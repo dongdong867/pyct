@@ -42,6 +42,12 @@ class StringManipulation:
         if sep is None:
             sep = " "
 
+        # Python semantics: empty separator raises ValueError. Without this
+        # guard the recursive implementation below loops forever because
+        # StringQueries.find("anything", "") returns 0, not -1.
+        if concolic_converter.unwrap_concolic(sep) == "":
+            raise ValueError("empty separator")
+
         from pyct.core.str.queries import StringQueries
 
         sep_idx = StringQueries.find(concolic_str, sep)
