@@ -2,6 +2,13 @@
 
 
 def test_string_equality_covers_all_keywords():
+    """
+    Given a target that branches on string equality against multiple keywords
+    When run_concolic starts from an empty-string seed
+    Then the engine should synthesize each matching keyword plus a fallback
+      And coverage should reach at least 95%
+      And at least 3 distinct paths should be explored
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.strings.equality import check_keyword
 
@@ -13,6 +20,12 @@ def test_string_equality_covers_all_keywords():
 
 
 def test_string_contains_covers_match_and_mismatch():
+    """
+    Given a target that checks whether a URL contains a protocol prefix
+    When run_concolic starts from an empty URL
+    Then the engine should generate both a protocol-containing URL and a plain one
+      And coverage should reach at least 95%
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.strings.contains import has_protocol
 
@@ -24,7 +37,13 @@ def test_string_contains_covers_match_and_mismatch():
 
 
 def test_empty_string_branch_reached():
-    """Empty string is a boundary case the solver must find."""
+    """
+    Given a target that branches on equality to the empty string
+    When run_concolic starts from a non-empty initial value
+    Then the engine should discover the empty-string boundary
+      And explore both s=="" and s!="" paths
+      And coverage should reach at least 95%
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.strings.empty_check import is_empty
 
@@ -32,5 +51,4 @@ def test_empty_string_branch_reached():
 
     assert result.success
     assert result.coverage_percent >= 95.0
-    # Engine must find both s=="" and s!="" paths
     assert result.paths_explored >= 2

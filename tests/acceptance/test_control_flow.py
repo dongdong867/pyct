@@ -2,6 +2,13 @@
 
 
 def test_early_return_reaches_every_path():
+    """
+    Given a target with guard-clause early returns (safe_divide)
+    When run_concolic starts from a valid input pair
+    Then the engine should generate inputs hitting every early return
+      And coverage should reach at least 95%
+      And at least 3 distinct return paths should be recorded
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.control_flow.early_return import safe_divide
 
@@ -13,8 +20,13 @@ def test_early_return_reaches_every_path():
 
 
 def test_target_raising_exception_does_not_crash_engine():
-    """Targets that raise runtime exceptions should not propagate out
-    of the engine — exploration continues, failure is recorded."""
+    """
+    Given a target that raises ValueError on some input (n < 0)
+    When run_concolic may try a negative input during exploration
+    Then the engine should capture the exception internally
+      And continue exploration for at least the happy path
+      And return a result without propagating the exception to the caller
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.control_flow.raises_exception import guarded
 

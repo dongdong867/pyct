@@ -2,6 +2,13 @@
 
 
 def test_single_if_else_covers_both_branches():
+    """
+    Given a target with a single if/else branch on a numeric input
+    When run_concolic is invoked with an arbitrary initial value
+    Then the engine should discover inputs that drive both arms
+      And coverage should reach at least 95%
+      And at least 2 distinct inputs should be generated
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.branches.single_if_else import classify
 
@@ -14,6 +21,12 @@ def test_single_if_else_covers_both_branches():
 
 
 def test_nested_conditions_covers_all_combinations():
+    """
+    Given a target with nested if/else on two independent inputs
+    When run_concolic is invoked from a single-quadrant seed
+    Then the engine should discover all four (x, y) sign combinations
+      And coverage should reach at least 95%
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.branches.nested_conditions import categorize
 
@@ -25,6 +38,12 @@ def test_nested_conditions_covers_all_combinations():
 
 
 def test_multi_way_elif_reaches_every_arm():
+    """
+    Given a target with a 5-way if/elif chain (grades A through F)
+    When run_concolic starts from a mid-range seed score
+    Then the engine should generate inputs hitting every arm
+      And coverage should reach at least 95%
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.branches.multi_way_elif import grade
 
@@ -36,7 +55,12 @@ def test_multi_way_elif_reaches_every_arm():
 
 
 def test_function_with_no_branches_still_succeeds():
-    """A branch-free target has trivial full coverage — one path."""
+    """
+    Given a pure function with no symbolic branches
+    When run_concolic is invoked with any input
+    Then exploration should succeed with trivial full coverage
+      And at least one path should be recorded
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.branches.no_branches import double
 
@@ -48,15 +72,19 @@ def test_function_with_no_branches_still_succeeds():
 
 
 def test_unreachable_branch_does_not_crash_engine():
-    """A branch that is provably unsatisfiable should be reported,
-    not crash the engine. Coverage will be less than 100% on the
-    dead branch, but success is still True."""
+    """
+    Given a target with a provably unsatisfiable branch (x != x)
+    When run_concolic attempts to reach that branch
+    Then the solver should fail to satisfy the unreachable arm (UNSAT)
+      And the engine should still report success for the reachable arm
+      And no unhandled solver exception should propagate
+    """
     from pyct import run_concolic
     from tests.acceptance.fixtures.branches.unreachable import unreachable
 
     result = run_concolic(target=unreachable, initial_args={"x": 0})
 
     assert result.success
-    # Reachable arm is covered, unreachable arm is not — partial coverage OK
+    # Reachable arm is covered; the unreachable arm drags the percent below 100
     assert result.coverage_percent > 0
     assert result.paths_explored >= 1

@@ -2,6 +2,13 @@
 
 
 def test_run_concolic_returns_result_with_expected_fields():
+    """
+    Given the top-level run_concolic API and a trivial target
+    When the caller invokes it with an initial args dict
+    Then the return value should be a RunConcolicResult instance
+      And expose the documented fields: success, coverage_percent,
+          executed_lines, paths_explored, inputs_generated, iterations, error
+    """
     from pyct import RunConcolicResult, run_concolic
 
     def trivial(x: int) -> int:
@@ -22,7 +29,12 @@ def test_run_concolic_returns_result_with_expected_fields():
 
 
 def test_run_concolic_with_empty_args_for_zero_arg_function():
-    """Zero-arg functions should accept empty initial_args."""
+    """
+    Given a zero-argument target function
+    When run_concolic is invoked with an empty initial_args dict
+    Then the engine should accept the call without complaining about args
+      And at least one path should be recorded
+    """
     from pyct import run_concolic
 
     def constant() -> int:
@@ -35,8 +47,12 @@ def test_run_concolic_with_empty_args_for_zero_arg_function():
 
 
 def test_run_concolic_captures_target_exception_in_error_field():
-    """When the target raises, the result should report the error
-    rather than propagating the exception to the caller."""
+    """
+    Given a target that always raises RuntimeError
+    When run_concolic is invoked on it
+    Then the exception should NOT propagate out of run_concolic
+      And the result should report the failure via error field or success=False
+    """
     from pyct import run_concolic
 
     def always_raises(x: int) -> int:
@@ -44,7 +60,5 @@ def test_run_concolic_captures_target_exception_in_error_field():
 
     result = run_concolic(target=always_raises, initial_args={"x": 0})
 
-    # Result is still returned; error path is visible via either the
-    # `error` field or `success=False`.
     assert result is not None
     assert result.error is not None or result.success is False

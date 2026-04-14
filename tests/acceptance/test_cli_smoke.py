@@ -5,6 +5,12 @@ import sys
 
 
 def test_cli_runs_target_function_end_to_end():
+    """
+    Given the pyct CLI and a valid `module::function` target
+    When invoked via `python -m pyct run` with a JSON args blob
+    Then the subprocess should exit 0
+      And stdout should mention coverage or success
+    """
     result = subprocess.run(
         [
             sys.executable,
@@ -25,10 +31,12 @@ def test_cli_runs_target_function_end_to_end():
 
 
 def test_cli_with_nonexistent_module_fails_with_nonzero_exit():
-    """Bad module path should be rejected with a message naming the module.
-
-    This test requires the CLI to actually parse argv and attempt the
-    import — a generic "pyct has no __main__" failure is NOT a pass.
+    """
+    Given a bogus `module.path::function` argument to the CLI
+    When the subprocess attempts to import the module
+    Then the exit code should be non-zero
+      And the error output should name the bad module path
+          (proves the CLI reached import, not just module-loader failure)
     """
     result = subprocess.run(
         [
@@ -47,17 +55,16 @@ def test_cli_with_nonexistent_module_fails_with_nonzero_exit():
 
     output = (result.stderr + result.stdout).lower()
     assert result.returncode != 0
-    # The bad module name must appear in the output — proves the CLI
-    # processed argv and reached the import attempt, not just bailed
-    # out at module loading.
     assert "does.not.exist" in output
 
 
 def test_cli_with_malformed_json_args_fails_with_nonzero_exit():
-    """Malformed --args JSON should be rejected with a JSON-specific error.
-
-    This test requires the CLI to actually parse the --args flag — a
-    generic "pyct has no __main__" failure is NOT a pass.
+    """
+    Given a syntactically invalid --args JSON payload
+    When the CLI parses the flag
+    Then the exit code should be non-zero
+      And output should mention JSON, --args, or "invalid args"
+          (proves the CLI reached argument validation, not module loading)
     """
     result = subprocess.run(
         [
@@ -76,6 +83,4 @@ def test_cli_with_malformed_json_args_fails_with_nonzero_exit():
 
     output = (result.stderr + result.stdout).lower()
     assert result.returncode != 0
-    # One of these markers must appear — they prove the CLI reached the
-    # JSON parsing step rather than failing at module discovery.
     assert "json" in output or "--args" in output or "invalid args" in output
