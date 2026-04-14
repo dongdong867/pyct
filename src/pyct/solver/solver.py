@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pyct.core import Concolic
 from pyct.predicate import Predicate
@@ -34,8 +34,8 @@ class Solver:
         solver: str = "cvc5",
         timeout: int = 10,
         safety: int = 0,
-        store: Optional[str] = None,
-        statsdir: Optional[str] = None,
+        store: str | None = None,
+        statsdir: str | None = None,
     ):
         self.config = SolverConfig(
             solver=solver,
@@ -49,7 +49,7 @@ class Solver:
         self._formula_builder = FormulaBuilder()
         self._model_parser = ModelParser()
 
-    def get_stats_dict(self) -> Dict[str, float]:
+    def get_stats_dict(self) -> dict[str, float]:
         """Return solver statistics as a flat dictionary."""
         return self.stats.to_dict()
 
@@ -58,8 +58,8 @@ class Solver:
     # ------------------------------------------------------------------
 
     def find_model(
-        self, constraint: Any, var_to_types: Dict[str, Any]
-    ) -> Tuple[Optional[Dict[str, Any]], SolverStatus, str]:
+        self, constraint: Any, var_to_types: dict[str, Any]
+    ) -> tuple[dict[str, Any] | None, SolverStatus, str]:
         """Find a satisfying model for a constraint.
 
         Returns:
@@ -88,10 +88,10 @@ class Solver:
     def _parse_model_result(
         self,
         status: SolverStatus,
-        output_lines: List[str],
+        output_lines: list[str],
         formula: str,
-        var_to_types: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
+        var_to_types: dict[str, Any],
+    ) -> dict[str, Any] | None:
         """Parse a SAT result into a model dict, or return None."""
         if status != SolverStatus.SAT:
             if status == SolverStatus.ERROR:
@@ -130,7 +130,7 @@ class Solver:
     # Expression validation (called from Concolic._validate_with_solver)
     # ------------------------------------------------------------------
 
-    def validate_expression(self, expr: Any, value: Any) -> Optional[Any]:
+    def validate_expression(self, expr: Any, value: Any) -> Any | None:
         """Check that a symbolic expression matches its concrete *value*.
 
         At safety level 0 this is a no-op (returns the engine immediately).
@@ -148,7 +148,7 @@ class Solver:
 
         return self._run_validation(expr, value, engine)
 
-    def _run_validation(self, expr: Any, value: Any, engine: Any) -> Optional[Any]:
+    def _run_validation(self, expr: Any, value: Any, engine: Any) -> Any | None:
         """Execute the solver to verify expr == value."""
         try:
             expr_formula = Predicate.get_formula_shallow(expr)

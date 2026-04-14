@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict
 
 
 @dataclass
@@ -30,7 +29,7 @@ class SolverStats:
         self.otherwise_number += 1
         self.otherwise_time += elapsed
 
-    def to_dict(self) -> Dict[str, float]:
+    def to_dict(self) -> dict[str, float]:
         """Convert to dictionary."""
         return {
             "sat_number": self.sat_number,

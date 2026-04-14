@@ -2,6 +2,4 @@
 
 
 def has_protocol(url: str) -> bool:
-    if "://" in url:
-        return True
-    return False
+    return "://" in url

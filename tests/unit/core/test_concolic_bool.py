@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pyct.core.bool import ConcolicBool
 from pyct.core.float import ConcolicFloat
 from pyct.core.int import ConcolicInt

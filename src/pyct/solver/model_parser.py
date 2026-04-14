@@ -5,7 +5,7 @@ Parse solver output to extract models.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 log = logging.getLogger("ct.solver.parser")
 
@@ -16,8 +16,8 @@ class ModelParser:
     VAR_SUFFIX = "_VAR"
 
     def parse_model(
-        self, output_lines: List[str], var_to_types: Dict[str, str]
-    ) -> Dict[str, Any]:
+        self, output_lines: list[str], var_to_types: dict[str, str]
+    ) -> dict[str, Any]:
         """
         Parse solver output to extract model.
 

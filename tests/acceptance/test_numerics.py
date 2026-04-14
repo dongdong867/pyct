@@ -3,7 +3,6 @@
 
 def test_int_range_covers_all_categories():
     from pyct import run_concolic
-
     from tests.acceptance.fixtures.numerics.int_range import categorize_value
 
     result = run_concolic(target=categorize_value, initial_args={"x": 0})

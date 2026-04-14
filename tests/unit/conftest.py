@@ -8,12 +8,11 @@ Provides:
 from __future__ import annotations
 
 from collections import deque
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 import pytest
 
 from pyct.utils.constraint import ConstraintRegistry
-
 
 # ---------------------------------------------------------------------------
 # ConstraintRegistry isolation
@@ -37,9 +36,9 @@ class MockSolver:
     """Minimal solver stub that records validate_expression calls."""
 
     def __init__(self) -> None:
-        self.validate_calls: List[Tuple[Any, Any]] = []
+        self.validate_calls: list[tuple[Any, Any]] = []
 
-    def validate_expression(self, expr: Any, value: Any) -> Optional["MockEngine"]:
+    def validate_expression(self, expr: Any, value: Any) -> MockEngine | None:
         """Record the call and return None (no validation)."""
         self.validate_calls.append((expr, value))
         return None
@@ -49,7 +48,7 @@ class MockPath:
     """Minimal path-constraint tracker that records add_branch calls."""
 
     def __init__(self) -> None:
-        self.branches: List[Tuple[Any, Any]] = []
+        self.branches: list[tuple[Any, Any]] = []
 
     def add_branch(self, condition: Any, queue: Any) -> None:
         """Record the branch decision."""

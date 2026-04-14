@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import List, Optional
-
 from pyct.predicate import Predicate
 
 
@@ -12,10 +10,10 @@ class ConstraintRegistry:
     No singleton pattern, no instance state.
     """
 
-    _constraints: List[Constraint] = []
+    _constraints: list[Constraint] = []
 
     @classmethod
-    def set_constraints(cls, constraints: List[Constraint]) -> None:
+    def set_constraints(cls, constraints: list[Constraint]) -> None:
         """Replace the constraint list (called after receiving from child process)."""
         cls._constraints = list(constraints)
 
@@ -32,7 +30,7 @@ class ConstraintRegistry:
         return cls._constraints[constraint_id]
 
     @classmethod
-    def get_all(cls) -> List[Constraint]:
+    def get_all(cls) -> list[Constraint]:
         """Get a copy of all registered constraints."""
         return cls._constraints.copy()
 
@@ -58,13 +56,13 @@ class Constraint:
 
     def __init__(
         self,
-        parent_id: Optional[int],
-        predicate: Optional[Predicate],
+        parent_id: int | None,
+        predicate: Predicate | None,
         depth: int = 0,
     ):
         self.parent_id = parent_id
         self.predicate = predicate
-        self.children_ids: List[int] = []
+        self.children_ids: list[int] = []
         self.depth = depth
         self.processed = False
         self.id = ConstraintRegistry.register(self)
@@ -85,14 +83,14 @@ class Constraint:
         )
 
     @property
-    def parent(self) -> Optional[Constraint]:
+    def parent(self) -> Constraint | None:
         """Get the parent constraint, or None for root."""
         if self.parent_id is None:
             return None
         return ConstraintRegistry.get(self.parent_id)
 
     @property
-    def children(self) -> List[Constraint]:
+    def children(self) -> list[Constraint]:
         """Get all child constraints."""
         return [ConstraintRegistry.get(cid) for cid in self.children_ids]
 
@@ -106,7 +104,7 @@ class Constraint:
         self.children_ids.append(child.id)
         return child
 
-    def find_child(self, predicate: Predicate) -> Optional[Constraint]:
+    def find_child(self, predicate: Predicate) -> Constraint | None:
         """Find a child with the given predicate, or None."""
         for child_id in self.children_ids:
             child = ConstraintRegistry.get(child_id)
@@ -119,11 +117,11 @@ class Constraint:
         existing = self.find_child(predicate)
         return existing if existing is not None else self.add_child(predicate)
 
-    def get_path_predicates(self) -> List[Predicate]:
+    def get_path_predicates(self) -> list[Predicate]:
         """Collect all predicates from root to this node (marks as processed)."""
         self.processed = True
-        predicates: List[Predicate] = []
-        current: Optional[Constraint] = self
+        predicates: list[Predicate] = []
+        current: Constraint | None = self
 
         while current is not None and current.predicate is not None:
             predicates.append(current.predicate)
@@ -131,10 +129,10 @@ class Constraint:
 
         return list(reversed(predicates))
 
-    def get_path_constraints(self) -> List[Constraint]:
+    def get_path_constraints(self) -> list[Constraint]:
         """Collect all constraint nodes from root to this node."""
-        constraints: List[Constraint] = []
-        current: Optional[Constraint] = self
+        constraints: list[Constraint] = []
+        current: Constraint | None = self
 
         while current is not None:
             constraints.append(current)

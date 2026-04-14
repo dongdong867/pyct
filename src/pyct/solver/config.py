@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional
 
 
 @dataclass(frozen=True)
@@ -20,10 +19,10 @@ class SolverConfig:
     solver: str = "cvc5"
     timeout: int = 10
     safety: int = 0
-    store: Optional[str] = None
-    statsdir: Optional[str] = None
+    store: str | None = None
+    statsdir: str | None = None
 
-    def get_solver_command(self) -> List[str]:
+    def get_solver_command(self) -> list[str]:
         """
         Build solver command based on configuration.
 

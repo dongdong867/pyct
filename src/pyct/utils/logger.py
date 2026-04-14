@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 SMTLIB2_LEVEL = 17  # Between DEBUG(10) and INFO(20)
 
 
-def configure_logging(verbose: int, logfile: Optional[str] = None) -> None:
+def configure_logging(verbose: int, logfile: str | None = None) -> None:
     """
     Configure logging based on verbosity level.
 

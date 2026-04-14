@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 
 class FormulaBuilder:
@@ -10,7 +10,7 @@ class FormulaBuilder:
     VAR_SUFFIX = "_VAR"
 
     def build_constraint_formula(
-        self, constraint: Any, var_to_types: Dict[str, str]
+        self, constraint: Any, var_to_types: dict[str, str]
     ) -> str:
         """
         Build complete SMT formula from constraint.
@@ -67,7 +67,7 @@ class FormulaBuilder:
         """Build SMT header with logic and options."""
         return f"(set-logic {self.LOGIC})\n(set-option :strings-exp true)"
 
-    def _build_declarations(self, var_to_types: Dict[str, str]) -> str:
+    def _build_declarations(self, var_to_types: dict[str, str]) -> str:
         """Build variable declarations."""
         declarations = [
             f"(declare-const {name} {var_type})"
@@ -86,7 +86,7 @@ class FormulaBuilder:
         """Build check-sat command."""
         return "(check-sat)"
 
-    def _build_get_values(self, var_to_types: Dict[str, str]) -> str:
+    def _build_get_values(self, var_to_types: dict[str, str]) -> str:
         """Build get-value commands."""
-        get_values = [f"(get-value ({name}))" for name in var_to_types.keys()]
+        get_values = [f"(get-value ({name}))" for name in var_to_types]
         return "\n".join(get_values)

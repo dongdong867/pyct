@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, List, Union
+from typing import Any, Union
 
 from pyct.core import Concolic
 
@@ -13,7 +13,7 @@ class FormulaDepth(Enum):
     SHALLOW = "shallow"  # Use concrete values for concolic objects
 
 
-SymbolicExpression = Union[str, List[Any], Concolic, bool, int, float]
+SymbolicExpression = Union[str, list[Any], Concolic, bool, int, float]
 
 
 class Predicate:
@@ -133,7 +133,7 @@ class Predicate:
         # Primitive comparison
         return expr1 == expr2
 
-    def _lists_equal(self, list1: List[Any], list2: List[Any]) -> bool:
+    def _lists_equal(self, list1: list[Any], list2: list[Any]) -> bool:
         """
         Check if two expression lists are equal.
 
@@ -147,7 +147,7 @@ class Predicate:
         if len(list1) != len(list2):
             return False
 
-        return all(self._expressions_equal(e1, e2) for e1, e2 in zip(list1, list2))
+        return all(self._expressions_equal(e1, e2) for e1, e2 in zip(list1, list2, strict=False))
 
     # ========================================================================
     # Formula Generation
@@ -280,7 +280,7 @@ class Predicate:
             return expr.value
 
     @staticmethod
-    def _handle_list(expr_list: List[Any], depth: FormulaDepth) -> str:
+    def _handle_list(expr_list: list[Any], depth: FormulaDepth) -> str:
         """
         Convert list expression to S-expression string.
 

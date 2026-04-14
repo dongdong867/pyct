@@ -4,7 +4,7 @@ import builtins
 from typing import Any, List, Optional, Union
 
 # Type aliases
-SymbolicExpression = Union[str, List[Any]]
+SymbolicExpression = Union[str, list[Any]]
 Engine = Any
 
 
@@ -35,8 +35,8 @@ class Concolic:
 
     def __init__(
         self,
-        expr: Optional[SymbolicExpression] = None,
-        engine: Optional[Engine] = None,
+        expr: SymbolicExpression | None = None,
+        engine: Engine | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -98,10 +98,10 @@ class Concolic:
 
     def _resolve_engine(
         self,
-        engine: Optional[Engine],
-        expr: Optional[SymbolicExpression],
+        engine: Engine | None,
+        expr: SymbolicExpression | None,
         value: Any,
-    ) -> Optional[Engine]:
+    ) -> Engine | None:
         """
         Determine which execution engine to use.
 
@@ -131,8 +131,8 @@ class Concolic:
 
     @staticmethod
     def _validate_with_solver(
-        expr: Optional[SymbolicExpression], value: Any
-    ) -> Optional[Engine]:
+        expr: SymbolicExpression | None, value: Any
+    ) -> Engine | None:
         """Validate expression via the engine's solver instance.
 
         Attempts to find an engine embedded in *expr* and, if the engine
@@ -148,9 +148,9 @@ class Concolic:
 
     def _resolve_expression(
         self,
-        expr: Optional[SymbolicExpression],
+        expr: SymbolicExpression | None,
         concrete_value: str,
-    ) -> Union[str, List[Any]]:
+    ) -> str | list[Any]:
         """
         Determine which expression to use.
 
@@ -166,7 +166,7 @@ class Concolic:
         return concrete_value
 
     @staticmethod
-    def find_engine_in_expr(expr: Union[Concolic, List, Any]) -> Optional[Engine]:
+    def find_engine_in_expr(expr: Concolic | list | Any) -> Engine | None:
         """
         Recursively search for an execution engine in an expression tree.
 

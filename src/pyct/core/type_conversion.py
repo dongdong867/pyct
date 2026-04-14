@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Type, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -52,7 +52,7 @@ class BooleanConverter:
 
     @classmethod
     def to_concolic_bool(
-        cls, value: Any, concolic_class: Type[T], engine: Any = None
+        cls, value: Any, concolic_class: type[T], engine: Any = None
     ) -> T:
         """
         Convert value to ConcolicBool instance.

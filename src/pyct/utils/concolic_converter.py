@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Type
+from typing import Any
 
 from pyct.utils.types import (
     ConcolicEngine,
@@ -14,10 +14,10 @@ from pyct.utils.types import (
 # Lazy-loaded concolic class registry
 # ---------------------------------------------------------------------------
 
-_concolic_classes: Optional[Dict[Type, Type]] = None
+_concolic_classes: dict[type, type] | None = None
 
 
-def _get_concolic_classes() -> Dict[Type, Type]:
+def _get_concolic_classes() -> dict[type, type]:
     """Lazy-load concolic type → class mapping to avoid circular imports."""
     global _concolic_classes
     if _concolic_classes is None:
@@ -42,8 +42,8 @@ def _get_concolic_classes() -> Dict[Type, Type]:
 
 def wrap_concolic(
     value: Any,
-    expr: Optional[ConcolicExpression] = None,
-    engine: Optional[ConcolicEngine] = None,
+    expr: ConcolicExpression | None = None,
+    engine: ConcolicEngine | None = None,
 ) -> Any:
     """
     Wrap a primitive value in the appropriate concolic object.

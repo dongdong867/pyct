@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pyct.core.int import ConcolicInt
 from pyct.core.operations.binary_ops import BinaryOp
 from pyct.core.operations.converters import OperandConverter

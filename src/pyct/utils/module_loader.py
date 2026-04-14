@@ -3,9 +3,10 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from types import ModuleType
-from typing import Any, Callable, Iterator, Optional
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ log = logging.getLogger(__name__)
 
 def get_module_from_rootdir_and_modpath(
     root_dir: str, module_path: str
-) -> Optional[ModuleType]:
+) -> ModuleType | None:
     """
     Load module from root directory and module path.
 
@@ -33,7 +34,7 @@ def get_module_from_rootdir_and_modpath(
 
 def get_function_from_module_and_funcname(
     module: ModuleType, function_name: str, enforce: bool = True
-) -> Optional[Callable]:
+) -> Callable | None:
     """
     Get function from module by name.
 
@@ -53,7 +54,7 @@ def get_function_from_module_and_funcname(
 # ---------------------------------------------------------------------------
 
 
-def _load_module(root_dir: str, module_path: str) -> Optional[ModuleType]:
+def _load_module(root_dir: str, module_path: str) -> ModuleType | None:
     """Load a module by trying standard import first, then file-based loading."""
     try:
         import importlib
@@ -105,7 +106,7 @@ def _resolve_module_path(root_dir: str, module_path: str) -> str:
 
 def _get_function(
     module: ModuleType, function_name: str, enforce: bool = True
-) -> Optional[Callable]:
+) -> Callable | None:
     """Get a function from a module, optionally validating parameter types."""
     try:
         func = _navigate_to_attribute(module, function_name)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pyct.core import Concolic
 from pyct.utils import concolic_converter
@@ -18,7 +18,7 @@ class OperandConverter:
         target_class: type,
         engine: Any = None,
         allow_float: bool = True,
-    ) -> Optional[Any]:
+    ) -> Any | None:
         """
         Convert value to concolic numeric type.
 

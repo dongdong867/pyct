@@ -5,7 +5,6 @@ from __future__ import annotations
 import site
 import sys
 from pathlib import Path
-from typing import Optional
 
 _VENV_DIR_NAMES = (".venv", "venv", "env")
 
@@ -29,7 +28,7 @@ def activate_project_venv(project_root: str) -> bool:
     return True
 
 
-def get_venv_python_executable(project_root: str) -> Optional[str]:
+def get_venv_python_executable(project_root: str) -> str | None:
     """Return the path to the venv's Python executable, or None."""
     venv_path = _find_venv_dir(project_root)
     if venv_path is None:
@@ -48,7 +47,7 @@ def get_venv_python_executable(project_root: str) -> Optional[str]:
 # ---------------------------------------------------------------------------
 
 
-def _find_venv_dir(project_root: str) -> Optional[Path]:
+def _find_venv_dir(project_root: str) -> Path | None:
     """Locate the venv directory under *project_root*."""
     root = Path(project_root)
     for name in _VENV_DIR_NAMES:
@@ -58,7 +57,7 @@ def _find_venv_dir(project_root: str) -> Optional[Path]:
     return None
 
 
-def _find_site_packages(project_root: str) -> Optional[Path]:
+def _find_site_packages(project_root: str) -> Path | None:
     """Locate the site-packages directory inside the project's venv."""
     venv_path = _find_venv_dir(project_root)
     if venv_path is None:
@@ -71,7 +70,7 @@ def _find_site_packages(project_root: str) -> Optional[Path]:
     return _find_unix_site_packages(venv_path)
 
 
-def _find_unix_site_packages(venv_path: Path) -> Optional[Path]:
+def _find_unix_site_packages(venv_path: Path) -> Path | None:
     """Find site-packages under a Unix venv, trying the current Python version first."""
     python_version = f"python{sys.version_info.major}.{sys.version_info.minor}"
     candidate = venv_path / "lib" / python_version / "site-packages"

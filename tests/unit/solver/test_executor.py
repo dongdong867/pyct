@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-
 from pyct.solver.config import SolverConfig
 from pyct.solver.executor import SolverExecutor, SolverStatus
 from pyct.solver.stats import SolverStats

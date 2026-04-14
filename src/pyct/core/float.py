@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pyct.core import Concolic, MetaFinal
 from pyct.utils import concolic_converter
@@ -33,8 +33,8 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
     def __new__(
         cls,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> ConcolicFloat:
         """
         Create a new ConcolicFloat instance.
@@ -63,8 +63,8 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
     def __init__(
         self,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> None:
         """Initialize concolic attributes."""
         super().__init__(expr=expr, engine=engine)
@@ -73,7 +73,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
     # Comparison Operations
     # ========================================================================
 
-    def __ge__(self, other: Any) -> "ConcolicType":
+    def __ge__(self, other: Any) -> ConcolicType:
         """
         Greater than or equal comparison with symbolic tracking.
 
@@ -104,7 +104,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
 
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def __lt__(self, other: Any) -> "ConcolicType":
+    def __lt__(self, other: Any) -> ConcolicType:
         """Less than comparison with symbolic tracking."""
         concrete = self._compute_comparison(other, "__lt__", "__gt__")
         symbolic_other = self._to_symbolic_float(other)
@@ -115,7 +115,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         symbolic_expr = ["<", self, symbolic_other]
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def __le__(self, other: Any) -> "ConcolicType":
+    def __le__(self, other: Any) -> ConcolicType:
         """Less than or equal comparison with symbolic tracking."""
         concrete = self._compute_comparison(other, "__le__", "__ge__")
         symbolic_other = self._to_symbolic_float(other)
@@ -126,7 +126,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         symbolic_expr = ["<=", self, symbolic_other]
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def __gt__(self, other: Any) -> "ConcolicType":
+    def __gt__(self, other: Any) -> ConcolicType:
         """Greater than comparison with symbolic tracking."""
         concrete = self._compute_comparison(other, "__gt__", "__lt__")
         symbolic_other = self._to_symbolic_float(other)
@@ -137,7 +137,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         symbolic_expr = [">", self, symbolic_other]
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def __eq__(self, other: Any) -> "ConcolicType":
+    def __eq__(self, other: Any) -> ConcolicType:
         """Equality comparison with symbolic tracking."""
         concrete = self._compute_comparison(other, "__eq__", "__eq__")
         symbolic_other = self._to_symbolic_float(other)
@@ -148,7 +148,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         symbolic_expr = ["=", self, symbolic_other]
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def __ne__(self, other: Any) -> "ConcolicType":
+    def __ne__(self, other: Any) -> ConcolicType:
         """Not equal comparison with symbolic tracking."""
         concrete = self._compute_comparison(other, "__ne__", "__ne__")
         symbolic_other = self._to_symbolic_float(other)
@@ -191,7 +191,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
                 f"Cannot compare {type(self).__name__} with {type(other).__name__}: {e}"
             )
 
-    def _to_symbolic_float(self, value: Any) -> Optional[ConcolicFloat]:
+    def _to_symbolic_float(self, value: Any) -> ConcolicFloat | None:
         """
         Convert value to symbolic float for operations.
 
@@ -233,7 +233,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
     # Arithmetic Operations
     # ========================================================================
 
-    def __truediv__(self, other: Any) -> "ConcolicType":
+    def __truediv__(self, other: Any) -> ConcolicType:
         """
         Division operation with symbolic tracking.
 
@@ -302,7 +302,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         """
         return self
 
-    def to_int(self) -> "ConcolicType":
+    def to_int(self) -> ConcolicType:
         """
         Convert to ConcolicInt, preserving symbolic tracking.
 
@@ -380,7 +380,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
 
 
 def create_concolic_float(
-    value: float, expr: Optional[Any] = None, engine: Optional[Any] = None
+    value: float, expr: Any | None = None, engine: Any | None = None
 ) -> ConcolicFloat:
     """
     Factory function to create a ConcolicFloat.

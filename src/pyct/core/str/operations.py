@@ -31,7 +31,7 @@ class StringBinaryOperations:
         self.concolic_str = concolic_str
         self.engine = concolic_str.engine
 
-    def add(self, other: Any) -> "ConcolicType":
+    def add(self, other: Any) -> ConcolicType:
         """String concatenation: self + other."""
         concrete = str.__add__(
             self.concolic_str,
@@ -47,7 +47,7 @@ class StringBinaryOperations:
             self.engine,
         )
 
-    def contains(self, other: Any) -> "ConcolicType":
+    def contains(self, other: Any) -> ConcolicType:
         """Check containment: other in self."""
         concrete = str.__contains__(
             self.concolic_str,
@@ -63,7 +63,7 @@ class StringBinaryOperations:
             self.engine,
         )
 
-    def eq(self, other: Any) -> "ConcolicType":
+    def eq(self, other: Any) -> ConcolicType:
         """Equality: self == other."""
         concrete = _safe_compare(self.concolic_str, other, "__eq__", "__eq__")
         if not isinstance(other, str):
@@ -76,7 +76,7 @@ class StringBinaryOperations:
             self.engine,
         )
 
-    def ne(self, other: Any) -> "ConcolicType":
+    def ne(self, other: Any) -> ConcolicType:
         """Inequality: self != other."""
         concrete = _safe_compare(self.concolic_str, other, "__ne__", "__ne__")
         if not isinstance(other, str):
@@ -89,27 +89,27 @@ class StringBinaryOperations:
             self.engine,
         )
 
-    def lt(self, other: Any) -> "ConcolicType":
+    def lt(self, other: Any) -> ConcolicType:
         """Less than: self < other."""
         spec = _ComparisonSpec("<", "__lt__", "__gt__", reverse=False)
         return self._comparison(spec, other)
 
-    def le(self, other: Any) -> "ConcolicType":
+    def le(self, other: Any) -> ConcolicType:
         """Less than or equal: self <= other."""
         spec = _ComparisonSpec("<=", "__le__", "__ge__", reverse=False)
         return self._comparison(spec, other)
 
-    def gt(self, other: Any) -> "ConcolicType":
+    def gt(self, other: Any) -> ConcolicType:
         """Greater than: self > other."""
         spec = _ComparisonSpec("<", "__gt__", "__lt__", reverse=True)
         return self._comparison(spec, other)
 
-    def ge(self, other: Any) -> "ConcolicType":
+    def ge(self, other: Any) -> ConcolicType:
         """Greater than or equal: self >= other."""
         spec = _ComparisonSpec("<=", "__ge__", "__le__", reverse=True)
         return self._comparison(spec, other)
 
-    def mul(self, other: Any) -> "ConcolicType":
+    def mul(self, other: Any) -> ConcolicType:
         """String repetition: self * n."""
         concrete = _safe_compare(self.concolic_str, other, "__mul__", "__rmul__")
 
@@ -120,7 +120,7 @@ class StringBinaryOperations:
         result = _build_repetition(self.concolic_str, count, self.engine)
         return concolic_converter.wrap_concolic(concrete, result, self.engine)
 
-    def _comparison(self, spec: _ComparisonSpec, other: Any) -> "ConcolicType":
+    def _comparison(self, spec: _ComparisonSpec, other: Any) -> ConcolicType:
         """Handle string comparisons (symbolic only for alphanumeric strings)."""
         concrete = _safe_compare(
             self.concolic_str, other, spec.forward, spec.reverse_method

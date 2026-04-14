@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pyct.core.type_conversion import BooleanConverter, NumericConverter
 
 

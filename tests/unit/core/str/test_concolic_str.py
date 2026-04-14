@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 from pyct.core.str.str import ConcolicStr
 from pyct.utils.concolic_converter import unwrap_concolic
 

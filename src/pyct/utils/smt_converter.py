@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import Union
-
 from pyct.utils.constants import SMTConstants
 
 
-def py2smt(obj: Union[bool, int, float, str]) -> str:
+def py2smt(obj: bool | int | float | str) -> str:
     """
     Convert Python object to SMT-LIB2 string representation.
 
@@ -45,7 +43,7 @@ def _convert_bool(value: bool) -> str:
     return SMTConstants.TRUE if value else SMTConstants.FALSE
 
 
-def _convert_number(value: Union[int, float]) -> str:
+def _convert_number(value: int | float) -> str:
     """Convert number to SMT format."""
     if value < 0:
         return f"{SMTConstants.NEGATIVE_PREFIX}{-value}{SMTConstants.NEGATIVE_SUFFIX}"

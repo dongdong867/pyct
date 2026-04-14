@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Union
+from typing import Any
 
 from pyct.core import Concolic, MetaFinal
 from pyct.core.expressions import BooleanExpressionBuilder as BoolExpr
@@ -30,8 +30,8 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
     def __new__(
         cls,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> ConcolicBool:
         """Create a new ConcolicBool instance."""
         normalized = BooleanConverter.normalize_to_bool(value)
@@ -41,8 +41,8 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
     def __init__(
         self,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> None:
         """Initialize concolic attributes."""
         super().__init__(expr=expr, engine=engine)
@@ -116,7 +116,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
         """
         return self
 
-    def to_int(self) -> "ConcolicType":
+    def to_int(self) -> ConcolicType:
         """
         Convert to ConcolicInt, preserving symbolic tracking.
 
@@ -139,7 +139,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
 
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
-    def to_float(self) -> "ConcolicType":
+    def to_float(self) -> ConcolicType:
         """
         Convert to ConcolicFloat, preserving symbolic tracking.
 
@@ -183,7 +183,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
         if self.engine and hasattr(self.engine, "path"):
             self.engine.path.add_branch(self, self.engine.constraints_to_solve)
 
-    def __xor__(self, other: Any) -> "ConcolicType":
+    def __xor__(self, other: Any) -> ConcolicType:
         """XOR operation with symbolic expression tracking."""
         concrete = self._compute_xor(other)
         symbolic_other = self._to_concolic_bool(other)
@@ -210,7 +210,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
 
         return BooleanConverter.to_concolic_bool(value, self.__class__, self.engine)
 
-    def __add__(self, other: Any) -> Union[int, Any]:
+    def __add__(self, other: Any) -> int | Any:
         """Addition operation, delegating to other if it's Concolic."""
         # TODO: - update this to fit int and str type
         # if isinstance(other, Concolic):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Protocol, Union, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, Union, runtime_checkable
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
@@ -14,10 +14,10 @@ if TYPE_CHECKING:
 # Type Aliases
 # ============================================================================
 
-ConcolicExpression = Union[List[Any], str, None]
+ConcolicExpression = Union[list[Any], str, None]
 ConcolicEngine = Any  # Forward reference to avoid circular import
 PrimitiveValue = Union[bool, int, float, str]
-ConversionResult = Union[PrimitiveValue, List["ConversionResult"]]
+ConversionResult = Union[PrimitiveValue, list["ConversionResult"]]
 
 
 # ============================================================================

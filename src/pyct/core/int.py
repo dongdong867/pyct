@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pyct.core import Concolic, MetaFinal
 from pyct.core.operations.binary_ops import BinaryOp
@@ -37,8 +37,8 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
     def __new__(
         cls,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> ConcolicInt:
         if not isinstance(value, int) or isinstance(value, bool):
             value = int(value)
@@ -47,8 +47,8 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
     def __init__(
         self,
         value: Any,
-        expr: Optional[Any] = None,
-        engine: Optional[Any] = None,
+        expr: Any | None = None,
+        engine: Any | None = None,
     ) -> None:
         super().__init__(expr=expr, engine=engine)
         if log.isEnabledFor(logging.DEBUG):
@@ -56,54 +56,54 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
 
     # -- Unary operations --
 
-    def __abs__(self) -> "ConcolicType":
+    def __abs__(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(
             int.__abs__(self), ["abs", self], self.engine
         )
 
-    def __neg__(self) -> "ConcolicType":
+    def __neg__(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(
             int.__neg__(self), ["-", self], self.engine
         )
 
-    def __pos__(self) -> "ConcolicType":
+    def __pos__(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(int.__pos__(self), self, self.engine)
 
     # -- Binary arithmetic --
 
-    def __add__(self, other: Any) -> "ConcolicType":
+    def __add__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.ADD, other)
 
-    def __sub__(self, other: Any) -> "ConcolicType":
+    def __sub__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.SUB, other)
 
-    def __mul__(self, other: Any) -> "ConcolicType":
+    def __mul__(self, other: Any) -> ConcolicType:
         if isinstance(concolic_converter.unwrap_concolic(other), str):
             return concolic_converter.wrap_concolic(other).__mul__(self)
         return BinaryOperationHandler(self).execute(BinaryOp.MUL, other)
 
-    def __truediv__(self, other: Any) -> "ConcolicType":
+    def __truediv__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.TRUEDIV, other)
 
-    def __floordiv__(self, other: Any) -> "ConcolicType":
+    def __floordiv__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.FLOORDIV, other)
 
-    def __mod__(self, other: Any) -> "ConcolicType":
+    def __mod__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.MOD, other)
 
     # -- Reverse arithmetic --
 
-    def __radd__(self, other: Any) -> "ConcolicType":
+    def __radd__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(
             BinaryOp.RADD, other, is_reverse=True
         )
 
-    def __rsub__(self, other: Any) -> "ConcolicType":
+    def __rsub__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(
             BinaryOp.RSUB, other, is_reverse=True
         )
 
-    def __rmul__(self, other: Any) -> "ConcolicType":
+    def __rmul__(self, other: Any) -> ConcolicType:
         if isinstance(other, (str, Concolic)) and isinstance(
             concolic_converter.unwrap_concolic(other),
             str,
@@ -113,59 +113,59 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
             BinaryOp.RMUL, other, is_reverse=True
         )
 
-    def __rtruediv__(self, other: Any) -> "ConcolicType":
+    def __rtruediv__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(
             BinaryOp.RTRUEDIV, other, is_reverse=True
         )
 
-    def __rfloordiv__(self, other: Any) -> "ConcolicType":
+    def __rfloordiv__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(
             BinaryOp.RFLOORDIV, other, is_reverse=True
         )
 
-    def __rmod__(self, other: Any) -> "ConcolicType":
+    def __rmod__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(
             BinaryOp.RMOD, other, is_reverse=True
         )
 
     # -- Comparisons --
 
-    def __eq__(self, other: Any) -> "ConcolicType":
+    def __eq__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.EQ, other)
 
-    def __ne__(self, other: Any) -> "ConcolicType":
+    def __ne__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.NE, other)
 
-    def __lt__(self, other: Any) -> "ConcolicType":
+    def __lt__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.LT, other)
 
-    def __le__(self, other: Any) -> "ConcolicType":
+    def __le__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.LE, other)
 
-    def __gt__(self, other: Any) -> "ConcolicType":
+    def __gt__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.GT, other)
 
-    def __ge__(self, other: Any) -> "ConcolicType":
+    def __ge__(self, other: Any) -> ConcolicType:
         return BinaryOperationHandler(self).execute(BinaryOp.GE, other)
 
     # -- Bitwise (concrete only, no symbolic tracking) --
 
-    def __and__(self, other: Any) -> "ConcolicType":
+    def __and__(self, other: Any) -> ConcolicType:
         return _concrete_only(int.__and__, self, other)
 
-    def __or__(self, other: Any) -> "ConcolicType":
+    def __or__(self, other: Any) -> ConcolicType:
         return _concrete_only(int.__or__, self, other)
 
-    def __xor__(self, other: Any) -> "ConcolicType":
+    def __xor__(self, other: Any) -> ConcolicType:
         return _concrete_only(int.__xor__, self, other)
 
-    def __lshift__(self, other: Any) -> "ConcolicType":
+    def __lshift__(self, other: Any) -> ConcolicType:
         return _concrete_only(int.__lshift__, self, other)
 
-    def __rshift__(self, other: Any) -> "ConcolicType":
+    def __rshift__(self, other: Any) -> ConcolicType:
         return _concrete_only(int.__rshift__, self, other)
 
-    def __invert__(self) -> "ConcolicType":
+    def __invert__(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(int.__invert__(self), None, self.engine)
 
     # -- Boolean and special --
@@ -187,21 +187,21 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
 
     # -- Rounding (identity for integers) --
 
-    def __ceil__(self, *args, **kwargs) -> "ConcolicType":
+    def __ceil__(self, *args, **kwargs) -> ConcolicType:
         return _rounding_identity(int.__ceil__, self, *args, **kwargs)
 
-    def __floor__(self, *args, **kwargs) -> "ConcolicType":
+    def __floor__(self, *args, **kwargs) -> ConcolicType:
         return _rounding_identity(int.__floor__, self, *args, **kwargs)
 
-    def __round__(self, *args, **kwargs) -> "ConcolicType":
+    def __round__(self, *args, **kwargs) -> ConcolicType:
         return _rounding_identity(int.__round__, self, *args, **kwargs)
 
-    def __trunc__(self, *args, **kwargs) -> "ConcolicType":
+    def __trunc__(self, *args, **kwargs) -> ConcolicType:
         return _rounding_identity(int.__trunc__, self, *args, **kwargs)
 
     # -- Type conversions --
 
-    def to_bool(self) -> "ConcolicType":
+    def to_bool(self) -> ConcolicType:
         concrete = int.__bool__(self)
         return concolic_converter.wrap_concolic(
             concrete, ["not", ["=", self, "0"]], self.engine
@@ -210,12 +210,12 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
     def to_int(self) -> ConcolicInt:
         return self
 
-    def to_float(self) -> "ConcolicType":
+    def to_float(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(
             int.__float__(self), ["to_real", self], self.engine
         )
 
-    def to_str(self) -> "ConcolicType":
+    def to_str(self) -> ConcolicType:
         concrete = int.__str__(self)
         expr = [
             "ite",

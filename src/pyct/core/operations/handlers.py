@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from pyct.core.operations.binary_ops import BinaryOp
 from pyct.core.operations.converters import OperandConverter
@@ -23,7 +24,7 @@ class BinaryOperationHandler:
         op: BinaryOp,
         other: Any,
         is_reverse: bool = False,
-    ) -> "ConcolicType":
+    ) -> ConcolicType:
         """Execute binary operation with symbolic tracking."""
         if log.isEnabledFor(logging.DEBUG):
             log.debug(
@@ -66,7 +67,7 @@ class BinaryOperationHandler:
 
         return _try_reverse_operation(op, self.concolic_obj, unwrapped_other)
 
-    def _prepare_operand(self, value: Any, op: BinaryOp) -> Optional[Any]:
+    def _prepare_operand(self, value: Any, op: BinaryOp) -> Any | None:
         """Convert operand to a concolic type for symbolic computation."""
         symbolic = self.converter.to_concolic_numeric(
             value,
@@ -80,9 +81,8 @@ class BinaryOperationHandler:
             BinaryOp.MOD,
             BinaryOp.RFLOORDIV,
             BinaryOp.RMOD,
-        ):
-            if not self.converter.validate_for_floor_division(symbolic):
-                return None
+        ) and not self.converter.validate_for_floor_division(symbolic):
+            return None
 
         return symbolic
 
@@ -100,10 +100,8 @@ class BinaryOperationHandler:
 
     def _check_division_by_zero(self, other: Any) -> None:
         """Insert a symbolic branch check for division by zero."""
-        try:
+        with contextlib.suppress(Exception):
             (other != 0).__bool__()
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------

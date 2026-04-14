@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pickle
 
-
 from pyct.core.float import ConcolicFloat
 from pyct.core.int import ConcolicInt
 from pyct.utils.concolic_converter import unwrap_concolic

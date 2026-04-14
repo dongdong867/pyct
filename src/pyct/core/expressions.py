@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from typing import Any, List, Union
+from typing import Any
 
 # Type alias for symbolic expressions
-SymbolicExpr = List[Union[str, Any]]
+SymbolicExpr = list[str | Any]
 
 
 class BooleanExpressionBuilder:
