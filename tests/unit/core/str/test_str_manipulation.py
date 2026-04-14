@@ -49,3 +49,29 @@ class TestSplitlines:
         parts = cs.splitlines()
         concrete_parts = [unwrap_concolic(p) for p in parts]
         assert concrete_parts == ["a", "b", "c"]
+
+
+class TestStrManipulationErrorCases:
+    """Error paths: negative replace count, empty-string strip, etc.
+
+    NOTE: test_split_with_empty_separator_raises is intentionally
+    omitted here — it revealed a real bug in StringManipulation.split
+    (infinite recursion on empty sep) that is being triaged separately.
+    """
+
+    def test_replace_empty_old_inserts_between_every_character(self, engine):
+        # "abc".replace("", "X") == "XaXbXcX" — Python str semantics
+        cs = ConcolicStr("abc", "x", engine)
+        result = cs.replace("", "X")
+        assert unwrap_concolic(result) == "XaXbXcX"
+
+    def test_replace_negative_count_replaces_all(self, engine):
+        # Negative count in Python str.replace means "replace all"
+        cs = ConcolicStr("ababab", "x", engine)
+        result = cs.replace("ab", "X", -1)
+        assert unwrap_concolic(result) == "XXX"
+
+    def test_strip_on_empty_string_returns_empty(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        result = cs.strip()
+        assert unwrap_concolic(result) == ""

@@ -60,3 +60,28 @@ class TestEndsWith:
         cs = ConcolicStr("hello", "x", engine)
         result = cs.endswith("xyz")
         assert unwrap_concolic(result) is False
+
+
+class TestStrQueriesEmptyNeedle:
+    """Python str semantics: empty needle has special matching rules."""
+
+    def test_find_empty_needle_returns_zero(self, engine):
+        cs = ConcolicStr("hello", "x", engine)
+        result = cs.find("")
+        assert unwrap_concolic(result) == 0
+
+    def test_count_empty_needle_returns_length_plus_one(self, engine):
+        # "hello".count("") == 6 — matches at every gap including ends
+        cs = ConcolicStr("hello", "x", engine)
+        result = cs.count("")
+        assert unwrap_concolic(result) == 6
+
+    def test_startswith_empty_string_returns_true(self, engine):
+        cs = ConcolicStr("hello", "x", engine)
+        result = cs.startswith("")
+        assert unwrap_concolic(result) is True
+
+    def test_endswith_empty_string_returns_true(self, engine):
+        cs = ConcolicStr("hello", "x", engine)
+        result = cs.endswith("")
+        assert unwrap_concolic(result) is True

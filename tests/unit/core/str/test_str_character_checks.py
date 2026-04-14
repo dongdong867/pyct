@@ -74,3 +74,27 @@ class TestIsUpper:
         cs = ConcolicStr("Abc", "x", engine)
         result = cs.isupper()
         assert unwrap_concolic(result) is False
+
+
+class TestCharacterChecksOnEmptyString:
+    """Python str semantics: all char-check methods return False on ''."""
+
+    def test_isdigit_empty_is_false(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        assert unwrap_concolic(cs.isdigit()) is False
+
+    def test_isalpha_empty_is_false(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        assert unwrap_concolic(cs.isalpha()) is False
+
+    def test_isalnum_empty_is_false(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        assert unwrap_concolic(cs.isalnum()) is False
+
+    def test_islower_empty_is_false(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        assert unwrap_concolic(cs.islower()) is False
+
+    def test_isupper_empty_is_false(self, engine):
+        cs = ConcolicStr("", "x", engine)
+        assert unwrap_concolic(cs.isupper()) is False

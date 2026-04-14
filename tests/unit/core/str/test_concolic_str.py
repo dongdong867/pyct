@@ -85,3 +85,21 @@ class TestIteration:
     def test_iter_empty_string(self, engine):
         cs = ConcolicStr("", "x", engine)
         assert list(cs) == []
+
+
+class TestConstructionEdgeCases:
+    """Boundary and permissive construction."""
+
+    def test_create_from_none_coerces_to_string(self):
+        cs = ConcolicStr(None)
+        assert str(cs) == "None"
+
+    def test_create_from_list_coerces_to_repr(self):
+        cs = ConcolicStr([1, 2, 3])
+        assert str(cs) == "[1, 2, 3]"
+
+    def test_eq_with_different_primitive_type_returns_false(self, engine):
+        cs = ConcolicStr("42", "x", engine)
+        # Comparing to an int — should not raise, should return False
+        result = cs == 42
+        assert unwrap_concolic(result) is False
