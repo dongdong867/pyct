@@ -32,5 +32,9 @@ def test_division_by_zero_in_target_does_not_crash_engine():
 
     result = run_concolic(target=divide, initial_args={"n": 1})
 
-    assert result is not None
+    # Engine must have explored at least one path — confirms the engine
+    # didn't crash out on the ZeroDivisionError that n=0 would trigger.
     assert result.paths_explored >= 1
+    # Either the run succeeded (engine avoided n=0) or the exception was
+    # captured as an error. Either way, no exception propagates here.
+    assert result.success or result.error is not None

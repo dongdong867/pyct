@@ -42,7 +42,7 @@ def test_run_concolic_with_empty_args_for_zero_arg_function():
 
     result = run_concolic(target=constant, initial_args={})
 
-    assert result is not None
+    assert result.success
     assert result.paths_explored >= 1
 
 
@@ -60,5 +60,6 @@ def test_run_concolic_captures_target_exception_in_error_field():
 
     result = run_concolic(target=always_raises, initial_args={"x": 0})
 
-    assert result is not None
+    # The exception should be captured, not propagated — verify the
+    # failure is surfaced via either error or success flag.
     assert result.error is not None or result.success is False

@@ -32,5 +32,8 @@ def test_target_raising_exception_does_not_crash_engine():
 
     result = run_concolic(target=guarded, initial_args={"n": 0})
 
-    assert result is not None
+    # Engine must have explored at least the happy path — confirms it
+    # didn't bail out on the first exception it encountered.
     assert result.paths_explored >= 1
+    # The ValueError should be captured, not propagated out of run_concolic.
+    assert result.success or result.error is not None

@@ -22,7 +22,7 @@ class _NoopPlugin:
 class TestEngineConstruction:
     def test_engine_accepts_config(self):
         engine = Engine(ExecutionConfig())
-        assert engine is not None
+        assert isinstance(engine, Engine)
 
     def test_engine_has_no_plugins_initially(self):
         engine = Engine(ExecutionConfig())
