@@ -52,12 +52,14 @@ class TestSplitlines:
 
 
 class TestStrManipulationErrorCases:
-    """Error paths: negative replace count, empty-string strip, etc.
+    """Error paths: empty separator, negative replace count, empty strip."""
 
-    NOTE: test_split_with_empty_separator_raises is intentionally
-    omitted here — it revealed a real bug in StringManipulation.split
-    (infinite recursion on empty sep) that is being triaged separately.
-    """
+    def test_split_with_empty_separator_raises(self, engine):
+        import pytest
+
+        cs = ConcolicStr("abc", "x", engine)
+        with pytest.raises(ValueError, match="empty separator"):
+            cs.split("")
 
     def test_replace_empty_old_inserts_between_every_character(self, engine):
         # "abc".replace("", "X") == "XaXbXcX" — Python str semantics
