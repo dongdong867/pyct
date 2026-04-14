@@ -1,0 +1,81 @@
+[project]
+name = "pyct"
+version = "0.2.0"
+description = "Python concolic testing with LLM-assisted discovery oracles"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    { name = "dongdong867", email = "dongdong0867@gmail.com" },
+]
+dependencies = [
+    "coverage>=7.10.7",
+    "func-timeout>=4.3.5",
+]
+
+[project.optional-dependencies]
+llm = [
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+]
+benchmark = [
+    "crosshair-tool>=0.0.97",
+]
+realworld = [
+    "werkzeug==3.1.3",
+    "phonenumbers==8.13.51",
+    "simplejson==3.19.3",
+    "python-dateutil==2.9.0.post0",
+]
+
+[project.scripts]
+pyct = "pyct.cli:main"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pyct*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pyrefly]
+project-includes = ["src/**/*", "tests/**/*"]
+project-excludes = ["**/*venv/**/*", "**/__pycache__/**/*"]
+
+# Suppressions for concolic type design.
+# ConcolicInt(int), ConcolicFloat(float), ConcolicStr(str), ConcolicBool(bool)
+# intentionally override built-in operator signatures to intercept operations
+# for symbolic expression tracking. These are not bugs.
+[tool.pyrefly.errors]
+bad-argument-type = false
+bad-assignment = false
+bad-override = false
+bad-return = false
+implicit-import = false
+import-error = false
+missing-attribute = false
+no-matching-overload = false
+not-iterable = false
+unsupported-operation = false
+
+[dependency-groups]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "ruff>=0.5.0",
+    "pyrefly>=0.33.1",
+]
