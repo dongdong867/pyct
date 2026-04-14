@@ -87,3 +87,42 @@ class TestRemoveVarSuffix:
     def test_no_suffix_unchanged(self):
         parser = ModelParser()
         assert parser._remove_var_suffix("plain") == "plain"
+
+
+class TestParseModelDegenerateInput:
+    """Edge cases for empty/whitespace input and large values."""
+
+    def test_empty_output_lines_returns_empty_dict(self):
+        parser = ModelParser()
+        model = parser.parse_model([], {"x_VAR": "Int"})
+        assert model == {}
+
+    def test_only_whitespace_lines_returns_empty_dict(self):
+        parser = ModelParser()
+        model = parser.parse_model(["", "  ", "\t\n"], {"x_VAR": "Int"})
+        assert model == {}
+
+    def test_very_large_int_parsed_as_python_int(self):
+        parser = ModelParser()
+        huge = 10**50
+        model = parser.parse_model([f"((x_VAR {huge}))"], {"x_VAR": "Int"})
+        assert model == {"x": huge}
+
+    def test_real_scientific_notation_parsed_as_float(self):
+        parser = ModelParser()
+        model = parser.parse_model(["((x_VAR 1.5e10))"], {"x_VAR": "Real"})
+        assert model["x"] == pytest.approx(1.5e10)
+
+
+class TestParseModelErrorCases:
+    """Malformed values should raise with clear messages."""
+
+    def test_invalid_boolean_value_raises(self):
+        parser = ModelParser()
+        with pytest.raises(ValueError, match="Invalid boolean"):
+            parser.parse_model(["((flag_VAR maybe))"], {"flag_VAR": "Bool"})
+
+    def test_invalid_string_value_without_quotes_raises(self):
+        parser = ModelParser()
+        with pytest.raises(ValueError, match="Invalid string"):
+            parser.parse_model(["((s_VAR unquoted))"], {"s_VAR": "String"})

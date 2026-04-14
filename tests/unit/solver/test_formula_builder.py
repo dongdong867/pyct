@@ -71,3 +71,54 @@ class TestBuildValidationFormula:
         builder = FormulaBuilder()
         formula = builder.build_validation_formula("s_VAR", "hello", is_float=False)
         assert '(assert (= s_VAR "hello"))' in formula
+
+
+class TestFormulaBuilderEdgeCases:
+    """Boundary inputs: empty constraint, empty vars, extreme values."""
+
+    def test_empty_var_to_types_still_produces_header_and_check_sat(self):
+        builder = FormulaBuilder()
+        constraint = _mock_constraint([])
+        formula = builder.build_constraint_formula(constraint, {})
+        assert "(set-logic ALL)" in formula
+        assert "(check-sat)" in formula
+        # No declarations, no assertions, no get-values
+        assert "declare-const" not in formula
+        assert "get-value" not in formula
+
+    def test_empty_predicates_produces_no_assertions(self):
+        builder = FormulaBuilder()
+        constraint = _mock_constraint([])
+        formula = builder.build_constraint_formula(constraint, {"x_VAR": "Int"})
+        assert "assert" not in formula
+        assert "(declare-const x_VAR Int)" in formula
+
+    def test_build_constraint_formula_ends_with_newline(self):
+        builder = FormulaBuilder()
+        constraint = _mock_constraint([])
+        formula = builder.build_constraint_formula(constraint, {})
+        assert formula.endswith("\n")
+
+    def test_build_validation_formula_int_zero(self):
+        builder = FormulaBuilder()
+        formula = builder.build_validation_formula("x_VAR", 0, is_float=False)
+        assert "(assert (= x_VAR 0))" in formula
+
+    def test_build_validation_formula_int_negative(self):
+        builder = FormulaBuilder()
+        formula = builder.build_validation_formula("x_VAR", -42, is_float=False)
+        # py2smt formats negatives as (- 42)
+        assert "x_VAR" in formula
+        assert "check-sat" in formula
+
+
+class TestFormulaBuilderErrorPropagation:
+    def test_constraint_with_failing_get_path_predicates_propagates(self):
+        import pytest
+
+        mock = MagicMock()
+        mock.get_path_predicates.side_effect = RuntimeError("constraint corrupted")
+
+        builder = FormulaBuilder()
+        with pytest.raises(RuntimeError, match="constraint corrupted"):
+            builder.build_constraint_formula(mock, {"x_VAR": "Int"})
