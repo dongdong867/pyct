@@ -151,4 +151,4 @@ def _try_reverse_operation(
             f"Cannot perform {op.method_name} between "
             + f"{type(concolic_obj).__name__} and "
             + f"{type(unwrapped_other).__name__}: {e}"
-        )
+        ) from e

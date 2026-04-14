@@ -48,7 +48,7 @@ class BooleanConverter:
         try:
             return bool(value)
         except Exception as e:
-            raise TypeError(f"Cannot convert {type(value).__name__} to bool: {e}")
+            raise TypeError(f"Cannot convert {type(value).__name__} to bool: {e}") from e
 
     @classmethod
     def to_concolic_bool(cls, value: Any, concolic_class: type[T], engine: Any = None) -> T:

@@ -46,7 +46,7 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
             try:
                 value = str(value)
             except Exception as e:
-                raise TypeError(f"Cannot convert {type(value).__name__} to str: {e}")
+                raise TypeError(f"Cannot convert {type(value).__name__} to str: {e}") from e
 
         instance = str.__new__(cls, value)
         return instance

@@ -55,7 +55,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
             try:
                 value = float(value)
             except (ValueError, TypeError) as e:
-                raise TypeError(f"Cannot convert {type(value).__name__} to float: {e}")
+                raise TypeError(f"Cannot convert {type(value).__name__} to float: {e}") from e
 
         instance = float.__new__(cls, value)
         return instance
@@ -187,7 +187,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         except (TypeError, AttributeError) as e:
             raise TypeError(
                 f"Cannot compare {type(self).__name__} with {type(other).__name__}: {e}"
-            )
+            ) from e
 
     def _to_symbolic_float(self, value: Any) -> ConcolicFloat | None:
         """
