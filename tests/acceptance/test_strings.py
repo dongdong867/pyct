@@ -21,3 +21,16 @@ def test_string_contains_covers_match_and_mismatch():
     assert result.success
     assert result.coverage_percent >= 95.0
     assert result.paths_explored >= 2
+
+
+def test_empty_string_branch_reached():
+    """Empty string is a boundary case the solver must find."""
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.empty_check import is_empty
+
+    result = run_concolic(target=is_empty, initial_args={"s": "nonempty"})
+
+    assert result.success
+    assert result.coverage_percent >= 95.0
+    # Engine must find both s=="" and s!="" paths
+    assert result.paths_explored >= 2

@@ -22,3 +22,16 @@ def test_data_dependent_loop_terminates():
     assert result.success
     assert result.coverage_percent >= 95.0
     assert result.paths_explored >= 2
+
+
+def test_loop_with_zero_iterations_still_succeeds():
+    """A loop whose body never executes is a degenerate-but-valid case."""
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.loops.bounded import power_of_two
+
+    # n=0 → loop body never runs
+    result = run_concolic(target=power_of_two, initial_args={"n": 0})
+
+    assert result.success
+    # Engine should still explore at least the "skip body" path
+    assert result.paths_explored >= 1

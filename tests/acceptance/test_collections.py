@@ -10,3 +10,15 @@ def test_dict_key_membership_covers_present_and_absent():
     assert result.success
     assert result.coverage_percent >= 95.0
     assert result.paths_explored >= 2
+
+
+def test_empty_dict_membership_always_false():
+    """Degenerate case: empty dict literal — no key can ever be found."""
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.collections.empty_dict import always_absent
+
+    result = run_concolic(target=always_absent, initial_args={"key": "anything"})
+
+    assert result.success
+    # Only the "not in empty dict" path is reachable
+    assert result.paths_explored >= 1
