@@ -66,7 +66,6 @@ bad-assignment = false
 bad-override = false
 bad-return = false
 implicit-import = false
-import-error = false
 missing-attribute = false
 no-matching-overload = false
 not-iterable = false
