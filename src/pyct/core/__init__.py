@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import builtins
-from typing import Any, List, Optional, Union
+from typing import Any
 
 # Type aliases
-SymbolicExpression = Union[str, list[Any]]
+SymbolicExpression = str | list[Any]
 Engine = Any
 
 

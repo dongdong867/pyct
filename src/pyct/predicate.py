@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Union
+from typing import Any
 
 from pyct.core import Concolic
 
@@ -13,7 +13,7 @@ class FormulaDepth(Enum):
     SHALLOW = "shallow"  # Use concrete values for concolic objects
 
 
-SymbolicExpression = Union[str, list[Any], Concolic, bool, int, float]
+SymbolicExpression = str | list[Any] | Concolic | bool | int | float
 
 
 class Predicate:

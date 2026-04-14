@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Protocol, Union, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 # Use TYPE_CHECKING to avoid circular imports at runtime
 if TYPE_CHECKING:
@@ -14,10 +14,10 @@ if TYPE_CHECKING:
 # Type Aliases
 # ============================================================================
 
-ConcolicExpression = Union[list[Any], str, None]
+ConcolicExpression = list[Any] | str | None
 ConcolicEngine = Any  # Forward reference to avoid circular import
-PrimitiveValue = Union[bool, int, float, str]
-ConversionResult = Union[PrimitiveValue, list["ConversionResult"]]
+PrimitiveValue = bool | int | float | str
+ConversionResult = PrimitiveValue | list["ConversionResult"]
 
 
 # ============================================================================
@@ -53,20 +53,16 @@ class UnwrappableProtocol(Protocol):
 # ============================================================================
 
 # Type representing any concolic object
-ConcolicType = Union[ConcolicProtocol, Any]
+ConcolicType = ConcolicProtocol | Any
 
 # More specific: A concolic object that wraps a primitive
 if TYPE_CHECKING:
-    ConcolicWrapper = Union[
-        ConcolicBool,
-        ConcolicInt,
-        ConcolicFloat,
-        ConcolicStr,
-        ConcolicProtocol,
-    ]
+    ConcolicWrapper = (
+        ConcolicBool | ConcolicInt | ConcolicFloat | ConcolicStr | ConcolicProtocol
+    )
 else:
     # At runtime, use the protocol
-    ConcolicWrapper = Union[ConcolicProtocol, Any]
+    ConcolicWrapper = ConcolicProtocol | Any
 
 # ============================================================================
 # Enums
