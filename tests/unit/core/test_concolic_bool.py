@@ -29,6 +29,22 @@ class TestConstruction:
         assert int.__bool__(cb) is True
 
 
+class TestConcolicBoolBoundary:
+    """Boundary constructions: falsy containers, none, zero-float."""
+
+    def test_from_none_is_false(self):
+        cb = ConcolicBool(None)
+        assert int.__bool__(cb) is False
+
+    def test_from_empty_list_is_false(self):
+        cb = ConcolicBool([])
+        assert int.__bool__(cb) is False
+
+    def test_from_zero_float_is_false(self):
+        cb = ConcolicBool(0.0)
+        assert int.__bool__(cb) is False
+
+
 class TestBoolConversion:
     """Standard Python protocol: __bool__, __int__, __float__, __str__."""
 

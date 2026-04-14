@@ -41,6 +41,31 @@ class TestConstruction:
         assert int(ci) == 99
 
 
+class TestConcolicIntErrorCases:
+    """Division-by-zero error paths."""
+
+    def test_division_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        with pytest.raises(ZeroDivisionError):
+            _ = a / 0
+
+    def test_floor_division_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        with pytest.raises(ZeroDivisionError):
+            _ = a // 0
+
+    def test_modulo_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        with pytest.raises(ZeroDivisionError):
+            _ = a % 0
+
+
 class TestArithmetic:
     """Arithmetic operations produce correct concrete + symbolic results."""
 

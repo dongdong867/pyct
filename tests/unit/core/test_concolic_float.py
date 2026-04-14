@@ -56,6 +56,27 @@ class TestArithmetic:
         assert unwrap_concolic(result) == pytest.approx(10.0 / 3)
 
 
+class TestConcolicFloatErrorCases:
+    """Division-by-zero and NaN behavior."""
+
+    def test_division_by_zero_float_raises(self, engine):
+        a = ConcolicFloat(10.0, "a", engine)
+        b = ConcolicFloat(0.0, "b", engine)
+        with pytest.raises(ZeroDivisionError):
+            _ = a / b
+
+    def test_floor_division_by_zero_float_raises(self, engine):
+        a = ConcolicFloat(10.0, "a", engine)
+        with pytest.raises(ZeroDivisionError):
+            _ = a // 0.0
+
+    def test_nan_is_not_equal_to_itself(self):
+        # IEEE 754 rule: NaN != NaN. Documents the characterization
+        # because equality propagates through concolic comparison.
+        nan = ConcolicFloat(math.nan)
+        assert float(nan) != float(nan)
+
+
 class TestComparisons:
     """Comparison operations on ConcolicFloat."""
 

@@ -55,6 +55,34 @@ class TestBinaryOperationHandler:
         assert result.expr[1][0] == "="
 
 
+class TestBinaryOperationHandlerErrorCases:
+    """Error paths: divide-by-zero, incompatible operand types."""
+
+    def test_truediv_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        handler = BinaryOperationHandler(a)
+        with pytest.raises(ZeroDivisionError):
+            handler.execute(BinaryOp.TRUEDIV, ConcolicInt(0, "b", engine))
+
+    def test_floordiv_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        handler = BinaryOperationHandler(a)
+        with pytest.raises(ZeroDivisionError):
+            handler.execute(BinaryOp.FLOORDIV, ConcolicInt(0, "b", engine))
+
+    def test_mod_by_zero_raises(self, engine):
+        import pytest
+
+        a = ConcolicInt(10, "a", engine)
+        handler = BinaryOperationHandler(a)
+        with pytest.raises(ZeroDivisionError):
+            handler.execute(BinaryOp.MOD, ConcolicInt(0, "b", engine))
+
+
 class TestOperandConverter:
     """OperandConverter.to_concolic_numeric and validate_for_floor_division."""
 

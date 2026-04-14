@@ -48,3 +48,39 @@ class TestNumericConverter:
 
     def test_bool_to_float_false(self):
         assert NumericConverter.bool_to_float(False) == 0.0
+
+
+class TestBooleanConverterEdgeAndError:
+    """Boundary inputs and error paths for normalize_to_bool."""
+
+    def test_normalize_none_is_false(self):
+        assert BooleanConverter.normalize_to_bool(None) is False
+
+    def test_normalize_empty_list_is_false(self):
+        assert BooleanConverter.normalize_to_bool([]) is False
+
+    def test_normalize_nonempty_list_is_true(self):
+        assert BooleanConverter.normalize_to_bool([0]) is True
+
+    def test_normalize_zero_float_is_false(self):
+        assert BooleanConverter.normalize_to_bool(0.0) is False
+
+    def test_normalize_raising_bool_wraps_in_type_error(self):
+        """A custom class whose __bool__ raises should trigger TypeError."""
+        import pytest
+
+        class RaisingBool:
+            def __bool__(self):
+                raise RuntimeError("nope")
+
+        with pytest.raises(TypeError, match="Cannot convert.*to bool"):
+            BooleanConverter.normalize_to_bool(RaisingBool())
+
+
+class TestNumericConverterBoundary:
+    def test_bool_to_int_is_inverse_of_bool_conversion(self):
+        # Round trip: normalize → bool_to_int → should match int(original)
+        for value in (True, False, 1, 0, 3.14, "nonempty", ""):
+            normalized = BooleanConverter.normalize_to_bool(value)
+            as_int = NumericConverter.bool_to_int(normalized)
+            assert as_int == int(normalized)
