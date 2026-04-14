@@ -50,9 +50,7 @@ class SolverExecutor:
 
         return status, output_lines, elapsed, error_message
 
-    def _run_subprocess(
-        self, formula: str
-    ) -> tuple[SolverStatus, list[str], float, str]:
+    def _run_subprocess(self, formula: str) -> tuple[SolverStatus, list[str], float, str]:
         """Spawn the solver process and collect its raw output."""
         start_time = time.time()
 
@@ -129,10 +127,7 @@ class SolverExecutor:
 
     def _store_formula(self, formula: str, status: SolverStatus) -> None:
         """Persist the formula to disk if storage is configured."""
-        if (
-            not self.config.should_store_formulas
-            and not self.config.should_collect_stats
-        ):
+        if not self.config.should_store_formulas and not self.config.should_collect_stats:
             return
 
         filename = f"{self.formula_counter}_{status.value}.smt2"

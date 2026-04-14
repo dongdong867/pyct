@@ -112,9 +112,7 @@ class TestResolverDispatch:
         dispatcher = Dispatcher([p1, p2])
 
         ctx = _FakeContext()
-        result = dispatcher.dispatch_resolver(
-            "on_constraint_unknown", ctx, "constraint"
-        )
+        result = dispatcher.dispatch_resolver("on_constraint_unknown", ctx, "constraint")
 
         assert result == {"x": 42}
 
@@ -124,9 +122,7 @@ class TestResolverDispatch:
         dispatcher = Dispatcher([p1, p2])
 
         ctx = _FakeContext()
-        result = dispatcher.dispatch_resolver(
-            "on_constraint_unknown", ctx, "constraint"
-        )
+        result = dispatcher.dispatch_resolver("on_constraint_unknown", ctx, "constraint")
 
         assert result == {"x": 1}
         assert len(p1.calls) == 1
@@ -138,9 +134,7 @@ class TestResolverDispatch:
         dispatcher = Dispatcher([p1, p2])
 
         ctx = _FakeContext()
-        result = dispatcher.dispatch_resolver(
-            "on_constraint_unknown", ctx, "constraint"
-        )
+        result = dispatcher.dispatch_resolver("on_constraint_unknown", ctx, "constraint")
 
         assert result is None
 

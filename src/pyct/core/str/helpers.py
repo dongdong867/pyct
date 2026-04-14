@@ -48,11 +48,9 @@ def _compute_concrete_slice(concolic_str: Any, start: Any, end: Any) -> str:
 
 def _is_full_string(start: Any, end: Any, concolic_str: Any) -> bool:
     """Check if the slice covers the entire string (optimization)."""
-    return concolic_converter.unwrap_concolic(
-        start
-    ) == 0 and concolic_converter.unwrap_concolic(end) == len(
-        concolic_converter.unwrap_concolic(concolic_str)
-    )
+    return concolic_converter.unwrap_concolic(start) == 0 and concolic_converter.unwrap_concolic(
+        end
+    ) == len(concolic_converter.unwrap_concolic(concolic_str))
 
 
 def _build_substr_expression(
@@ -86,8 +84,7 @@ def _normalize_index(index: Any, concolic_str: Any) -> Any:
         concolic_str.engine,
     )
     normalized = concolic_converter.wrap_concolic(
-        concolic_converter.unwrap_concolic(index)
-        + concolic_converter.unwrap_concolic(str_len),
+        concolic_converter.unwrap_concolic(index) + concolic_converter.unwrap_concolic(str_len),
         ["+", index, str_len],
         concolic_str.engine,
     )
@@ -117,24 +114,16 @@ class CaseConverter:
         """Convert string to lowercase."""
         concrete = str.lower(concolic_str)
         replacements = [(chr(i), chr(i + 32)) for i in range(65, 91)]
-        symbolic_expr = CaseConverter.generate_case_expression(
-            concolic_str, replacements
-        )
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        symbolic_expr = CaseConverter.generate_case_expression(concolic_str, replacements)
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def to_upper(concolic_str: Any) -> Any:
         """Convert string to uppercase."""
         concrete = str.upper(concolic_str)
         replacements = [(chr(i), chr(i - 32)) for i in range(97, 123)]
-        symbolic_expr = CaseConverter.generate_case_expression(
-            concolic_str, replacements
-        )
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        symbolic_expr = CaseConverter.generate_case_expression(concolic_str, replacements)
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
 
 def ensure_concolic_str(value: Any, engine: Any = None) -> Any:

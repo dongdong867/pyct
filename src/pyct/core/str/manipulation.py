@@ -78,11 +78,7 @@ class StringManipulation:
             concolic_converter.unwrap_concolic(keepends),
         )
 
-        sep = (
-            "\r\n"
-            if "\r\n" in str(concolic_converter.unwrap_concolic(concolic_str))
-            else "\n"
-        )
+        sep = "\r\n" if "\r\n" in str(concolic_converter.unwrap_concolic(concolic_str)) else "\n"
         result = StringManipulation.split(concolic_str, sep)
 
         if list(map(concolic_converter.unwrap_concolic, result)) == concrete:
@@ -103,9 +99,7 @@ def _unbounded_replace(concolic_str: Any, old_str: Any, new_str: Any) -> Any:
         concolic_converter.unwrap_concolic(new_str),
     )
     symbolic_expr = ["str.replace_all", concolic_str, old_str, new_str]
-    return concolic_converter.wrap_concolic(
-        concrete, symbolic_expr, concolic_str.engine
-    )
+    return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
 
 def _bounded_replace(
@@ -136,9 +130,7 @@ def _bounded_replace(
             return _concat(result, current, concolic_str.engine)
 
         before = SubstringHelper.substr(current, None, split_index)
-        result = _concat(
-            _concat(result, before, concolic_str.engine), new_str, concolic_str.engine
-        )
+        result = _concat(_concat(result, before, concolic_str.engine), new_str, concolic_str.engine)
         current = SubstringHelper.substr(
             current, _advance_index(split_index, old_len, concolic_str.engine), None
         )
@@ -166,9 +158,7 @@ def _decrement(value: Any, engine: Any) -> Any:
 
 def _concat(left: Any, right: Any, engine: Any) -> Any:
     """Concatenate two concolic strings."""
-    concrete = concolic_converter.unwrap_concolic(
-        left
-    ) + concolic_converter.unwrap_concolic(right)
+    concrete = concolic_converter.unwrap_concolic(left) + concolic_converter.unwrap_concolic(right)
     return concolic_converter.wrap_concolic(concrete, ["str.++", left, right], engine)
 
 

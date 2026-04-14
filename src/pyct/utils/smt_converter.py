@@ -71,9 +71,7 @@ def _escape_unicode(value: str) -> str:
     for char in value:
         if ord(char) > 127:
             hex_value = hex(ord(char))[2:]
-            result.append(
-                f"{SMTConstants.UNICODE_PREFIX}{hex_value}{SMTConstants.UNICODE_SUFFIX}"
-            )
+            result.append(f"{SMTConstants.UNICODE_PREFIX}{hex_value}{SMTConstants.UNICODE_SUFFIX}")
         else:
             result.append(char)
     return "".join(result)

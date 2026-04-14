@@ -57,14 +57,10 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
     # -- Unary operations --
 
     def __abs__(self) -> ConcolicType:
-        return concolic_converter.wrap_concolic(
-            int.__abs__(self), ["abs", self], self.engine
-        )
+        return concolic_converter.wrap_concolic(int.__abs__(self), ["abs", self], self.engine)
 
     def __neg__(self) -> ConcolicType:
-        return concolic_converter.wrap_concolic(
-            int.__neg__(self), ["-", self], self.engine
-        )
+        return concolic_converter.wrap_concolic(int.__neg__(self), ["-", self], self.engine)
 
     def __pos__(self) -> ConcolicType:
         return concolic_converter.wrap_concolic(int.__pos__(self), self, self.engine)
@@ -94,14 +90,10 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
     # -- Reverse arithmetic --
 
     def __radd__(self, other: Any) -> ConcolicType:
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RADD, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RADD, other, is_reverse=True)
 
     def __rsub__(self, other: Any) -> ConcolicType:
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RSUB, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RSUB, other, is_reverse=True)
 
     def __rmul__(self, other: Any) -> ConcolicType:
         if isinstance(other, (str, Concolic)) and isinstance(
@@ -109,24 +101,16 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
             str,
         ):
             return concolic_converter.wrap_concolic(other).__mul__(self)
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RMUL, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RMUL, other, is_reverse=True)
 
     def __rtruediv__(self, other: Any) -> ConcolicType:
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RTRUEDIV, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RTRUEDIV, other, is_reverse=True)
 
     def __rfloordiv__(self, other: Any) -> ConcolicType:
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RFLOORDIV, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RFLOORDIV, other, is_reverse=True)
 
     def __rmod__(self, other: Any) -> ConcolicType:
-        return BinaryOperationHandler(self).execute(
-            BinaryOp.RMOD, other, is_reverse=True
-        )
+        return BinaryOperationHandler(self).execute(BinaryOp.RMOD, other, is_reverse=True)
 
     # -- Comparisons --
 
@@ -174,9 +158,7 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
         """Return self != 0, registering branch for symbolic execution."""
         concrete = int.__bool__(self)
         symbolic_expr = ["not", ["=", self, "0"]]
-        concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, self.engine
-        ).__bool__()
+        concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine).__bool__()
         return concrete
 
     def __hash__(self) -> int:
@@ -203,17 +185,13 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
 
     def to_bool(self) -> ConcolicType:
         concrete = int.__bool__(self)
-        return concolic_converter.wrap_concolic(
-            concrete, ["not", ["=", self, "0"]], self.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, ["not", ["=", self, "0"]], self.engine)
 
     def to_int(self) -> ConcolicInt:
         return self
 
     def to_float(self) -> ConcolicType:
-        return concolic_converter.wrap_concolic(
-            int.__float__(self), ["to_real", self], self.engine
-        )
+        return concolic_converter.wrap_concolic(int.__float__(self), ["to_real", self], self.engine)
 
     def to_str(self) -> ConcolicType:
         concrete = int.__str__(self)

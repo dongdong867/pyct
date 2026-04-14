@@ -16,9 +16,7 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
-def get_module_from_rootdir_and_modpath(
-    root_dir: str, module_path: str
-) -> ModuleType | None:
+def get_module_from_rootdir_and_modpath(root_dir: str, module_path: str) -> ModuleType | None:
     """
     Load module from root directory and module path.
 
@@ -104,9 +102,7 @@ def _resolve_module_path(root_dir: str, module_path: str) -> str:
     return direct_path
 
 
-def _get_function(
-    module: ModuleType, function_name: str, enforce: bool = True
-) -> Callable | None:
+def _get_function(module: ModuleType, function_name: str, enforce: bool = True) -> Callable | None:
     """Get a function from a module, optionally validating parameter types."""
     try:
         func = _navigate_to_attribute(module, function_name)

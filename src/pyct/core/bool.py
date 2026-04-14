@@ -132,9 +132,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
             >>> ci.expr
             ["ite", cb, "1", "0"]
         """
-        concrete = NumericConverter.bool_to_int(
-            concolic_converter.unwrap_concolic(self)
-        )
+        concrete = NumericConverter.bool_to_int(concolic_converter.unwrap_concolic(self))
         symbolic_expr = BoolExpr.if_then_else(self, "1", "0")
 
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
@@ -155,9 +153,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
             >>> cf.expr
             ["ite", cb, "1.0", "0.0"]
         """
-        concrete = NumericConverter.bool_to_float(
-            concolic_converter.unwrap_concolic(self)
-        )
+        concrete = NumericConverter.bool_to_float(concolic_converter.unwrap_concolic(self))
         symbolic_expr = BoolExpr.if_then_else(self, "1.0", "0.0")
 
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
@@ -204,9 +200,7 @@ class ConcolicBool(int, Concolic, metaclass=MetaFinal):
             if hasattr(value, "to_bool"):
                 return value.to_bool()
             # Fallback: wrap the boolean value
-            return BooleanConverter.to_concolic_bool(
-                bool(value), self.__class__, self.engine
-            )
+            return BooleanConverter.to_concolic_bool(bool(value), self.__class__, self.engine)
 
         return BooleanConverter.to_concolic_bool(value, self.__class__, self.engine)
 

@@ -59,9 +59,7 @@ class BinaryOperationHandler:
         primitive_type = _find_primitive_type(type(self.concolic_obj))
         unwrapped_other = concolic_converter.unwrap_concolic(other)
 
-        result = _try_forward_operation(
-            primitive_type, op, self.concolic_obj, unwrapped_other
-        )
+        result = _try_forward_operation(primitive_type, op, self.concolic_obj, unwrapped_other)
         if result is not NotImplemented:
             return result
 
@@ -76,12 +74,17 @@ class BinaryOperationHandler:
             allow_float=True,
         )
 
-        if symbolic is not None and op in (
-            BinaryOp.FLOORDIV,
-            BinaryOp.MOD,
-            BinaryOp.RFLOORDIV,
-            BinaryOp.RMOD,
-        ) and not self.converter.validate_for_floor_division(symbolic):
+        if (
+            symbolic is not None
+            and op
+            in (
+                BinaryOp.FLOORDIV,
+                BinaryOp.MOD,
+                BinaryOp.RFLOORDIV,
+                BinaryOp.RMOD,
+            )
+            and not self.converter.validate_for_floor_division(symbolic)
+        ):
             return None
 
         return symbolic

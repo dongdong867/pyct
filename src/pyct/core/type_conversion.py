@@ -51,9 +51,7 @@ class BooleanConverter:
             raise TypeError(f"Cannot convert {type(value).__name__} to bool: {e}")
 
     @classmethod
-    def to_concolic_bool(
-        cls, value: Any, concolic_class: type[T], engine: Any = None
-    ) -> T:
+    def to_concolic_bool(cls, value: Any, concolic_class: type[T], engine: Any = None) -> T:
         """
         Convert value to ConcolicBool instance.
 

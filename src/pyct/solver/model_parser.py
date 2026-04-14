@@ -15,9 +15,7 @@ class ModelParser:
 
     VAR_SUFFIX = "_VAR"
 
-    def parse_model(
-        self, output_lines: list[str], var_to_types: dict[str, str]
-    ) -> dict[str, Any]:
+    def parse_model(self, output_lines: list[str], var_to_types: dict[str, str]) -> dict[str, Any]:
         """
         Parse solver output to extract model.
 

@@ -130,9 +130,7 @@ class Concolic:
         return self._validate_with_solver(expr, value)
 
     @staticmethod
-    def _validate_with_solver(
-        expr: SymbolicExpression | None, value: Any
-    ) -> Engine | None:
+    def _validate_with_solver(expr: SymbolicExpression | None, value: Any) -> Engine | None:
         """Validate expression via the engine's solver instance.
 
         Attempts to find an engine embedded in *expr* and, if the engine

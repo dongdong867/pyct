@@ -173,9 +173,7 @@ class ConcolicFloat(float, Concolic, metaclass=MetaFinal):
         """
         try:
             # Try forward comparison: self >= other
-            result = getattr(float, forward_op)(
-                self, concolic_converter.unwrap_concolic(other)
-            )
+            result = getattr(float, forward_op)(self, concolic_converter.unwrap_concolic(other))
             if result is not NotImplemented:
                 return result
         except (TypeError, AttributeError):

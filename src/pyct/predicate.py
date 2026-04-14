@@ -73,9 +73,7 @@ class Predicate:
         if not isinstance(other, Predicate):
             return NotImplemented
 
-        return self.value == other.value and self._expressions_equal(
-            self.expr, other.expr
-        )
+        return self.value == other.value and self._expressions_equal(self.expr, other.expr)
 
     def __str__(self) -> str:
         """
@@ -100,9 +98,7 @@ class Predicate:
     # Equality Checking
     # ========================================================================
 
-    def _expressions_equal(
-        self, expr1: SymbolicExpression, expr2: SymbolicExpression
-    ) -> bool:
+    def _expressions_equal(self, expr1: SymbolicExpression, expr2: SymbolicExpression) -> bool:
         """
         Check if two expressions are equivalent.
 
@@ -292,9 +288,7 @@ class Predicate:
             S-expression string like "(op arg1 arg2 ...)"
         """
         # Convert each element recursively
-        elements = [
-            Predicate._generate_formula(element, depth) for element in expr_list
-        ]
+        elements = [Predicate._generate_formula(element, depth) for element in expr_list]
 
         # Join with spaces and wrap in parentheses
         return f"({' '.join(elements)})"

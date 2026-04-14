@@ -29,9 +29,7 @@ class CharacterChecks:
             ],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def isalnum(concolic_str: Any) -> Any:
@@ -54,9 +52,7 @@ class CharacterChecks:
             ],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def isdigit(concolic_str: Any) -> Any:
@@ -68,9 +64,7 @@ class CharacterChecks:
             ["re.+", ["re.range", py2smt("0"), py2smt("9")]],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def isnumeric(concolic_str: Any) -> Any:
@@ -84,9 +78,7 @@ class CharacterChecks:
             ["re.+", ["re.range", py2smt("0"), py2smt("9")]],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def islower(concolic_str: Any) -> Any:
@@ -98,9 +90,7 @@ class CharacterChecks:
             ["re.+", ["re.range", py2smt("a"), py2smt("z")]],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def isupper(concolic_str: Any) -> Any:
@@ -112,9 +102,7 @@ class CharacterChecks:
             ["re.+", ["re.range", py2smt("A"), py2smt("Z")]],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)
 
     @staticmethod
     def is_integer_string(concolic_str: Any) -> Any:
@@ -133,6 +121,4 @@ class CharacterChecks:
             ["re.+", ["re.range", py2smt("0"), py2smt("9")]],
         ]
 
-        return concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, concolic_str.engine
-        )
+        return concolic_converter.wrap_concolic(concrete, symbolic_expr, concolic_str.engine)

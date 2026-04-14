@@ -66,9 +66,7 @@ class Solver:
             ``(model, status, error_msg)`` — *model* is a variable-name to
             value mapping when SAT, None otherwise.
         """
-        formula = self._formula_builder.build_constraint_formula(
-            constraint, var_to_types
-        )
+        formula = self._formula_builder.build_constraint_formula(constraint, var_to_types)
         log.smtlib2("Solving constraint: %s", constraint)
 
         status, output_lines, elapsed, error_output = self.executor.execute(formula)
@@ -118,9 +116,7 @@ class Solver:
         if status == SolverStatus.UNSAT:
             return "Constraint is unsatisfiable (UNSAT)"
         if status == SolverStatus.UNKNOWN:
-            msg = (
-                f"Solver returned UNKNOWN (timeout or too complex after {elapsed:.2f}s)"
-            )
+            msg = f"Solver returned UNKNOWN (timeout or too complex after {elapsed:.2f}s)"
             return f"{msg}: {error_output}" if error_output else msg
         log.error("Solver error at SMT-id: %d", self.executor.formula_counter)
         log.error("Formula:\n%s", formula)
@@ -153,9 +149,7 @@ class Solver:
         try:
             expr_formula = Predicate.get_formula_shallow(expr)
             is_float = isinstance(value, float)
-            formula = self._formula_builder.build_validation_formula(
-                expr_formula, value, is_float
-            )
+            formula = self._formula_builder.build_validation_formula(expr_formula, value, is_float)
 
             status, _, _, _ = self.executor.execute(formula)
 

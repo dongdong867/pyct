@@ -1,6 +1,5 @@
 """Unit tests for Engine class and exploration loop."""
 
-
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.result import ExplorationResult

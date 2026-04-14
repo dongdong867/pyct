@@ -169,9 +169,7 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
         symbolic_expr = ["not", ["=", self, py2smt("")]]
 
         # Insert branch for symbolic execution
-        concolic_converter.wrap_concolic(
-            concrete, symbolic_expr, self.engine
-        ).__bool__()
+        concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine).__bool__()
 
         return concrete
 

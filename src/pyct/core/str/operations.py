@@ -122,9 +122,7 @@ class StringBinaryOperations:
 
     def _comparison(self, spec: _ComparisonSpec, other: Any) -> ConcolicType:
         """Handle string comparisons (symbolic only for alphanumeric strings)."""
-        concrete = _safe_compare(
-            self.concolic_str, other, spec.forward, spec.reverse_method
-        )
+        concrete = _safe_compare(self.concolic_str, other, spec.forward, spec.reverse_method)
 
         if not isinstance(other, str):
             return concolic_converter.wrap_concolic(concrete, None, self.engine)
@@ -165,9 +163,7 @@ def _safe_compare(concolic_str: Any, other: Any, forward: str, reverse: str) -> 
 
 def _both_alphanumeric(concolic_str: Any, other: Any) -> bool:
     """Check if both strings are alphanumeric (needed for valid SMT comparison)."""
-    return str.isalnum(concolic_str) and str.isalnum(
-        concolic_converter.unwrap_concolic(other)
-    )
+    return str.isalnum(concolic_str) and str.isalnum(concolic_converter.unwrap_concolic(other))
 
 
 def _build_repetition(concolic_str: Any, count: Any, engine: Any) -> Any:

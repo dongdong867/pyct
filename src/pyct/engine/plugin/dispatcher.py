@@ -46,9 +46,7 @@ class Dispatcher:
             try:
                 handler(ctx, *args)
             except Exception as e:
-                log.warning(
-                    "Plugin %s failed on %s: %s", plugin.name, event, e
-                )
+                log.warning("Plugin %s failed on %s: %s", plugin.name, event, e)
 
     def dispatch_collector(self, event: str, ctx) -> list:
         """Collect list results from every plugin that handles the event.

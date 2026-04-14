@@ -61,6 +61,4 @@ class Engine:
         loop, path constraint collection, and solver-driven input
         generation.
         """
-        raise NotImplementedError(
-            "Engine.explore() not yet implemented — pending M2-B.2"
-        )
+        raise NotImplementedError("Engine.explore() not yet implemented — pending M2-B.2")

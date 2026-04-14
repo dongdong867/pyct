@@ -24,9 +24,7 @@ class BooleanExpressionBuilder:
         return ["xor", left, right]
 
     @staticmethod
-    def if_then_else(
-        condition: Any, true_branch: str, false_branch: str
-    ) -> SymbolicExpr:
+    def if_then_else(condition: Any, true_branch: str, false_branch: str) -> SymbolicExpr:
         """
         Create if-then-else expression.
 

@@ -9,9 +9,7 @@ class FormulaBuilder:
     LOGIC = "ALL"
     VAR_SUFFIX = "_VAR"
 
-    def build_constraint_formula(
-        self, constraint: Any, var_to_types: dict[str, str]
-    ) -> str:
+    def build_constraint_formula(self, constraint: Any, var_to_types: dict[str, str]) -> str:
         """
         Build complete SMT formula from constraint.
 
@@ -70,16 +68,13 @@ class FormulaBuilder:
     def _build_declarations(self, var_to_types: dict[str, str]) -> str:
         """Build variable declarations."""
         declarations = [
-            f"(declare-const {name} {var_type})"
-            for name, var_type in var_to_types.items()
+            f"(declare-const {name} {var_type})" for name, var_type in var_to_types.items()
         ]
         return "\n".join(declarations)
 
     def _build_assertions(self, constraint: Any) -> str:
         """Build assertions from constraint."""
-        assertions = [
-            assertion.get_formula() for assertion in constraint.get_path_predicates()
-        ]
+        assertions = [assertion.get_formula() for assertion in constraint.get_path_predicates()]
         return "\n".join(assertions)
 
     def _build_check_sat(self) -> str:
