@@ -1,0 +1,54 @@
+"""Internal exploration state — mutable, owned by the engine."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+
+@dataclass
+class ExplorationState:
+    """Mutable state for an in-progress exploration run.
+
+    This is engine-internal. Plugins receive a read-only snapshot via
+    EngineContext, not this object directly. The engine updates this
+    state in place as exploration progresses.
+
+    Attributes:
+        iteration: Current iteration count, starting at zero.
+        constraint_pool: Path constraints awaiting exploration.
+        covered_lines: Set of source line numbers hit so far.
+        total_lines: Total executable lines in the target function.
+        inputs_tried: History of inputs that have been executed.
+        start_time: Wall-clock start time (from time.monotonic()).
+        last_coverage_change_iteration: Iteration number when coverage
+            last increased. Used to detect plateaus.
+        terminated: True once the engine has stopped exploring.
+        termination_reason: Human-readable reason for termination, or
+            None if still running.
+    """
+
+    iteration: int = 0
+    constraint_pool: list[Any] = field(default_factory=list)
+    covered_lines: set[int] = field(default_factory=set)
+    total_lines: int = 0
+    inputs_tried: list[dict[str, Any]] = field(default_factory=list)
+    start_time: float = 0.0
+    last_coverage_change_iteration: int = 0
+    terminated: bool = False
+    termination_reason: str | None = None
+
+    def coverage_percent(self) -> float:
+        """Return coverage as a 0-100 percentage."""
+        if self.total_lines == 0:
+            return 0.0
+        return 100.0 * len(self.covered_lines) / self.total_lines
+
+    def paths_explored(self) -> int:
+        """Return the number of distinct inputs that have been tried."""
+        return len(self.inputs_tried)
+
+    def elapsed_seconds(self) -> float:
+        """Return wall-clock seconds since start_time was set."""
+        return time.monotonic() - self.start_time
