@@ -76,3 +76,30 @@ class TestEngineTerminationReason:
         # Either max_iterations or full_coverage is acceptable depending on
         # how fast the simple function gets explored
         assert result.termination_reason in ("max_iterations", "full_coverage", "exhausted")
+
+
+class TestEnginePluginRegistrationBoundary:
+    """Characterization tests for registration permissiveness."""
+
+    def test_register_same_plugin_instance_twice_duplicates(self):
+        engine = Engine(ExecutionConfig())
+        plugin = _NoopPlugin()
+        engine.register(plugin)
+        engine.register(plugin)
+        # No deduplication at the engine level
+        assert engine.plugins.count(plugin) == 2
+
+    def test_register_plugin_missing_required_fields_does_not_raise(self):
+        """Engine.register() does not validate the Plugin protocol.
+
+        Plugins without name/priority are accepted at registration but
+        will fail later when Dispatcher tries to sort by priority. The
+        engine deliberately pushes validation downstream.
+        """
+
+        class _BadPlugin:
+            pass  # no name, no priority
+
+        engine = Engine(ExecutionConfig())
+        engine.register(_BadPlugin())  # type: ignore
+        assert len(engine.plugins) == 1

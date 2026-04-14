@@ -160,3 +160,108 @@ class TestPriorityOrdering:
         dispatcher.dispatch_observer("on_exploration_start", _FakeContext())
 
         assert execution_order == ["low", "mid", "high"]
+
+
+class TestDispatcherErrorHandling:
+    """Error-path behavior: observer suppresses, collector/resolver propagate."""
+
+    def test_observer_suppresses_plugin_exceptions(self):
+        class ExplodingPlugin:
+            name = "boom"
+            priority = 100
+
+            def on_exploration_start(self, ctx):
+                raise RuntimeError("plugin blew up")
+
+        good = _RecordingPlugin("good")
+        dispatcher = Dispatcher([ExplodingPlugin(), good])
+
+        # Should not raise — observer errors are logged and swallowed
+        dispatcher.dispatch_observer("on_exploration_start", _FakeContext())
+
+        # The good plugin still runs after the exploding one
+        assert len(good.calls) == 1
+
+    def test_observer_continues_after_plugin_exception(self):
+        order: list[str] = []
+
+        class ExplodingFirst:
+            name = "boom"
+            priority = 50
+
+            def on_exploration_start(self, ctx):
+                order.append("boom")
+                raise RuntimeError("oops")
+
+        class SecondPlugin:
+            name = "second"
+            priority = 100
+
+            def on_exploration_start(self, ctx):
+                order.append("second")
+
+        dispatcher = Dispatcher([ExplodingFirst(), SecondPlugin()])
+        dispatcher.dispatch_observer("on_exploration_start", _FakeContext())
+
+        assert order == ["boom", "second"]
+
+    def test_collector_propagates_plugin_exceptions(self):
+        """Collector does not suppress — plugin bugs surface to the caller."""
+        import pytest
+
+        class ExplodingPlugin:
+            name = "boom"
+            priority = 100
+
+            def on_seed_request(self, ctx):
+                raise ValueError("seed generation failed")
+
+        dispatcher = Dispatcher([ExplodingPlugin()])
+        with pytest.raises(ValueError, match="seed generation failed"):
+            dispatcher.dispatch_collector("on_seed_request", _FakeContext())
+
+    def test_resolver_propagates_plugin_exceptions(self):
+        """Resolver does not suppress — plugin bugs surface to the caller."""
+        import pytest
+
+        class ExplodingPlugin:
+            name = "boom"
+            priority = 100
+
+            def on_constraint_unknown(self, ctx, constraint):
+                raise RuntimeError("resolver failed")
+
+        dispatcher = Dispatcher([ExplodingPlugin()])
+        with pytest.raises(RuntimeError, match="resolver failed"):
+            dispatcher.dispatch_resolver("on_constraint_unknown", _FakeContext(), "c")
+
+
+class TestDispatcherEmptyPluginList:
+    """Degenerate input: a dispatcher with zero plugins should be a no-op."""
+
+    def test_observer_with_no_plugins_noop(self):
+        dispatcher = Dispatcher([])
+        # Should not raise
+        dispatcher.dispatch_observer("on_exploration_start", _FakeContext())
+
+    def test_collector_with_no_plugins_returns_empty_list(self):
+        dispatcher = Dispatcher([])
+        result = dispatcher.dispatch_collector("on_seed_request", _FakeContext())
+        assert result == []
+
+    def test_resolver_with_no_plugins_returns_none(self):
+        dispatcher = Dispatcher([])
+        result = dispatcher.dispatch_resolver("on_constraint_unknown", _FakeContext(), "c")
+        assert result is None
+
+
+class TestDispatcherInvalidPlugins:
+    def test_plugin_missing_priority_raises_attribute_error_at_init(self):
+        import pytest
+
+        class NoPriority:
+            name = "bad"
+            # priority is missing
+
+        with pytest.raises(AttributeError):
+            Dispatcher([NoPriority()])

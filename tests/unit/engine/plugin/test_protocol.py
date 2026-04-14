@@ -56,3 +56,29 @@ class TestPluginProtocol:
                 return [{"x": 1}]
 
         assert isinstance(PartialPlugin(), Plugin)
+
+
+class TestPluginProtocolTypeLoose:
+    """Characterization tests for runtime_checkable Protocol limits.
+
+    runtime_checkable only verifies attribute presence, not types.
+    These tests lock that loose contract in so any future tightening
+    is an intentional choice.
+    """
+
+    def test_plugin_with_non_string_name_still_satisfies_protocol(self):
+        class WeirdPlugin:
+            name = 42  # int, not str
+            priority = 100
+
+        assert isinstance(WeirdPlugin(), Plugin)
+
+    def test_plugin_with_non_int_priority_still_satisfies_protocol(self):
+        class WeirdPlugin:
+            name = "weird"
+            priority = "high"  # str, not int
+
+        assert isinstance(WeirdPlugin(), Plugin)
+
+    def test_none_object_does_not_satisfy_plugin_protocol(self):
+        assert not isinstance(None, Plugin)
