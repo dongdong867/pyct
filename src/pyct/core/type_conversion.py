@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 T = TypeVar("T")
 
@@ -51,7 +51,9 @@ class BooleanConverter:
             raise TypeError(f"Cannot convert {type(value).__name__} to bool: {e}") from e
 
     @classmethod
-    def to_concolic_bool(cls, value: Any, concolic_class: type[T], engine: Any = None) -> T:
+    def to_concolic_bool(
+        cls, value: Any, concolic_class: Callable[..., T], engine: Any = None
+    ) -> T:
         """
         Convert value to ConcolicBool instance.
 
