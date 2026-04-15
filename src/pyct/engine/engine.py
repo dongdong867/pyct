@@ -21,6 +21,7 @@ from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.plugin.protocol import Plugin
 from pyct.engine.result import ExplorationResult
 from pyct.engine.state import ExplorationState
+from pyct.solver.executor import SolverStatus
 from pyct.solver.solver import Solver
 from pyct.utils.constraint import ConstraintRegistry
 
@@ -131,6 +132,7 @@ class Engine:
 
         last_error = self._exploration_loop(
             target=rewritten_target,
+            original_target=target,
             target_file=target_file,
             signature=signature,
             initial_args=initial_args,
@@ -152,6 +154,7 @@ class Engine:
         self,
         *,
         target: Callable,
+        original_target: Callable,
         target_file: str,
         signature: inspect.Signature,
         initial_args: dict[str, Any],
@@ -169,7 +172,15 @@ class Engine:
             if self._check_budget(state):
                 break
 
-            args = self._next_input(input_queue, initial_args, var_to_types, state)
+            args = self._next_input(
+                input_queue=input_queue,
+                initial_args=initial_args,
+                var_to_types=var_to_types,
+                state=state,
+                dispatcher=dispatcher,
+                target=original_target,
+                signature=signature,
+            )
             if args is None:
                 _terminate(state, "exhausted")
                 break
@@ -205,12 +216,16 @@ class Engine:
 
     def _next_input(
         self,
+        *,
         input_queue: list[dict[str, Any]],
         initial_args: dict[str, Any],
         var_to_types: dict[str, str],
         state: ExplorationState,
+        dispatcher: Dispatcher,
+        target: Callable,
+        signature: inspect.Signature,
     ) -> dict[str, Any] | None:
-        """Return the next unseen input, either from the queue or by solving."""
+        """Return the next unseen input from the queue, solver, or resolver plugins."""
         while input_queue:
             args = input_queue.pop(0)
             if args not in state.inputs_tried:
@@ -218,12 +233,26 @@ class Engine:
 
         while self.constraints_to_solve:
             constraint = self.constraints_to_solve.pop(0)
-            model = self._solve(constraint, var_to_types)
-            if model is None:
+            model, status = self._solve(constraint, var_to_types)
+
+            if model is not None:
+                merged = {**initial_args, **model}
+                if merged not in state.inputs_tried:
+                    return merged
                 continue
-            merged = {**initial_args, **model}
-            if merged not in state.inputs_tried:
-                return merged
+
+            if status == SolverStatus.UNSAT:
+                continue
+
+            resolution = dispatcher.dispatch_resolver(
+                "on_constraint_unknown",
+                self._snapshot(target, signature, state),
+                constraint,
+            )
+            if resolution is not None:
+                merged = {**initial_args, **resolution}
+                if merged not in state.inputs_tried:
+                    return merged
 
         return None
 
@@ -231,11 +260,18 @@ class Engine:
         self,
         constraint: Any,
         var_to_types: dict[str, str],
-    ) -> dict[str, Any] | None:
-        """Call the solver and return the model, or None on UNSAT/UNKNOWN."""
+    ) -> tuple[dict[str, Any] | None, SolverStatus]:
+        """Call the solver and return ``(model, status)``.
+
+        ``model`` is populated when status is SAT; None on UNSAT/UNKNOWN/ERROR.
+        Callers use the status to decide whether to fall back to a
+        resolver plugin — UNSAT means provably unreachable and is not
+        retryable, while UNKNOWN/ERROR may be solvable by an LLM or
+        fuzzing strategy.
+        """
         assert self.solver is not None
-        model, _status, _error = self.solver.find_model(constraint, var_to_types)
-        return model
+        model, status, _error = self.solver.find_model(constraint, var_to_types)
+        return model, status
 
     def _run_iteration(
         self,
