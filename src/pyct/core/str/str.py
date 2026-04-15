@@ -313,8 +313,8 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
         symbolic_expr = [
             "ite",
             ["str.prefixof", py2smt("-"), self],
-            ["-", ["str.to.int", ["str.substr", self, "1", ["str.len", self]]]],
-            ["str.to.int", self],
+            ["-", ["str.to_int", ["str.substr", self, "1", ["str.len", self]]]],
+            ["str.to_int", self],
         ]
 
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)

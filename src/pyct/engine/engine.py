@@ -10,6 +10,7 @@ from typing import Any
 
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
+from pyct.engine.ast_transformer import rewrite_target
 from pyct.engine.coverage_tracker import CoverageTracker
 from pyct.engine.environment import prepared_environment
 from pyct.engine.function_inspector import inspect_target
@@ -100,6 +101,7 @@ class Engine:
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
         target_file, func_lines, def_line = inspect_target(target)
+        rewritten_target = rewrite_target(target)
         self.coverage_tracker = CoverageTracker(
             target_file,
             func_lines,
@@ -128,7 +130,7 @@ class Engine:
         input_queue: list[dict[str, Any]] = [dict(initial_args), *seeds]
 
         last_error = self._exploration_loop(
-            target=target,
+            target=rewritten_target,
             target_file=target_file,
             signature=signature,
             initial_args=initial_args,

@@ -194,12 +194,13 @@ class ConcolicInt(int, Concolic, metaclass=MetaFinal):
         return concolic_converter.wrap_concolic(int.__float__(self), ["to_real", self], self.engine)
 
     def to_str(self) -> ConcolicType:
-        concrete = int.__str__(self)
+        raw = int.__int__(self)
+        concrete = int.__repr__(raw)
         expr = [
             "ite",
             ["<", self, "0"],
-            ["str.++", py2smt("-"), ["int.to.str", ["-", self]]],
-            ["int.to.str", self],
+            ["str.++", py2smt("-"), ["str.from_int", ["-", self]]],
+            ["str.from_int", self],
         ]
         return concolic_converter.wrap_concolic(concrete, expr, self.engine)
 
