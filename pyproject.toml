@@ -55,6 +55,7 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.pyrefly]
 project-includes = ["src/**/*", "tests/**/*"]
 project-excludes = ["**/*venv/**/*", "**/__pycache__/**/*"]
+search-path = ["src", "."]
 
 # Suppressions for concolic type design.
 # ConcolicInt(int), ConcolicFloat(float), ConcolicStr(str), ConcolicBool(bool)

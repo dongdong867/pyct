@@ -11,8 +11,8 @@ class ExplorationResult:
     """Internal result produced by Engine.explore().
 
     Summarizes an exploration run. The public-facing counterpart is
-    RunConcolicResult, which adds the inputs_generated tuple so
-    callers can see the test inputs the engine produced.
+    RunConcolicResult, which exposes the same data via
+    ``inputs_generated`` + ``from_exploration()`` for API stability.
 
     Attributes:
         success: True if exploration completed without error.
@@ -24,6 +24,7 @@ class ExplorationResult:
             "timeout", "exhausted", or "error".
         elapsed_seconds: Wall-clock duration of the exploration.
         error: Human-readable error message if success=False, else None.
+        inputs_generated: Inputs the engine executed during exploration.
     """
 
     success: bool
@@ -34,6 +35,7 @@ class ExplorationResult:
     termination_reason: str
     elapsed_seconds: float
     error: str | None = None
+    inputs_generated: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)

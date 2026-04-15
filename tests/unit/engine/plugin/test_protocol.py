@@ -71,6 +71,7 @@ class TestPluginProtocolTypeLoose:
             name = 42  # int, not str
             priority = 100
 
+        # pyrefly: ignore[unsafe-overlap]
         assert isinstance(WeirdPlugin(), Plugin)
 
     def test_plugin_with_non_int_priority_still_satisfies_protocol(self):
@@ -78,6 +79,7 @@ class TestPluginProtocolTypeLoose:
             name = "weird"
             priority = "high"  # str, not int
 
+        # pyrefly: ignore[unsafe-overlap]
         assert isinstance(WeirdPlugin(), Plugin)
 
     def test_none_object_does_not_satisfy_plugin_protocol(self):

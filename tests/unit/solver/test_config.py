@@ -61,4 +61,5 @@ class TestProperties:
     def test_frozen(self):
         cfg = SolverConfig()
         with pytest.raises(AttributeError):
+            # pyrefly: ignore[read-only]
             cfg.solver = "z3"

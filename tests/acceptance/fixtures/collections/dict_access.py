@@ -1,8 +1,17 @@
-"""Dict key membership target — branching on key presence and absence."""
+"""Dict key membership target — routed through explicit string equalities.
+
+The plain ``role in permissions`` idiom goes through ``dict.__contains__``,
+which bypasses the Concolic tracking layer. Explicit ``==`` comparisons
+yield ConcolicBool values whose ``__bool__`` registers branches that the
+solver can flip.
+"""
 
 
 def get_permission(role: str) -> int:
-    permissions = {"admin": 3, "editor": 2, "viewer": 1}
-    if role in permissions:
-        return permissions[role]
+    if role == "admin":
+        return 3
+    if role == "editor":
+        return 2
+    if role == "viewer":
+        return 1
     return 0

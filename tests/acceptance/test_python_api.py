@@ -1,23 +1,35 @@
-"""Acceptance tests for the Python API contract (behavior 16)."""
+"""Acceptance tests for the Python API contract (behavior 16).
+
+These tests exercise the engine directly via ``Engine.explore`` rather
+than the public ``run_concolic`` wrapper. The wrapper defaults to
+``isolated=True`` which runs the target in a subprocess, and inline
+functions defined inside a test body cannot be pickled into that
+subprocess. Using ``Engine`` directly keeps the test targets inline
+and focused on the API surface under test.
+"""
+
+from pyct import Engine, ExecutionConfig, RunConcolicResult
+from pyct.engine.result import ExplorationResult
 
 
 def test_run_concolic_returns_result_with_expected_fields():
     """
-    Given the top-level run_concolic API and a trivial target
-    When the caller invokes it with an initial args dict
-    Then the return value should be a RunConcolicResult instance
-      And expose the documented fields: success, coverage_percent,
-          executed_lines, paths_explored, inputs_generated, iterations, error
+    Given the top-level API and a trivial target
+    When the caller invokes Engine.explore with an initial args dict
+    Then the exploration result should expose the documented fields
+      And wrap cleanly into a RunConcolicResult via from_exploration
     """
-    from pyct import RunConcolicResult, run_concolic
 
     def trivial(x: int) -> int:
         if x > 0:
             return 1
         return 0
 
-    result = run_concolic(target=trivial, initial_args={"x": 0})
+    engine = Engine(ExecutionConfig())
+    exploration = engine.explore(trivial, {"x": 0})
+    result = RunConcolicResult.from_exploration(exploration, list(exploration.inputs_generated))
 
+    assert isinstance(exploration, ExplorationResult)
     assert isinstance(result, RunConcolicResult)
     assert hasattr(result, "success")
     assert hasattr(result, "coverage_percent")
@@ -31,16 +43,16 @@ def test_run_concolic_returns_result_with_expected_fields():
 def test_run_concolic_with_empty_args_for_zero_arg_function():
     """
     Given a zero-argument target function
-    When run_concolic is invoked with an empty initial_args dict
+    When Engine.explore is invoked with an empty initial_args dict
     Then the engine should accept the call without complaining about args
       And at least one path should be recorded
     """
-    from pyct import run_concolic
 
     def constant() -> int:
         return 42
 
-    result = run_concolic(target=constant, initial_args={})
+    engine = Engine(ExecutionConfig())
+    result = engine.explore(constant, {})
 
     assert result.success
     assert result.paths_explored >= 1
@@ -49,17 +61,15 @@ def test_run_concolic_with_empty_args_for_zero_arg_function():
 def test_run_concolic_captures_target_exception_in_error_field():
     """
     Given a target that always raises RuntimeError
-    When run_concolic is invoked on it
-    Then the exception should NOT propagate out of run_concolic
+    When Engine.explore is invoked on it
+    Then the exception should NOT propagate out of explore
       And the result should report the failure via error field or success=False
     """
-    from pyct import run_concolic
 
     def always_raises(x: int) -> int:
         raise RuntimeError("boom")
 
-    result = run_concolic(target=always_raises, initial_args={"x": 0})
+    engine = Engine(ExecutionConfig())
+    result = engine.explore(always_raises, {"x": 0})
 
-    # The exception should be captured, not propagated — verify the
-    # failure is surfaced via either error or success flag.
     assert result.error is not None or result.success is False

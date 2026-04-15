@@ -57,9 +57,7 @@ ConcolicType = ConcolicProtocol | Any
 
 # More specific: A concolic object that wraps a primitive
 if TYPE_CHECKING:
-    ConcolicWrapper = (
-        ConcolicBool | ConcolicInt | ConcolicFloat | ConcolicStr | ConcolicProtocol
-    )
+    ConcolicWrapper = ConcolicBool | ConcolicInt | ConcolicFloat | ConcolicStr | ConcolicProtocol
 else:
     # At runtime, use the protocol
     ConcolicWrapper = ConcolicProtocol | Any
