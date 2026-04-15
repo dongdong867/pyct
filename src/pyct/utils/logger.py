@@ -6,6 +6,23 @@ from typing import Any
 SMTLIB2_LEVEL = 17  # Between DEBUG(10) and INFO(20)
 
 
+def _add_smtlib2_level() -> None:
+    """Add custom SMTLIB2 logging level."""
+    logging.addLevelName(SMTLIB2_LEVEL, "SMTLIB2")
+
+    def smtlib2(self: logging.Logger, message: str, *args: Any, **kwargs: Any) -> None:
+        """Log a message at the SMTLIB2 level."""
+        if self.isEnabledFor(SMTLIB2_LEVEL):
+            self._log(SMTLIB2_LEVEL, message, args, **kwargs)
+
+    logging.Logger.smtlib2 = smtlib2
+
+
+# Register the custom level at import time so `log.smtlib2` is always callable,
+# regardless of whether configure_logging() has been invoked (e.g. under pytest).
+_add_smtlib2_level()
+
+
 def configure_logging(verbose: int, logfile: str | None = None) -> None:
     """
     Configure logging based on verbosity level.
@@ -30,17 +47,3 @@ def configure_logging(verbose: int, logfile: str | None = None) -> None:
             level=log_level,
             format="%(levelname)s\t %(message)s",
         )
-
-    _add_smtlib2_level()
-
-
-def _add_smtlib2_level() -> None:
-    """Add custom SMTLIB2 logging level."""
-    logging.addLevelName(SMTLIB2_LEVEL, "SMTLIB2")
-
-    def smtlib2(self: logging.Logger, message: str, *args: Any, **kwargs: Any) -> None:
-        """Log a message at the SMTLIB2 level."""
-        if self.isEnabledFor(SMTLIB2_LEVEL):
-            self._log(SMTLIB2_LEVEL, message, args, **kwargs)
-
-    logging.Logger.smtlib2 = smtlib2

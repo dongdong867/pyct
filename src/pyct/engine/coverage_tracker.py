@@ -1,4 +1,4 @@
-"""Coverage tracking — M2-B.2a stub (behavior pending in GREEN commit)."""
+"""Coverage tracking for a concolic target function."""
 
 from __future__ import annotations
 
@@ -8,10 +8,9 @@ from coverage import CoverageData
 class CoverageTracker:
     """Accumulates line coverage for a target function across runs.
 
-    M2-B.2a stub — construction and trivial properties are real so
-    tests can exercise the type contract, but update() and
-    is_fully_covered() raise NotImplementedError until the GREEN
-    commit wires up the algorithm.
+    Tracks which lines within ``function_lines`` have been executed so far.
+    Lines outside the function (e.g., module-level imports picked up by raw
+    coverage data) are discarded at update time.
     """
 
     def __init__(self, target_file: str, function_lines: frozenset[int]):
@@ -20,9 +19,9 @@ class CoverageTracker:
         self._covered: set[int] = set()
 
     def update(self, data: CoverageData) -> None:
-        raise NotImplementedError(
-            "CoverageTracker.update not yet implemented — pending M2-B.2a GREEN"
-        )
+        """Merge executed lines from ``data`` into the accumulated set."""
+        raw_lines = data.lines(self.target_file) or []
+        self._covered |= set(raw_lines) & self.function_lines
 
     @property
     def covered_lines(self) -> frozenset[int]:
@@ -33,6 +32,4 @@ class CoverageTracker:
         return len(self.function_lines)
 
     def is_fully_covered(self) -> bool:
-        raise NotImplementedError(
-            "CoverageTracker.is_fully_covered not yet implemented — pending M2-B.2a GREEN"
-        )
+        return self._covered >= self.function_lines

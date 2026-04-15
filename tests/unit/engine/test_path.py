@@ -73,11 +73,13 @@ class TestAddBranch:
         # No new alternative queued because the branch already existed
         assert len(queue) == 1
 
-    def test_add_branch_with_complex_list_expression(self):
+    def test_add_branch_with_complex_list_expression(self, engine):
         tracker = PathConstraintTracker()
         queue: list = []
         nested_expr = ["and", ["=", "x_VAR", "5"], [">", "y_VAR", "0"]]
-        condition = ConcolicBool(True, expr=nested_expr)
+        # engine is required so Concolic._resolve_expression preserves the list
+        # expression instead of degrading to the concrete value.
+        condition = ConcolicBool(True, expr=nested_expr, engine=engine)
 
         tracker.add_branch(condition, queue)
 
@@ -153,14 +155,18 @@ class TestRefactorLocks:
 
 
 class TestInconsistentTreeError:
-    def test_add_branch_raises_when_only_one_child_exists(self):
+    def test_add_branch_raises_when_only_one_child_exists(self, engine):
         """Manually corrupt the tree to trigger the inconsistency guard."""
         tracker = PathConstraintTracker()
         queue: list = []
         # Add only the "taken" predicate child, leaving the negated one missing
-        taken_predicate = Predicate(["=", "x_VAR", "5"], True)
+        expr = ["=", "x_VAR", "5"]
+        taken_predicate = Predicate(expr, True)
         tracker.root_constraint.add_child(taken_predicate)
 
-        cond = ConcolicBool(True, expr=["=", "x_VAR", "5"])
+        # engine is required so cond.expr matches the seeded predicate's expr;
+        # without it, Concolic drops the list and the tree lookup misses both
+        # children, bypassing the inconsistency guard we want to exercise.
+        cond = ConcolicBool(True, expr=expr, engine=engine)
         with pytest.raises(PathConstraintError, match="only one branch child"):
             tracker.add_branch(cond, queue)
