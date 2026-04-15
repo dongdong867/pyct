@@ -88,13 +88,51 @@ class TestCallRewrite:
 
 
 class TestCompareRewrite:
-    def test_is_comparison_rewritten_to_helper(self, rewrite):
-        out = rewrite("result = x is y")
-        assert "pyct.core.builtin_wrappers._is(x, y)" in out
+    """Rewrite only ``x is <literal>`` comparisons.
+
+    The rewrite covers the 99% ``x is None`` / ``x is True`` / ``x is False``
+    idiom while leaving genuine object-identity checks (``x is y`` where ``y``
+    is a variable or call result) untouched. Variable-RHS identity checks go
+    through Python's default ``is`` semantics, which matches the user's
+    intent when they wrote ``is`` instead of ``==``.
+    """
 
     def test_is_none_rewritten(self, rewrite):
         out = rewrite("result = x is None")
         assert "pyct.core.builtin_wrappers._is(x, None)" in out
+
+    def test_is_true_rewritten(self, rewrite):
+        out = rewrite("result = x is True")
+        assert "pyct.core.builtin_wrappers._is(x, True)" in out
+
+    def test_is_false_rewritten(self, rewrite):
+        out = rewrite("result = x is False")
+        assert "pyct.core.builtin_wrappers._is(x, False)" in out
+
+    def test_is_ellipsis_rewritten(self, rewrite):
+        out = rewrite("result = x is ...")
+        assert "pyct.core.builtin_wrappers._is(x, ...)" in out
+
+    def test_is_variable_NOT_rewritten(self, rewrite):
+        """``x is y`` where ``y`` is a variable preserves Python identity
+        semantics — different object references must remain distinct, and
+        the concolic layer can't model identity without unwrap semantics
+        that diverge from user expectation."""
+        out = rewrite("result = x is y")
+        assert "builtin_wrappers" not in out
+        assert "x is y" in out
+
+    def test_is_function_call_NOT_rewritten(self, rewrite):
+        """``x is foo()`` — function call RHS is not a literal."""
+        out = rewrite("result = x is foo()")
+        assert "builtin_wrappers" not in out
+
+    def test_is_integer_literal_NOT_rewritten(self, rewrite):
+        """``x is 5`` is a Python anti-pattern (use ==) but we shouldn't
+        rewrite it — integer interning makes it ambiguous and the user's
+        intent is usually a typo anyway."""
+        out = rewrite("result = x is 5")
+        assert "builtin_wrappers" not in out
 
     def test_eq_comparison_not_rewritten(self, rewrite):
         out = rewrite("result = x == y")
@@ -103,7 +141,7 @@ class TestCompareRewrite:
 
     def test_is_not_left_alone(self, rewrite):
         """Upstream's transformer only handles single `is`, not `is not`."""
-        out = rewrite("result = x is not y")
+        out = rewrite("result = x is not None")
         assert "pyct.core.builtin_wrappers._is" not in out
 
     def test_chained_comparison_left_alone(self, rewrite):
@@ -194,3 +232,87 @@ class TestRewriteTarget:
 
         rewritten = rewrite_target(_target_uses_module_globals)
         assert rewritten(5) == 105
+
+
+class TestRewriteTargetErrorPaths:
+    """Ensure rewrite failures surface as TypeError so explore() catches them."""
+
+    def test_lambda_rejected_upfront(self):
+        """Lambdas must be rejected BEFORE we exec the rewritten source.
+
+        ``inspect.getsource`` on a lambda returns the entire containing
+        statement, not just the ``lambda`` expression. Exec-ing that
+        source would re-run the caller — including, in the common case
+        ``engine.explore(lambda x: ..., {...})``, a recursive call
+        back into the engine that would infinite-loop. Reject the
+        lambda before any source extraction happens.
+        """
+        import pytest
+
+        from pyct.engine.ast_transformer import rewrite_target
+
+        lam = lambda x: x + 1  # noqa: E731
+        with pytest.raises(TypeError, match="lambda"):
+            rewrite_target(lam)
+
+    def test_inline_lambda_argument_does_not_recurse(self):
+        """Reproduction of a real recursion bug: passing a lambda as an
+        inline argument to engine.explore would cause rewrite_target to
+        extract and exec the entire caller line, which re-invokes
+        engine.explore → infinite recursion. Must raise TypeError cleanly.
+        """
+        from pyct import Engine
+        from pyct.config.execution import ExecutionConfig
+
+        engine = Engine(ExecutionConfig())
+        result = engine.explore(lambda x: x + 1, {"x": 0})
+        # Engine.explore catches TypeError from rewrite_target and returns
+        # a clean error_result.
+        assert result.success is False
+        assert result.termination_reason == "error"
+        assert "lambda" in (result.error or "").lower()
+
+    def test_syntaxerror_in_rewrite_raises_type_error(self, monkeypatch):
+        """A SyntaxError from ast.parse (pathological, but possible if
+        inspect.getsource returns something weird) must surface as
+        TypeError, not a bare SyntaxError that escapes explore()."""
+        import inspect
+
+        import pytest
+
+        from pyct.engine import ast_transformer
+
+        def _broken_source(_target):
+            return "def broken(x:\n    return x"
+
+        monkeypatch.setattr(inspect, "getsource", _broken_source)
+
+        with pytest.raises(TypeError, match="rewrite"):
+            ast_transformer.rewrite_target(_target_parses_int)
+
+    def test_shift_line_numbers_warns_on_getsourcelines_failure(self, monkeypatch, caplog):
+        """If getsourcelines fails in _shift_line_numbers after getsource
+        already succeeded (pathological — file racing, linecache quirk),
+        coverage attribution would be silently empty. We must log a
+        WARNING so the issue has a visible breadcrumb.
+
+        Tests _shift_line_numbers directly rather than rewrite_target to
+        isolate the branch — rewrite_target calls getsource first, which
+        would fail through the same mock and short-circuit the test.
+        """
+        import ast
+        import inspect
+        import logging
+
+        from pyct.engine import ast_transformer
+
+        def _broken_getsourcelines(_target):
+            raise OSError("source temporarily unavailable")
+
+        monkeypatch.setattr(inspect, "getsourcelines", _broken_getsourcelines)
+
+        tree = ast.parse("def f(x):\n    return x\n")
+        with caplog.at_level(logging.WARNING, logger="ct.engine.ast_transformer"):
+            ast_transformer._shift_line_numbers(tree, _target_parses_int)
+
+        assert any("line shift unavailable" in r.message for r in caplog.records)

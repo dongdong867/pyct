@@ -17,6 +17,32 @@ for benchmark targets using ``for _ in range(n)``). Other range methods
 delegate to the underlying primitive ``range`` without symbolic
 tracking — benchmark targets rarely need them and porting would double
 the file size.
+
+Known limitations (deferred to post-QRS cleanup):
+
+* **Unbounded constraint growth on large symbolic ranges.** A loop like
+  ``for _ in ConcolicRange(n)`` with ``n`` concretely 1,000,000 will
+  fire ``ConcolicInt.__lt__`` on every iteration, registering one
+  branch per loop step. On large ranges this inflates the constraint
+  pool and slows down the solver. Upstream has the same behavior;
+  benchmark targets stay well below the threshold. Post-QRS we could
+  add an iteration-count cap that short-circuits to concrete iteration
+  after N rounds.
+
+* **Pass-through methods drop symbolic tracking silently.** ``x in
+  range(n)``, ``range(n).count(x)``, ``range(n).index(x)``,
+  ``range(n)[i]`` all delegate to the primitive ``range`` via
+  ``self._super``, which strips concolic wrappers on inputs and
+  returns primitive results. Benchmark targets that use these forms
+  lose symbolic tracking with no runtime warning. If a post-QRS
+  benchmark needs any of these, port upstream's full implementation.
+
+* **Symbolic ``step`` direction is resolved concretely.** The loop
+  direction check in ``__iter__`` uses ``unwrap_concolic(self.step)``
+  to decide whether to use ``<`` or ``>``. If the step is symbolic,
+  the direction branch is decided on the concrete value only; the
+  solver never sees a constraint on the sign of step. Matches
+  upstream.
 """
 
 from __future__ import annotations

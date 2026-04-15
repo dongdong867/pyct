@@ -84,27 +84,24 @@ class TestPreparedEnvironmentError:
         from pyct.engine.environment import prepared_environment
 
         original_len, _, _ = saved_state
-        with pytest.raises(RuntimeError, match="boom"):
-            with prepared_environment():
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError, match="boom"), prepared_environment():
+            raise RuntimeError("boom")
         assert builtins.len is original_len
 
     def test_recursion_limit_restored_after_exception(self, saved_state):
         from pyct.engine.environment import prepared_environment
 
         _, _, original_limit = saved_state
-        with pytest.raises(RuntimeError):
-            with prepared_environment():
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError), prepared_environment():
+            raise RuntimeError("boom")
         assert sys.getrecursionlimit() == original_limit
 
     def test_socket_restored_after_exception(self, saved_state):
         from pyct.engine.environment import prepared_environment
 
         _, original_getaddrinfo, _ = saved_state
-        with pytest.raises(RuntimeError):
-            with prepared_environment():
-                raise RuntimeError("boom")
+        with pytest.raises(RuntimeError), prepared_environment():
+            raise RuntimeError("boom")
         assert socket.getaddrinfo is original_getaddrinfo
 
 

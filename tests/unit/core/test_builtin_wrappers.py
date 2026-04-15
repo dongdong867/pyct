@@ -61,6 +61,52 @@ class TestStrWrapper:
         assert _str("hello") == "hello"
 
 
+class TestConcolicWithoutHelperWarns:
+    """A Concolic subclass missing to_int/to_str should NOT silently drop
+    symbolic tracking. The whole point of this module is to stop the
+    silent-drop pattern, so a subclass bug surfaces as a warning."""
+
+    def test_int_wrapper_warns_when_concolic_lacks_to_int(self, caplog):
+        import logging
+
+        from pyct.core import Concolic
+        from pyct.core.builtin_wrappers import _int
+
+        class _StubConcolic(Concolic):
+            def __init__(self, value):
+                self._value = value
+
+            def __int__(self):
+                return self._value
+
+        stub = _StubConcolic(7)
+        with caplog.at_level(logging.WARNING, logger="ct.core.builtin_wrappers"):
+            result = _int(stub)
+
+        assert result == 7
+        assert any("to_int" in r.message for r in caplog.records)
+
+    def test_str_wrapper_warns_when_concolic_lacks_to_str(self, caplog):
+        import logging
+
+        from pyct.core import Concolic
+        from pyct.core.builtin_wrappers import _str
+
+        class _StubConcolic(Concolic):
+            def __init__(self, value):
+                self._value = value
+
+            def __str__(self):
+                return str(self._value)
+
+        stub = _StubConcolic(42)
+        with caplog.at_level(logging.WARNING, logger="ct.core.builtin_wrappers"):
+            result = _str(stub)
+
+        assert result == "42"
+        assert any("to_str" in r.message for r in caplog.records)
+
+
 class TestIsWrapper:
     def test_none_check_identity(self):
         from pyct.core.builtin_wrappers import _is
@@ -71,31 +117,37 @@ class TestIsWrapper:
     def test_concolic_none_check_matches_plain_is(self):
         """The common ``x is None`` pattern must work with concolic ``x``.
 
-        ``_is`` unwraps both sides before comparing identity, so a concolic
-        value tested against ``None`` returns False (concolic primitives
-        never unwrap to None)."""
+        ``_is`` unwraps the concolic side before comparing identity against
+        None. A concolic wrapper never unwraps to None, so the result is
+        False — matching what a plain ``x is None`` would do on a non-None
+        value."""
         from pyct.core.builtin_wrappers import _is
         from pyct.core.int import ConcolicInt
 
         ci = ConcolicInt(0, "x_VAR")
         assert _is(ci, None) is False
 
-    def test_concolic_compared_to_unwrapped_same_small_int(self):
-        """Unwrapping collapses distinct concolic wrappers of the same small
-        int to the same cached int object, so ``_is`` returns True.
-
-        This matches upstream semantics: ``_is`` is intentionally MORE
-        permissive than plain ``is`` on concolic wrappers, because plain
-        ``is`` would be False (distinct wrapper objects)."""
+    def test_plain_identity_falls_through_to_python_is(self):
+        """When neither operand is Concolic, ``_is`` must preserve Python's
+        genuine object-identity semantics. Distinct list objects with the
+        same contents are NOT identical — ``_is`` must not unwrap and
+        compare by value."""
         from pyct.core.builtin_wrappers import _is
-        from pyct.core.int import ConcolicInt
 
-        a = ConcolicInt(5, "a_VAR")
-        b = ConcolicInt(5, "b_VAR")
-        # Small ints (-5 to 256) are cached in CPython, so unwrap(a) is unwrap(b).
-        assert _is(a, b) is True
-        # Plain `is` on the wrappers is False — they're distinct objects.
-        assert (a is b) is False
+        list_a: list[int] = [1, 2, 3]
+        list_b: list[int] = [1, 2, 3]
+        assert _is(list_a, list_a) is True
+        assert _is(list_a, list_b) is False  # distinct objects, same content
+
+    def test_concolic_vs_none_is_false(self):
+        """A Concolic wrapper compared to None must unwrap to return False,
+        matching the source-level meaning of ``x is None`` when x was a
+        concolic input (it was always a primitive, never None)."""
+        from pyct.core.builtin_wrappers import _is
+        from pyct.core.str.str import ConcolicStr
+
+        cs = ConcolicStr("hello", "s_VAR")
+        assert _is(cs, None) is False
 
     def test_is_returns_bool(self):
         from pyct.core.builtin_wrappers import _is
