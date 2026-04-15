@@ -11,6 +11,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.coverage_tracker import CoverageTracker
+from pyct.engine.environment import prepared_environment
 from pyct.engine.function_inspector import inspect_target
 from pyct.engine.line_tracer import line_tracer, lines_to_coverage_data
 from pyct.engine.path import PathConstraintTracker
@@ -84,7 +85,8 @@ class Engine:
         )
 
         try:
-            return self._run(target, initial_args)
+            with prepared_environment():
+                return self._run(target, initial_args)
         except (TypeError, OSError) as e:
             return _error_result(f"cannot inspect target: {e}")
         finally:
@@ -97,8 +99,12 @@ class Engine:
         initial_args: dict[str, Any],
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
-        target_file, func_lines = inspect_target(target)
-        self.coverage_tracker = CoverageTracker(target_file, func_lines)
+        target_file, func_lines, def_line = inspect_target(target)
+        self.coverage_tracker = CoverageTracker(
+            target_file,
+            func_lines,
+            pre_covered=frozenset({def_line}),
+        )
 
         signature = inspect.signature(target)
         var_to_types = build_var_to_types(initial_args)
@@ -108,6 +114,7 @@ class Engine:
             start_time=time.monotonic(),
             total_lines=len(func_lines),
         )
+        state.covered_lines |= self.coverage_tracker.covered_lines
 
         dispatcher.dispatch_observer(
             "on_exploration_start",

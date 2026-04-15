@@ -8,13 +8,17 @@ from collections.abc import Callable
 from coverage import Coverage
 
 
-def inspect_target(target: Callable) -> tuple[str, frozenset[int]]:
-    """Return the target's source file and executable line numbers.
+def inspect_target(target: Callable) -> tuple[str, frozenset[int], int]:
+    """Return the target's source file, executable lines, and def-line number.
 
     Executable lines are the set of lines that coverage.py's static
-    analyzer considers statements — comments, blank lines, and the
-    ``def`` header itself are excluded. The result is used by the
-    coverage tracker to decide when ``is_fully_covered()`` is true.
+    analyzer considers statements within the function's source range.
+    The returned set INCLUDES the ``def`` header line to match legacy's
+    line-counting convention (legacy pre-covers the def line at init so
+    it counts toward both total and executed). Callers should pass the
+    third return value to ``CoverageTracker(..., pre_covered={def_line})``
+    so ``is_fully_covered()`` doesn't get stuck on the def line, which
+    never fires during function-body execution.
 
     Raises:
         TypeError: if ``target`` has no inspectable source (built-in
@@ -22,14 +26,10 @@ def inspect_target(target: Callable) -> tuple[str, frozenset[int]]:
     """
     target_file = inspect.getfile(target)
     source_lines, start_line = inspect.getsourcelines(target)
-    # Skip the ``def`` line — it lives inside the inspected range but the
-    # tracer never fires on it (the def header is executed at import time
-    # and does not emit a line event when the function body runs). Keeping
-    # it in would make ``is_fully_covered()`` unreachable.
-    func_range = set(range(start_line + 1, start_line + len(source_lines)))
+    func_range = set(range(start_line, start_line + len(source_lines)))
 
     statements = _executable_statements(target_file)
-    return target_file, frozenset(statements & func_range)
+    return target_file, frozenset(statements & func_range), start_line
 
 
 def _executable_statements(target_file: str) -> set[int]:
