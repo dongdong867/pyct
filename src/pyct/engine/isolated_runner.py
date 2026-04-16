@@ -35,6 +35,9 @@ def run_isolated(
     target: Callable,
     initial_args: dict[str, Any],
     config: ExecutionConfig,
+    *,
+    seed_inputs: list[dict[str, Any]] | None = None,
+    plugins: list | None = None,
 ) -> RunConcolicResult:
     """Run the engine in a subprocess, returning the serialized result."""
     module_name, qualname = _describe_target(target)
@@ -43,7 +46,8 @@ def run_isolated(
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
         target=_child_entry,
-        args=(module_name, qualname, initial_args, config, child_conn),
+        args=(module_name, qualname, initial_args, config, child_conn,
+              seed_inputs, plugins),
     )
     proc.start()
     child_conn.close()
@@ -88,12 +92,17 @@ def _child_entry(
     initial_args: dict[str, Any],
     config: ExecutionConfig,
     pipe: Connection,
+    seed_inputs: list[dict[str, Any]] | None = None,
+    plugins: list | None = None,
 ) -> None:
     """Child-process entry point: import target, run engine, send result."""
     try:
         target = _import_target(module_name, qualname)
         engine = Engine(config)
-        exploration = engine.explore(target, initial_args)
+        exploration = engine.explore(
+            target, initial_args,
+            seed_inputs=seed_inputs, plugins=plugins,
+        )
         result = RunConcolicResult.from_exploration(
             exploration,
             list(exploration.inputs_generated),

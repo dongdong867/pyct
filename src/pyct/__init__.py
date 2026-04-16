@@ -27,6 +27,8 @@ def run_concolic(
     *,
     config: ExecutionConfig | None = None,
     isolated: bool = True,
+    seed_inputs: list[dict[str, Any]] | None = None,
+    plugins: list | None = None,
 ) -> RunConcolicResult:
     """Run concolic exploration on ``target`` from ``initial_args``.
 
@@ -50,6 +52,12 @@ def run_concolic(
             when omitted.
         isolated: When True (the default), run the engine inside a
             subprocess. When False, run in-process.
+        seed_inputs: Pre-generated seed inputs for the engine's input
+            queue. When provided, the engine skips on_seed_request
+            dispatch. Used by the benchmark adapter for seed sharing
+            between modes.
+        plugins: Plugin instances to register on the engine before
+            exploration. Must be pickleable when ``isolated=True``.
 
     Returns:
         A :class:`RunConcolicResult` describing the outcome.
@@ -58,16 +66,28 @@ def run_concolic(
     if isolated:
         from pyct.engine.isolated_runner import run_isolated
 
-        return run_isolated(target, initial_args, exec_config)
-    return _run_in_process(target, initial_args, exec_config)
+        return run_isolated(
+            target, initial_args, exec_config,
+            seed_inputs=seed_inputs, plugins=plugins,
+        )
+    return _run_in_process(
+        target, initial_args, exec_config,
+        seed_inputs=seed_inputs, plugins=plugins,
+    )
 
 
 def _run_in_process(
     target: Callable,
     initial_args: dict[str, Any],
     config: ExecutionConfig,
+    *,
+    seed_inputs: list[dict[str, Any]] | None = None,
+    plugins: list | None = None,
 ) -> RunConcolicResult:
     """Run the engine directly in the current process."""
     engine = Engine(config)
-    result = engine.explore(target, initial_args)
+    result = engine.explore(
+        target, initial_args,
+        seed_inputs=seed_inputs, plugins=plugins,
+    )
     return RunConcolicResult.from_exploration(result, list(result.inputs_generated))

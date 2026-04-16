@@ -114,4 +114,4 @@ def _find_return_line(func: Callable, literal: str) -> int:
     for offset, line in enumerate(source_lines):
         if f'return "{literal}"' in line:
             return start + offset
-    raise AssertionError(f"no `return \"{literal}\"` in {func.__name__}")
+    raise AssertionError(f'no `return "{literal}"` in {func.__name__}')

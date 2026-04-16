@@ -69,8 +69,20 @@ class Engine:
         self,
         target: Callable,
         initial_args: dict[str, Any],
+        *,
+        seed_inputs: list[dict[str, Any]] | None = None,
+        plugins: list[Plugin] | None = None,
     ) -> ExplorationResult:
         """Run concolic exploration on ``target`` starting from ``initial_args``.
+
+        Args:
+            seed_inputs: Pre-generated seed inputs to prepend to the input
+                queue. When provided (even if empty), the engine skips its
+                own ``on_seed_request`` dispatch — the caller has already
+                obtained seeds and is supplying them directly.
+            plugins: Plugin instances to register before exploration starts.
+                These are in addition to any previously registered via
+                ``engine.register()``.
 
         Returns an ExplorationResult describing the outcome. Termination
         reasons: ``full_coverage``, ``max_iterations``, ``timeout``,
@@ -78,6 +90,10 @@ class Engine:
         the result's ``error`` field; only engine-level failures (e.g.
         cannot inspect the target) mark ``success=False``.
         """
+        if plugins:
+            for plugin in plugins:
+                self.register(plugin)
+
         ConstraintRegistry.clear()
         self.path = PathConstraintTracker()
         self.constraints_to_solve = []
@@ -88,7 +104,7 @@ class Engine:
 
         try:
             with prepared_environment():
-                return self._run(target, initial_args)
+                return self._run(target, initial_args, seed_inputs=seed_inputs)
         except (TypeError, OSError) as e:
             return _error_result(f"cannot inspect target: {e}")
         finally:
@@ -99,6 +115,8 @@ class Engine:
         self,
         target: Callable,
         initial_args: dict[str, Any],
+        *,
+        seed_inputs: list[dict[str, Any]] | None = None,
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
         target_file, func_lines, def_line = inspect_target(target)
@@ -124,10 +142,13 @@ class Engine:
             self._snapshot(target, signature, state),
         )
 
-        seeds = dispatcher.dispatch_collector(
-            "on_seed_request",
-            self._snapshot(target, signature, state),
-        )
+        if seed_inputs is not None:
+            seeds = list(seed_inputs)
+        else:
+            seeds = dispatcher.dispatch_collector(
+                "on_seed_request",
+                self._snapshot(target, signature, state),
+            )
         input_queue: list[dict[str, Any]] = [dict(initial_args), *seeds]
 
         last_error = self._exploration_loop(
@@ -235,6 +256,10 @@ class Engine:
             constraint = self.constraints_to_solve.pop(0)
             model, status = self._solve(constraint, var_to_types)
 
+            if state.elapsed_seconds() >= self.config.timeout_seconds:
+                _terminate(state, "timeout")
+                return None
+
             if model is not None:
                 merged = {**initial_args, **model}
                 if merged not in state.inputs_tried:
@@ -326,12 +351,21 @@ class Engine:
         target: Callable,
         signature: inspect.Signature,
     ) -> int:
-        """Track stale iterations; dispatch plateau event and reset if needed."""
+        """Track stale iterations; dispatch plateau event and reset if needed.
+
+        The plateau handler is suppressed while the input queue still has
+        pending entries — pre-generated seeds and solver-produced inputs
+        should be processed before asking plugins for recovery seeds.
+        Without this guard, seed-phase iterations count toward the stale
+        counter and trigger unnecessary LLM calls.
+        """
         if len(state.covered_lines) > last_coverage_size:
             return 0
 
         stale_count += 1
         if stale_count < self.config.plateau_threshold:
+            return stale_count
+        if input_queue or self.constraints_to_solve:
             return stale_count
 
         plateau_seeds = dispatcher.dispatch_collector(

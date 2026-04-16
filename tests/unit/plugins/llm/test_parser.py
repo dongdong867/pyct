@@ -23,7 +23,7 @@ class TestExtractInputList:
     def test_parse_code_fence_plain(self):
         from pyct.plugins.llm.parser import parse_input_list
 
-        content = "```\n[{\"x\": 5}]\n```"
+        content = '```\n[{"x": 5}]\n```'
         assert parse_input_list(content) == [{"x": 5}]
 
     def test_parse_raw_literal(self):

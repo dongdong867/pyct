@@ -72,8 +72,9 @@ def _simple_target(x: int) -> int:
 
 
 def _build_engine_with_queue(solver_responses, plugin):
-    """Return (engine, dispatcher, snapshot_builder) ready for _next_input."""
+    """Return (engine, dispatcher, state, signature) ready for _next_input."""
     import inspect
+    import time
 
     from pyct.config.execution import ExecutionConfig
     from pyct.engine.engine import Engine
@@ -85,7 +86,7 @@ def _build_engine_with_queue(solver_responses, plugin):
     engine.constraints_to_solve = ["(> x_VAR 0)", "(< x_VAR 0)"]
     engine.register(plugin)
 
-    state = ExplorationState(start_time=0.0, total_lines=3)
+    state = ExplorationState(start_time=time.monotonic(), total_lines=3)
     dispatcher = Dispatcher(engine.plugins)
     signature = inspect.signature(_simple_target)
 
@@ -215,3 +216,76 @@ class TestConstraintUnknownDispatch:
 
         assert plugin.unknown_calls == ["(> x_VAR 0)"]
         assert result == {"x": 55}
+
+
+class TestNextInputBudgetCheck:
+    """Budget enforcement inside _next_input.
+
+    When the solver takes a long time per call, _next_input must check
+    elapsed time between solver calls and bail out rather than burning
+    the remaining budget on constraints that won't matter.
+    """
+
+    def test_terminates_when_budget_exceeded_between_solver_calls(self):
+        """Given 2 constraints queued, budget already expired after first
+        solver call, _next_input should terminate and return None rather
+        than processing the second constraint."""
+        import time
+
+        from pyct.config.execution import ExecutionConfig
+        from pyct.engine.engine import Engine
+
+        plugin = _RecordingPlugin()
+        engine, dispatcher, state, signature = _build_engine_with_queue(
+            [(None, "unsat"), ({"x": 5}, "sat")],
+            plugin,
+        )
+        engine.constraints_to_solve = ["constraint_1", "constraint_2"]
+
+        # Budget is 1s but 100s have already elapsed
+        engine.config = ExecutionConfig(timeout_seconds=1.0)
+        state.start_time = time.monotonic() - 100
+
+        result = Engine._next_input(
+            engine,
+            input_queue=[],
+            initial_args={"x": 0},
+            var_to_types={"x_VAR": "Int"},
+            state=state,
+            dispatcher=dispatcher,
+            target=_simple_target,
+            signature=signature,
+        )
+
+        assert result is None
+        assert state.terminated is True
+        assert state.termination_reason == "timeout"
+        # Only first constraint should have been sent to solver
+        assert len(engine.solver.calls) == 1
+
+    def test_does_not_terminate_when_budget_has_remaining_time(self):
+        """When budget is ample, _next_input processes all constraints
+        normally and returns a solved input."""
+        from pyct.engine.engine import Engine
+
+        plugin = _RecordingPlugin()
+        engine, dispatcher, state, signature = _build_engine_with_queue(
+            [(None, "unsat"), ({"x": 5}, "sat")],
+            plugin,
+        )
+        engine.constraints_to_solve = ["constraint_1", "constraint_2"]
+
+        result = Engine._next_input(
+            engine,
+            input_queue=[],
+            initial_args={"x": 0},
+            var_to_types={"x_VAR": "Int"},
+            state=state,
+            dispatcher=dispatcher,
+            target=_simple_target,
+            signature=signature,
+        )
+
+        assert result == {"x": 5}
+        assert state.terminated is False
+        assert len(engine.solver.calls) == 2
