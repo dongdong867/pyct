@@ -1,7 +1,8 @@
 """Library benchmark suite — auto-discover entry points from installed packages.
 
-Walks bs4 and PyYAML public APIs to find testable functions (callable,
-<=5 primitive-typed parameters). Generates BenchmarkTarget for each.
+Walks bs4 and PyYAML public APIs to find testable functions and class
+constructors. Matches legacy's discovery logic: includes classes (via
+__init__), uses 0/""/ None for inferred args, strict same-module check.
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import inspect
 import logging
 import os
 import pkgutil
+import typing
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any
@@ -20,13 +22,12 @@ from tools.benchmark.targets import BenchmarkTarget
 log = logging.getLogger("benchmark.discovery")
 
 _MAX_PARAMS = 5
-_PRIMITIVE_TYPES = {int, float, str, bool, bytes}
-_DEFAULT_VALUES: dict[type, Any] = {
-    int: 1,
-    float: 1.0,
-    str: "test",
+_PRIMITIVE_TYPES = {int, float, str, bool, bytes, list, dict, type(None)}
+_IMMUTABLE_DEFAULTS: dict[type, Any] = {
+    int: 0,
+    str: "",
     bool: True,
-    bytes: b"test",
+    float: 0.0,
 }
 
 
@@ -116,9 +117,10 @@ def _collect_public_callables(
     modules: list[ModuleType],
     package_name: str,
 ) -> list[tuple[str, str, Any]]:
-    """Find public callables with primitive-typed parameters.
+    """Find public callables (functions + class constructors).
 
-    Returns (module_name, func_name, callable) triples.
+    Matches legacy: includes classes (checks __init__ signature),
+    strict same-module check (func.__module__ == module.__name__).
     """
     seen: set[int] = set()
     results: list[tuple[str, str, Any]] = []
@@ -133,51 +135,90 @@ def _collect_public_callables(
             obj = getattr(module, name, None)
             if obj is None or not callable(obj):
                 continue
-            if inspect.isclass(obj):
-                continue  # engine's rewrite_target needs a function, not a class
             if id(obj) in seen:
                 continue
             seen.add(id(obj))
 
-            # Check it belongs to this package
+            # Strict same-module check (matches legacy)
             obj_module = getattr(obj, "__module__", "")
-            if not obj_module.startswith(package_name):
+            if obj_module != module_name:
                 continue
 
-            if _has_testable_signature(obj):
+            if inspect.isclass(obj):
+                if _has_testable_init(obj):
+                    results.append((module_name, name, obj))
+            elif _has_testable_signature(obj):
                 results.append((module_name, name, obj))
 
     return results
 
 
-def _has_testable_signature(obj: Any) -> bool:
-    """Check if callable has <=MAX_PARAMS and inspectable source.
+def _has_testable_init(cls: type) -> bool:
+    """Check if a class constructor is testable."""
+    init = getattr(cls, "__init__", None)
+    if init is None or init is object.__init__:
+        return False
+    return _has_testable_signature(init, skip_self=True)
 
-    Accepts params without annotations — those will default to str in
-    the arg inference step. This is intentionally lenient to catch
-    library functions like yaml.safe_load(stream) that have no hints.
+
+def _has_testable_signature(obj: Any, *, skip_self: bool = False) -> bool:
+    """Check if callable has testable parameters.
+
+    Only required params (no default) must have primitive-compatible
+    types. Optional params are accepted regardless — PyCT uses their
+    defaults. Matches legacy's _has_primitive_signature.
     """
     try:
         sig = inspect.signature(obj)
+        resolved_hints = _resolve_type_hints(obj)
     except (ValueError, TypeError):
         return False
 
-    # Must have inspectable source for the engine
-    try:
-        inspect.getfile(obj)
-    except (TypeError, OSError):
+    params = list(sig.parameters.values())
+    if skip_self and params and params[0].name == "self":
+        params = params[1:]
+
+    regular = [
+        p for p in params
+        if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+    ]
+    required = [p for p in regular if p.default is inspect.Parameter.empty]
+
+    if not regular:
+        return False
+    if len(required) > _MAX_PARAMS:
         return False
 
-    params = [
-        p for p in sig.parameters.values()
-        if p.kind not in (
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        )
-        and p.name != "self"
-    ]
+    return all(_is_primitive_param(p, resolved_hints) for p in required)
 
-    return bool(params) and len(params) <= _MAX_PARAMS
+
+def _resolve_type_hints(func: Any) -> dict:
+    """Resolve string annotations to actual types."""
+    try:
+        return typing.get_type_hints(func)
+    except Exception:
+        return {}
+
+
+def _is_primitive_param(param: inspect.Parameter, resolved_hints: dict) -> bool:
+    """Check if a required parameter is primitive-compatible."""
+    ann = resolved_hints.get(param.name, param.annotation)
+    if ann is inspect.Parameter.empty:
+        return True  # untyped params default to 0
+    return _is_primitive_type(ann)
+
+
+def _is_primitive_type(annotation: Any) -> bool:
+    """Check if a type annotation is primitive or simple container."""
+    if annotation in _PRIMITIVE_TYPES:
+        return True
+    origin = getattr(annotation, "__origin__", None)
+    if origin is list or origin is dict or origin is type(None):
+        return True
+    if origin is typing.Union:
+        args = getattr(annotation, "__args__", ())
+        return any(_is_primitive_type(a) for a in args)
+    return False
 
 
 def _build_targets(
@@ -185,18 +226,16 @@ def _build_targets(
     category: str,
     source_path: str | None = None,
 ) -> list[BenchmarkTarget]:
-    """Build BenchmarkTarget for each discovered callable.
-
-    Each candidate is smoke-tested with inferred args. Functions that
-    crash on ImportError or FeatureNotFound (missing optional deps like
-    lxml) are silently skipped.
-    """
+    """Build BenchmarkTarget for each discovered callable."""
     targets: list[BenchmarkTarget] = []
     for module_name, func_name, obj in callables:
-        args = _infer_initial_args(obj)
-        if args is None:
+        target_func = obj.__init__ if inspect.isclass(obj) else obj
+        try:
+            args = _infer_args(target_func)
+        except (ValueError, TypeError):
             continue
-        if not _smoke_check(obj, args, f"{module_name}.{func_name}"):
+        args.pop("self", None)
+        if not args:
             continue
         targets.append(BenchmarkTarget(
             name=f"{module_name}.{func_name}",
@@ -210,47 +249,52 @@ def _build_targets(
     return targets
 
 
-def _smoke_check(obj: Any, args: dict[str, Any], label: str) -> bool:
-    """Try calling the function once; skip if it crashes on missing deps."""
-    try:
-        obj(**args)
-        return True
-    except (ImportError, ModuleNotFoundError) as e:
-        log.info("Skipping %s: missing dep: %s", label, e)
-        return False
-    except Exception:
-        return True  # other exceptions are fine — the function is callable
+def _infer_args(func: Any) -> dict[str, Any]:
+    """Infer initial args matching legacy's pattern.
 
-
-def _infer_initial_args(obj: Any) -> dict[str, Any] | None:
-    """Infer initial arguments from type annotations and defaults.
-
-    Parameters without annotations or defaults get ``"test"`` (str) as a
-    fallback — most library entry points accept string input.
+    Required params: type-inferred default (0 for untyped, "" for str, etc.)
+    Optional params with primitive defaults: use the default.
+    Optional params with non-primitive defaults: skip.
     """
-    try:
-        sig = inspect.signature(obj)
-    except (ValueError, TypeError):
-        return None
-
+    sig = inspect.signature(func)
     args: dict[str, Any] = {}
-    for name, param in sig.parameters.items():
-        if name == "self":
-            continue
-        if param.kind in (
-            inspect.Parameter.VAR_POSITIONAL,
-            inspect.Parameter.VAR_KEYWORD,
-        ):
-            continue
 
-        if param.default is not inspect.Parameter.empty:
-            args[name] = param.default
-        elif param.annotation is not inspect.Parameter.empty:
-            default = _DEFAULT_VALUES.get(param.annotation)
-            if default is not None:
-                args[name] = default
-            else:
-                args[name] = "test"  # fallback for non-primitive annotations
-        else:
-            args[name] = "test"  # fallback for untyped params
+    for param_name, param in sig.parameters.items():
+        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+            continue
+        if param.default is inspect.Parameter.empty:
+            args[param_name] = _default_for_annotation(param.annotation)
+        elif isinstance(param.default, (int, float, str, bool, bytes, type(None))):
+            args[param_name] = param.default
+
     return args
+
+
+def _default_for_annotation(annotation: Any) -> Any:
+    """Return a sensible default for a type annotation.
+
+    Matches legacy: 0 for untyped, "" for str, None for Optional.
+    """
+    if annotation is inspect.Parameter.empty:
+        return 0
+
+    if annotation in _IMMUTABLE_DEFAULTS:
+        return _IMMUTABLE_DEFAULTS[annotation]
+
+    if annotation is list:
+        return []
+    if annotation is dict:
+        return {}
+
+    origin = getattr(annotation, "__origin__", None)
+    if origin is list:
+        return []
+    if origin is dict:
+        return {}
+
+    if origin is typing.Union:
+        args = getattr(annotation, "__args__", ())
+        if type(None) in args:
+            return None
+
+    return None

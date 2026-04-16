@@ -10,9 +10,11 @@ from __future__ import annotations
 import contextlib
 import importlib
 import inspect
+import io
 import logging
 import time
 from collections.abc import Callable
+from contextlib import redirect_stderr, redirect_stdout
 from typing import Any
 
 from coverage import Coverage
@@ -116,7 +118,7 @@ def run_llm_only(
     start = time.monotonic()
     for seed in seeds:
         cov.start()
-        with contextlib.suppress(Exception):
+        with _suppress_output(), contextlib.suppress(Exception):
             func(**seed)
         cov.stop()
     elapsed = time.monotonic() - start + seed_time
@@ -185,7 +187,7 @@ def run_crosshair(
     cov = _create_coverage_session(target)
     cov.start()
     for inp in test_inputs:
-        with contextlib.suppress(Exception):
+        with _suppress_output(), contextlib.suppress(Exception):
             func(**inp)
     cov.stop()
 
@@ -206,6 +208,18 @@ def _resolve_target(target: BenchmarkTarget) -> Callable:
     """Import and return the target callable."""
     module = importlib.import_module(target.module)
     return getattr(module, target.function)
+
+
+@contextlib.contextmanager
+def _suppress_output():
+    """Redirect stdout and stderr to devnull.
+
+    External library functions (bs4.diagnose.benchmark_parsers,
+    cProfile output, etc.) can print heavily during execution.
+    Suppressing keeps the benchmark console clean.
+    """
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        yield
 
 
 def _create_coverage_session(target: BenchmarkTarget) -> Coverage:

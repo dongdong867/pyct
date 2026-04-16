@@ -26,9 +26,14 @@ from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.result import RunConcolicResult
 
-_WATCHDOG_BUFFER_SECONDS = 5.0
+_WATCHDOG_BUFFER_SECONDS = 20.0
 """How much longer the parent waits beyond the engine's timeout before killing.
-Gives the engine a grace period to terminate cleanly from its own budget check."""
+
+Must exceed solver_timeout (default 15s) so the engine can finish its
+current solver call, terminate from the budget check, build the result,
+and send it through the pipe. With 5s buffer, the parent killed the child
+mid-solver-call and lost partial coverage. 20s covers one solver_timeout
+(15s) + cleanup (5s)."""
 
 
 def run_isolated(
@@ -96,6 +101,12 @@ def _child_entry(
     plugins: list | None = None,
 ) -> None:
     """Child-process entry point: import target, run engine, send result."""
+    # Suppress stdout/stderr from target functions (e.g. bs4 diagnostics)
+    import io
+    import sys
+    sys.stdout = io.StringIO()
+    sys.stderr = io.StringIO()
+
     try:
         target = _import_target(module_name, qualname)
         engine = Engine(config)

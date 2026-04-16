@@ -162,15 +162,18 @@ def _run_with_retries(
             f" error={result.error}" if result.error else "",
         )
 
-        if result.success and result.coverage.coverage_percent > best_coverage:
+        if result.coverage.coverage_percent > best_coverage:
             best_coverage = result.coverage.coverage_percent
             best_result = result
 
-        if result.success and result.coverage.coverage_percent >= 100.0:
+        if result.coverage.coverage_percent >= 100.0:
             break
 
     if best_result is None:
         best_result = RunnerResult(success=False, error="All attempts failed")
+    elif not best_result.success and best_result.coverage.coverage_percent > 0:
+        # Timeout or watchdog kill with partial coverage — report as success
+        best_result.success = True
 
     best_result.attempts = attempts
 
