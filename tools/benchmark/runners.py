@@ -135,20 +135,9 @@ def run_llm_only(
 
     elapsed = time.monotonic() - start + seed_time
 
-    func_executed = sorted(all_stmts & hit_lines)
-    func_missing = sorted(all_stmts - hit_lines)
-    total = len(all_stmts)
-    pct = (len(func_executed) / total * 100) if total > 0 else 0.0
-
     return RunnerResult(
         success=True,
-        coverage=CoverageResult(
-            coverage_percent=pct,
-            executed_lines=len(func_executed),
-            total_lines=total,
-            executed_line_numbers=func_executed,
-            missing_line_numbers=func_missing,
-        ),
+        coverage=_build_coverage_result(all_stmts, hit_lines),
         time_seconds=elapsed,
         iterations=len(seeds),
     )
@@ -219,20 +208,9 @@ def run_crosshair(
         if measured_file == target_file:
             hit_lines |= set(data.lines(measured_file) or [])
 
-    func_executed = sorted(all_stmts & hit_lines)
-    func_missing = sorted(all_stmts - hit_lines)
-    total = len(all_stmts)
-    pct = (len(func_executed) / total * 100) if total > 0 else 0.0
-
     return RunnerResult(
         success=True,
-        coverage=CoverageResult(
-            coverage_percent=pct,
-            executed_lines=len(func_executed),
-            total_lines=total,
-            executed_line_numbers=func_executed,
-            missing_line_numbers=func_missing,
-        ),
+        coverage=_build_coverage_result(all_stmts, hit_lines),
         time_seconds=elapsed,
         iterations=len(test_inputs),
         test_cases_generated=len(test_inputs),
@@ -249,6 +227,40 @@ def _resolve_target(target: BenchmarkTarget) -> Callable:
     return getattr(module, target.function)
 
 
+def _build_coverage_result(
+    all_stmts: set[int],
+    hit_lines: set[int],
+) -> CoverageResult:
+    """Build a CoverageResult with definition-line inclusion.
+
+    If any body line was executed, lines before the first executed line
+    (decorators, ``def`` header) are counted as covered — the function
+    must have been defined to be called. This matches the engine's
+    ``CoverageTracker(pre_covered={def_line})`` behavior and legacy's
+    ``calculate_function_coverage`` def-line backfill.
+    """
+    func_executed = sorted(all_stmts & hit_lines)
+
+    if func_executed:
+        first_executed = min(func_executed)
+        for stmt in sorted(all_stmts):
+            if stmt < first_executed and stmt not in func_executed:
+                func_executed.append(stmt)
+        func_executed = sorted(func_executed)
+
+    func_missing = sorted(all_stmts - set(func_executed))
+    total = len(all_stmts)
+    pct = (len(func_executed) / total * 100) if total > 0 else 0.0
+
+    return CoverageResult(
+        coverage_percent=pct,
+        executed_lines=len(func_executed),
+        total_lines=total,
+        executed_line_numbers=func_executed,
+        missing_line_numbers=func_missing,
+    )
+
+
 def _pyct_result_to_runner(
     result: Any,
     func: Callable,
@@ -262,20 +274,9 @@ def _pyct_result_to_runner(
     cov = Coverage(data_file=None, include=[target_file])
     all_stmts = set(cov.analysis(target_file)[1]) & func_range
 
-    executed = sorted(all_stmts & set(result.executed_lines))
-    missing = sorted(all_stmts - set(result.executed_lines))
-    total = len(all_stmts)
-    pct = (len(executed) / total * 100) if total > 0 else 0.0
-
     return RunnerResult(
         success=result.success,
-        coverage=CoverageResult(
-            coverage_percent=pct,
-            executed_lines=len(executed),
-            total_lines=total,
-            executed_line_numbers=executed,
-            missing_line_numbers=missing,
-        ),
+        coverage=_build_coverage_result(all_stmts, set(result.executed_lines)),
         time_seconds=elapsed,
         error=result.error,
         iterations=result.iterations,
