@@ -412,6 +412,13 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Substring filter over target names (default: all targets in suite)",
     )
     baseline.add_argument(
+        "--shard",
+        help=(
+            "Partition targets across parallel workers as INDEX/COUNT, "
+            "e.g. --shard 0/4 takes the first of four round-robin slices"
+        ),
+    )
+    baseline.add_argument(
         "--timeout",
         type=float,
         default=120.0,

@@ -175,8 +175,15 @@ def cmd_baseline(args: Any) -> int:
     if args.target:
         needle = args.target
         targets = [t for t in targets if needle in t.name]
+    shard = getattr(args, "shard", None)
+    targets = _apply_shard(targets, shard)
     if not targets:
-        log.error("no targets matched suite=%s target=%s", args.suite, args.target)
+        log.error(
+            "no targets matched suite=%s target=%s shard=%s",
+            args.suite,
+            args.target,
+            shard,
+        )
         return 1
 
     config = BenchmarkConfig(
@@ -205,6 +212,29 @@ def cmd_baseline(args: Any) -> int:
         )
 
     return 0
+
+
+def _apply_shard(items: list[Any], shard: str | None) -> list[Any]:
+    """Round-robin partition ``items`` for parallel workers.
+
+    ``shard`` is ``"INDEX/COUNT"`` (e.g. ``"0/4"`` = first of four
+    workers). ``None`` means no partitioning. Round-robin (modulo)
+    keeps per-worker load roughly even even when contiguous runs of
+    targets have lopsided costs.
+    """
+    if shard is None:
+        return list(items)
+    try:
+        idx_str, count_str = shard.split("/", 1)
+        index = int(idx_str)
+        count = int(count_str)
+    except ValueError:
+        raise ValueError(f"invalid shard spec {shard!r} (expected INDEX/COUNT)") from None
+    if count <= 0:
+        raise ValueError(f"shard count must be positive, got {count}")
+    if not 0 <= index < count:
+        raise ValueError(f"shard index {index} out of range for count {count}")
+    return [item for i, item in enumerate(items) if i % count == index]
 
 
 def _targets_for_suite(suite: str) -> list[BenchmarkTarget]:
