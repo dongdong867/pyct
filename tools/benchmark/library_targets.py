@@ -123,6 +123,8 @@ def _collect_public_callables(
             obj = getattr(module, name, None)
             if obj is None or not callable(obj):
                 continue
+            if inspect.isclass(obj):
+                continue  # engine's rewrite_target needs a function, not a class
             if id(obj) in seen:
                 continue
             seen.add(id(obj))
@@ -139,10 +141,21 @@ def _collect_public_callables(
 
 
 def _has_testable_signature(obj: Any) -> bool:
-    """Check if callable has <=MAX_PARAMS primitive-typed parameters."""
+    """Check if callable has <=MAX_PARAMS and inspectable source.
+
+    Accepts params without annotations — those will default to str in
+    the arg inference step. This is intentionally lenient to catch
+    library functions like yaml.safe_load(stream) that have no hints.
+    """
     try:
         sig = inspect.signature(obj)
     except (ValueError, TypeError):
+        return False
+
+    # Must have inspectable source for the engine
+    try:
+        inspect.getfile(obj)
+    except (TypeError, OSError):
         return False
 
     params = [
@@ -154,14 +167,7 @@ def _has_testable_signature(obj: Any) -> bool:
         and p.name != "self"
     ]
 
-    if not params or len(params) > _MAX_PARAMS:
-        return False
-
-    for p in params:
-        if p.default is inspect.Parameter.empty and p.annotation is inspect.Parameter.empty:
-            return False
-
-    return True
+    return bool(params) and len(params) <= _MAX_PARAMS
 
 
 def _build_targets(
@@ -186,7 +192,11 @@ def _build_targets(
 
 
 def _infer_initial_args(obj: Any) -> dict[str, Any] | None:
-    """Infer initial arguments from type annotations and defaults."""
+    """Infer initial arguments from type annotations and defaults.
+
+    Parameters without annotations or defaults get ``"test"`` (str) as a
+    fallback — most library entry points accept string input.
+    """
     try:
         sig = inspect.signature(obj)
     except (ValueError, TypeError):
@@ -209,7 +219,7 @@ def _infer_initial_args(obj: Any) -> dict[str, Any] | None:
             if default is not None:
                 args[name] = default
             else:
-                return None
+                args[name] = "test"  # fallback for non-primitive annotations
         else:
-            return None
+            args[name] = "test"  # fallback for untyped params
     return args

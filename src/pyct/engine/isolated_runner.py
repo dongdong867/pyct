@@ -103,9 +103,11 @@ def _child_entry(
             target, initial_args,
             seed_inputs=seed_inputs, plugins=plugins,
         )
+        token_stats = _extract_plugin_tokens(plugins or [])
         result = RunConcolicResult.from_exploration(
             exploration,
             list(exploration.inputs_generated),
+            token_stats=token_stats,
         )
     except Exception as e:
         result = _wrapper_failure(f"{type(e).__name__}: {e}")
@@ -158,6 +160,23 @@ def _reap_child(proc: mp.process.BaseProcess) -> None:
     if proc.is_alive():
         proc.kill()
         proc.join(timeout=1)
+
+
+def _extract_plugin_tokens(plugins: list) -> dict[str, int] | None:
+    """Extract accumulated token usage from plugins after exploration."""
+    for plugin in plugins:
+        client = getattr(plugin, "_client", None)
+        if client is None:
+            continue
+        get_stats = getattr(client, "get_stats", None)
+        if get_stats is None:
+            continue
+        stats = get_stats()
+        inp = stats.get("input_tokens", 0)
+        out = stats.get("output_tokens", 0)
+        if inp or out:
+            return {"input_tokens": inp, "output_tokens": out}
+    return None
 
 
 def _wrapper_failure(message: str) -> RunConcolicResult:

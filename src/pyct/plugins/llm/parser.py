@@ -43,8 +43,13 @@ def parse_input_list(content: str | None) -> list[dict[str, Any]]:
     code = _extract_code_block(content)
     parsed = _safe_eval(code)
     if not isinstance(parsed, list):
+        log.warning("LLM response did not parse to a list (got %s)", type(parsed).__name__)
+        log.debug("Extracted code block:\n%s", code[:500])
         return []
-    return [entry for entry in parsed if isinstance(entry, dict)]
+    results = [entry for entry in parsed if isinstance(entry, dict)]
+    if not results and parsed:
+        log.warning("LLM response parsed to list but contained no dicts: %s", parsed[:3])
+    return results
 
 
 def parse_single_input(content: str | None) -> dict[str, Any] | None:
@@ -83,6 +88,10 @@ def _safe_eval(code: str) -> Any:
     expressions but not pure literals. Running ``eval`` with
     ``__builtins__ = {}`` blocks name resolution for imports, file
     access, and other dangerous operations.
+
+    If the whole-list parse fails (common when one entry has broken
+    quotes like ``{"x": "{"nested"}"}``), falls back to per-entry
+    parsing to recover as many valid entries as possible.
     """
     try:
         return ast.literal_eval(code)
@@ -91,6 +100,41 @@ def _safe_eval(code: str) -> Any:
 
     try:
         return eval(code, {"__builtins__": {}}, {})  # noqa: S307
-    except Exception as exc:
-        log.debug("LLM response parse failed: %s", exc)
-        return None
+    except Exception:
+        pass
+
+    # Per-entry fallback: split on lines that look like dict boundaries
+    # and try to parse each independently.
+    recovered = _recover_entries(code)
+    if recovered:
+        log.info(
+            "Recovered %d entries via per-entry parsing (whole-list parse failed)",
+            len(recovered),
+        )
+        return recovered
+
+    log.warning("LLM response parse failed entirely")
+    log.debug("Unparseable code:\n%s", code[:500])
+    return None
+
+
+def _recover_entries(code: str) -> list[dict[str, Any]] | None:
+    """Try to parse individual dict entries from a broken list expression.
+
+    Extracts lines that look like ``{...}`` and parses each one.
+    """
+    import re
+
+    entries: list[dict[str, Any]] = []
+    for match in re.finditer(r"\{[^{}]*\}", code):
+        fragment = match.group(0)
+        try:
+            val = ast.literal_eval(fragment)
+        except (ValueError, SyntaxError):
+            try:
+                val = eval(fragment, {"__builtins__": {}}, {})  # noqa: S307
+            except Exception:
+                continue
+        if isinstance(val, dict):
+            entries.append(val)
+    return entries or None

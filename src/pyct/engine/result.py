@@ -58,12 +58,14 @@ class RunConcolicResult:
     iterations: int
     termination_reason: str
     error: str | None = None
+    token_stats: dict[str, int] | None = None
 
     @classmethod
     def from_exploration(
         cls,
         result: ExplorationResult,
         inputs: list[dict[str, Any]],
+        token_stats: dict[str, int] | None = None,
     ) -> RunConcolicResult:
         """Construct a public result from an internal ExplorationResult.
 
@@ -83,4 +85,5 @@ class RunConcolicResult:
             iterations=result.iterations,
             termination_reason=result.termination_reason,
             error=result.error,
+            token_stats=token_stats,
         )

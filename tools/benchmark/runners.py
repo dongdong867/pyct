@@ -89,13 +89,17 @@ def run_concolic_llm(
     start = time.monotonic()
     result = run_concolic(
         func, dict(target.initial_args),
-        config=exec_config, isolated=False,
+        config=exec_config, isolated=True,
         seed_inputs=seeds, plugins=plugins,
     )
     elapsed = time.monotonic() - start + seed_time
 
     runner_result = _pyct_result_to_runner(result, func, elapsed)
-    runner_result.token_usage = _extract_token_usage(plugins)
+    if result.token_stats:
+        runner_result.token_usage = TokenUsage(
+            input_tokens=result.token_stats.get("input_tokens", 0),
+            output_tokens=result.token_stats.get("output_tokens", 0),
+        )
     return runner_result
 
 
