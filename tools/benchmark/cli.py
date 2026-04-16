@@ -50,6 +50,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    if args.command == "baseline":
+        from tools.benchmark.baseline_generator import cmd_baseline
+
+        _setup_logging(args.verbose)
+        return cmd_baseline(args)
+
     if args.command != "run":
         parser.print_help()
         return 2
@@ -356,6 +362,54 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Output directory for results (default: benchmark/results)",
     )
     run.add_argument(
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
+        help="Increase verbosity",
+    )
+
+    baseline = subs.add_parser(
+        "baseline",
+        help="Generate frozen coverage baselines for library/realworld targets",
+    )
+    baseline.add_argument(
+        "--suite",
+        required=True,
+        choices=["library", "realworld"],
+        help="Target suite to generate baselines for",
+    )
+    baseline.add_argument(
+        "--target",
+        help="Substring filter over target names (default: all targets in suite)",
+    )
+    baseline.add_argument(
+        "--timeout",
+        type=float,
+        default=120.0,
+        help="Per-runner timeout in seconds (default: 120, deliberately higher than run)",
+    )
+    baseline.add_argument(
+        "--single-timeout",
+        type=float,
+        default=30.0,
+        help="Per-solver-call timeout in seconds (default: 30)",
+    )
+    baseline.add_argument(
+        "--max-iterations",
+        type=int,
+        default=100,
+        help="Max exploration iterations per runner (default: 100)",
+    )
+    baseline.add_argument(
+        "--output-dir",
+        default="benchmark/baselines",
+        help=(
+            "Output root (default: benchmark/baselines); baselines land at "
+            "{out}/{suite}/{target}.json"
+        ),
+    )
+    baseline.add_argument(
         "--verbose",
         "-v",
         action="count",
