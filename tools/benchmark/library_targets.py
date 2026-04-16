@@ -174,11 +174,18 @@ def _build_targets(
     callables: list[tuple[str, str, Any]],
     category: str,
 ) -> list[BenchmarkTarget]:
-    """Build BenchmarkTarget for each discovered callable."""
+    """Build BenchmarkTarget for each discovered callable.
+
+    Each candidate is smoke-tested with inferred args. Functions that
+    crash on ImportError or FeatureNotFound (missing optional deps like
+    lxml) are silently skipped.
+    """
     targets: list[BenchmarkTarget] = []
     for module_name, func_name, obj in callables:
         args = _infer_initial_args(obj)
         if args is None:
+            continue
+        if not _smoke_check(obj, args, f"{module_name}.{func_name}"):
             continue
         targets.append(BenchmarkTarget(
             name=f"{module_name}.{func_name}",
@@ -189,6 +196,18 @@ def _build_targets(
             description=f"Auto-discovered from {module_name}",
         ))
     return targets
+
+
+def _smoke_check(obj: Any, args: dict[str, Any], label: str) -> bool:
+    """Try calling the function once; skip if it crashes on missing deps."""
+    try:
+        obj(**args)
+        return True
+    except (ImportError, ModuleNotFoundError) as e:
+        log.info("Skipping %s: missing dep: %s", label, e)
+        return False
+    except Exception:
+        return True  # other exceptions are fine — the function is callable
 
 
 def _infer_initial_args(obj: Any) -> dict[str, Any] | None:

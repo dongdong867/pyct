@@ -43,10 +43,18 @@ def run_single_target(
     """
     seeds, seed_time, seed_tokens = _generate_seeds_if_needed(target, runner_names)
 
+    if seeds:
+        log.info("LLM seeds for %s (%d seeds):", target.name, len(seeds))
+        for i, s in enumerate(seeds):
+            log.info("  seed[%d]: %s", i, s)
+
     results: dict[str, RunnerResult] = {}
     for name in runner_names:
         result = _run_with_retries(target, name, config, seeds, seed_time, seed_tokens)
         results[name] = result
+
+        _log_runner_result(target.name, name, result)
+
         if on_runner_done:
             on_runner_done(name, result)
 
@@ -145,6 +153,15 @@ def _run_with_retries(
             error=result.error,
         ))
 
+        log.info(
+            "  %s attempt[%d]: %s cov=%.1f%% time=%.1fs%s",
+            runner_name, run_id,
+            "OK" if result.success else "FAIL",
+            result.coverage.coverage_percent,
+            result.time_seconds,
+            f" error={result.error}" if result.error else "",
+        )
+
         if result.success and result.coverage.coverage_percent > best_coverage:
             best_coverage = result.coverage.coverage_percent
             best_result = result
@@ -169,6 +186,29 @@ def _run_with_retries(
             best_result.token_usage = seed_tokens
 
     return best_result
+
+
+def _log_runner_result(target_name: str, runner_name: str, result: RunnerResult) -> None:
+    """Log detailed runner outcome for debugging."""
+    if result.success:
+        log.info(
+            "%s / %s: %.1f%% (%d/%d lines) in %.1fs, %s iters, reason=%s",
+            target_name, runner_name,
+            result.coverage.coverage_percent,
+            result.coverage.executed_lines, result.coverage.total_lines,
+            result.time_seconds,
+            result.iterations,
+            "ok",
+        )
+    else:
+        log.warning(
+            "%s / %s: FAILED — %s",
+            target_name, runner_name,
+            result.error or "unknown error",
+        )
+        for a in result.attempts:
+            if a.error:
+                log.warning("  attempt[%d]: %s", a.run_id, a.error)
 
 
 def _run_single(

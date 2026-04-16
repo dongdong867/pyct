@@ -193,6 +193,10 @@ def run_crosshair(
     if not test_inputs and not param_names:
         test_inputs = [{}]
 
+    log.info("Crosshair generated %d inputs for %s:", len(test_inputs), target.function)
+    for i, inp in enumerate(test_inputs):
+        log.info("  crosshair[%d]: %s", i, inp)
+
     # Measure coverage by running generated inputs
     cov = Coverage(data_file=None, include=[target_file])
     all_stmts = set(cov.analysis(target_file)[1]) & func_range
