@@ -398,19 +398,26 @@ class Engine:
 def _try_rewrite(target: Callable) -> Callable:
     """Attempt AST rewrite; fall back to original on exec failures.
 
-    The AST transformer breaks on external library functions whose source
-    references module-level names not present in the exec namespace (e.g.
-    decorated functions with ``__globals__`` from the wrong module).
-    Falling back to the original target loses int/str/range/is rewriting
-    but lets the engine explore the function with plain Concolic wrapping.
+    The AST transformer breaks on:
+    - External library functions with wrong __globals__ (NameError)
+    - Class targets where source is ``class Foo:`` not ``def foo:`` (TypeError)
+    - Decorated functions with missing attributes (AttributeError)
 
-    Lambda rejection and other upfront checks still raise — only exec-time
-    failures (NameError, attribute errors during compilation) are caught.
+    Falls back to the original target, losing int/str/range/is rewriting
+    but letting the engine explore with plain Concolic wrapping.
+
+    Lambda rejection still raises — lambdas have fundamental issues
+    (inspect.getsource returns the containing line, causing recursion).
     """
+    name = getattr(target, "__name__", "")
+    if name == "<lambda>":
+        from pyct.engine.ast_transformer import rewrite_target as _rw
+
+        return _rw(target)  # will raise TypeError for lambdas
     try:
         return rewrite_target(target)
-    except (NameError, KeyError, AttributeError) as e:
-        log.debug("AST rewrite failed for %s, using original: %s", target.__name__, e)
+    except (TypeError, NameError, KeyError, AttributeError, OSError) as e:
+        log.debug("AST rewrite failed for %s, using original: %s", name, e)
         return target
 
 

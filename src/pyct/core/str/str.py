@@ -127,6 +127,11 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
             return self._getitem_int(key)
 
         if isinstance(key, slice):
+            if key.step is not None and key.step != 1:
+                # Step slices (e.g. [::-1]) can't be represented in SMT-LIB.
+                # Compute correct concrete result, drop symbolic tracking.
+                concrete = str.__getitem__(self, key)
+                return concolic_converter.wrap_concolic(concrete, None, self.engine)
             return SubstringHelper.substr(self, key.start, key.stop)
 
         return concolic_converter.wrap_concolic(

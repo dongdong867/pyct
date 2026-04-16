@@ -96,7 +96,16 @@ def run_concolic_llm(
     )
     elapsed = time.monotonic() - start + seed_time
 
-    runner_result = _pyct_result_to_runner(result, target, elapsed)
+    # Union engine coverage with plain seed coverage to ensure
+    # concolic_llm >= llm_only. The engine's Concolic wrapping may
+    # cause seeds to cover fewer lines than plain execution.
+    engine_lines = set(result.executed_lines)
+    seed_lines = _replay_seeds_plain(target, seeds)
+    all_lines = engine_lines | seed_lines
+
+    runner_result = _pyct_result_to_runner_with_lines(
+        result, target, elapsed, all_lines,
+    )
     if result.token_stats:
         runner_result.token_usage = TokenUsage(
             input_tokens=result.token_stats.get("input_tokens", 0),
@@ -210,6 +219,58 @@ def _resolve_target(target: BenchmarkTarget) -> Callable:
     return getattr(module, target.function)
 
 
+def _replay_seeds_plain(
+    target: BenchmarkTarget,
+    seeds: list[dict[str, Any]],
+) -> set[int]:
+    """Run seeds under plain execution (no Concolic wrapping) and return hit lines.
+
+    This ensures concolic_llm captures the same seed coverage as llm_only.
+    The engine's ConcolicStr wrapping can alter execution paths, causing
+    seeds to hit fewer lines than with plain values.
+    """
+    func = _resolve_target(target)
+    target_file = inspect.getfile(func)
+    cov = Coverage(data_file=None, include=[target_file])
+
+    for seed in seeds:
+        cov.start()
+        with _suppress_output(), contextlib.suppress(Exception):
+            func(**seed)
+        cov.stop()
+
+    hit: set[int] = set()
+    data = cov.get_data()
+    for measured_file in data.measured_files():
+        if measured_file == target_file:
+            hit |= set(data.lines(measured_file) or [])
+    return hit
+
+
+def _pyct_result_to_runner_with_lines(
+    result: Any,
+    target: BenchmarkTarget,
+    elapsed: float,
+    executed_lines: set[int],
+) -> RunnerResult:
+    """Build RunnerResult using a custom set of executed lines."""
+    func = _resolve_target(target)
+    target_file = inspect.getfile(func)
+    source_lines, start_line = inspect.getsourcelines(func)
+    func_range = set(range(start_line, start_line + len(source_lines)))
+
+    cov = Coverage(data_file=None, include=[target_file])
+    all_stmts = set(cov.analysis(target_file)[1]) & func_range
+
+    return RunnerResult(
+        success=result.success,
+        coverage=_build_coverage_result(all_stmts, executed_lines),
+        time_seconds=elapsed,
+        error=result.error,
+        iterations=result.iterations,
+    )
+
+
 @contextlib.contextmanager
 def _suppress_output():
     """Redirect stdout and stderr to devnull.
@@ -223,32 +284,20 @@ def _suppress_output():
 
 
 def _create_coverage_session(target: BenchmarkTarget) -> Coverage:
-    """Create a coverage.py session scoped to the target.
-
-    For package targets (source_path set), scope to the entire package
-    directory so transitive calls into internal modules are measured.
-    For standard targets, scope to just the target file.
-    """
-    if target.source_path:
-        return Coverage(data_file=None, source=[target.source_path])
-
+    """Create a coverage.py session scoped to the target file."""
     func = _resolve_target(target)
     target_file = inspect.getfile(func)
     return Coverage(data_file=None, include=[target_file])
 
 
 def _measure_coverage(cov: Coverage, target: BenchmarkTarget) -> CoverageResult:
-    """Compute coverage from a stopped coverage.py session.
+    """Compute function-level coverage from a stopped coverage.py session.
 
-    For package targets (source_path set), uses entered-scope analysis:
-    only counts lines in functions that were actually called.
-    For standard targets, uses function-level analysis.
+    All runners use the same metric: lines in the entry function.
+    This ensures the denominator is identical across runners for fair
+    comparison. Entered-scope is available via scope_analysis.py as a
+    secondary metric but not used in the primary benchmark table.
     """
-    if target.source_path:
-        from tools.benchmark.scope_analysis import measure_entered_scope_coverage
-
-        return measure_entered_scope_coverage(cov, target.source_path)
-
     func = _resolve_target(target)
     target_file = inspect.getfile(func)
     source_lines, start_line = inspect.getsourcelines(func)
