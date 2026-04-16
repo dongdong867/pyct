@@ -62,6 +62,48 @@ class TestSeedPrompt:
         assert "dict" in prompt.lower()
 
 
+class TestSeedPromptParameterFiltering:
+    """``build_seed_prompt`` must exclude parameters whose defaults aren't
+    Python literals (e.g., ``Callable`` defaults). Otherwise the LLM fills
+    them in with ``None``, which poisons the call at runtime — see
+    ``validators.url``'s ``validate_scheme`` parameter.
+    """
+
+    @staticmethod
+    def _target_with_callable_default(value: str, /, *, fn=len) -> int:
+        return fn(value)
+
+    def _context_for(self, target):
+        import inspect
+
+        from pyct.config.execution import ExecutionConfig
+        from pyct.engine.plugin.context import EngineContext
+
+        return EngineContext(
+            iteration=0,
+            constraint_pool=(),
+            covered_lines=frozenset(),
+            total_lines=2,
+            inputs_tried=(),
+            target_function=target,
+            target_signature=inspect.signature(target),
+            config=ExecutionConfig(),
+            elapsed_seconds=0.0,
+        )
+
+    def test_seed_prompt_parameter_list_omits_callable_default_param(self):
+        from pyct.plugins.llm.prompt import build_seed_prompt
+
+        prompt = build_seed_prompt(self._context_for(self._target_with_callable_default))
+
+        # The "these exact parameter names: [...]" line must list only
+        # literalizable params — ``fn`` (callable default) must not appear
+        # in that list.
+        line = next(ln for ln in prompt.splitlines() if "exact parameter names" in ln)
+        assert "'value'" in line
+        assert "'fn'" not in line
+
+
 class TestPlateauPrompt:
     def test_plateau_prompt_includes_tried_inputs(self):
         from pyct.plugins.llm.prompt import build_plateau_prompt

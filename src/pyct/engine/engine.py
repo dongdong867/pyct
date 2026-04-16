@@ -23,6 +23,7 @@ from pyct.engine.result import ExplorationResult
 from pyct.engine.state import ExplorationState
 from pyct.solver.executor import SolverStatus
 from pyct.solver.solver import Solver
+from pyct.utils.call_binding import call_with_args
 from pyct.utils.constraint import ConstraintRegistry
 
 log = logging.getLogger("ct.engine")
@@ -316,7 +317,7 @@ class Engine:
         error: str | None = None
         with line_tracer(target_file, deadline=deadline) as hit_lines:
             try:
-                target(**concolic_args)
+                call_with_args(target, concolic_args)
             except TimeoutError as e:
                 error = f"timeout: {e}"
             except SystemExit as e:

@@ -19,6 +19,7 @@ from typing import Any
 
 from coverage import Coverage
 
+from pyct.utils.call_binding import call_with_args
 from tools.benchmark.models import (
     BenchmarkConfig,
     CoverageResult,
@@ -59,8 +60,10 @@ def run_pure_concolic(
 
     start = time.monotonic()
     result = run_concolic(
-        func, dict(target.initial_args),
-        config=exec_config, isolated=True,
+        func,
+        dict(target.initial_args),
+        config=exec_config,
+        isolated=True,
     )
     elapsed = time.monotonic() - start
 
@@ -90,9 +93,12 @@ def run_concolic_llm(
 
     start = time.monotonic()
     result = run_concolic(
-        func, dict(target.initial_args),
-        config=exec_config, isolated=True,
-        seed_inputs=seeds, plugins=plugins,
+        func,
+        dict(target.initial_args),
+        config=exec_config,
+        isolated=True,
+        seed_inputs=seeds,
+        plugins=plugins,
     )
     elapsed = time.monotonic() - start + seed_time
 
@@ -119,7 +125,7 @@ def run_llm_only(
     for seed in seeds:
         cov.start()
         with _suppress_output(), contextlib.suppress(Exception):
-            func(**seed)
+            call_with_args(func, seed)
         cov.stop()
     elapsed = time.monotonic() - start + seed_time
 
@@ -145,10 +151,15 @@ def run_crosshair(
 
     module_func = f"{target.module}.{target.function}"
     cmd = [
-        "uv", "run", "crosshair", "cover",
+        "uv",
+        "run",
+        "crosshair",
+        "cover",
         module_func,
-        "--per_path_timeout", str(int(config.single_timeout)),
-        "--max_uninteresting_iterations", str(config.max_iterations),
+        "--per_path_timeout",
+        str(int(config.single_timeout)),
+        "--max_uninteresting_iterations",
+        str(config.max_iterations),
     ]
     env = os.environ.copy()
     env["PYTHONPATH"] = os.getcwd()
@@ -156,19 +167,25 @@ def run_crosshair(
     start = time.monotonic()
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True,
-            timeout=config.timeout + 10, cwd=os.getcwd(), env=env,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=config.timeout + 10,
+            cwd=os.getcwd(),
+            env=env,
         )
         captured = result.stdout + result.stderr
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start
         return RunnerResult(
-            success=False, time_seconds=elapsed,
+            success=False,
+            time_seconds=elapsed,
             error="Crosshair timed out",
         )
     except FileNotFoundError:
         return RunnerResult(
-            success=False, error="crosshair not installed (uv run crosshair failed)",
+            success=False,
+            error="crosshair not installed (uv run crosshair failed)",
         )
 
     elapsed = time.monotonic() - start
@@ -188,7 +205,7 @@ def run_crosshair(
     cov.start()
     for inp in test_inputs:
         with _suppress_output(), contextlib.suppress(Exception):
-            func(**inp)
+            call_with_args(func, inp)
     cov.stop()
 
     return RunnerResult(

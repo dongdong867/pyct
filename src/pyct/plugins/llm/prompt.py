@@ -32,13 +32,17 @@ def build_seed_prompt(ctx: EngineContext) -> str:
     extraction and type context analysis (upstream helpers not
     ported in the rewrite). GPT-class models do fine on branch
     enumeration given just the source.
+
+    Parameters whose defaults aren't Python literals (callables,
+    class instances) are excluded from the emitted parameter list so
+    the LLM cannot fill them with ``None`` — e.g.
+    ``validators.url(..., validate_scheme: Callable = _validate_scheme)``
+    becomes unreachable when ``validate_scheme=None`` leaks into the
+    seed. The target's real defaults are used for excluded params.
     """
     source = _get_source(ctx.target_function)
     sig = str(ctx.target_signature)
-    param_names = [
-        p.name for p in ctx.target_signature.parameters.values()
-        if p.name != "self"
-    ]
+    param_names = _literalizable_params(ctx.target_signature)
     example_dict = ", ".join(f'"{p}": value' for p in param_names[:3]) or '"param": value'
     return "\n".join(
         [
@@ -162,3 +166,43 @@ def _get_source(target: object) -> str:
         return inspect.getsource(target)
     except (OSError, TypeError):
         return f"<source unavailable for {getattr(target, '__name__', repr(target))}>"
+
+
+_LITERAL_DEFAULT_TYPES: tuple[type, ...] = (
+    int,
+    float,
+    str,
+    bool,
+    bytes,
+    type(None),
+    tuple,
+    list,
+    dict,
+)
+
+
+def _literalizable_params(signature: inspect.Signature) -> list[str]:
+    """Return parameter names whose defaults the LLM can emit as literals.
+
+    Required params (no default) are always included — the LLM must
+    supply a value. Optional params are kept only when the default is
+    one of the primitive/container types Python literals can express;
+    a ``Callable`` default or a custom-class default would force the
+    LLM to hallucinate (typically ``None``), which then breaks the
+    target at call time.
+    """
+    kept: list[str] = []
+    for param in signature.parameters.values():
+        if param.name == "self":
+            continue
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+        if param.default is inspect.Parameter.empty:
+            kept.append(param.name)
+            continue
+        if isinstance(param.default, _LITERAL_DEFAULT_TYPES):
+            kept.append(param.name)
+    return kept
