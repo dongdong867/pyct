@@ -18,7 +18,13 @@ class ExplorationState:
     Attributes:
         iteration: Current iteration count, starting at zero.
         constraint_pool: Path constraints awaiting exploration.
-        covered_lines: Set of source line numbers hit so far.
+        covered_lines: Set of source line numbers hit so far, including
+            synthetic pre-covered headers (used for plateau detection
+            and coverage_percent reporting during exploration).
+        observed_lines: Subset of covered_lines that the tracer actually
+            saw fire — excludes pre-covered. This is what gets reported
+            to callers as ``executed_lines`` so downstream def-header
+            backfill heuristics work correctly.
         total_lines: Total executable lines in the target function.
         inputs_tried: History of inputs that have been executed.
         start_time: Wall-clock start time (from time.monotonic()).
@@ -32,6 +38,7 @@ class ExplorationState:
     iteration: int = 0
     constraint_pool: list[Any] = field(default_factory=list)
     covered_lines: set[int] = field(default_factory=set)
+    observed_lines: set[int] = field(default_factory=set)
     total_lines: int = 0
     inputs_tried: list[dict[str, Any]] = field(default_factory=list)
     start_time: float = 0.0

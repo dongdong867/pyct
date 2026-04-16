@@ -14,7 +14,11 @@ class CoverageTracker:
 
     ``pre_covered`` lets the caller mark some lines as covered at init time
     — used for the ``def`` header, which is part of a function's source
-    range but doesn't fire a line event during body execution.
+    range but doesn't fire a line event during body execution. Pre-covered
+    lines count toward ``covered_lines`` and ``is_fully_covered()`` but
+    are kept separate from tracer-observed lines in ``observed_lines`` so
+    downstream consumers can distinguish "really executed" from
+    "synthetically counted as covered".
     """
 
     def __init__(
@@ -25,20 +29,27 @@ class CoverageTracker:
     ):
         self.target_file = target_file
         self.function_lines = function_lines
-        self._covered: set[int] = set(pre_covered & function_lines)
+        self._pre_covered: frozenset[int] = frozenset(pre_covered & function_lines)
+        self._observed: set[int] = set()
 
     def update(self, data: CoverageData) -> None:
-        """Merge executed lines from ``data`` into the accumulated set."""
+        """Merge tracer-observed lines from ``data`` into the observed set."""
         raw_lines = data.lines(self.target_file) or []
-        self._covered |= set(raw_lines) & self.function_lines
+        self._observed |= set(raw_lines) & self.function_lines
 
     @property
     def covered_lines(self) -> frozenset[int]:
-        return frozenset(self._covered)
+        """Lines considered covered — tracer-observed ∪ pre-covered."""
+        return frozenset(self._observed | self._pre_covered)
+
+    @property
+    def observed_lines(self) -> frozenset[int]:
+        """Lines the tracer actually saw fire, excluding pre-covered."""
+        return frozenset(self._observed)
 
     @property
     def total_lines(self) -> int:
         return len(self.function_lines)
 
     def is_fully_covered(self) -> bool:
-        return self._covered >= self.function_lines
+        return (self._observed | self._pre_covered) >= self.function_lines

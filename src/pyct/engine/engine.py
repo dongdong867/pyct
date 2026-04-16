@@ -136,6 +136,7 @@ class Engine:
             total_lines=len(func_lines),
         )
         state.covered_lines |= self.coverage_tracker.covered_lines
+        state.observed_lines |= self.coverage_tracker.observed_lines
 
         dispatcher.dispatch_observer(
             "on_exploration_start",
@@ -326,6 +327,7 @@ class Engine:
         data = lines_to_coverage_data(target_file, hit_lines)
         self.coverage_tracker.update(data)
         state.covered_lines |= self.coverage_tracker.covered_lines
+        state.observed_lines |= self.coverage_tracker.observed_lines
 
         if error is not None:
             log.debug("Target iteration raised: %s", error)
@@ -431,11 +433,19 @@ def _build_result(
     state: ExplorationState,
     last_error: str | None,
 ) -> ExplorationResult:
-    """Turn the final state into an ExplorationResult."""
+    """Turn the final state into an ExplorationResult.
+
+    ``executed_lines`` reports tracer-observed lines only — pre-covered
+    headers are kept in ``state.covered_lines`` for plateau/percent
+    accounting but would otherwise shadow the first body line and break
+    downstream def-header backfill (``_build_coverage_result`` in
+    tools/benchmark/runners.py). Callers can re-derive header coverage
+    from source statements.
+    """
     return ExplorationResult(
         success=True,
         coverage_percent=state.coverage_percent(),
-        executed_lines=frozenset(state.covered_lines),
+        executed_lines=frozenset(state.observed_lines),
         paths_explored=state.paths_explored(),
         iterations=state.iteration,
         termination_reason=state.termination_reason or "exhausted",
