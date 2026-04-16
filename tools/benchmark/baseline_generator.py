@@ -23,8 +23,6 @@ import logging
 from datetime import datetime
 from typing import Any
 
-from coverage import Coverage
-
 from pyct.utils.call_binding import call_with_args
 from tools.benchmark.baseline import (
     Baseline,
@@ -34,6 +32,7 @@ from tools.benchmark.baseline import (
 )
 from tools.benchmark.models import BenchmarkConfig
 from tools.benchmark.runners import (
+    _create_coverage_session,
     _parse_crosshair_output,
     _resolve_target,
     _suppress_output,
@@ -41,22 +40,6 @@ from tools.benchmark.runners import (
 from tools.benchmark.targets import BenchmarkTarget
 
 log = logging.getLogger("benchmark.baseline")
-
-
-def baseline_session_for_target(target: BenchmarkTarget) -> Coverage:
-    """Coverage session wide enough to see the target's sub-callees.
-
-    When ``target.source_path`` is set (library / realworld), measure
-    every file under that directory so deep-callee hits are recorded.
-    Without a source_path, fall back to file-scoped measurement — the
-    standard suite never sees this path, but it keeps the function
-    total for ad-hoc use.
-    """
-    if target.source_path:
-        return Coverage(data_file=None, source=[target.source_path])
-    func = _resolve_target(target)
-    target_file = inspect.getfile(inspect.unwrap(func))
-    return Coverage(data_file=None, include=[target_file])
 
 
 def collect_scopes_for_inputs(
@@ -71,7 +54,7 @@ def collect_scopes_for_inputs(
     ``normalize_scope_paths`` before serialization.
     """
     func = _resolve_target(target)
-    cov = baseline_session_for_target(target)
+    cov = _create_coverage_session(target)
 
     cov.start()
     for inp in inputs:

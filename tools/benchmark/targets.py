@@ -15,10 +15,13 @@ from typing import Any
 class BenchmarkTarget:
     """One benchmark target function.
 
-    When ``source_path`` is set, coverage is measured using entered-scope
-    analysis across the package — not just the entry function. Used for
-    realworld and library targets where the entry function is a thin
-    wrapper that delegates to internal modules.
+    When ``source_path`` is set, coverage is measured across the whole
+    package — runners re-execute discovered inputs under a broad
+    coverage.py session and score against a frozen baseline (if one is
+    committed under ``benchmark/baselines/``). Used for realworld and
+    library targets where the entry function is a thin wrapper that
+    delegates to internal modules. Without ``source_path``, runners
+    measure only the entry function's own lines.
     """
 
     name: str

@@ -1,20 +1,21 @@
 """End-to-end: run inputs under a broad coverage session → entered scopes.
 
-This is the integration test that proves the coverage.py widening
-actually measures sub-callees when the target entry function delegates
-to helpers in other files. The pure layers that compose into a
-:class:`Baseline` are exercised in ``tests/unit/benchmark/``; this test
-guards the filesystem + coverage.py + Python import seam that unit
-tests cannot.
+These tests prove the filesystem + coverage.py + Python import seam
+that unit tests cannot. They also cover ``_pyct_result_to_runner``'s
+source_path branch, which re-runs inputs through ``coverage.py`` so
+library/realworld runners can surface transitive coverage instead of
+the engine's narrow per-file tracker.
 """
 
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
 from tools.benchmark.baseline_generator import collect_scopes_for_inputs
+from tools.benchmark.runners import _pyct_result_to_runner
 from tools.benchmark.targets import BenchmarkTarget
 
 
@@ -28,6 +29,17 @@ def _purge_synthpkg_from_sys_modules():
     for name in list(sys.modules):
         if name == "synthpkg" or name.startswith("synthpkg."):
             del sys.modules[name]
+
+
+@dataclass
+class _FakeRunResult:
+    """Stand-in for ``pyct.engine.result.RunConcolicResult``."""
+
+    success: bool = True
+    executed_lines: frozenset[int] = field(default_factory=frozenset)
+    inputs_generated: tuple = ()
+    error: str | None = None
+    iterations: int = 0
 
 
 def _write_synthetic_package(root: Path) -> Path:
@@ -106,3 +118,67 @@ def test_input_that_raises_does_not_abort_collection(tmp_path, monkeypatch):
 
     files = {Path(s.file).name for s in scopes}
     assert "helpers.py" in files, "Valid input after failing one should still measure"
+
+
+# ── _pyct_result_to_runner — source_path re-run branch ────────────
+
+
+def test_pyct_result_reruns_inputs_for_source_path_target(tmp_path, monkeypatch):
+    """For library/realworld targets, coverage must be rebuilt by re-running
+    the engine's discovered inputs through coverage.py — the engine's own
+    per-line tracker is scoped to the entry file and cannot see callees.
+    """
+    pkg_dir = _write_synthetic_package(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = BenchmarkTarget(
+        name="synth",
+        module="synthpkg.entry",
+        function="entry",
+        initial_args={"x": 0},
+        source_path=str(pkg_dir),
+    )
+    # Inputs that reach the `x > 0` branch inside classify()
+    fake = _FakeRunResult(
+        success=True,
+        inputs_generated=({"x": 5},),
+        executed_lines=frozenset(),  # intentionally empty — proves this isn't used
+    )
+
+    runner_result = _pyct_result_to_runner(fake, target, elapsed=1.0)
+
+    # Without a committed baseline we fall back to function-scope on the entry
+    # file — but crucially the coverage numbers are non-zero because the
+    # inputs were actually executed under coverage.py rather than relying
+    # on the empty engine tracker.
+    assert runner_result.success
+    assert runner_result.coverage.total_lines > 0
+    assert runner_result.coverage.executed_lines > 0
+
+
+def test_pyct_result_standard_target_falls_back_to_engine_tracker(tmp_path, monkeypatch):
+    """For standard targets (no source_path), measurement stays on the
+    legacy path: engine-reported executed_lines vs function-scope
+    statements. Preserves comparability with pre-baseline paper data.
+    """
+    _write_synthetic_package(tmp_path)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = BenchmarkTarget(
+        name="synth",
+        module="synthpkg.entry",
+        function="entry",
+        initial_args={"x": 0},
+        source_path=None,  # <-- standard-style
+    )
+    # Engine reports def (3) + body (4) as executed — standard hit pattern.
+    fake = _FakeRunResult(
+        success=True,
+        inputs_generated=(),  # intentionally empty — proves this isn't used
+        executed_lines=frozenset({3, 4}),
+    )
+
+    runner_result = _pyct_result_to_runner(fake, target, elapsed=1.0)
+
+    # entry() has 2 executable statements (def, return); both hit → 100%.
+    assert runner_result.success
+    assert runner_result.coverage.total_lines == 2
+    assert runner_result.coverage.executed_lines == 2

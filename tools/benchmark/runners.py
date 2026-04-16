@@ -11,15 +11,18 @@ import contextlib
 import importlib
 import inspect
 import io
+import json
 import logging
 import time
 from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
+from pathlib import Path
 from typing import Any
 
 from coverage import Coverage
 
 from pyct.utils.call_binding import call_with_args
+from tools.benchmark.baseline import BASELINE_SCHEMA_VERSION, Baseline
 from tools.benchmark.models import (
     BenchmarkConfig,
     CoverageResult,
@@ -27,6 +30,8 @@ from tools.benchmark.models import (
     TokenUsage,
 )
 from tools.benchmark.targets import BenchmarkTarget
+
+_DEFAULT_BASELINES_ROOT = Path("benchmark/baselines")
 
 log = logging.getLogger("benchmark.runners")
 
@@ -285,21 +290,82 @@ def _soft_timeout(seconds: int):
         signal.signal(alarm, previous)
 
 
+def _load_baseline(
+    target: BenchmarkTarget,
+    baselines_root: Path | None = None,
+) -> Baseline | None:
+    """Look up a frozen baseline for ``target``, or return ``None``.
+
+    Searches ``{root}/*/{target.name}.json`` — generator output is
+    partitioned by suite but callers don't need to know which. Returns
+    ``None`` (never raises) if the root is missing, the JSON is
+    malformed, required keys are absent, or the schema version differs
+    from what this code understands — runners fall back to function-
+    scope measurement in any of those cases so a botched baseline
+    never sinks a benchmark run.
+    """
+    root = baselines_root or _DEFAULT_BASELINES_ROOT
+    if not root.is_dir():
+        return None
+
+    for candidate in root.glob(f"*/{target.name}.json"):
+        try:
+            baseline = Baseline.from_json(candidate)
+        except (json.JSONDecodeError, KeyError, OSError) as exc:
+            log.warning("failed to load baseline %s: %s", candidate, exc)
+            continue
+        if baseline.generator_version != BASELINE_SCHEMA_VERSION:
+            log.warning(
+                "baseline %s has unsupported schema version %s (expected %s)",
+                candidate,
+                baseline.generator_version,
+                BASELINE_SCHEMA_VERSION,
+            )
+            continue
+        return baseline
+
+    return None
+
+
 def _create_coverage_session(target: BenchmarkTarget) -> Coverage:
-    """Create a coverage.py session scoped to the target file."""
+    """Create a coverage.py session scoped appropriately for ``target``.
+
+    When ``target.source_path`` is set (library / realworld), widen to
+    measure every file under the package root so sub-callees are
+    captured. Otherwise scope narrowly to the target's own file — the
+    standard suite uses function-scope coverage and doesn't need
+    package-wide measurement.
+    """
+    if target.source_path:
+        return Coverage(data_file=None, source=[target.source_path])
     func = _resolve_target(target)
     target_file = inspect.getfile(inspect.unwrap(func))
     return Coverage(data_file=None, include=[target_file])
 
 
-def _measure_coverage(cov: Coverage, target: BenchmarkTarget) -> CoverageResult:
-    """Compute function-level coverage from a stopped coverage.py session.
+def _measure_coverage(
+    cov: Coverage,
+    target: BenchmarkTarget,
+    baselines_root: Path | None = None,
+) -> CoverageResult:
+    """Compute coverage from a stopped coverage.py session.
 
-    All runners use the same metric: lines in the entry function.
-    This ensures the denominator is identical across runners for fair
-    comparison. Entered-scope is available via scope_analysis.py as a
-    secondary metric but not used in the primary benchmark table.
+    Dispatch: if a frozen baseline exists for the target, score against
+    it (same denominator for every runner). Otherwise fall back to
+    function-scope on the entry file — preserves current behavior for
+    the standard suite and for library/realworld targets whose
+    baselines haven't been committed yet.
     """
+    baseline = _load_baseline(target, baselines_root)
+    if baseline is not None:
+        from tools.benchmark.baseline import (
+            hits_from_coverage_data,
+            measure_against_baseline,
+        )
+
+        hits = hits_from_coverage_data(cov.get_data())
+        return measure_against_baseline(hits, baseline)
+
     func = _resolve_target(target)
     unwrapped = inspect.unwrap(func)
     target_file = inspect.getfile(unwrapped)
@@ -357,27 +423,58 @@ def _pyct_result_to_runner(
 ) -> RunnerResult:
     """Convert a RunConcolicResult to a RunnerResult with coverage details.
 
-    For package targets, re-measures using the engine's executed_lines
-    against the function-level scope. Entered-scope analysis for engine
-    results would require the engine to track package-wide coverage,
-    which it doesn't — its CoverageTracker is scoped to the target file.
+    Two measurement paths:
+
+    - ``target.source_path`` set (library / realworld): re-run the
+      engine's ``inputs_generated`` through a broad coverage.py session
+      so sub-callees are actually measured. The engine's own tracker is
+      scoped to the target file and cannot see transitive coverage.
+    - ``source_path`` unset (standard): use the engine's
+      ``executed_lines`` directly against the function-level scope —
+      preserves comparability with the pre-baseline paper numbers.
     """
+    if target.source_path:
+        coverage = _coverage_by_rerun(target, result.inputs_generated)
+    else:
+        coverage = _coverage_from_engine_tracker(target, result.executed_lines)
+
+    return RunnerResult(
+        success=result.success,
+        coverage=coverage,
+        time_seconds=elapsed,
+        error=result.error,
+        iterations=result.iterations,
+    )
+
+
+def _coverage_by_rerun(
+    target: BenchmarkTarget,
+    inputs: Any,
+) -> CoverageResult:
+    """Replay ``inputs`` under a broad coverage session, then measure."""
+    func = _resolve_target(target)
+    cov = _create_coverage_session(target)
+    cov.start()
+    for inp in inputs:
+        with _suppress_output(), contextlib.suppress(Exception):
+            call_with_args(func, inp)
+    cov.stop()
+    return _measure_coverage(cov, target)
+
+
+def _coverage_from_engine_tracker(
+    target: BenchmarkTarget,
+    executed_lines: Any,
+) -> CoverageResult:
+    """Function-scope coverage using the engine's per-line tracker."""
     func = _resolve_target(target)
     unwrapped = inspect.unwrap(func)
     target_file = inspect.getfile(unwrapped)
     source_lines, start_line = inspect.getsourcelines(unwrapped)
     func_range = set(range(start_line, start_line + len(source_lines)))
-
     cov = Coverage(data_file=None, include=[target_file])
     all_stmts = set(cov.analysis(target_file)[1]) & func_range
-
-    return RunnerResult(
-        success=result.success,
-        coverage=_build_coverage_result(all_stmts, set(result.executed_lines)),
-        time_seconds=elapsed,
-        error=result.error,
-        iterations=result.iterations,
-    )
+    return _build_coverage_result(all_stmts, set(executed_lines))
 
 
 def _extract_token_usage(plugins: list) -> TokenUsage | None:

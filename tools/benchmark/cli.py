@@ -17,6 +17,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from tools.benchmark.baseline import Baseline
 from tools.benchmark.models import BenchmarkConfig, RunnerResult
 from tools.benchmark.output import (
     format_comparison_table,
@@ -26,7 +27,13 @@ from tools.benchmark.output import (
     save_results_json,
     save_summary,
 )
-from tools.benchmark.runners import CONCOLIC_LLM, CROSSHAIR, LLM_ONLY, PURE_CONCOLIC
+from tools.benchmark.runners import (
+    CONCOLIC_LLM,
+    CROSSHAIR,
+    LLM_ONLY,
+    PURE_CONCOLIC,
+    _load_baseline,
+)
 from tools.benchmark.suite import run_single_target
 from tools.benchmark.targets import TEST_SUITE, BenchmarkTarget
 
@@ -108,7 +115,9 @@ def main(argv: list[str] | None = None) -> int:
 
             _output(format_comparison_table(runner_results))
 
-            result_entry = _build_result_entry(target, runner_results)
+            result_entry = _build_result_entry(
+                target, runner_results, baseline=_load_baseline(target)
+            )
             all_results.append(result_entry)
 
     except KeyboardInterrupt:
@@ -240,12 +249,19 @@ def _resolve_runners(runner_strs: list[str]) -> list[str]:
 def _build_result_entry(
     target: BenchmarkTarget,
     runner_results: dict[str, RunnerResult],
+    baseline: Baseline | None = None,
 ) -> dict[str, Any]:
-    """Build a result dict matching legacy JSON schema."""
+    """Build a result dict matching legacy JSON schema + baseline metadata.
+
+    ``baseline_generated_at`` records which frozen baseline scored the
+    run (or ``None`` when no baseline was used) so a reviewer can tell
+    whether the percentages are still comparable to a later regeneration.
+    """
     return {
         "test_name": target.name,
         "function": target.function,
         "category": target.category,
+        "baseline_generated_at": baseline.generated_at if baseline else None,
         "runners": {name: r.to_dict() for name, r in runner_results.items()},
     }
 
