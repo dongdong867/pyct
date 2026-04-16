@@ -1,0 +1,215 @@
+"""Library benchmark suite — auto-discover entry points from installed packages.
+
+Walks bs4 and PyYAML public APIs to find testable functions (callable,
+<=5 primitive-typed parameters). Generates BenchmarkTarget for each.
+"""
+
+from __future__ import annotations
+
+import importlib
+import inspect
+import logging
+import pkgutil
+from dataclasses import dataclass
+from types import ModuleType
+from typing import Any
+
+from tools.benchmark.targets import BenchmarkTarget
+
+log = logging.getLogger("benchmark.discovery")
+
+_MAX_PARAMS = 5
+_PRIMITIVE_TYPES = {int, float, str, bool, bytes}
+_DEFAULT_VALUES: dict[type, Any] = {
+    int: 1,
+    float: 1.0,
+    str: "test",
+    bool: True,
+    bytes: b"test",
+}
+
+
+@dataclass(frozen=True)
+class LibraryConfig:
+    """Configuration for one library benchmark target."""
+
+    package_name: str
+    pip_name: str
+    category: str
+    description: str
+
+
+LIBRARY_CONFIGS: list[LibraryConfig] = [
+    LibraryConfig(
+        package_name="bs4",
+        pip_name="beautifulsoup4",
+        category="bs4",
+        description="BeautifulSoup4 — fully typed HTML/XML parser",
+    ),
+    LibraryConfig(
+        package_name="yaml",
+        pip_name="PyYAML",
+        category="pyyaml",
+        description="PyYAML — zero-type-hint YAML parser",
+    ),
+]
+
+
+def discover_library_entry_points(
+    package_name: str,
+    category: str,
+) -> list[BenchmarkTarget]:
+    """Discover testable entry points from an installed package."""
+    package = _import_package(package_name)
+    if package is None:
+        return []
+
+    modules = _collect_public_modules(package, package_name)
+    callables = _collect_public_callables(modules, package_name)
+    targets = _build_targets(callables, category)
+
+    log.info("Discovered %d entry points from %s", len(targets), package_name)
+    return targets
+
+
+def _import_package(name: str) -> ModuleType | None:
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        log.warning("Cannot import package: %s", name)
+        return None
+
+
+def _collect_public_modules(
+    package: ModuleType,
+    package_name: str,
+) -> list[ModuleType]:
+    """Walk the package tree and collect importable public modules."""
+    modules = [package]
+    package_path = getattr(package, "__path__", None)
+    if package_path is None:
+        return modules
+
+    for _importer, name, _is_pkg in pkgutil.walk_packages(
+        package_path, prefix=f"{package_name}."
+    ):
+        if any(part.startswith("_") for part in name.split(".")):
+            continue
+        try:
+            modules.append(importlib.import_module(name))
+        except Exception:
+            continue
+    return modules
+
+
+def _collect_public_callables(
+    modules: list[ModuleType],
+    package_name: str,
+) -> list[tuple[str, str, Any]]:
+    """Find public callables with primitive-typed parameters.
+
+    Returns (module_name, func_name, callable) triples.
+    """
+    seen: set[int] = set()
+    results: list[tuple[str, str, Any]] = []
+
+    for module in modules:
+        module_name = module.__name__
+        names = getattr(module, "__all__", None)
+        if names is None:
+            names = [n for n in dir(module) if not n.startswith("_")]
+
+        for name in names:
+            obj = getattr(module, name, None)
+            if obj is None or not callable(obj):
+                continue
+            if id(obj) in seen:
+                continue
+            seen.add(id(obj))
+
+            # Check it belongs to this package
+            obj_module = getattr(obj, "__module__", "")
+            if not obj_module.startswith(package_name):
+                continue
+
+            if _has_testable_signature(obj):
+                results.append((module_name, name, obj))
+
+    return results
+
+
+def _has_testable_signature(obj: Any) -> bool:
+    """Check if callable has <=MAX_PARAMS primitive-typed parameters."""
+    try:
+        sig = inspect.signature(obj)
+    except (ValueError, TypeError):
+        return False
+
+    params = [
+        p for p in sig.parameters.values()
+        if p.kind not in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        )
+        and p.name != "self"
+    ]
+
+    if not params or len(params) > _MAX_PARAMS:
+        return False
+
+    for p in params:
+        if p.default is inspect.Parameter.empty and p.annotation is inspect.Parameter.empty:
+            return False
+
+    return True
+
+
+def _build_targets(
+    callables: list[tuple[str, str, Any]],
+    category: str,
+) -> list[BenchmarkTarget]:
+    """Build BenchmarkTarget for each discovered callable."""
+    targets: list[BenchmarkTarget] = []
+    for module_name, func_name, obj in callables:
+        args = _infer_initial_args(obj)
+        if args is None:
+            continue
+        targets.append(BenchmarkTarget(
+            name=f"{module_name}.{func_name}",
+            module=module_name,
+            function=func_name,
+            initial_args=args,
+            category=category,
+            description=f"Auto-discovered from {module_name}",
+        ))
+    return targets
+
+
+def _infer_initial_args(obj: Any) -> dict[str, Any] | None:
+    """Infer initial arguments from type annotations and defaults."""
+    try:
+        sig = inspect.signature(obj)
+    except (ValueError, TypeError):
+        return None
+
+    args: dict[str, Any] = {}
+    for name, param in sig.parameters.items():
+        if name == "self":
+            continue
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
+            continue
+
+        if param.default is not inspect.Parameter.empty:
+            args[name] = param.default
+        elif param.annotation is not inspect.Parameter.empty:
+            default = _DEFAULT_VALUES.get(param.annotation)
+            if default is not None:
+                args[name] = default
+            else:
+                return None
+        else:
+            return None
+    return args

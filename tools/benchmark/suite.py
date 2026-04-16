@@ -11,6 +11,7 @@ from tools.benchmark.models import (
     AttemptInfo,
     BenchmarkConfig,
     RunnerResult,
+    TokenUsage,
 )
 from tools.benchmark.runners import (
     CONCOLIC_LLM,
@@ -40,11 +41,11 @@ def run_single_target(
     Seeds are generated once and shared between llm_only and concolic_llm.
     Each runner is retried up to config.num_attempts times; best coverage wins.
     """
-    seeds, seed_time = _generate_seeds_if_needed(target, runner_names)
+    seeds, seed_time, seed_tokens = _generate_seeds_if_needed(target, runner_names)
 
     results: dict[str, RunnerResult] = {}
     for name in runner_names:
-        result = _run_with_retries(target, name, config, seeds, seed_time)
+        result = _run_with_retries(target, name, config, seeds, seed_time, seed_tokens)
         results[name] = result
         if on_runner_done:
             on_runner_done(name, result)
@@ -55,10 +56,14 @@ def run_single_target(
 def _generate_seeds_if_needed(
     target: BenchmarkTarget,
     runner_names: list[str],
-) -> tuple[list[dict[str, Any]], float]:
-    """Generate LLM seeds once if any LLM-mode runner is requested."""
+) -> tuple[list[dict[str, Any]], float, TokenUsage | None]:
+    """Generate LLM seeds once if any LLM-mode runner is requested.
+
+    Returns (seeds, seed_time, seed_tokens). Token usage from the seed
+    generation call is added to both concolic_llm and llm_only results.
+    """
     if not LLM_RUNNERS.intersection(runner_names):
-        return [], 0.0
+        return [], 0.0, None
 
     from pyct.plugins.llm import LLMPlugin
     from pyct.plugins.llm.client import build_default_client
@@ -66,7 +71,7 @@ def _generate_seeds_if_needed(
     client = build_default_client()
     if client is None:
         log.warning("No OpenAI client — LLM modes will run with empty seeds")
-        return [], 0.0
+        return [], 0.0, None
 
     plugin = LLMPlugin(client=client)
     ctx = _build_seed_context(target)
@@ -75,8 +80,22 @@ def _generate_seeds_if_needed(
     seeds = plugin.on_seed_request(ctx)
     seed_time = time.monotonic() - start
 
+    seed_tokens = _tokens_from_client(client)
     log.info("Generated %d seeds for %s in %.1fs", len(seeds), target.name, seed_time)
-    return seeds, seed_time
+    return seeds, seed_time, seed_tokens
+
+
+def _tokens_from_client(client: Any) -> TokenUsage | None:
+    """Extract accumulated token usage from an LLM client."""
+    get_stats = getattr(client, "get_stats", None)
+    if get_stats is None:
+        return None
+    stats = get_stats()
+    inp = stats.get("input_tokens", 0)
+    out = stats.get("output_tokens", 0)
+    if inp or out:
+        return TokenUsage(input_tokens=inp, output_tokens=out)
+    return None
 
 
 def _build_seed_context(target: BenchmarkTarget) -> Any:
@@ -108,6 +127,7 @@ def _run_with_retries(
     config: BenchmarkConfig,
     seeds: list[dict[str, Any]],
     seed_time: float,
+    seed_tokens: TokenUsage | None = None,
 ) -> RunnerResult:
     """Run a runner up to num_attempts times, keep best coverage."""
     best_result: RunnerResult | None = None
@@ -136,6 +156,18 @@ def _run_with_retries(
         best_result = RunnerResult(success=False, error="All attempts failed")
 
     best_result.attempts = attempts
+
+    # Add seed tokens to LLM-mode results
+    if runner_name in LLM_RUNNERS and seed_tokens is not None:
+        existing = best_result.token_usage
+        if existing is not None:
+            best_result.token_usage = TokenUsage(
+                input_tokens=existing.input_tokens + seed_tokens.input_tokens,
+                output_tokens=existing.output_tokens + seed_tokens.output_tokens,
+            )
+        else:
+            best_result.token_usage = seed_tokens
+
     return best_result
 
 

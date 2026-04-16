@@ -154,26 +154,31 @@ def run_crosshair(
     target: BenchmarkTarget,
     config: BenchmarkConfig,
 ) -> RunnerResult:
-    """CrossHair — hypothesis-style property testing via subprocess."""
+    """CrossHair — symbolic execution via ``crosshair cover`` subprocess."""
+    import os
     import subprocess
 
     func = _resolve_target(target)
     target_file = inspect.getfile(func)
     source_lines, start_line = inspect.getsourcelines(func)
     func_range = set(range(start_line, start_line + len(source_lines)))
+    param_names = list(inspect.signature(func).parameters.keys())
 
     module_func = f"{target.module}.{target.function}"
     cmd = [
-        "crosshair", "cover",
-        "--per_condition_timeout", str(int(config.timeout)),
+        "uv", "run", "crosshair", "cover",
         module_func,
+        "--per_path_timeout", str(int(config.single_timeout)),
+        "--max_uninteresting_iterations", str(config.max_iterations),
     ]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.getcwd()
 
     start = time.monotonic()
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True,
-            timeout=config.timeout + 10,
+            timeout=config.timeout + 10, cwd=os.getcwd(), env=env,
         )
         captured = result.stdout + result.stderr
     except subprocess.TimeoutExpired:
@@ -184,27 +189,31 @@ def run_crosshair(
         )
     except FileNotFoundError:
         return RunnerResult(
-            success=False, error="crosshair not installed",
+            success=False, error="crosshair not installed (uv run crosshair failed)",
         )
 
     elapsed = time.monotonic() - start
+
+    test_inputs = _parse_crosshair_output(
+        result.stdout + "\n" + result.stderr, func.__name__, param_names
+    )
+    if not test_inputs and not param_names:
+        test_inputs = [{}]
 
     # Measure coverage by running generated inputs
     cov = Coverage(data_file=None, include=[target_file])
     all_stmts = set(cov.analysis(target_file)[1]) & func_range
     hit_lines: set[int] = set()
-    inputs_found = _parse_crosshair_cover_output(result.stdout)
 
-    for args, kwargs in inputs_found:
-        cov.start()
+    cov.start()
+    for inp in test_inputs:
         with contextlib.suppress(Exception):
-            func(*args, **kwargs)
-        cov.stop()
-        data = cov.get_data()
-        for measured_file in data.measured_files():
-            if measured_file == target_file:
-                hit_lines |= set(data.lines(measured_file) or [])
-        cov.erase()
+            func(**inp)
+    cov.stop()
+    data = cov.get_data()
+    for measured_file in data.measured_files():
+        if measured_file == target_file:
+            hit_lines |= set(data.lines(measured_file) or [])
 
     func_executed = sorted(all_stmts & hit_lines)
     func_missing = sorted(all_stmts - hit_lines)
@@ -221,7 +230,8 @@ def run_crosshair(
             missing_line_numbers=func_missing,
         ),
         time_seconds=elapsed,
-        iterations=len(inputs_found),
+        iterations=len(test_inputs),
+        test_cases_generated=len(test_inputs),
         captured_output=captured,
     )
 
@@ -284,34 +294,68 @@ def _extract_token_usage(plugins: list) -> TokenUsage | None:
     return None
 
 
-def _parse_crosshair_cover_output(
-    stdout: str,
-) -> list[tuple[list, dict]]:
-    """Parse crosshair cover output into (args, kwargs) pairs.
+def _parse_crosshair_output(
+    output: str,
+    func_name: str,
+    param_names: list[str],
+) -> list[dict[str, Any]]:
+    """Parse crosshair cover output into input dicts.
 
-    crosshair cover prints lines like:
-        function_name(arg1, arg2, kwarg=value)
-    We extract the argument expressions and eval them.
+    crosshair cover prints lines like ``func_name(arg1, arg2, kw=val)``.
+    Uses AST parsing to handle both positional and keyword args, mapping
+    positional args to parameter names by position.
     """
-    import ast
     import re
 
-    results: list[tuple[list, dict]] = []
-    for line in stdout.strip().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = re.match(r"\w+\((.*)\)$", line)
-        if not match:
-            continue
-        arg_str = match.group(1)
-        if not arg_str:
-            results.append(([], {}))
-            continue
-        try:
-            # Parse as a tuple expression to get individual args
-            parsed = ast.literal_eval(f"({arg_str},)")
-            results.append((list(parsed), {}))
-        except (ValueError, SyntaxError):
-            log.debug("Could not parse crosshair output: %s", line)
+    pattern = rf"{re.escape(func_name)}\s*\((.*?)\)"
+    results: list[dict[str, Any]] = []
+
+    for match in re.finditer(pattern, output, re.DOTALL):
+        args_dict = _parse_call_args(func_name, match.group(1), param_names)
+        if args_dict and args_dict not in results:
+            results.append(args_dict)
+
     return results
+
+
+def _parse_call_args(
+    func_name: str,
+    args_str: str,
+    param_names: list[str],
+) -> dict[str, Any] | None:
+    """Parse argument string via AST into a name→value dict."""
+    import ast
+
+    try:
+        tree = ast.parse(f"{func_name}({args_str})")
+        if not tree.body or not isinstance(tree.body[0], ast.Expr):
+            return None
+        call = tree.body[0].value
+        if not isinstance(call, ast.Call):
+            return None
+
+        args_dict: dict[str, Any] = {}
+        for kw in call.keywords:
+            value = _try_literal_eval(kw.value)
+            if value is not None:
+                args_dict[kw.arg] = value
+        for i, arg in enumerate(call.args):
+            if i < len(param_names):
+                value = _try_literal_eval(arg)
+                if value is not None:
+                    args_dict[param_names[i]] = value
+        return args_dict if args_dict else None
+    except SyntaxError:
+        return None
+
+
+def _try_literal_eval(node: Any) -> Any | None:
+    """Safely evaluate an AST node as a literal value."""
+    import ast
+
+    try:
+        return ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        if isinstance(node, ast.Constant):
+            return node.value
+        return None

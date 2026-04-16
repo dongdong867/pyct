@@ -25,6 +25,11 @@ realworld = [
     "phonenumbers==8.13.51",
     "simplejson==3.19.3",
     "python-dateutil==2.9.0.post0",
+    "validators>=0.22.0",
+]
+library = [
+    "beautifulsoup4>=4.12.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]

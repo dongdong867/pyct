@@ -36,6 +36,9 @@ class OpenAIClient:
     The 30s timeout is enforced by a daemon thread rather than the OpenAI
     SDK's own timeout because we want a hard deadline regardless of the
     SDK's retry behavior.
+
+    Token usage is accumulated across all ``complete()`` calls and
+    accessible via ``get_stats()`` for benchmark reporting.
     """
 
     def __init__(
@@ -51,6 +54,8 @@ class OpenAIClient:
         self._timeout = timeout_seconds
         self._max_tokens = max_tokens
         self._temperature = temperature
+        self._input_tokens: int = 0
+        self._output_tokens: int = 0
 
     def complete(self, prompt: str) -> str | None:
         container: dict[str, Any] = {"text": None, "error": None}
@@ -99,10 +104,20 @@ class OpenAIClient:
                 temperature=self._temperature,
                 max_tokens=self._max_tokens,
             )
+            if response.usage is not None:
+                self._input_tokens += response.usage.prompt_tokens
+                self._output_tokens += response.usage.completion_tokens
             return response.choices[0].message.content
         finally:
             with contextlib.suppress(Exception):  # best-effort cleanup
                 client.close()
+
+    def get_stats(self) -> dict[str, int]:
+        """Return accumulated token usage across all calls."""
+        return {
+            "input_tokens": self._input_tokens,
+            "output_tokens": self._output_tokens,
+        }
 
 
 def build_default_client() -> LLMClient | None:

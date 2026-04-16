@@ -20,6 +20,7 @@ from typing import Any
 from tools.benchmark.models import BenchmarkConfig, RunnerResult
 from tools.benchmark.output import (
     format_comparison_table,
+    format_runner_result,
     format_summary_table,
     format_test_header,
     save_results_json,
@@ -82,14 +83,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         for target in targets:
-            _output(format_test_header(target.name, target.category, target.description))
+            _output(format_test_header(
+                target.name, target.category, target.description, target.function,
+            ))
 
             runner_results = run_single_target(
                 target, runner_names, config,
-                on_runner_done=lambda name, r: _output(
-                    f"  {name:<18s} {r.coverage.coverage_percent:>6.1f}%  "
-                    f"{r.time_seconds:>7.1f}s"
-                ),
+                on_runner_done=lambda name, r: _output(format_runner_result(name, r)),
             )
 
             _output(format_comparison_table(runner_results))
@@ -116,7 +116,7 @@ def _resolve_targets(args: argparse.Namespace) -> list[BenchmarkTarget]:
     if args.custom_function:
         return _discover_custom_function(args.custom_function, args.initial_args)
 
-    targets = list(TEST_SUITE)
+    targets = _discover_suite(args.suite)
 
     if args.targets:
         names = {t.strip() for t in args.targets.split(",")}
@@ -126,6 +126,41 @@ def _resolve_targets(args: argparse.Namespace) -> list[BenchmarkTarget]:
         targets = [t for t in targets if t.category == args.category]
 
     return targets
+
+
+def _discover_suite(suite: str) -> list[BenchmarkTarget]:
+    """Return targets for the requested suite."""
+    if suite == "standard":
+        return list(TEST_SUITE)
+
+    if suite == "realworld":
+        from tools.benchmark.realworld_targets import REALWORLD_SUITE
+
+        return list(REALWORLD_SUITE)
+
+    if suite == "library":
+        from tools.benchmark.library_targets import LIBRARY_CONFIGS, discover_library_entry_points
+
+        targets: list[BenchmarkTarget] = []
+        for lib_config in LIBRARY_CONFIGS:
+            targets.extend(discover_library_entry_points(
+                lib_config.package_name, lib_config.category,
+            ))
+        return targets
+
+    if suite == "all":
+        from tools.benchmark.library_targets import LIBRARY_CONFIGS, discover_library_entry_points
+        from tools.benchmark.realworld_targets import REALWORLD_SUITE
+
+        targets = list(TEST_SUITE) + list(REALWORLD_SUITE)
+        for lib_config in LIBRARY_CONFIGS:
+            targets.extend(discover_library_entry_points(
+                lib_config.package_name, lib_config.category,
+            ))
+        return targets
+
+    _output(f"Unknown suite: {suite}")
+    return []
 
 
 def _discover_custom_function(
@@ -237,6 +272,11 @@ def _build_parser() -> argparse.ArgumentParser:
     subs = parser.add_subparsers(dest="command")
 
     run = subs.add_parser("run", help="Run benchmark suite")
+    run.add_argument(
+        "--suite", default="standard",
+        choices=["standard", "realworld", "library", "all"],
+        help="Target suite (default: standard)",
+    )
     run.add_argument(
         "--runners", nargs="+", default=["pc", "cl", "lo"],
         help="Runners to invoke (pc=pure_concolic, cl=concolic_llm, lo=llm_only, ch=crosshair)",
