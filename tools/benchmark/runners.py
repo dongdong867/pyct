@@ -117,14 +117,24 @@ def run_llm_only(
     seeds: list[dict[str, Any]],
     seed_time: float,
 ) -> RunnerResult:
-    """LLM-only — run target on each seed with coverage.py, no engine."""
+    """LLM-only — run target on each seed with coverage.py, no engine.
+
+    Each seed is capped at ``config.single_timeout`` wall-clock seconds
+    via a SIGALRM-based soft timeout. A pathological seed (e.g. a
+    non-converging loop in ``sympy.ntheory.egyptian_fraction.
+    egypt_takenouchi(15, 7)``) would otherwise hang the benchmark
+    indefinitely — the concolic runners are protected by the engine's
+    line-tracer deadline and the isolated-runner watchdog, but this
+    path runs targets in-process.
+    """
     func = _resolve_target(target)
     cov = _create_coverage_session(target)
+    per_seed_budget = max(1, int(config.single_timeout))
 
     start = time.monotonic()
     for seed in seeds:
         cov.start()
-        with _suppress_output(), contextlib.suppress(Exception):
+        with _suppress_output(), _soft_timeout(per_seed_budget), contextlib.suppress(Exception):
             call_with_args(func, seed)
         cov.stop()
     elapsed = time.monotonic() - start + seed_time
@@ -237,6 +247,42 @@ def _suppress_output():
     """
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
         yield
+
+
+@contextlib.contextmanager
+def _soft_timeout(seconds: int):
+    """Install a SIGALRM-based soft timeout for the enclosed block.
+
+    On Unix, schedules an alarm that raises ``TimeoutError`` after
+    ``seconds`` if the block is still running. The previous handler
+    and alarm are restored on exit. No-op on platforms without
+    ``SIGALRM`` (Windows) or when invoked off the main thread —
+    Python only delivers signals to the main thread.
+
+    SIGALRM interrupts Python bytecode at frame boundaries, so it
+    cleanly stops pure-Python hangs. It cannot preempt code blocked
+    inside a C extension (e.g. ``[y] * 10**9`` stuck in
+    ``list.__mul__``); those rare cases would require full
+    subprocess isolation.
+    """
+    import signal
+    import threading
+
+    alarm = getattr(signal, "SIGALRM", None)
+    if alarm is None or threading.current_thread() is not threading.main_thread():
+        yield
+        return
+
+    def _raise(_signum, _frame):
+        raise TimeoutError(f"seed exceeded {seconds}s soft timeout")
+
+    previous = signal.signal(alarm, _raise)
+    signal.alarm(seconds)
+    try:
+        yield
+    finally:
+        signal.alarm(0)
+        signal.signal(alarm, previous)
 
 
 def _create_coverage_session(target: BenchmarkTarget) -> Coverage:
