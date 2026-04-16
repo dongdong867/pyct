@@ -120,7 +120,7 @@ class Engine:
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
         target_file, func_lines, def_line = inspect_target(target)
-        rewritten_target = rewrite_target(target)
+        rewritten_target = _try_rewrite(target)
         self.coverage_tracker = CoverageTracker(
             target_file,
             func_lines,
@@ -393,6 +393,25 @@ class Engine:
             config=self.config,
             elapsed_seconds=state.elapsed_seconds(),
         )
+
+
+def _try_rewrite(target: Callable) -> Callable:
+    """Attempt AST rewrite; fall back to original on exec failures.
+
+    The AST transformer breaks on external library functions whose source
+    references module-level names not present in the exec namespace (e.g.
+    decorated functions with ``__globals__`` from the wrong module).
+    Falling back to the original target loses int/str/range/is rewriting
+    but lets the engine explore the function with plain Concolic wrapping.
+
+    Lambda rejection and other upfront checks still raise — only exec-time
+    failures (NameError, attribute errors during compilation) are caught.
+    """
+    try:
+        return rewrite_target(target)
+    except (NameError, KeyError, AttributeError) as e:
+        log.debug("AST rewrite failed for %s, using original: %s", target.__name__, e)
+        return target
 
 
 def _terminate(state: ExplorationState, reason: str) -> None:
