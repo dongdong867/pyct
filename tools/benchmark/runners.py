@@ -275,8 +275,8 @@ def _pyct_result_to_runner_with_lines(
 def _suppress_output():
     """Redirect stdout and stderr to devnull.
 
-    External library functions (bs4.diagnose.benchmark_parsers,
-    cProfile output, etc.) can print heavily during execution.
+    External library functions (sympy diagnostics, cProfile
+    output, etc.) can print heavily during execution.
     Suppressing keeps the benchmark console clean.
     """
     with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):

@@ -101,7 +101,7 @@ def _child_entry(
     plugins: list | None = None,
 ) -> None:
     """Child-process entry point: import target, run engine, send result."""
-    # Suppress stdout/stderr from target functions (e.g. bs4 diagnostics)
+    # Suppress stdout/stderr from target functions (e.g. sympy diagnostics)
     import io
     import sys
     sys.stdout = io.StringIO()

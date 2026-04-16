@@ -1,8 +1,9 @@
 """Library benchmark suite — auto-discover entry points from installed packages.
 
-Walks bs4 and PyYAML public APIs to find testable functions and class
-constructors. Matches legacy's discovery logic: includes classes (via
-__init__), uses 0/""/ None for inferred args, strict same-module check.
+Walks sympy.ntheory and PyYAML public APIs to find testable functions
+and class constructors. Matches legacy's discovery logic: includes
+classes (via __init__), uses 0/""/ None for inferred args, strict
+same-module check.
 """
 
 from __future__ import annotations
@@ -43,10 +44,10 @@ class LibraryConfig:
 
 LIBRARY_CONFIGS: list[LibraryConfig] = [
     LibraryConfig(
-        package_name="bs4",
-        pip_name="beautifulsoup4",
-        category="bs4",
-        description="BeautifulSoup4 — fully typed HTML/XML parser",
+        package_name="sympy.ntheory",
+        pip_name="sympy",
+        category="sympy_ntheory",
+        description="SymPy number theory — pure-Python numeric computation",
     ),
     LibraryConfig(
         package_name="yaml",
@@ -104,7 +105,10 @@ def _collect_public_modules(
     for _importer, name, _is_pkg in pkgutil.walk_packages(
         package_path, prefix=f"{package_name}."
     ):
-        if any(part.startswith("_") for part in name.split(".")):
+        if any(
+            part.startswith("_") or part == "tests"
+            for part in name.split(".")
+        ):
             continue
         try:
             modules.append(importlib.import_module(name))

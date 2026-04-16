@@ -34,19 +34,6 @@ wheels = [
 ]
 
 [[package]]
-name = "beautifulsoup4"
-version = "4.14.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "soupsieve" },
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/c3/b0/1c6a16426d389813b48d95e26898aff79abbde42ad353958ad95cc8c9b21/beautifulsoup4-4.14.3.tar.gz", hash = "sha256:6292b1c5186d356bba669ef9f7f051757099565ad9ada5dd630bd9de5fa7fb86", size = 627737, upload-time = "2025-11-30T15:08:26.084Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/39/47f9197bdd44df24d67ac8893641e16f386c984a0619ef2ee4c51fbbc019/beautifulsoup4-4.14.3-py3-none-any.whl", hash = "sha256:0918bfe44902e6ad8d57732ba310582e98da931428d231a5ecb9e7c703a735bb", size = 107721, upload-time = "2025-11-30T15:08:24.087Z" },
-]
-
-[[package]]
 name = "cattrs"
 version = "26.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -439,6 +426,15 @@ wheels = [
 ]
 
 [[package]]
+name = "mpmath"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/47/dd32fa426cc72114383ac549964eecb20ecfd886d1e5ccf5340b55b02f57/mpmath-1.3.0.tar.gz", hash = "sha256:7a28eb2a9774d00c7bc92411c19a89209d5da7c4c9a9e227be8330a23a25b91f", size = 508106, upload-time = "2023-03-07T16:47:11.061Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/43/e3/7d92a15f894aa0c9c4b49b8ee9ac9850d6e63b03c9c32c0367a13ae62209/mpmath-1.3.0-py3-none-any.whl", hash = "sha256:a0b2b9fe80bbcd81a6647ff13108738cfb482d481d826cc0e02f5b35e5c88d2c", size = 536198, upload-time = "2023-03-07T16:47:09.197Z" },
+]
+
+[[package]]
 name = "mypy-extensions"
 version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -503,12 +499,24 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "crosshair-tool" },
+    { name = "openai" },
+    { name = "phonenumbers" },
+    { name = "python-dateutil" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "simplejson" },
+    { name = "sympy" },
+    { name = "validators" },
+    { name = "werkzeug" },
+]
 benchmark = [
     { name = "crosshair-tool" },
 ]
 library = [
-    { name = "beautifulsoup4" },
     { name = "pyyaml" },
+    { name = "sympy" },
 ]
 llm = [
     { name = "openai" },
@@ -532,20 +540,21 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "beautifulsoup4", marker = "extra == 'library'", specifier = ">=4.12.0" },
     { name = "coverage", specifier = ">=7.10.7" },
     { name = "crosshair-tool", marker = "extra == 'benchmark'", specifier = ">=0.0.97" },
     { name = "func-timeout", specifier = ">=4.3.5" },
     { name = "openai", marker = "extra == 'llm'", specifier = ">=1.0.0" },
     { name = "phonenumbers", marker = "extra == 'realworld'", specifier = "==8.13.51" },
+    { name = "pyct", extras = ["llm", "benchmark", "realworld", "library"], marker = "extra == 'all'" },
     { name = "python-dateutil", marker = "extra == 'realworld'", specifier = "==2.9.0.post0" },
     { name = "python-dotenv", marker = "extra == 'llm'", specifier = ">=1.0.0" },
     { name = "pyyaml", marker = "extra == 'library'", specifier = ">=6.0" },
     { name = "simplejson", marker = "extra == 'realworld'", specifier = "==3.19.3" },
+    { name = "sympy", marker = "extra == 'library'", specifier = ">=1.14.0" },
     { name = "validators", marker = "extra == 'realworld'", specifier = ">=0.22.0" },
     { name = "werkzeug", marker = "extra == 'realworld'", specifier = "==3.1.3" },
 ]
-provides-extras = ["llm", "benchmark", "realworld", "library"]
+provides-extras = ["llm", "benchmark", "realworld", "library", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -861,12 +870,15 @@ wheels = [
 ]
 
 [[package]]
-name = "soupsieve"
-version = "2.8.3"
+name = "sympy"
+version = "1.14.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/7b/ae/2d9c981590ed9999a0d91755b47fc74f74de286b0f5cee14c9269041e6c4/soupsieve-2.8.3.tar.gz", hash = "sha256:3267f1eeea4251fb42728b6dfb746edc9acaffc4a45b27e19450b676586e8349", size = 118627, upload-time = "2026-01-20T04:27:02.457Z" }
+dependencies = [
+    { name = "mpmath" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/83/d3/803453b36afefb7c2bb238361cd4ae6125a569b4db67cd9e79846ba2d68c/sympy-1.14.0.tar.gz", hash = "sha256:d3d3fe8df1e5a0b42f0e7bdf50541697dbe7d23746e894990c030e2b05e72517", size = 7793921, upload-time = "2025-04-27T18:05:01.611Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/46/2c/1462b1d0a634697ae9e55b3cecdcb64788e8b7d63f54d923fcd0bb140aed/soupsieve-2.8.3-py3-none-any.whl", hash = "sha256:ed64f2ba4eebeab06cc4962affce381647455978ffc1e36bb79a545b91f45a95", size = 37016, upload-time = "2026-01-20T04:27:01.012Z" },
+    { url = "https://files.pythonhosted.org/packages/a2/09/77d55d46fd61b4a135c444fc97158ef34a095e5681d0a6c10b75bf356191/sympy-1.14.0-py3-none-any.whl", hash = "sha256:e091cc3e99d2141a0ba2847328f5479b05d94a6635cb96148ccb3f34671bd8f5", size = 6299353, upload-time = "2025-04-27T18:04:59.103Z" },
 ]
 
 [[package]]
