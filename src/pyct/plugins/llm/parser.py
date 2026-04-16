@@ -46,9 +46,10 @@ def parse_input_list(content: str | None) -> list[dict[str, Any]]:
         log.warning("LLM response did not parse to a list (got %s)", type(parsed).__name__)
         log.debug("Extracted code block:\n%s", code[:500])
         return []
-    results = [entry for entry in parsed if isinstance(entry, dict)]
+    results = [_sanitize_dict(e) for e in parsed if isinstance(e, dict)]
+    results = [e for e in results if e]
     if not results and parsed:
-        log.warning("LLM response parsed to list but contained no dicts: %s", parsed[:3])
+        log.warning("LLM response parsed to list but contained no usable dicts: %s", parsed[:3])
     return results
 
 
@@ -70,6 +71,27 @@ def parse_single_input(content: str | None) -> dict[str, Any] | None:
             if isinstance(entry, dict):
                 return entry
     return None
+
+
+_SAFE_TYPES = (str, int, float, bool, type(None), list, dict, tuple, bytes)
+
+
+def _sanitize_dict(d: dict[str, Any]) -> dict[str, Any] | None:
+    """Strip non-primitive values from a seed dict.
+
+    LLMs sometimes generate ``lambda: None`` or ``print`` for callback
+    parameters. The restricted eval creates real function objects from
+    these, which fail to pickle across the isolated-mode spawn boundary.
+    Replace them with None so the target gets its default.
+    """
+    cleaned: dict[str, Any] = {}
+    for k, v in d.items():
+        if isinstance(v, _SAFE_TYPES):
+            cleaned[k] = v
+        else:
+            log.debug("Dropping non-primitive seed value: %s=%r (%s)", k, v, type(v).__name__)
+            cleaned[k] = None
+    return cleaned if cleaned else None
 
 
 def _extract_code_block(content: str) -> str:
