@@ -13,7 +13,13 @@ from typing import Any
 
 @dataclass(frozen=True)
 class BenchmarkTarget:
-    """One benchmark target function."""
+    """One benchmark target function.
+
+    When ``source_path`` is set, coverage is measured using entered-scope
+    analysis across the package — not just the entry function. Used for
+    realworld and library targets where the entry function is a thin
+    wrapper that delegates to internal modules.
+    """
 
     name: str
     module: str
@@ -21,6 +27,7 @@ class BenchmarkTarget:
     initial_args: dict[str, Any] = field(default_factory=dict)
     category: str = ""
     description: str = ""
+    source_path: str | None = None
 
 
 _BT = "examples"

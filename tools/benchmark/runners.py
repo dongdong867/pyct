@@ -62,7 +62,7 @@ def run_pure_concolic(
     )
     elapsed = time.monotonic() - start
 
-    return _pyct_result_to_runner(result, func, elapsed)
+    return _pyct_result_to_runner(result, target, elapsed)
 
 
 def run_concolic_llm(
@@ -94,7 +94,7 @@ def run_concolic_llm(
     )
     elapsed = time.monotonic() - start + seed_time
 
-    runner_result = _pyct_result_to_runner(result, func, elapsed)
+    runner_result = _pyct_result_to_runner(result, target, elapsed)
     if result.token_stats:
         runner_result.token_usage = TokenUsage(
             input_tokens=result.token_stats.get("input_tokens", 0),
@@ -111,33 +111,20 @@ def run_llm_only(
 ) -> RunnerResult:
     """LLM-only — run target on each seed with coverage.py, no engine."""
     func = _resolve_target(target)
-    target_file = inspect.getfile(func)
-    source_lines, start_line = inspect.getsourcelines(func)
-    func_range = set(range(start_line, start_line + len(source_lines)))
-
-    cov = Coverage(data_file=None, include=[target_file])
-    all_stmts = set(cov.analysis(target_file)[1]) & func_range
+    cov = _create_coverage_session(target)
 
     start = time.monotonic()
-    hit_lines: set[int] = set()
-
     for seed in seeds:
         cov.start()
         with contextlib.suppress(Exception):
             func(**seed)
         cov.stop()
-
-        data = cov.get_data()
-        for measured_file in data.measured_files():
-            if measured_file == target_file:
-                hit_lines |= set(data.lines(measured_file) or [])
-        cov.erase()
-
     elapsed = time.monotonic() - start + seed_time
 
+    coverage = _measure_coverage(cov, target)
     return RunnerResult(
         success=True,
-        coverage=_build_coverage_result(all_stmts, hit_lines),
+        coverage=coverage,
         time_seconds=elapsed,
         iterations=len(seeds),
     )
@@ -152,9 +139,6 @@ def run_crosshair(
     import subprocess
 
     func = _resolve_target(target)
-    target_file = inspect.getfile(func)
-    source_lines, start_line = inspect.getsourcelines(func)
-    func_range = set(range(start_line, start_line + len(source_lines)))
     param_names = list(inspect.signature(func).parameters.keys())
 
     module_func = f"{target.module}.{target.function}"
@@ -198,23 +182,16 @@ def run_crosshair(
         log.info("  crosshair[%d]: %s", i, inp)
 
     # Measure coverage by running generated inputs
-    cov = Coverage(data_file=None, include=[target_file])
-    all_stmts = set(cov.analysis(target_file)[1]) & func_range
-    hit_lines: set[int] = set()
-
+    cov = _create_coverage_session(target)
     cov.start()
     for inp in test_inputs:
         with contextlib.suppress(Exception):
             func(**inp)
     cov.stop()
-    data = cov.get_data()
-    for measured_file in data.measured_files():
-        if measured_file == target_file:
-            hit_lines |= set(data.lines(measured_file) or [])
 
     return RunnerResult(
         success=True,
-        coverage=_build_coverage_result(all_stmts, hit_lines),
+        coverage=_measure_coverage(cov, target),
         time_seconds=elapsed,
         iterations=len(test_inputs),
         test_cases_generated=len(test_inputs),
@@ -229,6 +206,48 @@ def _resolve_target(target: BenchmarkTarget) -> Callable:
     """Import and return the target callable."""
     module = importlib.import_module(target.module)
     return getattr(module, target.function)
+
+
+def _create_coverage_session(target: BenchmarkTarget) -> Coverage:
+    """Create a coverage.py session scoped to the target.
+
+    For package targets (source_path set), scope to the entire package
+    directory so transitive calls into internal modules are measured.
+    For standard targets, scope to just the target file.
+    """
+    if target.source_path:
+        return Coverage(data_file=None, source=[target.source_path])
+
+    func = _resolve_target(target)
+    target_file = inspect.getfile(func)
+    return Coverage(data_file=None, include=[target_file])
+
+
+def _measure_coverage(cov: Coverage, target: BenchmarkTarget) -> CoverageResult:
+    """Compute coverage from a stopped coverage.py session.
+
+    For package targets (source_path set), uses entered-scope analysis:
+    only counts lines in functions that were actually called.
+    For standard targets, uses function-level analysis.
+    """
+    if target.source_path:
+        from tools.benchmark.scope_analysis import measure_entered_scope_coverage
+
+        return measure_entered_scope_coverage(cov, target.source_path)
+
+    func = _resolve_target(target)
+    target_file = inspect.getfile(func)
+    source_lines, start_line = inspect.getsourcelines(func)
+    func_range = set(range(start_line, start_line + len(source_lines)))
+    all_stmts = set(cov.analysis(target_file)[1]) & func_range
+
+    data = cov.get_data()
+    hit_lines: set[int] = set()
+    for measured_file in data.measured_files():
+        if measured_file == target_file:
+            hit_lines |= set(data.lines(measured_file) or [])
+
+    return _build_coverage_result(all_stmts, hit_lines)
 
 
 def _build_coverage_result(
@@ -267,10 +286,17 @@ def _build_coverage_result(
 
 def _pyct_result_to_runner(
     result: Any,
-    func: Callable,
+    target: BenchmarkTarget,
     elapsed: float,
 ) -> RunnerResult:
-    """Convert a RunConcolicResult to a RunnerResult with coverage details."""
+    """Convert a RunConcolicResult to a RunnerResult with coverage details.
+
+    For package targets, re-measures using the engine's executed_lines
+    against the function-level scope. Entered-scope analysis for engine
+    results would require the engine to track package-wide coverage,
+    which it doesn't — its CoverageTracker is scoped to the target file.
+    """
+    func = _resolve_target(target)
     target_file = inspect.getfile(func)
     source_lines, start_line = inspect.getsourcelines(func)
     func_range = set(range(start_line, start_line + len(source_lines)))

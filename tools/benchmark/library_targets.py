@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import logging
+import os
 import pkgutil
 from dataclasses import dataclass
 from types import ModuleType
@@ -64,9 +65,10 @@ def discover_library_entry_points(
     if package is None:
         return []
 
+    source_path = _resolve_source_path(package)
     modules = _collect_public_modules(package, package_name)
     callables = _collect_public_callables(modules, package_name)
-    targets = _build_targets(callables, category)
+    targets = _build_targets(callables, category, source_path)
 
     log.info("Discovered %d entry points from %s", len(targets), package_name)
     return targets
@@ -78,6 +80,14 @@ def _import_package(name: str) -> ModuleType | None:
     except ImportError:
         log.warning("Cannot import package: %s", name)
         return None
+
+
+def _resolve_source_path(package: ModuleType) -> str | None:
+    """Find the installed package's source directory."""
+    init_file = getattr(package, "__file__", None)
+    if init_file is None:
+        return None
+    return os.path.dirname(os.path.abspath(init_file))
 
 
 def _collect_public_modules(
@@ -173,6 +183,7 @@ def _has_testable_signature(obj: Any) -> bool:
 def _build_targets(
     callables: list[tuple[str, str, Any]],
     category: str,
+    source_path: str | None = None,
 ) -> list[BenchmarkTarget]:
     """Build BenchmarkTarget for each discovered callable.
 
@@ -194,6 +205,7 @@ def _build_targets(
             initial_args=args,
             category=category,
             description=f"Auto-discovered from {module_name}",
+            source_path=source_path,
         ))
     return targets
 
