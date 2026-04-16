@@ -20,6 +20,7 @@ from typing import Any
 from tools.benchmark.baseline import Baseline
 from tools.benchmark.models import BenchmarkConfig, RunnerResult
 from tools.benchmark.output import (
+    SummaryHeader,
     format_comparison_table,
     format_runner_result,
     format_summary_table,
@@ -93,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     _output(f"Attempts: {config.num_attempts}")
     _output("")
 
+    import time
+
+    run_started = time.monotonic()
+    run_started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     all_results: list[dict[str, Any]] = []
 
     try:
@@ -124,7 +129,14 @@ def main(argv: list[str] | None = None) -> int:
         _output("\nBenchmark interrupted.")
 
     save_results_json(all_results, config, run_dir / "results.json")
-    save_summary(all_results, runner_names, run_dir / "summary.txt")
+    summary_header = SummaryHeader(
+        suite=args.suite,
+        timestamp=run_started_at,
+        wall_clock_seconds=time.monotonic() - run_started,
+        target_count=len(targets),
+        config=config,
+    )
+    save_summary(all_results, runner_names, run_dir / "summary.txt", header=summary_header)
 
     _output(format_summary_table(all_results, runner_names))
     _output(f"\nResults saved to: {run_dir}")

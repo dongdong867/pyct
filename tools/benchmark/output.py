@@ -2,13 +2,17 @@
 
 JSON schema matches legacy's run_20260327_030025/results.json for
 cross-validation in M4. Console output uses box-drawing characters
-for coverage/time comparison tables with winner indicators.
+for coverage/time comparison tables with winner indicators. The
+``summary.txt`` writer produces a header + three stacked per-target
+tables (coverage%, lines, time) + aggregate — enough context to
+interpret a run without opening ``results.json``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,6 +20,17 @@ from typing import Any
 from tools.benchmark.models import BenchmarkConfig, RunnerResult
 
 log = logging.getLogger("benchmark.output")
+
+
+@dataclass(frozen=True)
+class SummaryHeader:
+    """Run-level metadata that tops the summary.txt file."""
+
+    suite: str
+    timestamp: str
+    wall_clock_seconds: float
+    target_count: int
+    config: BenchmarkConfig
 
 
 # ── Persistence ────────────────────────────────────────────────────
@@ -41,13 +56,41 @@ def save_summary(
     all_results: list[dict[str, Any]],
     runner_names: list[str],
     path: Path,
+    header: SummaryHeader | None = None,
 ) -> None:
-    """Write a compact summary.txt table."""
-    lines: list[str] = []
-    header = f"{'Target':<35s}" + "".join(f"  {rn:>12s}" for rn in runner_names)
-    lines.append(header)
-    lines.append("-" * len(header))
+    """Write an enriched summary.txt: header + 3 per-target tables + aggregate.
 
+    When ``header`` is omitted, produces the legacy compact coverage
+    table only — kept for ad-hoc callers that don't have run metadata.
+    """
+    if header is None:
+        _write_legacy_summary(all_results, runner_names, path)
+        return
+
+    lines: list[str] = []
+    lines.extend(_format_header(header))
+    lines.append("")
+    lines.extend(_format_per_target_table(all_results, runner_names, _coverage_cell))
+    lines.append("")
+    lines.extend(_format_per_target_table(all_results, runner_names, _lines_cell))
+    lines.append("")
+    lines.extend(_format_per_target_table(all_results, runner_names, _time_cell))
+    lines.append("")
+    lines.extend(_format_aggregate_block(all_results, runner_names))
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n")
+
+
+def _write_legacy_summary(
+    all_results: list[dict[str, Any]],
+    runner_names: list[str],
+    path: Path,
+) -> None:
+    lines: list[str] = []
+    header_line = f"{'Target':<35s}" + "".join(f"  {rn:>12s}" for rn in runner_names)
+    lines.append(header_line)
+    lines.append("-" * len(header_line))
     for entry in all_results:
         name = entry["test_name"]
         parts = [f"{name:<35s}"]
@@ -59,10 +102,127 @@ def save_summary(
                 pct = runner_data.get("coverage", {}).get("coverage_percent", 0.0)
                 parts.append(f"  {pct:>11.1f}%")
         lines.append("".join(parts))
-
     lines.append("")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines))
+
+
+# ── Summary formatters ────────────────────────────────────────────
+
+
+def _format_header(h: SummaryHeader) -> list[str]:
+    bar = "=" * 80
+    return [
+        bar,
+        f" PyCT Benchmark — {h.suite} suite",
+        bar,
+        f" Timestamp:   {h.timestamp}",
+        f" Wall-clock:  {_format_duration(h.wall_clock_seconds)}",
+        f" Targets: {h.target_count}",
+        "",
+        " Config:",
+        f"   timeout:         {h.config.timeout}s",
+        f"   single_timeout:  {h.config.single_timeout}s",
+        f"   max_iterations:  {h.config.max_iterations}",
+        f"   num_attempts:    {h.config.num_attempts}",
+        bar,
+    ]
+
+
+def _format_duration(seconds: float) -> str:
+    total = int(seconds)
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours:
+        return f"{hours}h {minutes}m {secs}s"
+    if minutes:
+        return f"{minutes}m {secs}s"
+    return f"{secs}s"
+
+
+def _coverage_cell(runner_data: dict[str, Any]) -> str:
+    pct = runner_data.get("coverage", {}).get("coverage_percent", 0.0)
+    return f"{pct:>10.1f}%"
+
+
+def _lines_cell(runner_data: dict[str, Any]) -> str:
+    cov = runner_data.get("coverage", {})
+    exec_ = cov.get("executed_lines", 0)
+    total = cov.get("total_lines", 0)
+    return f"{exec_:>5d}/{total:<5d}"
+
+
+def _time_cell(runner_data: dict[str, Any]) -> str:
+    return f"{runner_data.get('time_seconds', 0.0):>10.2f}"
+
+
+_CELL_HEADERS = {
+    _coverage_cell: ("COVERAGE (%)", "cov%"),
+    _lines_cell: ("LINES (executed / total)", "exec/total"),
+    _time_cell: ("TIME (seconds)", "seconds"),
+}
+
+
+def _format_per_target_table(
+    all_results: list[dict[str, Any]],
+    runner_names: list[str],
+    cell_fn: Any,
+) -> list[str]:
+    section, _ = _CELL_HEADERS[cell_fn]
+    name_col = 38
+    data_col = 14
+
+    lines = [f"PER-TARGET {section}", "-" * 80]
+    header = f"{'Target':<{name_col}s}" + "".join(f" {rn:>{data_col}s}" for rn in runner_names)
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    for entry in all_results:
+        parts = [f"{entry['test_name']:<{name_col}s}"]
+        for rn in runner_names:
+            runner_data = entry["runners"].get(rn)
+            if runner_data is None:
+                parts.append(f" {'N/A':>{data_col}s}")
+            else:
+                parts.append(f" {cell_fn(runner_data):>{data_col}s}")
+        lines.append("".join(parts))
+
+    return lines
+
+
+def _format_aggregate_block(
+    all_results: list[dict[str, Any]],
+    runner_names: list[str],
+) -> list[str]:
+    stats = _compute_runner_stats(all_results)
+    bar = "=" * 80
+    lines = [
+        bar,
+        "AGGREGATE",
+        bar,
+        f"{'Runner':<18s} {'Tests':<10s} {'Avg Cov':<10s} "
+        f"{'Avg Time':<12s} {'Total Time':<14s} {'Wins':<6s}",
+        "-" * 80,
+    ]
+    for name in runner_names:
+        s = stats.get(name)
+        if s is None:
+            continue
+        ok = s["successful"]
+        total = s["total"]
+        avg_cov = s["total_coverage"] / ok if ok else 0.0
+        avg_time = s["total_time"] / ok if ok else 0.0
+        total_time = s["total_time"]
+        lines.append(
+            f"{name:<18s} "
+            f"{f'{ok}/{total}':<10s} "
+            f"{avg_cov:>6.1f}%   "
+            f"{avg_time:>8.2f}s   "
+            f"{_format_duration(total_time):<14s} "
+            f"{s['wins']:<6d}"
+        )
+    lines.append(bar)
+    return lines
 
 
 # ── Per-target console output ──────────────────────────────────────
