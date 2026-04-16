@@ -29,14 +29,16 @@ realworld = [
 
 [project.scripts]
 pyct = "pyct.cli:main"
+pyct-benchmark = "tools.benchmark.cli:main"
 
 [build-system]
 requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["src"]
-include = ["pyct*"]
+where = ["src", "."]
+include = ["pyct*", "tools*"]
+exclude = ["examples*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -53,9 +55,9 @@ line-length = 100
 select = ["E", "F", "I", "B", "UP", "SIM"]
 
 [tool.pyrefly]
-project-includes = ["src/**/*", "tests/**/*"]
+project-includes = ["src/**/*", "tests/**/*", "tools/**/*"]
 project-excludes = ["**/*venv/**/*", "**/__pycache__/**/*"]
-search-path = ["src", "."]
+search-path = ["src", ".", "tools"]
 
 # Suppressions for concolic type design.
 # ConcolicInt(int), ConcolicFloat(float), ConcolicStr(str), ConcolicBool(bool)
