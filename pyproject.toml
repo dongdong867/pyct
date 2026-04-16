@@ -33,6 +33,9 @@ library = [
     "html5lib>=1.1",
     "pyyaml>=6.0",
 ]
+all = [
+    "pyct[llm,benchmark,realworld,library]",
+]
 
 [project.scripts]
 pyct = "pyct.cli:main"
