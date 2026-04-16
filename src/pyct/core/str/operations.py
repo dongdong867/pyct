@@ -47,6 +47,22 @@ class StringBinaryOperations:
             self.engine,
         )
 
+    def radd(self, other: Any) -> ConcolicType:
+        """Reverse string concatenation: other + self."""
+        concrete = str.__add__(
+            concolic_converter.unwrap_concolic(other),
+            self.concolic_str,
+        )
+        if not isinstance(other, str):
+            return concolic_converter.wrap_concolic(concrete, None, self.engine)
+
+        other_str = ensure_concolic_str(other, self.engine)
+        return concolic_converter.wrap_concolic(
+            concrete,
+            ["str.++", other_str, self.concolic_str],
+            self.engine,
+        )
+
     def contains(self, other: Any) -> ConcolicType:
         """Check containment: other in self."""
         concrete = str.__contains__(

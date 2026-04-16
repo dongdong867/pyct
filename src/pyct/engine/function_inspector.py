@@ -24,8 +24,9 @@ def inspect_target(target: Callable) -> tuple[str, frozenset[int], int]:
         TypeError: if ``target`` has no inspectable source (built-in
             or C extension function).
     """
-    target_file = inspect.getfile(target)
-    source_lines, start_line = inspect.getsourcelines(target)
+    unwrapped = inspect.unwrap(target)
+    target_file = inspect.getfile(unwrapped)
+    source_lines, start_line = inspect.getsourcelines(unwrapped)
     func_range = set(range(start_line, start_line + len(source_lines)))
 
     statements = _executable_statements(target_file)

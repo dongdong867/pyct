@@ -184,7 +184,7 @@ def _parse_rewritten_tree(target: Callable[..., Any]) -> tuple[ast.Module, str]:
     runs afterward.
     """
     source = textwrap.dedent(inspect.getsource(target))
-    filename = inspect.getfile(target)
+    filename = inspect.getfile(inspect.unwrap(target))
 
     tree = ast.parse(source, filename=filename)
     tree = ConcolicCallRewriter().visit(tree)
@@ -208,7 +208,7 @@ def _build_exec_globals(target: Callable[..., Any]) -> dict[str, Any]:
     import pyct.core.builtin_wrappers  # noqa: F401, PLC0415
     import pyct.core.concolic_range  # noqa: F401, PLC0415
 
-    exec_globals = dict(target.__globals__)
+    exec_globals = dict(inspect.unwrap(target).__globals__)
     exec_globals["pyct"] = pyct
     return exec_globals
 

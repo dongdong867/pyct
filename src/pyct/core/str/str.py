@@ -73,7 +73,7 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
 
     def __radd__(self, other: Any) -> ConcolicType:
         """Reverse string concatenation: other + self."""
-        return StringBinaryOperations(self).add(other)
+        return StringBinaryOperations(self).radd(other)
 
     def __mul__(self, other: Any) -> ConcolicType:
         """String repetition: self * n."""
