@@ -145,17 +145,20 @@ def _run_with_retries(
     for run_id in range(config.num_attempts):
         result = _run_single(target, runner_name, config, seeds, seed_time)
 
-        attempts.append(AttemptInfo(
-            run_id=run_id,
-            coverage=result.coverage.coverage_percent,
-            time_seconds=result.time_seconds,
-            success=result.success,
-            error=result.error,
-        ))
+        attempts.append(
+            AttemptInfo(
+                run_id=run_id,
+                coverage=result.coverage.coverage_percent,
+                time_seconds=result.time_seconds,
+                success=result.success,
+                error=result.error,
+            )
+        )
 
         log.info(
             "  %s attempt[%d]: %s cov=%.1f%% time=%.1fs%s",
-            runner_name, run_id,
+            runner_name,
+            run_id,
             "OK" if result.success else "FAIL",
             result.coverage.coverage_percent,
             result.time_seconds,
@@ -196,9 +199,11 @@ def _log_runner_result(target_name: str, runner_name: str, result: RunnerResult)
     if result.success:
         log.info(
             "%s / %s: %.1f%% (%d/%d lines) in %.1fs, %s iters, reason=%s",
-            target_name, runner_name,
+            target_name,
+            runner_name,
             result.coverage.coverage_percent,
-            result.coverage.executed_lines, result.coverage.total_lines,
+            result.coverage.executed_lines,
+            result.coverage.total_lines,
             result.time_seconds,
             result.iterations,
             "ok",
@@ -206,7 +211,8 @@ def _log_runner_result(target_name: str, runner_name: str, result: RunnerResult)
     else:
         log.warning(
             "%s / %s: FAILED — %s",
-            target_name, runner_name,
+            target_name,
+            runner_name,
             result.error or "unknown error",
         )
         for a in result.attempts:

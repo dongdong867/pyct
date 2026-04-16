@@ -59,7 +59,9 @@ def measure_entered_scope_coverage(
 
         func_ranges = _collect_function_ranges(filepath)
         entered_exec, entered_hit = _compute_entered_lines(
-            func_ranges, executable, hit,
+            func_ranges,
+            executable,
+            hit,
         )
 
         total_entered += len(entered_exec)

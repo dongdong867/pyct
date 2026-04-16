@@ -107,8 +107,7 @@ def format_runner_result(runner_name: str, result: RunnerResult) -> str:
             tu = result.token_usage
             total = tu.input_tokens + tu.output_tokens
             lines.append(
-                f"  \u2713 Tokens: {total:,} "
-                f"(in: {tu.input_tokens:,}, out: {tu.output_tokens:,})"
+                f"  \u2713 Tokens: {total:,} (in: {tu.input_tokens:,}, out: {tu.output_tokens:,})"
             )
     else:
         lines.append(f"  \u2717 Failed: {result.error or 'Unknown error'}")
@@ -130,12 +129,14 @@ def format_comparison_table(runner_results: dict[str, RunnerResult]) -> str:
 
     winner = max(successful, key=lambda n: successful[n].coverage.coverage_percent)
     fastest = min(successful, key=lambda n: successful[n].time_seconds)
-    lines.extend([
-        "",
-        "  Summary:",
-        f"    \u2022 Best Coverage: {winner.upper()} ({max_cov:.1f}%)",
-        f"    \u2022 Fastest: {fastest.upper()} ({min_time:.2f}s)",
-    ])
+    lines.extend(
+        [
+            "",
+            "  Summary:",
+            f"    \u2022 Best Coverage: {winner.upper()} ({max_cov:.1f}%)",
+            f"    \u2022 Fastest: {fastest.upper()} ({min_time:.2f}s)",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -167,9 +168,7 @@ def format_summary_table(
         avg_time = s["total_time"] / ok if ok > 0 else 0
         wins = s["wins"]
         ratio = f"{ok}/{total}"
-        lines.append(
-            f"{name:<20s} {ratio:<8s} {avg_cov:>7.1f}%     {avg_time:>7.2f}s      {wins}"
-        )
+        lines.append(f"{name:<20s} {ratio:<8s} {avg_cov:>7.1f}%     {avg_time:>7.2f}s      {wins}")
 
     lines.append("=" * 80)
     return "\n".join(lines)
@@ -187,15 +186,35 @@ def _build_coverage_table(
 ) -> list[str]:
     """Coverage comparison with box-drawing borders."""
     lines = [
-        "\u250c" + "\u2500" * (_W1 + 2) + "\u252c" + "\u2500" * (_W2 + 2) + "\u252c"
-        + "\u2500" * 24 + "\u2510",
+        "\u250c"
+        + "\u2500" * (_W1 + 2)
+        + "\u252c"
+        + "\u2500" * (_W2 + 2)
+        + "\u252c"
+        + "\u2500" * 24
+        + "\u2510",
         "\u2502" + " COVERAGE COMPARISON".center(_W1 + _W2 + 28) + "\u2502",
-        "\u251c" + "\u2500" * (_W1 + 2) + "\u253c" + "\u2500" * (_W2 + 2) + "\u253c"
-        + "\u2500" * 24 + "\u2524",
-        "\u2502" + " Runner".ljust(_W1 + 2) + "\u2502" + " Coverage".ljust(_W2 + 2)
-        + "\u2502" + " Lines (Exec/Total)".ljust(24) + "\u2502",
-        "\u251c" + "\u2500" * (_W1 + 2) + "\u253c" + "\u2500" * (_W2 + 2) + "\u253c"
-        + "\u2500" * 24 + "\u2524",
+        "\u251c"
+        + "\u2500" * (_W1 + 2)
+        + "\u253c"
+        + "\u2500" * (_W2 + 2)
+        + "\u253c"
+        + "\u2500" * 24
+        + "\u2524",
+        "\u2502"
+        + " Runner".ljust(_W1 + 2)
+        + "\u2502"
+        + " Coverage".ljust(_W2 + 2)
+        + "\u2502"
+        + " Lines (Exec/Total)".ljust(24)
+        + "\u2502",
+        "\u251c"
+        + "\u2500" * (_W1 + 2)
+        + "\u253c"
+        + "\u2500" * (_W2 + 2)
+        + "\u253c"
+        + "\u2500" * 24
+        + "\u2524",
     ]
     for name, result in results.items():
         cov = result.coverage
@@ -205,8 +224,13 @@ def _build_coverage_table(
         lines_col = f" {cov.executed_lines}/{cov.total_lines}".ljust(24)
         lines.append(f"\u2502{name_col} \u2502{cov_col}\u2502{lines_col}\u2502")
     lines.append(
-        "\u2514" + "\u2500" * (_W1 + 2) + "\u2534" + "\u2500" * (_W2 + 2) + "\u2534"
-        + "\u2500" * 24 + "\u2518"
+        "\u2514"
+        + "\u2500" * (_W1 + 2)
+        + "\u2534"
+        + "\u2500" * (_W2 + 2)
+        + "\u2534"
+        + "\u2500" * 24
+        + "\u2518"
     )
     return lines
 
@@ -217,15 +241,35 @@ def _build_time_table(
 ) -> list[str]:
     """Time comparison with box-drawing borders."""
     lines = [
-        "\u250c" + "\u2500" * (_W1 + 2) + "\u252c" + "\u2500" * (_W2 + 2) + "\u252c"
-        + "\u2500" * 24 + "\u2510",
+        "\u250c"
+        + "\u2500" * (_W1 + 2)
+        + "\u252c"
+        + "\u2500" * (_W2 + 2)
+        + "\u252c"
+        + "\u2500" * 24
+        + "\u2510",
         "\u2502" + " TIME COMPARISON".center(_W1 + _W2 + 28) + "\u2502",
-        "\u251c" + "\u2500" * (_W1 + 2) + "\u253c" + "\u2500" * (_W2 + 2) + "\u253c"
-        + "\u2500" * 24 + "\u2524",
-        "\u2502" + " Runner".ljust(_W1 + 2) + "\u2502" + " Time (s)".ljust(_W2 + 2)
-        + "\u2502" + " Additional Info".ljust(24) + "\u2502",
-        "\u251c" + "\u2500" * (_W1 + 2) + "\u253c" + "\u2500" * (_W2 + 2) + "\u253c"
-        + "\u2500" * 24 + "\u2524",
+        "\u251c"
+        + "\u2500" * (_W1 + 2)
+        + "\u253c"
+        + "\u2500" * (_W2 + 2)
+        + "\u253c"
+        + "\u2500" * 24
+        + "\u2524",
+        "\u2502"
+        + " Runner".ljust(_W1 + 2)
+        + "\u2502"
+        + " Time (s)".ljust(_W2 + 2)
+        + "\u2502"
+        + " Additional Info".ljust(24)
+        + "\u2502",
+        "\u251c"
+        + "\u2500" * (_W1 + 2)
+        + "\u253c"
+        + "\u2500" * (_W2 + 2)
+        + "\u253c"
+        + "\u2500" * 24
+        + "\u2524",
     ]
     for name, result in results.items():
         name_col = f" {name.upper()[:_W1]:<{_W1}s}"
@@ -242,8 +286,13 @@ def _build_time_table(
         info_col = f" {', '.join(info_parts) or '-'}"[:24].ljust(24)
         lines.append(f"\u2502{name_col} \u2502{time_col}\u2502{info_col}\u2502")
     lines.append(
-        "\u2514" + "\u2500" * (_W1 + 2) + "\u2534" + "\u2500" * (_W2 + 2) + "\u2534"
-        + "\u2500" * 24 + "\u2518"
+        "\u2514"
+        + "\u2500" * (_W1 + 2)
+        + "\u2534"
+        + "\u2500" * (_W2 + 2)
+        + "\u2534"
+        + "\u2500" * 24
+        + "\u2518"
     )
     return lines
 
@@ -262,8 +311,11 @@ def _compute_runner_stats(
         for name, result_data in runners.items():
             if name not in stats:
                 stats[name] = {
-                    "total": 0, "successful": 0,
-                    "total_coverage": 0.0, "total_time": 0.0, "wins": 0,
+                    "total": 0,
+                    "successful": 0,
+                    "total_coverage": 0.0,
+                    "total_time": 0.0,
+                    "wins": 0,
                 }
             s = stats[name]
             s["total"] += 1

@@ -51,8 +51,7 @@ def run_isolated(
     parent_conn, child_conn = ctx.Pipe(duplex=False)
     proc = ctx.Process(
         target=_child_entry,
-        args=(module_name, qualname, initial_args, config, child_conn,
-              seed_inputs, plugins),
+        args=(module_name, qualname, initial_args, config, child_conn, seed_inputs, plugins),
     )
     proc.start()
     child_conn.close()
@@ -104,6 +103,7 @@ def _child_entry(
     # Suppress stdout/stderr from target functions (e.g. sympy diagnostics)
     import io
     import sys
+
     sys.stdout = io.StringIO()
     sys.stderr = io.StringIO()
 
@@ -111,8 +111,10 @@ def _child_entry(
         target = _import_target(module_name, qualname)
         engine = Engine(config)
         exploration = engine.explore(
-            target, initial_args,
-            seed_inputs=seed_inputs, plugins=plugins,
+            target,
+            initial_args,
+            seed_inputs=seed_inputs,
+            plugins=plugins,
         )
         token_stats = _extract_plugin_tokens(plugins or [])
         result = RunConcolicResult.from_exploration(

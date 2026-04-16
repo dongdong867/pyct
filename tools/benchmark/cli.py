@@ -84,12 +84,19 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         for target in targets:
-            _output(format_test_header(
-                target.name, target.category, target.description, target.function,
-            ))
+            _output(
+                format_test_header(
+                    target.name,
+                    target.category,
+                    target.description,
+                    target.function,
+                )
+            )
 
             runner_results = run_single_target(
-                target, runner_names, config,
+                target,
+                runner_names,
+                config,
                 on_runner_done=lambda name, r: _output(format_runner_result(name, r)),
             )
 
@@ -144,9 +151,12 @@ def _discover_suite(suite: str) -> list[BenchmarkTarget]:
 
         targets: list[BenchmarkTarget] = []
         for lib_config in LIBRARY_CONFIGS:
-            targets.extend(discover_library_entry_points(
-                lib_config.package_name, lib_config.category,
-            ))
+            targets.extend(
+                discover_library_entry_points(
+                    lib_config.package_name,
+                    lib_config.category,
+                )
+            )
         return targets
 
     if suite == "all":
@@ -155,9 +165,12 @@ def _discover_suite(suite: str) -> list[BenchmarkTarget]:
 
         targets = list(TEST_SUITE) + list(REALWORLD_SUITE)
         for lib_config in LIBRARY_CONFIGS:
-            targets.extend(discover_library_entry_points(
-                lib_config.package_name, lib_config.category,
-            ))
+            targets.extend(
+                discover_library_entry_points(
+                    lib_config.package_name,
+                    lib_config.category,
+                )
+            )
         return targets
 
     _output(f"Unknown suite: {suite}")
@@ -191,14 +204,16 @@ def _discover_custom_function(
             print(f"Invalid --initial-args JSON: {e}", file=sys.stderr)
             return []
 
-    return [BenchmarkTarget(
-        name=func_name,
-        module=module_path,
-        function=func_name,
-        initial_args=initial_args,
-        category="custom",
-        description=f"Custom target: {spec}",
-    )]
+    return [
+        BenchmarkTarget(
+            name=func_name,
+            module=module_path,
+            function=func_name,
+            initial_args=initial_args,
+            category="custom",
+            description=f"Custom target: {spec}",
+        )
+    ]
 
 
 def _resolve_runners(runner_strs: list[str]) -> list[str]:
@@ -284,12 +299,15 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run = subs.add_parser("run", help="Run benchmark suite")
     run.add_argument(
-        "--suite", default="standard",
+        "--suite",
+        default="standard",
         choices=["standard", "realworld", "library", "all"],
         help="Target suite (default: standard)",
     )
     run.add_argument(
-        "--runners", nargs="+", default=["pc", "cl", "lo"],
+        "--runners",
+        nargs="+",
+        default=["pc", "cl", "lo"],
         help="Runners to invoke (pc=pure_concolic, cl=concolic_llm, lo=llm_only, ch=crosshair)",
     )
     run.add_argument(
@@ -309,27 +327,39 @@ def _build_parser() -> argparse.ArgumentParser:
         help="JSON dict of initial args for --custom-function",
     )
     run.add_argument(
-        "--num-attempts", type=int, default=3,
+        "--num-attempts",
+        type=int,
+        default=3,
         help="Number of attempts per (target, runner) pair (default: 3)",
     )
     run.add_argument(
-        "--timeout", type=float, default=60.0,
+        "--timeout",
+        type=float,
+        default=60.0,
         help="Total timeout per exploration run in seconds (default: 60)",
     )
     run.add_argument(
-        "--single-timeout", type=float, default=15.0,
+        "--single-timeout",
+        type=float,
+        default=15.0,
         help="Per-solver-call timeout in seconds (default: 15)",
     )
     run.add_argument(
-        "--max-iterations", type=int, default=50,
+        "--max-iterations",
+        type=int,
+        default=50,
         help="Max exploration iterations (default: 50)",
     )
     run.add_argument(
-        "--output-dir", default="benchmark/results",
+        "--output-dir",
+        default="benchmark/results",
         help="Output directory for results (default: benchmark/results)",
     )
     run.add_argument(
-        "--verbose", "-v", action="count", default=0,
+        "--verbose",
+        "-v",
+        action="count",
+        default=0,
         help="Increase verbosity",
     )
     return parser

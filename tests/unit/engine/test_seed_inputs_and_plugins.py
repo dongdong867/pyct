@@ -121,9 +121,7 @@ class TestEnginePluginsParam:
     def test_plugins_param_combined_with_seed_inputs(self):
         """When both seed_inputs and plugins are provided, seeds are used
         but plugins are still registered for runtime events."""
-        config = ExecutionConfig(
-            max_iterations=5, timeout_seconds=5.0, plateau_threshold=2
-        )
+        config = ExecutionConfig(max_iterations=5, timeout_seconds=5.0, plateau_threshold=2)
         seed_plugin = _SeedRecorderPlugin(seeds=[{"x": 99}])
         plateau_plugin = _PlateauRecorderPlugin()
         engine = Engine(config)

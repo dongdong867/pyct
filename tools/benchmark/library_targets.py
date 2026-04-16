@@ -102,13 +102,8 @@ def _collect_public_modules(
     if package_path is None:
         return modules
 
-    for _importer, name, _is_pkg in pkgutil.walk_packages(
-        package_path, prefix=f"{package_name}."
-    ):
-        if any(
-            part.startswith("_") or part == "tests"
-            for part in name.split(".")
-        ):
+    for _importer, name, _is_pkg in pkgutil.walk_packages(package_path, prefix=f"{package_name}."):
+        if any(part.startswith("_") or part == "tests" for part in name.split(".")):
             continue
         try:
             modules.append(importlib.import_module(name))
@@ -183,7 +178,8 @@ def _has_testable_signature(obj: Any, *, skip_self: bool = False) -> bool:
         params = params[1:]
 
     regular = [
-        p for p in params
+        p
+        for p in params
         if p.kind not in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
     ]
     required = [p for p in regular if p.default is inspect.Parameter.empty]
@@ -241,15 +237,17 @@ def _build_targets(
         args.pop("self", None)
         if not args:
             continue
-        targets.append(BenchmarkTarget(
-            name=f"{module_name}.{func_name}",
-            module=module_name,
-            function=func_name,
-            initial_args=args,
-            category=category,
-            description=f"Auto-discovered from {module_name}",
-            source_path=source_path,
-        ))
+        targets.append(
+            BenchmarkTarget(
+                name=f"{module_name}.{func_name}",
+                module=module_name,
+                function=func_name,
+                initial_args=args,
+                category=category,
+                description=f"Auto-discovered from {module_name}",
+                source_path=source_path,
+            )
+        )
     return targets
 
 

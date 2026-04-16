@@ -67,12 +67,18 @@ def run_concolic(
         from pyct.engine.isolated_runner import run_isolated
 
         return run_isolated(
-            target, initial_args, exec_config,
-            seed_inputs=seed_inputs, plugins=plugins,
+            target,
+            initial_args,
+            exec_config,
+            seed_inputs=seed_inputs,
+            plugins=plugins,
         )
     return _run_in_process(
-        target, initial_args, exec_config,
-        seed_inputs=seed_inputs, plugins=plugins,
+        target,
+        initial_args,
+        exec_config,
+        seed_inputs=seed_inputs,
+        plugins=plugins,
     )
 
 
@@ -87,7 +93,9 @@ def _run_in_process(
     """Run the engine directly in the current process."""
     engine = Engine(config)
     result = engine.explore(
-        target, initial_args,
-        seed_inputs=seed_inputs, plugins=plugins,
+        target,
+        initial_args,
+        seed_inputs=seed_inputs,
+        plugins=plugins,
     )
     return RunConcolicResult.from_exploration(result, list(result.inputs_generated))
