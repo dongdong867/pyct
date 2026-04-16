@@ -35,6 +35,11 @@ def build_seed_prompt(ctx: EngineContext) -> str:
     """
     source = _get_source(ctx.target_function)
     sig = str(ctx.target_signature)
+    param_names = [
+        p.name for p in ctx.target_signature.parameters.values()
+        if p.name != "self"
+    ]
+    example_dict = ", ".join(f'"{p}": value' for p in param_names[:3]) or '"param": value'
     return "\n".join(
         [
             "# Task: Generate Test Inputs for Maximum Code Coverage",
@@ -58,14 +63,13 @@ def build_seed_prompt(ctx: EngineContext) -> str:
             "",
             "## Output format",
             "Return ONLY a Python list of dicts inside a ```python``` fence.",
-            "Each dict must use the exact parameter names and self-contained",
-            "literal values (str/int/float/bool/None/list/dict). Do NOT reference",
-            "any name from the function source.",
+            f"Each dict MUST use these exact parameter names: {param_names}",
+            "Values must be self-contained literals (str/int/float/bool/None/list/dict).",
+            "Do NOT reference any name from the function source.",
             "",
             "```python",
             "[",
-            '    {"param": value1},',
-            '    {"param": value2},',
+            f"    {{{example_dict}}},",
             "]",
             "```",
         ]

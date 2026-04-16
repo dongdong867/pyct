@@ -46,6 +46,7 @@ RUNNER_ALIASES = {
 
 def main(argv: list[str] | None = None) -> int:
     """CLI entry point."""
+    _load_dotenv()
     parser = _build_parser()
     args = parser.parse_args(argv)
 
@@ -262,6 +263,16 @@ def _create_run_directory(output_dir: str) -> Path:
 
 
 # ── Parser ─────────────────────────────────────────────────────────
+
+
+def _load_dotenv() -> None:
+    """Load .env file if present (for OPENAI_API_KEY)."""
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
 
 
 def _build_parser() -> argparse.ArgumentParser:
