@@ -60,6 +60,69 @@ class TestExtractInputList:
         assert parse_input_list(content) == [{"x": "aaaaa"}]
 
 
+class TestSanitizerStripsNonPickleableValues:
+    """LLM-eval fallback can produce lambdas, functions, and other non-picklable
+    objects. Seed dicts cross a multiprocessing.spawn boundary in isolated mode,
+    so every nested value must be pickle-safe. The sanitizer replaces unsafe
+    values with None and recurses into nested dicts/lists.
+    """
+
+    def test_top_level_lambda_stripped(self):
+        from pyct.plugins.llm.parser import parse_input_list
+
+        content = '[{"callback": lambda: None}]'
+        assert parse_input_list(content) == [{"callback": None}]
+
+    def test_nested_lambda_in_dict_stripped(self):
+        """Reproduces the sympy EllipticCurvePoint pickle failure: LLM
+        returns a seed whose ``curve`` value is a dict containing lambdas."""
+        from pyct.plugins.llm.parser import parse_input_list
+
+        content = '[{"curve": {"_domain": {"convert": lambda: None}}, "x": 1}]'
+        result = parse_input_list(content)
+        assert result == [{"curve": {"_domain": {"convert": None}}, "x": 1}]
+
+    def test_nested_lambda_in_list_stripped(self):
+        from pyct.plugins.llm.parser import parse_input_list
+
+        content = '[{"handlers": [lambda: 1, lambda: 2]}]'
+        result = parse_input_list(content)
+        assert result == [{"handlers": [None, None]}]
+
+    def test_sanitized_output_is_pickle_safe(self):
+        """The strongest invariant: whatever comes out must pickle cleanly
+        so it can cross the isolated_runner subprocess boundary."""
+        import pickle
+
+        from pyct.plugins.llm.parser import parse_input_list
+
+        content = (
+            '[{"curve": {"_domain": {"convert": lambda: None}, '
+            '"validators": [lambda: True]}, "x": 1, "y": 2}]'
+        )
+        result = parse_input_list(content)
+        pickle.dumps(result)  # must not raise
+
+    def test_scalars_and_structures_preserved(self):
+        from pyct.plugins.llm.parser import parse_input_list
+
+        content = (
+            '[{"s": "hello", "i": 42, "f": 3.14, "b": True, "n": None, '
+            '"lst": [1, 2, 3], "nested": {"k": "v"}}]'
+        )
+        assert parse_input_list(content) == [
+            {
+                "s": "hello",
+                "i": 42,
+                "f": 3.14,
+                "b": True,
+                "n": None,
+                "lst": [1, 2, 3],
+                "nested": {"k": "v"},
+            }
+        ]
+
+
 class TestExtractSingleInput:
     def test_parse_single_dict(self):
         from pyct.plugins.llm.parser import parse_single_input

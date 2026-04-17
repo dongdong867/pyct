@@ -73,25 +73,35 @@ def parse_single_input(content: str | None) -> dict[str, Any] | None:
     return None
 
 
-_SAFE_TYPES = (str, int, float, bool, type(None), list, dict, tuple, bytes)
+_SCALAR_TYPES = (str, int, float, bool, type(None), bytes)
 
 
 def _sanitize_dict(d: dict[str, Any]) -> dict[str, Any] | None:
-    """Strip non-primitive values from a seed dict.
+    """Strip non-primitive values from a seed dict, recursing into containers.
 
     LLMs sometimes generate ``lambda: None`` or ``print`` for callback
-    parameters. The restricted eval creates real function objects from
-    these, which fail to pickle across the isolated-mode spawn boundary.
-    Replace them with None so the target gets its default.
+    parameters, and the restricted eval creates real function objects
+    from these. A callable nested inside a seed value (e.g. ``{"curve":
+    {"convert": lambda: None}}``) fails to pickle across the
+    isolated-mode spawn boundary just as much as a top-level one —
+    recurse into dicts and lists and replace any non-primitive with
+    None so the whole structure is pickle-safe.
     """
-    cleaned: dict[str, Any] = {}
-    for k, v in d.items():
-        if isinstance(v, _SAFE_TYPES):
-            cleaned[k] = v
-        else:
-            log.debug("Dropping non-primitive seed value: %s=%r (%s)", k, v, type(v).__name__)
-            cleaned[k] = None
+    cleaned = {k: _sanitize_value(v) for k, v in d.items()}
     return cleaned if cleaned else None
+
+
+def _sanitize_value(v: Any) -> Any:
+    """Return v if pickle-safe by shape; recurse into containers; drop otherwise."""
+    if isinstance(v, _SCALAR_TYPES):
+        return v
+    if isinstance(v, dict):
+        return {k: _sanitize_value(inner) for k, inner in v.items()}
+    if isinstance(v, (list, tuple)):
+        sanitized = [_sanitize_value(x) for x in v]
+        return type(v)(sanitized) if isinstance(v, tuple) else sanitized
+    log.debug("Dropping non-primitive seed value: %r (%s)", v, type(v).__name__)
+    return None
 
 
 def _extract_code_block(content: str) -> str:
