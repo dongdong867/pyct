@@ -49,11 +49,30 @@ def test_normalize_rejects_substring_match():
     assert normalize_to_site_packages_relative(abs_path) is None
 
 
+# ── Stdlib paths (realworld uses urllib.parse, json, etc) ─────────
+
+
+def test_normalize_stdlib_urllib_linux():
+    abs_path = "/usr/lib/python3.12/urllib/parse.py"
+    assert normalize_to_site_packages_relative(abs_path) == "urllib/parse.py"
+
+
+def test_normalize_stdlib_macos_homebrew():
+    abs_path = "/opt/homebrew/lib/python3.13/json/decoder.py"
+    assert normalize_to_site_packages_relative(abs_path) == "json/decoder.py"
+
+
+def test_normalize_prefers_site_packages_over_stdlib_pattern():
+    # A venv inside /usr/lib — the site-packages install is canonical.
+    abs_path = "/usr/lib/python3.12/site-packages/yaml/__init__.py"
+    assert normalize_to_site_packages_relative(abs_path) == "yaml/__init__.py"
+
+
 # ── Error / non-matching ──────────────────────────────────────────
 
 
-def test_normalize_returns_none_when_no_site_packages():
-    # Editable install or source file — not under any site-packages.
+def test_normalize_returns_none_when_no_site_packages_or_stdlib():
+    # Editable install or source file — not under any recognizable root.
     abs_path = "/Users/dong/dev/pyct/src/pyct/engine.py"
     assert normalize_to_site_packages_relative(abs_path) is None
 

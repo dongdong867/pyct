@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 
@@ -59,10 +60,24 @@ def collect_scopes_for_inputs(
     cov.start()
     for inp in inputs:
         with _suppress_output(), contextlib.suppress(Exception):
-            call_with_args(func, inp)
+            _exercise(func, inp)
     cov.stop()
 
     return scopes_from_coverage_session(cov)
+
+
+def _exercise(func: Any, inp: dict[str, Any]) -> None:
+    """Invoke ``func`` and exhaust its return value if it's an iterator.
+
+    Generator-returning targets (yaml.parse, yaml.scan, …) don't
+    execute their body until iterated — a bare call gives us a
+    generator object and no coverage. Iterating drives the body so
+    coverage.py records the lines.
+    """
+    result = call_with_args(func, inp)
+    if isinstance(result, Iterator):
+        for _ in result:
+            pass
 
 
 def concolic_inputs(target: BenchmarkTarget, config: BenchmarkConfig) -> list[dict[str, Any]]:

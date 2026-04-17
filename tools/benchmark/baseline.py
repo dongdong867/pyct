@@ -160,30 +160,42 @@ def measure_against_baseline(
 
 
 def normalize_to_site_packages_relative(abs_path: str) -> str | None:
-    """Return the ``site-packages/``-relative suffix of an absolute path.
+    """Return the package-relative suffix of an absolute source path.
 
-    Benchmarks run against packages installed in a venv, so
-    ``site-packages/`` always separates install-location noise from the
-    package-relative path we want to freeze. Returns ``None`` when the
-    path is not under a ``site-packages`` directory (editable installs,
-    source trees, test fixtures).
+    Recognises two install roots:
 
-    Uses the LAST ``site-packages`` component in the path so nested
-    bundled tools resolve to the true install location.
+    - ``site-packages/`` — venv / system installs of third-party
+      packages. Strip everything up to and including this component.
+    - ``lib/pythonX.Y/`` — CPython stdlib. Strip up to and including
+      the version directory, leaving ``urllib/parse.py`` etc.
+
+    Site-packages wins when both patterns match (a venv inside
+    ``/usr/lib/...`` still resolves to the venv install location).
+    Uses the LAST ``site-packages`` component so nested bundled tools
+    resolve to their true install location. Returns ``None`` when the
+    path matches neither root — editable installs, source trees, test
+    fixtures — so callers drop them silently.
     """
     if not abs_path:
         return None
 
     parts = abs_path.split("/")
-    last_match = -1
+
+    last_sp = -1
     for i, part in enumerate(parts):
         if part == _SITE_PACKAGES:
-            last_match = i
+            last_sp = i
+    if 0 <= last_sp < len(parts) - 1:
+        return "/".join(parts[last_sp + 1 :])
 
-    if last_match < 0 or last_match == len(parts) - 1:
-        return None
+    # Stdlib fallback: .../lib/pythonX.Y/<rest>
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i] == "lib" and parts[i + 1].startswith("python"):
+            if i + 2 < len(parts):
+                return "/".join(parts[i + 2 :])
+            return None
 
-    return "/".join(parts[last_match + 1 :])
+    return None
 
 
 def function_scopes_in_source(

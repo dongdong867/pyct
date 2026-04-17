@@ -20,14 +20,14 @@ from tools.benchmark.targets import BenchmarkTarget
 
 
 @pytest.fixture(autouse=True)
-def _purge_synthpkg_from_sys_modules():
-    """Each test writes fresh synthpkg files to a new tmp_path; stale
-    imports cached in sys.modules would shadow them and coverage would
-    measure paths that no longer exist on disk.
+def _purge_synth_packages_from_sys_modules():
+    """Each test writes fresh packages to a new tmp_path; stale imports
+    cached in sys.modules would shadow them and coverage would measure
+    paths that no longer exist on disk.
     """
     yield
     for name in list(sys.modules):
-        if name == "synthpkg" or name.startswith("synthpkg."):
+        if name in {"synthpkg", "genpkg"} or name.startswith(("synthpkg.", "genpkg.")):
             del sys.modules[name]
 
 
@@ -97,6 +97,31 @@ def test_narrow_target_without_source_path_still_emits_entry_scope(tmp_path, mon
     files = {Path(s.file).name for s in scopes}
     assert "entry.py" in files
     assert "helpers.py" not in files
+
+
+def test_generator_returning_target_body_executes_via_iteration(tmp_path, monkeypatch):
+    """Targets like yaml.parse return generators — calling them does not
+    execute the body until iteration. collect_scopes_for_inputs must
+    exhaust iterator return values so the body runs and coverage is
+    recorded; otherwise the baseline ends up empty.
+    """
+    pkg = tmp_path / "genpkg"
+    pkg.mkdir()
+    (pkg / "__init__.py").write_text("")
+    (pkg / "gen.py").write_text("def stream(n):\n    for i in range(n):\n        yield i * 2\n")
+    monkeypatch.syspath_prepend(str(tmp_path))
+    target = BenchmarkTarget(
+        name="genpkg.gen.stream",
+        module="genpkg.gen",
+        function="stream",
+        initial_args={"n": 3},
+        source_path=str(pkg),
+    )
+
+    scopes = collect_scopes_for_inputs(target, [{"n": 3}])
+
+    files = {Path(s.file).name for s in scopes}
+    assert "gen.py" in files, "Generator body must execute via iteration"
 
 
 def test_input_that_raises_does_not_abort_collection(tmp_path, monkeypatch):
