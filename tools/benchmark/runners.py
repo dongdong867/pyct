@@ -21,6 +21,7 @@ from typing import Any
 
 from coverage import Coverage
 
+from pyct.engine.coverage_scope import CoverageScope
 from pyct.utils.call_binding import call_with_args
 from tools.benchmark.baseline import BASELINE_SCHEMA_VERSION, Baseline
 from tools.benchmark.models import (
@@ -60,6 +61,7 @@ def run_pure_concolic(
         timeout_seconds=config.timeout,
         solver_timeout=int(config.single_timeout),
         max_iterations=config.max_iterations,
+        scope=_build_coverage_scope(target, config),
     )
     func = _resolve_target(target)
 
@@ -91,6 +93,7 @@ def run_concolic_llm(
         timeout_seconds=config.timeout,
         solver_timeout=int(config.single_timeout),
         max_iterations=config.max_iterations,
+        scope=_build_coverage_scope(target, config),
     )
     func = _resolve_target(target)
     client = build_default_client()
@@ -240,6 +243,43 @@ def _resolve_target(target: BenchmarkTarget) -> Callable:
     """Import and return the target callable."""
     module = importlib.import_module(target.module)
     return getattr(module, target.function)
+
+
+def _build_coverage_scope(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+) -> CoverageScope | None:
+    """Return an explicit scope for the engine, or None for narrow default.
+
+    Returns None when ``config.coverage_scope == "narrow"`` (engine falls
+    back to classical single-file scope) or when ``"wide"`` is requested
+    but ``target.source_path`` is unset (nothing to expand — also falls
+    back to narrow). Returns a multi-file scope spanning every ``.py``
+    under ``source_path`` when both conditions meet, so the engine keeps
+    exploring until deeper library code is covered.
+    """
+    if config.coverage_scope != "wide":
+        return None
+    if not target.source_path:
+        return None
+
+    paths = [str(p) for p in Path(target.source_path).rglob("*.py")]
+    if not paths:
+        return None
+
+    target_file = _target_file_path(target)
+    if target_file and target_file not in paths:
+        paths.append(target_file)
+    return CoverageScope.for_paths(paths, target_file=target_file or paths[0])
+
+
+def _target_file_path(target: BenchmarkTarget) -> str | None:
+    """Return the absolute path of the target function's defining file."""
+    try:
+        func = _resolve_target(target)
+        return inspect.getfile(func)
+    except (ImportError, TypeError, OSError):
+        return None
 
 
 @contextlib.contextmanager

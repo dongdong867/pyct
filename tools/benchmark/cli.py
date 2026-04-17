@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         num_attempts=args.num_attempts,
         verbose=args.verbose,
         output_dir=args.output_dir,
+        coverage_scope=args.coverage_scope,
     )
 
     runner_names = _resolve_runners(args.runners)
@@ -395,6 +396,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action="count",
         default=0,
         help="Increase verbosity",
+    )
+    run.add_argument(
+        "--coverage-scope",
+        default="narrow",
+        choices=["narrow", "wide"],
+        help=(
+            "Coverage scope for the concolic engine. 'narrow' (default) "
+            "tracks only the target function's own file — classical "
+            "concolic behavior. 'wide' tracks every .py file under the "
+            "target's source_path, so the engine keeps exploring past "
+            "thin-wrapper targets into deeper library code."
+        ),
     )
 
     baseline = subs.add_parser(

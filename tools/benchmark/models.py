@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -104,7 +104,17 @@ class RunnerResult:
 
 @dataclass(frozen=True)
 class BenchmarkConfig:
-    """Configuration for a benchmark run."""
+    """Configuration for a benchmark run.
+
+    Attributes:
+        coverage_scope: ``"narrow"`` (default) lets the concolic engine
+            track coverage only within the target function's own file —
+            classical concolic behavior. ``"wide"`` tells the engine to
+            track coverage across every ``.py`` file under the target's
+            ``source_path`` directory. Useful when the target is a thin
+            wrapper over deeper library code (yaml, sympy, ...) and the
+            benchmark's coverage measurement spans the whole package.
+    """
 
     timeout: float = 60.0
     single_timeout: float = 15.0
@@ -112,6 +122,7 @@ class BenchmarkConfig:
     num_attempts: int = 3
     verbose: int = 0
     output_dir: str = "benchmark/results"
+    coverage_scope: Literal["narrow", "wide"] = "narrow"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -121,4 +132,5 @@ class BenchmarkConfig:
             "num_attempts": self.num_attempts,
             "verbose": self.verbose,
             "output_dir": self.output_dir,
+            "coverage_scope": self.coverage_scope,
         }
