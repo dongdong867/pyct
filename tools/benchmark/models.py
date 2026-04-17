@@ -107,13 +107,16 @@ class BenchmarkConfig:
     """Configuration for a benchmark run.
 
     Attributes:
-        coverage_scope: ``"narrow"`` (default) lets the concolic engine
-            track coverage only within the target function's own file —
-            classical concolic behavior. ``"wide"`` tells the engine to
-            track coverage across every ``.py`` file under the target's
-            ``source_path`` directory. Useful when the target is a thin
-            wrapper over deeper library code (yaml, sympy, ...) and the
-            benchmark's coverage measurement spans the whole package.
+        coverage_scope: ``"wide"`` (default) tells the concolic engine
+            to track coverage across every ``.py`` file under the
+            target's ``source_path`` directory — matches how the
+            benchmark's own coverage measurement spans the whole
+            package, so the engine keeps exploring past thin-wrapper
+            targets into deeper library code. Standard-suite targets
+            without a ``source_path`` degrade to single-file scope
+            automatically. Set to ``"narrow"`` to force classical
+            concolic behavior (useful for scope-sensitivity
+            ablations against the wide default).
     """
 
     timeout: float = 60.0
@@ -122,7 +125,7 @@ class BenchmarkConfig:
     num_attempts: int = 3
     verbose: int = 0
     output_dir: str = "benchmark/results"
-    coverage_scope: Literal["narrow", "wide"] = "narrow"
+    coverage_scope: Literal["narrow", "wide"] = "wide"
 
     def to_dict(self) -> dict[str, Any]:
         return {

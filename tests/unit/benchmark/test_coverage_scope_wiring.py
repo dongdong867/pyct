@@ -34,17 +34,21 @@ def _write_package(root, name, modules):
 
 
 class TestBenchmarkConfigCoverageScopeDefault:
-    def test_default_is_narrow(self):
+    def test_default_is_wide(self):
+        # Wide is the friendlier default for routine benchmark runs:
+        # standard suite targets (no source_path) degrade to narrow
+        # automatically, while library + realworld targets benefit from
+        # the engine exploring past thin-wrapper boundaries.
         config = BenchmarkConfig()
-        assert config.coverage_scope == "narrow"
-
-    def test_coverage_scope_accepted_as_wide(self):
-        config = BenchmarkConfig(coverage_scope="wide")
         assert config.coverage_scope == "wide"
 
+    def test_coverage_scope_accepted_as_narrow(self):
+        config = BenchmarkConfig(coverage_scope="narrow")
+        assert config.coverage_scope == "narrow"
+
     def test_coverage_scope_is_in_dict_serialization(self):
-        config = BenchmarkConfig(coverage_scope="wide")
-        assert config.to_dict()["coverage_scope"] == "wide"
+        config = BenchmarkConfig(coverage_scope="narrow")
+        assert config.to_dict()["coverage_scope"] == "narrow"
 
 
 class TestBuildCoverageScope:

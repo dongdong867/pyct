@@ -399,14 +399,16 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run.add_argument(
         "--coverage-scope",
-        default="narrow",
+        default="wide",
         choices=["narrow", "wide"],
         help=(
-            "Coverage scope for the concolic engine. 'narrow' (default) "
-            "tracks only the target function's own file — classical "
-            "concolic behavior. 'wide' tracks every .py file under the "
-            "target's source_path, so the engine keeps exploring past "
-            "thin-wrapper targets into deeper library code."
+            "Coverage scope for the concolic engine. 'wide' (default) "
+            "tracks every .py file under the target's source_path so "
+            "the engine keeps exploring past thin-wrapper targets into "
+            "deeper library code. Standard-suite targets without a "
+            "source_path degrade to single-file scope automatically. "
+            "Use 'narrow' to force classical single-file concolic "
+            "behavior (scope-sensitivity ablations)."
         ),
     )
 
