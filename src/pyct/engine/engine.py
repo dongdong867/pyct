@@ -120,7 +120,7 @@ class Engine:
         seed_inputs: list[dict[str, Any]] | None = None,
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
-        scope = CoverageScope.for_target(target)
+        scope = self.config.scope or CoverageScope.for_target(target)
         target_file = scope.target_file
         func_lines = scope.executable_lines[target_file]
         rewritten_target = _try_rewrite(target)
@@ -133,6 +133,7 @@ class Engine:
         state = ExplorationState(
             start_time=time.monotonic(),
             total_lines=len(func_lines),
+            tracker=self.coverage_tracker,
         )
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
@@ -235,7 +236,7 @@ class Engine:
                 target,
                 signature,
             )
-            last_coverage_size = max(last_coverage_size, len(state.covered_lines))
+            last_coverage_size = max(last_coverage_size, state.scope_observed_count)
 
         return last_error
 
@@ -401,8 +402,11 @@ class Engine:
         should be processed before asking plugins for recovery seeds.
         Without this guard, seed-phase iterations count toward the stale
         counter and trigger unnecessary LLM calls.
+
+        Plateau progress is measured against the wide scope count: when
+        scope spans multiple files, growth in any of them resets stale.
         """
-        if len(state.covered_lines) > last_coverage_size:
+        if state.scope_observed_count > last_coverage_size:
             return 0
 
         stale_count += 1

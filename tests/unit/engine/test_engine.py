@@ -1,6 +1,9 @@
 """Unit tests for Engine class and exploration loop."""
 
+import inspect
+
 from pyct.config.execution import ExecutionConfig
+from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.engine import Engine
 from pyct.engine.result import ExplorationResult
 
@@ -82,6 +85,48 @@ class TestEngineTerminationReason:
         # Either max_iterations or full_coverage is acceptable depending on
         # how fast the simple function gets explored
         assert result.termination_reason in ("max_iterations", "full_coverage", "exhausted")
+
+
+class TestEngineScopeWiring:
+    """Verify ExecutionConfig.scope reaches the coverage tracker.
+
+    When the caller provides a scope, the engine must use it rather
+    than constructing a fresh narrow scope from the target. These
+    tests exercise that wiring indirectly via observable termination
+    and coverage behavior.
+    """
+
+    def test_engine_uses_config_scope_when_provided(self):
+        # Build a scope whose pre_covered already spans every executable
+        # line. With this scope, the tracker reports full coverage before
+        # any seed runs, so the engine should terminate at iter <= 1 on
+        # reason=full_coverage — irrespective of what _sample_target does.
+        target_file = inspect.getfile(_sample_target)
+        source_lines, start = inspect.getsourcelines(_sample_target)
+        func_range = frozenset(range(start, start + len(source_lines)))
+        scope = CoverageScope.for_file(target_file, func_range, pre_covered=func_range)
+
+        engine = Engine(
+            ExecutionConfig(
+                max_iterations=50,
+                timeout_seconds=10.0,
+                scope=scope,
+            )
+        )
+        result = engine.explore(_sample_target, {"x": 0})
+
+        assert result.success
+        assert result.termination_reason == "full_coverage"
+        assert result.iterations <= 1
+
+    def test_engine_falls_back_to_for_target_when_scope_is_none(self):
+        # Default config.scope=None → engine computes a fresh scope.
+        # _sample_target has only two branches, so exploration finishes
+        # in a bounded number of iterations with non-zero coverage.
+        engine = Engine(ExecutionConfig(max_iterations=20, timeout_seconds=10.0))
+        result = engine.explore(_sample_target, {"x": 0})
+        assert result.success
+        assert result.coverage_percent > 0
 
 
 class TestEnginePluginRegistrationBoundary:
