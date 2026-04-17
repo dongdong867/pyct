@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from pyct.engine.coverage_scope import CoverageScope
 
 
 @dataclass(frozen=True)
@@ -27,6 +31,13 @@ class ExecutionConfig:
             engine from a hung or pathological seed. Mirrors the
             ``_coverage_by_rerun`` / ``run_llm_only`` protection in
             ``tools/benchmark/runners.py``.
+        scope: Optional CoverageScope specifying which source files the
+            engine tracks for coverage and termination. When None
+            (default), the engine constructs a narrow single-file scope
+            from the target function — identical to classical concolic
+            testing behavior. Set to a multi-file scope when the caller
+            wants the engine to keep exploring past the target function
+            until deeper library code is also covered.
     """
 
     timeout_seconds: float = 30.0
@@ -35,3 +46,4 @@ class ExecutionConfig:
     solver_timeout: int = 10
     plateau_threshold: int = 5
     seed_soft_timeout: float = 10.0
+    scope: CoverageScope | None = None

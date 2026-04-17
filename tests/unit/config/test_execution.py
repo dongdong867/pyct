@@ -1,8 +1,11 @@
 """Unit tests for ExecutionConfig."""
 
+import pickle
+
 import pytest
 
 from pyct.config.execution import ExecutionConfig
+from pyct.engine.coverage_scope import CoverageScope
 
 
 class TestExecutionConfigDefaults:
@@ -98,3 +101,38 @@ class TestExecutionConfigErrorCases:
         config = ExecutionConfig()
         with pytest.raises((AttributeError, TypeError)):
             del config.timeout_seconds  # type: ignore
+
+
+class TestExecutionConfigScope:
+    """ExecutionConfig carries an optional CoverageScope across the engine.
+
+    When ``scope`` is None (default) the engine constructs a narrow
+    single-file scope from the target function — preserves classical
+    concolic-testing behavior. When set, the engine uses the provided
+    scope for tracking and termination decisions.
+    """
+
+    def test_default_scope_is_none(self):
+        config = ExecutionConfig()
+        assert config.scope is None
+
+    def test_scope_can_be_set_to_coverage_scope(self, tmp_path):
+        path = str(tmp_path / "t.py")
+        scope = CoverageScope.for_file(path, frozenset({1, 2, 3}))
+        config = ExecutionConfig(scope=scope)
+        assert config.scope is scope
+
+    def test_config_with_scope_round_trips_through_pickle(self, tmp_path):
+        path = str(tmp_path / "t.py")
+        scope = CoverageScope.for_file(path, frozenset({1, 2, 3}))
+        config = ExecutionConfig(scope=scope, timeout_seconds=45.0)
+        restored = pickle.loads(pickle.dumps(config))
+        assert restored.timeout_seconds == 45.0
+        assert restored.scope == scope
+
+    def test_scope_field_is_frozen(self, tmp_path):
+        path = str(tmp_path / "t.py")
+        scope = CoverageScope.for_file(path, frozenset({1, 2, 3}))
+        config = ExecutionConfig(scope=scope)
+        with pytest.raises((AttributeError, TypeError)):
+            config.scope = None  # type: ignore
