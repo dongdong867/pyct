@@ -129,11 +129,13 @@ def measure_against_baseline(
 ) -> CoverageResult:
     """Score ``hits`` against the baseline's frozen line scope.
 
-    For each :class:`FunctionScope`, count in-scope hits and — when any
-    body line was hit — backfill def/decorator lines before the first
-    hit (coverage.py reports those as executed only at import time).
-    Hits outside any scope are ignored; backfill does not cross scope
-    boundaries.
+    For each :class:`FunctionScope`, collect in-scope hits and — when
+    any body line was hit — backfill def/decorator lines before the
+    first hit (coverage.py reports those as executed only at import
+    time). Hits outside any scope are ignored; backfill does not cross
+    scope boundaries. The returned ``executed_line_numbers`` is a flat
+    sorted union across scopes; ``executed_by_file`` preserves per-file
+    context for multi-scope baselines.
     """
     total = baseline.total_lines
     if total == 0:
@@ -145,17 +147,23 @@ def measure_against_baseline(
             missing_line_numbers=[],
         )
 
-    covered_total = 0
+    per_file: dict[str, set[int]] = {}
     for scope in baseline.scopes:
-        covered_total += _covered_in_scope(scope, hits.get(scope.file, set()))
+        covered = _covered_in_scope(scope, hits.get(scope.file, set()))
+        if covered:
+            per_file.setdefault(scope.file, set()).update(covered)
 
+    executed_by_file = {f: sorted(lines) for f, lines in per_file.items()}
+    all_covered: list[int] = sorted({ln for lines in per_file.values() for ln in lines})
+    covered_total = sum(len(v) for v in per_file.values())
     pct = covered_total / total * 100
     return CoverageResult(
         coverage_percent=pct,
         executed_lines=covered_total,
         total_lines=total,
-        executed_line_numbers=[],
+        executed_line_numbers=all_covered,
         missing_line_numbers=[],
+        executed_by_file=executed_by_file,
     )
 
 
@@ -319,18 +327,18 @@ def hits_from_coverage_data(data: Any) -> dict[str, set[int]]:
     return hits
 
 
-def _covered_in_scope(scope: FunctionScope, file_hits: set[int]) -> int:
-    """Count covered lines within one scope, with def-line backfill.
+def _covered_in_scope(scope: FunctionScope, file_hits: set[int]) -> set[int]:
+    """Return the covered lines within one scope, with def-line backfill.
 
-    Returns 0 if no scope line was hit. Otherwise, every line in the
+    Empty when no scope line was hit. Otherwise, every line in the
     scope prior to the first hit is treated as covered (the def header
     ran at import time, not at call time — coverage.py won't see it).
     """
     scope_set = set(scope.lines)
     in_scope_hits = scope_set & file_hits
     if not in_scope_hits:
-        return 0
+        return set()
 
     first_hit = min(in_scope_hits)
     backfilled = {ln for ln in scope_set if ln < first_hit}
-    return len(in_scope_hits | backfilled)
+    return in_scope_hits | backfilled

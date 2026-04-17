@@ -144,3 +144,70 @@ def test_measure_backfill_only_applies_when_some_body_line_hit():
     result = measure_against_baseline(hits, baseline)
 
     assert result.executed_lines == 0
+
+
+# ── Line-number reporting ─────────────────────────────────────────
+
+
+def test_measure_populates_executed_line_numbers_as_sorted_union():
+    # Two scopes in two files each with partial hits. The flat
+    # executed_line_numbers list must be the sorted union of what was
+    # covered (including def-line backfill) so downstream diff tools
+    # can compare runners line-by-line.
+    baseline = _make_baseline(
+        FunctionScope("a.py", 1, 10, (1, 3, 5, 7)),
+        FunctionScope("b.py", 20, 30, (20, 22, 25)),
+    )
+    hits = {"a.py": {5, 7}, "b.py": {25}}
+
+    result = measure_against_baseline(hits, baseline)
+
+    # a.py: {5, 7} hit + backfill {1, 3} = {1, 3, 5, 7}
+    # b.py: {25} hit + backfill {20, 22} = {20, 22, 25}
+    assert result.executed_line_numbers == [1, 3, 5, 7, 20, 22, 25]
+
+
+def test_measure_populates_executed_by_file_dict():
+    # Multi-scope baseline — callers need per-file context so line
+    # numbers aren't ambiguous across files.
+    baseline = _make_baseline(
+        FunctionScope("a.py", 1, 10, (1, 3, 5, 7)),
+        FunctionScope("b.py", 20, 30, (20, 22, 25)),
+    )
+    hits = {"a.py": {5, 7}, "b.py": {25}}
+
+    result = measure_against_baseline(hits, baseline)
+
+    assert result.executed_by_file == {
+        "a.py": [1, 3, 5, 7],
+        "b.py": [20, 22, 25],
+    }
+
+
+def test_measure_executed_by_file_omits_files_with_zero_coverage():
+    # A scope with no hits should not contribute an empty list — keeps
+    # the output focused on what was actually touched.
+    baseline = _make_baseline(
+        FunctionScope("a.py", 1, 10, (1, 3, 5)),
+        FunctionScope("b.py", 20, 30, (20, 22, 25)),
+    )
+    hits = {"a.py": {5}}  # b.py untouched
+
+    result = measure_against_baseline(hits, baseline)
+
+    assert result.executed_by_file == {"a.py": [1, 3, 5]}
+
+
+def test_measure_aggregates_multiple_scopes_in_same_file():
+    # Two scopes in one file → executed_by_file collapses them under
+    # the file key, sorted.
+    baseline = _make_baseline(
+        FunctionScope("a.py", 1, 10, (1, 3, 5)),
+        FunctionScope("a.py", 20, 30, (20, 22, 25)),
+    )
+    hits = {"a.py": {5, 25}}
+
+    result = measure_against_baseline(hits, baseline)
+
+    assert result.executed_by_file == {"a.py": [1, 3, 5, 20, 22, 25]}
+    assert result.executed_line_numbers == [1, 3, 5, 20, 22, 25]

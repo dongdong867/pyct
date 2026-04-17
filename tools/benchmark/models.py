@@ -8,22 +8,34 @@ from typing import Any
 
 @dataclass
 class CoverageResult:
-    """Coverage measurement for a single runner execution."""
+    """Coverage measurement for a single runner execution.
+
+    ``executed_line_numbers`` is the flat sorted union of covered lines
+    across all baseline scopes — useful for quick line-count checks but
+    loses the file-of-origin for multi-file baselines. Downstream tools
+    that need to disambiguate should read ``executed_by_file``, which
+    holds per-file sorted lists and is populated only when at least one
+    line was covered.
+    """
 
     coverage_percent: float = 0.0
     executed_lines: int = 0
     total_lines: int = 0
     executed_line_numbers: list[int] = field(default_factory=list)
     missing_line_numbers: list[int] = field(default_factory=list)
+    executed_by_file: dict[str, list[int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result: dict[str, Any] = {
             "coverage_percent": self.coverage_percent,
             "executed_lines": self.executed_lines,
             "total_lines": self.total_lines,
             "executed_line_numbers": self.executed_line_numbers,
             "missing_line_numbers": self.missing_line_numbers,
         }
+        if self.executed_by_file:
+            result["executed_by_file"] = self.executed_by_file
+        return result
 
 
 @dataclass
