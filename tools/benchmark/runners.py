@@ -107,7 +107,7 @@ def run_concolic_llm(
     )
     elapsed = time.monotonic() - start + seed_time
 
-    runner_result = _pyct_result_to_runner(result, target, elapsed)
+    runner_result = _pyct_result_to_runner(result, target, elapsed, seeds=seeds)
     if result.token_stats:
         runner_result.token_usage = TokenUsage(
             input_tokens=result.token_stats.get("input_tokens", 0),
@@ -420,6 +420,7 @@ def _pyct_result_to_runner(
     result: Any,
     target: BenchmarkTarget,
     elapsed: float,
+    seeds: list[dict[str, Any]] | None = None,
 ) -> RunnerResult:
     """Convert a RunConcolicResult to a RunnerResult with coverage details.
 
@@ -432,11 +433,23 @@ def _pyct_result_to_runner(
     - ``source_path`` unset (standard): use the engine's
       ``executed_lines`` directly against the function-level scope —
       preserves comparability with the pre-baseline paper numbers.
+
+    When ``seeds`` is supplied (concolic_llm mode), the plain execution
+    of those seeds is unioned into the coverage so the invariant
+    ``concolic_llm >= llm_only`` holds even when the engine subprocess
+    was killed by the watchdog, crashed mid-seed, or terminated before
+    replaying every seed — cases that would otherwise leave
+    ``result.inputs_generated`` / ``executed_lines`` empty or partial.
     """
     if target.source_path:
-        coverage = _coverage_by_rerun(target, result.inputs_generated)
+        inputs = list(result.inputs_generated)
+        if seeds:
+            inputs.extend(seeds)
+        coverage = _coverage_by_rerun(target, inputs)
     else:
-        coverage = _coverage_from_engine_tracker(target, result.executed_lines)
+        engine_lines = set(result.executed_lines)
+        seed_lines = _replay_seeds_plain(target, seeds) if seeds else set()
+        coverage = _coverage_from_engine_tracker(target, engine_lines | seed_lines)
 
     return RunnerResult(
         success=result.success,
@@ -488,6 +501,40 @@ def _coverage_from_engine_tracker(
     cov = Coverage(data_file=None, include=[target_file])
     all_stmts = set(cov.analysis(target_file)[1]) & func_range
     return _build_coverage_result(all_stmts, set(executed_lines))
+
+
+def _replay_seeds_plain(
+    target: BenchmarkTarget,
+    seeds: list[dict[str, Any]] | None,
+) -> set[int]:
+    """Plain-execute ``seeds`` under a target-file-scoped coverage session.
+
+    Used by the standard-suite (non-``source_path``) branch to recover
+    seed lines that the engine didn't hit — either because the engine's
+    Concolic wrapping crashed before reaching them or because the engine
+    was killed before replaying the full seed list.
+    """
+    if not seeds:
+        return set()
+    func = _resolve_target(target)
+    unwrapped = inspect.unwrap(func)
+    target_file = inspect.getfile(unwrapped)
+    cov = Coverage(data_file=None, include=[target_file])
+    for seed in seeds:
+        cov.start()
+        with (
+            _suppress_output(),
+            _soft_timeout(_RERUN_SOFT_TIMEOUT_SECONDS),
+            contextlib.suppress(Exception),
+        ):
+            call_with_args(func, seed)
+        cov.stop()
+    data = cov.get_data()
+    hits: set[int] = set()
+    for measured in data.measured_files():
+        if measured == target_file:
+            hits |= set(data.lines(measured) or [])
+    return hits
 
 
 def _extract_token_usage(plugins: list) -> TokenUsage | None:
