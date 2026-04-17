@@ -1,0 +1,39 @@
+{
+  "target": "sympy.ntheory.elliptic_curve.EllipticCurve",
+  "generated_at": "2026-04-17T06:57:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/elliptic_curve.py",
+      "start_line": 35,
+      "end_line": 61,
+      "lines": [
+        35,
+        36,
+        37,
+        39,
+        40,
+        41,
+        42,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49,
+        50,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61
+      ]
+    }
+  ]
+}

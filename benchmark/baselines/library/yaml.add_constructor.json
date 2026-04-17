@@ -1,0 +1,31 @@
+{
+  "target": "yaml.add_constructor",
+  "generated_at": "2026-04-17T07:03:34",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 302,
+      "end_line": 313,
+      "lines": [
+        302,
+        308,
+        309,
+        310,
+        311,
+        313
+      ]
+    },
+    {
+      "file": "yaml/constructor.py",
+      "start_line": 160,
+      "end_line": 163,
+      "lines": [
+        160,
+        161,
+        162,
+        163
+      ]
+    }
+  ]
+}

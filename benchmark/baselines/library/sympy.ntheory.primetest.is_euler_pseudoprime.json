@@ -1,0 +1,29 @@
+{
+  "target": "sympy.ntheory.primetest.is_euler_pseudoprime",
+  "generated_at": "2026-04-17T06:59:06",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 73,
+      "end_line": 126,
+      "lines": [
+        73,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        122,
+        123,
+        124,
+        125,
+        126
+      ]
+    }
+  ]
+}

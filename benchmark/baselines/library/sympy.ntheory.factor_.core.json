@@ -1,0 +1,25 @@
+{
+  "target": "sympy.ntheory.factor_.core",
+  "generated_at": "2026-04-17T06:59:22",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 2302,
+      "end_line": 2366,
+      "lines": [
+        2302,
+        2356,
+        2357,
+        2358,
+        2359,
+        2360,
+        2361,
+        2363,
+        2364,
+        2365,
+        2366
+      ]
+    }
+  ]
+}

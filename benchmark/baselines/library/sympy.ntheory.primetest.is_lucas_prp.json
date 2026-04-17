@@ -1,0 +1,19 @@
+{
+  "target": "sympy.ntheory.primetest.is_lucas_prp",
+  "generated_at": "2026-04-17T07:00:02",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 308,
+      "end_line": 345,
+      "lines": [
+        308,
+        342,
+        343,
+        344,
+        345
+      ]
+    }
+  ]
+}

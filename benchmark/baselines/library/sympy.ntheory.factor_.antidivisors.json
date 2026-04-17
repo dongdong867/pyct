@@ -1,0 +1,37 @@
+{
+  "target": "sympy.ntheory.factor_.antidivisors",
+  "generated_at": "2026-04-17T06:59:23",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 2026,
+      "end_line": 2047,
+      "lines": [
+        2026,
+        2036,
+        2037,
+        2038,
+        2039,
+        2040,
+        2041,
+        2042,
+        2043,
+        2044,
+        2045,
+        2046,
+        2047
+      ]
+    },
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 2050,
+      "end_line": 2079,
+      "lines": [
+        2050,
+        2078,
+        2079
+      ]
+    }
+  ]
+}

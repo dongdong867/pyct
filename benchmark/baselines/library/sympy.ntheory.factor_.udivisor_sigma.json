@@ -1,0 +1,17 @@
+{
+  "target": "sympy.ntheory.factor_.udivisor_sigma",
+  "generated_at": "2026-04-17T06:57:28",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 2373,
+      "end_line": 2432,
+      "lines": [
+        2373,
+        2431,
+        2432
+      ]
+    }
+  ]
+}

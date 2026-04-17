@@ -1,0 +1,21 @@
+{
+  "target": "Parse List Header",
+  "generated_at": "2026-04-17T06:57:10",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "werkzeug/http.py",
+      "start_line": 300,
+      "end_line": 324,
+      "lines": [
+        300,
+        316,
+        318,
+        319,
+        320,
+        322,
+        324
+      ]
+    }
+  ]
+}

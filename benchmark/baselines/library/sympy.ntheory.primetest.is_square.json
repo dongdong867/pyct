@@ -1,0 +1,22 @@
+{
+  "target": "sympy.ntheory.primetest.is_square",
+  "generated_at": "2026-04-17T07:01:51",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 174,
+      "end_line": 203,
+      "lines": [
+        174,
+        197,
+        198,
+        199,
+        200,
+        201,
+        202,
+        203
+      ]
+    }
+  ]
+}

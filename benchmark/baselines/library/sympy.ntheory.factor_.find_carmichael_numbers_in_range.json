@@ -1,0 +1,20 @@
+{
+  "target": "sympy.ntheory.factor_.find_carmichael_numbers_in_range",
+  "generated_at": "2026-04-17T06:59:23",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 2730,
+      "end_line": 2745,
+      "lines": [
+        2730,
+        2739,
+        2740,
+        2741,
+        2743,
+        2745
+      ]
+    }
+  ]
+}

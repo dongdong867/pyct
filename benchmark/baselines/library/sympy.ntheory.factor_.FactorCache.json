@@ -1,0 +1,31 @@
+{
+  "target": "sympy.ntheory.factor_.FactorCache",
+  "generated_at": "2026-04-17T06:57:36",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 700,
+      "end_line": 702,
+      "lines": [
+        700,
+        701,
+        702
+      ]
+    },
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 741,
+      "end_line": 747,
+      "lines": [
+        741,
+        742,
+        743,
+        744,
+        745,
+        746,
+        747
+      ]
+    }
+  ]
+}

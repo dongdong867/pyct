@@ -1,0 +1,70 @@
+{
+  "target": "Parse Cookie",
+  "generated_at": "2026-04-17T06:57:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "werkzeug/datastructures/structures.py",
+      "start_line": 181,
+      "end_line": 210,
+      "lines": [
+        181,
+        190,
+        191,
+        192,
+        193,
+        194,
+        195,
+        196,
+        197,
+        198,
+        200,
+        201,
+        203,
+        204,
+        205,
+        207,
+        208,
+        209,
+        210
+      ]
+    },
+    {
+      "file": "werkzeug/http.py",
+      "start_line": 1184,
+      "end_line": 1218,
+      "lines": [
+        1184,
+        1210,
+        1211,
+        1213,
+        1215,
+        1216,
+        1218
+      ]
+    },
+    {
+      "file": "werkzeug/sansio/http.py",
+      "start_line": 122,
+      "end_line": 166,
+      "lines": [
+        122,
+        142,
+        143,
+        145,
+        146,
+        148,
+        149,
+        151,
+        152,
+        153,
+        155,
+        156,
+        158,
+        160,
+        164,
+        166
+      ]
+    }
+  ]
+}

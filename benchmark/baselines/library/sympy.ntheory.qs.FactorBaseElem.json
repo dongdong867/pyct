@@ -1,0 +1,21 @@
+{
+  "target": "sympy.ntheory.qs.FactorBaseElem",
+  "generated_at": "2026-04-17T06:59:10",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/qs.py",
+      "start_line": 39,
+      "end_line": 57,
+      "lines": [
+        39,
+        50,
+        51,
+        52,
+        55,
+        56,
+        57
+      ]
+    }
+  ]
+}

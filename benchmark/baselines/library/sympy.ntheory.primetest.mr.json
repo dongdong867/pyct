@@ -1,0 +1,29 @@
+{
+  "target": "sympy.ntheory.primetest.mr",
+  "generated_at": "2026-04-17T06:59:42",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 226,
+      "end_line": 265,
+      "lines": [
+        226,
+        249,
+        251,
+        252,
+        253,
+        255,
+        256,
+        257,
+        259,
+        260,
+        261,
+        262,
+        263,
+        264,
+        265
+      ]
+    }
+  ]
+}

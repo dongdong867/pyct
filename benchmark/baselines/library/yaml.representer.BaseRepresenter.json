@@ -1,0 +1,21 @@
+{
+  "target": "yaml.representer.BaseRepresenter",
+  "generated_at": "2026-04-17T07:06:02",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/representer.py",
+      "start_line": 18,
+      "end_line": 24,
+      "lines": [
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24
+      ]
+    }
+  ]
+}

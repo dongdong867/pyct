@@ -1,0 +1,20 @@
+{
+  "target": "yaml.scanner.ScannerError",
+  "generated_at": "2026-04-17T06:59:41",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/error.py",
+      "start_line": 50,
+      "end_line": 56,
+      "lines": [
+        50,
+        52,
+        53,
+        54,
+        55,
+        56
+      ]
+    }
+  ]
+}

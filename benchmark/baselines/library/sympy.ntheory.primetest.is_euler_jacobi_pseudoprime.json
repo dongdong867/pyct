@@ -1,0 +1,19 @@
+{
+  "target": "sympy.ntheory.primetest.is_euler_jacobi_pseudoprime",
+  "generated_at": "2026-04-17T06:58:31",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 129,
+      "end_line": 171,
+      "lines": [
+        129,
+        168,
+        169,
+        170,
+        171
+      ]
+    }
+  ]
+}

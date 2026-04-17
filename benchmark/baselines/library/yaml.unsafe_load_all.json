@@ -1,0 +1,16 @@
+{
+  "target": "yaml.unsafe_load_all",
+  "generated_at": "2026-04-17T07:06:01",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 147,
+      "end_line": 155,
+      "lines": [
+        147,
+        155
+      ]
+    }
+  ]
+}

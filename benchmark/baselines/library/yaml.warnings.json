@@ -1,0 +1,17 @@
+{
+  "target": "yaml.warnings",
+  "generated_at": "2026-04-17T07:01:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 24,
+      "end_line": 26,
+      "lines": [
+        24,
+        25,
+        26
+      ]
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "target": "yaml.add_multi_constructor",
+  "generated_at": "2026-04-17T06:59:47",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 315,
+      "end_line": 327,
+      "lines": [
+        315,
+        322,
+        323,
+        324,
+        325,
+        327
+      ]
+    },
+    {
+      "file": "yaml/constructor.py",
+      "start_line": 166,
+      "end_line": 169,
+      "lines": [
+        166,
+        167,
+        168,
+        169
+      ]
+    }
+  ]
+}

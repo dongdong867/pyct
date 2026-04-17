@@ -1,0 +1,101 @@
+{
+  "target": "yaml.compose",
+  "generated_at": "2026-04-17T07:01:56",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 51,
+      "end_line": 60,
+      "lines": [
+        51,
+        56,
+        57,
+        58,
+        60
+      ]
+    },
+    {
+      "file": "yaml/loader.py",
+      "start_line": 43,
+      "end_line": 49,
+      "lines": [
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ]
+    },
+    {
+      "file": "yaml/reader.py",
+      "start_line": 59,
+      "end_line": 85,
+      "lines": [
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70,
+        71,
+        72,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        81,
+        82,
+        83,
+        84,
+        85
+      ]
+    },
+    {
+      "file": "yaml/reader.py",
+      "start_line": 122,
+      "end_line": 135,
+      "lines": [
+        122,
+        123,
+        124,
+        125,
+        126,
+        127,
+        128,
+        129,
+        130,
+        131,
+        133,
+        134,
+        135
+      ]
+    },
+    {
+      "file": "yaml/reader.py",
+      "start_line": 177,
+      "end_line": 185,
+      "lines": [
+        177,
+        178,
+        179,
+        180,
+        182,
+        183,
+        184,
+        185
+      ]
+    }
+  ]
+}

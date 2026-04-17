@@ -1,0 +1,23 @@
+{
+  "target": "sympy.ntheory.egyptian_fraction.egypt_harmonic",
+  "generated_at": "2026-04-17T06:57:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/egyptian_fraction.py",
+      "start_line": 214,
+      "end_line": 223,
+      "lines": [
+        214,
+        216,
+        217,
+        218,
+        219,
+        220,
+        221,
+        222,
+        223
+      ]
+    }
+  ]
+}

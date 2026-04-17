@@ -1,0 +1,27 @@
+{
+  "target": "yaml.add_representer",
+  "generated_at": "2026-04-17T07:00:06",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 329,
+      "end_line": 336,
+      "lines": [
+        329,
+        336
+      ]
+    },
+    {
+      "file": "yaml/representer.py",
+      "start_line": 66,
+      "end_line": 69,
+      "lines": [
+        66,
+        67,
+        68,
+        69
+      ]
+    }
+  ]
+}

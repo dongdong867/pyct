@@ -1,0 +1,52 @@
+{
+  "target": "Parse Dict Header",
+  "generated_at": "2026-04-17T06:57:10",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "werkzeug/http.py",
+      "start_line": 300,
+      "end_line": 324,
+      "lines": [
+        300,
+        316,
+        318,
+        319,
+        320,
+        322,
+        324
+      ]
+    },
+    {
+      "file": "werkzeug/http.py",
+      "start_line": 327,
+      "end_line": 398,
+      "lines": [
+        327,
+        358,
+        360,
+        361,
+        362,
+        364,
+        366,
+        368,
+        369,
+        370,
+        372,
+        373,
+        375,
+        378,
+        379,
+        381,
+        383,
+        384,
+        389,
+        391,
+        393,
+        394,
+        396,
+        398
+      ]
+    }
+  ]
+}

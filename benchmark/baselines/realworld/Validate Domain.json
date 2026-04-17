@@ -1,0 +1,97 @@
+{
+  "target": "Validate Domain",
+  "generated_at": "2026-04-17T06:59:24",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "validators/domain.py",
+      "start_line": 41,
+      "end_line": 101,
+      "lines": [
+        41,
+        76,
+        77,
+        79,
+        80,
+        82,
+        83,
+        84,
+        86,
+        100,
+        101
+      ]
+    },
+    {
+      "file": "validators/utils.py",
+      "start_line": 14,
+      "end_line": 19,
+      "lines": [
+        14,
+        16,
+        17,
+        18,
+        19
+      ]
+    },
+    {
+      "file": "validators/utils.py",
+      "start_line": 37,
+      "end_line": 42,
+      "lines": [
+        37,
+        39
+      ]
+    },
+    {
+      "file": "validators/utils.py",
+      "start_line": 45,
+      "end_line": 102,
+      "lines": [
+        45,
+        73,
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        82,
+        83,
+        84,
+        85,
+        87,
+        89,
+        94,
+        95,
+        96,
+        100,
+        102
+      ]
+    },
+    {
+      "file": "validators/utils.py",
+      "start_line": 74,
+      "end_line": 100,
+      "lines": [
+        74,
+        75,
+        76,
+        77,
+        78,
+        79,
+        80,
+        82,
+        83,
+        84,
+        85,
+        87,
+        89,
+        94,
+        95,
+        96,
+        100
+      ]
+    }
+  ]
+}

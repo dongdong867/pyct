@@ -1,0 +1,19 @@
+{
+  "target": "sympy.ntheory.ecm.Point",
+  "generated_at": "2026-04-17T06:57:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/ecm.py",
+      "start_line": 40,
+      "end_line": 55,
+      "lines": [
+        40,
+        52,
+        53,
+        54,
+        55
+      ]
+    }
+  ]
+}

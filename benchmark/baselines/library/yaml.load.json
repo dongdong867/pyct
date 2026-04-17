@@ -1,0 +1,19 @@
+{
+  "target": "yaml.load",
+  "generated_at": "2026-04-17T07:00:07",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 74,
+      "end_line": 83,
+      "lines": [
+        74,
+        79,
+        80,
+        81,
+        83
+      ]
+    }
+  ]
+}

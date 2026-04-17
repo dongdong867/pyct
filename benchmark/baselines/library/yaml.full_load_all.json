@@ -1,0 +1,16 @@
+{
+  "target": "yaml.full_load_all",
+  "generated_at": "2026-04-17T06:59:12",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 107,
+      "end_line": 115,
+      "lines": [
+        107,
+        115
+      ]
+    }
+  ]
+}

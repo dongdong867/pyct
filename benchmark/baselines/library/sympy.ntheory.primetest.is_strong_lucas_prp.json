@@ -1,0 +1,19 @@
+{
+  "target": "sympy.ntheory.primetest.is_strong_lucas_prp",
+  "generated_at": "2026-04-17T07:00:02",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 348,
+      "end_line": 383,
+      "lines": [
+        348,
+        380,
+        381,
+        382,
+        383
+      ]
+    }
+  ]
+}

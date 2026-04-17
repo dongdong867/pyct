@@ -1,0 +1,50 @@
+{
+  "target": "sympy.ntheory.primetest.is_extra_strong_lucas_prp",
+  "generated_at": "2026-04-17T06:59:35",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 268,
+      "end_line": 305,
+      "lines": [
+        268,
+        299,
+        300,
+        301,
+        302,
+        303,
+        304,
+        305
+      ]
+    },
+    {
+      "file": "sympy/ntheory/primetest.py",
+      "start_line": 386,
+      "end_line": 455,
+      "lines": [
+        386,
+        431,
+        432,
+        433,
+        434,
+        435,
+        436,
+        437,
+        439,
+        440,
+        441,
+        444,
+        445,
+        447,
+        449,
+        450,
+        451,
+        452,
+        453,
+        454,
+        455
+      ]
+    }
+  ]
+}

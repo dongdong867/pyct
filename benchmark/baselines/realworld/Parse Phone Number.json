@@ -1,0 +1,668 @@
+{
+  "target": "Parse Phone Number",
+  "generated_at": "2026-04-17T07:01:35",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "phonenumbers/data/__init__.py",
+      "start_line": 21,
+      "end_line": 23,
+      "lines": [
+        21,
+        22
+      ]
+    },
+    {
+      "file": "phonenumbers/phonemetadata.py",
+      "start_line": 29,
+      "end_line": 106,
+      "lines": [
+        29,
+        41,
+        48,
+        66,
+        67,
+        68,
+        87,
+        97,
+        98,
+        100,
+        106
+      ]
+    },
+    {
+      "file": "phonenumbers/phonemetadata.py",
+      "start_line": 153,
+      "end_line": 192,
+      "lines": [
+        153,
+        161,
+        165,
+        175,
+        176,
+        177,
+        190,
+        191,
+        192
+      ]
+    },
+    {
+      "file": "phonenumbers/phonemetadata.py",
+      "start_line": 232,
+      "end_line": 237,
+      "lines": [
+        232,
+        233,
+        234,
+        235,
+        236,
+        237
+      ]
+    },
+    {
+      "file": "phonenumbers/phonemetadata.py",
+      "start_line": 276,
+      "end_line": 284,
+      "lines": [
+        276,
+        277,
+        278,
+        280,
+        281,
+        282,
+        283,
+        284
+      ]
+    },
+    {
+      "file": "phonenumbers/phonemetadata.py",
+      "start_line": 341,
+      "end_line": 563,
+      "lines": [
+        341,
+        382,
+        383,
+        384,
+        385,
+        386,
+        387,
+        388,
+        389,
+        390,
+        391,
+        392,
+        393,
+        394,
+        395,
+        396,
+        397,
+        401,
+        409,
+        414,
+        422,
+        428,
+        436,
+        444,
+        456,
+        465,
+        471,
+        478,
+        479,
+        480,
+        507,
+        508,
+        509,
+        517,
+        526,
+        530,
+        536,
+        539,
+        541,
+        543,
+        544,
+        545,
+        546,
+        547,
+        549,
+        550,
+        551,
+        552,
+        553,
+        554,
+        556,
+        558,
+        559,
+        560,
+        561,
+        563
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumber.py",
+      "start_line": 75,
+      "end_line": 181,
+      "lines": [
+        75,
+        89,
+        90,
+        92,
+        109,
+        110,
+        112,
+        122,
+        143,
+        144,
+        146,
+        149,
+        150,
+        152,
+        163,
+        168,
+        181
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 648,
+      "end_line": 681,
+      "lines": [
+        648,
+        668,
+        669,
+        670,
+        672,
+        673,
+        674,
+        676,
+        677,
+        678,
+        679,
+        681
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 684,
+      "end_line": 702,
+      "lines": [
+        684,
+        699,
+        700,
+        701,
+        702
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 705,
+      "end_line": 730,
+      "lines": [
+        705,
+        726,
+        727,
+        728,
+        730
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 733,
+      "end_line": 754,
+      "lines": [
+        733,
+        745,
+        746,
+        747,
+        748,
+        749,
+        750,
+        751,
+        752,
+        753,
+        754
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 1071,
+      "end_line": 1075,
+      "lines": [
+        1071,
+        1073,
+        1074,
+        1075
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2008,
+      "end_line": 2032,
+      "lines": [
+        2008,
+        2010,
+        2011,
+        2012,
+        2013,
+        2014,
+        2015,
+        2016,
+        2018,
+        2019,
+        2020,
+        2021,
+        2022,
+        2023,
+        2024,
+        2025,
+        2026,
+        2027,
+        2028,
+        2029,
+        2030,
+        2032
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2205,
+      "end_line": 2220,
+      "lines": [
+        2205,
+        2216,
+        2217,
+        2218,
+        2220
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2379,
+      "end_line": 2448,
+      "lines": [
+        2379,
+        2383,
+        2384,
+        2385,
+        2386,
+        2394,
+        2397,
+        2399,
+        2400,
+        2403,
+        2405,
+        2406,
+        2408,
+        2415,
+        2418,
+        2420,
+        2421,
+        2423,
+        2424,
+        2425,
+        2428,
+        2429,
+        2431,
+        2434,
+        2435,
+        2437,
+        2438,
+        2439,
+        2440,
+        2441,
+        2442,
+        2443,
+        2445,
+        2446,
+        2448
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2569,
+      "end_line": 2587,
+      "lines": [
+        2569,
+        2577,
+        2579,
+        2580,
+        2581,
+        2582,
+        2583,
+        2584,
+        2585,
+        2586,
+        2587
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2590,
+      "end_line": 2686,
+      "lines": [
+        2590,
+        2632,
+        2633,
+        2634,
+        2636,
+        2637,
+        2638,
+        2640,
+        2642,
+        2643,
+        2645,
+        2646,
+        2647,
+        2650,
+        2651,
+        2652,
+        2653,
+        2657,
+        2659,
+        2663,
+        2664,
+        2665,
+        2666,
+        2667,
+        2668,
+        2669,
+        2676,
+        2679,
+        2680,
+        2681,
+        2682,
+        2685,
+        2686
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2712,
+      "end_line": 2748,
+      "lines": [
+        2712,
+        2730,
+        2731,
+        2733,
+        2734,
+        2735,
+        2738,
+        2742,
+        2743,
+        2744,
+        2745,
+        2746,
+        2748
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2751,
+      "end_line": 2810,
+      "lines": [
+        2751,
+        2765,
+        2766,
+        2767,
+        2771,
+        2774,
+        2775,
+        2776,
+        2777,
+        2779,
+        2783,
+        2784,
+        2785,
+        2790,
+        2791,
+        2792,
+        2794,
+        2796,
+        2797,
+        2802,
+        2803,
+        2804,
+        2805,
+        2806,
+        2807,
+        2808,
+        2810
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2813,
+      "end_line": 2838,
+      "lines": [
+        2813,
+        2827,
+        2830,
+        2832,
+        2836,
+        2837,
+        2838
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2841,
+      "end_line": 2854,
+      "lines": [
+        2841,
+        2847,
+        2849,
+        2850,
+        2851,
+        2852,
+        2853,
+        2854
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2857,
+      "end_line": 2869,
+      "lines": [
+        2857,
+        2860,
+        2861,
+        2862,
+        2865,
+        2867,
+        2868,
+        2869
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 2872,
+      "end_line": 3031,
+      "lines": [
+        2872,
+        2930,
+        2931,
+        2932,
+        2933,
+        2935,
+        2936,
+        2939,
+        2941,
+        2942,
+        2947,
+        2948,
+        2950,
+        2951,
+        2955,
+        2956,
+        2957,
+        2958,
+        2959,
+        2961,
+        2963,
+        2964,
+        2965,
+        2969,
+        2970,
+        2971,
+        2972,
+        2975,
+        2979,
+        2980,
+        2983,
+        2985,
+        2986,
+        2987,
+        2989,
+        2990,
+        2995,
+        2996,
+        2997,
+        2998,
+        2999,
+        3000,
+        3002,
+        3003,
+        3005,
+        3006,
+        3007,
+        3013,
+        3014,
+        3017,
+        3018,
+        3019,
+        3020,
+        3026,
+        3027,
+        3029,
+        3030,
+        3031
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 3034,
+      "end_line": 3054,
+      "lines": [
+        3034,
+        3041,
+        3042,
+        3044,
+        3046,
+        3047,
+        3049,
+        3051,
+        3052,
+        3054
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 3057,
+      "end_line": 3066,
+      "lines": [
+        3057,
+        3059,
+        3060,
+        3061,
+        3062,
+        3065
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 3069,
+      "end_line": 3113,
+      "lines": [
+        3069,
+        3072,
+        3074,
+        3075,
+        3076,
+        3077,
+        3080,
+        3084,
+        3086,
+        3093,
+        3094,
+        3096,
+        3100,
+        3105,
+        3106,
+        3107,
+        3113
+      ]
+    },
+    {
+      "file": "phonenumbers/phonenumberutil.py",
+      "start_line": 3360,
+      "end_line": 3363,
+      "lines": [
+        3360,
+        3361,
+        3362,
+        3363
+      ]
+    },
+    {
+      "file": "phonenumbers/unicode_util.py",
+      "start_line": 401,
+      "end_line": 409,
+      "lines": [
+        401,
+        405,
+        406,
+        407,
+        409
+      ]
+    },
+    {
+      "file": "phonenumbers/util.py",
+      "start_line": 144,
+      "end_line": 149,
+      "lines": [
+        144,
+        146,
+        147,
+        149
+      ]
+    },
+    {
+      "file": "phonenumbers/util.py",
+      "start_line": 156,
+      "end_line": 160,
+      "lines": [
+        156,
+        157,
+        158,
+        160
+      ]
+    },
+    {
+      "file": "phonenumbers/util.py",
+      "start_line": 169,
+      "end_line": 179,
+      "lines": [
+        169,
+        171,
+        172,
+        173,
+        174,
+        176,
+        178,
+        179
+      ]
+    },
+    {
+      "file": "phonenumbers/util.py",
+      "start_line": 171,
+      "end_line": 178,
+      "lines": [
+        171,
+        172,
+        173,
+        174,
+        176,
+        178
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "target": "sympy.ntheory.modular.crt2",
+  "generated_at": "2026-04-17T07:01:36",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/modular.py",
+      "start_line": 10,
+      "end_line": 21,
+      "lines": [
+        10,
+        19,
+        20,
+        21
+      ]
+    },
+    {
+      "file": "sympy/ntheory/modular.py",
+      "start_line": 143,
+      "end_line": 169,
+      "lines": [
+        143,
+        165,
+        167,
+        168,
+        169
+      ]
+    }
+  ]
+}

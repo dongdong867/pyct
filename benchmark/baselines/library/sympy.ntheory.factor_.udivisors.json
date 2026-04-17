@@ -1,0 +1,37 @@
+{
+  "target": "sympy.ntheory.factor_.udivisors",
+  "generated_at": "2026-04-17T06:59:30",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 1929,
+      "end_line": 1953,
+      "lines": [
+        1929,
+        1939,
+        1940,
+        1941,
+        1942,
+        1944,
+        1947,
+        1948,
+        1949,
+        1950,
+        1951,
+        1952,
+        1953
+      ]
+    },
+    {
+      "file": "sympy/ntheory/factor_.py",
+      "start_line": 1956,
+      "end_line": 1990,
+      "lines": [
+        1956,
+        1989,
+        1990
+      ]
+    }
+  ]
+}

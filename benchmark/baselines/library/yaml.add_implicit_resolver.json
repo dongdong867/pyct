@@ -1,0 +1,38 @@
+{
+  "target": "yaml.add_implicit_resolver",
+  "generated_at": "2026-04-17T07:00:09",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/__init__.py",
+      "start_line": 271,
+      "end_line": 285,
+      "lines": [
+        271,
+        279,
+        280,
+        281,
+        282,
+        284,
+        285
+      ]
+    },
+    {
+      "file": "yaml/resolver.py",
+      "start_line": 26,
+      "end_line": 35,
+      "lines": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35
+      ]
+    }
+  ]
+}

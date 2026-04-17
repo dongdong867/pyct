@@ -1,0 +1,24 @@
+{
+  "target": "sympy.ntheory.egyptian_fraction.egypt_graham_jewett",
+  "generated_at": "2026-04-17T06:57:11",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/egyptian_fraction.py",
+      "start_line": 157,
+      "end_line": 176,
+      "lines": [
+        157,
+        159,
+        165,
+        166,
+        167,
+        168,
+        169,
+        173,
+        175,
+        176
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "target": "sympy.ntheory.elliptic_curve.EllipticCurvePoint",
+  "generated_at": "2026-04-17T06:57:15",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "sympy/ntheory/elliptic_curve.py",
+      "start_line": 299,
+      "end_line": 307,
+      "lines": [
+        299,
+        300,
+        301,
+        302,
+        303,
+        304,
+        305,
+        306,
+        307
+      ]
+    }
+  ]
+}

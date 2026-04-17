@@ -1,0 +1,20 @@
+{
+  "target": "yaml.reader.ReaderError",
+  "generated_at": "2026-04-17T07:01:08",
+  "generator_version": "1",
+  "scopes": [
+    {
+      "file": "yaml/reader.py",
+      "start_line": 26,
+      "end_line": 31,
+      "lines": [
+        26,
+        27,
+        28,
+        29,
+        30,
+        31
+      ]
+    }
+  ]
+}
