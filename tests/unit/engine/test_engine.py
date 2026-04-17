@@ -57,9 +57,15 @@ class TestEngineExploreBasic:
         assert isinstance(result, ExplorationResult)
 
     def test_explore_terminates_on_max_iterations(self):
+        """``max_iterations`` caps exploration iterations beyond the initial seed.
+
+        The initial args count as seed phase (exempt from the budget),
+        so with ``max_iterations=1`` we allow the initial run plus one
+        constraint-driven iteration.
+        """
         engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=10.0))
         result = engine.explore(_sample_target, {"x": 0})
-        assert result.iterations <= 1
+        assert result.iterations <= 2
 
     def test_explore_covers_both_branches_of_simple_function(self):
         engine = Engine(ExecutionConfig(max_iterations=20, timeout_seconds=10.0))

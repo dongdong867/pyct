@@ -33,6 +33,13 @@ class ExplorationState:
         terminated: True once the engine has stopped exploring.
         termination_reason: Human-readable reason for termination, or
             None if still running.
+        seed_phase: True while the engine is still replaying pre-supplied
+            or plateau-requested seeds. While True, ``max_iterations``
+            and ``timeout_seconds`` do not apply — only the per-seed
+            soft timeout bounds each iteration. Flipped to False in
+            ``_next_input`` when the input queue first drains, and
+            re-enabled by ``_handle_plateau`` when new plugin seeds are
+            appended to the queue.
     """
 
     iteration: int = 0
@@ -45,6 +52,7 @@ class ExplorationState:
     last_coverage_change_iteration: int = 0
     terminated: bool = False
     termination_reason: str | None = None
+    seed_phase: bool = True
 
     def coverage_percent(self) -> float:
         """Return coverage as a 0-100 percentage."""

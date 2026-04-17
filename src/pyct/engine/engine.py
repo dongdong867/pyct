@@ -214,7 +214,11 @@ class Engine:
 
             if iteration_error is not None:
                 last_error = iteration_error
-                if iteration_error.startswith("timeout:"):
+                # A timeout during seed phase is the per-seed soft
+                # deadline firing — skip this seed, keep the queue
+                # draining. The global ``timeout_seconds`` only takes
+                # effect once exploration begins.
+                if iteration_error.startswith("timeout:") and not state.seed_phase:
                     _terminate(state, "timeout")
                     break
             else:
@@ -253,6 +257,11 @@ class Engine:
             args = input_queue.pop(0)
             if args not in state.inputs_tried:
                 return args
+
+        # Queue fully drained — seed phase is over; subsequent iterations
+        # come from the solver or resolver plugins and must respect the
+        # exploration budget.
+        state.seed_phase = False
 
         while self.constraints_to_solve:
             constraint = self.constraints_to_solve.pop(0)
@@ -325,7 +334,7 @@ class Engine:
             log.debug("wrap_arguments failed for %r: %s", args, e)
             return f"wrap_arguments: {type(e).__name__}: {e}"
 
-        deadline = state.start_time + self.config.timeout_seconds
+        deadline = self._iteration_deadline(state)
         error: str | None = None
         with line_tracer(target_file, deadline=deadline) as hit_lines:
             try:
@@ -347,7 +356,16 @@ class Engine:
         return error
 
     def _check_budget(self, state: ExplorationState) -> bool:
-        """Check max-iterations and wall-clock timeout; terminate if exceeded."""
+        """Check max-iterations and wall-clock timeout; terminate if exceeded.
+
+        During seed phase the per-iteration budget is the only safety
+        limit — ``max_iterations`` and global ``timeout_seconds`` are
+        deferred until every supplied seed has run. Otherwise an LLM
+        returning more seeds than ``max_iterations``, or a slow target
+        mid-seed, would strand the tail of the queue.
+        """
+        if state.seed_phase:
+            return False
         if state.iteration >= self.config.max_iterations:
             _terminate(state, "max_iterations")
             return True
@@ -355,6 +373,18 @@ class Engine:
             _terminate(state, "timeout")
             return True
         return False
+
+    def _iteration_deadline(self, state: ExplorationState) -> float:
+        """Return the wall-clock deadline for the next target call.
+
+        Seed-phase iterations use ``seed_soft_timeout`` so a slow seed
+        cannot eat the global budget. Post-seed iterations use the
+        classic exploration deadline so the engine's own generated
+        inputs share one shared pool.
+        """
+        if state.seed_phase:
+            return time.monotonic() + self.config.seed_soft_timeout
+        return state.start_time + self.config.timeout_seconds
 
     def _handle_plateau(
         self,
@@ -388,6 +418,11 @@ class Engine:
             self._snapshot(target, signature, state),
         )
         input_queue.extend(plateau_seeds)
+        # Plugin-supplied seeds get the same budget treatment as the
+        # initial ones — they're a fresh replay batch, not engine
+        # exploration.
+        if plateau_seeds:
+            state.seed_phase = True
         return 0
 
     def _snapshot(
