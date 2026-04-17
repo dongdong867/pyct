@@ -2,6 +2,8 @@
 
 import time
 
+from pyct.engine.coverage_scope import CoverageScope
+from pyct.engine.coverage_tracker import CoverageTracker
 from pyct.engine.state import ExplorationState
 
 
@@ -109,3 +111,71 @@ class TestExplorationStateBoundary:
         # number, not zero. Engine must set start_time before measuring.
         assert elapsed > 0.0
         assert elapsed >= time.monotonic() - 1.0
+
+
+class TestExplorationStateScopeViews:
+    """Wide-scope views forward to an optional tracker.
+
+    These views let the engine reason about scope-spanning coverage
+    (multiple files when scope is wide) without touching the narrow
+    ``covered_lines`` / ``total_lines`` fields that plugin snapshots
+    and legacy callers depend on.
+    """
+
+    def _tracker_with_scope(self, tmp_path, executable_lines):
+        path = str(tmp_path / "t.py")
+        scope = CoverageScope.for_file(path, frozenset(executable_lines))
+        return path, CoverageTracker(scope)
+
+    def test_scope_views_zero_when_tracker_is_none(self):
+        state = ExplorationState()
+        assert state.tracker is None
+        assert state.scope_total_lines == 0
+        assert state.scope_observed_count == 0
+        assert state.scope_covered_count == 0
+        assert state.scope_coverage_percent() == 0.0
+
+    def test_scope_total_lines_forwards_to_tracker(self, tmp_path):
+        _, tracker = self._tracker_with_scope(tmp_path, {1, 2, 3, 4, 5})
+        state = ExplorationState(tracker=tracker)
+        assert state.scope_total_lines == 5
+
+    def test_scope_observed_count_reflects_tracker_observed_count(self, tmp_path):
+        from coverage import CoverageData
+
+        path, tracker = self._tracker_with_scope(tmp_path, {1, 2, 3, 4, 5})
+        state = ExplorationState(tracker=tracker)
+
+        data = CoverageData(basename=str(tmp_path / "cov.data"))
+        data.add_lines({path: [1, 3]})
+        tracker.update(data)
+
+        assert state.scope_observed_count == 2
+
+    def test_scope_covered_count_includes_pre_covered(self, tmp_path):
+        path = str(tmp_path / "t.py")
+        scope = CoverageScope.for_file(path, frozenset({1, 2, 3}), pre_covered=frozenset({1}))
+        tracker = CoverageTracker(scope)
+        state = ExplorationState(tracker=tracker)
+        # No observed updates; just pre-covered counts
+        assert state.scope_covered_count == 1
+
+    def test_scope_coverage_percent_uses_wide_ratio(self, tmp_path):
+        from coverage import CoverageData
+
+        path, tracker = self._tracker_with_scope(tmp_path, {1, 2, 3, 4})
+        state = ExplorationState(tracker=tracker)
+
+        data = CoverageData(basename=str(tmp_path / "cov.data"))
+        data.add_lines({path: [1]})
+        tracker.update(data)
+
+        assert state.scope_coverage_percent() == 25.0
+
+    def test_narrow_fields_remain_independent_of_tracker(self, tmp_path):
+        _, tracker = self._tracker_with_scope(tmp_path, {1, 2, 3})
+        state = ExplorationState(tracker=tracker, total_lines=10, covered_lines={1, 2})
+        # Narrow view unchanged by tracker presence
+        assert state.total_lines == 10
+        assert state.covered_lines == {1, 2}
+        assert state.coverage_percent() == 20.0

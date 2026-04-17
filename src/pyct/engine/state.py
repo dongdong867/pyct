@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pyct.engine.coverage_tracker import CoverageTracker
 
 
 @dataclass
@@ -20,12 +23,15 @@ class ExplorationState:
         constraint_pool: Path constraints awaiting exploration.
         covered_lines: Set of source line numbers hit so far, including
             synthetic pre-covered headers (used for plateau detection
-            and coverage_percent reporting during exploration).
+            and coverage_percent reporting during exploration). This is
+            the *narrow* view — target-file only — for plugin snapshots
+            and legacy callers.
         observed_lines: Subset of covered_lines that the tracer actually
             saw fire — excludes pre-covered. This is what gets reported
             to callers as ``executed_lines`` so downstream def-header
-            backfill heuristics work correctly.
-        total_lines: Total executable lines in the target function.
+            backfill heuristics work correctly. Narrow view.
+        total_lines: Total executable lines in the target function
+            (narrow view). ``scope_total_lines`` is the wide counterpart.
         inputs_tried: History of inputs that have been executed.
         start_time: Wall-clock start time (from time.monotonic()).
         last_coverage_change_iteration: Iteration number when coverage
@@ -40,6 +46,10 @@ class ExplorationState:
             ``_next_input`` when the input queue first drains, and
             re-enabled by ``_handle_plateau`` when new plugin seeds are
             appended to the queue.
+        tracker: The engine's CoverageTracker. Optional for backward
+            compatibility with tests that construct state standalone;
+            when None, the ``scope_*`` views return zero. When set, the
+            wide views forward to the tracker's scope-spanning counters.
     """
 
     iteration: int = 0
@@ -53,9 +63,10 @@ class ExplorationState:
     terminated: bool = False
     termination_reason: str | None = None
     seed_phase: bool = True
+    tracker: CoverageTracker | None = None
 
     def coverage_percent(self) -> float:
-        """Return coverage as a 0-100 percentage."""
+        """Return narrow coverage as a 0-100 percentage (target file only)."""
         if self.total_lines == 0:
             return 0.0
         return 100.0 * len(self.covered_lines) / self.total_lines
@@ -67,3 +78,28 @@ class ExplorationState:
     def elapsed_seconds(self) -> float:
         """Return wall-clock seconds since start_time was set."""
         return time.monotonic() - self.start_time
+
+    # ── Wide-scope views (forward to the optional tracker) ────────────
+    #
+    # These let the engine reason about scope-spanning coverage for
+    # termination and plateau decisions without altering the narrow
+    # fields that plugin snapshots expose.
+
+    @property
+    def scope_total_lines(self) -> int:
+        """Sum of executable lines across all scope files (wide)."""
+        return self.tracker.total_lines if self.tracker is not None else 0
+
+    @property
+    def scope_observed_count(self) -> int:
+        """Tracer-observed line count across all scope files (wide)."""
+        return self.tracker.observed_count if self.tracker is not None else 0
+
+    @property
+    def scope_covered_count(self) -> int:
+        """Observed ∪ pre-covered line count across all scope files (wide)."""
+        return self.tracker.covered_count if self.tracker is not None else 0
+
+    def scope_coverage_percent(self) -> float:
+        """Wide coverage ratio as a 0-100 percentage."""
+        return self.tracker.coverage_percent if self.tracker is not None else 0.0
