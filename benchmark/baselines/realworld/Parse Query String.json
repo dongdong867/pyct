@@ -1,6 +1,100 @@
 {
   "target": "Parse Query String",
-  "generated_at": "2026-04-17T07:01:46",
+  "generated_at": "2026-04-17T09:28:44",
   "generator_version": "1",
-  "scopes": []
+  "scopes": [
+    {
+      "file": "urllib/parse.py",
+      "start_line": 688,
+      "end_line": 708,
+      "lines": [
+        688,
+        698,
+        699,
+        700,
+        702,
+        703,
+        704,
+        705,
+        706,
+        707,
+        708
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 711,
+      "end_line": 750,
+      "lines": [
+        711,
+        741,
+        742,
+        745,
+        746,
+        747,
+        749,
+        750
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 753,
+      "end_line": 824,
+      "lines": [
+        753,
+        783,
+        784,
+        785,
+        786,
+        787,
+        788,
+        789,
+        790,
+        792,
+        793,
+        796,
+        797,
+        798,
+        799,
+        800,
+        801,
+        803,
+        804,
+        809,
+        810,
+        811,
+        812,
+        814,
+        815,
+        816,
+        817,
+        818,
+        819,
+        820,
+        821,
+        822,
+        823,
+        824
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 789,
+      "end_line": 790,
+      "lines": [
+        789,
+        790
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 826,
+      "end_line": 833,
+      "lines": [
+        826,
+        832,
+        833
+      ]
+    }
+  ]
 }

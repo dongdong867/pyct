@@ -1,6 +1,80 @@
 {
   "target": "URL Quote",
-  "generated_at": "2026-04-17T07:01:35",
+  "generated_at": "2026-04-17T09:28:41",
   "generator_version": "1",
-  "scopes": []
+  "scopes": [
+    {
+      "file": "urllib/parse.py",
+      "start_line": 858,
+      "end_line": 860,
+      "lines": [
+        858,
+        860
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 865,
+      "end_line": 869,
+      "lines": [
+        865,
+        867,
+        868,
+        869
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 871,
+      "end_line": 923,
+      "lines": [
+        871,
+        910,
+        911,
+        912,
+        913,
+        914,
+        915,
+        916,
+        917,
+        919,
+        920,
+        921,
+        922,
+        923
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 944,
+      "end_line": 945,
+      "lines": [
+        944,
+        945
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 947,
+      "end_line": 972,
+      "lines": [
+        947,
+        952,
+        953,
+        954,
+        955,
+        956,
+        958,
+        961,
+        962,
+        963,
+        964,
+        965,
+        966,
+        969,
+        970,
+        972
+      ]
+    }
+  ]
 }

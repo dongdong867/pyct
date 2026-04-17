@@ -1,6 +1,101 @@
 {
   "target": "URL Split",
-  "generated_at": "2026-04-17T07:02:05",
+  "generated_at": "2026-04-17T09:28:09",
   "generator_version": "1",
-  "scopes": []
+  "scopes": [
+    {
+      "file": "urllib/parse.py",
+      "start_line": 108,
+      "end_line": 109,
+      "lines": [
+        108,
+        109
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 119,
+      "end_line": 133,
+      "lines": [
+        119,
+        125,
+        126,
+        129,
+        130,
+        131,
+        132,
+        133
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 413,
+      "end_line": 419,
+      "lines": [
+        413,
+        414,
+        415,
+        416,
+        417,
+        418,
+        419
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 421,
+      "end_line": 437,
+      "lines": [
+        421,
+        422,
+        423,
+        426,
+        427,
+        428,
+        429,
+        430,
+        431,
+        432,
+        433,
+        434,
+        435,
+        436
+      ]
+    },
+    {
+      "file": "urllib/parse.py",
+      "start_line": 470,
+      "end_line": 523,
+      "lines": [
+        470,
+        491,
+        494,
+        495,
+        497,
+        498,
+        499,
+        501,
+        502,
+        503,
+        504,
+        505,
+        506,
+        507,
+        509,
+        510,
+        511,
+        512,
+        514,
+        515,
+        516,
+        517,
+        518,
+        519,
+        520,
+        521,
+        522,
+        523
+      ]
+    }
+  ]
 }
