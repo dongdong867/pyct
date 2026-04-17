@@ -155,7 +155,6 @@ class Engine:
         last_error = self._exploration_loop(
             target=rewritten_target,
             original_target=target,
-            target_file=target_file,
             signature=signature,
             initial_args=initial_args,
             var_to_types=var_to_types,
@@ -177,7 +176,6 @@ class Engine:
         *,
         target: Callable,
         original_target: Callable,
-        target_file: str,
         signature: inspect.Signature,
         initial_args: dict[str, Any],
         var_to_types: dict[str, str],
@@ -207,7 +205,7 @@ class Engine:
                 _terminate(state, "exhausted")
                 break
 
-            iteration_error = self._run_iteration(target, args, target_file, state)
+            iteration_error = self._run_iteration(target, args, state)
             state.inputs_tried.append(args)
             state.iteration += 1
 
@@ -312,7 +310,6 @@ class Engine:
         self,
         target: Callable,
         args: dict[str, Any],
-        target_file: str,
         state: ExplorationState,
     ) -> str | None:
         """Run one concolic iteration with tracing; return error string or None.
@@ -334,8 +331,9 @@ class Engine:
             return f"wrap_arguments: {type(e).__name__}: {e}"
 
         deadline = self._iteration_deadline(state)
+        scope_files = self.coverage_tracker.scope.files
         error: str | None = None
-        with line_tracer(target_file, deadline=deadline) as hit_lines:
+        with line_tracer(scope_files, deadline=deadline) as hit_lines:
             try:
                 call_with_args(target, concolic_args)
             except TimeoutError as e:
@@ -345,7 +343,7 @@ class Engine:
             except Exception as e:
                 error = f"{type(e).__name__}: {e}"
 
-        data = lines_to_coverage_data(target_file, hit_lines)
+        data = lines_to_coverage_data(hit_lines)
         self.coverage_tracker.update(data)
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
@@ -485,13 +483,19 @@ def _build_result(
 ) -> ExplorationResult:
     """Turn the final state into an ExplorationResult.
 
-    ``executed_lines`` reports tracer-observed lines only — pre-covered
-    headers are kept in ``state.covered_lines`` for plateau/percent
-    accounting but would otherwise shadow the first body line and break
-    downstream def-header backfill (``_build_coverage_result`` in
-    tools/benchmark/runners.py). Callers can re-derive header coverage
-    from source statements.
+    ``executed_lines`` reports tracer-observed lines in the target's own
+    file only (narrow) — pre-covered headers are kept in
+    ``state.covered_lines`` for plateau/percent accounting but would
+    otherwise shadow the first body line and break downstream def-header
+    backfill (``_build_coverage_result`` in tools/benchmark/runners.py).
+    Callers can re-derive header coverage from source statements.
+
+    ``scope_executed_lines`` reports the wide view as ``(file, line)``
+    tuples across every file in the engine's CoverageScope — the paper's
+    dual-reporting signal that pairs with the benchmark's post-hoc
+    rerun measurement.
     """
+    scope_lines, scope_total, scope_percent = _scope_snapshot(state)
     return ExplorationResult(
         success=True,
         coverage_percent=state.coverage_percent(),
@@ -502,7 +506,23 @@ def _build_result(
         elapsed_seconds=state.elapsed_seconds(),
         error=last_error,
         inputs_generated=tuple(state.inputs_tried),
+        scope_coverage_percent=scope_percent,
+        scope_executed_lines=scope_lines,
+        scope_total_lines=scope_total,
     )
+
+
+def _scope_snapshot(
+    state: ExplorationState,
+) -> tuple[frozenset[tuple[str, int]], int, float]:
+    """Return the wide-view snapshot (line pairs, total, percent) from state."""
+    tracker = state.tracker
+    if tracker is None:
+        return frozenset(), 0, 0.0
+    pairs = frozenset(
+        (path, line) for path, lines in tracker.observed_by_file.items() for line in lines
+    )
+    return pairs, tracker.total_lines, tracker.coverage_percent
 
 
 def _error_result(message: str) -> ExplorationResult:

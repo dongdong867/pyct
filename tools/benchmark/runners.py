@@ -495,12 +495,24 @@ def _pyct_result_to_runner(
     # when ``success=True`` (engine convention). A successful overall run
     # shouldn't propagate that as an infra error to the benchmark output.
     error = None if result.success else result.error
+
+    # Dual-reporting: alongside the rerun-measured ``coverage``, surface
+    # the engine's in-loop wide-scope view when the run was scoped. When
+    # scope is narrow/default, these match the target-file-only numbers
+    # and still serve as an independent sanity check against the rerun.
+    engine_total = getattr(result, "scope_total_lines", 0) or 0
+    engine_percent = getattr(result, "scope_coverage_percent", None)
+    engine_executed = len(getattr(result, "scope_executed_lines", ()) or ())
+
     return RunnerResult(
         success=result.success,
         coverage=coverage,
         time_seconds=elapsed,
         error=error,
         iterations=result.iterations,
+        engine_coverage_percent=engine_percent if engine_total > 0 else None,
+        engine_executed_lines=engine_executed if engine_total > 0 else None,
+        engine_total_lines=engine_total if engine_total > 0 else None,
     )
 
 

@@ -14,10 +14,20 @@ class ExplorationResult:
     RunConcolicResult, which exposes the same data via
     ``inputs_generated`` + ``from_exploration()`` for API stability.
 
+    Coverage is reported along two dimensions:
+      - ``coverage_percent`` / ``executed_lines``: narrow view (target
+        file's own lines only), preserved for plugin prompts and
+        backward compat with callers that expected single-file data.
+      - ``scope_coverage_percent`` / ``scope_executed_lines`` /
+        ``scope_total_lines``: wide view across every file in the
+        engine's CoverageScope. Populated from the engine's in-loop
+        line tracer and comparable to the benchmark's post-hoc rerun
+        measurement — the two numbers agreeing strengthens validity.
+
     Attributes:
         success: True if exploration completed without error.
-        coverage_percent: Line coverage as 0-100 percentage.
-        executed_lines: Frozenset of source line numbers that were hit.
+        coverage_percent: Narrow (target-file) line coverage as 0-100.
+        executed_lines: Lines hit in the target's own file.
         paths_explored: Number of distinct input combinations tried.
         iterations: Number of exploration loop iterations.
         termination_reason: One of "full_coverage", "max_iterations",
@@ -25,6 +35,9 @@ class ExplorationResult:
         elapsed_seconds: Wall-clock duration of the exploration.
         error: Human-readable error message if success=False, else None.
         inputs_generated: Inputs the engine executed during exploration.
+        scope_coverage_percent: Wide (scope-spanning) coverage percent.
+        scope_executed_lines: ``{(file, line)}`` pairs across the scope.
+        scope_total_lines: Sum of executable lines across all scope files.
     """
 
     success: bool
@@ -36,6 +49,9 @@ class ExplorationResult:
     elapsed_seconds: float
     error: str | None = None
     inputs_generated: tuple[dict[str, Any], ...] = ()
+    scope_coverage_percent: float = 0.0
+    scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
+    scope_total_lines: int = 0
 
 
 @dataclass(frozen=True)
@@ -59,6 +75,9 @@ class RunConcolicResult:
     termination_reason: str
     error: str | None = None
     token_stats: dict[str, int] | None = None
+    scope_coverage_percent: float = 0.0
+    scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
+    scope_total_lines: int = 0
 
     @classmethod
     def from_exploration(
@@ -86,4 +105,7 @@ class RunConcolicResult:
             termination_reason=result.termination_reason,
             error=result.error,
             token_stats=token_stats,
+            scope_coverage_percent=result.scope_coverage_percent,
+            scope_executed_lines=result.scope_executed_lines,
+            scope_total_lines=result.scope_total_lines,
         )

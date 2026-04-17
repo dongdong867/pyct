@@ -44,6 +44,42 @@ class TestScopeEarlyExit:
             f"body is covered; got {result.iterations}"
         )
 
+    def test_wide_scope_result_reports_cross_file_coverage(self):
+        # Dual reporting: with wide scope, the engine should record lines
+        # from BOTH wrapper_target.py AND wrapper_helper.py during
+        # exploration — previously the tracer only saw target_file.
+        wide = CoverageScope.for_paths(
+            [wrapper_target.__file__, wrapper_helper.__file__],
+            target_file=wrapper_target.__file__,
+        )
+        cfg = ExecutionConfig(
+            timeout_seconds=15,
+            solver_timeout=5,
+            max_iterations=50,
+            scope=wide,
+        )
+        seeds = [{"s": "abcdef"}, {"s": "alpha"}, {"s": "gz"}]
+
+        result = run_concolic(
+            wrapper_target.classify,
+            {"s": ""},
+            config=cfg,
+            isolated=False,
+            seed_inputs=seeds,
+        )
+
+        assert result.success
+        # Wide-view totals populated from the tracker
+        assert result.scope_total_lines > 0
+        assert result.scope_executed_lines
+        # Coverage includes lines from the helper file (not just target_file)
+        files_covered = {path for path, _ in result.scope_executed_lines}
+        assert wrapper_helper.__file__ in files_covered, (
+            "widened tracer should record lines from helper file under wide scope"
+        )
+        # Scope percent is >0 and bounded
+        assert 0 < result.scope_coverage_percent <= 100
+
     def test_wide_scope_iterates_through_seeds_and_reaches_helper(self):
         # Scope that covers both wrapper_target.py AND wrapper_helper.py.
         # The helper has four branches the wrapper delegates to; seed inputs

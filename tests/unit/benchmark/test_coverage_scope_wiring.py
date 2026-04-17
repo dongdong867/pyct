@@ -107,3 +107,34 @@ class TestBuildCoverageScope:
 
         assert scope is not None
         assert scope.total_lines > 0
+
+
+class TestRunnerResultDualReporting:
+    """RunnerResult pairs the engine's in-loop wide-scope view with the
+    benchmark's rerun-measured coverage. The two channels land side-by-
+    side in results.json for validity cross-checking.
+    """
+
+    def test_engine_fields_absent_when_not_populated(self):
+        from tools.benchmark.models import RunnerResult
+
+        # Default RunnerResult leaves all three engine fields at None —
+        # the scope wasn't in use or the engine couldn't measure.
+        rr = RunnerResult()
+        d = rr.to_dict()
+        assert "engine_coverage_percent" not in d
+        assert "engine_executed_lines" not in d
+        assert "engine_total_lines" not in d
+
+    def test_engine_fields_present_when_populated(self):
+        from tools.benchmark.models import RunnerResult
+
+        rr = RunnerResult(
+            engine_coverage_percent=42.5,
+            engine_executed_lines=17,
+            engine_total_lines=40,
+        )
+        d = rr.to_dict()
+        assert d["engine_coverage_percent"] == 42.5
+        assert d["engine_executed_lines"] == 17
+        assert d["engine_total_lines"] == 40

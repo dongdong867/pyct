@@ -80,6 +80,16 @@ class CoverageTracker:
         return sum(len(s) for s in self._observed.values())
 
     @property
+    def observed_by_file(self) -> dict[str, frozenset[int]]:
+        """Per-file tracer-observed line sets across the scope.
+
+        Returns a new dict (callers can iterate freely without affecting
+        internal state). Files with no observed lines are included with
+        empty sets — preserves the scope shape for downstream consumers.
+        """
+        return {path: frozenset(lines) for path, lines in self._observed.items()}
+
+    @property
     def covered_count(self) -> int:
         """Count of observed ∪ pre-covered lines across all scope files."""
         total = 0

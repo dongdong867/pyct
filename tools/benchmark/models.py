@@ -74,7 +74,19 @@ class TokenUsage:
 
 @dataclass
 class RunnerResult:
-    """Result of a single runner on a single target (best of N attempts)."""
+    """Result of a single runner on a single target (best of N attempts).
+
+    The primary reported coverage comes from ``coverage`` — a
+    coverage.py-measured rerun of every discovered input. When an
+    engine-backed runner (``pure_concolic``, ``concolic_llm``) ran with
+    a ``CoverageScope``, the engine's in-loop tracer also produces a
+    wide-scope view that can be cross-referenced with the rerun
+    number. Those optional fields (``engine_coverage_percent``,
+    ``engine_executed_lines``, ``engine_total_lines``) provide the
+    dual-reporting signal used for validity claims — if the two
+    channels agree, the measurement is well-calibrated; divergence
+    highlights tracer or rerun issues worth investigating.
+    """
 
     success: bool = False
     coverage: CoverageResult = field(default_factory=CoverageResult)
@@ -85,6 +97,9 @@ class RunnerResult:
     attempts: list[AttemptInfo] = field(default_factory=list)
     captured_output: str = ""
     token_usage: TokenUsage | None = None
+    engine_coverage_percent: float | None = None
+    engine_executed_lines: int | None = None
+    engine_total_lines: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -99,6 +114,10 @@ class RunnerResult:
         }
         if self.token_usage is not None:
             result["token_usage"] = self.token_usage.to_dict()
+        if self.engine_coverage_percent is not None:
+            result["engine_coverage_percent"] = self.engine_coverage_percent
+            result["engine_executed_lines"] = self.engine_executed_lines
+            result["engine_total_lines"] = self.engine_total_lines
         return result
 
 
