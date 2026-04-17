@@ -451,11 +451,15 @@ def _pyct_result_to_runner(
         seed_lines = _replay_seeds_plain(target, seeds) if seeds else set()
         coverage = _coverage_from_engine_tracker(target, engine_lines | seed_lines)
 
+    # ``result.error`` holds the most recent per-iteration exception even
+    # when ``success=True`` (engine convention). A successful overall run
+    # shouldn't propagate that as an infra error to the benchmark output.
+    error = None if result.success else result.error
     return RunnerResult(
         success=result.success,
         coverage=coverage,
         time_seconds=elapsed,
-        error=result.error,
+        error=error,
         iterations=result.iterations,
     )
 
