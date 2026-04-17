@@ -67,14 +67,19 @@ def save_summary(
         _write_legacy_summary(all_results, runner_names, path)
         return
 
+    name_col = _resolve_name_column(all_results)
+
     lines: list[str] = []
     lines.extend(_format_header(header))
     lines.append("")
-    lines.extend(_format_per_target_table(all_results, runner_names, _coverage_cell))
+    lines.extend(_format_per_target_table(all_results, runner_names, _coverage_cell, name_col))
     lines.append("")
-    lines.extend(_format_per_target_table(all_results, runner_names, _lines_cell))
+    if _has_engine_data(all_results):
+        lines.extend(_format_engine_coverage_table(all_results, runner_names, name_col))
+        lines.append("")
+    lines.extend(_format_per_target_table(all_results, runner_names, _lines_cell, name_col))
     lines.append("")
-    lines.extend(_format_per_target_table(all_results, runner_names, _time_cell))
+    lines.extend(_format_per_target_table(all_results, runner_names, _time_cell, name_col))
     lines.append("")
     lines.extend(_format_aggregate_block(all_results, runner_names))
 
@@ -163,28 +168,99 @@ _CELL_HEADERS = {
 }
 
 
+_MAX_NAME_COL = 56
+_DATA_COL = 14
+
+
+def _resolve_name_column(all_results: list[dict[str, Any]]) -> int:
+    """Compute a name column width that fits every test name up to a cap.
+
+    ``"Target"`` is the minimum floor; any target longer than
+    ``_MAX_NAME_COL`` gets truncated with a middle-ellipsis at render
+    time, so the column width never exceeds the cap.
+    """
+    longest = max((len(entry["test_name"]) for entry in all_results), default=0)
+    return min(max(longest, len("Target")), _MAX_NAME_COL)
+
+
+def _truncate_middle(name: str, width: int) -> str:
+    """Return ``name`` fit to ``width`` using a middle ``…`` if too long.
+
+    Splitting in the middle preserves both the module prefix and the
+    function suffix — the two halves most readers use to orient.
+    """
+    if len(name) <= width:
+        return name
+    keep = width - 1  # room for the ellipsis char
+    left = keep - keep // 2
+    right = keep // 2
+    return f"{name[:left]}…{name[-right:]}"
+
+
 def _format_per_target_table(
     all_results: list[dict[str, Any]],
     runner_names: list[str],
     cell_fn: Any,
+    name_col: int,
 ) -> list[str]:
     section, _ = _CELL_HEADERS[cell_fn]
-    name_col = 38
-    data_col = 14
-
-    lines = [f"PER-TARGET {section}", "-" * 80]
-    header = f"{'Target':<{name_col}s}" + "".join(f" {rn:>{data_col}s}" for rn in runner_names)
-    lines.append(header)
-    lines.append("-" * len(header))
+    header = f"{'Target':<{name_col}s}" + "".join(
+        f" {rn:>{_DATA_COL}s}" for rn in runner_names
+    )
+    lines = [f"PER-TARGET {section}", "-" * len(header), header, "-" * len(header)]
 
     for entry in all_results:
-        parts = [f"{entry['test_name']:<{name_col}s}"]
+        parts = [f"{_truncate_middle(entry['test_name'], name_col):<{name_col}s}"]
         for rn in runner_names:
             runner_data = entry["runners"].get(rn)
             if runner_data is None:
-                parts.append(f" {'N/A':>{data_col}s}")
+                parts.append(f" {'N/A':>{_DATA_COL}s}")
             else:
-                parts.append(f" {cell_fn(runner_data):>{data_col}s}")
+                parts.append(f" {cell_fn(runner_data):>{_DATA_COL}s}")
+        lines.append("".join(parts))
+
+    return lines
+
+
+def _has_engine_data(all_results: list[dict[str, Any]]) -> bool:
+    """True when any runner on any target exposed an engine_coverage_percent."""
+    for entry in all_results:
+        for runner_data in entry.get("runners", {}).values():
+            if isinstance(runner_data, dict) and "engine_coverage_percent" in runner_data:
+                return True
+    return False
+
+
+def _format_engine_coverage_table(
+    all_results: list[dict[str, Any]],
+    runner_names: list[str],
+    name_col: int,
+) -> list[str]:
+    """Render the engine's in-loop wide-scope coverage per (target, runner).
+
+    Only called when at least one runner has engine data. Cells without
+    data read ``N/A`` — some runners (crosshair, llm_only) never route
+    through the engine's tracker.
+    """
+    header = f"{'Target':<{name_col}s}" + "".join(
+        f" {rn:>{_DATA_COL}s}" for rn in runner_names
+    )
+    title = "PER-TARGET ENGINE COVERAGE (%) — in-loop wide-scope"
+    lines = [title, "-" * len(header), header, "-" * len(header)]
+
+    for entry in all_results:
+        parts = [f"{_truncate_middle(entry['test_name'], name_col):<{name_col}s}"]
+        for rn in runner_names:
+            runner_data = entry["runners"].get(rn)
+            pct = (
+                runner_data.get("engine_coverage_percent")
+                if isinstance(runner_data, dict)
+                else None
+            )
+            if pct is None:
+                parts.append(f" {'N/A':>{_DATA_COL}s}")
+            else:
+                parts.append(f" {pct:>{_DATA_COL - 1}.1f}%")
         lines.append("".join(parts))
 
     return lines
@@ -195,15 +271,15 @@ def _format_aggregate_block(
     runner_names: list[str],
 ) -> list[str]:
     stats = _compute_runner_stats(all_results)
+    show_engine = _has_engine_data(all_results)
     bar = "=" * 80
-    lines = [
-        bar,
-        "AGGREGATE",
-        bar,
+    header = (
         f"{'Runner':<18s} {'Tests':<10s} {'Avg Cov':<10s} "
-        f"{'Avg Time':<12s} {'Total Time':<14s} {'Wins':<6s}",
-        "-" * 80,
-    ]
+        + (f"{'Engine Cov':<12s} " if show_engine else "")
+        + f"{'Avg Time':<12s} {'Total Time':<14s} {'Wins':<6s}"
+    )
+    lines = [bar, "AGGREGATE", bar, header, "-" * 80]
+
     for name in runner_names:
         s = stats.get(name)
         if s is None:
@@ -213,14 +289,24 @@ def _format_aggregate_block(
         avg_cov = s["total_coverage"] / ok if ok else 0.0
         avg_time = s["total_time"] / ok if ok else 0.0
         total_time = s["total_time"]
-        lines.append(
+        row = (
             f"{name:<18s} "
             f"{f'{ok}/{total}':<10s} "
             f"{avg_cov:>6.1f}%   "
+        )
+        if show_engine:
+            engine_n = s["engine_n"]
+            row += (
+                f"{s['total_engine_coverage'] / engine_n:>7.1f}%    "
+                if engine_n
+                else f"{'N/A':>11s} "
+            )
+        row += (
             f"{avg_time:>8.2f}s   "
             f"{_format_duration(total_time):<14s} "
             f"{s['wins']:<6d}"
         )
+        lines.append(row)
     lines.append(bar)
     return lines
 
@@ -463,7 +549,15 @@ def _build_time_table(
 def _compute_runner_stats(
     all_results: list[dict[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Aggregate per-runner statistics across all test results."""
+    """Aggregate per-runner statistics across all test results.
+
+    ``total_engine_coverage`` and ``engine_n`` are the dual-reporting
+    counterparts to ``total_coverage`` and ``successful``: they sum
+    engine-in-loop percentages only over targets where the runner
+    actually exposed an ``engine_coverage_percent``. This avoids
+    polluting the average with zeros from runners that never route
+    through the engine (``crosshair``, ``llm_only``).
+    """
     stats: dict[str, dict[str, Any]] = {}
 
     for entry in all_results:
@@ -476,6 +570,8 @@ def _compute_runner_stats(
                     "total_coverage": 0.0,
                     "total_time": 0.0,
                     "wins": 0,
+                    "total_engine_coverage": 0.0,
+                    "engine_n": 0,
                 }
             s = stats[name]
             s["total"] += 1
@@ -483,6 +579,10 @@ def _compute_runner_stats(
                 s["successful"] += 1
                 s["total_coverage"] += result_data["coverage"]["coverage_percent"]
                 s["total_time"] += result_data["time_seconds"]
+                engine_pct = result_data.get("engine_coverage_percent")
+                if engine_pct is not None:
+                    s["total_engine_coverage"] += engine_pct
+                    s["engine_n"] += 1
 
     _count_wins(all_results, stats)
     return stats
