@@ -147,15 +147,25 @@ def generate_baseline(
     when = now or datetime.now()
     log.info("generating baseline for %s", target.name)
 
-    all_inputs: list[dict[str, Any]] = []
-    all_inputs.extend(concolic_inputs(target, config))
-    all_inputs.extend(crosshair_inputs(target, config))
-
-    if not all_inputs:
-        log.warning("no inputs discovered for %s — baseline will be empty", target.name)
-
-    scopes = collect_scopes_for_inputs(target, all_inputs)
+    scopes = collect_scopes_for_inputs(target, _all_inputs(target, config))
     return build_baseline(target.name, [scopes], when)
+
+
+def _all_inputs(target: BenchmarkTarget, config: BenchmarkConfig) -> list[dict[str, Any]]:
+    """Compose the full set of inputs to exercise for baseline generation.
+
+    Starts with the target's canonical ``initial_args`` so targets where
+    neither concolic nor crosshair can discover inputs — generators,
+    metaclasses, urllib.parse functions the solver can't symbolically
+    track — still get exercised through at least their happy path.
+    Extends with concolic and crosshair discoveries to surface callees
+    the canonical input alone would miss. Order matters: the initial
+    arg runs first, so coverage.py's first-hit is the canonical path.
+    """
+    inputs: list[dict[str, Any]] = [dict(target.initial_args)]
+    inputs.extend(concolic_inputs(target, config))
+    inputs.extend(crosshair_inputs(target, config))
+    return inputs
 
 
 # ── CLI ────────────────────────────────────────────────────────────
