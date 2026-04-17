@@ -36,8 +36,11 @@ from tools.benchmark.runners import (
     _create_coverage_session,
     _parse_crosshair_output,
     _resolve_target,
+    _soft_timeout,
     _suppress_output,
 )
+
+_PER_INPUT_SOFT_TIMEOUT_SECONDS = 15
 from tools.benchmark.targets import BenchmarkTarget
 
 log = logging.getLogger("benchmark.baseline")
@@ -59,7 +62,11 @@ def collect_scopes_for_inputs(
 
     cov.start()
     for inp in inputs:
-        with _suppress_output(), contextlib.suppress(Exception):
+        with (
+            _suppress_output(),
+            _soft_timeout(_PER_INPUT_SOFT_TIMEOUT_SECONDS),
+            contextlib.suppress(Exception),
+        ):
             _exercise(func, inp)
     cov.stop()
 

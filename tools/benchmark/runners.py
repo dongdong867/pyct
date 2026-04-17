@@ -447,16 +447,29 @@ def _pyct_result_to_runner(
     )
 
 
+_RERUN_SOFT_TIMEOUT_SECONDS = 15
+
+
 def _coverage_by_rerun(
     target: BenchmarkTarget,
     inputs: Any,
 ) -> CoverageResult:
-    """Replay ``inputs`` under a broad coverage session, then measure."""
+    """Replay ``inputs`` under a broad coverage session, then measure.
+
+    Each input gets a SIGALRM-based soft timeout so a pathological case
+    (e.g. ``sympy.ntheory.egyptian_fraction.egypt_takenouchi(15, 7)``)
+    can't hang the in-process re-execution — the same protection
+    :func:`run_llm_only` already has.
+    """
     func = _resolve_target(target)
     cov = _create_coverage_session(target)
     cov.start()
     for inp in inputs:
-        with _suppress_output(), contextlib.suppress(Exception):
+        with (
+            _suppress_output(),
+            _soft_timeout(_RERUN_SOFT_TIMEOUT_SECONDS),
+            contextlib.suppress(Exception),
+        ):
             call_with_args(func, inp)
     cov.stop()
     return _measure_coverage(cov, target)
