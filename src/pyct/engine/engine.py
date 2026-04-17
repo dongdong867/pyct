@@ -307,13 +307,25 @@ class Engine:
         target_file: str,
         state: ExplorationState,
     ) -> str | None:
-        """Run one concolic iteration with tracing; return error string or None."""
+        """Run one concolic iteration with tracing; return error string or None.
+
+        ``wrap_arguments`` runs inside the containment scope so a Concolic
+        constructor failure on one seed aborts only that iteration — not
+        the whole exploration. Without this guard the exception escapes
+        past ``explore()``'s narrow ``(TypeError, OSError)`` filter into
+        ``_child_entry``, which nukes the subprocess and drops every
+        remaining seed.
+        """
         assert self.coverage_tracker is not None
 
         self.path.reset()
-        concolic_args = wrap_arguments(args, self)
-        deadline = state.start_time + self.config.timeout_seconds
+        try:
+            concolic_args = wrap_arguments(args, self)
+        except Exception as e:
+            log.debug("wrap_arguments failed for %r: %s", args, e)
+            return f"wrap_arguments: {type(e).__name__}: {e}"
 
+        deadline = state.start_time + self.config.timeout_seconds
         error: str | None = None
         with line_tracer(target_file, deadline=deadline) as hit_lines:
             try:
