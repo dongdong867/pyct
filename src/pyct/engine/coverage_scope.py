@@ -78,6 +78,27 @@ class CoverageScope:
         )
 
     @classmethod
+    def for_file(
+        cls,
+        target_file: str,
+        executable_lines: frozenset[int],
+        pre_covered: frozenset[int] = frozenset(),
+    ) -> CoverageScope:
+        """Build a single-file scope from explicit executable lines.
+
+        Used by callers that have already computed the line set (e.g.,
+        tests, or plugins that don't want to re-analyze a file). The
+        corresponding ``for_target`` path calls coverage.py for line
+        analysis; this factory trusts the caller.
+        """
+        return cls(
+            files=frozenset({target_file}),
+            executable_lines={target_file: executable_lines},
+            pre_covered={target_file: pre_covered} if pre_covered else {},
+            target_file=target_file,
+        )
+
+    @classmethod
     def for_paths(
         cls,
         paths: Iterable[str],

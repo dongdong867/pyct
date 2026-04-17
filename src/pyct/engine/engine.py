@@ -11,9 +11,9 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
+from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
 from pyct.engine.environment import prepared_environment
-from pyct.engine.function_inspector import inspect_target
 from pyct.engine.line_tracer import line_tracer, lines_to_coverage_data
 from pyct.engine.path import PathConstraintTracker
 from pyct.engine.plugin.context import EngineContext
@@ -120,13 +120,11 @@ class Engine:
         seed_inputs: list[dict[str, Any]] | None = None,
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
-        target_file, func_lines, def_line = inspect_target(target)
+        scope = CoverageScope.for_target(target)
+        target_file = scope.target_file
+        func_lines = scope.executable_lines[target_file]
         rewritten_target = _try_rewrite(target)
-        self.coverage_tracker = CoverageTracker(
-            target_file,
-            func_lines,
-            pre_covered=frozenset({def_line}),
-        )
+        self.coverage_tracker = CoverageTracker(scope)
 
         signature = inspect.signature(target)
         var_to_types = build_var_to_types(initial_args)
