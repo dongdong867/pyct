@@ -393,13 +393,16 @@ class Engine:
         target: Callable,
         signature: inspect.Signature,
     ) -> int:
-        """Track stale iterations; dispatch plateau event and reset if needed.
+        """Track stale iterations; dispatch plateau event when stale hits threshold.
 
-        The plateau handler is suppressed while the input queue still has
-        pending entries — pre-generated seeds and solver-produced inputs
-        should be processed before asking plugins for recovery seeds.
-        Without this guard, seed-phase iterations count toward the stale
-        counter and trigger unnecessary LLM calls.
+        Plateau dispatch is suppressed while the engine is replaying
+        pre-queued seeds: during ``seed_phase``, stale iterations reflect
+        uninformative seed execution rather than true exploration stalls.
+
+        When the plateau fires, the pending constraint pool is cleared
+        before dispatch: those constraints have produced no coverage gain
+        for ``plateau_threshold`` consecutive iterations, so processing
+        them further ahead of LLM-supplied seeds would waste budget.
 
         Plateau progress is measured against the wide scope count: when
         scope spans multiple files, growth in any of them resets stale.
@@ -410,9 +413,10 @@ class Engine:
         stale_count += 1
         if stale_count < self.config.plateau_threshold:
             return stale_count
-        if input_queue or self.constraints_to_solve:
+        if state.seed_phase:
             return stale_count
 
+        self.constraints_to_solve.clear()
         plateau_seeds = dispatcher.dispatch_collector(
             "on_coverage_plateau",
             self._snapshot(target, signature, state),
