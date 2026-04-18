@@ -27,8 +27,17 @@ class ExecutionConfig:
             before firing the on_coverage_plateau plugin event.
         max_stale_llm_attempts: Number of consecutive plateau dispatches
             that fail to improve coverage before the engine terminates
-            with ``plateau_exhausted``. Matches the paper's
+            with ``plateau_exhausted``. The same cap bounds the
+            post-loop discovery phase. Matches the paper's
             coverage-gated silencing policy.
+        post_loop_rounds: Upper bound on rounds of post-loop discovery
+            that run after the main loop exits with partial coverage.
+            Each round dispatches ``on_post_loop_discovery`` and may
+            close a portion of the remaining gap. Zero disables the
+            phase entirely.
+        post_loop_mini_iterations: Solver iteration cap used within
+            each post-loop round to exploit fresh constraints collected
+            from the plugin's candidate inputs.
         seed_soft_timeout: Per-seed wall-clock cap for the seed-replay
             phase. Seed iterations are exempt from ``max_iterations``
             and ``timeout_seconds``; this bound is what protects the
@@ -50,5 +59,7 @@ class ExecutionConfig:
     solver_timeout: int = 10
     plateau_threshold: int = 5
     max_stale_llm_attempts: int = 2
+    post_loop_rounds: int = 3
+    post_loop_mini_iterations: int = 20
     seed_soft_timeout: float = 10.0
     scope: CoverageScope | None = None

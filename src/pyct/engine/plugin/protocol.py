@@ -36,6 +36,7 @@ class Plugin(Protocol):
         Collector events — all plugins run, list results concatenated:
             def on_seed_request(self, ctx: EngineContext) -> list[Seed]
             def on_coverage_plateau(self, ctx: EngineContext) -> list[Seed]
+            def on_post_loop_discovery(self, ctx: EngineContext) -> list[Seed]
 
         Resolver events — first non-None return wins, others skipped:
             def on_constraint_unknown(self, ctx: EngineContext,

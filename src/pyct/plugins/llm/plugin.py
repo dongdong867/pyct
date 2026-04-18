@@ -7,6 +7,9 @@ Implements three event handlers:
   target's source code.
 * ``on_coverage_plateau`` — collector event fired when exploration
   stalls. Returns more inputs aimed at the uncovered branches.
+* ``on_post_loop_discovery`` — collector event fired after the main
+  exploration loop ends, to close remaining coverage gaps. Reuses the
+  plateau prompt (same "cover these uncovered lines" intent).
 * ``on_constraint_unknown`` — resolver event fired when the solver
   returns UNKNOWN/ERROR on a constraint. Returns a single
   ``Resolution`` dict or ``None``.
@@ -66,6 +69,13 @@ class LLMPlugin:
         return parse_input_list(content)
 
     def on_coverage_plateau(self, ctx: EngineContext) -> list[dict[str, Any]]:
+        if self._client is None:
+            return []
+        prompt = build_plateau_prompt(ctx)
+        content = self._client.complete(prompt)
+        return parse_input_list(content)
+
+    def on_post_loop_discovery(self, ctx: EngineContext) -> list[dict[str, Any]]:
         if self._client is None:
             return []
         prompt = build_plateau_prompt(ctx)

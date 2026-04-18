@@ -163,6 +163,16 @@ class Engine:
             dispatcher=dispatcher,
         )
 
+        self._run_post_loop_discovery(
+            target=rewritten_target,
+            original_target=target,
+            signature=signature,
+            initial_args=initial_args,
+            var_to_types=var_to_types,
+            state=state,
+            dispatcher=dispatcher,
+        )
+
         result = _build_result(state, last_error)
         dispatcher.dispatch_observer(
             "on_exploration_end",
@@ -437,6 +447,87 @@ class Engine:
         if plateau_seeds:
             state.seed_phase = True
         return 0
+
+    def _run_post_loop_discovery(
+        self,
+        *,
+        target: Callable,
+        original_target: Callable,
+        signature: inspect.Signature,
+        initial_args: dict[str, Any],
+        var_to_types: dict[str, str],
+        state: ExplorationState,
+        dispatcher: Dispatcher,
+    ) -> None:
+        """Close remaining coverage gaps after the main loop returns.
+
+        Runs up to ``config.post_loop_rounds`` rounds of LLM-driven
+        discovery. Each round dispatches ``on_post_loop_discovery``,
+        executes the returned candidates, then runs a bounded solver
+        mini-loop to exploit any fresh constraints. Silences after
+        ``config.max_stale_llm_attempts`` consecutive non-improving
+        rounds. Skipped entirely when coverage is already complete.
+        """
+        if self.coverage_tracker is None or self.coverage_tracker.is_fully_covered():
+            return
+        if self.config.post_loop_rounds <= 0:
+            return
+
+        failure_count = 0
+        for _ in range(self.config.post_loop_rounds):
+            if self.coverage_tracker.is_fully_covered():
+                return
+            coverage_before = state.scope_observed_count
+            candidates = dispatcher.dispatch_collector(
+                "on_post_loop_discovery",
+                self._snapshot(original_target, signature, state),
+            )
+            if not candidates:
+                return
+            self._execute_post_loop_candidates(
+                candidates=candidates,
+                target=target,
+                initial_args=initial_args,
+                var_to_types=var_to_types,
+                state=state,
+            )
+            if state.scope_observed_count > coverage_before:
+                failure_count = 0
+                continue
+            failure_count += 1
+            if failure_count >= self.config.max_stale_llm_attempts:
+                return
+
+    def _execute_post_loop_candidates(
+        self,
+        *,
+        candidates: list[dict[str, Any]],
+        target: Callable,
+        initial_args: dict[str, Any],
+        var_to_types: dict[str, str],
+        state: ExplorationState,
+    ) -> None:
+        """Execute each candidate, then drive a bounded solver mini-loop."""
+        for candidate in candidates:
+            if candidate in state.inputs_tried:
+                continue
+            self._run_iteration(target, candidate, state)
+            state.inputs_tried.append(candidate)
+
+        remaining = self.config.post_loop_mini_iterations
+        while remaining > 0 and self.constraints_to_solve:
+            if self.coverage_tracker is not None and self.coverage_tracker.is_fully_covered():
+                return
+            constraint = self.constraints_to_solve.pop(0)
+            model, _status = self._solve(constraint, var_to_types)
+            if model is None:
+                continue
+            merged = {**initial_args, **model}
+            if merged in state.inputs_tried:
+                continue
+            self._run_iteration(target, merged, state)
+            state.inputs_tried.append(merged)
+            remaining -= 1
 
     def _check_plateau_outcome(self, state: ExplorationState) -> None:
         """Evaluate whether the last plateau's seeds improved coverage.

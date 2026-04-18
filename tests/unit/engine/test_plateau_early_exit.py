@@ -12,10 +12,12 @@ returns useless seeds and asserts the engine stops early.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
+from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.state import ExplorationState
 
 
@@ -117,9 +119,6 @@ class TestPlateauDispatchRecordsCoverage:
     """Dispatching plateau stores scope_observed_count for later outcome check."""
 
     def test_handle_plateau_sets_coverage_at_last_plateau(self) -> None:
-        import inspect
-        from pyct.engine.plugin.dispatcher import Dispatcher
-
         config = ExecutionConfig(plateau_threshold=2, max_stale_llm_attempts=2)
         engine = Engine(config)
         plugin = _UselessPlateauPlugin(seed={"x": 0})
