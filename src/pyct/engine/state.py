@@ -46,6 +46,16 @@ class ExplorationState:
             ``_next_input`` when the input queue first drains, and
             re-enabled by ``_handle_plateau`` when new plugin seeds are
             appended to the queue.
+        coverage_at_last_plateau: Wide scope_observed_count recorded at
+            the moment the engine last dispatched ``on_coverage_plateau``.
+            Set by ``_handle_plateau``, cleared by ``_check_plateau_outcome``
+            once the plateau seeds have drained and the engine can
+            measure whether they improved coverage.
+        plateau_failure_count: Consecutive plateau dispatches whose
+            seeds failed to improve coverage. Resets to zero on any
+            successful recovery; drives the silencing policy that
+            terminates exploration with ``plateau_exhausted`` once the
+            count reaches ``ExecutionConfig.max_stale_llm_attempts``.
         tracker: The engine's CoverageTracker. Optional for backward
             compatibility with tests that construct state standalone;
             when None, the ``scope_*`` views return zero. When set, the
@@ -63,6 +73,8 @@ class ExplorationState:
     terminated: bool = False
     termination_reason: str | None = None
     seed_phase: bool = True
+    coverage_at_last_plateau: int | None = None
+    plateau_failure_count: int = 0
     tracker: CoverageTracker | None = None
 
     def coverage_percent(self) -> float:

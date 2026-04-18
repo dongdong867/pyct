@@ -31,7 +31,7 @@ class ExplorationResult:
         paths_explored: Number of distinct input combinations tried.
         iterations: Number of exploration loop iterations.
         termination_reason: One of "full_coverage", "max_iterations",
-            "timeout", "exhausted", or "error".
+            "timeout", "exhausted", "plateau_exhausted", or "error".
         elapsed_seconds: Wall-clock duration of the exploration.
         error: Human-readable error message if success=False, else None.
         inputs_generated: Inputs the engine executed during exploration.

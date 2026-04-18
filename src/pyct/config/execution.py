@@ -25,6 +25,10 @@ class ExecutionConfig:
         solver_timeout: Per-call solver timeout in seconds.
         plateau_threshold: Iterations without coverage improvement
             before firing the on_coverage_plateau plugin event.
+        max_stale_llm_attempts: Number of consecutive plateau dispatches
+            that fail to improve coverage before the engine terminates
+            with ``plateau_exhausted``. Matches the paper's
+            coverage-gated silencing policy.
         seed_soft_timeout: Per-seed wall-clock cap for the seed-replay
             phase. Seed iterations are exempt from ``max_iterations``
             and ``timeout_seconds``; this bound is what protects the
@@ -45,5 +49,6 @@ class ExecutionConfig:
     solver: str = "cvc5"
     solver_timeout: int = 10
     plateau_threshold: int = 5
+    max_stale_llm_attempts: int = 2
     seed_soft_timeout: float = 10.0
     scope: CoverageScope | None = None

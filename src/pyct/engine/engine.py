@@ -225,6 +225,14 @@ class Engine:
                 _terminate(state, "full_coverage")
                 break
 
+            # Measure the previous plateau's outcome before a new plateau
+            # can fire — otherwise a repeat dispatch would overwrite the
+            # recorded baseline and skip the silencing counter update.
+            if state.coverage_at_last_plateau is not None and not state.seed_phase:
+                self._check_plateau_outcome(state)
+                if state.terminated:
+                    break
+
             stale_count = self._handle_plateau(
                 state,
                 last_coverage_size,
@@ -417,6 +425,7 @@ class Engine:
             return stale_count
 
         self.constraints_to_solve.clear()
+        state.coverage_at_last_plateau = state.scope_observed_count
         plateau_seeds = dispatcher.dispatch_collector(
             "on_coverage_plateau",
             self._snapshot(target, signature, state),
@@ -428,6 +437,28 @@ class Engine:
         if plateau_seeds:
             state.seed_phase = True
         return 0
+
+    def _check_plateau_outcome(self, state: ExplorationState) -> None:
+        """Evaluate whether the last plateau's seeds improved coverage.
+
+        Called at the phase-boundary transition (seed_phase True -> False
+        after a plateau dispatch). On improvement, the silencing counter
+        resets; on repeated failure it climbs until
+        ``max_stale_llm_attempts`` is reached, at which point the engine
+        terminates with ``plateau_exhausted`` to bound LLM spend.
+        """
+        baseline = state.coverage_at_last_plateau
+        state.coverage_at_last_plateau = None
+        if baseline is None:
+            return
+
+        if state.scope_observed_count > baseline:
+            state.plateau_failure_count = 0
+            return
+
+        state.plateau_failure_count += 1
+        if state.plateau_failure_count >= self.config.max_stale_llm_attempts:
+            _terminate(state, "plateau_exhausted")
 
     def _snapshot(
         self,
