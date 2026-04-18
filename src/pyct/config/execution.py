@@ -25,11 +25,14 @@ class ExecutionConfig:
         solver_timeout: Per-call solver timeout in seconds.
         plateau_threshold: Iterations without coverage improvement
             before firing the on_coverage_plateau plugin event.
-        max_stale_llm_attempts: Number of consecutive plateau dispatches
-            that fail to improve coverage before the engine terminates
-            with ``plateau_exhausted``. The same cap bounds the
-            post-loop discovery phase. Matches the paper's
-            coverage-gated silencing policy.
+        max_stale_llm_attempts: Number of consecutive non-improving
+            LLM dispatches tolerated before exploration exits the
+            phase. Applies to both the in-loop plateau trigger (which
+            terminates the main loop with ``plateau_exhausted``) and
+            the post-loop discovery push. Default of 1 matches the
+            paper's coverage-gated silencing policy: "silenced as
+            soon as it fails to improve coverage". Set to 2 for
+            legacy post-loop behavior.
         post_loop_rounds: Upper bound on rounds of post-loop discovery
             that run after the main loop exits with partial coverage.
             Each round dispatches ``on_post_loop_discovery`` and may
@@ -58,7 +61,7 @@ class ExecutionConfig:
     solver: str = "cvc5"
     solver_timeout: int = 10
     plateau_threshold: int = 5
-    max_stale_llm_attempts: int = 2
+    max_stale_llm_attempts: int = 1
     post_loop_rounds: int = 3
     post_loop_mini_iterations: int = 20
     seed_soft_timeout: float = 10.0

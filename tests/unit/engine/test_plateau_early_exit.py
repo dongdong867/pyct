@@ -115,6 +115,31 @@ class TestPlateauOutcomeCheck:
         assert state.terminated
         assert state.termination_reason == "plateau_exhausted"
 
+    def test_default_cap_terminates_after_first_failure(self) -> None:
+        """Default ``max_stale_llm_attempts=1`` matches the paper's
+        "silenced as soon as it fails to improve coverage" policy."""
+        config = ExecutionConfig()  # default max_stale_llm_attempts=1
+        assert config.max_stale_llm_attempts == 1
+        engine = Engine(config)
+
+        state = ExplorationState()
+        state.coverage_at_last_plateau = 10
+
+        class _FakeTracker:
+            observed_count = 10  # no improvement
+            total_lines = 20
+
+            def is_fully_covered(self) -> bool:
+                return False
+
+        state.tracker = _FakeTracker()  # type: ignore[assignment]
+
+        check_plateau_outcome(engine, state)
+
+        assert state.plateau_failure_count == 1
+        assert state.terminated
+        assert state.termination_reason == "plateau_exhausted"
+
 
 class TestPlateauDispatchRecordsCoverage:
     """Dispatching plateau stores scope_observed_count for later outcome check."""
