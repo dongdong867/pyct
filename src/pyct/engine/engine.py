@@ -19,6 +19,11 @@ from pyct.engine.path import PathConstraintTracker
 from pyct.engine.plugin.context import EngineContext
 from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.plugin.protocol import Plugin
+from pyct.engine.recovery import (
+    check_plateau_outcome,
+    handle_plateau,
+    run_post_loop_discovery,
+)
 from pyct.engine.result import ExplorationResult
 from pyct.engine.state import ExplorationState
 from pyct.solver.executor import SolverStatus
@@ -163,7 +168,8 @@ class Engine:
             dispatcher=dispatcher,
         )
 
-        self._run_post_loop_discovery(
+        run_post_loop_discovery(
+            self,
             target=rewritten_target,
             original_target=target,
             signature=signature,
@@ -239,11 +245,12 @@ class Engine:
             # can fire — otherwise a repeat dispatch would overwrite the
             # recorded baseline and skip the silencing counter update.
             if state.coverage_at_last_plateau is not None and not state.seed_phase:
-                self._check_plateau_outcome(state)
+                check_plateau_outcome(self, state)
                 if state.terminated:
                     break
 
-            stale_count = self._handle_plateau(
+            stale_count = handle_plateau(
+                self,
                 state,
                 last_coverage_size,
                 stale_count,
@@ -401,155 +408,6 @@ class Engine:
             return time.monotonic() + self.config.seed_soft_timeout
         return state.start_time + self.config.timeout_seconds
 
-    def _handle_plateau(
-        self,
-        state: ExplorationState,
-        last_coverage_size: int,
-        stale_count: int,
-        input_queue: list[dict[str, Any]],
-        dispatcher: Dispatcher,
-        target: Callable,
-        signature: inspect.Signature,
-    ) -> int:
-        """Track stale iterations; dispatch plateau event when stale hits threshold.
-
-        Plateau dispatch is suppressed while the engine is replaying
-        pre-queued seeds: during ``seed_phase``, stale iterations reflect
-        uninformative seed execution rather than true exploration stalls.
-
-        When the plateau fires, the pending constraint pool is cleared
-        before dispatch: those constraints have produced no coverage gain
-        for ``plateau_threshold`` consecutive iterations, so processing
-        them further ahead of LLM-supplied seeds would waste budget.
-
-        Plateau progress is measured against the wide scope count: when
-        scope spans multiple files, growth in any of them resets stale.
-        """
-        if state.scope_observed_count > last_coverage_size:
-            return 0
-
-        stale_count += 1
-        if stale_count < self.config.plateau_threshold:
-            return stale_count
-        if state.seed_phase:
-            return stale_count
-
-        self.constraints_to_solve.clear()
-        state.coverage_at_last_plateau = state.scope_observed_count
-        plateau_seeds = dispatcher.dispatch_collector(
-            "on_coverage_plateau",
-            self._snapshot(target, signature, state),
-        )
-        input_queue.extend(plateau_seeds)
-        # Plugin-supplied seeds get the same budget treatment as the
-        # initial ones — they're a fresh replay batch, not engine
-        # exploration.
-        if plateau_seeds:
-            state.seed_phase = True
-        return 0
-
-    def _run_post_loop_discovery(
-        self,
-        *,
-        target: Callable,
-        original_target: Callable,
-        signature: inspect.Signature,
-        initial_args: dict[str, Any],
-        var_to_types: dict[str, str],
-        state: ExplorationState,
-        dispatcher: Dispatcher,
-    ) -> None:
-        """Close remaining coverage gaps after the main loop returns.
-
-        Runs up to ``config.post_loop_rounds`` rounds of LLM-driven
-        discovery. Each round dispatches ``on_post_loop_discovery``,
-        executes the returned candidates, then runs a bounded solver
-        mini-loop to exploit any fresh constraints. Silences after
-        ``config.max_stale_llm_attempts`` consecutive non-improving
-        rounds. Skipped entirely when coverage is already complete.
-        """
-        if self.coverage_tracker is None or self.coverage_tracker.is_fully_covered():
-            return
-        if self.config.post_loop_rounds <= 0:
-            return
-
-        failure_count = 0
-        for _ in range(self.config.post_loop_rounds):
-            if self.coverage_tracker.is_fully_covered():
-                return
-            coverage_before = state.scope_observed_count
-            candidates = dispatcher.dispatch_collector(
-                "on_post_loop_discovery",
-                self._snapshot(original_target, signature, state),
-            )
-            if not candidates:
-                return
-            self._execute_post_loop_candidates(
-                candidates=candidates,
-                target=target,
-                initial_args=initial_args,
-                var_to_types=var_to_types,
-                state=state,
-            )
-            if state.scope_observed_count > coverage_before:
-                failure_count = 0
-                continue
-            failure_count += 1
-            if failure_count >= self.config.max_stale_llm_attempts:
-                return
-
-    def _execute_post_loop_candidates(
-        self,
-        *,
-        candidates: list[dict[str, Any]],
-        target: Callable,
-        initial_args: dict[str, Any],
-        var_to_types: dict[str, str],
-        state: ExplorationState,
-    ) -> None:
-        """Execute each candidate, then drive a bounded solver mini-loop."""
-        for candidate in candidates:
-            if candidate in state.inputs_tried:
-                continue
-            self._run_iteration(target, candidate, state)
-            state.inputs_tried.append(candidate)
-
-        remaining = self.config.post_loop_mini_iterations
-        while remaining > 0 and self.constraints_to_solve:
-            if self.coverage_tracker is not None and self.coverage_tracker.is_fully_covered():
-                return
-            constraint = self.constraints_to_solve.pop(0)
-            model, _status = self._solve(constraint, var_to_types)
-            if model is None:
-                continue
-            merged = {**initial_args, **model}
-            if merged in state.inputs_tried:
-                continue
-            self._run_iteration(target, merged, state)
-            state.inputs_tried.append(merged)
-            remaining -= 1
-
-    def _check_plateau_outcome(self, state: ExplorationState) -> None:
-        """Evaluate whether the last plateau's seeds improved coverage.
-
-        Called at the phase-boundary transition (seed_phase True -> False
-        after a plateau dispatch). On improvement, the silencing counter
-        resets; on repeated failure it climbs until
-        ``max_stale_llm_attempts`` is reached, at which point the engine
-        terminates with ``plateau_exhausted`` to bound LLM spend.
-        """
-        baseline = state.coverage_at_last_plateau
-        state.coverage_at_last_plateau = None
-        if baseline is None:
-            return
-
-        if state.scope_observed_count > baseline:
-            state.plateau_failure_count = 0
-            return
-
-        state.plateau_failure_count += 1
-        if state.plateau_failure_count >= self.config.max_stale_llm_attempts:
-            _terminate(state, "plateau_exhausted")
 
     def _snapshot(
         self,

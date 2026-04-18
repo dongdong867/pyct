@@ -19,6 +19,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.plugin.dispatcher import Dispatcher
+from pyct.engine.recovery import handle_plateau
 from pyct.engine.state import ExplorationState
 
 
@@ -52,7 +53,8 @@ def test_plateau_flushes_constraint_pool() -> None:
     engine.constraints_to_solve.extend([object(), object()])
 
     state = ExplorationState(seed_phase=False)
-    engine._handle_plateau(
+    handle_plateau(
+        engine,
         state=state,
         last_coverage_size=0,
         stale_count=config.plateau_threshold,
@@ -77,7 +79,8 @@ def test_plateau_suppressed_during_seed_phase() -> None:
     engine.register(plugin)
 
     state = ExplorationState(seed_phase=True)
-    engine._handle_plateau(
+    handle_plateau(
+        engine,
         state=state,
         last_coverage_size=0,
         stale_count=config.plateau_threshold,

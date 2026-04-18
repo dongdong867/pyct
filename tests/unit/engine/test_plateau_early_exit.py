@@ -18,6 +18,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.plugin.dispatcher import Dispatcher
+from pyct.engine.recovery import check_plateau_outcome, handle_plateau
 from pyct.engine.state import ExplorationState
 
 
@@ -63,7 +64,7 @@ class TestPlateauOutcomeCheck:
 
         state.tracker = _FakeTracker()  # type: ignore[assignment]
 
-        engine._check_plateau_outcome(state)
+        check_plateau_outcome(engine, state)
 
         assert state.plateau_failure_count == 0
         assert state.coverage_at_last_plateau is None
@@ -85,7 +86,7 @@ class TestPlateauOutcomeCheck:
 
         state.tracker = _FakeTracker()  # type: ignore[assignment]
 
-        engine._check_plateau_outcome(state)
+        check_plateau_outcome(engine, state)
 
         assert state.plateau_failure_count == 1
         assert state.coverage_at_last_plateau is None
@@ -108,7 +109,7 @@ class TestPlateauOutcomeCheck:
 
         state.tracker = _FakeTracker()  # type: ignore[assignment]
 
-        engine._check_plateau_outcome(state)
+        check_plateau_outcome(engine, state)
 
         assert state.plateau_failure_count == 2
         assert state.terminated
@@ -136,7 +137,8 @@ class TestPlateauDispatchRecordsCoverage:
 
         # last_coverage_size matches scope_observed_count so the stale
         # guard (early-return on improvement) lets us reach the dispatch.
-        engine._handle_plateau(
+        handle_plateau(
+            engine,
             state=state,
             last_coverage_size=7,
             stale_count=config.plateau_threshold,
@@ -180,7 +182,7 @@ class TestPlateauOutcomeWiring:
         state.coverage_at_last_plateau = 10  # no improvement since dispatch
         state.plateau_failure_count = 1
 
-        engine._check_plateau_outcome(state)
+        check_plateau_outcome(engine, state)
 
         # Counter advanced; baseline cleared; engine terminated.
         assert state.plateau_failure_count == 2
