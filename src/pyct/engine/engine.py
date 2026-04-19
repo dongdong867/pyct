@@ -62,6 +62,9 @@ class Engine:
         self.constraints_to_solve: list[Any] = []
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
+        self._progress_callback: (
+            Callable[[Engine, ExplorationState], None] | None
+        ) = None
 
     def register(self, plugin: Plugin) -> None:
         """Register a plugin instance with the engine.
@@ -78,6 +81,7 @@ class Engine:
         *,
         seed_inputs: list[dict[str, Any]] | None = None,
         plugins: list[Plugin] | None = None,
+        progress_callback: Callable[[Engine, ExplorationState], None] | None = None,
     ) -> ExplorationResult:
         """Run concolic exploration on ``target`` starting from ``initial_args``.
 
@@ -89,6 +93,13 @@ class Engine:
             plugins: Plugin instances to register before exploration starts.
                 These are in addition to any previously registered via
                 ``engine.register()``.
+            progress_callback: Invoked after every completed iteration
+                with ``(engine, state)``. ``state.iteration`` and
+                ``state.inputs_tried`` reflect the just-completed
+                iteration. Used by the isolated runner to checkpoint
+                partial progress over its pipe so watchdog kills can
+                fall back to the latest snapshot instead of dropping
+                all concolic-loop coverage.
 
         Returns an ExplorationResult describing the outcome. Termination
         reasons: ``full_coverage``, ``max_iterations``, ``timeout``,
@@ -99,6 +110,8 @@ class Engine:
         if plugins:
             for plugin in plugins:
                 self.register(plugin)
+
+        self._progress_callback = progress_callback
 
         ConstraintRegistry.clear()
         self.path = PathConstraintTracker()
@@ -224,6 +237,7 @@ class Engine:
             iteration_error = self._run_iteration(target, args, state)
             state.inputs_tried.append(args)
             state.iteration += 1
+            self._fire_progress(state)
 
             if iteration_error is not None:
                 last_error = iteration_error
@@ -408,6 +422,22 @@ class Engine:
             return time.monotonic() + self.config.seed_soft_timeout
         return state.start_time + self.config.timeout_seconds
 
+
+    def _fire_progress(self, state: ExplorationState) -> None:
+        """Invoke the optional progress callback, swallowing any failure.
+
+        The callback runs in the same process and iteration loop as
+        exploration; a buggy callback must not corrupt engine state or
+        abort the run. Callers that need strict delivery (e.g. the
+        isolated runner) should log or re-raise inside their own
+        callback instead.
+        """
+        if self._progress_callback is None:
+            return
+        try:
+            self._progress_callback(self, state)
+        except Exception:  # noqa: BLE001 — protect the engine loop
+            log.exception("progress_callback raised; ignoring")
 
     def _snapshot(
         self,

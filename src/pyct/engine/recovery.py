@@ -170,6 +170,7 @@ def _execute_post_loop_candidates(
             continue
         engine._run_iteration(target, candidate, state)
         state.inputs_tried.append(candidate)
+        engine._fire_progress(state)
 
     remaining = engine.config.post_loop_mini_iterations
     tracker = engine.coverage_tracker
@@ -185,4 +186,5 @@ def _execute_post_loop_candidates(
             continue
         engine._run_iteration(target, merged, state)
         state.inputs_tried.append(merged)
+        engine._fire_progress(state)
         remaining -= 1

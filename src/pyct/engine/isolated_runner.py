@@ -15,6 +15,7 @@ are contained to the child.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import multiprocessing as mp
 import time
@@ -99,13 +100,29 @@ def _child_entry(
     seed_inputs: list[dict[str, Any]] | None = None,
     plugins: list | None = None,
 ) -> None:
-    """Child-process entry point: import target, run engine, send result."""
-    # Suppress stdout/stderr from target functions (e.g. sympy diagnostics)
+    """Child-process entry point: import target, run engine, send result.
+
+    Pipe protocol: ``(kind, RunConcolicResult)`` tuples, where ``kind``
+    is ``"progress"`` for every completed iteration and ``"final"`` for
+    the terminal result. Earlier revisions sent a bare result on the
+    pipe; the tag lets the parent fall back to the latest ``"progress"``
+    payload when the watchdog kills the child before ``"final"`` lands.
+    """
     import io
     import sys
 
     sys.stdout = io.StringIO()
     sys.stderr = io.StringIO()
+
+    plugins_list = plugins or []
+
+    def emit_progress(engine: Engine, state: Any) -> None:
+        partial = _partial_result_from_state(engine, state, plugins_list)
+        # Parent may have closed the pipe already (e.g. after killing us);
+        # dropping the send keeps the engine loop alive so a clean ``final``
+        # can still be attempted if we somehow survive.
+        with contextlib.suppress(BrokenPipeError, EOFError, OSError):
+            pipe.send(("progress", partial))
 
     try:
         target = _import_target(module_name, qualname)
@@ -115,8 +132,9 @@ def _child_entry(
             initial_args,
             seed_inputs=seed_inputs,
             plugins=plugins,
+            progress_callback=emit_progress,
         )
-        token_stats = _extract_plugin_tokens(plugins or [])
+        token_stats = _extract_plugin_tokens(plugins_list)
         result = RunConcolicResult.from_exploration(
             exploration,
             list(exploration.inputs_generated),
@@ -126,9 +144,55 @@ def _child_entry(
         result = _wrapper_failure(f"{type(e).__name__}: {e}")
 
     try:
-        pipe.send(result)
+        pipe.send(("final", result))
     finally:
         pipe.close()
+
+
+def _partial_result_from_state(
+    engine: Engine,
+    state: Any,
+    plugins: list,
+) -> RunConcolicResult:
+    """Snapshot engine + state into a RunConcolicResult for pipe delivery.
+
+    Mirrors the shape ``_pyct_result_to_runner`` consumes on the parent
+    side so the benchmark's coverage-from-inputs rerun path works
+    identically whether we got a ``final`` or fell back to a ``progress``
+    checkpoint. Success is marked False on a partial so callers can
+    distinguish partial-checkpoint cases from clean completion.
+    """
+    tracker = engine.coverage_tracker
+    narrow_lines = frozenset(state.observed_lines)
+    narrow_total = state.total_lines or 0
+    narrow_percent = (100.0 * len(narrow_lines) / narrow_total) if narrow_total else 0.0
+
+    scope_lines: frozenset[tuple[str, int]] = frozenset()
+    scope_total = 0
+    scope_percent = 0.0
+    if tracker is not None:
+        scope_lines = frozenset(
+            (path, line)
+            for path, lines in tracker.observed_by_file.items()
+            for line in lines
+        )
+        scope_total = tracker.total_lines
+        scope_percent = tracker.coverage_percent
+
+    return RunConcolicResult(
+        success=False,
+        coverage_percent=narrow_percent,
+        executed_lines=narrow_lines,
+        paths_explored=len(state.inputs_tried),
+        inputs_generated=tuple(state.inputs_tried),
+        iterations=state.iteration,
+        termination_reason="partial_checkpoint",
+        error=None,
+        token_stats=_extract_plugin_tokens(plugins),
+        scope_coverage_percent=scope_percent,
+        scope_executed_lines=scope_lines,
+        scope_total_lines=scope_total,
+    )
 
 
 def _import_target(module_name: str, qualname: str) -> Callable:
@@ -147,24 +211,82 @@ def _wait_for_result(
     proc: mp.process.BaseProcess,
     timeout: float,
 ) -> RunConcolicResult:
-    """Block until the child sends a result, dies, or the watchdog fires."""
+    """Block until the child sends ``final``, dies, or the watchdog fires.
+
+    Drains ``("progress", result)`` checkpoints into ``last_checkpoint``
+    until either a ``("final", result)`` arrives (preferred), the pipe
+    closes / the child exits, or the deadline passes. On watchdog kill
+    or unexpected exit, the latest checkpoint is returned so the parent
+    still sees the concolic-iteration coverage gathered before the kill;
+    only when no checkpoint was ever received do we fall back to the
+    legacy empty-coverage wrapper failure.
+    """
     deadline = time.monotonic() + timeout
+    last_checkpoint: RunConcolicResult | None = None
+
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             proc.kill()
-            return _wrapper_failure(f"child exceeded wall-clock timeout of {timeout:.1f}s")
+            return _checkpoint_or_failure(
+                last_checkpoint,
+                f"child exceeded wall-clock timeout of {timeout:.1f}s",
+            )
 
         ready = wait([conn, proc.sentinel], timeout=remaining)
         if not ready:
             continue
         if conn in ready:
             try:
-                return conn.recv()
+                message = conn.recv()
             except EOFError:
-                return _wrapper_failure("child closed pipe without sending result")
+                return _checkpoint_or_failure(
+                    last_checkpoint, "child closed pipe without sending result"
+                )
+            kind, payload = _parse_pipe_message(message)
+            if kind == "final":
+                return payload
+            last_checkpoint = payload  # kind == "progress"
+            continue
         if proc.sentinel in ready:
-            return _wrapper_failure(f"child exited unexpectedly (exit code {proc.exitcode})")
+            return _checkpoint_or_failure(
+                last_checkpoint,
+                f"child exited unexpectedly (exit code {proc.exitcode})",
+            )
+
+
+def _parse_pipe_message(
+    message: Any,
+) -> tuple[str, RunConcolicResult]:
+    """Unpack a ``(kind, payload)`` tuple; treat legacy bare payloads as final.
+
+    The bare-RunConcolicResult shape is what child processes sent before
+    the checkpoint protocol landed; accepting it keeps mixed-version
+    testing clean while the codebase converges.
+    """
+    if isinstance(message, tuple) and len(message) == 2:
+        kind, payload = message
+        if kind in ("progress", "final") and isinstance(payload, RunConcolicResult):
+            return kind, payload
+    if isinstance(message, RunConcolicResult):
+        return "final", message
+    raise TypeError(f"unexpected pipe message shape: {type(message).__name__}")
+
+
+def _checkpoint_or_failure(
+    checkpoint: RunConcolicResult | None,
+    failure_message: str,
+) -> RunConcolicResult:
+    """Return the latest checkpoint if any, else a fresh wrapper failure.
+
+    The checkpoint path preserves concolic-iteration coverage that would
+    otherwise be dropped on watchdog kill; without a checkpoint we fall
+    back to the original empty-coverage behaviour so tests that rely on
+    the legacy ``success=False`` signature still pass.
+    """
+    if checkpoint is not None:
+        return checkpoint
+    return _wrapper_failure(failure_message)
 
 
 def _reap_child(proc: mp.process.BaseProcess) -> None:
