@@ -66,9 +66,7 @@ def _two_gates(x: str) -> int:
 class TestPostLoopDispatch:
     def test_fires_after_main_loop_exits_incomplete(self) -> None:
         """A partial-coverage main loop triggers at least one post-loop round."""
-        config = ExecutionConfig(
-            max_iterations=5, timeout_seconds=5.0, post_loop_rounds=3
-        )
+        config = ExecutionConfig(max_iterations=5, timeout_seconds=5.0, post_loop_rounds=3)
         engine = Engine(config)
         plugin = _PostLoopPlugin(rounds=[[{"x": "hello"}]])
         engine.register(plugin)
@@ -93,6 +91,57 @@ class TestPostLoopDispatch:
 
         assert plugin.calls == 0, "post-loop must not fire when main loop hits full coverage"
 
+    def test_mid_loop_full_coverage_stops_further_rounds(self) -> None:
+        """When a round closes coverage to 100%, the phase exits before
+        dispatching the next round — even though ``post_loop_rounds``
+        would allow more. Distinct from skip-on-full-coverage at entry,
+        which never enters the loop."""
+        config = ExecutionConfig(
+            max_iterations=5,
+            timeout_seconds=5.0,
+            post_loop_rounds=3,
+            max_stale_llm_attempts=5,  # high — silencing must NOT be the cause of exit
+        )
+        engine = Engine(config)
+        plugin = _PostLoopPlugin(
+            rounds=[
+                [{"x": "hello"}],  # closes coverage on the first round
+                [{"x": "extra1"}],  # would fire without the mid-loop coverage check
+                [{"x": "extra2"}],
+            ]
+        )
+        engine.register(plugin)
+
+        engine.explore(_regex_gate, {"x": ""})
+
+        assert plugin.calls == 1, (
+            f"closing coverage mid-phase must stop further dispatches; "
+            f"got {plugin.calls} plugin calls"
+        )
+
+    def test_empty_candidates_exits_phase(self) -> None:
+        """When the plugin returns no candidates, the phase exits on
+        that round — distinct from silencing, which only fires after
+        ``max_stale_llm_attempts`` non-improving rounds."""
+        config = ExecutionConfig(
+            max_iterations=5,
+            timeout_seconds=5.0,
+            post_loop_rounds=5,
+            max_stale_llm_attempts=10,  # high — silencing cannot fire within the loop
+        )
+        engine = Engine(config)
+        # One scripted (coverage-flat) round, then the plugin returns [].
+        plugin = _PostLoopPlugin(rounds=[[{"x": "useless"}]])
+        engine.register(plugin)
+
+        engine.explore(_regex_gate, {"x": ""})
+
+        assert plugin.calls == 2, (
+            f"empty candidates must exit phase on that round; got "
+            f"{plugin.calls} plugin calls (max_stale_llm_attempts=10 "
+            f"so silencing cannot have fired)"
+        )
+
 
 class TestPostLoopSilencing:
     def test_silences_after_two_non_improving_rounds(self) -> None:
@@ -112,13 +161,18 @@ class TestPostLoopSilencing:
         engine.explore(_regex_gate, {"x": ""})
 
         assert plugin.calls == 2, (
-            f"expected silencing after 2 non-improving rounds, "
-            f"got {plugin.calls} plugin calls"
+            f"expected silencing after 2 non-improving rounds, got {plugin.calls} plugin calls"
         )
 
     def test_improvement_resets_silencing_counter(self) -> None:
-        """An improving round followed by non-improving rounds should still
-        run ``max_stale_llm_attempts`` non-improving rounds before silencing."""
+        """An improving round resets ``failure_count``, allowing a fresh
+        ``max_stale_llm_attempts`` non-improving rounds before silencing.
+
+        The improving round MUST come after a non-improving round so the
+        reset's effect is observable: an improving round first leaves
+        ``failure_count`` at its initial 0, where ``failure_count = 0``
+        is a no-op and the test cannot distinguish "reset" from "stays".
+        """
         config = ExecutionConfig(
             max_iterations=5,
             timeout_seconds=5.0,
@@ -128,19 +182,20 @@ class TestPostLoopSilencing:
         engine = Engine(config)
         plugin = _PostLoopPlugin(
             rounds=[
-                [{"x": "foo"}],  # improves — covers first gate
-                [{"x": ""}],     # no improvement
-                [{"x": ""}],     # no improvement → silenced on this round
-                [{"x": "bar"}],  # never reached
+                [{"x": ""}],  # no improvement → failure_count=1
+                [{"x": "foo"}],  # improving — reset must drop to 0
+                [{"x": ""}],  # no improvement → failure_count=1
+                [{"x": ""}],  # no improvement → failure_count=2, silenced
             ]
         )
         engine.register(plugin)
 
         engine.explore(_two_gates, {"x": ""})
 
-        assert plugin.calls == 3, (
-            f"improvement should reset the counter; expected 1 improving + "
-            f"2 non-improving rounds before silencing, got {plugin.calls}"
+        assert plugin.calls == 4, (
+            f"reset should grant a fresh budget after the improving round; "
+            f"expected 1 + 1 improving + 2 non-improving rounds before "
+            f"silencing, got {plugin.calls}"
         )
 
 
