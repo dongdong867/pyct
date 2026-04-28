@@ -126,3 +126,62 @@ class TestLenReturnsConcolicInt:
             result = len(cs)
             assert isinstance(result, ConcolicInt)
             assert result.expr == ["str.len", cs]
+
+
+class TestSocketGetaddrinfoUnwraps:
+    """The wrapper must unwrap concolic args before delegating to the C call.
+
+    Without unwrap, libc's ``getaddrinfo`` would receive a ConcolicStr
+    instance and crash. The earlier ``socket_getaddrinfo_wrapped``/
+    ``restored`` tests only check identity (wrapper installed/removed) —
+    they never invoke the wrapper, so a no-op wrapper would pass them.
+    These tests assert the inner call sees a plain ``str``, not a
+    ConcolicStr (which inherits from ``str`` so ``==`` comparison
+    cannot discriminate).
+    """
+
+    def test_positional_concolic_args_unwrapped_before_call(self, monkeypatch, engine):
+        from pyct.core.str.str import ConcolicStr
+        from pyct.engine.environment import prepared_environment
+
+        captured: list[tuple] = []
+
+        def fake_getaddrinfo(*args, **kwargs):
+            captured.append(args)
+            return []
+
+        monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+        cs = ConcolicStr("example.com", "s_HOST", engine)
+
+        with prepared_environment():
+            socket.getaddrinfo(cs, 80)
+
+        assert len(captured) == 1
+        host, port = captured[0]
+        assert type(host) is str, f"expected unwrapped str, got {type(host).__name__}"
+        assert host == "example.com"
+        assert port == 80
+
+    def test_keyword_concolic_args_unwrapped_before_call(self, monkeypatch, engine):
+        from pyct.core.str.str import ConcolicStr
+        from pyct.engine.environment import prepared_environment
+
+        captured: list[dict] = []
+
+        def fake_getaddrinfo(*args, **kwargs):
+            captured.append(kwargs)
+            return []
+
+        monkeypatch.setattr(socket, "getaddrinfo", fake_getaddrinfo)
+        cs = ConcolicStr("example.com", "s_HOST", engine)
+
+        with prepared_environment():
+            socket.getaddrinfo(host=cs, port=80)
+
+        assert len(captured) == 1
+        kw = captured[0]
+        assert type(kw["host"]) is str, (
+            f"expected unwrapped str, got {type(kw['host']).__name__}"
+        )
+        assert kw["host"] == "example.com"
+        assert kw["port"] == 80
