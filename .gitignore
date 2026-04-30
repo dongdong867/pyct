@@ -43,5 +43,7 @@ Thumbs.db
 
 # Project-specific
 benchmark/results/
+benchmarks/
+paper/
 .claude/
 .env
