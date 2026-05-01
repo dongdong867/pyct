@@ -47,3 +47,8 @@ benchmarks/
 paper/
 .claude/
 .env
+
+# Mutation testing
+mutants/
+mutmut-stats.json
+tools/mutation/results/

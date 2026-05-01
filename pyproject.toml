@@ -88,4 +88,30 @@ dev = [
     "pytest-cov>=4.0.0",
     "ruff>=0.5.0",
     "pyrefly>=0.33.1",
+    "mutmut>=3.5.0",
+]
+
+[tool.mutmut]
+# isolated_runner.py is excluded: its multiprocessing-spawned subprocess tests
+# clash with mutmut's coverage instrumentation and fork start-method on macOS.
+# Watchdog/checkpoint behavior is validated via Phase 2 comment-out ACs instead.
+paths_to_mutate = ["src/pyct/engine/"]
+tests_dir = ["tests/unit/engine/"]
+also_copy = ["src/pyct/", "tests/unit/engine/_fixtures/"]
+do_not_mutate = [
+    "**/__init__.py",
+    "**/_fixtures/**",
+    "**/isolated_runner.py",
+]
+mutate_only_covered_lines = false
+pytest_add_cli_args = [
+    "-x",
+    "-q",
+    "--tb=short",
+    "-p", "no:cacheprovider",
+    # Subprocess-spawning tests clash with mutmut's fork start-method on macOS.
+    "--ignore=tests/unit/engine/test_isolated_runner_partial.py",
+    "--deselect=tests/unit/engine/test_seed_inputs_and_plugins.py::TestRunConcolicSeedInputsAndPlugins::test_run_concolic_isolated_with_seed_inputs",
+    # sys.settrace conflicts inside mutmut's in-process pytest.main runner
+    "--deselect=tests/unit/engine/test_line_tracer.py::TestLineTracerFileFiltering::test_multiple_files_captured_per_file",
 ]
