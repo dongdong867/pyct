@@ -52,6 +52,11 @@ class ExplorationResult:
     scope_coverage_percent: float = 0.0
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
+    pre_cover_lines: frozenset[int] = frozenset()
+    gen_unsat: int = 0
+    gen_unknown: int = 0
+    gen_parse_failed: int = 0
+    harness_error: int = 0
 
 
 @dataclass(frozen=True)
@@ -78,6 +83,11 @@ class RunConcolicResult:
     scope_coverage_percent: float = 0.0
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
+    pre_cover_lines: frozenset[int] = frozenset()
+    gen_unsat: int = 0
+    gen_unknown: int = 0
+    gen_parse_failed: int = 0
+    harness_error: int = 0
 
     @classmethod
     def from_exploration(
@@ -108,4 +118,9 @@ class RunConcolicResult:
             scope_coverage_percent=result.scope_coverage_percent,
             scope_executed_lines=result.scope_executed_lines,
             scope_total_lines=result.scope_total_lines,
+            pre_cover_lines=result.pre_cover_lines,
+            gen_unsat=result.gen_unsat,
+            gen_unknown=result.gen_unknown,
+            gen_parse_failed=result.gen_parse_failed,
+            harness_error=result.harness_error,
         )

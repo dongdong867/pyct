@@ -14,12 +14,16 @@ from pyct.engine.plugin.context import EngineContext
 from pyct.engine.plugin.protocol import Plugin
 from pyct.engine.result import ExplorationResult, RunConcolicResult
 from pyct.engine.state import ExplorationState
+from pyct.engine.types import InputRecord, Outcome, Provenance
 
 __all__ = [
     "Engine",
     "EngineContext",
     "ExplorationResult",
     "ExplorationState",
+    "InputRecord",
+    "Outcome",
     "Plugin",
+    "Provenance",
     "RunConcolicResult",
 ]
