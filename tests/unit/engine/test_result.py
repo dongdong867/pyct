@@ -114,3 +114,139 @@ class TestRunConcolicResult:
         exploration = _make_exploration_result()
         run_result = RunConcolicResult.from_exploration(exploration, [])
         assert run_result.inputs_generated == ()
+
+
+class TestExplorationResultTelemetryFields:
+    def test_pre_cover_lines_defaults_to_empty_frozenset(self):
+        result = _make_exploration_result()
+        assert result.pre_cover_lines == frozenset()
+
+    def test_counter_fields_default_to_zero(self):
+        result = _make_exploration_result()
+        assert result.gen_unsat == 0
+        assert result.gen_unknown == 0
+        assert result.gen_parse_failed == 0
+        assert result.harness_error == 0
+
+    def test_pre_cover_lines_accepts_explicit_value(self):
+        result = ExplorationResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset({1, 2, 3}),
+            paths_explored=0,
+            iterations=0,
+            termination_reason="",
+            elapsed_seconds=0.0,
+            error=None,
+            pre_cover_lines=frozenset({1}),
+        )
+        assert result.pre_cover_lines == frozenset({1})
+
+    def test_counter_fields_accept_explicit_values(self):
+        result = ExplorationResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset(),
+            paths_explored=0,
+            iterations=0,
+            termination_reason="",
+            elapsed_seconds=0.0,
+            error=None,
+            gen_unsat=2,
+            gen_unknown=1,
+            gen_parse_failed=4,
+            harness_error=0,
+        )
+        assert result.gen_unsat == 2
+        assert result.gen_unknown == 1
+        assert result.gen_parse_failed == 4
+        assert result.harness_error == 0
+
+
+class TestRunConcolicResultTelemetryFields:
+    def test_pre_cover_lines_defaults_to_empty_frozenset(self):
+        result = RunConcolicResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset(),
+            paths_explored=0,
+            inputs_generated=(),
+            iterations=0,
+            termination_reason="",
+        )
+        assert result.pre_cover_lines == frozenset()
+
+    def test_counter_fields_default_to_zero(self):
+        result = RunConcolicResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset(),
+            paths_explored=0,
+            inputs_generated=(),
+            iterations=0,
+            termination_reason="",
+        )
+        assert result.gen_unsat == 0
+        assert result.gen_unknown == 0
+        assert result.gen_parse_failed == 0
+        assert result.harness_error == 0
+
+    def test_pre_cover_lines_subset_invariant_holds_for_constructed_result(self):
+        result = RunConcolicResult(
+            success=True,
+            coverage_percent=100.0,
+            executed_lines=frozenset({1, 2, 3, 4}),
+            paths_explored=1,
+            inputs_generated=(),
+            iterations=1,
+            termination_reason="full_coverage",
+            pre_cover_lines=frozenset({1, 2}),
+        )
+        assert result.pre_cover_lines <= result.executed_lines
+
+
+class TestFromExplorationPropagatesTelemetry:
+    def test_propagates_pre_cover_lines(self):
+        exploration = ExplorationResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset({1, 2, 3}),
+            paths_explored=0,
+            iterations=0,
+            termination_reason="",
+            elapsed_seconds=0.0,
+            error=None,
+            pre_cover_lines=frozenset({1}),
+        )
+        run_result = RunConcolicResult.from_exploration(exploration, [])
+        assert run_result.pre_cover_lines == frozenset({1})
+
+    def test_propagates_counters(self):
+        exploration = ExplorationResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset(),
+            paths_explored=0,
+            iterations=0,
+            termination_reason="",
+            elapsed_seconds=0.0,
+            error=None,
+            gen_unsat=2,
+            gen_unknown=1,
+            gen_parse_failed=4,
+            harness_error=0,
+        )
+        run_result = RunConcolicResult.from_exploration(exploration, [])
+        assert run_result.gen_unsat == 2
+        assert run_result.gen_unknown == 1
+        assert run_result.gen_parse_failed == 4
+        assert run_result.harness_error == 0
+
+    def test_default_telemetry_when_exploration_has_no_explicit_values(self):
+        exploration = _make_exploration_result()
+        run_result = RunConcolicResult.from_exploration(exploration, [])
+        assert run_result.pre_cover_lines == frozenset()
+        assert run_result.gen_unsat == 0
+        assert run_result.gen_unknown == 0
+        assert run_result.gen_parse_failed == 0
+        assert run_result.harness_error == 0
