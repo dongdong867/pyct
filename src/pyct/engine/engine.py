@@ -202,7 +202,7 @@ class Engine:
             dispatcher=dispatcher,
         )
 
-        result = _build_result(state, last_error)
+        result = _build_result(state, last_error, plugins=self.plugins)
         dispatcher.dispatch_observer(
             "on_exploration_end",
             self._snapshot(target, signature, state),
@@ -557,6 +557,8 @@ def _terminate(state: ExplorationState, reason: str) -> None:
 def _build_result(
     state: ExplorationState,
     last_error: str | None,
+    *,
+    plugins: list[Plugin] | None = None,
 ) -> ExplorationResult:
     """Turn the final state into an ExplorationResult.
 
@@ -571,8 +573,14 @@ def _build_result(
     tuples across every file in the engine's CoverageScope — the paper's
     dual-reporting signal that pairs with the benchmark's post-hoc
     rerun measurement.
+
+    ``gen_parse_failed`` is a soft-convention sweep: the engine sums
+    ``parse_failed`` across every plugin that exposes the attribute. The
+    LLM plugin populates it via its parser tuple-return; other plugins
+    may opt in by carrying the same attribute name.
     """
     scope_lines, scope_total, scope_percent = _scope_snapshot(state)
+    gen_parse_failed = sum(getattr(p, "parse_failed", 0) for p in plugins or ())
     return ExplorationResult(
         success=True,
         coverage_percent=state.coverage_percent(),
@@ -589,6 +597,7 @@ def _build_result(
         pre_cover_lines=state.pre_cover_lines,
         gen_unsat=state.gen_unsat,
         gen_unknown=state.gen_unknown,
+        gen_parse_failed=gen_parse_failed,
         harness_error=state.harness_error,
     )
 

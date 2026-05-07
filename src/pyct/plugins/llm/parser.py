@@ -31,26 +31,36 @@ from typing import Any
 log = logging.getLogger("ct.plugins.llm.parser")
 
 
-def parse_input_list(content: str | None) -> list[dict[str, Any]]:
-    """Extract a list of input dicts from an LLM response.
+def parse_input_list(content: str | None) -> tuple[list[dict[str, Any]], int]:
+    """Extract input dicts from an LLM response, plus a parse-fail count.
 
-    Returns an empty list on any failure — the caller treats that as
-    "plugin has nothing to offer" and falls through to the engine's
-    next step.
+    Returns ``(inputs, fails)`` where ``fails`` counts candidates that
+    were attempted but rejected. Callers (the LLM plugin) accumulate
+    ``fails`` into the engine's ``gen_parse_failed`` telemetry counter.
+
+    Failure rules:
+
+    - ``content is None`` → ``([], 0)``: no parse attempted.
+    - Whole response can't be eval'd into a list → ``([], 1)``: the
+      entire response counts as a single failed candidate.
+    - List eval'd successfully → ``fails = len(parsed) − len(returned)``:
+      every entry that was non-dict, empty after sanitize, or otherwise
+      dropped contributes one fail.
     """
     if content is None:
-        return []
+        return [], 0
     code = _extract_code_block(content)
     parsed = _safe_eval(code)
     if not isinstance(parsed, list):
         log.warning("LLM response did not parse to a list (got %s)", type(parsed).__name__)
         log.debug("Extracted code block:\n%s", code[:500])
-        return []
+        return [], 1
+    raw_count = len(parsed)
     results = [_sanitize_dict(e) for e in parsed if isinstance(e, dict)]
     results = [e for e in results if e]
     if not results and parsed:
         log.warning("LLM response parsed to list but contained no usable dicts: %s", parsed[:3])
-    return results
+    return results, raw_count - len(results)
 
 
 def parse_single_input(content: str | None) -> dict[str, Any] | None:

@@ -60,27 +60,39 @@ class LLMPlugin:
         if client is _DEFAULT_CLIENT:
             client = build_default_client()
         self._client: LLMClient | None = client  # type: ignore[assignment]
+        # Accumulated parse-fail count across every list-parsing handler.
+        # The engine sweeps registered plugins for this attribute when
+        # building its result so the count surfaces on
+        # ``ExplorationResult.gen_parse_failed`` without changing the
+        # plugin protocol's return shape.
+        self.parse_failed: int = 0
+
+    def _parse_and_count(self, content: str | None) -> list[dict[str, Any]]:
+        """Parse a response into inputs while accumulating ``parse_failed``."""
+        inputs, fails = parse_input_list(content)
+        self.parse_failed += fails
+        return inputs
 
     def on_seed_request(self, ctx: EngineContext) -> list[dict[str, Any]]:
         if self._client is None:
             return []
         prompt = build_seed_prompt(ctx)
         content = self._client.complete(prompt)
-        return parse_input_list(content)
+        return self._parse_and_count(content)
 
     def on_coverage_plateau(self, ctx: EngineContext) -> list[dict[str, Any]]:
         if self._client is None:
             return []
         prompt = build_plateau_prompt(ctx)
         content = self._client.complete(prompt)
-        return parse_input_list(content)
+        return self._parse_and_count(content)
 
     def on_post_loop_discovery(self, ctx: EngineContext) -> list[dict[str, Any]]:
         if self._client is None:
             return []
         prompt = build_plateau_prompt(ctx)
         content = self._client.complete(prompt)
-        return parse_input_list(content)
+        return self._parse_and_count(content)
 
     def on_constraint_unknown(
         self,
