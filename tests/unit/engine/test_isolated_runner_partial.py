@@ -101,6 +101,106 @@ def test_wait_for_result_falls_back_to_wrapper_failure_without_messages() -> Non
     assert result.error is not None
 
 
+def _child_iter_start_then_sleep(pipe: Any) -> None:
+    """Send iter_start without ever following with progress; then hang.
+
+    Models a watchdog kill mid-iteration: the parent must reconstruct
+    the in-flight iter as a TIMEOUT record from the iter_start payload.
+    """
+    pipe.send(("progress", _make_result(iterations=1)))  # one completed iter
+    pipe.send(
+        (
+            "iter_start",
+            {"idx": 1, "args": {"x": 99}, "provenance": "solver"},
+        )
+    )
+    time.sleep(100)
+
+
+def _child_iter_start_then_progress(pipe: Any) -> None:
+    """iter_start followed by progress that covers it — tombstone NOT inserted."""
+    pipe.send(("progress", _make_result(iterations=1)))
+    pipe.send(("iter_start", {"idx": 1, "args": {"x": 5}, "provenance": "solver"}))
+    pipe.send(("progress", _make_result(iterations=2)))
+    time.sleep(100)
+
+
+def _child_two_starts_only_first_progressed(pipe: Any) -> None:
+    """Two iter_starts; only the first ends in progress. Tombstone for second."""
+    pipe.send(("iter_start", {"idx": 0, "args": {"x": 1}, "provenance": "seed"}))
+    pipe.send(("progress", _make_result(iterations=1)))
+    pipe.send(
+        (
+            "iter_start",
+            {"idx": 1, "args": {"x": 2}, "provenance": "plugin_seed"},
+        )
+    )
+    time.sleep(100)
+
+
+def _child_iter_start_no_checkpoint_then_sleep(pipe: Any) -> None:
+    """iter_start before any progress arrives. Tombstone is the only record."""
+    pipe.send(("iter_start", {"idx": 0, "args": {"x": 7}, "provenance": "seed"}))
+    time.sleep(100)
+
+
+class TestTombstoneRecovery:
+    """Watchdog kill mid-iteration → parent reconstructs TIMEOUT record."""
+
+    def test_pending_iter_start_becomes_timeout_record(self) -> None:
+        from pyct.engine.types import Outcome, Provenance
+
+        result = _run_child_and_wait(_child_iter_start_then_sleep, timeout=1.0)
+
+        # Latest checkpoint had 1 record; tombstone adds the second.
+        assert result.iterations == 2
+        assert len(result.inputs_generated) == 2
+        tombstone = result.inputs_generated[-1]
+        assert tombstone.outcome is Outcome.TIMEOUT
+        assert tombstone.args == {"x": 99}
+        assert tombstone.provenance is Provenance.SOLVER
+        assert tombstone.error is not None
+        assert tombstone.error.startswith("timeout:")
+        assert result.termination_reason == "timeout"
+
+    def test_progress_after_iter_start_clears_pending(self) -> None:
+        """When progress arrives covering the iter_start, no tombstone is added."""
+        result = _run_child_and_wait(_child_iter_start_then_progress, timeout=1.0)
+
+        # Latest checkpoint had 2 records; iter_start was covered → no
+        # tombstone augmentation, so termination_reason stays "partial"
+        # (the checkpoint's value) rather than being overwritten with
+        # "timeout" by the pending-iter-start finalizer.
+        assert result.iterations == 2
+        assert len(result.inputs_generated) == 2
+        assert result.termination_reason != "timeout"
+
+    def test_only_unmatched_iter_start_becomes_tombstone(self) -> None:
+        from pyct.engine.types import Outcome, Provenance
+
+        result = _run_child_and_wait(_child_two_starts_only_first_progressed, timeout=1.0)
+
+        # First iter_start was covered by the progress message; second wasn't.
+        assert result.iterations == 2
+        assert len(result.inputs_generated) == 2
+        tombstone = result.inputs_generated[-1]
+        assert tombstone.outcome is Outcome.TIMEOUT
+        assert tombstone.args == {"x": 2}
+        assert tombstone.provenance is Provenance.PLUGIN_SEED
+
+    def test_tombstone_with_no_prior_checkpoint(self) -> None:
+        """iter_start before any progress → tombstone is the only record."""
+        from pyct.engine.types import Outcome, Provenance
+
+        result = _run_child_and_wait(_child_iter_start_no_checkpoint_then_sleep, timeout=1.0)
+
+        assert len(result.inputs_generated) == 1
+        tombstone = result.inputs_generated[0]
+        assert tombstone.outcome is Outcome.TIMEOUT
+        assert tombstone.args == {"x": 7}
+        assert tombstone.provenance is Provenance.SEED
+
+
 def _slow_plugin_target(x: int, y: int, z: int) -> int:
     """Multi-branch target with a hard-to-solve corner so full coverage
     doesn't come in one iteration; plateau fires instead and the slow
