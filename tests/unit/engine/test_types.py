@@ -32,6 +32,9 @@ class TestProvenance:
     def test_plugin_unknown_value_is_lowercase_snake_case(self):
         assert Provenance.PLUGIN_UNKNOWN.value == "plugin_unknown"
 
+    def test_plugin_post_loop_value_is_lowercase_snake_case(self):
+        assert Provenance.PLUGIN_POST_LOOP.value == "plugin_post_loop"
+
     def test_pickle_round_trip_preserves_enum_identity(self):
         restored = pickle.loads(pickle.dumps(Provenance.PLUGIN_PLATEAU))
         assert restored is Provenance.PLUGIN_PLATEAU
