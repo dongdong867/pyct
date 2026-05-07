@@ -18,6 +18,7 @@ from typing import Any
 
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
+from pyct.engine.types import Outcome, Provenance
 
 
 class _PostLoopPlugin:
@@ -197,6 +198,52 @@ class TestPostLoopSilencing:
             f"expected 1 + 1 improving + 2 non-improving rounds before "
             f"silencing, got {plugin.calls}"
         )
+
+
+class TestPostLoopRecordOutcome:
+    """Post-loop records carry computed outcome + new_lines, not hardcoded
+    NO_GAIN with empty deltas.
+
+    Two record-append sites in ``_execute_post_loop_candidates``:
+    - direct candidate execution (PLUGIN_POST_LOOP provenance)
+    - bounded solver mini-loop (SOLVER provenance)
+    Both must classify the iteration result instead of stamping NO_GAIN.
+    """
+
+    def test_covering_post_loop_seed_records_covered_new(self) -> None:
+        config = ExecutionConfig(max_iterations=5, timeout_seconds=5.0, post_loop_rounds=2)
+        engine = Engine(config)
+        plugin = _PostLoopPlugin(rounds=[[{"x": "hello"}]])
+        engine.register(plugin)
+        result = engine.explore(_regex_gate, {"x": ""})
+
+        post_loop_records = [
+            r for r in result.inputs_generated if r.provenance is Provenance.PLUGIN_POST_LOOP
+        ]
+        assert post_loop_records, "expected at least one PLUGIN_POST_LOOP record"
+        # The "hello" seed unlocks a previously-uncovered branch.
+        assert any(r.outcome is Outcome.COVERED_NEW for r in post_loop_records)
+        assert any(r.new_lines for r in post_loop_records)
+
+    def test_useless_post_loop_seed_records_no_gain(self) -> None:
+        config = ExecutionConfig(
+            max_iterations=5,
+            timeout_seconds=5.0,
+            post_loop_rounds=2,
+            max_stale_llm_attempts=5,  # avoid silencing-driven exit
+        )
+        engine = Engine(config)
+        plugin = _PostLoopPlugin(rounds=[[{"x": "useless"}]])
+        engine.register(plugin)
+        result = engine.explore(_regex_gate, {"x": ""})
+
+        post_loop_records = [
+            r for r in result.inputs_generated if r.provenance is Provenance.PLUGIN_POST_LOOP
+        ]
+        assert post_loop_records, "expected at least one PLUGIN_POST_LOOP record"
+        for record in post_loop_records:
+            assert record.outcome is Outcome.NO_GAIN
+            assert record.new_lines == frozenset()
 
 
 class TestPostLoopRoundsCap:
