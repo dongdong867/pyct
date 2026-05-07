@@ -17,6 +17,7 @@ from tools.benchmark.runners import run_concolic_llm
 from tools.benchmark.targets import BenchmarkTarget
 
 from pyct.engine.result import RunConcolicResult
+from pyct.engine.types import InputRecord, Outcome, Provenance
 
 
 @pytest.fixture
@@ -110,7 +111,15 @@ def test_union_preserves_engine_lines_when_engine_adds_coverage(monkeypatch, tar
         coverage_percent=20.0,
         executed_lines=frozenset({9, 10}),
         paths_explored=1,
-        inputs_generated=({"x": 1, "y": 0},),
+        inputs_generated=(
+            InputRecord(
+                args={"x": 1, "y": 0},
+                provenance=Provenance.SEED,
+                outcome=Outcome.COVERED_NEW,
+                new_lines=frozenset({9, 10}),
+                error=None,
+            ),
+        ),
         iterations=1,
         termination_reason="exhausted",
     )

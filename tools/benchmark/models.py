@@ -100,6 +100,11 @@ class RunnerResult:
     engine_coverage_percent: float | None = None
     engine_executed_lines: int | None = None
     engine_total_lines: int | None = None
+    input_records: list[dict[str, Any]] = field(default_factory=list)
+    gen_unsat: int = 0
+    gen_unknown: int = 0
+    gen_parse_failed: int = 0
+    harness_error: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         result: dict[str, Any] = {
@@ -111,6 +116,11 @@ class RunnerResult:
             "test_cases_generated": self.test_cases_generated,
             "attempts": [a.to_dict() for a in self.attempts],
             "captured_output": self.captured_output,
+            "input_records": self.input_records,
+            "gen_unsat": self.gen_unsat,
+            "gen_unknown": self.gen_unknown,
+            "gen_parse_failed": self.gen_parse_failed,
+            "harness_error": self.harness_error,
         }
         if self.token_usage is not None:
             result["token_usage"] = self.token_usage.to_dict()

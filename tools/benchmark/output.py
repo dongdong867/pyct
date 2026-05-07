@@ -48,7 +48,12 @@ def save_results_json(
         "results": all_results,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n")
+    # ``default=repr`` keeps the dump alive when an input record's args
+    # contain values json can't natively serialize (objects from a
+    # poorly-sanitized LLM response, frozensets, custom containers).
+    # Failing the whole results.json on one bad arg would hide every
+    # other measurement in the run.
+    path.write_text(json.dumps(payload, indent=2, default=repr) + "\n")
     log.info("Results saved to %s", path)
 
 

@@ -22,6 +22,7 @@ from typing import Any
 from coverage import Coverage
 
 from pyct.engine.coverage_scope import CoverageScope
+from pyct.engine.types import InputRecord, Outcome, Provenance
 from pyct.utils.call_binding import call_with_args
 from tools.benchmark.baseline import BASELINE_SCHEMA_VERSION, Baseline
 from tools.benchmark.models import (
@@ -139,12 +140,23 @@ def run_llm_only(
     cov = _create_coverage_session(target)
     per_seed_budget = max(1, int(config.single_timeout))
 
+    records: list[dict[str, Any]] = []
+    seen_lines: set[int] = set()
+
     start = time.monotonic()
     for seed in seeds:
+        seed_error: str | None = None
         cov.start()
-        with _suppress_output(), _soft_timeout(per_seed_budget), contextlib.suppress(Exception):
-            call_with_args(func, seed)
+        with _suppress_output(), _soft_timeout(per_seed_budget):
+            try:
+                call_with_args(func, seed)
+            except Exception as e:  # noqa: BLE001 — capture for record's error field
+                seed_error = f"{type(e).__name__}: {e}"
         cov.stop()
+        seen_after = _seen_lines_for_target(cov, target)
+        new_lines = seen_after - seen_lines
+        seen_lines = seen_after
+        records.append(_build_seed_record(seed, seed_error, new_lines, Provenance.PLUGIN_SEED))
     elapsed = time.monotonic() - start + seed_time
 
     coverage = _measure_coverage(cov, target)
@@ -153,7 +165,50 @@ def run_llm_only(
         coverage=coverage,
         time_seconds=elapsed,
         iterations=len(seeds),
+        input_records=records,
     )
+
+
+def _seen_lines_for_target(cov: Coverage, target: BenchmarkTarget) -> set[int]:
+    """Return the union of lines coverage.py has observed for the target file.
+
+    The accumulating ``Coverage`` session collects line numbers
+    cumulatively across start/stop boundaries, so calling this after
+    each seed produces a monotonically-growing set we can diff to
+    derive a per-seed delta.
+    """
+    target_file = _target_file_path(target)
+    if target_file is None:
+        return set()
+    data = cov.get_data()
+    return set(data.lines(target_file) or [])
+
+
+def _build_seed_record(
+    seed: dict[str, Any],
+    error: str | None,
+    new_lines: set[int],
+    provenance: Provenance,
+) -> dict[str, Any]:
+    """Mirror ``_record_to_dict`` shape for the engine-less llm_only path.
+
+    Outcome rules match the engine's classifier in ``engine.py``:
+    error wins over coverage gain, COVERED_NEW reflects the per-seed
+    delta, NO_GAIN otherwise.
+    """
+    if error is not None:
+        outcome = Outcome.TARGET_ERROR
+    elif new_lines:
+        outcome = Outcome.COVERED_NEW
+    else:
+        outcome = Outcome.NO_GAIN
+    return {
+        "args": dict(seed),
+        "provenance": provenance.value,
+        "outcome": outcome.value,
+        "new_lines": sorted(new_lines),
+        "error": error,
+    }
 
 
 def run_crosshair(
@@ -513,7 +568,28 @@ def _pyct_result_to_runner(
         engine_coverage_percent=engine_percent if engine_total > 0 else None,
         engine_executed_lines=engine_executed if engine_total > 0 else None,
         engine_total_lines=engine_total if engine_total > 0 else None,
+        input_records=[_record_to_dict(rec) for rec in result.inputs_generated],
+        gen_unsat=getattr(result, "gen_unsat", 0),
+        gen_unknown=getattr(result, "gen_unknown", 0),
+        gen_parse_failed=getattr(result, "gen_parse_failed", 0),
+        harness_error=getattr(result, "harness_error", 0),
     )
+
+
+def _record_to_dict(record: InputRecord) -> dict[str, Any]:
+    """Serialize an InputRecord into the JSON-shaped dict the benchmark consumes.
+
+    ``args`` keeps its native dict shape — JSON output relies on the
+    writer's ``default=repr`` fallback so non-serializable values (e.g.
+    objects from a poorly-sanitized LLM response) don't sink the dump.
+    """
+    return {
+        "args": dict(record.args),
+        "provenance": record.provenance.value,
+        "outcome": record.outcome.value,
+        "new_lines": sorted(record.new_lines),
+        "error": record.error,
+    }
 
 
 _RERUN_SOFT_TIMEOUT_SECONDS = 15
