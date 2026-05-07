@@ -5,6 +5,18 @@ import time
 from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
 from pyct.engine.state import ExplorationState
+from pyct.engine.types import InputRecord, Outcome, Provenance
+
+
+def _record(args: dict) -> InputRecord:
+    """Build a placeholder record for tests that only care about list length."""
+    return InputRecord(
+        args=args,
+        provenance=Provenance.SEED,
+        outcome=Outcome.NO_GAIN,
+        new_lines=frozenset(),
+        error=None,
+    )
 
 
 class TestExplorationStateDefaults:
@@ -24,9 +36,9 @@ class TestExplorationStateDefaults:
         state = ExplorationState()
         assert state.total_lines == 0
 
-    def test_starts_with_empty_inputs_tried(self):
+    def test_starts_with_empty_records(self):
         state = ExplorationState()
-        assert state.inputs_tried == []
+        assert state.records == []
 
     def test_starts_not_terminated(self):
         state = ExplorationState()
@@ -59,11 +71,25 @@ class TestExplorationStateCoverage:
 
 
 class TestExplorationStatePaths:
-    def test_paths_explored_counts_inputs_tried(self):
+    def test_paths_explored_counts_records(self):
         state = ExplorationState()
-        state.inputs_tried.append({"x": 1})
-        state.inputs_tried.append({"x": 2})
+        state.records.append(_record({"x": 1}))
+        state.records.append(_record({"x": 2}))
         assert state.paths_explored() == 2
+
+    def test_has_seen_args_returns_true_for_existing_args(self):
+        state = ExplorationState()
+        state.records.append(_record({"x": 1}))
+        assert state.has_seen_args({"x": 1}) is True
+
+    def test_has_seen_args_returns_false_for_unseen_args(self):
+        state = ExplorationState()
+        state.records.append(_record({"x": 1}))
+        assert state.has_seen_args({"x": 2}) is False
+
+    def test_has_seen_args_empty_state(self):
+        state = ExplorationState()
+        assert state.has_seen_args({"x": 1}) is False
 
     def test_paths_explored_zero_initially(self):
         state = ExplorationState()

@@ -26,6 +26,7 @@ from pyct.engine.recovery import (
 )
 from pyct.engine.result import ExplorationResult
 from pyct.engine.state import ExplorationState
+from pyct.engine.types import InputRecord, Outcome, Provenance
 from pyct.solver.executor import SolverStatus
 from pyct.solver.solver import Solver
 from pyct.utils.call_binding import call_with_args
@@ -62,9 +63,7 @@ class Engine:
         self.constraints_to_solve: list[Any] = []
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
-        self._progress_callback: (
-            Callable[[Engine, ExplorationState], None] | None
-        ) = None
+        self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
 
     def register(self, plugin: Plugin) -> None:
         """Register a plugin instance with the engine.
@@ -95,7 +94,7 @@ class Engine:
                 ``engine.register()``.
             progress_callback: Invoked after every completed iteration
                 with ``(engine, state)``. ``state.iteration`` and
-                ``state.inputs_tried`` reflect the just-completed
+                ``state.records`` reflect the just-completed
                 iteration. Used by the isolated runner to checkpoint
                 partial progress over its pipe so watchdog kills can
                 fall back to the latest snapshot instead of dropping
@@ -162,13 +161,18 @@ class Engine:
         )
 
         if seed_inputs is not None:
+            seed_provenance = Provenance.SEED
             seeds = list(seed_inputs)
         else:
+            seed_provenance = Provenance.PLUGIN_SEED
             seeds = dispatcher.dispatch_collector(
                 "on_seed_request",
                 self._snapshot(target, signature, state),
             )
-        input_queue: list[dict[str, Any]] = [dict(initial_args), *seeds]
+        input_queue: list[tuple[dict[str, Any], Provenance]] = [
+            (dict(initial_args), Provenance.SEED),
+            *((dict(s), seed_provenance) for s in seeds),
+        ]
 
         last_error = self._exploration_loop(
             target=rewritten_target,
@@ -209,7 +213,7 @@ class Engine:
         initial_args: dict[str, Any],
         var_to_types: dict[str, str],
         state: ExplorationState,
-        input_queue: list[dict[str, Any]],
+        input_queue: list[tuple[dict[str, Any], Provenance]],
         dispatcher: Dispatcher,
     ) -> str | None:
         """Run the iteration loop; returns the last per-iteration error."""
@@ -221,7 +225,7 @@ class Engine:
             if self._check_budget(state):
                 break
 
-            args = self._next_input(
+            next_input = self._next_input(
                 input_queue=input_queue,
                 initial_args=initial_args,
                 var_to_types=var_to_types,
@@ -230,12 +234,21 @@ class Engine:
                 target=original_target,
                 signature=signature,
             )
-            if args is None:
+            if next_input is None:
                 _terminate(state, "exhausted")
                 break
 
+            args, provenance = next_input
             iteration_error = self._run_iteration(target, args, state)
-            state.inputs_tried.append(args)
+            state.records.append(
+                InputRecord(
+                    args=args,
+                    provenance=provenance,
+                    outcome=Outcome.NO_GAIN,
+                    new_lines=frozenset(),
+                    error=None,
+                )
+            )
             state.iteration += 1
             self._fire_progress(state)
 
@@ -280,19 +293,20 @@ class Engine:
     def _next_input(
         self,
         *,
-        input_queue: list[dict[str, Any]],
+        input_queue: list[tuple[dict[str, Any], Provenance]],
         initial_args: dict[str, Any],
         var_to_types: dict[str, str],
         state: ExplorationState,
         dispatcher: Dispatcher,
         target: Callable,
         signature: inspect.Signature,
-    ) -> dict[str, Any] | None:
-        """Return the next unseen input from the queue, solver, or resolver plugins."""
+    ) -> tuple[dict[str, Any], Provenance] | None:
+        """Return the next unseen input plus its provenance from the queue,
+        solver, or resolver plugins."""
         while input_queue:
-            args = input_queue.pop(0)
-            if args not in state.inputs_tried:
-                return args
+            args, provenance = input_queue.pop(0)
+            if not state.has_seen_args(args):
+                return args, provenance
 
         # Queue fully drained — seed phase is over; subsequent iterations
         # come from the solver or resolver plugins and must respect the
@@ -309,8 +323,8 @@ class Engine:
 
             if model is not None:
                 merged = {**initial_args, **model}
-                if merged not in state.inputs_tried:
-                    return merged
+                if not state.has_seen_args(merged):
+                    return merged, Provenance.SOLVER
                 continue
 
             if status == SolverStatus.UNSAT:
@@ -323,8 +337,8 @@ class Engine:
             )
             if resolution is not None:
                 merged = {**initial_args, **resolution}
-                if merged not in state.inputs_tried:
-                    return merged
+                if not state.has_seen_args(merged):
+                    return merged, Provenance.PLUGIN_UNKNOWN
 
         return None
 
@@ -422,7 +436,6 @@ class Engine:
             return time.monotonic() + self.config.seed_soft_timeout
         return state.start_time + self.config.timeout_seconds
 
-
     def _fire_progress(self, state: ExplorationState) -> None:
         """Invoke the optional progress callback, swallowing any failure.
 
@@ -451,7 +464,7 @@ class Engine:
             constraint_pool=tuple(self.constraints_to_solve),
             covered_lines=frozenset(state.covered_lines),
             total_lines=state.total_lines,
-            inputs_tried=tuple(state.inputs_tried),
+            inputs_tried=tuple(record.args for record in state.records),
             target_function=target,
             target_signature=signature,
             config=self.config,
@@ -519,7 +532,7 @@ def _build_result(
         termination_reason=state.termination_reason or "exhausted",
         elapsed_seconds=state.elapsed_seconds(),
         error=last_error,
-        inputs_generated=tuple(state.inputs_tried),
+        inputs_generated=tuple(state.records),
         scope_coverage_percent=scope_percent,
         scope_executed_lines=scope_lines,
         scope_total_lines=scope_total,

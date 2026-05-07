@@ -110,7 +110,7 @@ def concolic_inputs(target: BenchmarkTarget, config: BenchmarkConfig) -> list[di
         log.warning("concolic failed for %s: %s", target.name, exc)
         return []
 
-    return list(result.inputs_generated)
+    return [record.args for record in result.inputs_generated]
 
 
 def crosshair_inputs(target: BenchmarkTarget, config: BenchmarkConfig) -> list[dict[str, Any]]:

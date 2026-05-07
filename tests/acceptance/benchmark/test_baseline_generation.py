@@ -18,6 +18,18 @@ from tools.benchmark.baseline_generator import collect_scopes_for_inputs
 from tools.benchmark.runners import _pyct_result_to_runner
 from tools.benchmark.targets import BenchmarkTarget
 
+from pyct.engine.types import InputRecord, Outcome, Provenance
+
+
+def _record(args: dict) -> InputRecord:
+    return InputRecord(
+        args=args,
+        provenance=Provenance.SEED,
+        outcome=Outcome.NO_GAIN,
+        new_lines=frozenset(),
+        error=None,
+    )
+
 
 @pytest.fixture(autouse=True)
 def _purge_synth_packages_from_sys_modules():
@@ -165,7 +177,7 @@ def test_pyct_result_reruns_inputs_for_source_path_target(tmp_path, monkeypatch)
     # Inputs that reach the `x > 0` branch inside classify()
     fake = _FakeRunResult(
         success=True,
-        inputs_generated=({"x": 5},),
+        inputs_generated=(_record({"x": 5}),),
         executed_lines=frozenset(),  # intentionally empty — proves this isn't used
     )
 

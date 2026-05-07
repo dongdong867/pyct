@@ -180,8 +180,6 @@ class TestSocketGetaddrinfoUnwraps:
 
         assert len(captured) == 1
         kw = captured[0]
-        assert type(kw["host"]) is str, (
-            f"expected unwrapped str, got {type(kw['host']).__name__}"
-        )
+        assert type(kw["host"]) is str, f"expected unwrapped str, got {type(kw['host']).__name__}"
         assert kw["host"] == "example.com"
         assert kw["port"] == 80

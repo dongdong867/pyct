@@ -482,7 +482,7 @@ def _pyct_result_to_runner(
     ``result.inputs_generated`` / ``executed_lines`` empty or partial.
     """
     if target.source_path:
-        inputs = list(result.inputs_generated)
+        inputs = [record.args for record in result.inputs_generated]
         if seeds:
             inputs.extend(seeds)
         coverage = _coverage_by_rerun(target, inputs)

@@ -115,8 +115,13 @@ class TestConstraintUnknownDispatch:
             signature=signature,
         )
 
+        from pyct.engine.types import Provenance
+
         assert plugin.unknown_calls == ["(> x_VAR 0)"]
-        assert result == {"x": 42}
+        assert result is not None
+        args, provenance = result
+        assert args == {"x": 42}
+        assert provenance is Provenance.PLUGIN_UNKNOWN
 
     def test_unsat_status_does_not_fire_resolver(self):
         from pyct.engine.engine import Engine
@@ -163,8 +168,13 @@ class TestConstraintUnknownDispatch:
             signature=signature,
         )
 
+        from pyct.engine.types import Provenance
+
         assert plugin.unknown_calls == []
-        assert result == {"x": 7}
+        assert result is not None
+        args, provenance = result
+        assert args == {"x": 7}
+        assert provenance is Provenance.SOLVER
 
     def test_resolver_returning_none_falls_through_to_next_constraint(self):
         from pyct.engine.engine import Engine
@@ -187,8 +197,13 @@ class TestConstraintUnknownDispatch:
             signature=signature,
         )
 
+        from pyct.engine.types import Provenance
+
         assert plugin.unknown_calls == ["(> x_VAR 0)"]
-        assert result == {"x": 11}
+        assert result is not None
+        args, provenance = result
+        assert args == {"x": 11}
+        assert provenance is Provenance.SOLVER
 
     def test_error_status_also_fires_resolver(self):
         """ERROR is treated the same as UNKNOWN — both mean the solver
@@ -214,8 +229,13 @@ class TestConstraintUnknownDispatch:
             signature=signature,
         )
 
+        from pyct.engine.types import Provenance
+
         assert plugin.unknown_calls == ["(> x_VAR 0)"]
-        assert result == {"x": 55}
+        assert result is not None
+        args, provenance = result
+        assert args == {"x": 55}
+        assert provenance is Provenance.PLUGIN_UNKNOWN
 
 
 class TestNextInputBudgetCheck:
@@ -286,6 +306,8 @@ class TestNextInputBudgetCheck:
             signature=signature,
         )
 
-        assert result == {"x": 5}
+        assert result is not None
+        args, _ = result
+        assert args == {"x": 5}
         assert state.terminated is False
         assert len(engine.solver.calls) == 2

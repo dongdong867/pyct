@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+
+from pyct.engine.types import InputRecord
 
 
 @dataclass(frozen=True)
@@ -48,7 +49,7 @@ class ExplorationResult:
     termination_reason: str
     elapsed_seconds: float
     error: str | None = None
-    inputs_generated: tuple[dict[str, Any], ...] = ()
+    inputs_generated: tuple[InputRecord, ...] = ()
     scope_coverage_percent: float = 0.0
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
@@ -75,7 +76,7 @@ class RunConcolicResult:
     coverage_percent: float
     executed_lines: frozenset[int]
     paths_explored: int
-    inputs_generated: tuple[dict[str, Any], ...]
+    inputs_generated: tuple[InputRecord, ...]
     iterations: int
     termination_reason: str
     error: str | None = None
@@ -93,7 +94,7 @@ class RunConcolicResult:
     def from_exploration(
         cls,
         result: ExplorationResult,
-        inputs: list[dict[str, Any]],
+        inputs: list[InputRecord],
         token_stats: dict[str, int] | None = None,
     ) -> RunConcolicResult:
         """Construct a public result from an internal ExplorationResult.

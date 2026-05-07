@@ -204,9 +204,7 @@ def _format_per_target_table(
     name_col: int,
 ) -> list[str]:
     section, _ = _CELL_HEADERS[cell_fn]
-    header = f"{'Target':<{name_col}s}" + "".join(
-        f" {rn:>{_DATA_COL}s}" for rn in runner_names
-    )
+    header = f"{'Target':<{name_col}s}" + "".join(f" {rn:>{_DATA_COL}s}" for rn in runner_names)
     lines = [f"PER-TARGET {section}", "-" * len(header), header, "-" * len(header)]
 
     for entry in all_results:
@@ -242,9 +240,7 @@ def _format_engine_coverage_table(
     data read ``N/A`` — some runners (crosshair, llm_only) never route
     through the engine's tracker.
     """
-    header = f"{'Target':<{name_col}s}" + "".join(
-        f" {rn:>{_DATA_COL}s}" for rn in runner_names
-    )
+    header = f"{'Target':<{name_col}s}" + "".join(f" {rn:>{_DATA_COL}s}" for rn in runner_names)
     title = "PER-TARGET ENGINE COVERAGE (%) — in-loop wide-scope"
     lines = [title, "-" * len(header), header, "-" * len(header)]
 
@@ -289,11 +285,7 @@ def _format_aggregate_block(
         avg_cov = s["total_coverage"] / ok if ok else 0.0
         avg_time = s["total_time"] / ok if ok else 0.0
         total_time = s["total_time"]
-        row = (
-            f"{name:<18s} "
-            f"{f'{ok}/{total}':<10s} "
-            f"{avg_cov:>6.1f}%   "
-        )
+        row = f"{name:<18s} {f'{ok}/{total}':<10s} {avg_cov:>6.1f}%   "
         if show_engine:
             engine_n = s["engine_n"]
             row += (
@@ -301,11 +293,7 @@ def _format_aggregate_block(
                 if engine_n
                 else f"{'N/A':>11s} "
             )
-        row += (
-            f"{avg_time:>8.2f}s   "
-            f"{_format_duration(total_time):<14s} "
-            f"{s['wins']:<6d}"
-        )
+        row += f"{avg_time:>8.2f}s   {_format_duration(total_time):<14s} {s['wins']:<6d}"
         lines.append(row)
     lines.append(bar)
     return lines

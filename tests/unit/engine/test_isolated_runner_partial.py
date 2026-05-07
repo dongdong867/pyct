@@ -136,9 +136,7 @@ def test_isolated_run_preserves_concolic_coverage_on_watchdog_kill(monkeypatch: 
     from pyct.config.execution import ExecutionConfig
     from pyct.engine.isolated_runner import run_isolated
 
-    monkeypatch.setattr(
-        "pyct.engine.isolated_runner._WATCHDOG_BUFFER_SECONDS", 1.0
-    )
+    monkeypatch.setattr("pyct.engine.isolated_runner._WATCHDOG_BUFFER_SECONDS", 1.0)
 
     config = ExecutionConfig(
         timeout_seconds=2.0,

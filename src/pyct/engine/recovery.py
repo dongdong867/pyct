@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.state import ExplorationState
+from pyct.engine.types import InputRecord, Outcome, Provenance
 
 if TYPE_CHECKING:
     from pyct.engine.engine import Engine
@@ -34,7 +35,7 @@ def handle_plateau(
     state: ExplorationState,
     last_coverage_size: int,
     stale_count: int,
-    input_queue: list[dict[str, Any]],
+    input_queue: list[tuple[dict[str, Any], Provenance]],
     dispatcher: Dispatcher,
     target: Callable,
     signature: inspect.Signature,
@@ -68,7 +69,7 @@ def handle_plateau(
         "on_coverage_plateau",
         engine._snapshot(target, signature, state),
     )
-    input_queue.extend(plateau_seeds)
+    input_queue.extend((dict(seed), Provenance.PLUGIN_PLATEAU) for seed in plateau_seeds)
     # Plugin-supplied seeds get the same budget treatment as the
     # initial ones — they're a fresh replay batch, not engine
     # exploration.
@@ -166,10 +167,18 @@ def _execute_post_loop_candidates(
 ) -> None:
     """Execute each candidate, then drive a bounded solver mini-loop."""
     for candidate in candidates:
-        if candidate in state.inputs_tried:
+        if state.has_seen_args(candidate):
             continue
         engine._run_iteration(target, candidate, state)
-        state.inputs_tried.append(candidate)
+        state.records.append(
+            InputRecord(
+                args=candidate,
+                provenance=Provenance.PLUGIN_POST_LOOP,
+                outcome=Outcome.NO_GAIN,
+                new_lines=frozenset(),
+                error=None,
+            )
+        )
         engine._fire_progress(state)
 
     remaining = engine.config.post_loop_mini_iterations
@@ -182,9 +191,17 @@ def _execute_post_loop_candidates(
         if model is None:
             continue
         merged = {**initial_args, **model}
-        if merged in state.inputs_tried:
+        if state.has_seen_args(merged):
             continue
         engine._run_iteration(target, merged, state)
-        state.inputs_tried.append(merged)
+        state.records.append(
+            InputRecord(
+                args=merged,
+                provenance=Provenance.SOLVER,
+                outcome=Outcome.NO_GAIN,
+                new_lines=frozenset(),
+                error=None,
+            )
+        )
         engine._fire_progress(state)
         remaining -= 1

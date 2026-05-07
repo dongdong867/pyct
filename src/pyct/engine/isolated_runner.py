@@ -172,9 +172,7 @@ def _partial_result_from_state(
     scope_percent = 0.0
     if tracker is not None:
         scope_lines = frozenset(
-            (path, line)
-            for path, lines in tracker.observed_by_file.items()
-            for line in lines
+            (path, line) for path, lines in tracker.observed_by_file.items() for line in lines
         )
         scope_total = tracker.total_lines
         scope_percent = tracker.coverage_percent
@@ -183,8 +181,8 @@ def _partial_result_from_state(
         success=False,
         coverage_percent=narrow_percent,
         executed_lines=narrow_lines,
-        paths_explored=len(state.inputs_tried),
-        inputs_generated=tuple(state.inputs_tried),
+        paths_explored=len(state.records),
+        inputs_generated=tuple(state.records),
         iterations=state.iteration,
         termination_reason="partial_checkpoint",
         error=None,

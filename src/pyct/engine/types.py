@@ -40,6 +40,7 @@ class Provenance(StrEnum):
     PLUGIN_SEED = "plugin_seed"
     PLUGIN_PLATEAU = "plugin_plateau"
     PLUGIN_UNKNOWN = "plugin_unknown"
+    PLUGIN_POST_LOOP = "plugin_post_loop"
 
 
 class Outcome(StrEnum):

@@ -46,7 +46,7 @@ class TestSeedPhaseBudget:
         engine = Engine(ExecutionConfig(max_iterations=2, timeout_seconds=5.0))
         result = engine.explore(_three_path, {"x": 0}, seed_inputs=seeds)
 
-        tried_xs = {a["x"] for a in result.inputs_generated}
+        tried_xs = {r.args["x"] for r in result.inputs_generated}
         for seed in seeds:
             assert seed["x"] in tried_xs, f"missing seed {seed}"
 
@@ -96,6 +96,6 @@ class TestSeedPhaseBudget:
             {"x": 0},
             seed_inputs=[{"x": 999}, {"x": 7}],
         )
-        tried = {a["x"] for a in result.inputs_generated}
+        tried = {r.args["x"] for r in result.inputs_generated}
         assert 999 in tried
         assert 7 in tried

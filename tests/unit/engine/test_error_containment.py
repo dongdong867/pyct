@@ -51,7 +51,7 @@ class TestWrapArgumentsFailureDoesNotAbort:
         )
 
         assert result.success is True
-        tried_xs = {a["x"] for a in result.inputs_generated}
+        tried_xs = {r.args["x"] for r in result.inputs_generated}
         assert 7 in tried_xs
         attempted_xs = [a["x"] for a in wrap_attempts]
         assert 666 in attempted_xs and 7 in attempted_xs
@@ -79,4 +79,4 @@ class TestWrapArgumentsFailureDoesNotAbort:
         result = engine.explore(_passthrough, {"x": 42})
 
         assert result.success is True
-        assert any(a == {"x": 42} for a in result.inputs_generated)
+        assert any(r.args == {"x": 42} for r in result.inputs_generated)

@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pyct.engine.types import InputRecord
+
 if TYPE_CHECKING:
     from pyct.engine.coverage_tracker import CoverageTracker
 
@@ -32,7 +34,11 @@ class ExplorationState:
             backfill heuristics work correctly. Narrow view.
         total_lines: Total executable lines in the target function
             (narrow view). ``scope_total_lines`` is the wide counterpart.
-        inputs_tried: History of inputs that have been executed.
+        records: History of executed inputs as InputRecord instances —
+            each carries provenance, outcome, mechanical coverage delta,
+            and exception text. The next-input dedup check, plugin-context
+            ``inputs_tried`` snapshot, and ``paths_explored`` count all
+            derive from this list.
         start_time: Wall-clock start time (from time.monotonic()).
         last_coverage_change_iteration: Iteration number when coverage
             last increased. Used to detect plateaus.
@@ -67,7 +73,7 @@ class ExplorationState:
     covered_lines: set[int] = field(default_factory=set)
     observed_lines: set[int] = field(default_factory=set)
     total_lines: int = 0
-    inputs_tried: list[dict[str, Any]] = field(default_factory=list)
+    records: list[InputRecord] = field(default_factory=list)
     start_time: float = 0.0
     last_coverage_change_iteration: int = 0
     terminated: bool = False
@@ -85,7 +91,11 @@ class ExplorationState:
 
     def paths_explored(self) -> int:
         """Return the number of distinct inputs that have been tried."""
-        return len(self.inputs_tried)
+        return len(self.records)
+
+    def has_seen_args(self, args: dict[str, Any]) -> bool:
+        """Return True if ``args`` matches any prior record's args dict."""
+        return any(record.args == args for record in self.records)
 
     def elapsed_seconds(self) -> float:
         """Return wall-clock seconds since start_time was set."""
