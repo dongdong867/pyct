@@ -66,6 +66,9 @@ class Engine:
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
         self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
+        self._iteration_start_callback: (
+            Callable[[Engine, ExplorationState, dict[str, Any], Provenance], None] | None
+        ) = None
 
     def register(self, plugin: Plugin) -> None:
         """Register a plugin instance with the engine.
@@ -83,6 +86,9 @@ class Engine:
         seed_inputs: list[dict[str, Any]] | None = None,
         plugins: list[Plugin] | None = None,
         progress_callback: Callable[[Engine, ExplorationState], None] | None = None,
+        iteration_start_callback: (
+            Callable[[Engine, ExplorationState, dict[str, Any], Provenance], None] | None
+        ) = None,
     ) -> ExplorationResult:
         """Run concolic exploration on ``target`` starting from ``initial_args``.
 
@@ -101,6 +107,13 @@ class Engine:
                 partial progress over its pipe so watchdog kills can
                 fall back to the latest snapshot instead of dropping
                 all concolic-loop coverage.
+            iteration_start_callback: Invoked just before every target
+                call with ``(engine, state, args, provenance)``. Pairs
+                with ``progress_callback`` for the isolated runner's
+                tombstone protocol: the runner writes an ``iter_start``
+                message to its pipe so a watchdog kill mid-iteration
+                can be reconstructed by the parent as a TIMEOUT record
+                using the args/provenance the engine was about to run.
 
         Returns an ExplorationResult describing the outcome. Termination
         reasons: ``full_coverage``, ``max_iterations``, ``timeout``,
@@ -113,6 +126,7 @@ class Engine:
                 self.register(plugin)
 
         self._progress_callback = progress_callback
+        self._iteration_start_callback = iteration_start_callback
 
         ConstraintRegistry.clear()
         self.path = PathConstraintTracker()
@@ -245,6 +259,7 @@ class Engine:
                 break
 
             args, provenance = next_input
+            self._fire_iteration_start(state, args, provenance)
             covered_before = frozenset(state.observed_lines)
             iteration_error = self._run_iteration(target, args, state)
             new_lines = frozenset(state.observed_lines) - covered_before
@@ -456,6 +471,27 @@ class Engine:
             self._progress_callback(self, state)
         except Exception:  # noqa: BLE001 — protect the engine loop
             log.exception("progress_callback raised; ignoring")
+
+    def _fire_iteration_start(
+        self,
+        state: ExplorationState,
+        args: dict[str, Any],
+        provenance: Provenance,
+    ) -> None:
+        """Invoke the optional iteration-start callback before ``_run_iteration``.
+
+        Mirrors ``_fire_progress``'s error-containment policy — a buggy
+        callback must not abort exploration. The callback receives the
+        args and provenance the engine is about to run so a tombstone
+        consumer (the isolated runner) can record what would have
+        happened if the iteration is killed before it completes.
+        """
+        if self._iteration_start_callback is None:
+            return
+        try:
+            self._iteration_start_callback(self, state, args, provenance)
+        except Exception:  # noqa: BLE001 — protect the engine loop
+            log.exception("iteration_start_callback raised; ignoring")
 
     def _snapshot(
         self,

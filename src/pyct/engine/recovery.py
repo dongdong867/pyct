@@ -172,6 +172,7 @@ def _execute_post_loop_candidates(
     for candidate in candidates:
         if state.has_seen_args(candidate):
             continue
+        engine._fire_iteration_start(state, candidate, Provenance.PLUGIN_POST_LOOP)
         covered_before = frozenset(state.observed_lines)
         iteration_error = engine._run_iteration(target, candidate, state)
         new_lines = frozenset(state.observed_lines) - covered_before
@@ -196,6 +197,7 @@ def _execute_post_loop_candidates(
         merged = {**initial_args, **model}
         if state.has_seen_args(merged):
             continue
+        engine._fire_iteration_start(state, merged, Provenance.SOLVER)
         covered_before = frozenset(state.observed_lines)
         iteration_error = engine._run_iteration(target, merged, state)
         new_lines = frozenset(state.observed_lines) - covered_before

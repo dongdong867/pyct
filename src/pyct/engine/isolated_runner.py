@@ -16,6 +16,7 @@ are contained to the child.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import importlib
 import multiprocessing as mp
 import time
@@ -26,6 +27,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.result import RunConcolicResult
+from pyct.engine.types import InputRecord, Outcome, Provenance
 
 _WATCHDOG_BUFFER_SECONDS = 20.0
 """How much longer the parent waits beyond the engine's timeout before killing.
@@ -124,6 +126,20 @@ def _child_entry(
         with contextlib.suppress(BrokenPipeError, EOFError, OSError):
             pipe.send(("progress", partial))
 
+    def emit_iter_start(
+        engine: Engine,  # noqa: ARG001
+        state: Any,
+        args: dict[str, Any],
+        provenance: Provenance,
+    ) -> None:
+        payload = {
+            "idx": state.iteration,
+            "args": dict(args),
+            "provenance": provenance.value,
+        }
+        with contextlib.suppress(BrokenPipeError, EOFError, OSError):
+            pipe.send(("iter_start", payload))
+
     try:
         target = _import_target(module_name, qualname)
         engine = Engine(config)
@@ -133,6 +149,7 @@ def _child_entry(
             seed_inputs=seed_inputs,
             plugins=plugins,
             progress_callback=emit_progress,
+            iteration_start_callback=emit_iter_start,
         )
         token_stats = _extract_plugin_tokens(plugins_list)
         result = RunConcolicResult.from_exploration(
@@ -211,23 +228,26 @@ def _wait_for_result(
 ) -> RunConcolicResult:
     """Block until the child sends ``final``, dies, or the watchdog fires.
 
-    Drains ``("progress", result)`` checkpoints into ``last_checkpoint``
+    Drains the pipe into a checkpoint + a single pending iter_start slot
     until either a ``("final", result)`` arrives (preferred), the pipe
     closes / the child exits, or the deadline passes. On watchdog kill
-    or unexpected exit, the latest checkpoint is returned so the parent
-    still sees the concolic-iteration coverage gathered before the kill;
-    only when no checkpoint was ever received do we fall back to the
-    legacy empty-coverage wrapper failure.
+    or unexpected exit, the latest checkpoint is returned with a TIMEOUT
+    tombstone record appended for any iter_start that wasn't superseded
+    by a later progress message — so a kill mid-iteration still surfaces
+    the args + provenance the engine was about to run instead of dropping
+    that attempt silently.
     """
     deadline = time.monotonic() + timeout
     last_checkpoint: RunConcolicResult | None = None
+    pending: dict[str, Any] | None = None
 
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             proc.kill()
-            return _checkpoint_or_failure(
+            return _finalize(
                 last_checkpoint,
+                pending,
                 f"child exceeded wall-clock timeout of {timeout:.1f}s",
             )
 
@@ -238,53 +258,102 @@ def _wait_for_result(
             try:
                 message = conn.recv()
             except EOFError:
-                return _checkpoint_or_failure(
-                    last_checkpoint, "child closed pipe without sending result"
+                return _finalize(
+                    last_checkpoint, pending, "child closed pipe without sending result"
                 )
             kind, payload = _parse_pipe_message(message)
             if kind == "final":
                 return payload
-            last_checkpoint = payload  # kind == "progress"
+            if kind == "iter_start":
+                pending = payload
+                continue
+            # kind == "progress"
+            last_checkpoint = payload
+            if pending is not None and len(payload.inputs_generated) > pending["idx"]:
+                pending = None
             continue
         if proc.sentinel in ready:
-            return _checkpoint_or_failure(
+            return _finalize(
                 last_checkpoint,
+                pending,
                 f"child exited unexpectedly (exit code {proc.exitcode})",
             )
 
 
 def _parse_pipe_message(
     message: Any,
-) -> tuple[str, RunConcolicResult]:
+) -> tuple[str, Any]:
     """Unpack a ``(kind, payload)`` tuple; treat legacy bare payloads as final.
 
     The bare-RunConcolicResult shape is what child processes sent before
     the checkpoint protocol landed; accepting it keeps mixed-version
     testing clean while the codebase converges.
+
+    ``iter_start`` payloads are dicts (``idx`` / ``args`` / ``provenance``)
+    rather than ``RunConcolicResult`` instances — the parent's tombstone
+    reducer reads them on its own shape.
     """
     if isinstance(message, tuple) and len(message) == 2:
         kind, payload = message
         if kind in ("progress", "final") and isinstance(payload, RunConcolicResult):
+            return kind, payload
+        if kind == "iter_start" and isinstance(payload, dict):
             return kind, payload
     if isinstance(message, RunConcolicResult):
         return "final", message
     raise TypeError(f"unexpected pipe message shape: {type(message).__name__}")
 
 
-def _checkpoint_or_failure(
+def _finalize(
     checkpoint: RunConcolicResult | None,
+    pending: dict[str, Any] | None,
     failure_message: str,
 ) -> RunConcolicResult:
-    """Return the latest checkpoint if any, else a fresh wrapper failure.
+    """Return the result the parent should surface after subprocess death.
 
-    The checkpoint path preserves concolic-iteration coverage that would
-    otherwise be dropped on watchdog kill; without a checkpoint we fall
-    back to the original empty-coverage behaviour so tests that rely on
-    the legacy ``success=False`` signature still pass.
+    Resolution order:
+    1. If an iter_start is pending (i.e. the child started an iteration
+       but no later progress superseded it), append a TIMEOUT tombstone
+       record to the checkpoint and mark ``termination_reason="timeout"``.
+    2. Otherwise return the latest checkpoint unchanged.
+    3. If no checkpoint was ever received and no pending start exists,
+       fall back to the empty-coverage wrapper failure.
     """
+    if pending is not None:
+        return _augment_with_tombstone(checkpoint, pending, failure_message)
     if checkpoint is not None:
         return checkpoint
     return _wrapper_failure(failure_message)
+
+
+def _augment_with_tombstone(
+    checkpoint: RunConcolicResult | None,
+    pending: dict[str, Any],
+    failure_message: str,
+) -> RunConcolicResult:
+    """Append a TIMEOUT record for the in-flight iter to the checkpoint.
+
+    ``new_lines`` is empty — the iteration was killed before the engine
+    could compute a delta. The tombstone's args + provenance come from
+    the iter_start the child emitted just before ``_run_iteration``.
+    """
+    tombstone = InputRecord(
+        args=dict(pending["args"]),
+        provenance=Provenance(pending["provenance"]),
+        outcome=Outcome.TIMEOUT,
+        new_lines=frozenset(),
+        error=f"timeout: {failure_message}",
+    )
+
+    base = checkpoint if checkpoint is not None else _wrapper_failure(failure_message)
+    new_inputs = (*base.inputs_generated, tombstone)
+    return dataclasses.replace(
+        base,
+        inputs_generated=new_inputs,
+        paths_explored=base.paths_explored + 1,
+        iterations=base.iterations + 1,
+        termination_reason="timeout",
+    )
 
 
 def _reap_child(proc: mp.process.BaseProcess) -> None:
