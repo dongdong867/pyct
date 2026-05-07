@@ -53,6 +53,12 @@ class TestExplorationStateDefaults:
         assert state.pre_cover_lines == frozenset()
         assert isinstance(state.pre_cover_lines, frozenset)
 
+    def test_starts_with_zero_non_execution_counters(self):
+        state = ExplorationState()
+        assert state.gen_unsat == 0
+        assert state.gen_unknown == 0
+        assert state.harness_error == 0
+
 
 class TestExplorationStateCoverage:
     def test_coverage_percent_zero_when_no_total_lines(self):
