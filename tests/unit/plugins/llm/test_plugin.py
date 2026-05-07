@@ -175,6 +175,78 @@ class TestCoveragePlateau:
         assert plugin.on_coverage_plateau(ctx) == []
 
 
+class TestParseFailedCounter:
+    """Plugin tracks ``parse_failed`` so the engine can read it post-run.
+
+    Bumps on every list-parsing handler when ``parse_input_list`` reports
+    drops. The counter accumulates across handler calls and never resets
+    for the lifetime of the plugin instance.
+    """
+
+    def test_starts_at_zero(self):
+        from pyct.plugins.llm import LLMPlugin
+
+        plugin = LLMPlugin(client=_StubClient())
+        assert plugin.parse_failed == 0
+
+    def test_unparseable_seed_response_bumps_counter_by_one(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        plugin = LLMPlugin(client=_StubClient(responses=["this is not python"]))
+        ctx = _build_context(target)
+
+        plugin.on_seed_request(ctx)
+
+        assert plugin.parse_failed == 1
+
+    def test_partial_list_bumps_counter_by_drop_count(self, tmp_path):
+        """List with two valid + two non-dict entries → 2 fails."""
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(responses=['[{"x": 1}, "garbage", {"y": 2}, 3]'])
+        plugin = LLMPlugin(client=client)
+        ctx = _build_context(target)
+
+        plugin.on_seed_request(ctx)
+
+        assert plugin.parse_failed == 2
+
+    def test_none_response_keeps_counter_zero(self, tmp_path):
+        """Client returning None (timeout / API error) — no parse attempt."""
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        plugin = LLMPlugin(client=_StubClient(responses=[None]))
+        ctx = _build_context(target)
+
+        plugin.on_seed_request(ctx)
+
+        assert plugin.parse_failed == 0
+
+    def test_bumps_accumulate_across_handlers(self, tmp_path):
+        """Plateau + post-loop + seed handlers all contribute."""
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(
+            responses=[
+                "garbage_seed",  # +1
+                '[{"x": 1}, "bad"]',  # +1
+                "another garbage",  # +1
+            ]
+        )
+        plugin = LLMPlugin(client=client)
+        ctx = _build_context(target)
+
+        plugin.on_seed_request(ctx)
+        plugin.on_coverage_plateau(ctx)
+        plugin.on_post_loop_discovery(ctx)
+
+        assert plugin.parse_failed == 3
+
+
 class TestConstraintUnknown:
     def test_unknown_returns_resolution_dict(self, tmp_path):
         from pyct.plugins.llm import LLMPlugin
