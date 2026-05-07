@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Any
 from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.state import ExplorationState
 from pyct.engine.types import Provenance
+from pyct.solver.executor import SolverStatus
 
 if TYPE_CHECKING:
     from pyct.engine.engine import Engine
@@ -185,8 +186,12 @@ def _execute_post_loop_candidates(
         if tracker is not None and tracker.is_fully_covered():
             return
         constraint = engine.constraints_to_solve.pop(0)
-        model, _status = engine._solve(constraint, var_to_types)
+        model, status = engine._solve(constraint, var_to_types)
         if model is None:
+            if status == SolverStatus.UNSAT:
+                state.gen_unsat += 1
+            else:
+                state.gen_unknown += 1
             continue
         merged = {**initial_args, **model}
         if state.has_seen_args(merged):

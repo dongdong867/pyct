@@ -74,6 +74,20 @@ class ExplorationState:
             compatibility with tests that construct state standalone;
             when None, the ``scope_*`` views return zero. When set, the
             wide views forward to the tracker's scope-spanning counters.
+        gen_unsat: Solver-returned-UNSAT count over the run. Bumped at
+            every solver call that proves the constraint unreachable;
+            no input is produced for these calls.
+        gen_unknown: Solver-returned-UNKNOWN-or-ERROR count over the run.
+            Counted raw — every UNKNOWN/ERROR bumps this counter even
+            when a plugin's ``on_constraint_unknown`` resolver later
+            supplies an alternate input. Resolution is orthogonal: the
+            resolved record carries provenance ``PLUGIN_UNKNOWN`` so the
+            two facts can be cross-referenced from the result alone.
+        harness_error: ``wrap_arguments`` failure count over the run.
+            Bumped inside ``_run_iteration`` when Concolic construction
+            raises before the target is called. The iteration still
+            appends a record (carrying the wrap error and TARGET_ERROR
+            outcome) so callers can see which seed failed.
     """
 
     iteration: int = 0
@@ -91,6 +105,9 @@ class ExplorationState:
     coverage_at_last_plateau: int | None = None
     plateau_failure_count: int = 0
     tracker: CoverageTracker | None = None
+    gen_unsat: int = 0
+    gen_unknown: int = 0
+    harness_error: int = 0
 
     def coverage_percent(self) -> float:
         """Return narrow coverage as a 0-100 percentage (target file only)."""

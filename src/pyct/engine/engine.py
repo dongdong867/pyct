@@ -328,8 +328,12 @@ class Engine:
                 continue
 
             if status == SolverStatus.UNSAT:
+                state.gen_unsat += 1
                 continue
 
+            # UNKNOWN / ERROR: count raw, regardless of whether a plugin
+            # resolver later supplies an alternate input.
+            state.gen_unknown += 1
             resolution = dispatcher.dispatch_resolver(
                 "on_constraint_unknown",
                 self._snapshot(target, signature, state),
@@ -380,6 +384,7 @@ class Engine:
         try:
             concolic_args = wrap_arguments(args, self)
         except Exception as e:
+            state.harness_error += 1
             log.debug("wrap_arguments failed for %r: %s", args, e)
             return f"wrap_arguments: {type(e).__name__}: {e}"
 
@@ -582,6 +587,9 @@ def _build_result(
         scope_executed_lines=scope_lines,
         scope_total_lines=scope_total,
         pre_cover_lines=state.pre_cover_lines,
+        gen_unsat=state.gen_unsat,
+        gen_unknown=state.gen_unknown,
+        harness_error=state.harness_error,
     )
 
 
