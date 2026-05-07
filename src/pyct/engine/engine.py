@@ -34,6 +34,8 @@ from pyct.utils.constraint import ConstraintRegistry
 
 log = logging.getLogger("ct.engine")
 
+TIMEOUT_ERROR_PREFIX = "timeout:"
+
 
 class Engine:
     """Orchestrates concolic exploration of a target function.
@@ -154,6 +156,10 @@ class Engine:
         )
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
+        # Snapshot covered_lines before the loop runs so result consumers
+        # can verify ``∪ record.new_lines == executed_lines − pre_cover_lines``
+        # without re-running the engine.
+        state.pre_cover_lines = frozenset(state.covered_lines)
 
         dispatcher.dispatch_observer(
             "on_exploration_start",
@@ -239,16 +245,10 @@ class Engine:
                 break
 
             args, provenance = next_input
+            covered_before = frozenset(state.observed_lines)
             iteration_error = self._run_iteration(target, args, state)
-            state.records.append(
-                InputRecord(
-                    args=args,
-                    provenance=provenance,
-                    outcome=Outcome.NO_GAIN,
-                    new_lines=frozenset(),
-                    error=None,
-                )
-            )
+            new_lines = frozenset(state.observed_lines) - covered_before
+            state.records.append(build_record(args, provenance, iteration_error, new_lines))
             state.iteration += 1
             self._fire_progress(state)
 
@@ -472,6 +472,51 @@ class Engine:
         )
 
 
+def classify_outcome(iteration_error: str | None, new_lines: frozenset[int]) -> Outcome:
+    """Classify an iteration's result into one of the four Outcome values.
+
+    Outcome rules (mutually exclusive, error wins over coverage gain):
+    - ``TIMEOUT`` when the iteration error is a tracer-deadline timeout.
+    - ``TARGET_ERROR`` for any other non-None error string (target raise,
+      wrap_arguments failure, SystemExit). The non-execution-counters
+      sub-task may later split harness errors out into their own counter,
+      but for record classification any non-timeout error is TARGET_ERROR.
+    - ``COVERED_NEW`` when the iteration completed cleanly and traced at
+      least one previously-unseen line.
+    - ``NO_GAIN`` when the iteration completed cleanly and traced only
+      duplicate lines.
+    """
+    if iteration_error is None:
+        return Outcome.COVERED_NEW if new_lines else Outcome.NO_GAIN
+    if iteration_error.startswith(TIMEOUT_ERROR_PREFIX):
+        return Outcome.TIMEOUT
+    return Outcome.TARGET_ERROR
+
+
+def build_record(
+    args: dict[str, Any],
+    provenance: Provenance,
+    iteration_error: str | None,
+    new_lines: frozenset[int],
+) -> InputRecord:
+    """Build an InputRecord with classified outcome and stored error.
+
+    ``error`` is preserved on TARGET_ERROR / TIMEOUT records so consumers
+    can distinguish failure modes; clean outcomes carry ``None``.
+    ``new_lines`` is independent of outcome — TARGET_ERROR / TIMEOUT
+    records keep the lines traced before the failure.
+    """
+    outcome = classify_outcome(iteration_error, new_lines)
+    error = iteration_error if outcome in (Outcome.TARGET_ERROR, Outcome.TIMEOUT) else None
+    return InputRecord(
+        args=args,
+        provenance=provenance,
+        outcome=outcome,
+        new_lines=new_lines,
+        error=error,
+    )
+
+
 def _try_rewrite(target: Callable) -> Callable:
     """Attempt AST rewrite; fall back to original on exec failures.
 
@@ -536,6 +581,7 @@ def _build_result(
         scope_coverage_percent=scope_percent,
         scope_executed_lines=scope_lines,
         scope_total_lines=scope_total,
+        pre_cover_lines=state.pre_cover_lines,
     )
 
 

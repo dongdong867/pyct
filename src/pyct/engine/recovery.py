@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from pyct.engine.plugin.dispatcher import Dispatcher
 from pyct.engine.state import ExplorationState
-from pyct.engine.types import InputRecord, Outcome, Provenance
+from pyct.engine.types import Provenance
 
 if TYPE_CHECKING:
     from pyct.engine.engine import Engine
@@ -166,18 +166,16 @@ def _execute_post_loop_candidates(
     state: ExplorationState,
 ) -> None:
     """Execute each candidate, then drive a bounded solver mini-loop."""
+    from pyct.engine.engine import build_record
+
     for candidate in candidates:
         if state.has_seen_args(candidate):
             continue
-        engine._run_iteration(target, candidate, state)
+        covered_before = frozenset(state.observed_lines)
+        iteration_error = engine._run_iteration(target, candidate, state)
+        new_lines = frozenset(state.observed_lines) - covered_before
         state.records.append(
-            InputRecord(
-                args=candidate,
-                provenance=Provenance.PLUGIN_POST_LOOP,
-                outcome=Outcome.NO_GAIN,
-                new_lines=frozenset(),
-                error=None,
-            )
+            build_record(candidate, Provenance.PLUGIN_POST_LOOP, iteration_error, new_lines)
         )
         engine._fire_progress(state)
 
@@ -193,15 +191,9 @@ def _execute_post_loop_candidates(
         merged = {**initial_args, **model}
         if state.has_seen_args(merged):
             continue
-        engine._run_iteration(target, merged, state)
-        state.records.append(
-            InputRecord(
-                args=merged,
-                provenance=Provenance.SOLVER,
-                outcome=Outcome.NO_GAIN,
-                new_lines=frozenset(),
-                error=None,
-            )
-        )
+        covered_before = frozenset(state.observed_lines)
+        iteration_error = engine._run_iteration(target, merged, state)
+        new_lines = frozenset(state.observed_lines) - covered_before
+        state.records.append(build_record(merged, Provenance.SOLVER, iteration_error, new_lines))
         engine._fire_progress(state)
         remaining -= 1

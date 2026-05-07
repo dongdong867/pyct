@@ -52,6 +52,14 @@ class ExplorationState:
             ``_next_input`` when the input queue first drains, and
             re-enabled by ``_handle_plateau`` when new plugin seeds are
             appended to the queue.
+        pre_cover_lines: Snapshot of ``covered_lines`` taken before the
+            exploration loop's first iteration. Captures lines the
+            tracker reports as covered without the engine having executed
+            them (e.g., scope-level pre-covered ``def`` headers). Used as
+            the baseline for the coverage-delta invariant
+            ``∪ record.new_lines == executed_lines − pre_cover_lines``,
+            which lets a result consumer reconstruct per-input deltas
+            from the JSON alone.
         coverage_at_last_plateau: Wide scope_observed_count recorded at
             the moment the engine last dispatched ``on_coverage_plateau``.
             Set by ``_handle_plateau``, cleared by ``_check_plateau_outcome``
@@ -79,6 +87,7 @@ class ExplorationState:
     terminated: bool = False
     termination_reason: str | None = None
     seed_phase: bool = True
+    pre_cover_lines: frozenset[int] = field(default_factory=frozenset)
     coverage_at_last_plateau: int | None = None
     plateau_failure_count: int = 0
     tracker: CoverageTracker | None = None
