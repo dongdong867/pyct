@@ -9,7 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
-from pyct.contracts import EMPTY_CONTRACTS, ContractSet, discover_contracts
+from pyct.contracts import EMPTY_CONTRACTS, Contract, ContractSet, discover_contracts
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
 from pyct.engine.coverage_scope import CoverageScope
@@ -465,15 +465,27 @@ class Engine:
 def _check_preconditions(contracts: ContractSet, args: dict[str, Any]) -> str | None:
     """Evaluate require predicates against concrete args; return error or None.
 
-    Returns ``"precondition_violated: <source> <description>"`` on the first
-    predicate that returns False. Returns None when all predicates pass,
-    when the contract set is empty, or when every predicate raised (each
-    raise is logged and treated as "could not enforce, proceed").
+    Returns ``"precondition_violated: <source> <description>"`` (description
+    omitted when None) on the first predicate that returns False. Returns
+    None when all predicates pass, when the contract set is empty, or when
+    every predicate raised (each raise is logged and treated as "could not
+    enforce, proceed").
     """
-    del args
     if not contracts.requires:
         return None
+    for contract in contracts.requires:
+        bound = {name: args[name] for name in contract.condition_args}
+        if contract.predicate(**bound):
+            continue
+        return _format_violation(contract)
     return None
+
+
+def _format_violation(contract: Contract) -> str:
+    tag = f"precondition_violated: {contract.source}"
+    if contract.description:
+        return f"{tag} {contract.description}"
+    return tag
 
 
 def _try_rewrite(target: Callable) -> Callable:
