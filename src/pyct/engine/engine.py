@@ -372,6 +372,12 @@ class Engine:
             log.debug("wrap_arguments failed for %r: %s", args, e)
             return f"wrap_arguments: {type(e).__name__}: {e}"
 
+        precondition_error = _check_preconditions(self.contracts, args)
+        if precondition_error is not None:
+            state.preconditions_violated += 1
+            log.debug("Skipping iteration: %s", precondition_error)
+            return precondition_error
+
         deadline = self._iteration_deadline(state)
         scope_files = self.coverage_tracker.scope.files
         error: str | None = None
