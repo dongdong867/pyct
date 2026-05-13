@@ -359,3 +359,41 @@ def test_discover_api_drift_returns_empty_and_warns(
     warnings_logged = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert any("icontract" in r.message.lower() for r in warnings_logged)
     assert any(icontract.__version__ in r.message for r in warnings_logged)
+
+
+def test_discover_skips_record_with_runtime_error_and_warns(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+
+    class _ExplodingRecord:
+        description = None
+        location = "File <test>, line 1 in <test>"
+
+        @property
+        def condition(self):  # type: ignore[no-untyped-def]
+            raise RuntimeError("simulated icontract record failure")
+
+    @icontract.require(lambda x: x > 0, description="good")
+    def base(x: int) -> int:
+        return x
+
+    real_record = base.__preconditions__[0][0]  # type: ignore[attr-defined]
+
+    def target(x: int) -> int:
+        return x
+
+    target.__preconditions__ = [[_ExplodingRecord(), real_record]]  # type: ignore[attr-defined]
+
+    with caplog.at_level(logging.WARNING, logger="ct.contracts"):
+        result = discover_contracts(target)
+
+    descriptions = [c.description for c in result.requires]
+    assert descriptions == ["good"]
+    warnings_logged = [
+        r
+        for r in caplog.records
+        if r.levelno == logging.WARNING and "simulated icontract record failure" in r.message
+    ]
+    assert warnings_logged, "Expected a WARNING mentioning the per-record failure"
+    assert "index" in warnings_logged[0].message.lower()
