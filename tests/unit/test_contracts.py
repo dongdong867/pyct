@@ -118,6 +118,34 @@ def test_discover_wrapped_lambda_surfaces_contract() -> None:
     assert result.requires[0].predicate(-1) is False
 
 
+def test_discover_bound_method_surfaces_contracts() -> None:
+    class C:
+        @icontract.require(lambda x: x > 0, description="positive x")
+        @icontract.ensure(lambda result: result >= 0, description="non-neg result")
+        def m(self, x: int) -> int:
+            return x
+
+    instance = C()
+    result = discover_contracts(instance.m)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "positive x"
+    assert len(result.ensures) == 1
+    assert result.ensures[0].description == "non-neg result"
+
+
+def test_discover_bound_method_matches_unbound() -> None:
+    class C:
+        @icontract.require(lambda x: x > 0)
+        @icontract.ensure(lambda result: result >= 0)
+        def m(self, x: int) -> int:
+            return x
+
+    bound = discover_contracts(C().m)
+    unbound = discover_contracts(C.m)
+    assert [c.predicate for c in bound.requires] == [c.predicate for c in unbound.requires]
+    assert [c.predicate for c in bound.ensures] == [c.predicate for c in unbound.ensures]
+
+
 def test_discover_method_does_not_leak_class_invariant() -> None:
     @icontract.invariant(lambda self: self.x >= 0, description="invariant: non-neg")
     class D:
