@@ -1,7 +1,12 @@
 from __future__ import annotations
 
-import icontract
+import logging
+import sys
 
+import icontract
+import pytest
+
+import pyct.contracts as contracts_module
 from pyct.contracts import EMPTY_CONTRACTS, Contract, ContractSet, discover_contracts
 
 
@@ -289,3 +294,46 @@ def test_discover_method_does_not_leak_class_invariant() -> None:
     assert len(result.requires) == 1
     assert result.requires[0].description == "method require"
     assert result.ensures == ()
+
+
+def _reset_icontract_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(contracts_module, "_icontract_check_done", False)
+    monkeypatch.setattr(contracts_module, "_icontract_present", False)
+
+
+def test_discover_missing_icontract_returns_empty(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+    monkeypatch.setitem(sys.modules, "icontract", None)
+
+    @icontract.require(lambda x: x > 0)
+    def f(x: int) -> int:
+        return x
+
+    with caplog.at_level(logging.INFO, logger="ct.contracts"):
+        result = discover_contracts(f)
+
+    assert result is EMPTY_CONTRACTS
+    info_messages = [r for r in caplog.records if r.levelno == logging.INFO]
+    assert any("icontract" in r.message.lower() for r in info_messages)
+
+
+def test_discover_missing_icontract_logs_info_only_once(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+    monkeypatch.setitem(sys.modules, "icontract", None)
+
+    def f(x: int) -> int:
+        return x
+
+    with caplog.at_level(logging.INFO, logger="ct.contracts"):
+        discover_contracts(f)
+        discover_contracts(f)
+        discover_contracts(f)
+
+    info_messages = [
+        r for r in caplog.records if r.levelno == logging.INFO and "icontract" in r.message.lower()
+    ]
+    assert len(info_messages) == 1
