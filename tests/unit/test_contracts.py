@@ -361,6 +361,44 @@ def test_discover_api_drift_returns_empty_and_warns(
     assert any(icontract.__version__ in r.message for r in warnings_logged)
 
 
+def test_discover_logs_count_when_contracts_found(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+
+    @icontract.require(lambda x: x > 0)
+    @icontract.ensure(lambda result: result >= 0)
+    def f(x: int) -> int:
+        return x
+
+    with caplog.at_level(logging.INFO, logger="ct.contracts"):
+        discover_contracts(f)
+
+    discovery_logs = [
+        r for r in caplog.records if r.levelno == logging.INFO and "discovered" in r.message.lower()
+    ]
+    assert len(discovery_logs) == 1
+    assert "1 precondition" in discovery_logs[0].message
+    assert "1 postcondition" in discovery_logs[0].message
+
+
+def test_discover_does_not_log_count_when_no_contracts(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+
+    def f(x: int) -> int:
+        return x
+
+    with caplog.at_level(logging.INFO, logger="ct.contracts"):
+        discover_contracts(f)
+
+    discovery_logs = [
+        r for r in caplog.records if r.levelno == logging.INFO and "discovered" in r.message.lower()
+    ]
+    assert discovery_logs == []
+
+
 def test_discover_skips_record_with_runtime_error_and_warns(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
