@@ -102,6 +102,22 @@ def test_discover_ignores_class_invariant() -> None:
     assert result.ensures == ()
 
 
+def test_discover_bare_lambda_returns_empty() -> None:
+    target = lambda x: x + 1  # noqa: E731
+    result = discover_contracts(target)
+    assert result.requires == ()
+    assert result.ensures == ()
+
+
+def test_discover_wrapped_lambda_surfaces_contract() -> None:
+    target = icontract.require(lambda x: x > 0, description="positive")(lambda x: x + 1)
+    result = discover_contracts(target)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "positive"
+    assert result.requires[0].predicate(5) is True
+    assert result.requires[0].predicate(-1) is False
+
+
 def test_discover_method_does_not_leak_class_invariant() -> None:
     @icontract.invariant(lambda self: self.x >= 0, description="invariant: non-neg")
     class D:
