@@ -263,6 +263,7 @@ def test_discover_depth_cap_returns_empty_when_exceeded() -> None:
 
     current = core
     for _ in range(20):
+
         def wrapper(x: int, _inner=current) -> int:
             return _inner(x)
 
