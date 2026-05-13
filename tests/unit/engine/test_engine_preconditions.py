@@ -242,3 +242,29 @@ def test_precondition_error_does_not_trigger_timeout_termination() -> None:
     assert body_calls == []
     assert result.preconditions_violated == 3
     assert result.termination_reason != "timeout"
+
+
+def test_check_preconditions_logs_cannot_bind_when_args_missing_param(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    contract = Contract(
+        predicate=lambda self, x: x > 0,
+        description="x must be positive",
+        source="example.py:1",
+        condition_args=("self", "x"),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    with caplog.at_level(logging.WARNING, logger="ct.engine"):
+        result = _check_preconditions(contracts, {"x": 5})
+
+    assert result is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "cannot bind" in message.lower()
+    assert "self" in message
+    assert "example.py:1" in message
