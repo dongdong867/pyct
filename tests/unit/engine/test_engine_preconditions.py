@@ -50,3 +50,55 @@ def test_check_preconditions_returns_none_on_empty_contract_set() -> None:
     from pyct.engine.engine import _check_preconditions
 
     assert _check_preconditions(EMPTY_CONTRACTS, {"x": 1}) is None
+
+
+def test_check_preconditions_returns_error_with_source_and_description() -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    contract = Contract(
+        predicate=lambda x: x > 0,
+        description="x must be positive",
+        source="example.py:42",
+        condition_args=("x",),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    error = _check_preconditions(contracts, {"x": -1})
+
+    assert error is not None
+    assert error.startswith("precondition_violated:")
+    assert "example.py:42" in error
+    assert "x must be positive" in error
+
+
+def test_check_preconditions_returns_none_when_predicate_passes() -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    contract = Contract(
+        predicate=lambda x: x > 0,
+        description="x positive",
+        source="example.py:1",
+        condition_args=("x",),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    assert _check_preconditions(contracts, {"x": 5}) is None
+
+
+def test_check_preconditions_omits_trailing_space_when_description_none() -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    contract = Contract(
+        predicate=lambda x: x > 0,
+        description=None,
+        source="example.py:7",
+        condition_args=("x",),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    error = _check_preconditions(contracts, {"x": -1})
+
+    assert error == "precondition_violated: example.py:7"
