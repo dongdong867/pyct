@@ -31,8 +31,11 @@ library = [
     "pyyaml>=6.0",
     "sympy>=1.14.0",
 ]
+contracts = [
+    "icontract>=2",
+]
 all = [
-    "pyct[llm,benchmark,realworld,library]",
+    "pyct[llm,benchmark,realworld,library,contracts]",
 ]
 
 [project.scripts]
