@@ -22,6 +22,7 @@ class Contract:
     predicate: Callable[..., bool]
     description: str | None
     source: str
+    condition_args: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,6 +136,7 @@ def _to_contract(raw: Any) -> Contract:
         predicate=raw.condition,
         description=raw.description,
         source=_parse_location(raw.location),
+        condition_args=tuple(raw.condition_args),
     )
 
 
