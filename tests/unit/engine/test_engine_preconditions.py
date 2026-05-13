@@ -158,3 +158,42 @@ def test_check_preconditions_logs_warning_and_proceeds_on_predicate_raise(
     assert "example.py:10" in message
     assert "x must be positive" in message
     assert "ValueError" in message
+
+
+def test_check_preconditions_short_circuits_at_first_false_require() -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    later_called = False
+
+    def first_failing(x: int) -> bool:
+        return False
+
+    def later_predicate(x: int) -> bool:
+        nonlocal later_called
+        later_called = True
+        return True
+
+    contracts = ContractSet(
+        requires=(
+            Contract(
+                predicate=first_failing,
+                description="first fail",
+                source="example.py:1",
+                condition_args=("x",),
+            ),
+            Contract(
+                predicate=later_predicate,
+                description="never reached",
+                source="example.py:2",
+                condition_args=("x",),
+            ),
+        )
+    )
+
+    error = _check_preconditions(contracts, {"x": 0})
+
+    assert error is not None
+    assert "example.py:1" in error
+    assert "first fail" in error
+    assert later_called is False
