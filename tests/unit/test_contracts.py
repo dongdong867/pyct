@@ -89,3 +89,30 @@ def test_discover_ensures_preserve_source_order() -> None:
 
     result = discover_contracts(g)
     assert [c.description for c in result.ensures] == ["X", "Y", "Z"]
+
+
+def test_discover_ignores_class_invariant() -> None:
+    @icontract.invariant(lambda self: self.x >= 0, description="non-negative x")
+    class C:
+        def __init__(self, x: int) -> None:
+            self.x = x
+
+    result = discover_contracts(C)
+    assert result.requires == ()
+    assert result.ensures == ()
+
+
+def test_discover_method_does_not_leak_class_invariant() -> None:
+    @icontract.invariant(lambda self: self.x >= 0, description="invariant: non-neg")
+    class D:
+        def __init__(self, x: int) -> None:
+            self.x = x
+
+        @icontract.require(lambda y: y > 0, description="method require")
+        def m(self, y: int) -> int:
+            return self.x + y
+
+    result = discover_contracts(D.m)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "method require"
+    assert result.ensures == ()
