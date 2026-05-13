@@ -457,6 +457,7 @@ class Engine:
             target_signature=signature,
             config=self.config,
             elapsed_seconds=state.elapsed_seconds(),
+            contracts=self.contracts,
         )
 
 
