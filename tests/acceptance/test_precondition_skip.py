@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import icontract
+
+from pyct import run_concolic
+
 
 def test_run_concolic_skips_target_body_when_require_returns_false() -> None:
     """
@@ -11,20 +15,18 @@ def test_run_concolic_skips_target_body_when_require_returns_false() -> None:
     And result.preconditions_violated must be 1
     And termination_reason must not be "timeout"
     """
-    from pyct import run_concolic
-    from tests.acceptance.fixtures.contracts import basic
+    body_calls: list[int] = []
 
-    basic.PRECONDITION_BODY_CALLS.clear()
+    @icontract.require(lambda x: x > 0, description="x must be positive")
+    def target(x: int) -> int:
+        body_calls.append(x)
+        return x * 2
 
-    result = run_concolic(
-        target=basic.precondition_skip_target,
-        initial_args={"x": -1},
-        isolated=False,
-    )
+    result = run_concolic(target=target, initial_args={"x": -1}, isolated=False)
 
     assert result.success
-    assert basic.PRECONDITION_BODY_CALLS == [], (
-        f"target body invoked despite failing precondition: {basic.PRECONDITION_BODY_CALLS}"
+    assert body_calls == [], (
+        f"target body invoked despite failing precondition: {body_calls}"
     )
     assert result.preconditions_violated == 1
     assert result.termination_reason != "timeout"
