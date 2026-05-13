@@ -44,6 +44,7 @@ def discover_contracts(target: Any) -> ContractSet:
     """
     if not _ensure_icontract():
         return EMPTY_CONTRACTS
+    target_name = getattr(target, "__name__", "<target>")
     visited: set[int] = set()
     current: Any = target
     for _ in range(_MAX_WRAPPED_DEPTH + 1):
@@ -61,6 +62,12 @@ def discover_contracts(target: Any) -> ContractSet:
             )
             return EMPTY_CONTRACTS
         if requires or ensures:
+            log.info(
+                "Discovered %d precondition(s) and %d postcondition(s) on %s",
+                len(requires),
+                len(ensures),
+                target_name,
+            )
             return ContractSet(requires=requires, ensures=ensures)
         wrapped = getattr(current, "__wrapped__", None)
         if wrapped is None or wrapped is current:
