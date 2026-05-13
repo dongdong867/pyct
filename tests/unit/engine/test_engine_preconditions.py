@@ -197,3 +197,23 @@ def test_check_preconditions_short_circuits_at_first_false_require() -> None:
     assert "example.py:1" in error
     assert "first fail" in error
     assert later_called is False
+
+
+def test_engine_explore_skips_target_body_when_require_returns_false() -> None:
+    import icontract
+
+    from pyct.config.execution import ExecutionConfig
+    from pyct.engine.engine import Engine
+
+    body_calls: list[int] = []
+
+    @icontract.require(lambda x: x > 0, description="x must be positive")
+    def target(x: int) -> int:
+        body_calls.append(x)
+        return x
+
+    engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=5.0))
+    result = engine.explore(target, {"x": -1})
+
+    assert body_calls == []
+    assert result.preconditions_violated == 1
