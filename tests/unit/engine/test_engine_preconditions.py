@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+import pytest
+
 from pyct.engine.engine import _build_result
 from pyct.engine.result import ExplorationResult, RunConcolicResult
 from pyct.engine.state import ExplorationState
@@ -125,3 +129,32 @@ def test_check_preconditions_binds_only_condition_args_subset() -> None:
     _check_preconditions(contracts, {"x": 9, "y": 100, "z": "ignored"})
 
     assert captured == {"x": 9}
+
+
+def test_check_preconditions_logs_warning_and_proceeds_on_predicate_raise(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    def boom(x: int) -> bool:
+        raise ValueError("predicate broke")
+
+    contract = Contract(
+        predicate=boom,
+        description="x must be positive",
+        source="example.py:10",
+        condition_args=("x",),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    with caplog.at_level(logging.WARNING, logger="ct.engine"):
+        result = _check_preconditions(contracts, {"x": 5})
+
+    assert result is None
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    message = warnings[0].getMessage()
+    assert "example.py:10" in message
+    assert "x must be positive" in message
+    assert "ValueError" in message
