@@ -82,6 +82,7 @@ class RunConcolicResult:
     scope_coverage_percent: float = 0.0
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
+    preconditions_violated: int = 0
 
     @classmethod
     def from_exploration(
@@ -112,4 +113,5 @@ class RunConcolicResult:
             scope_coverage_percent=result.scope_coverage_percent,
             scope_executed_lines=result.scope_executed_lines,
             scope_total_lines=result.scope_total_lines,
+            preconditions_violated=result.preconditions_violated,
         )
