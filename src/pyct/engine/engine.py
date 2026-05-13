@@ -366,17 +366,18 @@ class Engine:
         assert self.coverage_tracker is not None
 
         self.path.reset()
-        try:
-            concolic_args = wrap_arguments(args, self)
-        except Exception as e:
-            log.debug("wrap_arguments failed for %r: %s", args, e)
-            return f"wrap_arguments: {type(e).__name__}: {e}"
 
         precondition_error = _check_preconditions(self.contracts, args)
         if precondition_error is not None:
             state.preconditions_violated += 1
             log.debug("Skipping iteration: %s", precondition_error)
             return precondition_error
+
+        try:
+            concolic_args = wrap_arguments(args, self)
+        except Exception as e:
+            log.debug("wrap_arguments failed for %r: %s", args, e)
+            return f"wrap_arguments: {type(e).__name__}: {e}"
 
         deadline = self._iteration_deadline(state)
         scope_files = self.coverage_tracker.scope.files
