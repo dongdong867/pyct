@@ -102,3 +102,26 @@ def test_check_preconditions_omits_trailing_space_when_description_none() -> Non
     error = _check_preconditions(contracts, {"x": -1})
 
     assert error == "precondition_violated: example.py:7"
+
+
+def test_check_preconditions_binds_only_condition_args_subset() -> None:
+    from pyct.contracts import Contract, ContractSet
+    from pyct.engine.engine import _check_preconditions
+
+    captured: dict[str, object] = {}
+
+    def spy_predicate(**kwargs: object) -> bool:
+        captured.update(kwargs)
+        return True
+
+    contract = Contract(
+        predicate=spy_predicate,
+        description=None,
+        source="example.py:1",
+        condition_args=("x",),
+    )
+    contracts = ContractSet(requires=(contract,))
+
+    _check_preconditions(contracts, {"x": 9, "y": 100, "z": "ignored"})
+
+    assert captured == {"x": 9}
