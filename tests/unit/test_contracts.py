@@ -146,6 +146,54 @@ def test_discover_bound_method_matches_unbound() -> None:
     assert [c.predicate for c in bound.ensures] == [c.predicate for c in unbound.ensures]
 
 
+def test_discover_classmethod_via_class() -> None:
+    class C:
+        @classmethod
+        @icontract.require(lambda x: x > 0, description="cls-req")
+        def cm(cls, x: int) -> int:
+            return x
+
+    result = discover_contracts(C.cm)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "cls-req"
+
+
+def test_discover_classmethod_via_instance() -> None:
+    class C:
+        @classmethod
+        @icontract.require(lambda x: x > 0, description="cls-req")
+        def cm(cls, x: int) -> int:
+            return x
+
+    result = discover_contracts(C().cm)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "cls-req"
+
+
+def test_discover_staticmethod_via_class() -> None:
+    class C:
+        @staticmethod
+        @icontract.require(lambda x: x > 0, description="static-req")
+        def sm(x: int) -> int:
+            return x
+
+    result = discover_contracts(C.sm)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "static-req"
+
+
+def test_discover_staticmethod_via_instance() -> None:
+    class C:
+        @staticmethod
+        @icontract.require(lambda x: x > 0, description="static-req")
+        def sm(x: int) -> int:
+            return x
+
+    result = discover_contracts(C().sm)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "static-req"
+
+
 def test_discover_method_does_not_leak_class_invariant() -> None:
     @icontract.invariant(lambda self: self.x >= 0, description="invariant: non-neg")
     class D:
