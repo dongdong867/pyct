@@ -194,6 +194,86 @@ def test_discover_staticmethod_via_instance() -> None:
     assert result.requires[0].description == "static-req"
 
 
+def test_discover_walks_bare_wrapper_chain() -> None:
+    @icontract.require(lambda x: x > 0, description="inner-req")
+    def inner(x: int) -> int:
+        return x
+
+    def bare(x: int) -> int:
+        return inner(x)
+
+    bare.__wrapped__ = inner  # type: ignore[attr-defined]
+
+    result = discover_contracts(bare)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "inner-req"
+
+
+def test_discover_walks_multi_level_wrapper_chain() -> None:
+    @icontract.require(lambda x: x > 0, description="deep-req")
+    def inner(x: int) -> int:
+        return x
+
+    def mid(x: int) -> int:
+        return inner(x)
+
+    mid.__wrapped__ = inner  # type: ignore[attr-defined]
+
+    def outer(x: int) -> int:
+        return mid(x)
+
+    outer.__wrapped__ = mid  # type: ignore[attr-defined]
+
+    result = discover_contracts(outer)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "deep-req"
+
+
+def test_discover_outer_contracts_override_inner() -> None:
+    @icontract.require(lambda x: x > 0, description="inner-req")
+    def inner(x: int) -> int:
+        return x
+
+    @icontract.require(lambda x: x < 100, description="outer-req")
+    def outer(x: int) -> int:
+        return inner(x)
+
+    outer.__wrapped__ = inner  # type: ignore[attr-defined]
+
+    result = discover_contracts(outer)
+    assert len(result.requires) == 1
+    assert result.requires[0].description == "outer-req"
+
+
+def test_discover_cyclic_wrapper_returns_empty() -> None:
+    def f(x: int) -> int:
+        return x
+
+    f.__wrapped__ = f  # type: ignore[attr-defined]
+
+    result = discover_contracts(f)
+    assert result.requires == ()
+    assert result.ensures == ()
+
+
+def test_discover_depth_cap_returns_empty_when_exceeded() -> None:
+    @icontract.require(lambda x: x > 0, description="deep-req")
+    def core(x: int) -> int:
+        return x
+
+    current = core
+    for _ in range(20):
+        def wrapper(x: int, _inner=current) -> int:
+            return _inner(x)
+
+        wrapper.__wrapped__ = current  # type: ignore[attr-defined]
+        current = wrapper
+
+    result = discover_contracts(current)
+    assert result.requires == ()
+    assert result.ensures == ()
+
+
 def test_discover_method_does_not_leak_class_invariant() -> None:
     @icontract.invariant(lambda self: self.x >= 0, description="invariant: non-neg")
     class D:
