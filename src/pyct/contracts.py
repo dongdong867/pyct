@@ -50,8 +50,16 @@ def discover_contracts(target: Any) -> ContractSet:
         if id(current) in visited:
             return EMPTY_CONTRACTS
         visited.add(id(current))
-        requires = _read_preconditions(current)
-        ensures = _read_postconditions(current)
+        try:
+            requires = _read_preconditions(current)
+            ensures = _read_postconditions(current)
+        except AttributeError as exc:
+            log.warning(
+                "icontract API drift detected (icontract=%s): %s",
+                _icontract_version(),
+                exc,
+            )
+            return EMPTY_CONTRACTS
         if requires or ensures:
             return ContractSet(requires=requires, ensures=ensures)
         wrapped = getattr(current, "__wrapped__", None)
@@ -74,6 +82,15 @@ def _ensure_icontract() -> bool:
         _icontract_present = True
     _icontract_check_done = True
     return _icontract_present
+
+
+def _icontract_version() -> str:
+    try:
+        import icontract
+
+        return getattr(icontract, "__version__", "unknown")
+    except ImportError:
+        return "unknown"
 
 
 def _read_preconditions(target: Any) -> tuple[Contract, ...]:
