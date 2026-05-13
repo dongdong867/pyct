@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet, discover_contracts
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
 from pyct.engine.coverage_scope import CoverageScope
@@ -62,9 +63,8 @@ class Engine:
         self.constraints_to_solve: list[Any] = []
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
-        self._progress_callback: (
-            Callable[[Engine, ExplorationState], None] | None
-        ) = None
+        self.contracts: ContractSet = EMPTY_CONTRACTS
+        self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
 
     def register(self, plugin: Plugin) -> None:
         """Register a plugin instance with the engine.
@@ -129,6 +129,7 @@ class Engine:
         finally:
             self.solver = None
             self.coverage_tracker = None
+            self.contracts = EMPTY_CONTRACTS
 
     def _run(
         self,
@@ -138,6 +139,7 @@ class Engine:
         seed_inputs: list[dict[str, Any]] | None = None,
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
+        self.contracts = discover_contracts(target)
         scope = self.config.scope or CoverageScope.for_target(target)
         target_file = scope.target_file
         func_lines = scope.executable_lines[target_file]
@@ -421,7 +423,6 @@ class Engine:
         if state.seed_phase:
             return time.monotonic() + self.config.seed_soft_timeout
         return state.start_time + self.config.timeout_seconds
-
 
     def _fire_progress(self, state: ExplorationState) -> None:
         """Invoke the optional progress callback, swallowing any failure.
