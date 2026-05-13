@@ -13,6 +13,9 @@ log = logging.getLogger("ct.contracts")
 _LOCATION_RE = re.compile(r"^File (?P<path>.+?), line (?P<line>\d+)")
 _MAX_WRAPPED_DEPTH = 10
 
+_icontract_check_done = False
+_icontract_present = False
+
 
 @dataclass(frozen=True)
 class Contract:
@@ -36,8 +39,11 @@ def discover_contracts(target: Any) -> ContractSet:
     Reads icontract's `__preconditions__` and `__postconditions__` attributes
     attached to the wrapped callable. Walks `__wrapped__` when the direct read
     is empty, with cycle detection and a depth cap. Returns EMPTY_CONTRACTS
-    when no contracts surface.
+    when no contracts surface or when the optional `icontract` dependency is
+    not installed.
     """
+    if not _ensure_icontract():
+        return EMPTY_CONTRACTS
     visited: set[int] = set()
     current: Any = target
     for _ in range(_MAX_WRAPPED_DEPTH + 1):
@@ -53,6 +59,21 @@ def discover_contracts(target: Any) -> ContractSet:
             return EMPTY_CONTRACTS
         current = wrapped
     return EMPTY_CONTRACTS
+
+
+def _ensure_icontract() -> bool:
+    global _icontract_check_done, _icontract_present
+    if _icontract_check_done:
+        return _icontract_present
+    try:
+        import icontract  # noqa: F401
+    except ImportError:
+        log.info("icontract is not installed; contract discovery is disabled")
+        _icontract_present = False
+    else:
+        _icontract_present = True
+    _icontract_check_done = True
+    return _icontract_present
 
 
 def _read_preconditions(target: Any) -> tuple[Contract, ...]:
