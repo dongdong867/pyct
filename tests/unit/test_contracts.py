@@ -337,3 +337,25 @@ def test_discover_missing_icontract_logs_info_only_once(
         r for r in caplog.records if r.levelno == logging.INFO and "icontract" in r.message.lower()
     ]
     assert len(info_messages) == 1
+
+
+def test_discover_api_drift_returns_empty_and_warns(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _reset_icontract_cache(monkeypatch)
+
+    class _Broken:
+        pass
+
+    def f(x: int) -> int:
+        return x
+
+    f.__preconditions__ = [[_Broken()]]  # type: ignore[attr-defined]
+
+    with caplog.at_level(logging.WARNING, logger="ct.contracts"):
+        result = discover_contracts(f)
+
+    assert result is EMPTY_CONTRACTS
+    warnings_logged = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert any("icontract" in r.message.lower() for r in warnings_logged)
+    assert any(icontract.__version__ in r.message for r in warnings_logged)
