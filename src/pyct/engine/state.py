@@ -79,6 +79,7 @@ class ExplorationState:
     plateau_failure_count: int = 0
     tracker: CoverageTracker | None = None
     contracts: ContractSet = EMPTY_CONTRACTS
+    preconditions_violated: int = 0
 
     def coverage_percent(self) -> float:
         """Return narrow coverage as a 0-100 percentage (target file only)."""
