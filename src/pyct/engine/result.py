@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet
+
 
 @dataclass(frozen=True)
 class ExplorationResult:
@@ -52,6 +54,7 @@ class ExplorationResult:
     scope_coverage_percent: float = 0.0
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
+    contracts: ContractSet = EMPTY_CONTRACTS
 
 
 @dataclass(frozen=True)

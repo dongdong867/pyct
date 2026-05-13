@@ -154,6 +154,7 @@ class Engine:
             start_time=time.monotonic(),
             total_lines=len(func_lines),
             tracker=self.coverage_tracker,
+            contracts=self.contracts,
         )
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
@@ -525,6 +526,7 @@ def _build_result(
         scope_coverage_percent=scope_percent,
         scope_executed_lines=scope_lines,
         scope_total_lines=scope_total,
+        contracts=state.contracts,
     )
 
 

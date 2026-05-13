@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet
+
 if TYPE_CHECKING:
     from pyct.engine.coverage_tracker import CoverageTracker
 
@@ -76,6 +78,7 @@ class ExplorationState:
     coverage_at_last_plateau: int | None = None
     plateau_failure_count: int = 0
     tracker: CoverageTracker | None = None
+    contracts: ContractSet = EMPTY_CONTRACTS
 
     def coverage_percent(self) -> float:
         """Return narrow coverage as a 0-100 percentage (target file only)."""
