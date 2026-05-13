@@ -381,6 +381,7 @@ class Engine:
         deadline = self._iteration_deadline(state)
         scope_files = self.coverage_tracker.scope.files
         error: str | None = None
+        state.inputs_exercised += 1
         with line_tracer(scope_files, deadline=deadline) as hit_lines:
             try:
                 call_with_args(target, concolic_args)
@@ -581,6 +582,7 @@ def _build_result(
         scope_total_lines=scope_total,
         contracts=state.contracts,
         preconditions_violated=state.preconditions_violated,
+        inputs_exercised=state.inputs_exercised,
     )
 
 

@@ -56,6 +56,7 @@ class ExplorationResult:
     scope_total_lines: int = 0
     contracts: ContractSet = EMPTY_CONTRACTS
     preconditions_violated: int = 0
+    inputs_exercised: int = 0
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ class RunConcolicResult:
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
     preconditions_violated: int = 0
+    inputs_exercised: int = 0
 
     @classmethod
     def from_exploration(
@@ -114,4 +116,5 @@ class RunConcolicResult:
             scope_executed_lines=result.scope_executed_lines,
             scope_total_lines=result.scope_total_lines,
             preconditions_violated=result.preconditions_violated,
+            inputs_exercised=result.inputs_exercised,
         )
