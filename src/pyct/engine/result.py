@@ -55,6 +55,7 @@ class ExplorationResult:
     scope_executed_lines: frozenset[tuple[str, int]] = frozenset()
     scope_total_lines: int = 0
     contracts: ContractSet = EMPTY_CONTRACTS
+    preconditions_violated: int = 0
 
 
 @dataclass(frozen=True)

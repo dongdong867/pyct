@@ -527,6 +527,7 @@ def _build_result(
         scope_executed_lines=scope_lines,
         scope_total_lines=scope_total,
         contracts=state.contracts,
+        preconditions_violated=state.preconditions_violated,
     )
 
 
