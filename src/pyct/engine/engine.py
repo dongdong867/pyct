@@ -474,8 +474,19 @@ def _check_preconditions(contracts: ContractSet, args: dict[str, Any]) -> str | 
     if not contracts.requires:
         return None
     for contract in contracts.requires:
-        bound = {name: args[name] for name in contract.condition_args}
-        if contract.predicate(**bound):
+        try:
+            bound = {name: args[name] for name in contract.condition_args}
+            passed = contract.predicate(**bound)
+        except Exception as exc:  # noqa: BLE001 — soft-fail per spec
+            log.warning(
+                "Could not enforce precondition at %s (%s): %s: %s",
+                contract.source,
+                contract.description or "<no description>",
+                type(exc).__name__,
+                exc,
+            )
+            continue
+        if passed:
             continue
         return _format_violation(contract)
     return None
