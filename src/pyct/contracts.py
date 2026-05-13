@@ -45,12 +45,13 @@ def discover_contracts(target: Any) -> ContractSet:
 
 def _read_preconditions(target: Any) -> tuple[Contract, ...]:
     groups = getattr(target, "__preconditions__", None) or ()
-    return tuple(_to_contract(c) for group in groups for c in group)
+    # icontract stores innermost-first; reverse to recover source order.
+    return tuple(_to_contract(c) for group in groups for c in reversed(group))
 
 
 def _read_postconditions(target: Any) -> tuple[Contract, ...]:
     items = getattr(target, "__postconditions__", None) or ()
-    return tuple(_to_contract(c) for c in items)
+    return tuple(_to_contract(c) for c in reversed(items))
 
 
 def _to_contract(raw: Any) -> Contract:
