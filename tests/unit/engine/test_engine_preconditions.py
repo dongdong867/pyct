@@ -217,3 +217,28 @@ def test_engine_explore_skips_target_body_when_require_returns_false() -> None:
 
     assert body_calls == []
     assert result.preconditions_violated == 1
+
+
+def test_precondition_error_does_not_trigger_timeout_termination() -> None:
+    import icontract
+
+    from pyct.config.execution import ExecutionConfig
+    from pyct.engine.engine import Engine
+
+    body_calls: list[int] = []
+
+    @icontract.require(lambda x: x > 0)
+    def target(x: int) -> int:
+        body_calls.append(x)
+        return x
+
+    engine = Engine(ExecutionConfig(max_iterations=10, timeout_seconds=10.0))
+    result = engine.explore(
+        target,
+        {"x": -1},
+        seed_inputs=[{"x": -2}, {"x": -3}],
+    )
+
+    assert body_calls == []
+    assert result.preconditions_violated == 3
+    assert result.termination_reason != "timeout"
