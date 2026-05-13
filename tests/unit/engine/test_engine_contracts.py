@@ -88,3 +88,25 @@ def test_engine_context_threads_contracts_to_plugin() -> None:
     assert plugin.captured is not None
     assert len(plugin.captured.requires) == 1
     assert plugin.captured.requires[0].description == "ctx-positive"
+
+
+def test_exploration_result_default_contracts_is_empty() -> None:
+    from pyct.engine.result import ExplorationResult
+
+    fields_default = ExplorationResult.__dataclass_fields__["contracts"].default
+    assert fields_default is EMPTY_CONTRACTS
+
+
+def test_explore_result_carries_discovered_contracts() -> None:
+    engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=5.0))
+
+    @icontract.require(lambda x: x > 0, description="result-positive")
+    @icontract.ensure(lambda result: result >= 0, description="result-non-neg")
+    def target(x: int) -> int:
+        return x
+
+    result = engine.explore(target, {"x": 1})
+    assert len(result.contracts.requires) == 1
+    assert result.contracts.requires[0].description == "result-positive"
+    assert len(result.contracts.ensures) == 1
+    assert result.contracts.ensures[0].description == "result-non-neg"
