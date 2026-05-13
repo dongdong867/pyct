@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 import icontract
+import pytest
 
 from pyct.config.execution import ExecutionConfig
 from pyct.contracts import EMPTY_CONTRACTS, ContractSet
+from pyct.engine import engine as engine_module
 from pyct.engine.engine import Engine
 
 
@@ -110,3 +112,33 @@ def test_explore_result_carries_discovered_contracts() -> None:
     assert result.contracts.requires[0].description == "result-positive"
     assert len(result.contracts.ensures) == 1
     assert result.contracts.ensures[0].description == "result-non-neg"
+
+
+def test_discover_contracts_runs_before_try_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    call_order: list[str] = []
+    real_discover = engine_module.discover_contracts
+    real_rewrite = engine_module._try_rewrite
+
+    def spy_discover(target: Any) -> Any:
+        call_order.append("discover")
+        return real_discover(target)
+
+    def spy_rewrite(target: Any) -> Any:
+        call_order.append("rewrite")
+        return real_rewrite(target)
+
+    monkeypatch.setattr(engine_module, "discover_contracts", spy_discover)
+    monkeypatch.setattr(engine_module, "_try_rewrite", spy_rewrite)
+
+    @icontract.require(lambda x: x > 0)
+    def target(x: int) -> int:
+        return x
+
+    engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=5.0))
+    engine.explore(target, {"x": 1})
+
+    assert "discover" in call_order
+    assert "rewrite" in call_order
+    assert call_order.index("discover") < call_order.index("rewrite")
