@@ -43,3 +43,10 @@ def test_from_exploration_threads_preconditions_violated() -> None:
     )
     public = RunConcolicResult.from_exploration(exploration, inputs=[])
     assert public.preconditions_violated == 7
+
+
+def test_check_preconditions_returns_none_on_empty_contract_set() -> None:
+    from pyct.contracts import EMPTY_CONTRACTS
+    from pyct.engine.engine import _check_preconditions
+
+    assert _check_preconditions(EMPTY_CONTRACTS, {"x": 1}) is None
