@@ -268,3 +268,79 @@ def test_check_preconditions_logs_cannot_bind_when_args_missing_param(
     assert "cannot bind" in message.lower()
     assert "self" in message
     assert "example.py:1" in message
+
+
+def test_state_inputs_exercised_defaults_to_zero() -> None:
+    state = ExplorationState()
+    assert state.inputs_exercised == 0
+
+
+def test_exploration_result_default_inputs_exercised_zero() -> None:
+    fields_default = ExplorationResult.__dataclass_fields__["inputs_exercised"].default
+    assert fields_default == 0
+
+
+def test_run_concolic_result_default_inputs_exercised_zero() -> None:
+    fields_default = RunConcolicResult.__dataclass_fields__["inputs_exercised"].default
+    assert fields_default == 0
+
+
+def test_build_result_threads_inputs_exercised_from_state() -> None:
+    state = ExplorationState()
+    state.inputs_exercised = 4
+    state.termination_reason = "exhausted"
+    result = _build_result(state, last_error=None)
+    assert result.inputs_exercised == 4
+
+
+def test_from_exploration_threads_inputs_exercised() -> None:
+    exploration = ExplorationResult(
+        success=True,
+        coverage_percent=0.0,
+        executed_lines=frozenset(),
+        paths_explored=0,
+        iterations=0,
+        termination_reason="exhausted",
+        elapsed_seconds=0.0,
+        inputs_exercised=11,
+    )
+    public = RunConcolicResult.from_exploration(exploration, inputs=[])
+    assert public.inputs_exercised == 11
+
+
+def test_engine_explore_inputs_exercised_zero_when_every_input_violates() -> None:
+    import icontract
+
+    from pyct.config.execution import ExecutionConfig
+    from pyct.engine.engine import Engine
+
+    @icontract.require(lambda x: x > 0)
+    def target(x: int) -> int:
+        return x
+
+    engine = Engine(ExecutionConfig(max_iterations=10, timeout_seconds=10.0))
+    result = engine.explore(
+        target,
+        {"x": -1},
+        seed_inputs=[{"x": -2}, {"x": -3}],
+    )
+
+    assert result.inputs_exercised == 0
+    assert result.preconditions_violated == 3
+    assert len(result.inputs_generated) == 3
+
+
+def test_engine_explore_inputs_exercised_increments_for_passing_input() -> None:
+    import icontract
+
+    from pyct.config.execution import ExecutionConfig
+    from pyct.engine.engine import Engine
+
+    @icontract.require(lambda x: x > 0)
+    def target(x: int) -> int:
+        return x
+
+    engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=5.0))
+    result = engine.explore(target, {"x": 5})
+
+    assert result.inputs_exercised >= 1
