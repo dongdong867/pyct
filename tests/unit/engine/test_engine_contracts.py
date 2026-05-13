@@ -54,3 +54,37 @@ def test_engine_contracts_reset_after_explore() -> None:
 
     engine.explore(target, {"x": 1})
     assert engine.contracts is EMPTY_CONTRACTS
+
+
+def test_engine_context_default_contracts_is_empty() -> None:
+    from pyct.engine.plugin.context import EngineContext
+
+    fields_default = EngineContext.__dataclass_fields__["contracts"].default
+    assert fields_default is EMPTY_CONTRACTS
+
+
+class _ContextContractsCapturePlugin:
+    name = "ctx-contracts-capture"
+    priority = 0
+
+    def __init__(self) -> None:
+        self.captured: ContractSet | None = None
+
+    def on_exploration_start(self, ctx: Any) -> None:
+        self.captured = ctx.contracts
+
+
+def test_engine_context_threads_contracts_to_plugin() -> None:
+    engine = Engine(ExecutionConfig(max_iterations=1, timeout_seconds=5.0))
+    plugin = _ContextContractsCapturePlugin()
+    engine.register(plugin)
+
+    @icontract.require(lambda x: x > 0, description="ctx-positive")
+    def target(x: int) -> int:
+        return x
+
+    engine.explore(target, {"x": 1})
+
+    assert plugin.captured is not None
+    assert len(plugin.captured.requires) == 1
+    assert plugin.captured.requires[0].description == "ctx-positive"
