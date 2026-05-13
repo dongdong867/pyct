@@ -96,12 +96,31 @@ def _icontract_version() -> str:
 def _read_preconditions(target: Any) -> tuple[Contract, ...]:
     groups = getattr(target, "__preconditions__", None) or ()
     # icontract stores innermost-first; reverse to recover source order.
-    return tuple(_to_contract(c) for group in groups for c in reversed(group))
+    flat = [raw for group in groups for raw in reversed(group)]
+    return _safe_collect("precondition", flat)
 
 
 def _read_postconditions(target: Any) -> tuple[Contract, ...]:
     items = getattr(target, "__postconditions__", None) or ()
-    return tuple(_to_contract(c) for c in reversed(items))
+    return _safe_collect("postcondition", list(reversed(items)))
+
+
+def _safe_collect(kind: str, records: list[Any]) -> tuple[Contract, ...]:
+    collected: list[Contract] = []
+    for index, raw in enumerate(records):
+        try:
+            collected.append(_to_contract(raw))
+        except AttributeError:
+            raise
+        except Exception as exc:
+            log.warning(
+                "Skipping %s at index %d due to %s: %s",
+                kind,
+                index,
+                type(exc).__name__,
+                exc,
+            )
+    return tuple(collected)
 
 
 def _to_contract(raw: Any) -> Contract:
