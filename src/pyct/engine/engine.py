@@ -482,6 +482,16 @@ def _check_preconditions(contracts: ContractSet, args: dict[str, Any]) -> str | 
     for contract in contracts.requires:
         try:
             bound = {name: args[name] for name in contract.condition_args}
+        except KeyError as exc:
+            missing = exc.args[0] if exc.args else "?"
+            log.warning(
+                "Cannot bind precondition at %s (%s): missing parameter %r",
+                contract.source,
+                contract.description or "<no description>",
+                missing,
+            )
+            continue
+        try:
             passed = contract.predicate(**bound)
         except Exception as exc:  # noqa: BLE001 — soft-fail per spec
             log.warning(
