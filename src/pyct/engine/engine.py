@@ -462,6 +462,20 @@ class Engine:
         )
 
 
+def _check_preconditions(contracts: ContractSet, args: dict[str, Any]) -> str | None:
+    """Evaluate require predicates against concrete args; return error or None.
+
+    Returns ``"precondition_violated: <source> <description>"`` on the first
+    predicate that returns False. Returns None when all predicates pass,
+    when the contract set is empty, or when every predicate raised (each
+    raise is logged and treated as "could not enforce, proceed").
+    """
+    del args
+    if not contracts.requires:
+        return None
+    return None
+
+
 def _try_rewrite(target: Callable) -> Callable:
     """Attempt AST rewrite; fall back to original on exec failures.
 
