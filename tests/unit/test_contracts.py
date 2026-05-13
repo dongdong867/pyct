@@ -39,6 +39,16 @@ def test_discover_require_populates_requires() -> None:
     assert line.isdigit()
 
 
+def test_discover_require_populates_condition_args_with_param_subset() -> None:
+    @icontract.require(lambda x: x > 0)
+    def f(x: int, y: int) -> int:
+        return x
+
+    result = discover_contracts(f)
+    contract = result.requires[0]
+    assert contract.condition_args == ("x",)
+
+
 def test_discover_ensure_populates_ensures() -> None:
     @icontract.ensure(lambda result, x: result == x * 2)
     def g(x: int) -> int:
