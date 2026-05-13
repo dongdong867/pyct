@@ -13,3 +13,12 @@ def positive_double(x: int) -> int:
 
 def no_contracts(x: int) -> int:
     return x
+
+
+PRECONDITION_BODY_CALLS: list[int] = []
+
+
+@icontract.require(lambda x: x > 0, description="x must be positive")
+def precondition_skip_target(x: int) -> int:
+    PRECONDITION_BODY_CALLS.append(x)
+    return x * 2
