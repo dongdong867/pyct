@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
+from pyct.contracts import EMPTY_CONTRACTS, Contract, ContractSet, discover_contracts
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
 from pyct.engine.coverage_scope import CoverageScope
@@ -65,6 +66,7 @@ class Engine:
         self.constraints_to_solve: list[Any] = []
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
+        self.contracts: ContractSet = EMPTY_CONTRACTS
         self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
         self._iteration_start_callback: (
             Callable[[Engine, ExplorationState, dict[str, Any], Provenance], None] | None
@@ -144,6 +146,7 @@ class Engine:
         finally:
             self.solver = None
             self.coverage_tracker = None
+            self.contracts = EMPTY_CONTRACTS
 
     def _run(
         self,
@@ -153,6 +156,12 @@ class Engine:
         seed_inputs: list[dict[str, Any]] | None = None,
     ) -> ExplorationResult:
         """Core exploration loop — inspect, dispatch, iterate, build result."""
+        # Discover contracts on the *original* target before AST rewrite
+        # so contract identity anchors to the user-decorated callable —
+        # ``_try_rewrite`` produces a fresh function whose
+        # ``__pyct_contracts__`` would be missing.
+        self.contracts = discover_contracts(target)
+
         scope = self.config.scope or CoverageScope.for_target(target)
         target_file = scope.target_file
         func_lines = scope.executable_lines[target_file]
@@ -167,6 +176,7 @@ class Engine:
             start_time=time.monotonic(),
             total_lines=len(func_lines),
             tracker=self.coverage_tracker,
+            contracts=self.contracts,
         )
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
@@ -263,7 +273,18 @@ class Engine:
             covered_before = frozenset(state.observed_lines)
             iteration_error = self._run_iteration(target, args, state)
             new_lines = frozenset(state.observed_lines) - covered_before
-            state.records.append(build_record(args, provenance, iteration_error, new_lines))
+            # Precondition-violating candidates are filtered: the
+            # iteration counter still advances (budget honored) but the
+            # input is excluded from the successful-execution accounting
+            # so downstream consumers (``state.records`` →
+            # ``ExplorationResult.inputs_generated``, plugin snapshots)
+            # do not see it as exercised.
+            if iteration_error is None or not iteration_error.startswith(
+                "precondition_violated:"
+            ):
+                state.records.append(
+                    build_record(args, provenance, iteration_error, new_lines)
+                )
             state.iteration += 1
             self._fire_progress(state)
 
@@ -396,6 +417,12 @@ class Engine:
         assert self.coverage_tracker is not None
 
         self.path.reset()
+
+        precondition_error = _check_preconditions(self.contracts, args)
+        if precondition_error is not None:
+            log.debug("Skipping iteration: %s", precondition_error)
+            return precondition_error
+
         try:
             concolic_args = wrap_arguments(args, self)
         except Exception as e:
@@ -510,6 +537,7 @@ class Engine:
             target_signature=signature,
             config=self.config,
             elapsed_seconds=state.elapsed_seconds(),
+            contracts=self.contracts,
         )
 
 
@@ -556,6 +584,56 @@ def build_record(
         new_lines=new_lines,
         error=error,
     )
+def _check_preconditions(
+    contracts: ContractSet, args: dict[str, Any]
+) -> str | None:
+    """Evaluate every require predicate against the concrete args dict.
+
+    Returns ``"precondition_violated: <source> <description>"`` on the
+    first predicate that returns False. Returns ``None`` when:
+      * the contract set has no requires (vacuously satisfied);
+      * every predicate passed;
+      * every predicate either raised or referenced a parameter absent
+        from ``args`` — each soft-fail logs a WARN naming the contract
+        location and continues to the next require, never aborting the
+        engine.
+    """
+    if not contracts.requires:
+        return None
+    for contract in contracts.requires:
+        try:
+            bound = {name: args[name] for name in contract.condition_args}
+        except KeyError as exc:
+            missing = exc.args[0] if exc.args else "?"
+            log.warning(
+                "Cannot bind precondition at %s (%s): missing parameter %r",
+                contract.source,
+                contract.description or "<no description>",
+                missing,
+            )
+            continue
+        try:
+            passed = contract.predicate(**bound)
+        except Exception as exc:  # noqa: BLE001 — soft-fail per spec
+            log.warning(
+                "Could not enforce precondition at %s (%s): %s: %s",
+                contract.source,
+                contract.description or "<no description>",
+                type(exc).__name__,
+                exc,
+            )
+            continue
+        if passed:
+            continue
+        return _format_violation(contract)
+    return None
+
+
+def _format_violation(contract: Contract) -> str:
+    tag = f"precondition_violated: {contract.source}"
+    if contract.description:
+        return f"{tag} {contract.description}"
+    return tag
 
 
 def _try_rewrite(target: Callable) -> Callable:
@@ -635,6 +713,7 @@ def _build_result(
         gen_unknown=state.gen_unknown,
         gen_parse_failed=gen_parse_failed,
         harness_error=state.harness_error,
+        contracts=state.contracts,
     )
 
 

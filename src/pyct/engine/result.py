@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet
 from pyct.engine.types import InputRecord
 
 
@@ -39,6 +40,9 @@ class ExplorationResult:
         scope_coverage_percent: Wide (scope-spanning) coverage percent.
         scope_executed_lines: ``{(file, line)}`` pairs across the scope.
         scope_total_lines: Sum of executable lines across all scope files.
+        contracts: ContractSet discovered on the target. Empty for
+            undecorated targets; the same instance the engine and any
+            plugin saw via ``EngineContext.contracts`` during the run.
     """
 
     success: bool
@@ -58,6 +62,7 @@ class ExplorationResult:
     gen_unknown: int = 0
     gen_parse_failed: int = 0
     harness_error: int = 0
+    contracts: ContractSet = EMPTY_CONTRACTS
 
 
 @dataclass(frozen=True)
