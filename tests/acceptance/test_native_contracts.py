@@ -52,16 +52,34 @@ def test_engine_populates_contracts_observable_via_result():
     assert discover_contracts(requires_positive).requires[0].description == "x > 0"
 
 
-def test_engine_filters_input_violating_precondition():
-    """Feature DoD: @pre-violating candidates are filtered, not recorded."""
+def test_engine_filters_input_violating_precondition(caplog):
+    """Feature DoD: @pre-violating candidates surface the violation string AND
+    are absent from the post-run successful-execution accounting.
+    """
     from tests.acceptance.fixtures.contracts.basic import requires_positive
 
     config = ExecutionConfig(max_iterations=20, timeout_seconds=10.0)
-    result = run_concolic(
-        target=requires_positive,
-        initial_args={"x": -5},
-        config=config,
-        isolated=False,
+    with caplog.at_level("DEBUG", logger="ct.engine"):
+        result = run_concolic(
+            target=requires_positive,
+            initial_args={"x": -5},
+            config=config,
+            isolated=False,
+        )
+
+    # Filter path emits the canonical "precondition_violated:" string on
+    # the iteration where it fires. The engine surfaces it via the
+    # iteration-error channel and, when no later iteration overrides it,
+    # via ExplorationResult.error.
+    surfaced = (result.error or "") + " ".join(
+        r.getMessage() for r in caplog.records
+    )
+    assert "precondition_violated:" in surfaced, (
+        "engine must surface the precondition_violated string from the "
+        "filter path; saw error=%r logs=%r" % (
+            result.error,
+            [r.getMessage() for r in caplog.records],
+        )
     )
 
     violating = [a for a in result.inputs_generated if a.get("x", 1) <= 0]
