@@ -74,12 +74,10 @@ def test_engine_filters_input_violating_precondition(caplog):
     surfaced = (result.error or "") + " ".join(
         r.getMessage() for r in caplog.records
     )
+    log_messages = [r.getMessage() for r in caplog.records]
     assert "precondition_violated:" in surfaced, (
-        "engine must surface the precondition_violated string from the "
-        "filter path; saw error=%r logs=%r" % (
-            result.error,
-            [r.getMessage() for r in caplog.records],
-        )
+        f"engine must surface the precondition_violated string from the "
+        f"filter path; saw error={result.error!r} logs={log_messages!r}"
     )
 
     violating = [a for a in result.inputs_generated if a.get("x", 1) <= 0]
