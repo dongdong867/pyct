@@ -165,7 +165,7 @@ class TestEngineContractsFiltering:
         engine = Engine(ExecutionConfig(max_iterations=20, timeout_seconds=10.0))
         result = engine.explore(target, {"x": -1})
 
-        violating = [a for a in result.inputs_generated if a.get("x", 1) <= 0]
+        violating = [r for r in result.inputs_generated if r.args.get("x", 1) <= 0]
         assert violating == [], (
             f"violating x<=0 candidates must be filtered from inputs_generated; "
             f"got {result.inputs_generated}"

@@ -80,7 +80,7 @@ def test_engine_filters_input_violating_precondition(caplog):
         f"filter path; saw error={result.error!r} logs={log_messages!r}"
     )
 
-    violating = [a for a in result.inputs_generated if a.get("x", 1) <= 0]
+    violating = [r for r in result.inputs_generated if r.args.get("x", 1) <= 0]
     assert violating == [], (
         f"x<=0 candidates must be filtered from successful-execution "
         f"accounting; got {result.inputs_generated}"
@@ -132,8 +132,9 @@ def test_engine_evaluates_predicate_against_module_globals():
     )
 
     assert result.success
-    assert {"x": 5} in result.inputs_generated or any(
-        a.get("x", 0) > 0 for a in result.inputs_generated
+    args_seen = [r.args for r in result.inputs_generated]
+    assert {"x": 5} in args_seen or any(
+        a.get("x", 0) > 0 for a in args_seen
     )
 
 
