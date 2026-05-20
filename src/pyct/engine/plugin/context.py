@@ -8,6 +8,7 @@ from inspect import Signature
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,8 @@ class EngineContext:
         target_signature: Inspected signature of target_function.
         config: The engine's frozen ExecutionConfig.
         elapsed_seconds: Wall-clock seconds since exploration began.
+        contracts: Read-only snapshot of the ContractSet discovered on
+            the target. ``EMPTY_CONTRACTS`` for undecorated targets.
     """
 
     iteration: int
@@ -42,6 +45,7 @@ class EngineContext:
     target_signature: Signature
     config: ExecutionConfig
     elapsed_seconds: float
+    contracts: ContractSet = EMPTY_CONTRACTS
 
     @property
     def coverage_percent(self) -> float:

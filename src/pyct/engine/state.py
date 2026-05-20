@@ -6,6 +6,7 @@ import time
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from pyct.contracts import EMPTY_CONTRACTS, ContractSet
 from pyct.engine.types import InputRecord
 
 if TYPE_CHECKING:
@@ -88,6 +89,10 @@ class ExplorationState:
             raises before the target is called. The iteration still
             appends a record (carrying the wrap error and TARGET_ERROR
             outcome) so callers can see which seed failed.
+        contracts: ContractSet discovered on the original target before
+            AST rewrite. ``EMPTY_CONTRACTS`` until the engine populates
+            it; mirrored from ``Engine.contracts`` so plugin snapshots
+            and ExplorationResult both observe the same instance.
     """
 
     iteration: int = 0
@@ -108,6 +113,7 @@ class ExplorationState:
     gen_unsat: int = 0
     gen_unknown: int = 0
     harness_error: int = 0
+    contracts: ContractSet = EMPTY_CONTRACTS
 
     def coverage_percent(self) -> float:
         """Return narrow coverage as a 0-100 percentage (target file only)."""
