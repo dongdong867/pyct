@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import itertools
 import logging
 import textwrap
 from collections.abc import Callable
@@ -53,6 +54,12 @@ _INT_HELPER = "pyct.core.builtin_wrappers._int"
 _STR_HELPER = "pyct.core.builtin_wrappers._str"
 _IS_HELPER = "pyct.core.builtin_wrappers._is"
 _RANGE_CLASS = "pyct.core.concolic_range.ConcolicRange"
+
+# Process-wide counter for membership-rewrite chain IDs. Each
+# ``ConcolicCompareRewriter`` instance draws from this so disjoint
+# rewriter invocations — including across separately rewritten target
+# functions — receive disjoint chain IDs.
+_chain_id_counter = itertools.count(1)
 
 # Empty-constructor calls Python treats as empty container literals for the
 # purposes of ``x in <empty>`` (always False). Listed at module scope so the
@@ -225,7 +232,10 @@ class ConcolicCompareRewriter(ast.NodeTransformer):
             return ast.copy_location(ast.Constant(value=isinstance(op, ast.NotIn)), node)
         eq_op: ast.cmpop = ast.NotEq() if isinstance(op, ast.NotIn) else ast.Eq()
         bool_op: ast.boolop = ast.And() if isinstance(op, ast.NotIn) else ast.Or()
-        comparisons = [_build_eq_compare(node.left, elem, eq_op, node) for elem in deduped]
+        chain_id = next(_chain_id_counter)
+        comparisons = [
+            _build_chain_tagged_compare(node.left, elem, eq_op, node, chain_id) for elem in deduped
+        ]
         self._bump_rewritten()
         if len(comparisons) == 1:
             return comparisons[0]
@@ -312,6 +322,28 @@ def _build_eq_compare(
     anchor: ast.AST,
 ) -> ast.Compare:
     compare = ast.Compare(left=left, ops=[op], comparators=[right])
+    return ast.copy_location(compare, anchor)
+
+
+def _build_chain_tagged_compare(
+    left: ast.expr,
+    right: ast.expr,
+    op: ast.cmpop,
+    anchor: ast.AST,
+    chain_id: int,
+) -> ast.Compare:
+    """Build a Compare and stamp the chain ID for AST + runtime lookup.
+
+    ``BoolOp.values`` must expose ``Compare`` nodes whose comparators
+    are plain ``Constant`` nodes (the unit test reads
+    ``c.comparators[0].value``), so the chain ID rides on the Compare
+    node as ``_pyct_or_chain_id`` and is registered separately under
+    ``(lineno, col_offset)`` in
+    ``pyct.core.builtin_wrappers._CHAIN_POSITION_REGISTRY`` for the
+    runtime concolic ``__eq__`` to look up via frame inspection.
+    """
+    compare = ast.Compare(left=left, ops=[op], comparators=[right])
+    compare._pyct_or_chain_id = chain_id
     return ast.copy_location(compare, anchor)
 
 
@@ -419,7 +451,28 @@ def _parse_rewritten_tree(
     tree = ConcolicCompareRewriter(state=state).visit(tree)
     ast.fix_missing_locations(tree)
     _shift_line_numbers(tree, target)
+    _register_chain_positions(tree, filename)
     return tree, filename
+
+
+def _register_chain_positions(tree: ast.AST, filename: str) -> None:
+    """Record (filename, lineno, col_offset) → chain_id for runtime lookup.
+
+    Walks the post-shift tree and registers every Compare that the
+    membership rewriter tagged with ``_pyct_or_chain_id``. The runtime
+    concolic ``__eq__`` reads the calling frame's exact position and
+    looks up the chain ID — the only available channel after Python's
+    ``compile()`` strips arbitrary attributes off AST nodes.
+    """
+    from pyct.core.builtin_wrappers import register_chain_position
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        chain_id = getattr(node, "_pyct_or_chain_id", None)
+        if chain_id is None:
+            continue
+        register_chain_position(filename, node.lineno, node.col_offset, chain_id)
 
 
 def _build_exec_globals(target: Callable[..., Any]) -> dict[str, Any]:

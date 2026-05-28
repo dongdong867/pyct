@@ -26,7 +26,7 @@ from pyct.engine.recovery import (
     run_post_loop_discovery,
 )
 from pyct.engine.result import ExplorationResult
-from pyct.engine.state import ExplorationState
+from pyct.engine.state import ChainStats, ExplorationState
 from pyct.engine.types import InputRecord, Outcome, Provenance
 from pyct.solver.executor import SolverStatus
 from pyct.solver.solver import Solver
@@ -36,6 +36,7 @@ from pyct.utils.constraint import ConstraintRegistry
 log = logging.getLogger("ct.engine")
 
 TIMEOUT_ERROR_PREFIX = "timeout:"
+_UNPRODUCTIVE_STREAK_THRESHOLD = 3
 
 
 class Engine:
@@ -72,6 +73,12 @@ class Engine:
         # state through every call site. Stays None outside an active
         # ``explore()`` call.
         self.state: ExplorationState | None = None
+        # Chain ID of the constraint whose solver model fed the most
+        # recent iteration; consumed by ``_post_iteration_update`` to
+        # attribute the iteration's coverage delta back to the chain.
+        # None when the iteration came from a seed or a non-chain
+        # constraint, leaving the chain stats untouched.
+        self._last_picked_chain_id: int | None = None
         self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
         self._iteration_start_callback: (
             Callable[[Engine, ExplorationState, dict[str, Any], Provenance], None] | None
@@ -268,10 +275,12 @@ class Engine:
                 break
 
             args, provenance = next_input
+            picked_chain_id = self._last_picked_chain_id
             self._fire_iteration_start(state, args, provenance)
             covered_before = frozenset(state.observed_lines)
             iteration_error = self._run_iteration(target, args, state)
             new_lines = frozenset(state.observed_lines) - covered_before
+            self._post_iteration_update(picked_chain_id, len(new_lines))
             state.records.append(build_record(args, provenance, iteration_error, new_lines))
             state.iteration += 1
             self._fire_progress(state)
@@ -288,7 +297,11 @@ class Engine:
             else:
                 last_error = None
 
-            if self.coverage_tracker is not None and self.coverage_tracker.is_fully_covered():
+            if (
+                self.coverage_tracker is not None
+                and self.coverage_tracker.is_fully_covered()
+                and not self._has_pending_chain_constraints()
+            ):
                 _terminate(state, "full_coverage")
                 break
 
@@ -330,15 +343,21 @@ class Engine:
         while input_queue:
             args, provenance = input_queue.pop(0)
             if not state.has_seen_args(args):
+                self._last_picked_chain_id = None
                 return args, provenance
 
         # Queue fully drained — seed phase is over; subsequent iterations
         # come from the solver or resolver plugins and must respect the
         # exploration budget.
         state.seed_phase = False
+        # Iterations driven by the queue carry no chain attribution.
+        self._last_picked_chain_id = None
 
         while self.constraints_to_solve:
-            constraint = self.constraints_to_solve.pop(0)
+            constraint = self._pick_next_constraint()
+            if constraint is None:
+                break
+            self._last_picked_chain_id = getattr(constraint, "chain_id", None)
             model, status = self._solve(constraint, var_to_types)
 
             if state.elapsed_seconds() >= self.config.timeout_seconds:
@@ -503,6 +522,60 @@ class Engine:
         except Exception:  # noqa: BLE001 — protect the engine loop
             log.exception("iteration_start_callback raised; ignoring")
 
+    def _has_pending_chain_constraints(self) -> bool:
+        """Return True when any pending constraint still belongs to a chain.
+
+        The full-coverage termination check defers when a chain still
+        has un-processed disjuncts so the adaptive scheduler can flip
+        them — without this, the seed iteration's coverage of the
+        rewritten ``return x in {…}`` line would terminate exploration
+        before the chain's unproductive-streak counter could fire.
+        """
+        return any(getattr(c, "chain_id", None) is not None for c in self.constraints_to_solve)
+
+    def _pick_next_constraint(self) -> Any | None:
+        """Return the next constraint to solve, ordered by chain priority.
+
+        Non-chain constraints are popped first, then chain constraints
+        whose ``unproductive_streak`` is below the deprioritization
+        threshold, then deprioritized chain constraints as a
+        last-resort fallback. Returns ``None`` when the pool is empty.
+        The returned constraint is removed from ``constraints_to_solve``.
+        """
+        if not self.constraints_to_solve:
+            return None
+        stats = self.state.or_chain_stats if self.state is not None else {}
+        for index, candidate in enumerate(self.constraints_to_solve):
+            if getattr(candidate, "chain_id", None) is None:
+                return self.constraints_to_solve.pop(index)
+        for index, candidate in enumerate(self.constraints_to_solve):
+            chain_id = getattr(candidate, "chain_id", None)
+            if not _is_deprioritized(stats.get(chain_id)):
+                return self.constraints_to_solve.pop(index)
+        return self.constraints_to_solve.pop(0)
+
+    def _post_iteration_update(self, chain_id: int | None, new_lines_covered: int) -> None:
+        """Attribute the iteration's coverage delta back to the picked chain.
+
+        No-op when the iteration consumed a non-chain constraint or
+        ``state`` is not attached. Bumps ``attempted_flips`` then either
+        records a productive flip (resetting ``unproductive_streak``) or
+        an unproductive one; the first crossing of the threshold for a
+        chain ticks ``gen_chain_deprioritized`` exactly once.
+        """
+        if chain_id is None or self.state is None:
+            return
+        stats = self.state.or_chain_stats.setdefault(chain_id, ChainStats())
+        was_deprioritized = _is_deprioritized(stats)
+        stats.attempted_flips += 1
+        if new_lines_covered > 0:
+            stats.productive_flips += 1
+            stats.unproductive_streak = 0
+            return
+        stats.unproductive_streak += 1
+        if not was_deprioritized and _is_deprioritized(stats):
+            self.state.gen_chain_deprioritized += 1
+
     def _snapshot(
         self,
         target: Callable,
@@ -521,6 +594,11 @@ class Engine:
             config=self.config,
             elapsed_seconds=state.elapsed_seconds(),
         )
+
+
+def _is_deprioritized(stats: ChainStats | None) -> bool:
+    """Return True when ``stats`` has crossed the unproductive-streak threshold."""
+    return stats is not None and stats.unproductive_streak >= _UNPRODUCTIVE_STREAK_THRESHOLD
 
 
 def classify_outcome(iteration_error: str | None, new_lines: frozenset[int]) -> Outcome:

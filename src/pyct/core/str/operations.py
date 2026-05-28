@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,31 @@ from pyct.utils import concolic_converter
 from pyct.utils.types import ConcolicType
 
 log = logging.getLogger("ct.con.str.ops")
+
+
+def _chain_id_for_compare_site() -> int | None:
+    """Return the chain ID for the Compare driving the current ``__eq__``.
+
+    Walks two frames up — past this helper, past ``eq``/``ne``, past
+    ``ConcolicStr.__eq__`` — to land on the user's Compare site,
+    reads ``co_positions()[f_lasti // 2]``, and consults the
+    side-channel registry the AST rewriter populated.
+    """
+    from pyct.core.builtin_wrappers import _CHAIN_POSITION_REGISTRY
+
+    frame = sys._getframe(3)
+    code = frame.f_code
+    try:
+        positions = list(code.co_positions())
+    except AttributeError:
+        return None
+    instr_idx = frame.f_lasti // 2
+    if not (0 <= instr_idx < len(positions)):
+        return None
+    start_line, _end_line, start_col, _end_col = positions[instr_idx]
+    if start_line is None or start_col is None:
+        return None
+    return _CHAIN_POSITION_REGISTRY.get((code.co_filename, start_line, start_col))
 
 
 @dataclass(frozen=True)
@@ -82,28 +108,36 @@ class StringBinaryOperations:
     def eq(self, other: Any) -> ConcolicType:
         """Equality: self == other."""
         concrete = _safe_compare(self.concolic_str, other, "__eq__", "__eq__")
+        chain_id = _chain_id_for_compare_site()
         if not isinstance(other, str):
-            return concolic_converter.wrap_concolic(concrete, None, self.engine)
-
-        other_str = ensure_concolic_str(other, self.engine)
-        return concolic_converter.wrap_concolic(
-            concrete,
-            ["=", self.concolic_str, other_str],
-            self.engine,
-        )
+            result = concolic_converter.wrap_concolic(concrete, None, self.engine)
+        else:
+            other_str = ensure_concolic_str(other, self.engine)
+            result = concolic_converter.wrap_concolic(
+                concrete,
+                ["=", self.concolic_str, other_str],
+                self.engine,
+            )
+        if chain_id is not None:
+            result._pyct_or_chain_id = chain_id
+        return result
 
     def ne(self, other: Any) -> ConcolicType:
         """Inequality: self != other."""
         concrete = _safe_compare(self.concolic_str, other, "__ne__", "__ne__")
+        chain_id = _chain_id_for_compare_site()
         if not isinstance(other, str):
-            return concolic_converter.wrap_concolic(concrete, None, self.engine)
-
-        other_str = ensure_concolic_str(other, self.engine)
-        return concolic_converter.wrap_concolic(
-            concrete,
-            ["not", ["=", self.concolic_str, other_str]],
-            self.engine,
-        )
+            result = concolic_converter.wrap_concolic(concrete, None, self.engine)
+        else:
+            other_str = ensure_concolic_str(other, self.engine)
+            result = concolic_converter.wrap_concolic(
+                concrete,
+                ["not", ["=", self.concolic_str, other_str]],
+                self.engine,
+            )
+        if chain_id is not None:
+            result._pyct_or_chain_id = chain_id
+        return result
 
     def lt(self, other: Any) -> ConcolicType:
         """Less than: self < other."""

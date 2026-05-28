@@ -58,6 +58,10 @@ class PathConstraintTracker:
         branch_result = self._get_or_create_branch(
             taken_predicate, negated_predicate, constraint_queue
         )
+        chain_id = getattr(condition, "_pyct_or_chain_id", None)
+        if chain_id is not None:
+            branch_result.alternative_path.chain_id = chain_id
+            branch_result.taken_path.chain_id = chain_id
         self.current_constraint = branch_result.taken_path
 
     def _get_or_create_branch(
