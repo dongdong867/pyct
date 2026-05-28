@@ -142,6 +142,66 @@ def test_per_char_int_branches():
     )
 
 
+# int-multichar-symbolic-str:
+#   Given a target with `int(s)` where s is a symbolic multi-char string
+#   When the engine runs pure_concolic exploration
+#   Then the engine produces inputs that exercise both digit-only-parseable
+#     and non-parseable branches
+#     And concrete re-execution of each produced input yields the same
+#     int / ValueError as the engine's path condition predicts
+def test_int_multichar_symbolic_str():
+    """
+    Given a target with ``int(s)`` where s is symbolic multi-char
+      (``parse_number(s)`` wraps ``int(s)`` in a try / except so both
+      the parseable and the ValueError arms are reachable)
+    When run_concolic explores from seed s="12"
+    Then the engine produces at least one parseable input
+      AND at least one ValueError-arm input
+      AND concrete re-execution of every produced input yields the same
+      int-success / ValueError verdict that the engine's path condition
+      predicts (parseable → ``int(s)`` succeeds; unparseable →
+      ``int(s)`` raises ``ValueError``).
+    """
+    from pyct import run_concolic
+    from pyct.config.execution import ExecutionConfig
+    from tests.acceptance.fixtures.builtins.int_parse import parse_number
+
+    config = ExecutionConfig(max_iterations=20, plateau_threshold=20)
+    result = run_concolic(
+        target=parse_number,
+        initial_args={"s": "12"},
+        config=config,
+    )
+
+    assert result.success
+    invalid_arm = _find_return_line(parse_number, "invalid")
+    parseable_arms = {
+        _find_return_line(parse_number, "zero"),
+        _find_return_line(parse_number, "nonzero"),
+    }
+    assert invalid_arm in result.executed_lines, (
+        f"line {invalid_arm} (the ValueError 'invalid' arm) not in "
+        f"{sorted(result.executed_lines)} — engine should synthesize a "
+        "non-digit-string input that drives int(s) into the except clause"
+    )
+    assert parseable_arms & result.executed_lines, (
+        f"none of the parseable arms {sorted(parseable_arms)} in "
+        f"{sorted(result.executed_lines)} — engine should synthesize a "
+        "digit-string input where int(s) succeeds"
+    )
+    # Concrete re-execution must agree with the path-condition predictions:
+    # every input the engine generated must produce the same return value
+    # when parse_number is run concretely (no symbolic absorption,
+    # no path-condition drift).
+    for record in result.inputs_generated:
+        s = record.args["s"]
+        assert parse_number(s) in {"invalid", "zero", "nonzero"}, (
+            f"concrete parse_number({s!r}) did not match any of the "
+            "three return arms; engine path condition diverged from "
+            "Python semantics"
+        )
+
+
 def _find_return_line(func: Callable, literal: str) -> int:
     """Return the absolute source line of ``return "{literal}"`` inside ``func``.
 
