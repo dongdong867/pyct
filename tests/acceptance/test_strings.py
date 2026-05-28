@@ -296,3 +296,115 @@ def test_membership_empty_container_constant_false():
             f"non-literal-skip counter fired "
             f"({result.gen_membership_skipped_non_literal})."
         )
+
+
+# membership-single-element:
+#   Given a target with `x in {"a"}` or `x in ("a",)`
+#   When the engine processes the target
+#   Then the path-condition emitted is the same as for `x == "a"`
+#     And the engine generates the same set of inputs as it would for the `==` form on the same target
+def test_membership_single_element_matches_eq_baseline():
+    """
+    Given three targets sharing identical downstream branching:
+      ``in_single_set`` (``x in {"a"}``), ``in_single_tuple``
+      (``x in ("a",)``), and ``eq_baseline`` (``x == "a"``), plus a
+      seed ``"z"`` that matches neither the literal nor any container
+      element
+    When the engine runs pure_concolic exploration on each
+    Then the path-condition emitted for the single-element membership
+      forms is the same as for the bare ``==`` baseline — observable
+      as the engine generating the same set of values for ``x``
+      across all three runs (each set must include ``"a"`` plus at
+      least one non-matching value), the same coverage percent
+      (within 1.0 percentage point), and the same iteration count
+      (within 1).
+      And the rewrite firing is observable via
+      ``result.gen_membership_rewritten > 0`` for the ``{"a"}`` and
+      ``("a",)`` forms (the rewriter emitted the bare ``Compare(Eq)``
+      per the ``single-element-skips-boolop`` TDD step — that's still
+      a rewrite firing per the ``membership-counter-fires`` TDD step);
+      and ``result.gen_membership_rewritten == 0`` for ``eq_baseline``
+      (the rewrite path is never entered, so the counter cannot fire).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_single import (
+        eq_baseline,
+        in_single_set,
+        in_single_tuple,
+    )
+
+    set_result = run_concolic(target=in_single_set, initial_args={"x": "z"})
+    tuple_result = run_concolic(target=in_single_tuple, initial_args={"x": "z"})
+    eq_result = run_concolic(target=eq_baseline, initial_args={"x": "z"})
+
+    # All three runs must succeed before any equivalence is meaningful.
+    assert set_result.success, "in_single_set run did not complete cleanly"
+    assert tuple_result.success, "in_single_tuple run did not complete cleanly"
+    assert eq_result.success, "eq_baseline run did not complete cleanly"
+
+    # Equivalence proxy 1: the set of generated x values matches across
+    # all three runs, and includes both the matching literal "a" and at
+    # least one non-match input.
+    set_x_values = {record.args.get("x") for record in set_result.inputs_generated}
+    tuple_x_values = {record.args.get("x") for record in tuple_result.inputs_generated}
+    eq_x_values = {record.args.get("x") for record in eq_result.inputs_generated}
+
+    assert "a" in eq_x_values, (
+        f"eq_baseline did not generate the matching value 'a'; "
+        f"got x values={eq_x_values}"
+    )
+    assert len(eq_x_values) >= 2, (
+        f"eq_baseline did not generate any non-matching value alongside "
+        f"'a'; got x values={eq_x_values}"
+    )
+    assert set_x_values == eq_x_values, (
+        f"in_single_set generated a different set of x values than the "
+        f"eq baseline. set={set_x_values}, eq={eq_x_values}"
+    )
+    assert tuple_x_values == eq_x_values, (
+        f"in_single_tuple generated a different set of x values than the "
+        f"eq baseline. tuple={tuple_x_values}, eq={eq_x_values}"
+    )
+
+    # Equivalence proxy 2: coverage_percent matches within 1.0pp across
+    # all three runs (identical fixture shape, identical reachable
+    # branches once the rewrite collapses to the bare Compare(Eq)).
+    assert abs(set_result.coverage_percent - eq_result.coverage_percent) <= 1.0, (
+        f"in_single_set coverage {set_result.coverage_percent} diverged "
+        f"from eq baseline {eq_result.coverage_percent} by more than 1.0pp"
+    )
+    assert abs(tuple_result.coverage_percent - eq_result.coverage_percent) <= 1.0, (
+        f"in_single_tuple coverage {tuple_result.coverage_percent} diverged "
+        f"from eq baseline {eq_result.coverage_percent} by more than 1.0pp"
+    )
+
+    # Equivalence proxy 3: iteration count matches within 1 across all
+    # three runs.
+    assert abs(set_result.iterations - eq_result.iterations) <= 1, (
+        f"in_single_set iterations {set_result.iterations} diverged "
+        f"from eq baseline {eq_result.iterations} by more than 1"
+    )
+    assert abs(tuple_result.iterations - eq_result.iterations) <= 1, (
+        f"in_single_tuple iterations {tuple_result.iterations} diverged "
+        f"from eq baseline {eq_result.iterations} by more than 1"
+    )
+
+    # Counter assertion: the membership-rewrite firing counter ticks
+    # for the {"a"} and ("a",) forms (the rewriter took the
+    # single-element-skips-boolop path and emitted the bare
+    # Compare(Eq), still a rewrite firing) and stays at 0 for the
+    # eq_baseline form (no membership Compare to rewrite).
+    assert set_result.gen_membership_rewritten > 0, (
+        f"in_single_set: expected gen_membership_rewritten > 0; got "
+        f"{set_result.gen_membership_rewritten}"
+    )
+    assert tuple_result.gen_membership_rewritten > 0, (
+        f"in_single_tuple: expected gen_membership_rewritten > 0; got "
+        f"{tuple_result.gen_membership_rewritten}"
+    )
+    assert eq_result.gen_membership_rewritten == 0, (
+        f"eq_baseline: expected gen_membership_rewritten == 0 (no "
+        f"membership Compare in target); got "
+        f"{eq_result.gen_membership_rewritten}"
+    )
+
