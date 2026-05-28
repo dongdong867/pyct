@@ -164,7 +164,6 @@ class Engine:
         scope = self.config.scope or CoverageScope.for_target(target)
         target_file = scope.target_file
         func_lines = scope.executable_lines[target_file]
-        rewritten_target = _try_rewrite(target)
         self.coverage_tracker = CoverageTracker(scope)
 
         signature = inspect.signature(target)
@@ -177,6 +176,7 @@ class Engine:
             tracker=self.coverage_tracker,
         )
         self.state = state
+        rewritten_target = _try_rewrite(target, state)
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
         # Snapshot covered_lines before the loop runs so result consumers
@@ -568,7 +568,7 @@ def build_record(
     )
 
 
-def _try_rewrite(target: Callable) -> Callable:
+def _try_rewrite(target: Callable, state: ExplorationState | None = None) -> Callable:
     """Attempt AST rewrite; fall back to original on exec failures.
 
     The AST transformer breaks on:
@@ -581,14 +581,19 @@ def _try_rewrite(target: Callable) -> Callable:
 
     Lambda rejection still raises — lambdas have fundamental issues
     (inspect.getsource returns the containing line, causing recursion).
+
+    The optional ``state`` argument flows to the Compare rewriter so its
+    membership-rewrite firing / skip counters tick on the live exploration
+    state. Test callers that pass no state get the same rewrites without
+    counter side effects.
     """
     name = getattr(target, "__name__", "")
     if name == "<lambda>":
         from pyct.engine.ast_transformer import rewrite_target as _rw
 
-        return _rw(target)  # will raise TypeError for lambdas
+        return _rw(target, state)  # will raise TypeError for lambdas
     try:
-        return rewrite_target(target)
+        return rewrite_target(target, state)
     except (TypeError, NameError, KeyError, AttributeError, OSError) as e:
         log.debug("AST rewrite failed for %s, using original: %s", name, e)
         return target
