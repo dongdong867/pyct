@@ -340,3 +340,85 @@ class TestCountCounterFires:
             "count(sub)==0 rewrite; got "
             f"{getattr(state, 'gen_count_rewritten', 'ATTRIBUTE-MISSING')!r}."
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 7 — case-fold ASCII rewrite substitutes a charwise SMT form
+# ---------------------------------------------------------------------------
+
+
+def _case_fold_lower_expr(s_var: str) -> list:
+    """Build the 26-deep replace_all chain that ``CaseConverter.to_lower`` emits.
+
+    Mirrors ``core/str/helpers.py:CaseConverter.to_lower`` so tests feed the
+    optimizer the same tree the engine would emit at runtime for ``s.lower()``.
+    """
+    expr: Any = s_var
+    for i in range(65, 91):  # 'A' .. 'Z'
+        expr = ["str.replace_all", expr, py2smt(chr(i)), py2smt(chr(i + 32))]
+    return expr
+
+
+def _eq_case_fold_constraint(s_var: str, literal: str) -> Constraint:
+    """Wrap ``(= <case_fold_lower_expr> "<literal>")`` in a fresh path Constraint."""
+    expr = ["=", _case_fold_lower_expr(s_var), py2smt(literal)]
+    root = Constraint(parent_id=None, predicate=None)
+    return root.add_child(Predicate(expr, True))
+
+
+class TestCaseFoldAsciiSubstitutesCharwise:
+    """``s.lower() == "<ascii>"`` collapses to a char-wise length+equality form."""
+
+    def test_lower_equals_ascii_rewrites_to_charwise(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        constraint = _eq_case_fold_constraint("s_VAR", "monday")
+
+        rewritten = constraint_optimizer.optimize(constraint, state)
+        expr = _rewritten_expr(rewritten)
+
+        # Post-green the predicate's expr drops the 26-deep replace_all
+        # chain entirely and expresses the equality char-wise:
+        #   (and (= (str.len s_VAR) 6)
+        #        (or (= (str.at s_VAR 0) "m") (= (str.at s_VAR 0) "M"))
+        #        ...)
+        assert not _expr_contains_op(expr, "str.replace_all"), (
+            "expected case-fold rewrite to drop the 26-deep replace_all chain; "
+            f"still present in {expr!r}"
+        )
+        # str.at must appear at least once per literal char (6 for "monday").
+        at_count = _count_op_occurrences(expr, "str.at")
+        assert at_count >= 6, (
+            f"expected at least 6 str.at calls for 6-char literal; got {at_count} in {expr!r}"
+        )
+        # str.len constraint pins the input length to len("monday") == 6.
+        assert _expr_contains(expr, ["str.len", "s_VAR"]), (
+            f"expected (str.len s_VAR) to anchor the length constraint; got {expr!r}"
+        )
+        assert _expr_contains(expr, "6"), (
+            f"expected the literal length 6 to appear in the rewrite; got {expr!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 8 — the case-fold firing counter bumps once per successful rewrite
+# ---------------------------------------------------------------------------
+
+
+class TestCaseFoldCounterFires:
+    """``gen_case_fold_rewritten`` bumps once at every substitution site."""
+
+    def test_ascii_rewrite_increments_counter(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        constraint = _eq_case_fold_constraint("s_VAR", "monday")
+
+        constraint_optimizer.optimize(constraint, state)
+
+        assert getattr(state, "gen_case_fold_rewritten", 0) == 1, (
+            "expected gen_case_fold_rewritten to bump to 1 after a successful "
+            "case-fold ASCII rewrite; got "
+            f"{getattr(state, 'gen_case_fold_rewritten', 'ATTRIBUTE-MISSING')!r}."
+        )
