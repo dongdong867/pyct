@@ -656,6 +656,7 @@ def _build_result(
         gen_membership_skipped_non_literal=state.gen_membership_skipped_non_literal,
         gen_str_to_int_singleton_rewritten=state.gen_str_to_int_singleton_rewritten,
         gen_case_fold_rewritten=state.gen_case_fold_rewritten,
+        gen_case_fold_skipped_non_ascii=state.gen_case_fold_skipped_non_ascii,
         harness_error=state.harness_error,
     )
 
