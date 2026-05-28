@@ -4,7 +4,7 @@ Sits between the engine's constraint pool and the solver. Walks each
 constraint's leaf predicate looking for known solver-hostile emission
 shapes and substitutes friendlier forms in place.
 
-Current rules (only one rule, but written for extension):
+Current rules:
 
 - ``s.count(sub) == k`` with literal ``sub`` and literal ``k`` is
   emitted by ``core/str/queries.py:_build_count_expression`` as an
@@ -23,6 +23,18 @@ Current rules (only one rule, but written for extension):
   no-op: the original ITE's empty-sub arm (``len + 1``) already
   carries Python's ``s.count("") == len(s) + 1`` semantics, and the
   contains-collapse would silently change that.
+
+- ``s.lower() == "literal"`` / ``s.upper() == "literal"`` with an
+  ASCII compared literal is emitted by
+  ``core/str/helpers.py:CaseConverter`` as a 26-deep ``str.replace_all``
+  chain over ``s``. The optimizer collapses the predicate into a
+  char-wise length+equality form:
+  ``(and (= (str.len s) N)
+         (or (= (str.at s 0) <lo>) (= (str.at s 0) <hi>))
+         …)``
+  which the solver can drive by direct character assignment instead of
+  enumerating 26 nested replacements. Non-ASCII compared literals fall
+  back to the baseline chain.
 
 Counters live on ``ExplorationState`` so the engine can attribute fire
 vs. skip rates on the result without the optimizer reaching across
@@ -79,7 +91,10 @@ def _rewrite_node(expr: Any, state: ExplorationState | None) -> Any | None:
             return None
         return ["not", inner]
     if head == "=" and len(expr) == 3:
-        return _rewrite_count_equality(expr[1], expr[2], state)
+        rewritten = _rewrite_count_equality(expr[1], expr[2], state)
+        if rewritten is not None:
+            return rewritten
+        return _rewrite_case_fold_equality(expr[1], expr[2], state)
     return None
 
 
@@ -229,3 +244,117 @@ def _nest_and(clauses: list[Any]) -> Any:
     if len(clauses) == 1:
         return clauses[0]
     return ["and", clauses[0], _nest_and(clauses[1:])]
+
+
+# ---------------------------------------------------------------------------
+# Case-fold equality rewrite (s.lower() == "literal" / s.upper() == "literal")
+# ---------------------------------------------------------------------------
+
+_LOWER_PAIRS_OUTER_FIRST: list[tuple[str, str]] = [
+    (chr(90 - i), chr(122 - i)) for i in range(26)
+]
+_UPPER_PAIRS_OUTER_FIRST: list[tuple[str, str]] = [
+    (chr(122 - i), chr(90 - i)) for i in range(26)
+]
+
+
+def _rewrite_case_fold_equality(
+    lhs: Any,
+    rhs: Any,
+    state: ExplorationState | None,
+) -> Any | None:
+    """Try to collapse ``(= <case_fold_chain> "<literal>")`` into a charwise form.
+
+    Detects the 26-deep ``str.replace_all`` chain that ``CaseConverter``
+    emits for ``s.lower()`` / ``s.upper()`` and, when the compared
+    literal is ASCII-only, substitutes a length+per-char-OR form. Non-
+    ASCII compared literals leave the predicate unchanged (the skip
+    counter is owned by the non-ASCII fallback rule).
+    """
+    base_node = _extract_case_fold_base(_peel_concolic(lhs))
+    if base_node is None:
+        return None
+
+    literal = _extract_smt_string_literal(_peel_concolic(rhs))
+    if literal is None or not _is_ascii(literal):
+        return None
+
+    rewritten = _build_case_fold_rewrite(base_node, literal)
+    if state is not None:
+        state.gen_case_fold_rewritten += 1
+    return rewritten
+
+
+def _extract_case_fold_base(node: Any) -> Any | None:
+    """If ``node`` is a 26-deep replace_all chain matching ``to_lower`` or
+    ``to_upper`` emission, return the inner base expression. Otherwise return
+    ``None``.
+
+    Walks outer-first, collecting ``(from, to)`` char pairs at each
+    ``str.replace_all`` level, then matches against the expected
+    descending-letter sequence either ``(Z,z)…(A,a)`` (to_lower) or
+    ``(z,Z)…(a,A)`` (to_upper).
+    """
+    pairs: list[tuple[str, str]] = []
+    current: Any = node
+    while (
+        isinstance(current, list)
+        and len(current) == 4
+        and current[0] == "str.replace_all"
+    ):
+        from_char = _strip_smt_string(current[2])
+        to_char = _strip_smt_string(current[3])
+        if from_char is None or to_char is None:
+            return None
+        if len(from_char) != 1 or len(to_char) != 1:
+            return None
+        pairs.append((from_char, to_char))
+        current = current[1]
+
+    if len(pairs) != 26:
+        return None
+    if pairs != _LOWER_PAIRS_OUTER_FIRST and pairs != _UPPER_PAIRS_OUTER_FIRST:
+        return None
+    return current
+
+
+def _strip_smt_string(node: Any) -> str | None:
+    """Return the inner string of an SMT-quoted string literal, or ``None``."""
+    if not isinstance(node, str) or not _is_quoted_smt_string(node):
+        return None
+    return node[1:-1]
+
+
+def _extract_smt_string_literal(node: Any) -> str | None:
+    """Return the inner string of an SMT-quoted literal node, or ``None``."""
+    return _strip_smt_string(node)
+
+
+def _is_ascii(text: str) -> bool:
+    """Return ``True`` if every character in ``text`` is ASCII (codepoint < 128)."""
+    return all(ord(ch) < 128 for ch in text)
+
+
+def _build_case_fold_rewrite(base: Any, literal: str) -> Any:
+    """Build the charwise rewrite for ``(= <case_fold_chain> "<literal>")``.
+
+    Emits ``(and (= (str.len base) N) <per-char-clause>…)`` where each
+    per-char clause is ``(or (= (str.at base i) "<lo>") (= (str.at base
+    i) "<hi>"))`` for ASCII letters and ``(= (str.at base i) "<c>")``
+    for ASCII non-letters.
+    """
+    length_clause: Any = ["=", ["str.len", base], str(len(literal))]
+    clauses: list[Any] = [length_clause]
+    for index, char in enumerate(literal):
+        position = ["str.at", base, str(index)]
+        clauses.append(_char_clause(position, char))
+    return _nest_and(clauses)
+
+
+def _char_clause(position: Any, char: str) -> Any:
+    """Build the per-position clause for ``char`` (case-fold OR or literal eq)."""
+    if char.isalpha():
+        lower = py2smt(char.lower())
+        upper = py2smt(char.upper())
+        return ["or", ["=", position, lower], ["=", position, upper]]
+    return ["=", position, py2smt(char)]
