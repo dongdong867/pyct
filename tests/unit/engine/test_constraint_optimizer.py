@@ -38,6 +38,7 @@ acceptance-suite's job, not these unit fixtures.
 from __future__ import annotations
 
 import inspect
+from typing import Any
 
 import pytest
 
@@ -47,36 +48,39 @@ from pyct.predicate import Predicate
 from pyct.utils.constraint import Constraint
 from pyct.utils.smt_converter import py2smt
 
-
 # ---------------------------------------------------------------------------
 # Helpers — build the count-emission AST shape that the optimizer must see
 # ---------------------------------------------------------------------------
 
 
-def _count_expr(region: str, sub: str | list) -> list:
+def _count_expr(region: str, sub: Any) -> list:
     """Build the current ``s.count(sub)`` SMT emission shape.
 
     Mirrors ``core/str/queries.py:_build_count_expression`` so tests
     feed the optimizer the same tree the engine would emit at runtime.
+
+    ``sub`` is spliced as-is — callers control whether it's a
+    py2smt-quoted literal (e.g., ``'"abc"'``) or a bare symbolic-var
+    name (e.g., ``"sub_VAR"``). The engine produces the former for
+    concrete literals and the latter for symbolic inputs.
     """
-    sub_smt = py2smt(sub) if isinstance(sub, str) else sub
     return [
         "ite",
-        ["<=", ["str.len", sub_smt], "0"],
+        ["<=", ["str.len", sub], "0"],
         ["+", "1", ["str.len", region]],
         [
             "div",
             [
                 "-",
                 ["str.len", region],
-                ["str.len", ["str.replace_all", region, sub_smt, py2smt("")]],
+                ["str.len", ["str.replace_all", region, sub, py2smt("")]],
             ],
-            ["str.len", sub_smt],
+            ["str.len", sub],
         ],
     ]
 
 
-def _eq_count_constraint(region: str, sub: str | list, k: int) -> Constraint:
+def _eq_count_constraint(region: str, sub: Any, k: int) -> Constraint:
     """Wrap a count-equality predicate in a fresh path Constraint."""
     expr = ["=", _count_expr(region, sub), str(k)]
     root = Constraint(parent_id=None, predicate=None)
@@ -157,7 +161,7 @@ class TestCountZeroSubstitutesContains:
         from pyct.engine import constraint_optimizer
 
         state = ExplorationState()
-        constraint = _eq_count_constraint("region_VAR", "abc", 0)
+        constraint = _eq_count_constraint("region_VAR", py2smt("abc"), 0)
 
         rewritten = constraint_optimizer.optimize(constraint, state)
         expr = _rewritten_expr(rewritten)
@@ -192,7 +196,7 @@ class TestCountKSubstitutesChainedIndexof:
         from pyct.engine import constraint_optimizer
 
         state = ExplorationState()
-        constraint = _eq_count_constraint("region_VAR", "abc", 2)
+        constraint = _eq_count_constraint("region_VAR", py2smt("abc"), 2)
 
         rewritten = constraint_optimizer.optimize(constraint, state)
         expr = _rewritten_expr(rewritten)
@@ -284,7 +288,7 @@ class TestCountEmptySubPreservesSemantics:
         # Literal empty-string sub — the rewrite to (not (str.contains s ""))
         # would silently change semantics because Python defines
         # `"abc".count("") == len("abc") + 1`, not 0.
-        constraint = _eq_count_constraint("region_VAR", "", 0)
+        constraint = _eq_count_constraint("region_VAR", py2smt(""), 0)
 
         rewritten = constraint_optimizer.optimize(constraint, state)
         expr = _rewritten_expr(rewritten)
@@ -327,7 +331,7 @@ class TestCountCounterFires:
         from pyct.engine import constraint_optimizer
 
         state = ExplorationState()
-        constraint = _eq_count_constraint("region_VAR", "abc", 0)
+        constraint = _eq_count_constraint("region_VAR", py2smt("abc"), 0)
 
         constraint_optimizer.optimize(constraint, state)
 
