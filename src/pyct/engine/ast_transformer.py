@@ -110,42 +110,54 @@ def _build_map_int_comprehension(node: ast.Call) -> ast.AST:
     """
     iterable_name = node.args[1]
     assert isinstance(iterable_name, ast.Name)
+    int_call = _build_map_int_element(iterable_name.id, node)
+    range_call = _build_map_int_range(iterable_name.id, node)
+    return _build_listcomp(int_call, range_call, node)
 
-    def _named(name_id: str, ctx: ast.expr_context) -> ast.Name:
-        ref = ast.Name(id=name_id, ctx=ctx)
-        ast.copy_location(ref, node)
-        return ref
 
+def _name_at(node: ast.AST, name_id: str, ctx: ast.expr_context) -> ast.Name:
+    """Build an ``ast.Name`` node co-located with ``node``."""
+    ref = ast.Name(id=name_id, ctx=ctx)
+    ast.copy_location(ref, node)
+    return ref
+
+
+def _build_map_int_element(iterable_id: str, anchor: ast.AST) -> ast.Call:
+    """Build the ``_int(x[_i])`` elt for the map(int, x) rewrite."""
     subscript = ast.Subscript(
-        value=_named(iterable_name.id, ast.Load()),
-        slice=_named(_MAP_INT_INDEX_VAR, ast.Load()),
+        value=_name_at(anchor, iterable_id, ast.Load()),
+        slice=_name_at(anchor, _MAP_INT_INDEX_VAR, ast.Load()),
         ctx=ast.Load(),
     )
-    ast.copy_location(subscript, node)
-    int_call = _build_helper_call_from_args(_INT_HELPER, [subscript], node)
+    ast.copy_location(subscript, anchor)
+    return _build_helper_call_from_args(_INT_HELPER, [subscript], anchor)
 
+
+def _build_map_int_range(iterable_id: str, anchor: ast.AST) -> ast.Call:
+    """Build the ``_Range(len(x))`` iter for the map(int, x) rewrite."""
     len_call = ast.Call(
-        func=ast.Name(id="len", ctx=ast.Load()),
-        args=[_named(iterable_name.id, ast.Load())],
+        func=_name_at(anchor, "len", ast.Load()),
+        args=[_name_at(anchor, iterable_id, ast.Load())],
         keywords=[],
     )
-    ast.copy_location(len_call, node)
-    for child in ast.walk(len_call):
-        ast.copy_location(child, node)
-    range_call = _build_helper_call_from_args(_RANGE_CLASS, [len_call], node)
+    ast.copy_location(len_call, anchor)
+    return _build_helper_call_from_args(_RANGE_CLASS, [len_call], anchor)
 
+
+def _build_listcomp(elt: ast.expr, iter_expr: ast.expr, anchor: ast.AST) -> ast.ListComp:
+    """Wrap ``elt`` in ``[elt for _MAP_INT_INDEX_VAR in iter_expr]``."""
     comp = ast.ListComp(
-        elt=int_call,
+        elt=elt,
         generators=[
             ast.comprehension(
-                target=_named(_MAP_INT_INDEX_VAR, ast.Store()),
-                iter=range_call,
+                target=_name_at(anchor, _MAP_INT_INDEX_VAR, ast.Store()),
+                iter=iter_expr,
                 ifs=[],
                 is_async=0,
             )
         ],
     )
-    ast.copy_location(comp, node)
+    ast.copy_location(comp, anchor)
     return comp
 
 
