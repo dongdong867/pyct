@@ -81,3 +81,43 @@ def test_substr_concrete_start_emits_let_bound_formula():
 
     assert result.success
     assert result.gen_substr_let_bound > 0
+
+
+# count-branch-flips:
+#   Given a target function with `if s.count(sub) == k:` where sub is a string literal and k is a small concrete int
+#     And the seed input value matches the literal sub `k0` times where `k0 != k`
+#   When the engine runs pure_concolic exploration
+#   Then within 5 iterations the engine produces an input where the literal sub occurs exactly `k` times
+#     And the iteration where this occurs reports the branch as flipped vs the seed
+def test_count_branch_flips_within_five_iterations():
+    """
+    Given a target ``if s.count("ab") == 2:`` with a literal sub ``"ab"``
+      and concrete k=2, plus a seed ``"xx"`` where the literal occurs 0
+      times (k0=0 != k=2)
+    When the engine runs pure_concolic exploration
+    Then within 5 iterations the engine produces an input where the
+      literal sub occurs exactly 2 times — observable as an
+      ``InputRecord`` in ``inputs_generated`` whose concrete ``s`` arg
+      satisfies ``s.count("ab") == 2``, evidencing the branch was
+      flipped vs the seed (which evaluated the equality as False).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.count_branch import has_two_ab
+
+    result = run_concolic(target=has_two_ab, initial_args={"s": "xx"})
+
+    assert result.success
+    assert result.iterations <= 5
+    flipped_inputs = [
+        record
+        for record in result.inputs_generated
+        if record.args.get("s", "").count("ab") == 2
+    ]
+    assert flipped_inputs, (
+        "Expected at least one generated input where s.count('ab') == 2; "
+        f"got inputs={[r.args for r in result.inputs_generated]}"
+    )
+    # The flipped iteration is the one that turned the seed's False count==k
+    # branch into True — observable via the count-rewrite counter ticking on
+    # the SMT emission path that solved for that input.
+    assert result.gen_count_rewritten > 0
