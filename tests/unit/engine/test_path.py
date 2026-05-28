@@ -154,6 +154,60 @@ class TestRefactorLocks:
         assert not hasattr(tracker, "depth")
 
 
+class TestChainIdPropagation:
+    """Chain-tagged ``ConcolicBool`` flows the chain ID onto the branch.
+
+    The adaptive disjunct flipping subsystem stamps a chain ID on the
+    ``ConcolicBool`` produced by ``_compare_with_chain``; the engine's
+    ``PathConstraintTracker.add_branch`` must preserve that ID on the
+    new alternative ``Constraint`` so the engine can score the chain
+    when the constraint is later popped from ``constraints_to_solve``.
+
+    Defaults: ``ConcolicBool`` with no chain attribute produces a
+    Constraint whose ``chain_id`` attribute is None.
+    """
+
+    def test_chain_tagged_condition_propagates_id_to_constraint(self):
+        condition = ConcolicBool(True, expr=["=", "x_VAR", py2smt_quote("red")])
+        condition._pyct_or_chain_id = 42
+
+        tracker = PathConstraintTracker()
+        queue: list = []
+        tracker.add_branch(condition, queue)
+
+        # The negated alternative constraint is the one queued for solving.
+        assert len(queue) == 1
+        alternative = queue[0]
+        assert getattr(alternative, "chain_id", None) == 42, (
+            "expected the negated alternative Constraint to carry "
+            f"chain_id=42 from the tagged condition; got "
+            f"{getattr(alternative, 'chain_id', None)!r}"
+        )
+
+    def test_helper_compare_with_chain_stamps_id_onto_concolic_bool(self):
+        """``core.builtin_wrappers._compare_with_chain(left, right, chain_id)``
+        wraps a concolic equality and returns a ``ConcolicBool`` whose
+        ``_pyct_or_chain_id`` attribute equals the passed chain_id."""
+        from pyct.core.builtin_wrappers import _compare_with_chain
+        from pyct.core.str.str import ConcolicStr
+
+        left = ConcolicStr("red", "x_VAR")
+        result = _compare_with_chain(left, "red", 7)
+        # The result is the concolic equality comparison — a ConcolicBool
+        # by virtue of ConcolicStr.__eq__ semantics — carrying the chain
+        # ID so __bool__ → add_branch propagates it downstream.
+        assert getattr(result, "_pyct_or_chain_id", None) == 7, (
+            "expected _compare_with_chain to stamp chain_id=7 onto the "
+            f"resulting ConcolicBool; got "
+            f"{getattr(result, '_pyct_or_chain_id', None)!r}"
+        )
+
+
+def py2smt_quote(value: str) -> str:
+    """Local SMT-string-literal helper to keep this test file self-contained."""
+    return f'"{value}"'
+
+
 class TestInconsistentTreeError:
     def test_add_branch_raises_when_only_one_child_exists(self, engine):
         """Manually corrupt the tree to trigger the inconsistency guard."""
