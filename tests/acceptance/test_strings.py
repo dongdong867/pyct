@@ -165,3 +165,47 @@ def test_count_empty_sub_preserves_python_semantics():
     # Empty sub is a literal (not symbolic), so the symbolic-sub
     # skip counter must remain zero across the entire run.
     assert result.gen_count_skipped_symbolic_sub == 0
+
+
+# membership-per-element-branches:
+#   Given a target with `if x in {a, b, c}:` where the container is a literal of N ≤ 32 string elements
+#     And the seed input does not match any element of the container
+#   When the engine runs pure_concolic exploration
+#   Then within 2*N iterations the engine produces at least one input matching each of a, b, c
+#     And each matching iteration reports a distinct path-condition disjunct as flipped
+def test_membership_set_literal_flips_each_disjunct():
+    """
+    Given a target ``if x in {"red", "green", "blue"}:`` with a literal
+      set comparator of N=3 string elements, plus a seed ``"none"`` that
+      matches no container element
+    When the engine runs pure_concolic exploration
+    Then within 2 * N = 6 iterations the engine produces at least one
+      input matching each of the three elements — observable as one
+      ``InputRecord`` in ``inputs_generated`` per element whose concrete
+      ``x`` arg equals that element. Each match evidences a distinct
+      path-condition disjunct flip (the rewriter expands ``in`` into a
+      ``BoolOp(Or, [Compare(Eq), ...])`` whose disjuncts are flipped
+      independently).
+      And the membership-rewrite firing is observable via
+      ``result.gen_membership_rewritten`` being non-zero.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_set import matches_color
+
+    result = run_concolic(target=matches_color, initial_args={"x": "none"})
+
+    assert result.success
+    # N=3 container, so the budget for hitting every element is 2 * N = 6.
+    assert result.iterations <= 6
+    generated_x_values = {
+        record.args.get("x") for record in result.inputs_generated
+    }
+    for element in ("red", "green", "blue"):
+        assert element in generated_x_values, (
+            f"Expected at least one generated input where x == {element!r}; "
+            f"got inputs={[r.args for r in result.inputs_generated]}"
+        )
+    # Each matching iteration flipped a distinct disjunct — observable
+    # via the membership-rewrite firing counter ticking on the SMT
+    # emission path that solved for those inputs.
+    assert result.gen_membership_rewritten > 0
