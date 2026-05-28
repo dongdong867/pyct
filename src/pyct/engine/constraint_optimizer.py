@@ -38,7 +38,6 @@ from pyct.engine.state import ExplorationState
 from pyct.utils.smt_converter import py2smt
 
 _NEG_ONE_SMT = py2smt(-1)
-_VAR_SUFFIX = "_VAR"
 
 
 def optimize(constraint: Any, state: ExplorationState | None) -> Any:
@@ -166,26 +165,16 @@ def _classify_sub(node: Any) -> tuple[str, Any]:
     ``kind`` is one of ``"literal-empty"``, ``"literal-nonempty"``,
     ``"symbolic"``. ``sub_smt`` is the SMT-string form to splice into a
     rewritten predicate (only meaningful for the literal kinds).
+
+    A literal sub arrives as a py2smt-quoted string (e.g., ``'"abc"'``);
+    a symbolic sub arrives as a bare variable name (e.g., ``"sub_VAR"``)
+    or a nested expression list. Concolic wrappers are peeled first.
     """
     if isinstance(node, Concolic):
         return _classify_sub(node.expr)
-    if isinstance(node, list):
-        return "symbolic", None
-    if isinstance(node, str):
-        if _is_quoted_smt_string(node):
-            inner = node[1:-1]
-            if inner == "":
-                return "literal-empty", node
-            if inner.endswith(_VAR_SUFFIX):
-                # A literal whose value happens to match the engine's
-                # symbolic-variable naming convention is the test
-                # fixture's symbolic-sub case; real engine paths arrive
-                # via the ``Concolic`` branch above. Treat as symbolic
-                # so the no-op skip-counter contract holds.
-                return "symbolic", node
-            return "literal-nonempty", node
-        return "symbolic", node
-    return "symbolic", None
+    if isinstance(node, str) and _is_quoted_smt_string(node):
+        return ("literal-empty", node) if node == '""' else ("literal-nonempty", node)
+    return "symbolic", node
 
 
 def _is_quoted_smt_string(node: str) -> bool:
