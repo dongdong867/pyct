@@ -91,6 +91,24 @@ class ExplorationState:
             length term. Concrete bounds skip their binding and inline
             directly inside the let body; the counter still bumps once
             per emission regardless of how many args were bound.
+        gen_count_rewritten: ``str.count`` rewrite-fire count over the
+            run. Bumped inside ``constraint_optimizer.optimize`` every
+            time a ``count(sub) == k`` predicate with literal ``sub`` and
+            literal ``k`` is substituted out of the solver-hostile
+            ``str.replace_all + div`` shape — into ``(not (str.contains
+            region sub))`` for ``k == 0`` or a ``k``-fold chained
+            ``str.indexof`` form for ``k >= 1``. Bumps once per
+            substitution site so the counter equals the number of
+            predicates the rule simplified.
+        gen_count_skipped_symbolic_sub: ``str.count`` rewrite-skip count
+            for symbolic-sub fallbacks over the run. Bumped inside
+            ``constraint_optimizer.optimize`` whenever a ``count``
+            predicate's ``sub`` argument is symbolic (not a literal
+            string) — the rule cannot fire and the baseline
+            ``replace_all + div`` emission is preserved unchanged.
+            Distinct from ``gen_count_rewritten`` so telemetry can show
+            both the fire rate and the symbolic-sub miss rate side by
+            side.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -116,6 +134,8 @@ class ExplorationState:
     gen_unsat: int = 0
     gen_unknown: int = 0
     gen_substr_let_bound: int = 0
+    gen_count_rewritten: int = 0
+    gen_count_skipped_symbolic_sub: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
