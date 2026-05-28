@@ -498,3 +498,69 @@ class TestCaseFoldNonAsciiFallsBack:
             "expected gen_case_fold_rewritten to stay at 0 on non-ASCII "
             f"skip path; got {state.gen_case_fold_rewritten}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 11 — non-ASCII skip counter ticks with exact counts and isolates from firing
+# ---------------------------------------------------------------------------
+
+
+class TestCaseFoldSkipCounterFiresWithExactCounts:
+    """``gen_case_fold_skipped_non_ascii`` counts every non-ASCII fallback."""
+
+    def test_three_non_ascii_literals_bump_skip_counter_three(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        for literal in ("café", "naïve", "über"):
+            constraint = _eq_case_fold_constraint("s_VAR", literal)
+            constraint_optimizer.optimize(constraint, state)
+
+        assert state.gen_case_fold_skipped_non_ascii == 3, (
+            "expected gen_case_fold_skipped_non_ascii == 3 after three "
+            "non-ASCII fallbacks; got "
+            f"{state.gen_case_fold_skipped_non_ascii}"
+        )
+        assert state.gen_case_fold_rewritten == 0, (
+            "non-ASCII path must not bump the firing counter; got "
+            f"gen_case_fold_rewritten={state.gen_case_fold_rewritten}"
+        )
+
+    def test_mixed_ascii_and_non_ascii_bump_separate_counters(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        ascii_literals = ("monday", "tuesday")
+        non_ascii_literals = ("café", "über")
+
+        for literal in ascii_literals:
+            constraint_optimizer.optimize(
+                _eq_case_fold_constraint("s_VAR", literal), state
+            )
+        for literal in non_ascii_literals:
+            constraint_optimizer.optimize(
+                _eq_case_fold_constraint("s_VAR", literal), state
+            )
+
+        assert state.gen_case_fold_rewritten == len(ascii_literals), (
+            "firing counter must equal ASCII rewrite count; got "
+            f"{state.gen_case_fold_rewritten}"
+        )
+        assert state.gen_case_fold_skipped_non_ascii == len(non_ascii_literals), (
+            "skip counter must equal non-ASCII fallback count; got "
+            f"{state.gen_case_fold_skipped_non_ascii}"
+        )
+
+    def test_no_state_skip_path_is_silent(self):
+        """``optimize(constraint, None)`` skips without touching counters."""
+        from pyct.engine import constraint_optimizer
+
+        constraint = _eq_case_fold_constraint("s_VAR", "café")
+        rewritten = constraint_optimizer.optimize(constraint, None)
+
+        # No state → no counter changes, and the replace_all chain
+        # survives because the rule rejected the non-ASCII literal.
+        assert _expr_contains_op(_rewritten_expr(rewritten), "str.replace_all"), (
+            "expected non-ASCII case-fold skip to preserve replace_all "
+            "even with state=None."
+        )
