@@ -16,12 +16,13 @@ log = logging.getLogger("ct.con.str.ops")
 
 
 def _chain_id_for_compare_site() -> int | None:
-    """Return the chain ID for the Compare driving the current ``__eq__``.
+    """Return the chain ID for the user Compare driving the current ``__eq__``.
 
-    Walks two frames up — past this helper, past ``eq``/``ne``, past
-    ``ConcolicStr.__eq__`` — to land on the user's Compare site,
-    reads ``co_positions()[f_lasti // 2]``, and consults the
-    side-channel registry the AST rewriter populated.
+    Walks three frames up — past this helper, past ``eq``/``ne``, past
+    ``ConcolicStr.__eq__`` — to land on the user's Compare site, then
+    consults the side-channel registry the AST rewriter populated. The
+    registry is the only viable channel after Python's ``compile()``
+    strips AST attributes off the produced bytecode.
     """
     from pyct.core.builtin_wrappers import _CHAIN_POSITION_REGISTRY
 
@@ -38,6 +39,17 @@ def _chain_id_for_compare_site() -> int | None:
     if start_line is None or start_col is None:
         return None
     return _CHAIN_POSITION_REGISTRY.get((code.co_filename, start_line, start_col))
+
+
+def _stamp_chain_id(result: Any, chain_id: int | None) -> Any:
+    """Attach ``chain_id`` to ``result`` so the engine scheduler can attribute it.
+
+    No-op when ``chain_id`` is ``None`` — the call site is a non-chain
+    Compare and the result should flow downstream untagged.
+    """
+    if chain_id is not None:
+        result._pyct_or_chain_id = chain_id
+    return result
 
 
 @dataclass(frozen=True)
@@ -118,9 +130,7 @@ class StringBinaryOperations:
                 ["=", self.concolic_str, other_str],
                 self.engine,
             )
-        if chain_id is not None:
-            result._pyct_or_chain_id = chain_id
-        return result
+        return _stamp_chain_id(result, chain_id)
 
     def ne(self, other: Any) -> ConcolicType:
         """Inequality: self != other."""
@@ -135,9 +145,7 @@ class StringBinaryOperations:
                 ["not", ["=", self.concolic_str, other_str]],
                 self.engine,
             )
-        if chain_id is not None:
-            result._pyct_or_chain_id = chain_id
-        return result
+        return _stamp_chain_id(result, chain_id)
 
     def lt(self, other: Any) -> ConcolicType:
         """Less than: self < other."""

@@ -456,13 +456,12 @@ def _parse_rewritten_tree(
 
 
 def _register_chain_positions(tree: ast.AST, filename: str) -> None:
-    """Record (filename, lineno, col_offset) → chain_id for runtime lookup.
+    """Publish chain IDs to the runtime registry, keyed by source position.
 
-    Walks the post-shift tree and registers every Compare that the
-    membership rewriter tagged with ``_pyct_or_chain_id``. The runtime
-    concolic ``__eq__`` reads the calling frame's exact position and
-    looks up the chain ID — the only available channel after Python's
-    ``compile()`` strips arbitrary attributes off AST nodes.
+    Python's ``compile()`` strips arbitrary attributes off AST nodes, so
+    the ``_pyct_or_chain_id`` tag the membership rewriter stamps onto
+    each disjunct's Compare cannot reach the runtime via the bytecode.
+    The position-keyed registry is the only channel that survives.
     """
     from pyct.core.builtin_wrappers import register_chain_position
 
