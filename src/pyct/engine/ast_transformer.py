@@ -132,7 +132,6 @@ class ConcolicCompareRewriter(ast.NodeTransformer):
         op: ast.cmpop,
         comparator: ast.expr,
     ) -> ast.AST:
-        """Expand ``x in <literal-container>`` into OR/AND of equality checks."""
         elements = _literal_container_elements(comparator)
         if elements is None:
             self._bump_skip()
@@ -159,32 +158,25 @@ class ConcolicCompareRewriter(ast.NodeTransformer):
 
 
 def _literal_container_elements(comparator: ast.expr) -> list[ast.expr] | None:
-    """Return the list of element nodes for a literal container, or None.
+    """Return element nodes for a literal container, or ``None`` if not one.
 
-    Recognises ``Set`` / ``Tuple`` / ``List`` literals (returning their
-    ``elts``), ``Dict`` literals (returning their ``keys`` per Python's
-    ``x in dict`` semantics), and empty zero-arg constructor calls
-    ``set()`` / ``frozenset()`` / ``tuple()`` / ``list()`` / ``dict()``
-    (returning an empty list). Any element of a Set/Tuple/List/Dict that
-    is not itself a literal (Constant or negative-int ``UnaryOp(USub,
-    Constant)``) disqualifies the whole comparator. Returning ``None``
-    signals "not a literal container" — the caller should skip the rewrite
-    and bump the non-literal skip counter.
+    ``Dict`` returns keys to match Python's ``x in dict`` semantics; empty
+    zero-arg constructor calls return ``[]``; non-literal elements (Name,
+    Call, attribute access) disqualify the whole comparator.
     """
     if isinstance(comparator, (ast.Set, ast.Tuple, ast.List)):
-        return list(comparator.elts) if _all_literal_elements(comparator.elts) else None
+        return list(comparator.elts) if all(map(_is_literal_element, comparator.elts)) else None
     if isinstance(comparator, ast.Dict):
         keys = [k for k in comparator.keys if k is not None]
         if len(keys) != len(comparator.keys):
             return None
-        return keys if _all_literal_elements(keys) else None
+        return keys if all(map(_is_literal_element, keys)) else None
     if _is_empty_container_call(comparator):
         return []
     return None
 
 
 def _is_empty_container_call(node: ast.expr) -> bool:
-    """Return True for ``set()`` / ``tuple()`` / ``list()`` / ``dict()`` / ``frozenset()``."""
     return (
         isinstance(node, ast.Call)
         and isinstance(node.func, ast.Name)
@@ -194,13 +186,7 @@ def _is_empty_container_call(node: ast.expr) -> bool:
     )
 
 
-def _all_literal_elements(elements: list[ast.expr]) -> bool:
-    """Return True if every element is a ``Constant`` or ``UnaryOp(USub, Constant)``."""
-    return all(_is_literal_element(elem) for elem in elements)
-
-
 def _is_literal_element(node: ast.expr) -> bool:
-    """Return True for a literal usable as a membership disjunct comparand."""
     if isinstance(node, ast.Constant):
         return True
     return (
@@ -211,7 +197,6 @@ def _is_literal_element(node: ast.expr) -> bool:
 
 
 def _literal_element_value(node: ast.expr) -> Any:
-    """Return the concrete Python value for a literal element node."""
     if isinstance(node, ast.Constant):
         return node.value
     assert isinstance(node, ast.UnaryOp) and isinstance(node.operand, ast.Constant)
@@ -243,7 +228,6 @@ def _build_eq_compare(
     op: ast.cmpop,
     anchor: ast.AST,
 ) -> ast.Compare:
-    """Build ``left == right`` (or ``!=``) anchored at ``anchor``'s location."""
     compare = ast.Compare(left=left, ops=[op], comparators=[right])
     return ast.copy_location(compare, anchor)
 
