@@ -159,6 +159,15 @@ class ExplorationState:
             unchanged. Distinct from ``gen_case_fold_rewritten`` so
             telemetry can show both the fire rate and the non-ASCII
             miss rate side by side.
+        gen_chain_deprioritized: count of chain transitions into the
+            deprioritized state — bumped exactly once per chain when
+            its ``unproductive_streak`` first crosses
+            ``_UNPRODUCTIVE_STREAK_THRESHOLD`` (default 3); the same
+            already-deprioritized chain does not re-bump on subsequent
+            unproductive iterations. Distinct from per-chain
+            ``unproductive_streak`` tracked in ``or_chain_stats`` so
+            telemetry can show the run-total transition count alongside
+            per-chain streak depth.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -191,6 +200,7 @@ class ExplorationState:
     gen_str_to_int_singleton_rewritten: int = 0
     gen_case_fold_rewritten: int = 0
     gen_case_fold_skipped_non_ascii: int = 0
+    gen_chain_deprioritized: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
