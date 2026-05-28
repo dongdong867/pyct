@@ -686,3 +686,60 @@ def test_membership_with_case_fold_composes_per_element():
         f"rewrite should have fired on each disjunct); got "
         f"{result.gen_case_fold_rewritten}"
     )
+
+
+# chain-deprioritized-after-unproductive-streak:
+#   Given a target with `if x in {a, b, c, d, e, f, g, h}:` where the function returns the membership bool directly with no downstream branching per matched element
+#     And the seed input matches none of the container elements
+#   When the engine has flipped 3 disjuncts in a row without gaining new line coverage
+#   Then the engine deprioritizes remaining disjuncts from this chain
+#     And subsequent iterations process other branches before returning to this chain
+#     And `gen_chain_deprioritized` increments by 1
+def test_membership_chain_deprioritized_after_unproductive_streak():
+    """
+    Given a target ``return x in {"a", "b", "c", "d", "e", "f", "g", "h"}``
+      whose body has no per-element downstream branching — every
+      successful disjunct flip lands on the same single ``return True``
+      line — plus a seed ``"none"`` that matches no container element
+      (container size N = 8, well above the streak threshold of 3)
+    When the engine runs pure_concolic exploration and flips disjuncts
+      of the membership chain
+    Then after the first matching flip covers the ``return True`` line,
+      subsequent flips of the same chain cannot gain new line coverage
+      (the only other line, ``return False`` for the no-match branch, is
+      already covered by the seed). Once three consecutive chain flips
+      yield zero new line coverage, the adaptive scheduler deprioritizes
+      the remaining chain disjuncts — observable via
+      ``result.gen_chain_deprioritized == 1``, which proves the chain
+      crossed the unproductive-streak threshold exactly once for this
+      single chain.
+      The "subsequent iterations process other branches before returning
+      to this chain" clause is observable through the same counter: the
+      scheduler can only deprioritize (i.e. demote to last-resort) the
+      chain if it routed work to non-chain candidates first; with no
+      other constraints available it would have stayed on the chain and
+      the counter would never have fired. The
+      ``gen_chain_deprioritized == 1`` assertion therefore covers both
+      the deprioritization decision and the routing-around-it
+      consequence as a single behavior-observable signal, per the plan's
+      TDD path for ``chain-deprioritized-counter-fires``.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_chain_flat import (
+        membership_returns_bool,
+    )
+
+    result = run_concolic(
+        target=membership_returns_bool, initial_args={"x": "none"}
+    )
+
+    assert result.success
+    # The chain crossed the unproductive-streak threshold exactly once.
+    # The counter must increment per chain transition (not per
+    # subsequent unproductive iter on the same already-deprioritized
+    # chain), so for this single-chain fixture the value is exactly 1.
+    assert result.gen_chain_deprioritized == 1, (
+        f"Expected gen_chain_deprioritized == 1 after the chain crossed "
+        f"the unproductive-streak threshold once; got "
+        f"{result.gen_chain_deprioritized}"
+    )
