@@ -647,6 +647,8 @@ def _build_result(
         gen_substr_let_bound=state.gen_substr_let_bound,
         gen_count_rewritten=state.gen_count_rewritten,
         gen_count_skipped_symbolic_sub=state.gen_count_skipped_symbolic_sub,
+        gen_membership_rewritten=state.gen_membership_rewritten,
+        gen_membership_skipped_non_literal=state.gen_membership_skipped_non_literal,
         harness_error=state.harness_error,
     )
 

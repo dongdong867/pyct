@@ -60,6 +60,8 @@ class ExplorationResult:
     gen_substr_let_bound: int = 0
     gen_count_rewritten: int = 0
     gen_count_skipped_symbolic_sub: int = 0
+    gen_membership_rewritten: int = 0
+    gen_membership_skipped_non_literal: int = 0
     harness_error: int = 0
 
 
@@ -94,6 +96,8 @@ class RunConcolicResult:
     gen_substr_let_bound: int = 0
     gen_count_rewritten: int = 0
     gen_count_skipped_symbolic_sub: int = 0
+    gen_membership_rewritten: int = 0
+    gen_membership_skipped_non_literal: int = 0
     harness_error: int = 0
 
     @classmethod
@@ -132,5 +136,7 @@ class RunConcolicResult:
             gen_substr_let_bound=result.gen_substr_let_bound,
             gen_count_rewritten=result.gen_count_rewritten,
             gen_count_skipped_symbolic_sub=result.gen_count_skipped_symbolic_sub,
+            gen_membership_rewritten=result.gen_membership_rewritten,
+            gen_membership_skipped_non_literal=result.gen_membership_skipped_non_literal,
             harness_error=result.harness_error,
         )
