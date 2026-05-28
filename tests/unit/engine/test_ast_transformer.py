@@ -315,6 +315,84 @@ class TestMembershipCounterFires:
         ConcolicCompareRewriter().visit(tree)  # no exception
 
 
+class TestMembershipChainIdTagging:
+    """Each membership rewrite stamps a unique chain ID on its disjuncts.
+
+    The adaptive disjunct flipping task tags every ``Compare(Eq)`` node
+    produced by a single membership rewrite with the same integer chain
+    ID via the AST attribute ``_pyct_or_chain_id``. Disjuncts from one
+    rewrite share the ID; disjuncts from a separate rewrite get a fresh
+    ID. The engine consumes the tag at runtime to attribute coverage
+    deltas to a chain.
+    """
+
+    def _disjunct_compares(self, tree: ast.AST) -> list[ast.Compare]:
+        """Collect every Compare(Eq) node under any BoolOp in the tree."""
+        compares: list[ast.Compare] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.BoolOp):
+                for value in node.values:
+                    if isinstance(value, ast.Compare) and len(value.ops) == 1:
+                        compares.append(value)
+        return compares
+
+    def test_single_rewrite_assigns_same_chain_id_to_every_disjunct(self):
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+
+        tree = ast.parse("y = x in {1, 2, 3}")
+        ConcolicCompareRewriter().visit(tree)
+        ast.fix_missing_locations(tree)
+
+        compares = self._disjunct_compares(tree)
+        assert len(compares) == 3, (
+            f"expected 3 disjunct Compare nodes, got {len(compares)}"
+        )
+        ids = {getattr(c, "_pyct_or_chain_id", None) for c in compares}
+        assert None not in ids, (
+            "every disjunct Compare must carry a _pyct_or_chain_id attribute; "
+            f"got {[getattr(c, '_pyct_or_chain_id', None) for c in compares]}"
+        )
+        assert len(ids) == 1, (
+            f"all disjuncts from one rewrite must share a chain id; got {ids}"
+        )
+
+    def test_separate_rewrites_get_distinct_chain_ids(self):
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+
+        source = textwrap.dedent("""
+            def f(x, y):
+                a = x in {1, 2, 3}
+                b = y in (4, 5, 6)
+                return a or b
+        """)
+        tree = ast.parse(source)
+        ConcolicCompareRewriter().visit(tree)
+        ast.fix_missing_locations(tree)
+
+        compares = self._disjunct_compares(tree)
+        # 3 from the first rewrite + 3 from the second + the final
+        # ``a or b`` BoolOp's disjunct values are Names (skipped by the
+        # collector — only Compare values are gathered). So 6 compares.
+        ids_first_rewrite = {
+            getattr(c, "_pyct_or_chain_id", None)
+            for c in compares
+            if isinstance(c.comparators[0], ast.Constant)
+            and c.comparators[0].value in (1, 2, 3)
+        }
+        ids_second_rewrite = {
+            getattr(c, "_pyct_or_chain_id", None)
+            for c in compares
+            if isinstance(c.comparators[0], ast.Constant)
+            and c.comparators[0].value in (4, 5, 6)
+        }
+        assert len(ids_first_rewrite) == 1 and None not in ids_first_rewrite
+        assert len(ids_second_rewrite) == 1 and None not in ids_second_rewrite
+        assert ids_first_rewrite.isdisjoint(ids_second_rewrite), (
+            "two separate membership rewrites must produce distinct chain ids; "
+            f"first={ids_first_rewrite} second={ids_second_rewrite}"
+        )
+
+
 class TestLinePreservation:
     def test_rewritten_int_call_keeps_line_number(self):
         from pyct.engine.ast_transformer import ConcolicCallRewriter

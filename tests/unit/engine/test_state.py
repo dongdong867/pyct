@@ -216,3 +216,43 @@ class TestExplorationStateScopeViews:
         assert state.total_lines == 10
         assert state.covered_lines == {1, 2}
         assert state.coverage_percent() == 20.0
+
+
+class TestExplorationStateOrChainStats:
+    """``or_chain_stats`` records per-chain flip telemetry on the state.
+
+    The adaptive disjunct flipping subsystem reads this dict in
+    ``_pick_next_constraint`` (to deprioritize chains whose recent
+    flips wasted iteration budget) and writes to it in
+    ``_post_iteration_update`` (to attribute new-coverage delta back
+    to the chain that produced the popped constraint).
+
+    The contract: fresh state has an empty ``or_chain_stats`` dict;
+    a ``ChainStats`` entry materialises lazily on first access with
+    ``attempted_flips``, ``productive_flips``, and ``unproductive_streak``
+    all defaulting to zero. ``gen_chain_deprioritized`` is a separate
+    run-total counter on ``ExplorationState``.
+    """
+
+    def test_fresh_state_carries_empty_or_chain_stats(self):
+        state = ExplorationState()
+        assert hasattr(state, "or_chain_stats"), (
+            "ExplorationState must declare an or_chain_stats field for the "
+            "adaptive disjunct flipping subsystem; field absent"
+        )
+        assert state.or_chain_stats == {}, (
+            f"or_chain_stats must default to an empty dict; got "
+            f"{state.or_chain_stats!r}"
+        )
+
+    def test_chain_stats_entry_defaults_to_zero_counters(self):
+        from pyct.engine.state import ChainStats
+
+        stats = ChainStats()
+        assert stats.attempted_flips == 0
+        assert stats.productive_flips == 0
+        assert stats.unproductive_streak == 0
+
+    def test_gen_chain_deprioritized_starts_at_zero(self):
+        state = ExplorationState()
+        assert state.gen_chain_deprioritized == 0
