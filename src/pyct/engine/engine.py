@@ -11,6 +11,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
+from pyct.engine.constraint_optimizer import optimize
 from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
 from pyct.engine.environment import prepared_environment
@@ -383,6 +384,7 @@ class Engine:
         fuzzing strategy.
         """
         assert self.solver is not None
+        constraint = optimize(constraint, self.state)
         model, status, _error = self.solver.find_model(constraint, var_to_types)
         return model, status
 
@@ -643,6 +645,8 @@ def _build_result(
         gen_unknown=state.gen_unknown,
         gen_parse_failed=gen_parse_failed,
         gen_substr_let_bound=state.gen_substr_let_bound,
+        gen_count_rewritten=state.gen_count_rewritten,
+        gen_count_skipped_symbolic_sub=state.gen_count_skipped_symbolic_sub,
         harness_error=state.harness_error,
     )
 

@@ -58,6 +58,8 @@ class ExplorationResult:
     gen_unknown: int = 0
     gen_parse_failed: int = 0
     gen_substr_let_bound: int = 0
+    gen_count_rewritten: int = 0
+    gen_count_skipped_symbolic_sub: int = 0
     harness_error: int = 0
 
 
@@ -90,6 +92,8 @@ class RunConcolicResult:
     gen_unknown: int = 0
     gen_parse_failed: int = 0
     gen_substr_let_bound: int = 0
+    gen_count_rewritten: int = 0
+    gen_count_skipped_symbolic_sub: int = 0
     harness_error: int = 0
 
     @classmethod
@@ -126,5 +130,7 @@ class RunConcolicResult:
             gen_unknown=result.gen_unknown,
             gen_parse_failed=result.gen_parse_failed,
             gen_substr_let_bound=result.gen_substr_let_bound,
+            gen_count_rewritten=result.gen_count_rewritten,
+            gen_count_skipped_symbolic_sub=result.gen_count_skipped_symbolic_sub,
             harness_error=result.harness_error,
         )
