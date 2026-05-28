@@ -408,3 +408,49 @@ def test_membership_single_element_matches_eq_baseline():
         f"{eq_result.gen_membership_rewritten}"
     )
 
+
+# non-literal-container-skipped:
+#   Given a target with `x in some_var` where `some_var` is a Name (not a literal AST node)
+#   When the engine processes the target through the AST transformer
+#   Then the membership rewriter does not transform this Compare
+#     And the engine's emitted constraints for the function are identical to pre-feature behavior
+def test_membership_non_literal_container_skipped():
+    """
+    Given a target ``if x in _KEYWORDS:`` where ``_KEYWORDS`` is a
+      module-level tuple bound to a Name (the AST comparator node is
+      ``ast.Name``, not a literal ``ast.Tuple``/``ast.Set``/etc.)
+    When the engine processes the target through the AST transformer
+    Then the membership rewriter does NOT transform this Compare —
+      observable as ``result.gen_membership_rewritten == 0`` after
+      the run (no rewrite fired) AND
+      ``result.gen_membership_skipped_non_literal > 0`` (the
+      non-literal-skip counter ticked at the decision site).
+      Together these two counter signals prove the non-literal
+      fallback path was taken and the Compare passed through to the
+      pre-feature constraint-generation path; this is the cleanest
+      behavior-observable proxy for "constraints identical to
+      pre-feature behavior" (comparing actual emitted constraints
+      would require running with the feature toggled off).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_non_literal import (
+        has_keyword,
+    )
+
+    result = run_concolic(target=has_keyword, initial_args={"x": "z"})
+
+    assert result.success
+    # Rewrite path must NOT have fired — the comparator is a Name, not
+    # a literal Set/Tuple/List/Dict AST node.
+    assert result.gen_membership_rewritten == 0, (
+        f"Expected gen_membership_rewritten == 0 for Name comparator; "
+        f"got {result.gen_membership_rewritten}"
+    )
+    # Skip counter must have ticked at the rewriter's decision site —
+    # this is the positive signal that the rewriter saw the Compare
+    # and explicitly fell through to pre-feature semantics.
+    assert result.gen_membership_skipped_non_literal > 0, (
+        f"Expected gen_membership_skipped_non_literal > 0 (rewriter "
+        f"should have ticked the skip counter at the non-literal "
+        f"decision site); got {result.gen_membership_skipped_non_literal}"
+    )
