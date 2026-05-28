@@ -150,6 +150,74 @@ class TestCompareRewrite:
         assert "a < b < c" in out
 
 
+class TestMembershipCompareRewrite:
+    """Rewrite ``x in <literal-container>`` to OR-of-equality.
+
+    SMT solvers (cvc5 in particular) handle ``x = a OR x = b`` faster
+    than the equivalent ``x ∈ {a, b}`` set-membership encoding, and
+    each disjunct becomes a separate branch the engine can flip. The
+    rewrite covers set, tuple, list, and dict literals on the RHS of
+    ``in`` / ``not in``. Non-literal RHS (variables, calls, comprehensions)
+    is left alone — we can't enumerate elements at compile time.
+
+    Empty containers fold to the constant ``False`` (``in``) — Python
+    semantics require at least one element for membership to hold.
+
+    Duplicate elements deduplicate to a single disjunct each.
+    """
+
+    def test_in_set_literal_rewrites_to_or_of_eq(self, rewrite):
+        out = rewrite("y = x in {1, 2, 3}")
+        assert "x == 1 or x == 2 or x == 3" in out
+        assert "x in" not in out
+
+    def test_in_tuple_literal_rewrites_to_or_of_eq(self, rewrite):
+        out = rewrite("y = x in (1, 2, 3)")
+        assert "x == 1 or x == 2 or x == 3" in out
+        assert "x in" not in out
+
+    def test_in_list_literal_rewrites_to_or_of_eq(self, rewrite):
+        out = rewrite("y = x in [1, 2, 3]")
+        assert "x == 1 or x == 2 or x == 3" in out
+        assert "x in" not in out
+
+    def test_in_dict_literal_rewrites_to_or_of_eq_over_keys(self, rewrite):
+        """Python ``x in {1: 'a', 2: 'b'}`` iterates the dict's keys."""
+        out = rewrite("y = x in {1: 'a', 2: 'b'}")
+        assert "x == 1 or x == 2" in out
+        assert "x in" not in out
+
+    def test_not_in_set_literal_rewrites_to_and_of_neq(self, rewrite):
+        out = rewrite("y = x not in {1, 2}")
+        assert "x != 1 and x != 2" in out
+        assert "not in" not in out
+
+    def test_in_empty_tuple_literal_rewrites_to_false(self, rewrite):
+        """``x in ()`` is unsatisfiable — fold to the constant ``False``."""
+        out = rewrite("y = x in ()")
+        assert "False" in out
+        assert "x in" not in out
+
+    def test_in_empty_list_literal_rewrites_to_false(self, rewrite):
+        """``x in []`` is unsatisfiable — fold to the constant ``False``."""
+        out = rewrite("y = x in []")
+        assert "False" in out
+        assert "x in" not in out
+
+    def test_in_duplicate_elements_dedups(self, rewrite):
+        """``x in (1, 1, 2)`` produces exactly two disjuncts, not three.
+
+        Duplicate disjuncts would inflate the SMT formula and create
+        redundant branch flips during exploration — collapse them at
+        rewrite time.
+        """
+        out = rewrite("y = x in (1, 1, 2)")
+        assert "x == 1 or x == 2" in out
+        # Each value appears as a comparator exactly once.
+        assert out.count("== 1") == 1
+        assert out.count("== 2") == 1
+
+
 class TestLinePreservation:
     def test_rewritten_int_call_keeps_line_number(self):
         from pyct.engine.ast_transformer import ConcolicCallRewriter
