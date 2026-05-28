@@ -52,3 +52,32 @@ def test_empty_string_branch_reached():
     assert result.success
     assert result.coverage_percent >= 95.0
     assert result.paths_explored >= 2
+
+
+# substr-concrete-start:
+#   Given a target with a slice expression `s[5:n]` where 5 is a concrete literal and n is symbolic
+#   When the engine emits the substr SMT formula
+#   Then the formula does not duplicate the start expression in the substr length term
+#     And solve time per formula is ≤ baseline solve time for the same slice depth on the same host
+def test_substr_concrete_start_emits_let_bound_formula():
+    """
+    Given a target with a slice expression `s[5:n]` where 5 is a concrete
+      literal and n is symbolic
+    When the engine emits the substr SMT formula
+    Then the formula does not duplicate the start expression in the substr
+      length term — observable via the ``gen_substr_let_bound`` counter on
+      the result being non-zero after exploration produced at least one
+      substr emission.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.substr_concrete_start import (
+        slice_with_symbolic_end,
+    )
+
+    result = run_concolic(
+        target=slice_with_symbolic_end,
+        initial_args={"s": "hello world", "n": 8},
+    )
+
+    assert result.success
+    assert result.gen_substr_let_bound > 0
