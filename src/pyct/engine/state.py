@@ -140,6 +140,15 @@ class ExplorationState:
             call shape and the ``map(int, x)`` expansion the AST
             rewriter produces, so a single counter covers per-char
             int routing regardless of the surface syntax.
+        gen_case_fold_rewritten: case-fold equality rewrite-fire count
+            over the run. Bumped inside ``constraint_optimizer.optimize``
+            every time a ``(= <case_fold_expr> "literal")`` predicate
+            with an ASCII-only literal is substituted out of the 26-deep
+            ``str.replace_all`` chain into a char-wise length+equality
+            form ``(and (= (str.len s) N) (or (= (str.at s i) <lo>)
+            (= (str.at s i) <hi>)) …)``. Bumps once per substitution
+            site so the counter equals the number of predicates the
+            rule simplified.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -170,6 +179,7 @@ class ExplorationState:
     gen_membership_rewritten: int = 0
     gen_membership_skipped_non_literal: int = 0
     gen_str_to_int_singleton_rewritten: int = 0
+    gen_case_fold_rewritten: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
