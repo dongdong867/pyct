@@ -209,3 +209,71 @@ def test_membership_set_literal_flips_each_disjunct():
     # via the membership-rewrite firing counter ticking on the SMT
     # emission path that solved for those inputs.
     assert result.gen_membership_rewritten > 0
+
+
+# membership-empty-container:
+#   Given a target with `x in set()` or `x in ()` or `x in []`
+#   When the engine processes the target
+#   Then no branch flip is registered for the membership Compare
+#     And the engine treats the Compare as a constant False matching Python semantics
+def test_membership_empty_container_constant_false():
+    """
+    Given three targets, one each for ``x in set()``, ``x in ()``, and
+      ``x in []`` — the three empty-container literal shapes Python
+      supports
+    When the engine runs pure_concolic exploration on each
+    Then for every produced input the membership Compare evaluates to
+      False under Python semantics — observable by re-executing the
+      fixture on each ``InputRecord``'s ``x`` arg and asserting the
+      result is ``"nomatch"`` (the ``"match"`` arm is unreachable).
+      And no branch flip is registered for the membership Compare —
+      observable as the engine terminating in ≤ 2 iterations (the
+      seed yields the only reachable path; a constant-False branch
+      cannot be flipped).
+      And the membership-rewrite firing is observable via
+      ``result.gen_membership_rewritten`` being non-zero (the rewriter
+      emits ``Constant(False)`` at the rewrite site, which still ticks
+      the firing counter). The non-literal-skip counter
+      ``result.gen_membership_skipped_non_literal`` is zero across
+      every run because each comparator IS a literal — it just
+      happens to be empty.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_empty import (
+        in_empty_list,
+        in_empty_set,
+        in_empty_tuple,
+    )
+
+    for fn in (in_empty_set, in_empty_tuple, in_empty_list):
+        result = run_concolic(target=fn, initial_args={"x": "anything"})
+
+        assert result.success, f"run_concolic failed for {fn.__name__}"
+        # Constant-False branch cannot be flipped — engine should
+        # terminate after the seed yields the only reachable path.
+        assert result.iterations <= 2, (
+            f"{fn.__name__}: expected ≤ 2 iterations for constant-False "
+            f"branch, got {result.iterations}"
+        )
+        # Python semantics: every generated input MUST evaluate to
+        # "nomatch" — the "match" arm is unreachable.
+        for record in result.inputs_generated:
+            x_value = record.args.get("x", "")
+            assert fn(x_value) == "nomatch", (
+                f"{fn.__name__}: engine produced input x={x_value!r} "
+                f"reaching 'match' arm, but Python evaluates "
+                f"x in <empty> as False — rewrite broke semantics."
+            )
+        # Rewrite firing counter ticks even when the emitted node is
+        # the constant-fold Constant(False) form.
+        assert result.gen_membership_rewritten > 0, (
+            f"{fn.__name__}: expected gen_membership_rewritten > 0 "
+            f"(rewriter emits Constant(False) at rewrite site)."
+        )
+        # Comparator IS a literal (just empty) so the non-literal-skip
+        # fallback must NOT have fired.
+        assert result.gen_membership_skipped_non_literal == 0, (
+            f"{fn.__name__}: empty container is a literal, but "
+            f"non-literal-skip counter fired "
+            f"({result.gen_membership_skipped_non_literal})."
+        )
