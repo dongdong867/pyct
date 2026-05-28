@@ -62,7 +62,7 @@ _EMPTY_CONSTRUCTOR_NAMES = frozenset({"set", "frozenset", "tuple", "list", "dict
 
 
 class ConcolicCallRewriter(ast.NodeTransformer):
-    """Rewrites ``int(x)``, ``str(x)``, ``range(...)`` Call nodes."""
+    """Rewrites ``int(x)``, ``str(x)``, ``range(...)``, ``map(int, x)`` Call nodes."""
 
     def visit_Call(self, node: ast.Call) -> ast.AST:
         self.generic_visit(node)
@@ -75,7 +75,78 @@ class ConcolicCallRewriter(ast.NodeTransformer):
             return _build_helper_call(_STR_HELPER, node)
         if name == "range":
             return _build_helper_call(_RANGE_CLASS, node)
+        if name == "map" and _is_map_int(node):
+            return _build_map_int_comprehension(node)
         return node
+
+
+_MAP_INT_INDEX_VAR = "_pyct_map_int_i"
+
+
+def _is_map_int(node: ast.Call) -> bool:
+    """Return True for ``map(int, x)`` whose iterable is a bare Name.
+
+    Restricting to Name iterables keeps the rewrite single-evaluation:
+    the expanded form references the iterable twice (inside ``len`` and
+    inside the subscript), and a Name is the only shape where reading
+    it twice is observably identical to the original ``map`` call.
+    """
+    if len(node.args) != 2 or node.keywords:
+        return False
+    func, iterable = node.args
+    if not isinstance(func, ast.Name) or func.id != "int":
+        return False
+    return isinstance(iterable, ast.Name)
+
+
+def _build_map_int_comprehension(node: ast.Call) -> ast.AST:
+    """Rewrite ``map(int, x)`` as ``[_int(x[_i]) for _i in _Range(len(x))]``.
+
+    Expanding ``map`` lets each per-character ``int`` go through the
+    ``_int`` helper at execution time, so symbolic tracking survives the
+    ``map(int, x)`` surface syntax that otherwise hides the int wraps
+    from the Call rewriter (``map`` looks up ``int`` once at call time
+    and the rewrite never sees a ``Call(int, ...)`` node to transform).
+    """
+    iterable_name = node.args[1]
+    assert isinstance(iterable_name, ast.Name)
+
+    def _named(name_id: str, ctx: ast.expr_context) -> ast.Name:
+        ref = ast.Name(id=name_id, ctx=ctx)
+        ast.copy_location(ref, node)
+        return ref
+
+    subscript = ast.Subscript(
+        value=_named(iterable_name.id, ast.Load()),
+        slice=_named(_MAP_INT_INDEX_VAR, ast.Load()),
+        ctx=ast.Load(),
+    )
+    ast.copy_location(subscript, node)
+    int_call = _build_helper_call_from_args(_INT_HELPER, [subscript], node)
+
+    len_call = ast.Call(
+        func=ast.Name(id="len", ctx=ast.Load()),
+        args=[_named(iterable_name.id, ast.Load())],
+        keywords=[],
+    )
+    ast.copy_location(len_call, node)
+    for child in ast.walk(len_call):
+        ast.copy_location(child, node)
+    range_call = _build_helper_call_from_args(_RANGE_CLASS, [len_call], node)
+
+    comp = ast.ListComp(
+        elt=int_call,
+        generators=[
+            ast.comprehension(
+                target=_named(_MAP_INT_INDEX_VAR, ast.Store()),
+                iter=range_call,
+                ifs=[],
+                is_async=0,
+            )
+        ],
+    )
+    ast.copy_location(comp, node)
+    return comp
 
 
 _IS_REWRITE_LITERALS = (None, True, False, Ellipsis)

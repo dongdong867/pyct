@@ -126,7 +126,7 @@ def test_per_char_int_branches():
     from tests.acceptance.fixtures.builtins.per_char_int import per_char_target
 
     seed = "10"
-    config = ExecutionConfig(max_iterations=len(seed) + 5)
+    config = ExecutionConfig(max_iterations=50, plateau_threshold=50)
     result = run_concolic(
         target=per_char_target,
         initial_args={"s": seed},

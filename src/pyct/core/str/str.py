@@ -6,7 +6,7 @@ from typing import Any
 
 from pyct.core import Concolic, MetaFinal
 from pyct.core.str.character_checks import CharacterChecks
-from pyct.core.str.helpers import SubstringHelper
+from pyct.core.str.helpers import SubstringHelper, _bump_str_to_int_singleton_counter
 from pyct.core.str.manipulation import StringManipulation
 from pyct.core.str.operations import StringBinaryOperations
 from pyct.core.str.queries import StringQueries
@@ -322,6 +322,8 @@ class ConcolicStr(str, Concolic, metaclass=MetaFinal):
             ["str.to_int", self],
         ]
 
+        if str.__len__(self) == 1:
+            _bump_str_to_int_singleton_counter(self)
         return concolic_converter.wrap_concolic(concrete, symbolic_expr, self.engine)
 
     def to_str(self) -> ConcolicStr:

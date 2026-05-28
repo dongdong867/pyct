@@ -131,6 +131,15 @@ class ExplorationState:
             Distinct from ``gen_membership_rewritten`` so telemetry can
             show both the fire rate and the non-literal miss rate side
             by side.
+        gen_str_to_int_singleton_rewritten: ``int(ConcolicStr)``
+            singleton-char rewrite-fire count over the run. Bumped
+            inside ``ConcolicStr.to_int`` every time the helper is
+            invoked on a single-character string and emits symbolic
+            tracking that links the resulting ``ConcolicInt`` back to
+            the originating char. Tags both the direct ``int(s[i])``
+            call shape and the ``map(int, x)`` expansion the AST
+            rewriter produces, so a single counter covers per-char
+            int routing regardless of the surface syntax.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -160,6 +169,7 @@ class ExplorationState:
     gen_count_skipped_symbolic_sub: int = 0
     gen_membership_rewritten: int = 0
     gen_membership_skipped_non_literal: int = 0
+    gen_str_to_int_singleton_rewritten: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
