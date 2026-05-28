@@ -57,6 +57,7 @@ class ExplorationResult:
     gen_unsat: int = 0
     gen_unknown: int = 0
     gen_parse_failed: int = 0
+    gen_substr_let_bound: int = 0
     harness_error: int = 0
 
 
@@ -88,6 +89,7 @@ class RunConcolicResult:
     gen_unsat: int = 0
     gen_unknown: int = 0
     gen_parse_failed: int = 0
+    gen_substr_let_bound: int = 0
     harness_error: int = 0
 
     @classmethod
@@ -123,5 +125,6 @@ class RunConcolicResult:
             gen_unsat=result.gen_unsat,
             gen_unknown=result.gen_unknown,
             gen_parse_failed=result.gen_parse_failed,
+            gen_substr_let_bound=result.gen_substr_let_bound,
             harness_error=result.harness_error,
         )

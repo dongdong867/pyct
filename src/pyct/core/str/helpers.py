@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from pyct.core import Concolic
 from pyct.utils import concolic_converter
 from pyct.utils.smt_converter import py2smt
 
@@ -59,18 +60,48 @@ def _build_substr_expression(
     end: Any,
     concrete: str,
 ) -> Any:
-    """Build the symbolic str.substr expression."""
-    length = concolic_converter.wrap_concolic(
-        int(concolic_converter.unwrap_concolic(end))
-        - int(concolic_converter.unwrap_concolic(start)),
-        ["-", end, start],
-        concolic_str.engine,
-    )
-    return concolic_converter.wrap_concolic(
-        concrete,
-        ["str.substr", concolic_str, start, length],
-        concolic_str.engine,
-    )
+    """Build the symbolic str.substr expression as an SMT let-form.
+
+    Wraps the output as ``(let ((__a start) (__b end)) (str.substr s __a (- __b __a)))``
+    so each bound is named once and referenced by name — avoids the
+    duplicate-evaluation cost of inlining ``start`` at both the substr
+    position and the length term. Concrete-int bounds skip their binding
+    and inline as bare int literals inside the body.
+    """
+    start_ref, start_binding = _let_arg(start, "__a")
+    end_ref, end_binding = _let_arg(end, "__b")
+    bindings = [b for b in (start_binding, end_binding) if b is not None]
+    body = ["str.substr", concolic_str, start_ref, ["-", end_ref, start_ref]]
+    let_expr = ["let", bindings, body]
+    _bump_substr_let_counter(concolic_str)
+    return concolic_converter.wrap_concolic(concrete, let_expr, concolic_str.engine)
+
+
+def _let_arg(arg: Any, name: str) -> tuple[Any, list | None]:
+    """Return ``(reference, binding_or_None)`` for a substr let-form arg.
+
+    Concrete ints inline directly as the reference with no binding;
+    Concolic args get a name-bound binding and reference the name.
+    """
+    if isinstance(arg, Concolic):
+        return name, [name, arg]
+    return arg, None
+
+
+def _bump_substr_let_counter(concolic_str: Any) -> None:
+    """Bump ``state.gen_substr_let_bound`` once per emission, no-op if absent.
+
+    Walks ``concolic_str.engine.state`` — some test fixtures construct
+    Concolic values without a live state, in which case the counter
+    silently no-ops.
+    """
+    engine = getattr(concolic_str, "engine", None)
+    if engine is None:
+        return
+    state = getattr(engine, "state", None)
+    if state is None:
+        return
+    state.gen_substr_let_bound += 1
 
 
 def _normalize_index(index: Any, concolic_str: Any) -> Any:

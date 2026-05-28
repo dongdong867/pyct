@@ -65,6 +65,12 @@ class Engine:
         self.constraints_to_solve: list[Any] = []
         self.solver: Solver | None = None
         self.coverage_tracker: CoverageTracker | None = None
+        # ``state`` is published here so helpers reached via
+        # ``concolic_value.engine`` (e.g. ``core/str/helpers.py`` substr
+        # emission) can walk back to live counters without threading
+        # state through every call site. Stays None outside an active
+        # ``explore()`` call.
+        self.state: ExplorationState | None = None
         self._progress_callback: Callable[[Engine, ExplorationState], None] | None = None
         self._iteration_start_callback: (
             Callable[[Engine, ExplorationState, dict[str, Any], Provenance], None] | None
@@ -144,6 +150,7 @@ class Engine:
         finally:
             self.solver = None
             self.coverage_tracker = None
+            self.state = None
 
     def _run(
         self,
@@ -168,6 +175,7 @@ class Engine:
             total_lines=len(func_lines),
             tracker=self.coverage_tracker,
         )
+        self.state = state
         state.covered_lines |= self.coverage_tracker.covered_lines
         state.observed_lines |= self.coverage_tracker.observed_lines
         # Snapshot covered_lines before the loop runs so result consumers
@@ -634,6 +642,7 @@ def _build_result(
         gen_unsat=state.gen_unsat,
         gen_unknown=state.gen_unknown,
         gen_parse_failed=gen_parse_failed,
+        gen_substr_let_bound=state.gen_substr_let_bound,
         harness_error=state.harness_error,
     )
 
