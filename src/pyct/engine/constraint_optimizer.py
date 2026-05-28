@@ -268,15 +268,21 @@ def _rewrite_case_fold_equality(
     Detects the 26-deep ``str.replace_all`` chain that ``CaseConverter``
     emits for ``s.lower()`` / ``s.upper()`` and, when the compared
     literal is ASCII-only, substitutes a length+per-char-OR form. Non-
-    ASCII compared literals leave the predicate unchanged (the skip
-    counter is owned by the non-ASCII fallback rule).
+    ASCII compared literals bump the skip counter and leave the chain
+    in place — the charwise rewrite is unsound for Unicode letters
+    (Python folds via Unicode case mappings, not the ASCII chain).
     """
     base_node = _extract_case_fold_base(_peel_concolic(lhs))
     if base_node is None:
         return None
 
     literal = _extract_smt_string_literal(_peel_concolic(rhs))
-    if literal is None or not _is_ascii(literal):
+    if literal is None:
+        return None
+
+    if not _is_ascii_smt_literal(literal):
+        if state is not None:
+            state.gen_case_fold_skipped_non_ascii += 1
         return None
 
     rewritten = _build_case_fold_rewrite(base_node, literal)
@@ -330,8 +336,17 @@ def _extract_smt_string_literal(node: Any) -> str | None:
     return _strip_smt_string(node)
 
 
-def _is_ascii(text: str) -> bool:
-    """Return ``True`` if every character in ``text`` is ASCII (codepoint < 128)."""
+def _is_ascii_smt_literal(text: str) -> bool:
+    """Return ``True`` if the SMT-stripped literal carries only ASCII content.
+
+    ``py2smt`` encodes any non-ASCII character as the SMT escape
+    ``\\u{XX}`` — presence of that escape marker means the source
+    Python string had a non-ASCII codepoint. We also reject any raw
+    non-ASCII character that survives the round-trip (defensive
+    against future encoder changes).
+    """
+    if "\\u{" in text:
+        return False
     return all(ord(ch) < 128 for ch in text)
 
 
