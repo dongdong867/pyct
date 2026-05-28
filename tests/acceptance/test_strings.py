@@ -556,3 +556,74 @@ def test_case_fold_non_ascii_falls_back_and_skips_rewrite():
             f"s.lower() == 'café' evaluates to {python_result!r} — "
             f"rewrite perturbed semantics."
         )
+
+
+# membership-with-case-fold-combined:
+#   Given a target with `if x.lower() in {a, b, c}:` where the container
+#     is a literal of N ≤ 32 ASCII lowercase string elements
+#     And the seed input does not match any container element under lowercasing
+#   When the engine runs pure_concolic exploration
+#   Then within 2*N iterations the engine produces at least one input
+#     matching each container element under case-insensitive comparison
+#     And each matching iteration reports both a membership disjunct flip
+#     and a case-fold rewrite firing in the log line
+def test_membership_with_case_fold_composes_per_element():
+    """
+    Given a target ``if x.lower() in {"yes", "no"}:`` where the container
+      is a literal set of N=2 ASCII lowercase string elements, plus a
+      seed ``"x"`` whose lowercased form does not match any element
+    When the engine runs pure_concolic exploration
+    Then within 2*N = 4 iterations the engine produces at least one
+      input matching each container element under case-insensitive
+      comparison — observable as the set of generated x values
+      containing one input whose ``x.lower() == "yes"`` and another
+      whose ``x.lower() == "no"``.
+      And both rewrites fire — observable via
+      ``result.gen_membership_rewritten > 0`` (the AST rewriter expanded
+      the ``in`` into a BoolOp(Or) chain) and
+      ``result.gen_case_fold_rewritten > 0`` (the constraint optimizer
+      rewrote each ``x.lower() == <ascii>`` disjunct charwise).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_case_fold import in_lower_set
+
+    result = run_concolic(target=in_lower_set, initial_args={"x": "x"})
+
+    assert result.success
+    assert result.iterations <= 4, (
+        f"expected ≤ 2*N = 4 iterations for N=2 container; "
+        f"got {result.iterations}"
+    )
+
+    matched_yes = [
+        record
+        for record in result.inputs_generated
+        if record.args.get("x", "").lower() == "yes"
+    ]
+    matched_no = [
+        record
+        for record in result.inputs_generated
+        if record.args.get("x", "").lower() == "no"
+    ]
+    assert matched_yes, (
+        "expected at least one generated input where x.lower() == 'yes'; "
+        f"got inputs={[r.args for r in result.inputs_generated]}"
+    )
+    assert matched_no, (
+        "expected at least one generated input where x.lower() == 'no'; "
+        f"got inputs={[r.args for r in result.inputs_generated]}"
+    )
+
+    # The membership rewriter expanded `in {…}` into BoolOp(Or, [==, ==])
+    # — observable via the firing counter from Task 3.
+    assert result.gen_membership_rewritten > 0, (
+        "expected gen_membership_rewritten > 0 (membership AST rewrite "
+        f"should have fired); got {result.gen_membership_rewritten}"
+    )
+    # Each `x.lower() == <ascii>` disjunct triggered the case-fold
+    # rewrite — observable via the firing counter from Task 6.
+    assert result.gen_case_fold_rewritten > 0, (
+        "expected gen_case_fold_rewritten > 0 (case-fold equality "
+        f"rewrite should have fired on each disjunct); got "
+        f"{result.gen_case_fold_rewritten}"
+    )
