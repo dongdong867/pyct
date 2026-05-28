@@ -218,6 +218,103 @@ class TestMembershipCompareRewrite:
         assert out.count("== 2") == 1
 
 
+class TestMembershipCounterFires:
+    """Verify ``gen_membership_rewritten`` / ``gen_membership_skipped_non_literal``
+    fire on exactly the paths the green sub-step wired into
+    ``ConcolicCompareRewriter.visit_Compare``.
+
+    The unit-level rewrite tests above already check AST shape. This
+    class drives the same rewriter with an attached ``ExplorationState``
+    and asserts the counters land on the precise hand-counted values for
+    each path: every literal-container Compare bumps ``rewritten`` once;
+    every non-literal-container Compare bumps ``skipped_non_literal``
+    once; the empty-container collapse and the single-element collapse
+    each count as one fire (matches the docstring contract on the state
+    field). The default ``state=None`` path stays a silent no-op so unit
+    tests that don't care about telemetry can keep passing the rewriter
+    without ceremony.
+    """
+
+    def test_each_in_compare_increments_rewritten_counter(self):
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+        from pyct.engine.state import ExplorationState
+
+        state = ExplorationState()
+        source = textwrap.dedent("""
+            def f(x):
+                a = x in {1, 2}        # rewrite #1
+                b = x in (3, 4, 5)     # rewrite #2
+                c = x not in [6]       # rewrite #3
+                d = x in {7: 'k'}      # rewrite #4
+                return a or b or c or d
+        """)
+        tree = ast.parse(source)
+        ConcolicCompareRewriter(state=state).visit(tree)
+
+        assert state.gen_membership_rewritten == 4, (
+            f"expected 4 rewrites, got {state.gen_membership_rewritten}"
+        )
+        assert state.gen_membership_skipped_non_literal == 0
+
+    def test_empty_and_single_element_containers_each_count_as_one_fire(self):
+        """Empty container collapses to ``Constant(False)`` and a
+        single-element container collapses to a bare ``Compare(Eq)`` —
+        both still bump ``rewritten`` once each per the docstring
+        contract."""
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+        from pyct.engine.state import ExplorationState
+
+        state = ExplorationState()
+        source = textwrap.dedent("""
+            def f(x):
+                a = x in ()          # empty → Constant(False), still 1 fire
+                b = x in [99]        # single elem → bare Compare(Eq), 1 fire
+                c = x in set()       # empty constructor call, 1 fire
+                return a or b or c
+        """)
+        tree = ast.parse(source)
+        ConcolicCompareRewriter(state=state).visit(tree)
+
+        assert state.gen_membership_rewritten == 3
+        assert state.gen_membership_skipped_non_literal == 0
+
+    def test_non_literal_in_compare_increments_skip_counter(self):
+        """Compares whose comparator is not a supported literal container
+        (a ``Name`` for a variable RHS, a ``Call`` that isn't an empty
+        constructor, or a literal container whose elements are themselves
+        non-literal) bump ``skipped_non_literal`` once each and leave the
+        Compare untouched."""
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+        from pyct.engine.state import ExplorationState
+
+        state = ExplorationState()
+        source = textwrap.dedent("""
+            def f(x, y, z):
+                a = x in y                  # Name RHS — skip #1
+                b = x in some_call()        # non-empty Call RHS — skip #2
+                c = x in (y, z)             # Tuple with Name elements — skip #3
+                return a or b or c
+        """)
+        tree = ast.parse(source)
+        ConcolicCompareRewriter(state=state).visit(tree)
+
+        assert state.gen_membership_rewritten == 0
+        assert state.gen_membership_skipped_non_literal == 3, (
+            f"expected 3 skips, got {state.gen_membership_skipped_non_literal}"
+        )
+
+    def test_no_state_argument_does_not_increment(self):
+        """The default ``state=None`` path is a silent no-op — neither
+        a rewrite-fire nor a non-literal-skip raises ``AttributeError``
+        when no state is attached. Locks the existing unit-test idiom
+        (the ``rewrite`` fixture above passes no state)."""
+        from pyct.engine.ast_transformer import ConcolicCompareRewriter
+
+        # Both rewrite and skip paths reachable from a single source.
+        tree = ast.parse("y = x in {1, 2}\nz = x in some_var\n")
+        ConcolicCompareRewriter().visit(tree)  # no exception
+
+
 class TestLinePreservation:
     def test_rewritten_int_call_keeps_line_number(self):
         from pyct.engine.ast_transformer import ConcolicCallRewriter
