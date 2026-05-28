@@ -121,3 +121,47 @@ def test_count_branch_flips_within_five_iterations():
     # branch into True — observable via the count-rewrite counter ticking on
     # the SMT emission path that solved for that input.
     assert result.gen_count_rewritten > 0
+
+
+# count-empty-sub:
+#   Given a target evaluating `s.count("")` where s is symbolic
+#   When the engine produces concrete inputs for s
+#   Then for every produced input, the engine's claimed value of `s.count("")` equals `len(s) + 1`
+#     And no rewrite-induced false branch is registered for the empty-sub case
+def test_count_empty_sub_preserves_python_semantics():
+    """
+    Given a target ``if s.count("") == 3:`` where the literal sub is the
+      empty string (the edge case Python defines as ``len(s) + 1``)
+    When the engine runs pure_concolic exploration and produces concrete
+      inputs for s
+    Then for every produced input, the concrete evaluation of
+      ``s.count("")`` equals ``len(s) + 1`` — i.e. the rewrite has NOT
+      perturbed Python's empty-sub semantics, observable by re-executing
+      ``str.count`` on each ``InputRecord``'s ``s`` arg.
+      And no rewrite-induced skip is registered for the empty-sub case:
+      ``result.gen_count_skipped_symbolic_sub == 0`` (empty sub is a
+      literal, so the symbolic-sub fallback must NOT have fired) while
+      ``result.gen_count_rewritten`` is exposed (counter exists),
+      anchoring the assertion at the post-rewrite-feature contract.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.count_empty_sub import (
+        matches_empty_count,
+    )
+
+    result = run_concolic(target=matches_empty_count, initial_args={"s": "x"})
+
+    assert result.success
+    # Semantic preservation: Python's `s.count("") == len(s) + 1` holds
+    # for every input the engine emitted, regardless of which branch the
+    # engine claimed it took.
+    for record in result.inputs_generated:
+        s_value = record.args.get("s", "")
+        assert s_value.count("") == len(s_value) + 1, (
+            f"Engine produced input s={s_value!r} but Python's "
+            f"s.count('') ({s_value.count('')}) != len(s) + 1 "
+            f"({len(s_value) + 1}) — rewrite perturbed empty-sub semantics."
+        )
+    # Empty sub is a literal (not symbolic), so the symbolic-sub
+    # skip counter must remain zero across the entire run.
+    assert result.gen_count_skipped_symbolic_sub == 0
