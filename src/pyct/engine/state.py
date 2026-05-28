@@ -149,6 +149,16 @@ class ExplorationState:
             (= (str.at s i) <hi>)) …)``. Bumps once per substitution
             site so the counter equals the number of predicates the
             rule simplified.
+        gen_case_fold_skipped_non_ascii: case-fold equality rewrite-skip
+            count for non-ASCII fallbacks over the run. Bumped inside
+            ``constraint_optimizer.optimize`` whenever a case-fold
+            equality's compared literal contains any non-ASCII character
+            — the charwise rewrite is unsound for Unicode letters
+            (Python folds via Unicode case mappings, not the 26-deep
+            ASCII chain) so the baseline encoding is preserved
+            unchanged. Distinct from ``gen_case_fold_rewritten`` so
+            telemetry can show both the fire rate and the non-ASCII
+            miss rate side by side.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -180,6 +190,7 @@ class ExplorationState:
     gen_membership_skipped_non_literal: int = 0
     gen_str_to_int_singleton_rewritten: int = 0
     gen_case_fold_rewritten: int = 0
+    gen_case_fold_skipped_non_ascii: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:

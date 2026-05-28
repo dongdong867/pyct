@@ -64,6 +64,7 @@ class ExplorationResult:
     gen_membership_skipped_non_literal: int = 0
     gen_str_to_int_singleton_rewritten: int = 0
     gen_case_fold_rewritten: int = 0
+    gen_case_fold_skipped_non_ascii: int = 0
     harness_error: int = 0
 
 
@@ -102,6 +103,7 @@ class RunConcolicResult:
     gen_membership_skipped_non_literal: int = 0
     gen_str_to_int_singleton_rewritten: int = 0
     gen_case_fold_rewritten: int = 0
+    gen_case_fold_skipped_non_ascii: int = 0
     harness_error: int = 0
 
     @classmethod
@@ -144,5 +146,6 @@ class RunConcolicResult:
             gen_membership_skipped_non_literal=result.gen_membership_skipped_non_literal,
             gen_str_to_int_singleton_rewritten=result.gen_str_to_int_singleton_rewritten,
             gen_case_fold_rewritten=result.gen_case_fold_rewritten,
+            gen_case_fold_skipped_non_ascii=result.gen_case_fold_skipped_non_ascii,
             harness_error=result.harness_error,
         )
