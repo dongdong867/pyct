@@ -239,6 +239,63 @@ def test_non_default_base_int_skipped():
     )
 
 
+# non-digit-int-error-surfaces:
+#   Given a target with `int(c)` where c is a symbolic ConcolicStr char
+#     And the engine generates an input where c is a non-digit character
+#   When the engine runs the target with that input
+#   Then the iteration surfaces `ValueError` exactly as Python would
+#     And the engine continues to the next iteration with the path that led
+#       to the ValueError marked as such
+#     And no symbolic absorption of the ValueError into a false branch occurs
+def test_non_digit_int_error_surfaces():
+    """
+    Given ``parse_digit(c)`` calling ``int(c)`` directly (no try / except)
+      and seed c="5" (digit, parseable path)
+    When run_concolic explores
+    Then at least one record carries
+      ``outcome == Outcome.TARGET_ERROR`` and an ``error`` string that
+      contains "invalid literal for int()" — the engine surfaced the
+      ValueError raised by ``int(non-digit)`` exactly as Python would,
+      and recorded it as the iteration's outcome rather than absorbing
+      it into a false branch
+      AND ``result.paths_explored`` exceeds the count of ValueError
+      records, observable proof that the engine kept exploring after
+      surfacing the error (the ValueError path doesn't short-circuit
+      the run).
+    """
+    from pyct import run_concolic
+    from pyct.config.execution import ExecutionConfig
+    from pyct.engine.types import Outcome
+    from tests.acceptance.fixtures.builtins.int_unprotected import parse_digit
+
+    config = ExecutionConfig(max_iterations=20, plateau_threshold=20)
+    result = run_concolic(
+        target=parse_digit,
+        initial_args={"c": "5"},
+        config=config,
+    )
+
+    assert result.success
+    value_error_records = [
+        record
+        for record in result.inputs_generated
+        if record.outcome == Outcome.TARGET_ERROR
+        and record.error is not None
+        and "invalid literal for int()" in record.error
+    ]
+    assert len(value_error_records) >= 1, (
+        "engine should surface ValueError from int(non-digit) as a "
+        "TARGET_ERROR record with the Python error text intact; "
+        f"got records={[(r.args, r.outcome, r.error) for r in result.inputs_generated]}"
+    )
+    assert result.paths_explored > len(value_error_records), (
+        f"engine stopped after surfacing ValueError; got paths_explored="
+        f"{result.paths_explored} vs ValueError records="
+        f"{len(value_error_records)} — engine must keep exploring "
+        "subsequent iterations after a ValueError surface"
+    )
+
+
 def _find_return_line(func: Callable, literal: str) -> int:
     """Return the absolute source line of ``return "{literal}"`` inside ``func``.
 
