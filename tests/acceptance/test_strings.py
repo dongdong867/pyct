@@ -409,6 +409,65 @@ def test_membership_single_element_matches_eq_baseline():
     )
 
 
+# chain-stays-productive-when-each-match-distinct:
+#   Given a target with `if x in {a, b, c, d}:` where each matched element triggers distinct downstream code paths
+#     And the seed input matches none of the container elements
+#   When the engine runs pure_concolic exploration
+#   Then within `len(container) + 5` iterations the engine produces inputs matching each container element
+#     And every disjunct flip yields new line coverage
+#     And `gen_chain_deprioritized` remains 0 for this chain
+def test_membership_chain_stays_productive_when_each_match_distinct():
+    """
+    Given a target ``if x in {"red", "green", "blue", "yellow"}:`` where
+      each matched element is routed to a distinct downstream ``return``
+      line, plus a seed ``"none"`` that matches no container element
+      (container size N = 4)
+    When the engine runs pure_concolic exploration
+    Then within ``N + 5 = 9`` iterations the engine produces inputs
+      matching each of the four container elements — observable as one
+      ``InputRecord`` in ``inputs_generated`` per element whose concrete
+      ``x`` arg equals that element.
+      And every disjunct flip yields new line coverage — the fixture's
+      shape (one distinct return line per matched element) guarantees
+      that each successful flip reaches a previously-unseen line, so the
+      chain's unproductive-streak counter never crosses the
+      deprioritization threshold.
+      And ``result.gen_chain_deprioritized`` remains 0 for this run,
+      evidencing that the adaptive scheduler kept the chain in the
+      productive bucket end-to-end.
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.membership_chain_productive import (
+        chain_with_distinct_paths,
+    )
+
+    result = run_concolic(
+        target=chain_with_distinct_paths, initial_args={"x": "none"}
+    )
+
+    assert result.success
+    # Container has N = 4 elements, so the budget for hitting every
+    # element while keeping the chain productive is N + 5 = 9.
+    assert result.iterations <= 9, (
+        f"Expected the engine to match every container element within "
+        f"9 iterations; got iterations={result.iterations}"
+    )
+    generated_x_values = {
+        record.args.get("x") for record in result.inputs_generated
+    }
+    for element in ("red", "green", "blue", "yellow"):
+        assert element in generated_x_values, (
+            f"Expected at least one generated input where x == {element!r}; "
+            f"got inputs={[r.args for r in result.inputs_generated]}"
+        )
+    # The chain never crossed the unproductive-streak threshold because
+    # every disjunct flip reached a previously-uncovered return line.
+    assert result.gen_chain_deprioritized == 0, (
+        f"Expected gen_chain_deprioritized == 0 for a chain where every "
+        f"flip gains new coverage; got {result.gen_chain_deprioritized}"
+    )
+
+
 # non-literal-container-skipped:
 #   Given a target with `x in some_var` where `some_var` is a Name (not a literal AST node)
 #   When the engine processes the target through the AST transformer
