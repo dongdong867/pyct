@@ -103,6 +103,45 @@ def test_bool_drives_alternate_arm():
     )
 
 
+# per-char-int-branches:
+#   Given a target with `digits = list(map(int, s))` followed by a branch
+#     on `digits[i] == k`
+#     And the seed input does not satisfy `s[i] == str(k)`
+#   When the engine runs pure_concolic exploration
+#   Then within `len(s) + 5` iterations the engine produces an input
+#     where `s[i] == str(k)`
+#     And the iteration reports the per-character branch as flipped
+def test_per_char_int_branches():
+    """
+    Given a target with ``digits = list(map(int, s))`` followed by
+      ``if digits[1] == 7`` (i = 1, k = 7)
+      And seed s = "10" so s[1] = "0" does not satisfy s[1] == str(7)
+    When run_concolic runs with max_iterations = len("10") + 5 = 7
+    Then the engine synthesizes an input where s[1] == "7"
+      And the per-character ``hit`` arm line is in executed_lines
+      (the engine reports the per-character branch as flipped).
+    """
+    from pyct import run_concolic
+    from pyct.config.execution import ExecutionConfig
+    from tests.acceptance.fixtures.builtins.per_char_int import per_char_target
+
+    seed = "10"
+    config = ExecutionConfig(max_iterations=len(seed) + 5)
+    result = run_concolic(
+        target=per_char_target,
+        initial_args={"s": seed},
+        config=config,
+    )
+
+    assert result.success
+    hit_arm_line = _find_return_line(per_char_target, "hit")
+    assert hit_arm_line in result.executed_lines, (
+        f"line {hit_arm_line} not in {sorted(result.executed_lines)} — "
+        "map(int, s) per-char routing may not have expanded; the engine "
+        "should have synthesized s where s[1] == '7' from seed s='10'"
+    )
+
+
 def _find_return_line(func: Callable, literal: str) -> int:
     """Return the absolute source line of ``return "{literal}"`` inside ``func``.
 
