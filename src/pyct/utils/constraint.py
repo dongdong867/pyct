@@ -65,6 +65,10 @@ class Constraint:
         self.children_ids: list[int] = []
         self.depth = depth
         self.processed = False
+        # Adaptive-disjunct-flipping tag: set by PathConstraintTracker.add_branch
+        # when the originating ConcolicBool carries a _pyct_or_chain_id, so the
+        # engine's scheduler can attribute coverage deltas back to a chain.
+        self.chain_id: int | None = None
         self.id = ConstraintRegistry.register(self)
 
     def __eq__(self, other: object) -> bool:

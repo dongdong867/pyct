@@ -13,6 +13,19 @@ if TYPE_CHECKING:
 
 
 @dataclass
+class ChainStats:
+    """Per-chain flip telemetry consumed by the adaptive scheduler.
+
+    Materialised lazily in ``ExplorationState.or_chain_stats`` keyed by
+    the chain ID assigned at AST rewrite time.
+    """
+
+    attempted_flips: int = 0
+    productive_flips: int = 0
+    unproductive_streak: int = 0
+
+
+@dataclass
 class ExplorationState:
     """Mutable state for an in-progress exploration run.
 
@@ -201,6 +214,7 @@ class ExplorationState:
     gen_case_fold_rewritten: int = 0
     gen_case_fold_skipped_non_ascii: int = 0
     gen_chain_deprioritized: int = 0
+    or_chain_stats: dict[int, ChainStats] = field(default_factory=dict)
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
