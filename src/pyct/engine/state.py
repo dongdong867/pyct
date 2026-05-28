@@ -109,6 +109,28 @@ class ExplorationState:
             Distinct from ``gen_count_rewritten`` so telemetry can show
             both the fire rate and the symbolic-sub miss rate side by
             side.
+        gen_membership_rewritten: literal-container membership
+            rewrite-fire count over the run. Bumped inside
+            ``ConcolicCompareRewriter.visit_Compare`` every time an
+            ``In`` / ``NotIn`` Compare whose comparator is a literal
+            ``Set`` / ``Tuple`` / ``List`` / ``Dict`` is expanded into
+            a ``BoolOp(Or, [Compare(Eq), …])`` (or ``BoolOp(And,
+            [Compare(NotEq), …])``) form so each element becomes its
+            own flippable disjunct. Bumps once per Compare rewritten;
+            the empty-container collapse to ``Constant(False)`` and the
+            single-element collapse to a bare ``Compare(Eq)`` still
+            count as one fire each.
+        gen_membership_skipped_non_literal: literal-container membership
+            rewrite-skip count for non-literal fallbacks over the run.
+            Bumped inside ``ConcolicCompareRewriter.visit_Compare``
+            whenever a Compare's comparator is not one of the supported
+            literal container nodes (e.g. a ``Name``) or any element of
+            the literal container is itself non-literal — the rewrite
+            cannot fire and the Compare is returned unchanged so
+            baseline emission semantics are preserved bit-for-bit.
+            Distinct from ``gen_membership_rewritten`` so telemetry can
+            show both the fire rate and the non-literal miss rate side
+            by side.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -136,6 +158,8 @@ class ExplorationState:
     gen_substr_let_bound: int = 0
     gen_count_rewritten: int = 0
     gen_count_skipped_symbolic_sub: int = 0
+    gen_membership_rewritten: int = 0
+    gen_membership_skipped_non_literal: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
