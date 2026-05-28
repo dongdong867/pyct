@@ -498,3 +498,61 @@ def test_case_fold_branch_flips_within_five_iterations():
         "Expected gen_case_fold_rewritten > 0 (case-fold ASCII charwise "
         f"rewrite should have fired); got {result.gen_case_fold_rewritten}"
     )
+
+
+# case-fold-non-ascii:
+#   Given a target with `s.lower() == c` where c contains a non-ASCII letter
+#   When the engine processes the comparison
+#   Then the engine falls back to the existing 26-deep replace_all encoding
+#     rather than emitting a char-wise rewrite
+#     And the concrete result of every produced input matches Python's
+#     `s.lower() == c` evaluation
+def test_case_fold_non_ascii_falls_back_and_skips_rewrite():
+    """
+    Given a target ``if s.lower() == "café":`` where the literal contains
+      a non-ASCII letter (é, U+00E9), plus a seed ``"x"``
+    When the engine runs pure_concolic exploration
+    Then the engine MUST NOT emit a char-wise rewrite — the rewrite is
+      unsound for non-ASCII (Python case-folds via Unicode mappings,
+      not the 26-deep ASCII chain). Observable via
+      ``result.gen_case_fold_rewritten == 0``.
+      And the rewriter MUST tick the skip counter at the non-ASCII
+      decision site so telemetry attributes the fallback —
+      ``result.gen_case_fold_skipped_non_ascii > 0``.
+      And every produced input's concrete evaluation matches Python's
+      ``s.lower() == "café"`` semantics — re-executing the fixture on
+      each ``InputRecord``'s ``s`` arg must yield a deterministic
+      ``"match"`` / ``"nomatch"`` result identical to direct Python
+      evaluation (no rewrite-induced divergence).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.case_fold_non_ascii import matches_cafe
+
+    result = run_concolic(target=matches_cafe, initial_args={"s": "x"})
+
+    assert result.success
+    # The rewriter saw the case-fold chain but skipped due to non-ASCII
+    # literal — the skip counter must have ticked at the decision site.
+    assert result.gen_case_fold_skipped_non_ascii > 0, (
+        "Expected gen_case_fold_skipped_non_ascii > 0 (rewriter should "
+        "have ticked the skip counter at the non-ASCII decision site); "
+        f"got {result.gen_case_fold_skipped_non_ascii}"
+    )
+    # The firing counter must remain zero — no charwise rewrite for
+    # non-ASCII literals.
+    assert result.gen_case_fold_rewritten == 0, (
+        "Expected gen_case_fold_rewritten == 0 for non-ASCII literal "
+        f"(charwise rewrite is unsound); got {result.gen_case_fold_rewritten}"
+    )
+    # Python-semantics preservation: every generated input evaluates
+    # under direct Python execution to the same branch the engine saw.
+    for record in result.inputs_generated:
+        s_value = record.args.get("s", "")
+        python_result = "match" if s_value.lower() == "café" else "nomatch"
+        engine_result = matches_cafe(s_value)
+        assert engine_result == python_result, (
+            f"engine produced input s={s_value!r}; re-executing the "
+            f"fixture yields {engine_result!r} but Python's "
+            f"s.lower() == 'café' evaluates to {python_result!r} — "
+            f"rewrite perturbed semantics."
+        )
