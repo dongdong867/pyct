@@ -454,3 +454,47 @@ def test_membership_non_literal_container_skipped():
         f"should have ticked the skip counter at the non-literal "
         f"decision site); got {result.gen_membership_skipped_non_literal}"
     )
+
+
+# case-fold-branch-flips:
+#   Given a target with `if s.lower() == c:` where c is an ASCII string literal
+#     And the seed input does not match c after lowercasing
+#   When the engine runs pure_concolic exploration
+#   Then within 5 iterations the engine produces an input where `s.lower() == c` is True
+#     And the iteration where this occurs reports the branch as flipped vs the seed
+def test_case_fold_branch_flips_within_five_iterations():
+    """
+    Given a target ``if s.lower() == "monday":`` with an ASCII literal
+      ``"monday"`` plus a seed ``"x"`` whose lowercased form does NOT
+      equal ``"monday"`` (the seed evaluates the equality as False)
+    When the engine runs pure_concolic exploration
+    Then within 5 iterations the engine produces an input ``s`` whose
+      lowercased form equals ``"monday"`` exactly — observable as an
+      ``InputRecord`` in ``inputs_generated`` whose concrete ``s`` arg
+      satisfies ``s.lower() == "monday"``, evidencing the branch was
+      flipped vs the seed.
+      And the rewrite firing is observable via
+      ``result.gen_case_fold_rewritten > 0`` (the case-fold ASCII
+      charwise substitution ticked at the SMT emission path that solved
+      for that input).
+    """
+    from pyct import run_concolic
+    from tests.acceptance.fixtures.strings.case_fold_branch import matches_monday
+
+    result = run_concolic(target=matches_monday, initial_args={"s": "x"})
+
+    assert result.success
+    assert result.iterations <= 5
+    flipped_inputs = [
+        record
+        for record in result.inputs_generated
+        if record.args.get("s", "").lower() == "monday"
+    ]
+    assert flipped_inputs, (
+        "Expected at least one generated input where s.lower() == 'monday'; "
+        f"got inputs={[r.args for r in result.inputs_generated]}"
+    )
+    assert result.gen_case_fold_rewritten > 0, (
+        "Expected gen_case_fold_rewritten > 0 (case-fold ASCII charwise "
+        f"rewrite should have fired); got {result.gen_case_fold_rewritten}"
+    )
