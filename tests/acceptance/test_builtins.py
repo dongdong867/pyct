@@ -202,6 +202,43 @@ def test_int_multichar_symbolic_str():
         )
 
 
+# non-default-base-int-skipped:
+#   Given a target with `int(s, 16)` or `int(s, base=2)`
+#   When the engine processes the target
+#   Then no symbolic tracking is added for the conversion
+#     And the run output shows `gen_str_to_int_singleton_rewritten` unchanged
+#     And coverage achieved matches baseline-pre-feature coverage for the target
+def test_non_default_base_int_skipped():
+    """
+    Given a target ``parse_hex(s)`` that calls ``int(s, 16)`` — the
+      two-arg shape that ``ConcolicCallRewriter.visit_Call`` deliberately
+      skips (guarded by ``len(args) == 1 and not keywords``)
+    When run_concolic explores from a seed
+    Then the singleton-int counter
+      ``result.gen_str_to_int_singleton_rewritten`` stays at 0,
+      observable proof that no ``ConcolicStr.to_int`` dispatch fired
+      and the call went through Python's primitive ``int`` builtin
+      with pre-feature semantics intact.
+    """
+    from pyct import run_concolic
+    from pyct.config.execution import ExecutionConfig
+    from tests.acceptance.fixtures.builtins.int_base_16 import parse_hex
+
+    result = run_concolic(
+        target=parse_hex,
+        initial_args={"s": "1A"},
+        config=ExecutionConfig(max_iterations=10),
+    )
+
+    assert result.success
+    assert result.gen_str_to_int_singleton_rewritten == 0, (
+        "Expected gen_str_to_int_singleton_rewritten == 0 for int(s, 16); "
+        f"got {result.gen_str_to_int_singleton_rewritten}. The non-default-base "
+        "rewrite skip path should leave the counter at zero — any non-zero "
+        "value signals an unwanted to_int dispatch on the two-arg int call."
+    )
+
+
 def _find_return_line(func: Callable, literal: str) -> int:
     """Return the absolute source line of ``return "{literal}"`` inside ``func``.
 
