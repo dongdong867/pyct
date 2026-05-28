@@ -457,3 +457,44 @@ class TestCaseFoldCounterFiresWithExactCounts:
             "expected case-fold rewrite to still drop replace_all chain "
             "when state is None; got tree with replace_all surviving."
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 10 — non-ASCII case-fold literal preserves the replace_all chain
+# ---------------------------------------------------------------------------
+
+
+class TestCaseFoldNonAsciiFallsBack:
+    """Non-ASCII compared literals leave the chain intact and bump skip counter."""
+
+    def test_non_ascii_literal_keeps_replace_all_and_bumps_skip(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        constraint = _eq_case_fold_constraint("s_VAR", "café")
+        original_expr = constraint.predicate.expr
+
+        rewritten = constraint_optimizer.optimize(constraint, state)
+        rewritten_expr = _rewritten_expr(rewritten)
+
+        # Non-ASCII literal MUST NOT trigger the charwise rewrite — the
+        # rule is unsound for Unicode letters (Python case-folds via
+        # Unicode case mappings, not the 26-deep ASCII chain). The
+        # original replace_all chain must survive unchanged.
+        assert _expr_contains_op(rewritten_expr, "str.replace_all"), (
+            "expected non-ASCII case-fold constraint to keep the 26-deep "
+            f"replace_all chain; rewritten expr lost it: {rewritten_expr!r}"
+        )
+        # Skip counter must bump once per non-ASCII fallback so downstream
+        # telemetry can attribute "rewrite didn't fire here".
+        assert getattr(state, "gen_case_fold_skipped_non_ascii", 0) == 1, (
+            "expected gen_case_fold_skipped_non_ascii to bump to 1 on "
+            "non-ASCII fallback; got "
+            f"{getattr(state, 'gen_case_fold_skipped_non_ascii', 'ATTRIBUTE-MISSING')!r}. "
+            f"Original expr was: {original_expr!r}"
+        )
+        # The firing counter MUST NOT bump on the skip path.
+        assert state.gen_case_fold_rewritten == 0, (
+            "expected gen_case_fold_rewritten to stay at 0 on non-ASCII "
+            f"skip path; got {state.gen_case_fold_rewritten}"
+        )
