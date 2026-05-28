@@ -422,3 +422,38 @@ class TestCaseFoldCounterFires:
             "case-fold ASCII rewrite; got "
             f"{getattr(state, 'gen_case_fold_rewritten', 'ATTRIBUTE-MISSING')!r}."
         )
+
+
+# ---------------------------------------------------------------------------
+# Test 9 — case-fold counter ticks with exact firing counts per ASCII shape
+# ---------------------------------------------------------------------------
+
+
+class TestCaseFoldCounterFiresWithExactCounts:
+    """``gen_case_fold_rewritten`` counts every successful ASCII rewrite."""
+
+    def test_three_independent_rewrites_bump_counter_three(self):
+        from pyct.engine import constraint_optimizer
+
+        state = ExplorationState()
+        for literal in ("monday", "x", "AbCdEf"):
+            constraint = _eq_case_fold_constraint("s_VAR", literal)
+            constraint_optimizer.optimize(constraint, state)
+
+        assert state.gen_case_fold_rewritten == 3, (
+            "expected gen_case_fold_rewritten == 3 after three independent "
+            f"ASCII rewrites; got {state.gen_case_fold_rewritten}"
+        )
+
+    def test_no_state_runs_no_op_for_counter(self):
+        """``optimize(constraint, None)`` rewrites without touching counters."""
+        from pyct.engine import constraint_optimizer
+
+        constraint = _eq_case_fold_constraint("s_VAR", "monday")
+        rewritten = constraint_optimizer.optimize(constraint, None)
+
+        # Expr still got rewritten — the rule fires even without state.
+        assert not _expr_contains_op(_rewritten_expr(rewritten), "str.replace_all"), (
+            "expected case-fold rewrite to still drop replace_all chain "
+            "when state is None; got tree with replace_all surviving."
+        )
