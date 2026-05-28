@@ -42,7 +42,10 @@ import inspect
 import logging
 import textwrap
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from pyct.engine.state import ExplorationState
 
 log = logging.getLogger("ct.engine.ast_transformer")
 
@@ -50,6 +53,12 @@ _INT_HELPER = "pyct.core.builtin_wrappers._int"
 _STR_HELPER = "pyct.core.builtin_wrappers._str"
 _IS_HELPER = "pyct.core.builtin_wrappers._is"
 _RANGE_CLASS = "pyct.core.concolic_range.ConcolicRange"
+
+# Empty-constructor calls Python treats as empty container literals for the
+# purposes of ``x in <empty>`` (always False). Listed at module scope so the
+# Compare rewriter can detect them as equivalent to an empty Set/Tuple/List/
+# Dict literal node.
+_EMPTY_CONSTRUCTOR_NAMES = frozenset({"set", "frozenset", "tuple", "list", "dict"})
 
 
 class ConcolicCallRewriter(ast.NodeTransformer):
@@ -73,29 +82,170 @@ _IS_REWRITE_LITERALS = (None, True, False, Ellipsis)
 
 
 class ConcolicCompareRewriter(ast.NodeTransformer):
-    """Rewrites ``x is <literal>`` Compare nodes for concolic unwrap checks.
+    """Rewrites ``x is <literal>`` and ``x in <literal-container>`` Compares.
 
-    Only rewrites when the comparator is a sentinel literal — ``None``,
-    ``True``, ``False``, or ``Ellipsis``. These are the 99% idiom
-    (``x is None``) where unwrapping the concolic side to check against
-    the sentinel matches the author's intent.
+    Two rewrites live here, both gated on a single op and single comparator:
 
-    Variable-RHS ``is`` checks (``x is y``) are left untouched because
-    the concolic layer can't preserve Python's object-identity semantics
-    — two wrappers of the same primitive would test identical under a
-    naive unwrap-and-compare, which is wrong for any target relying on
-    genuine identity.
+    * ``x is None`` / ``x is True`` / ``x is False`` / ``x is ...`` → routes
+      through ``_is`` so the concolic wrapper unwrap-check matches the
+      author's sentinel intent. Variable-RHS ``is`` checks are left
+      untouched because the concolic layer can't preserve Python's
+      object-identity semantics.
+    * ``x in {a, b, c}`` (and tuple/list/dict-keys literals plus the empty
+      constructor calls ``set()`` / ``tuple()`` / ``list()`` /
+      ``frozenset()`` / ``dict()``) → expands to ``x == a or x == b or
+      x == c`` so each disjunct becomes a flippable branch. ``not in``
+      expands symmetrically to AND-of-``!=``. Empty containers fold to
+      ``Constant(False)``; single-element containers collapse to a bare
+      ``Compare(Eq)``; duplicate elements deduplicate via Python ``__eq__``
+      on the underlying literal value. Non-literal comparators or any
+      non-literal element skip the rewrite and the original Compare is
+      returned unchanged.
+
+    Optional ``state`` argument lets the engine receive telemetry counter
+    bumps (``gen_membership_rewritten`` / ``gen_membership_skipped_non_literal``)
+    at the rewrite site. Unit tests that drive the rewriter directly pass
+    no state and assert only on AST shape.
     """
+
+    def __init__(self, state: ExplorationState | None = None) -> None:
+        super().__init__()
+        self._state = state
 
     def visit_Compare(self, node: ast.Compare) -> ast.AST:
         self.generic_visit(node)
         if len(node.ops) != 1 or len(node.comparators) != 1:
             return node
-        if not isinstance(node.ops[0], ast.Is):
+        op = node.ops[0]
+        comparator = node.comparators[0]
+        if isinstance(op, ast.Is):
+            if not _is_literal_comparator(comparator):
+                return node
+            return _build_helper_call_from_args(_IS_HELPER, [node.left, comparator], node)
+        if isinstance(op, (ast.In, ast.NotIn)):
+            return self._rewrite_membership(node, op, comparator)
+        return node
+
+    def _rewrite_membership(
+        self,
+        node: ast.Compare,
+        op: ast.cmpop,
+        comparator: ast.expr,
+    ) -> ast.AST:
+        """Expand ``x in <literal-container>`` into OR/AND of equality checks."""
+        elements = _literal_container_elements(comparator)
+        if elements is None:
+            self._bump_skip()
             return node
-        if not _is_literal_comparator(node.comparators[0]):
-            return node
-        return _build_helper_call_from_args(_IS_HELPER, [node.left, node.comparators[0]], node)
+        deduped = _dedup_literal_elements(elements)
+        if not deduped:
+            self._bump_rewritten()
+            return ast.copy_location(ast.Constant(value=isinstance(op, ast.NotIn)), node)
+        eq_op: ast.cmpop = ast.NotEq() if isinstance(op, ast.NotIn) else ast.Eq()
+        bool_op: ast.boolop = ast.And() if isinstance(op, ast.NotIn) else ast.Or()
+        comparisons = [_build_eq_compare(node.left, elem, eq_op, node) for elem in deduped]
+        self._bump_rewritten()
+        if len(comparisons) == 1:
+            return comparisons[0]
+        return ast.copy_location(ast.BoolOp(op=bool_op, values=comparisons), node)
+
+    def _bump_rewritten(self) -> None:
+        if self._state is not None:
+            self._state.gen_membership_rewritten += 1
+
+    def _bump_skip(self) -> None:
+        if self._state is not None:
+            self._state.gen_membership_skipped_non_literal += 1
+
+
+def _literal_container_elements(comparator: ast.expr) -> list[ast.expr] | None:
+    """Return the list of element nodes for a literal container, or None.
+
+    Recognises ``Set`` / ``Tuple`` / ``List`` literals (returning their
+    ``elts``), ``Dict`` literals (returning their ``keys`` per Python's
+    ``x in dict`` semantics), and empty zero-arg constructor calls
+    ``set()`` / ``frozenset()`` / ``tuple()`` / ``list()`` / ``dict()``
+    (returning an empty list). Any element of a Set/Tuple/List/Dict that
+    is not itself a literal (Constant or negative-int ``UnaryOp(USub,
+    Constant)``) disqualifies the whole comparator. Returning ``None``
+    signals "not a literal container" — the caller should skip the rewrite
+    and bump the non-literal skip counter.
+    """
+    if isinstance(comparator, (ast.Set, ast.Tuple, ast.List)):
+        return list(comparator.elts) if _all_literal_elements(comparator.elts) else None
+    if isinstance(comparator, ast.Dict):
+        keys = [k for k in comparator.keys if k is not None]
+        if len(keys) != len(comparator.keys):
+            return None
+        return keys if _all_literal_elements(keys) else None
+    if _is_empty_container_call(comparator):
+        return []
+    return None
+
+
+def _is_empty_container_call(node: ast.expr) -> bool:
+    """Return True for ``set()`` / ``tuple()`` / ``list()`` / ``dict()`` / ``frozenset()``."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id in _EMPTY_CONSTRUCTOR_NAMES
+        and not node.args
+        and not node.keywords
+    )
+
+
+def _all_literal_elements(elements: list[ast.expr]) -> bool:
+    """Return True if every element is a ``Constant`` or ``UnaryOp(USub, Constant)``."""
+    return all(_is_literal_element(elem) for elem in elements)
+
+
+def _is_literal_element(node: ast.expr) -> bool:
+    """Return True for a literal usable as a membership disjunct comparand."""
+    if isinstance(node, ast.Constant):
+        return True
+    return (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.USub)
+        and isinstance(node.operand, ast.Constant)
+    )
+
+
+def _literal_element_value(node: ast.expr) -> Any:
+    """Return the concrete Python value for a literal element node."""
+    if isinstance(node, ast.Constant):
+        return node.value
+    assert isinstance(node, ast.UnaryOp) and isinstance(node.operand, ast.Constant)
+    return -node.operand.value
+
+
+def _dedup_literal_elements(elements: list[ast.expr]) -> list[ast.expr]:
+    """Deduplicate literal elements by their concrete value, preserving order.
+
+    Uses an ``(type(value), value)`` key so ``1`` and ``True`` (which are
+    Python-``==`` equal but semantically distinct under most callers'
+    intent) collapse only when they share both type and value.
+    """
+    seen: list[tuple[type, Any]] = []
+    out: list[ast.expr] = []
+    for elem in elements:
+        value = _literal_element_value(elem)
+        key = (type(value), value)
+        if key in seen:
+            continue
+        seen.append(key)
+        out.append(elem)
+    return out
+
+
+def _build_eq_compare(
+    left: ast.expr,
+    right: ast.expr,
+    op: ast.cmpop,
+    anchor: ast.AST,
+) -> ast.Compare:
+    """Build ``left == right`` (or ``!=``) anchored at ``anchor``'s location."""
+    compare = ast.Compare(left=left, ops=[op], comparators=[right])
+    return ast.copy_location(compare, anchor)
 
 
 def _is_literal_comparator(comparator: ast.expr) -> bool:
@@ -109,7 +259,10 @@ def _is_literal_comparator(comparator: ast.expr) -> bool:
     return any(comparator.value is sentinel for sentinel in _IS_REWRITE_LITERALS)
 
 
-def rewrite_target(target: Callable[..., Any]) -> Callable[..., Any]:
+def rewrite_target(
+    target: Callable[..., Any],
+    state: ExplorationState | None = None,
+) -> Callable[..., Any]:
     """Return a rewritten copy of ``target`` with concolic call dispatch.
 
     Applies both the Call and Compare rewriters to ``target``'s source,
@@ -118,6 +271,11 @@ def rewrite_target(target: Callable[..., Any]) -> Callable[..., Any]:
     copy of the target's own ``__globals__`` with ``pyct`` injected so
     the fully-qualified helper references resolve. Copying the globals
     dict means the original target module is not mutated.
+
+    The optional ``state`` argument lets the engine receive telemetry
+    counter bumps from the Compare rewriter at the moment a membership
+    rewrite fires or is skipped. Standalone callers (unit tests) pass
+    no state and the counters are silently ignored.
 
     Lambdas are rejected upfront. ``inspect.getsource`` on a lambda
     returns the entire containing statement rather than just the
@@ -142,7 +300,7 @@ def rewrite_target(target: Callable[..., Any]) -> Callable[..., Any]:
         )
 
     try:
-        tree, filename = _parse_rewritten_tree(target)
+        tree, filename = _parse_rewritten_tree(target, state)
     except SyntaxError as exc:
         raise TypeError(f"rewrite failed to parse {target.__name__}: {exc}") from exc
 
@@ -176,7 +334,10 @@ def _tree_defines_name(tree: ast.Module, name: str) -> bool:
     )
 
 
-def _parse_rewritten_tree(target: Callable[..., Any]) -> tuple[ast.Module, str]:
+def _parse_rewritten_tree(
+    target: Callable[..., Any],
+    state: ExplorationState | None = None,
+) -> tuple[ast.Module, str]:
     """Return ``(transformed_tree, source_filename)`` for ``target``.
 
     Extracted from rewrite_target so the parse + transform step can
@@ -188,7 +349,7 @@ def _parse_rewritten_tree(target: Callable[..., Any]) -> tuple[ast.Module, str]:
 
     tree = ast.parse(source, filename=filename)
     tree = ConcolicCallRewriter().visit(tree)
-    tree = ConcolicCompareRewriter().visit(tree)
+    tree = ConcolicCompareRewriter(state=state).visit(tree)
     ast.fix_missing_locations(tree)
     _shift_line_numbers(tree, target)
     return tree, filename
