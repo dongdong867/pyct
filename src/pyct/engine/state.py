@@ -83,6 +83,14 @@ class ExplorationState:
             supplies an alternate input. Resolution is orthogonal: the
             resolved record carries provenance ``PLUGIN_UNKNOWN`` so the
             two facts can be cross-referenced from the result alone.
+        gen_substr_let_bound: ``str.substr`` let-binding emission count
+            over the run. Bumped inside ``_build_substr_expression``
+            every time the helper wraps its output in an SMT ``let`` so
+            start/end bounds are named once and referenced by name,
+            avoiding duplicate evaluation of the start expression in the
+            length term. Concrete bounds skip their binding and inline
+            directly inside the let body; the counter still bumps once
+            per emission regardless of how many args were bound.
         harness_error: ``wrap_arguments`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
@@ -107,6 +115,7 @@ class ExplorationState:
     tracker: CoverageTracker | None = None
     gen_unsat: int = 0
     gen_unknown: int = 0
+    gen_substr_let_bound: int = 0
     harness_error: int = 0
 
     def coverage_percent(self) -> float:
