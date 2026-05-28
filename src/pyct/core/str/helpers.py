@@ -104,6 +104,17 @@ def _bump_substr_let_counter(concolic_str: Any) -> None:
     state.gen_substr_let_bound += 1
 
 
+def _bump_str_to_int_singleton_counter(concolic_str: Any) -> None:
+    """Bump ``state.gen_str_to_int_singleton_rewritten``, no-op if absent."""
+    engine = getattr(concolic_str, "engine", None)
+    if engine is None:
+        return
+    state = getattr(engine, "state", None)
+    if state is None:
+        return
+    state.gen_str_to_int_singleton_rewritten += 1
+
+
 def _normalize_index(index: Any, concolic_str: Any) -> Any:
     """Normalize negative index to positive, clamping to 0."""
     if concolic_converter.unwrap_concolic(index) >= 0:
