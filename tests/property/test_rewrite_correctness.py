@@ -86,11 +86,19 @@ def _target_line_range(target: Callable) -> frozenset[int]:
 
 
 def _engine_executed_lines(target: Callable, args: dict[str, Any]) -> frozenset[int]:
-    """Run engine with ``args`` as the sole seed; return narrow executed lines."""
+    """Run engine with ``args`` as the sole seed; return lines the seed iteration hit.
+
+    The engine ignores ``max_iterations`` during seed phase, so ``executed_lines``
+    accumulates a stray solver-driven iteration after the seed runs. The seed's
+    own line set is captured by ``inputs_generated[0].new_lines`` — that's what
+    we compare against concrete execution to test the rewrite-correctness property.
+    """
     config = ExecutionConfig(max_iterations=1, timeout_seconds=10.0)
     engine = Engine(config)
     result = engine.explore(target, args, seed_inputs=[])
-    return result.executed_lines
+    if not result.inputs_generated:
+        return frozenset()
+    return result.inputs_generated[0].new_lines
 
 
 def _concrete_executed_lines(target: Callable, args: dict[str, Any]) -> frozenset[int]:
