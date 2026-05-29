@@ -68,13 +68,7 @@ _DEFAULT_BASELINE = (
     / "run_20260418_215802"
     / "results.json"
 )
-_DEFAULT_LATEST = (
-    _REPO_ROOT
-    / "benchmark"
-    / "results"
-    / "no_regression_latest"
-    / "results.json"
-)
+_DEFAULT_LATEST = _REPO_ROOT / "benchmark" / "results" / "no_regression_latest" / "results.json"
 
 
 def _resolve_path(env_var: str, default: Path) -> Path:
@@ -98,8 +92,7 @@ def test_realworld_mode_2_targets_have_no_regression() -> None:
     latest_path = _resolve_path("LATEST_RESULTS", _DEFAULT_LATEST)
 
     assert baseline_path.exists(), (
-        f"baseline results not found at {baseline_path}. "
-        f"Override via BASELINE_RESULTS env var."
+        f"baseline results not found at {baseline_path}. Override via BASELINE_RESULTS env var."
     )
     assert latest_path.exists(), (
         f"latest results not found at {latest_path}. "
@@ -111,9 +104,7 @@ def test_realworld_mode_2_targets_have_no_regression() -> None:
     latest = _load_results(latest_path)
 
     missing = _MODE_2_TARGETS - (baseline.keys() & latest.keys())
-    assert not missing, (
-        f"Mode-2 targets missing from one or both artifacts: {sorted(missing)}"
-    )
+    assert not missing, f"Mode-2 targets missing from one or both artifacts: {sorted(missing)}"
 
     failures: list[str] = []
     for target in sorted(_MODE_2_TARGETS):

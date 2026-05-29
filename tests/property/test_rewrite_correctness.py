@@ -30,24 +30,29 @@ from hypothesis import strategies as st
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 
+# The if/return-True else return-False shape is intentional and noqa'd:
+# the engine doesn't register branches on bare `return <Compare>` per
+# project memory `project_concolic_tracking_gaps`, so collapsing these to
+# `return cond` would silently disable the rewrite exercised by the test.
+
 
 def target_substring(s: str) -> bool:
     """Substring let-binding rewrite (slice on symbolic str)."""
-    if s[:3] == "abc":
+    if s[:3] == "abc":  # noqa: SIM103
         return True
     return False
 
 
 def target_count(s: str) -> bool:
     """Count rewrite (str.count on symbolic str, literal sub)."""
-    if s.count("a") == 2:
+    if s.count("a") == 2:  # noqa: SIM103
         return True
     return False
 
 
 def target_membership(s: str) -> bool:
     """Literal-container membership rewrite."""
-    if s in ("foo", "bar", "baz"):
+    if s in ("foo", "bar", "baz"):  # noqa: SIM103
         return True
     return False
 
@@ -63,7 +68,7 @@ def target_str_to_int(s: str) -> bool:
 
 def target_case_fold(s: str) -> bool:
     """Case-fold rewrite (str.lower on symbolic str)."""
-    if s.lower() == "abc":
+    if s.lower() == "abc":  # noqa: SIM103
         return True
     return False
 
