@@ -302,6 +302,9 @@ def _setup_file_logging(run_dir: Path) -> None:
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
     logging.getLogger("benchmark").addHandler(handler)
+    # Run-end rewrite telemetry emits on ``ct.engine``; route it to the
+    # same file so the line clusters with the per-target runner output.
+    logging.getLogger("ct.engine").addHandler(handler)
 
 
 def _create_run_directory(output_dir: str) -> Path:

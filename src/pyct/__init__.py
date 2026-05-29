@@ -8,6 +8,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.result import ExplorationResult, RunConcolicResult
+from pyct.engine.telemetry import emit_run_summary
 from pyct.utils import logger as _logger  # noqa: F401  — registers smtlib2 log level
 
 __version__ = "0.2.0"
@@ -66,20 +67,26 @@ def run_concolic(
     if isolated:
         from pyct.engine.isolated_runner import run_isolated
 
-        return run_isolated(
+        result = run_isolated(
             target,
             initial_args,
             exec_config,
             seed_inputs=seed_inputs,
             plugins=plugins,
         )
-    return _run_in_process(
-        target,
-        initial_args,
-        exec_config,
-        seed_inputs=seed_inputs,
-        plugins=plugins,
-    )
+    else:
+        result = _run_in_process(
+            target,
+            initial_args,
+            exec_config,
+            seed_inputs=seed_inputs,
+            plugins=plugins,
+        )
+    # Emit parent-side so the line lands in ``benchmark.log`` even when
+    # the engine itself ran in a child subprocess where logging is not
+    # configured. Counters survive the pipe; the line does not.
+    emit_run_summary(result)
+    return result
 
 
 def _run_in_process(
