@@ -1,5 +1,5 @@
 """LLM plugin — uses an LLM to generate seeds, plateau recovery, and solver fallback inputs."""
 
-from pyct.plugins.llm.plugin import LLMPlugin
+from pyct.plugins.llm.plugin import LLMPlugin, LLMPoint
 
-__all__ = ["LLMPlugin"]
+__all__ = ["LLMPlugin", "LLMPoint"]

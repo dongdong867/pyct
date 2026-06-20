@@ -247,6 +247,97 @@ class TestParseFailedCounter:
         assert plugin.parse_failed == 3
 
 
+class TestEnabledPoints:
+    """``enabled_points`` selectively silences LLM integration points.
+
+    The plugin exposes three logical integration points
+    (``LLMPoint.SEED``, ``LLMPoint.PLATEAU``, ``LLMPoint.SOLVER_FAILURE``).
+    A point not in ``enabled_points`` makes its handler degrade to the
+    same empty/None response as a missing client — and, critically,
+    fires NO LLM call (no prompt recorded, no token spend). This is the
+    capability the single-component ablation runners build on; the
+    ``PLATEAU`` point gates both the in-loop and post-loop handlers,
+    since the paper treats plateau discovery as one component with two
+    trigger sites.
+    """
+
+    def test_default_constructor_enables_all_points(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(responses=['[{"s": 1}]', '[{"p": 1}]', '{"u": 1}'])
+        plugin = LLMPlugin(client=client)
+        ctx = _build_context(target)
+
+        assert plugin.on_seed_request(ctx) == [{"s": 1}]
+        assert plugin.on_coverage_plateau(ctx) == [{"p": 1}]
+        assert plugin.on_constraint_unknown(ctx, "(> v 0)") == {"u": 1}
+        assert len(client.prompts) == 3
+
+    def test_seed_only_fires_seed_and_silences_the_rest(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin, LLMPoint
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(responses=['[{"value": 1}]'])
+        plugin = LLMPlugin(client=client, enabled_points=frozenset({LLMPoint.SEED}))
+        ctx = _build_context(target)
+
+        assert plugin.on_seed_request(ctx) == [{"value": 1}]
+        # Silenced points return empty/None and make no LLM call.
+        assert plugin.on_coverage_plateau(ctx) == []
+        assert plugin.on_post_loop_discovery(ctx) == []
+        assert plugin.on_constraint_unknown(ctx, "(> v 0)") is None
+        # Only the seed handler ever reached the client.
+        assert len(client.prompts) == 1
+
+    def test_plateau_point_gates_both_inloop_and_postloop(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin, LLMPoint
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(responses=['[{"a": 1}]', '[{"b": 2}]'])
+        plugin = LLMPlugin(client=client, enabled_points=frozenset({LLMPoint.PLATEAU}))
+        ctx = _build_context(target)
+
+        assert plugin.on_coverage_plateau(ctx) == [{"a": 1}]
+        assert plugin.on_post_loop_discovery(ctx) == [{"b": 2}]
+        # Seed and solver-failure are silenced.
+        assert plugin.on_seed_request(ctx) == []
+        assert plugin.on_constraint_unknown(ctx, "(> v 0)") is None
+        assert len(client.prompts) == 2
+
+    def test_solver_failure_only_fires_unknown_and_silences_the_rest(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin, LLMPoint
+
+        target = _build_target_module(tmp_path)
+        client = _StubClient(responses=['{"value": 9}'])
+        plugin = LLMPlugin(
+            client=client,
+            enabled_points=frozenset({LLMPoint.SOLVER_FAILURE}),
+        )
+        ctx = _build_context(target)
+
+        assert plugin.on_constraint_unknown(ctx, "(> v 0)") == {"value": 9}
+        assert plugin.on_seed_request(ctx) == []
+        assert plugin.on_coverage_plateau(ctx) == []
+        assert plugin.on_post_loop_discovery(ctx) == []
+        assert len(client.prompts) == 1
+
+    def test_empty_set_silences_every_handler_with_no_llm_call(self, tmp_path):
+        from pyct.plugins.llm import LLMPlugin
+
+        target = _build_target_module(tmp_path)
+        # A response is queued but must never be consumed.
+        client = _StubClient(responses=['[{"x": 1}]'])
+        plugin = LLMPlugin(client=client, enabled_points=frozenset())
+        ctx = _build_context(target)
+
+        assert plugin.on_seed_request(ctx) == []
+        assert plugin.on_coverage_plateau(ctx) == []
+        assert plugin.on_post_loop_discovery(ctx) == []
+        assert plugin.on_constraint_unknown(ctx, "(> v 0)") is None
+        assert client.prompts == []
+
+
 class TestConstraintUnknown:
     def test_unknown_returns_resolution_dict(self, tmp_path):
         from pyct.plugins.llm import LLMPlugin
