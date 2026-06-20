@@ -1,9 +1,11 @@
-"""Run-end telemetry emission for rewrite counter visibility."""
+"""Run-end telemetry emission: rewrite counters and target-error lines."""
 
 from __future__ import annotations
 
 import logging
 from typing import Any
+
+from pyct.engine.types import Outcome
 
 log = logging.getLogger("ct.engine")
 
@@ -38,3 +40,26 @@ def emit_run_summary(source: Any) -> None:
         return
     body = " ".join(f"{name}={value}" for name, value in counts if value > 0)
     log.info("rewrites: %s", body)
+
+
+def emit_target_errors(source: Any) -> None:
+    """Log one INFO line per input whose target execution raised.
+
+    ``source`` exposes ``inputs_generated`` — a sequence of
+    ``InputRecord`` (``RunConcolicResult`` / ``ExplorationResult``).
+    Emitted parent-side, like ``emit_run_summary``, so the lines reach
+    ``benchmark.log`` even when the engine ran in a child subprocess
+    where the in-loop DEBUG trace sinks nowhere. Each line names the
+    exception and the triggering input — a ``TARGET_ERROR`` record is a
+    discovered crashing case worth surfacing. Timeouts and clean exits
+    produce no line.
+    """
+    for record in getattr(source, "inputs_generated", ()):
+        if record.outcome != Outcome.TARGET_ERROR:
+            continue
+        log.info(
+            "target error [%s]: %s | args=%r",
+            record.provenance,
+            record.error,
+            record.args,
+        )

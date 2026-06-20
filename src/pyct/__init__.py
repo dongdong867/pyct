@@ -8,7 +8,7 @@ from typing import Any
 from pyct.config.execution import ExecutionConfig
 from pyct.engine.engine import Engine
 from pyct.engine.result import ExplorationResult, RunConcolicResult
-from pyct.engine.telemetry import emit_run_summary
+from pyct.engine.telemetry import emit_run_summary, emit_target_errors
 from pyct.utils import logger as _logger  # noqa: F401  — registers smtlib2 log level
 
 __version__ = "0.2.0"
@@ -86,6 +86,7 @@ def run_concolic(
     # the engine itself ran in a child subprocess where logging is not
     # configured. Counters survive the pipe; the line does not.
     emit_run_summary(result)
+    emit_target_errors(result)
     return result
 
 
