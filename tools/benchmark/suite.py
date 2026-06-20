@@ -17,17 +17,27 @@ from tools.benchmark.runners import (
     CONCOLIC_LLM,
     CROSSHAIR,
     LLM_ONLY,
+    PLATEAU_ONLY,
     PURE_CONCOLIC,
+    SEEDS_ONLY,
+    SOLVER_FAIL_ONLY,
     run_concolic_llm,
     run_crosshair,
     run_llm_only,
+    run_plateau_only,
     run_pure_concolic,
+    run_seeds_only,
+    run_solver_fail_only,
 )
 from tools.benchmark.targets import BenchmarkTarget
 
 log = logging.getLogger("benchmark.suite")
 
-LLM_RUNNERS = frozenset({LLM_ONLY, CONCOLIC_LLM})
+# Runners that consume the shared, once-per-target LLM seed set — they
+# trigger seed generation and are charged the seed-generation tokens. The
+# in-loop ablations (plateau_only, solver_fail_only) build their own
+# client for in-loop calls and do not use the seed set.
+SEED_RUNNERS = frozenset({LLM_ONLY, CONCOLIC_LLM, SEEDS_ONLY})
 
 
 def run_single_target(
@@ -70,7 +80,7 @@ def _generate_seeds_if_needed(
     Returns (seeds, seed_time, seed_tokens). Token usage from the seed
     generation call is added to both concolic_llm and llm_only results.
     """
-    if not LLM_RUNNERS.intersection(runner_names):
+    if not SEED_RUNNERS.intersection(runner_names):
         return [], 0.0, None
 
     from pyct.plugins.llm import LLMPlugin
@@ -180,8 +190,8 @@ def _run_with_retries(
 
     best_result.attempts = attempts
 
-    # Add seed tokens to LLM-mode results
-    if runner_name in LLM_RUNNERS and seed_tokens is not None:
+    # Add seed tokens to seed-consuming results
+    if runner_name in SEED_RUNNERS and seed_tokens is not None:
         existing = best_result.token_usage
         if existing is not None:
             best_result.token_usage = TokenUsage(
@@ -233,6 +243,12 @@ def _run_single(
             return run_pure_concolic(target, config)
         if runner_name == CONCOLIC_LLM:
             return run_concolic_llm(target, config, seeds, seed_time)
+        if runner_name == SEEDS_ONLY:
+            return run_seeds_only(target, config, seeds, seed_time)
+        if runner_name == PLATEAU_ONLY:
+            return run_plateau_only(target, config)
+        if runner_name == SOLVER_FAIL_ONLY:
+            return run_solver_fail_only(target, config)
         if runner_name == LLM_ONLY:
             return run_llm_only(target, config, seeds, seed_time)
         if runner_name == CROSSHAIR:

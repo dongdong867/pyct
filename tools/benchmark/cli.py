@@ -32,7 +32,10 @@ from tools.benchmark.runners import (
     CONCOLIC_LLM,
     CROSSHAIR,
     LLM_ONLY,
+    PLATEAU_ONLY,
     PURE_CONCOLIC,
+    SEEDS_ONLY,
+    SOLVER_FAIL_ONLY,
     _load_baseline,
 )
 from tools.benchmark.suite import run_single_target
@@ -45,11 +48,22 @@ RUNNER_ALIASES = {
     "cl": CONCOLIC_LLM,
     "lo": LLM_ONLY,
     "ch": CROSSHAIR,
+    "so": SEEDS_ONLY,
+    "po": PLATEAU_ONLY,
+    "fo": SOLVER_FAIL_ONLY,
     PURE_CONCOLIC: PURE_CONCOLIC,
     CONCOLIC_LLM: CONCOLIC_LLM,
     LLM_ONLY: LLM_ONLY,
     CROSSHAIR: CROSSHAIR,
+    SEEDS_ONLY: SEEDS_ONLY,
+    PLATEAU_ONLY: PLATEAU_ONLY,
+    SOLVER_FAIL_ONLY: SOLVER_FAIL_ONLY,
 }
+
+# Expands to the full single-component ablation set: baseline, each
+# integration point in isolation, and the full system — enough to read
+# each component's contribution and reconcile the sum against the whole.
+_ABLATION_GROUP = [PURE_CONCOLIC, SEEDS_ONLY, PLATEAU_ONLY, SOLVER_FAIL_ONLY, CONCOLIC_LLM]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -245,9 +259,12 @@ def _discover_custom_function(
 
 
 def _resolve_runners(runner_strs: list[str]) -> list[str]:
-    """Resolve runner aliases to full names."""
+    """Resolve runner aliases to full names; expand the ``ablation`` group."""
     result = []
     for r in runner_strs:
+        if r == "ablation":
+            result.extend(_ABLATION_GROUP)
+            continue
         resolved = RUNNER_ALIASES.get(r)
         if resolved is None:
             print(f"Unknown runner: {r}", file=sys.stderr)
@@ -346,7 +363,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--runners",
         nargs="+",
         default=["pc", "cl", "lo"],
-        help="Runners to invoke (pc=pure_concolic, cl=concolic_llm, lo=llm_only, ch=crosshair)",
+        help=(
+            "Runners to invoke (pc=pure_concolic, cl=concolic_llm, lo=llm_only, "
+            "ch=crosshair, so=seeds_only, po=plateau_only, fo=solver_fail_only). "
+            "Use 'ablation' to expand to pc so po fo cl."
+        ),
     )
     run.add_argument(
         "--targets",

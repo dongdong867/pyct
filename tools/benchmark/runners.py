@@ -44,6 +44,14 @@ CONCOLIC_LLM = "concolic_llm"
 LLM_ONLY = "llm_only"
 CROSSHAIR = "crosshair"
 
+# Single-component ablation runners — isolate one LLM integration point
+# each against the bare-concolic baseline. The seed component is toggled
+# by whether seed_inputs carries the LLM seeds; the in-loop components by
+# the plugin's enabled_points.
+SEEDS_ONLY = "seeds_only"
+PLATEAU_ONLY = "plateau_only"
+SOLVER_FAIL_ONLY = "solver_fail_only"
+
 ALL_RUNNERS = [PURE_CONCOLIC, CONCOLIC_LLM, LLM_ONLY, CROSSHAIR]
 
 
@@ -55,27 +63,22 @@ def run_pure_concolic(
     config: BenchmarkConfig,
 ) -> RunnerResult:
     """Pure concolic — no plugins, engine only."""
-    from pyct import run_concolic
-    from pyct.config.execution import ExecutionConfig
+    return _run_bare_engine(target, config, seed_inputs=None, seed_time=0.0)
 
-    exec_config = ExecutionConfig(
-        timeout_seconds=config.timeout,
-        solver_timeout=int(config.single_timeout),
-        max_iterations=config.max_iterations,
-        scope=_build_coverage_scope(target, config),
-    )
-    func = _resolve_target(target)
 
-    start = time.monotonic()
-    result = run_concolic(
-        func,
-        dict(target.initial_args),
-        config=exec_config,
-        isolated=True,
-    )
-    elapsed = time.monotonic() - start
+def run_seeds_only(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+    seeds: list[dict[str, Any]],
+    seed_time: float,
+) -> RunnerResult:
+    """Ablation: bare engine seeded by the LLM seed set, no in-loop LLM.
 
-    return _pyct_result_to_runner(result, target, elapsed)
+    Isolates the seed-generation component — the engine explores from the
+    LLM-generated seeds with every in-loop LLM trigger silenced (no
+    plugin registered).
+    """
+    return _run_bare_engine(target, config, seed_inputs=seeds, seed_time=seed_time)
 
 
 def run_concolic_llm(
@@ -84,21 +87,87 @@ def run_concolic_llm(
     seeds: list[dict[str, Any]],
     seed_time: float,
 ) -> RunnerResult:
-    """Concolic + LLM — pre-gen seeds + LLM plugin for plateau/unknown."""
-    from pyct import run_concolic
-    from pyct.config.execution import ExecutionConfig
-    from pyct.plugins.llm import LLMPlugin
-    from pyct.plugins.llm.client import build_default_client
+    """Concolic + full LLM oracle — pre-gen seeds plus all in-loop triggers."""
+    from pyct.plugins.llm import LLMPoint
 
-    exec_config = ExecutionConfig(
+    return _run_concolic_with_plugin(
+        target,
+        config,
+        seed_inputs=seeds,
+        seed_time=seed_time,
+        enabled_points=frozenset(LLMPoint),
+    )
+
+
+def run_plateau_only(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+) -> RunnerResult:
+    """Ablation: bare-concolic baseline + the LLM plateau-discovery trigger.
+
+    No LLM seeds (``seed_inputs=[]``); the plugin responds only to coverage
+    plateaus, both in-loop and in the post-loop push.
+    """
+    from pyct.plugins.llm import LLMPoint
+
+    return _run_concolic_with_plugin(
+        target,
+        config,
+        seed_inputs=[],
+        seed_time=0.0,
+        enabled_points=frozenset({LLMPoint.PLATEAU}),
+    )
+
+
+def run_solver_fail_only(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+) -> RunnerResult:
+    """Ablation: bare-concolic baseline + the LLM solver-failure trigger.
+
+    No LLM seeds (``seed_inputs=[]``); the plugin responds only when the
+    solver returns UNKNOWN/ERROR on a constraint.
+    """
+    from pyct.plugins.llm import LLMPoint
+
+    return _run_concolic_with_plugin(
+        target,
+        config,
+        seed_inputs=[],
+        seed_time=0.0,
+        enabled_points=frozenset({LLMPoint.SOLVER_FAILURE}),
+    )
+
+
+def _build_exec_config(target: BenchmarkTarget, config: BenchmarkConfig):
+    """Engine ExecutionConfig shared by the concolic runners."""
+    from pyct.config.execution import ExecutionConfig
+
+    return ExecutionConfig(
         timeout_seconds=config.timeout,
         solver_timeout=int(config.single_timeout),
         max_iterations=config.max_iterations,
         scope=_build_coverage_scope(target, config),
     )
+
+
+def _run_bare_engine(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+    *,
+    seed_inputs: list[dict[str, Any]] | None,
+    seed_time: float,
+) -> RunnerResult:
+    """Run the isolated engine with no plugins.
+
+    ``seed_inputs=None`` is the pure-concolic baseline (start from the
+    initial args only); a seed list runs the same bare engine seeded by
+    the LLM seed set (the seeds-only ablation) with no in-loop LLM.
+    """
+    from pyct import run_concolic
+
+    exec_config = _build_exec_config(target, config)
     func = _resolve_target(target)
-    client = build_default_client()
-    plugins = [LLMPlugin(client=client)] if client else []
 
     start = time.monotonic()
     result = run_concolic(
@@ -106,12 +175,50 @@ def run_concolic_llm(
         dict(target.initial_args),
         config=exec_config,
         isolated=True,
-        seed_inputs=seeds,
+        seed_inputs=seed_inputs,
+        plugins=[],
+    )
+    elapsed = time.monotonic() - start + seed_time
+
+    return _pyct_result_to_runner(result, target, elapsed, seeds=seed_inputs)
+
+
+def _run_concolic_with_plugin(
+    target: BenchmarkTarget,
+    config: BenchmarkConfig,
+    *,
+    seed_inputs: list[dict[str, Any]],
+    seed_time: float,
+    enabled_points: frozenset,
+) -> RunnerResult:
+    """Run the isolated engine with an LLM plugin restricted to ``enabled_points``.
+
+    Shared by the full concolic_llm runner and the in-loop ablation
+    runners. ``seed_inputs`` carries the pre-generated LLM seeds for the
+    full runner and is empty for the in-loop ablations, which isolate a
+    single in-loop trigger over the bare-concolic baseline.
+    """
+    from pyct import run_concolic
+    from pyct.plugins.llm import LLMPlugin
+    from pyct.plugins.llm.client import build_default_client
+
+    exec_config = _build_exec_config(target, config)
+    func = _resolve_target(target)
+    client = build_default_client()
+    plugins = [LLMPlugin(client=client, enabled_points=enabled_points)] if client else []
+
+    start = time.monotonic()
+    result = run_concolic(
+        func,
+        dict(target.initial_args),
+        config=exec_config,
+        isolated=True,
+        seed_inputs=seed_inputs,
         plugins=plugins,
     )
     elapsed = time.monotonic() - start + seed_time
 
-    runner_result = _pyct_result_to_runner(result, target, elapsed, seeds=seeds)
+    runner_result = _pyct_result_to_runner(result, target, elapsed, seeds=seed_inputs or None)
     if result.token_stats:
         runner_result.token_usage = TokenUsage(
             input_tokens=result.token_stats.get("input_tokens", 0),
