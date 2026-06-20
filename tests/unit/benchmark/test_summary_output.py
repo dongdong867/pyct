@@ -321,3 +321,101 @@ def test_aggregate_includes_engine_column_when_engine_data_present(tmp_path):
 def test_aggregate_engine_column_absent_without_data(tmp_path):
     text = _write_and_read(tmp_path)
     assert "Engine Cov" not in text
+
+
+# ── Execution-outcome metrics ─────────────────────────────────────
+
+
+def _result_with_outcomes(
+    name: str,
+    *,
+    runner: str,
+    total: int,
+    clean: int,
+    error: int,
+    timeout: int,
+    by_exception: dict,
+) -> dict:
+    return {
+        "test_name": name,
+        "function": name.split(".")[-1],
+        "category": "test",
+        "baseline_generated_at": None,
+        "runners": {
+            runner: {
+                "success": True,
+                "coverage": {
+                    "coverage_percent": 50.0,
+                    "executed_lines": 5,
+                    "total_lines": 10,
+                    "executed_line_numbers": [],
+                    "missing_line_numbers": [],
+                },
+                "time_seconds": 1.0,
+                "error": None,
+                "outcome_counts": {
+                    "total": total,
+                    "clean_exit": clean,
+                    "error_exit": error,
+                    "timeout": timeout,
+                    "by_exception": by_exception,
+                },
+            },
+        },
+    }
+
+
+def _outcome_section(text: str) -> list[str]:
+    """Lines from the EXECUTION OUTCOMES header to the next blank line."""
+    lines = text.splitlines()
+    start = next(i for i, ln in enumerate(lines) if "EXECUTION OUTCOMES" in ln)
+    section = []
+    for ln in lines[start:]:
+        if ln == "" and section:
+            break
+        section.append(ln)
+    return section
+
+
+def test_outcome_block_absent_without_outcome_data(tmp_path):
+    # Default _RESULTS carry no outcome_counts → no execution-outcome block.
+    assert "EXECUTION OUTCOMES" not in _write_and_read(tmp_path)
+
+
+def test_outcome_block_sums_tallies_per_runner(tmp_path):
+    results = [
+        _result_with_outcomes(
+            "lib.a",
+            runner="concolic_llm",
+            total=10,
+            clean=6,
+            error=3,
+            timeout=1,
+            by_exception={"AssertionError": 2, "ValueError": 1},
+        ),
+        _result_with_outcomes(
+            "lib.b",
+            runner="concolic_llm",
+            total=5,
+            clean=5,
+            error=0,
+            timeout=0,
+            by_exception={},
+        ),
+    ]
+    out = tmp_path / "summary.txt"
+    save_summary(results, ["concolic_llm"], out, header=_HEADER)
+    text = out.read_text()
+
+    assert "EXECUTION OUTCOMES" in text
+    section = _outcome_section(text)
+    header = next(ln for ln in section if "Inputs" in ln)
+    for label in ("Clean", "Error", "Timeout", "Assert"):
+        assert label in header, f"outcome header should name {label!r}: {header!r}"
+
+    row = next(ln for ln in section if ln.startswith("concolic_llm"))
+    fields = row.split()
+    # name, Inputs, Clean, Error, Timeout, AssertErr
+    assert fields[1:] == ["15", "11", "3", "1", "2"], (
+        f"summed tallies wrong in outcome row: {row!r}"
+    )

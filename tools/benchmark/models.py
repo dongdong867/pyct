@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Literal
+
+from pyct.engine.types import Outcome
 
 
 @dataclass
@@ -72,6 +75,69 @@ class TokenUsage:
         }
 
 
+def _exception_type(error: str | None) -> str:
+    """Extract the leading exception class name from an error string.
+
+    Records store errors as ``"AssertionError: msg"`` or, for SystemExit,
+    ``"SystemExit(0)"`` — both lead with the class name. Returns
+    ``"Unknown"`` when the string is empty or has no leading identifier.
+    """
+    if not error:
+        return "Unknown"
+    match = re.match(r"[A-Za-z_]\w*", error)
+    return match.group(0) if match else "Unknown"
+
+
+@dataclass(frozen=True)
+class OutcomeCounts:
+    """Execution-outcome tally derived from a runner's input records.
+
+    Answers the reviewer's per-execution metrics directly: ``clean_exit``
+    (the target returned normally), ``error_exit`` (it raised), and
+    ``timeout``. ``by_exception`` breaks the error exits down by exception
+    type — ``AssertionError`` appears as its own key, so the
+    fault-triggering count needs no post-processing. Purely a projection
+    of ``input_records``; it holds no state the records don't.
+    """
+
+    total: int = 0
+    clean_exit: int = 0
+    error_exit: int = 0
+    timeout: int = 0
+    by_exception: dict[str, int] = field(default_factory=dict)
+
+    @classmethod
+    def from_records(cls, records: list[dict[str, Any]]) -> OutcomeCounts:
+        clean = errors = timeouts = 0
+        by_exception: dict[str, int] = {}
+        for record in records:
+            outcome = record.get("outcome")
+            if outcome == Outcome.TIMEOUT:
+                timeouts += 1
+            elif outcome == Outcome.TARGET_ERROR:
+                errors += 1
+                exc = _exception_type(record.get("error"))
+                by_exception[exc] = by_exception.get(exc, 0) + 1
+            else:
+                clean += 1
+        return cls(
+            total=len(records),
+            clean_exit=clean,
+            error_exit=errors,
+            timeout=timeouts,
+            by_exception=by_exception,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "clean_exit": self.clean_exit,
+            "error_exit": self.error_exit,
+            "timeout": self.timeout,
+            "by_exception": dict(self.by_exception),
+        }
+
+
 @dataclass
 class RunnerResult:
     """Result of a single runner on a single target (best of N attempts).
@@ -117,6 +183,7 @@ class RunnerResult:
             "attempts": [a.to_dict() for a in self.attempts],
             "captured_output": self.captured_output,
             "input_records": self.input_records,
+            "outcome_counts": OutcomeCounts.from_records(self.input_records).to_dict(),
             "gen_unsat": self.gen_unsat,
             "gen_unknown": self.gen_unknown,
             "gen_parse_failed": self.gen_parse_failed,

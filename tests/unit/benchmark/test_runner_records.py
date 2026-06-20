@@ -353,6 +353,47 @@ class TestRunnerResultToDict:
         assert payload["gen_parse_failed"] == 4
         assert payload["harness_error"] == 5
 
+    def test_to_dict_includes_outcome_counts_derived_from_records(self, target):
+        """``outcome_counts`` is a projection of ``input_records`` — a
+        clean exit plus an AssertionError-raising input fold into the
+        run-level tally the paper's error-metric table reads."""
+        recs = (
+            InputRecord(
+                args={"x": 1},
+                provenance=Provenance.SEED,
+                outcome=Outcome.COVERED_NEW,
+                new_lines=frozenset({1}),
+                error=None,
+            ),
+            InputRecord(
+                args={"x": 2},
+                provenance=Provenance.SOLVER,
+                outcome=Outcome.TARGET_ERROR,
+                new_lines=frozenset(),
+                error="AssertionError: x must be positive",
+            ),
+        )
+        result = RunConcolicResult(
+            success=True,
+            coverage_percent=0.0,
+            executed_lines=frozenset({1}),
+            paths_explored=1,
+            inputs_generated=recs,
+            iterations=2,
+            termination_reason="exhausted",
+        )
+        runner_result = _pyct_result_to_runner(result, target, elapsed=0.0)
+
+        payload = runner_result.to_dict()
+
+        assert payload["outcome_counts"] == {
+            "total": 2,
+            "clean_exit": 1,
+            "error_exit": 1,
+            "timeout": 0,
+            "by_exception": {"AssertionError": 1},
+        }
+
 
 # Skip on Windows or systems without SIGALRM (run_llm_only uses _soft_timeout).
 pytestmark = pytest.mark.skipif(

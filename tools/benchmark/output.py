@@ -87,6 +87,10 @@ def save_summary(
     lines.extend(_format_per_target_table(all_results, runner_names, _time_cell, name_col))
     lines.append("")
     lines.extend(_format_aggregate_block(all_results, runner_names))
+    outcome_lines = _format_outcome_block(all_results, runner_names)
+    if outcome_lines:
+        lines.append("")
+        lines.extend(outcome_lines)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n")
@@ -300,6 +304,53 @@ def _format_aggregate_block(
             )
         row += f"{avg_time:>8.2f}s   {_format_duration(total_time):<14s} {s['wins']:<6d}"
         lines.append(row)
+    lines.append(bar)
+    return lines
+
+
+def _format_outcome_block(
+    all_results: list[dict[str, Any]],
+    runner_names: list[str],
+) -> list[str]:
+    """Per-runner execution-outcome tally, summed across all targets.
+
+    Reads each runner's ``outcome_counts`` (a projection of its input
+    records) and surfaces the reviewer's per-execution metrics: clean
+    exits, error exits, timeouts, and AssertionError-triggering inputs.
+    Returns an empty list when no runner reported any inputs — legacy
+    results and CrossHair-only runs stay quiet, mirroring the run-end
+    rewrite-telemetry suppression.
+    """
+    fields = ("total", "clean_exit", "error_exit", "timeout", "assertion")
+    totals = {name: dict.fromkeys(fields, 0) for name in runner_names}
+    any_inputs = False
+    for entry in all_results:
+        for name in runner_names:
+            counts = (entry["runners"].get(name) or {}).get("outcome_counts")
+            if not counts:
+                continue
+            tally = totals[name]
+            tally["total"] += counts.get("total", 0)
+            tally["clean_exit"] += counts.get("clean_exit", 0)
+            tally["error_exit"] += counts.get("error_exit", 0)
+            tally["timeout"] += counts.get("timeout", 0)
+            tally["assertion"] += counts.get("by_exception", {}).get("AssertionError", 0)
+            any_inputs = any_inputs or counts.get("total", 0) > 0
+    if not any_inputs:
+        return []
+
+    bar = "=" * 80
+    header = (
+        f"{'Runner':<18s} {'Inputs':>8s} {'Clean':>8s} "
+        f"{'Error':>8s} {'Timeout':>8s} {'AssertErr':>10s}"
+    )
+    lines = [bar, "EXECUTION OUTCOMES", bar, header, "-" * 80]
+    for name in runner_names:
+        t = totals[name]
+        lines.append(
+            f"{name:<18s} {t['total']:>8d} {t['clean_exit']:>8d} "
+            f"{t['error_exit']:>8d} {t['timeout']:>8d} {t['assertion']:>10d}"
+        )
     lines.append(bar)
     return lines
 
