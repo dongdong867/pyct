@@ -9,7 +9,6 @@ from __future__ import annotations
 import ast
 import logging
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
 
 log = logging.getLogger("pyct.cfg")
 
@@ -22,10 +21,10 @@ class CFGNode:
     line_number: int
     node_type: str
     code_snippet: str
-    condition: Optional[str] = None
-    details: Dict = field(default_factory=dict)
+    condition: str | None = None
+    details: dict = field(default_factory=dict)
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {
             "id": self.id,
             "line": self.line_number,
@@ -44,7 +43,7 @@ class CFGEdge:
     to_node: int
     condition: str
 
-    def to_dict(self) -> Dict:
+    def to_dict(self) -> dict:
         return {"from": self.from_node, "to": self.to_node, "condition": self.condition}
 
 
@@ -52,18 +51,18 @@ class CFGEdge:
 class CFGResult:
     """Result of CFG extraction — pure data, no formatting."""
 
-    nodes: List[CFGNode]
-    edges: List[CFGEdge]
-    entry_node: Optional[int]
-    exit_nodes: List[int]
+    nodes: list[CFGNode]
+    edges: list[CFGEdge]
+    entry_node: int | None
+    exit_nodes: list[int]
 
 
 class CFGExtractor:
     """Extract control flow graph from Python source code via AST."""
 
     def __init__(self) -> None:
-        self.nodes: List[CFGNode] = []
-        self.edges: List[CFGEdge] = []
+        self.nodes: list[CFGNode] = []
+        self.edges: list[CFGEdge] = []
         self.next_id = 1
 
     def extract(self, source_code: str) -> CFGResult:
@@ -93,7 +92,7 @@ class CFGExtractor:
         line_number: int,
         node_type: str,
         code_snippet: str,
-        condition: Optional[str] = None,
+        condition: str | None = None,
         **details,
     ) -> int:
         """Add a node, returning its ID."""
@@ -113,7 +112,7 @@ class CFGExtractor:
         """Add a directed edge."""
         self.edges.append(CFGEdge(from_node=from_node, to_node=to_node, condition=condition))
 
-    def _find_exit_nodes(self) -> List[int]:
+    def _find_exit_nodes(self) -> list[int]:
         exits = [n.id for n in self.nodes if n.node_type == "return"]
         if not exits and self.nodes:
             exits = [self.nodes[-1].id]
@@ -130,7 +129,7 @@ class _CFGVisitor(ast.NodeVisitor):
 
     def __init__(self, extractor: CFGExtractor) -> None:
         self.ext = extractor
-        self.parent: Optional[int] = None
+        self.parent: int | None = None
 
     def _connect(self, node_id: int) -> None:
         if self.parent is not None:

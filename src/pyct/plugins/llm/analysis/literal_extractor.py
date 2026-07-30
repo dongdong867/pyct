@@ -14,7 +14,7 @@ from __future__ import annotations
 import ast
 import inspect
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any
 
 log = logging.getLogger("pyct.literal_extractor")
 
@@ -23,9 +23,9 @@ class LiteralExtractor(ast.NodeVisitor):
     """Extract literals from Python source code."""
 
     def __init__(self):
-        self.string_literals: Set[str] = set()
-        self.numeric_literals: Set[int | float] = set()
-        self.comparisons: List[Dict[str, Any]] = []
+        self.string_literals: set[str] = set()
+        self.numeric_literals: set[int | float] = set()
+        self.comparisons: list[dict[str, Any]] = []
 
     def visit_Compare(self, node: ast.Compare) -> None:
         """Extract comparison operations and their literals."""
@@ -49,9 +49,7 @@ class LiteralExtractor(ast.NodeVisitor):
             # Handle "x in container" - the literal is the left side of 'In' operator
             if isinstance(op, ast.In) and isinstance(node.left, ast.Constant):
                 value = node.left.value
-                self.comparisons.append(
-                    {"op": "In", "value": value, "type": type(value).__name__}
-                )
+                self.comparisons.append({"op": "In", "value": value, "type": type(value).__name__})
                 if isinstance(value, str):
                     self.string_literals.add(value)
                 elif isinstance(value, (int, float)):
@@ -71,7 +69,7 @@ class LiteralExtractor(ast.NodeVisitor):
         self.generic_visit(node)
 
 
-def extract_literals_from_function(func: Any) -> Dict[str, Any]:
+def extract_literals_from_function(func: Any) -> dict[str, Any]:
     """Extract string and numeric literals from a function's source code."""
     try:
         source = inspect.getsource(func)
@@ -93,21 +91,13 @@ def extract_literals_from_function(func: Any) -> Dict[str, Any]:
         return _empty_literal_result()
 
 
-def _build_literal_result(extractor: LiteralExtractor) -> Dict[str, Any]:
-    comparison_strings = [
-        c["value"] for c in extractor.comparisons if isinstance(c["value"], str)
-    ]
+def _build_literal_result(extractor: LiteralExtractor) -> dict[str, Any]:
+    comparison_strings = [c["value"] for c in extractor.comparisons if isinstance(c["value"], str)]
     comparison_numbers = [
-        c["value"]
-        for c in extractor.comparisons
-        if isinstance(c["value"], (int, float))
+        c["value"] for c in extractor.comparisons if isinstance(c["value"], (int, float))
     ]
-    other_strings = sorted(
-        s for s in extractor.string_literals if s not in comparison_strings
-    )
-    other_numbers = sorted(
-        n for n in extractor.numeric_literals if n not in comparison_numbers
-    )
+    other_strings = sorted(s for s in extractor.string_literals if s not in comparison_strings)
+    other_numbers = sorted(n for n in extractor.numeric_literals if n not in comparison_numbers)
     return {
         "strings": sorted(comparison_strings) + other_strings,
         "numbers": sorted(comparison_numbers) + other_numbers,
@@ -117,7 +107,7 @@ def _build_literal_result(extractor: LiteralExtractor) -> Dict[str, Any]:
     }
 
 
-def _empty_literal_result() -> Dict[str, Any]:
+def _empty_literal_result() -> dict[str, Any]:
     return {
         "strings": [],
         "numbers": [],
@@ -127,9 +117,7 @@ def _empty_literal_result() -> Dict[str, Any]:
     }
 
 
-def extract_literals_from_module_function(
-    module_path: str, func_name: str
-) -> Dict[str, Any]:
+def extract_literals_from_module_function(module_path: str, func_name: str) -> dict[str, Any]:
     """
     Extract literals from a function specified by module path and name.
 
@@ -147,7 +135,5 @@ def extract_literals_from_module_function(
         func = getattr(module, func_name)
         return extract_literals_from_function(func)
     except Exception as e:
-        log.error(
-            "Failed to extract literals from %s::%s: %s", module_path, func_name, e
-        )
+        log.error("Failed to extract literals from %s::%s: %s", module_path, func_name, e)
         return _empty_literal_result()

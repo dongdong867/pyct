@@ -56,9 +56,7 @@ def _append_callee_sections(
     if not analysis.reachable_functions:
         return
 
-    by_depth = sorted(
-        analysis.reachable_functions.values(), key=lambda f: (f.depth, f.name)
-    )
+    by_depth = sorted(analysis.reachable_functions.values(), key=lambda f: (f.depth, f.name))
     for func in by_depth:
         _append_single_function(parts, func, include_boundary_values)
 
@@ -68,9 +66,7 @@ def _append_single_function(
     func: AnalyzedFunction,
     include_boundary_values: bool = True,
 ) -> None:
-    parts.append(
-        f"### Called Function: {func.name}{func.signature}  [depth {func.depth}]"
-    )
+    parts.append(f"### Called Function: {func.name}{func.signature}  [depth {func.depth}]")
     parts.append(f"```python\n{func.source.rstrip()}\n```")
 
     if func.branch_conditions:
@@ -98,9 +94,7 @@ def _append_aggregated_constraints(
     if not entries:
         return
     parts.append("### Aggregated Constraints")
-    parts.append(
-        "All branch conditions across the call graph that inputs must satisfy:"
-    )
+    parts.append("All branch conditions across the call graph that inputs must satisfy:")
     for i, entry in enumerate(entries, 1):
         parts.append(f"  {i}. {entry}")
     parts.append("")

@@ -79,9 +79,7 @@ class TestCalleeContext:
         assert "def _threshold_check(" in prompt
         assert "def _mode_check(" in prompt
 
-    def test_callee_branch_predicate_included_when_enabled(
-        self, ctx: EngineContext
-    ) -> None:
+    def test_callee_branch_predicate_included_when_enabled(self, ctx: EngineContext) -> None:
         """The predicate the caller cannot show is what makes this worth sending."""
         prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
         assert "value > MAX_ATTEMPTS" in prompt
@@ -91,9 +89,7 @@ class TestCalleeContext:
         assert "def _threshold_check(" not in prompt
 
     def test_target_without_callees_emits_no_callee_section(self) -> None:
-        prompt = build_seed_prompt(
-            _context_for(_leaf), PromptContextOptions(include_callees=True)
-        )
+        prompt = build_seed_prompt(_context_for(_leaf), PromptContextOptions(include_callees=True))
         assert "Called Function:" not in prompt
 
 

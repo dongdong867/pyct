@@ -11,9 +11,9 @@ import ast
 import inspect
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Callable, Optional
 
 from pyct.plugins.llm.analysis.literal_extractor import LiteralExtractor
 
@@ -286,7 +286,7 @@ def _resolve_callee(
     name: str,
     module: ModuleType,
     project_root: str,
-) -> Optional[Callable]:
+) -> Callable | None:
     """Look up *name* in *module* and return it if within the project.
 
     Handles both bare names (``"foo"``) and dotted names

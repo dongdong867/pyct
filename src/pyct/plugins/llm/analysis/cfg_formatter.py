@@ -6,15 +6,14 @@ Separated from CFGExtractor (which builds the graph) to follow SRP.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set
 
 from pyct.plugins.llm.analysis.cfg_extractor import CFGEdge, CFGNode
 
 
 def format_cfg_for_llm(
-    nodes: List[CFGNode],
-    edges: List[CFGEdge],
-    missing_lines: Optional[List[int]] = None,
+    nodes: list[CFGNode],
+    edges: list[CFGEdge],
+    missing_lines: list[int] | None = None,
 ) -> str:
     """Format CFG nodes/edges as LLM-friendly text."""
     lines: list[str] = ["## Control Flow Graph\n"]
@@ -24,7 +23,7 @@ def format_cfg_for_llm(
     return "\n".join(lines)
 
 
-def _append_nodes_table(lines: list[str], nodes: List[CFGNode]) -> None:
+def _append_nodes_table(lines: list[str], nodes: list[CFGNode]) -> None:
     lines.append("### Nodes (Execution Points)")
     lines.append("```")
     lines.append("ID  | Line | Type       | Code")
@@ -38,7 +37,7 @@ def _append_nodes_table(lines: list[str], nodes: List[CFGNode]) -> None:
     lines.append("```\n")
 
 
-def _append_edges_table(lines: list[str], edges: List[CFGEdge]) -> None:
+def _append_edges_table(lines: list[str], edges: list[CFGEdge]) -> None:
     lines.append("### Edges (Control Flow)")
     lines.append("```")
     lines.append("From → To | Condition")
@@ -50,9 +49,9 @@ def _append_edges_table(lines: list[str], edges: List[CFGEdge]) -> None:
 
 def _append_path_summary(
     lines: list[str],
-    nodes: List[CFGNode],
-    edges: List[CFGEdge],
-    missing_lines: Optional[List[int]],
+    nodes: list[CFGNode],
+    edges: list[CFGEdge],
+    missing_lines: list[int] | None,
 ) -> None:
     lines.append("### Possible Execution Paths")
     all_paths = _enumerate_simple_paths(nodes, edges)
@@ -66,11 +65,11 @@ def _append_path_summary(
 
 
 def _select_paths(
-    all_paths: List[List[int]],
-    nodes: List[CFGNode],
-    missing_lines: Optional[List[int]],
+    all_paths: list[list[int]],
+    nodes: list[CFGNode],
+    missing_lines: list[int] | None,
     lines: list[str],
-) -> List[List[int]]:
+) -> list[list[int]]:
     if missing_lines:
         return _filter_by_coverage(all_paths, nodes, missing_lines, lines)
     if len(all_paths) > 30:
@@ -81,17 +80,15 @@ def _select_paths(
 
 
 def _filter_by_coverage(
-    all_paths: List[List[int]],
-    nodes: List[CFGNode],
-    missing_lines: List[int],
+    all_paths: list[list[int]],
+    nodes: list[CFGNode],
+    missing_lines: list[int],
     lines: list[str],
-) -> List[List[int]]:
+) -> list[list[int]]:
     node_to_line = {n.id: n.line_number for n in nodes}
     missing_set = set(missing_lines)
     relevant = [
-        path
-        for path in all_paths
-        if any(node_to_line.get(nid) in missing_set for nid in path)
+        path for path in all_paths if any(node_to_line.get(nid) in missing_set for nid in path)
     ]
     if relevant:
         lines.append(f"**Showing {len(relevant)} paths containing uncovered lines:**")
@@ -109,16 +106,16 @@ def _filter_by_coverage(
 class _GraphContext:
     """Immutable context for DFS path enumeration."""
 
-    adj: Dict[int, List[int]]
-    exits: Set[int]
+    adj: dict[int, list[int]]
+    exits: set[int]
     max_paths: int
 
 
 def _enumerate_simple_paths(
-    nodes: List[CFGNode],
-    edges: List[CFGEdge],
+    nodes: list[CFGNode],
+    edges: list[CFGEdge],
     max_paths: int = 50,
-) -> List[List[int]]:
+) -> list[list[int]]:
     """Enumerate simple (cycle-free) paths via DFS."""
     if not nodes or not edges:
         return [[n.id for n in nodes]]
@@ -129,21 +126,19 @@ def _enumerate_simple_paths(
         return []
 
     ctx = _GraphContext(adj=adj, exits=exits, max_paths=max_paths)
-    paths: List[List[int]] = []
+    paths: list[list[int]] = []
     _dfs(1, [1], set(), ctx, paths)
     return paths
 
 
-def _build_adjacency_list(
-    nodes: List[CFGNode], edges: List[CFGEdge]
-) -> Dict[int, List[int]]:
-    adj: Dict[int, List[int]] = {n.id: [] for n in nodes}
+def _build_adjacency_list(nodes: list[CFGNode], edges: list[CFGEdge]) -> dict[int, list[int]]:
+    adj: dict[int, list[int]] = {n.id: [] for n in nodes}
     for e in edges:
         adj[e.from_node].append(e.to_node)
     return adj
 
 
-def _find_exit_ids(nodes: List[CFGNode]) -> Set[int]:
+def _find_exit_ids(nodes: list[CFGNode]) -> set[int]:
     exits = {n.id for n in nodes if n.node_type == "return"}
     if not exits and nodes:
         exits = {nodes[-1].id}
@@ -155,7 +150,7 @@ def _dfs(
     path: list[int],
     visited: set[int],
     ctx: _GraphContext,
-    paths: List[List[int]],
+    paths: list[list[int]],
 ) -> None:
     if len(paths) >= ctx.max_paths or current in visited:
         return

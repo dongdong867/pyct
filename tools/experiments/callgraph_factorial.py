@@ -28,14 +28,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pyct.plugins.llm import LLMPlugin
+from pyct.plugins.llm.client import build_default_client
+from pyct.plugins.llm.prompt import PromptContextOptions
 from tools.benchmark.models import BenchmarkConfig
 from tools.benchmark.runners import run_concolic_llm
 from tools.benchmark.suite import _build_seed_context
 from tools.benchmark.targets import TEST_SUITE, BenchmarkTarget
-
-from pyct.plugins.llm import LLMPlugin
-from pyct.plugins.llm.client import build_default_client
-from pyct.plugins.llm.prompt import PromptContextOptions
 
 log = logging.getLogger("experiment.callgraph")
 
@@ -54,9 +53,7 @@ ARMS: dict[str, PromptContextOptions | None] = {
     "cfg": PromptContextOptions(include_cfg=True),
     "callees": PromptContextOptions(include_callees=True),
     "callees+cfg": PromptContextOptions(include_callees=True, include_cfg=True),
-    "callees+bounds": PromptContextOptions(
-        include_callees=True, include_boundary_values=True
-    ),
+    "callees+bounds": PromptContextOptions(include_callees=True, include_boundary_values=True),
 }
 
 
@@ -119,11 +116,11 @@ def _run_trial(
         target=target.name,
         arm=arm,
         trial=trial,
-        coverage=result.coverage.percent,
+        coverage=result.coverage.coverage_percent,
         seed_count=len(seeds),
         prompt_chars=prompt_chars,
         seed_tokens=tokens,
-        elapsed=result.elapsed_seconds,
+        elapsed=result.time_seconds,
     )
 
 
@@ -143,7 +140,7 @@ def _summarize(records: list[TrialRecord]) -> dict[str, dict[str, float]]:
         }
     baseline = summary.get("none", {}).get("mean_coverage")
     if baseline is not None:
-        for arm, stats in summary.items():
+        for stats in summary.values():
             stats["delta_pp"] = stats["mean_coverage"] - baseline
     return summary
 
@@ -156,7 +153,9 @@ def _print_report(records: list[TrialRecord], summary: dict[str, Any]) -> None:
         cells = []
         for arm in ARMS:
             rows = [r for r in records if r.target == name and r.arm == arm]
-            cells.append(f"{statistics.mean(r.coverage for r in rows):>16.1f}" if rows else f"{'-':>16}")
+            cells.append(
+                f"{statistics.mean(r.coverage for r in rows):>16.1f}" if rows else f"{'-':>16}"
+            )
         print(f"{name:<30}" + "".join(cells))
 
     print("\n=== Arm summary ===")
@@ -168,6 +167,15 @@ def _print_report(records: list[TrialRecord], summary: dict[str, Any]) -> None:
         )
 
 
+def _load_dotenv() -> None:
+    """Load ``.env`` so ``build_default_client`` finds the API key."""
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return
+    load_dotenv()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trials", type=int, default=3)
@@ -176,6 +184,10 @@ def main() -> None:
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
+    # The benchmark CLI loads .env before touching the client; this
+    # runner bypasses the CLI, so without this every arm would seed
+    # empty and the whole factorial would read as a flat zero.
+    _load_dotenv()
     config = BenchmarkConfig(timeout=args.timeout, num_attempts=1)
 
     records: list[TrialRecord] = []
