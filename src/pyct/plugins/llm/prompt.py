@@ -19,19 +19,43 @@ markdown code fence so the parser can extract them cleanly.
 from __future__ import annotations
 
 import inspect
+import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from pyct.engine.plugin.context import EngineContext
 
+log = logging.getLogger("ct.plugins.llm.prompt")
 
-def build_seed_prompt(ctx: EngineContext) -> str:
+
+@dataclass(frozen=True)
+class PromptContextOptions:
+    """Which static-analysis blocks the seed prompt carries.
+
+    Every flag defaults off, so the prompt stays source-only unless a
+    caller opts in. The three blocks are independent because they carry
+    different information: callee sources expose branch predicates the
+    entry function hides, the CFG restates control flow already visible
+    in that source, and boundary values are extracted literals that
+    include return-value strings alongside genuine input thresholds.
+    """
+
+    include_callees: bool = False
+    include_cfg: bool = False
+    include_boundary_values: bool = False
+    max_depth: int = 3
+
+
+def build_seed_prompt(
+    ctx: EngineContext,
+    options: PromptContextOptions | None = None,
+) -> str:
     """Build a prompt asking the LLM to seed initial test inputs.
 
-    Scoped to source + signature only. We intentionally omit CFG
-    extraction and type context analysis (upstream helpers not
-    ported in the rewrite). GPT-class models do fine on branch
-    enumeration given just the source.
+    Source + signature always; the static-analysis blocks selected by
+    *options* are appended after the target. With no options the prompt
+    is source-only, which is what the engine shipped.
 
     Parameters whose defaults aren't Python literals (callables,
     class instances) are excluded from the emitted parameter list so
@@ -58,6 +82,7 @@ def build_seed_prompt(ctx: EngineContext) -> str:
             "",
             f"## Signature\n`{sig}`",
             "",
+            *_analysis_sections(ctx, options),
             "## Request",
             "Generate 6-10 test inputs covering:",
             "- Each branch of every if/elif/else",
@@ -158,6 +183,80 @@ def build_unknown_prompt(ctx: EngineContext, constraint: object) -> str:
             "```",
         ]
     )
+
+
+def _analysis_sections(
+    ctx: EngineContext,
+    options: PromptContextOptions | None,
+) -> list[str]:
+    """Return the static-analysis blocks *options* asks for.
+
+    Each block is built independently and each failure is swallowed:
+    a target whose module or source cannot be resolved still gets a
+    source-only prompt rather than no prompt at all.
+    """
+    if options is None:
+        return []
+    sections: list[str] = []
+    if options.include_cfg:
+        sections.extend(_cfg_section(ctx))
+    if options.include_callees:
+        sections.extend(_call_graph_section(ctx, options))
+    return sections
+
+
+def _cfg_section(ctx: EngineContext) -> list[str]:
+    """Format the target's control-flow graph, or nothing on failure."""
+    from pyct.plugins.llm.analysis.cfg_extractor import CFGExtractor
+    from pyct.plugins.llm.analysis.cfg_formatter import format_cfg_for_llm
+
+    try:
+        cfg = CFGExtractor().extract(inspect.getsource(ctx.target_function))
+        text = format_cfg_for_llm(cfg.nodes, cfg.edges)
+    except Exception:  # noqa: BLE001 - context is optional, never fatal
+        log.debug("CFG extraction failed for %s", ctx.target_function, exc_info=True)
+        return []
+    return [text, ""] if text.strip() else []
+
+
+def _call_graph_section(
+    ctx: EngineContext,
+    options: PromptContextOptions,
+) -> list[str]:
+    """Format callee sources and branch conditions, or nothing on failure."""
+    from pyct.plugins.llm.analysis.call_graph import CallGraphConfig, analyze_call_graph
+    from pyct.plugins.llm.analysis.call_graph_formatter import format_call_graph_for_llm
+
+    module = inspect.getmodule(ctx.target_function)
+    if module is None or not getattr(module, "__file__", None):
+        return []
+    try:
+        analysis = analyze_call_graph(
+            ctx.target_function,
+            module,
+            CallGraphConfig(
+                project_root=_project_root(module),
+                max_depth=options.max_depth,
+            ),
+        )
+        text = format_call_graph_for_llm(analysis, options.include_boundary_values)
+    except Exception:  # noqa: BLE001 - context is optional, never fatal
+        log.debug("Call graph analysis failed for %s", ctx.target_function, exc_info=True)
+        return []
+    return [text, ""] if text.strip() else []
+
+
+def _project_root(module: object) -> str:
+    """Directory bounding call-graph resolution for *module*'s target.
+
+    Callees outside this tree are recorded as unresolved rather than
+    followed, so the root decides how much of a dependency the analysis
+    will read. The module's own directory keeps same-package helpers in
+    scope without walking into site-packages.
+    """
+    import os
+
+    return os.path.dirname(os.path.abspath(module.__file__))  # type: ignore[attr-defined]
 
 
 def _get_source(target: object) -> str:

@@ -13,15 +13,25 @@ if TYPE_CHECKING:
     from pyct.plugins.llm.analysis.call_graph import AnalyzedFunction, CallGraphAnalysis
 
 
-def format_call_graph_for_llm(analysis: CallGraphAnalysis) -> str:
-    """Format *analysis* as text suitable for an LLM seed-generation prompt."""
+def format_call_graph_for_llm(
+    analysis: CallGraphAnalysis,
+    include_boundary_values: bool = True,
+) -> str:
+    """Format *analysis* as text suitable for an LLM seed-generation prompt.
+
+    Extracted literals are gated behind *include_boundary_values* so an
+    experiment can measure callee context on its own. The literal
+    extractor also picks up return-value strings, which are useless as
+    inputs, so the two blocks are worth separating.
+    """
     parts: list[str] = []
     parts.append("## Call Graph Analysis\n")
 
     _append_target_summary(parts, analysis)
-    _append_callee_sections(parts, analysis)
+    _append_callee_sections(parts, analysis, include_boundary_values)
     _append_aggregated_constraints(parts, analysis)
-    _append_boundary_values(parts, analysis)
+    if include_boundary_values:
+        _append_boundary_values(parts, analysis)
 
     return "\n".join(parts)
 
@@ -38,7 +48,11 @@ def _append_target_summary(parts: list[str], analysis: CallGraphAnalysis) -> Non
     parts.append(f"Calls: {callee_names}\n")
 
 
-def _append_callee_sections(parts: list[str], analysis: CallGraphAnalysis) -> None:
+def _append_callee_sections(
+    parts: list[str],
+    analysis: CallGraphAnalysis,
+    include_boundary_values: bool = True,
+) -> None:
     if not analysis.reachable_functions:
         return
 
@@ -46,10 +60,14 @@ def _append_callee_sections(parts: list[str], analysis: CallGraphAnalysis) -> No
         analysis.reachable_functions.values(), key=lambda f: (f.depth, f.name)
     )
     for func in by_depth:
-        _append_single_function(parts, func)
+        _append_single_function(parts, func, include_boundary_values)
 
 
-def _append_single_function(parts: list[str], func: AnalyzedFunction) -> None:
+def _append_single_function(
+    parts: list[str],
+    func: AnalyzedFunction,
+    include_boundary_values: bool = True,
+) -> None:
     parts.append(
         f"### Called Function: {func.name}{func.signature}  [depth {func.depth}]"
     )
@@ -60,7 +78,7 @@ def _append_single_function(parts: list[str], func: AnalyzedFunction) -> None:
         for cond in func.branch_conditions:
             parts.append(f"  - {cond}")
 
-    if func.literals:
+    if func.literals and include_boundary_values:
         literal_str = ", ".join(repr(v) for v in func.literals)
         parts.append(f"Boundary values: {literal_str}")
 
