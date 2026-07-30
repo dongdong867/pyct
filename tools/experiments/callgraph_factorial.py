@@ -38,14 +38,20 @@ from tools.benchmark.targets import TEST_SUITE, BenchmarkTarget
 
 log = logging.getLogger("experiment.callgraph")
 
-# Callee-heavy standard targets: the regime where hidden branch
-# predicates should matter most. Results are an upper bound on the
-# effect across the full suite, not an estimate of it.
+# Standard-suite targets with the most headroom under the source-only
+# prompt; 10 of the 22 already sit at 100% and can only move downward.
+#
+# The library and real-world suites are deliberately excluded. Their
+# targets live in site-packages, and ``_is_within_project`` refuses to
+# follow calls into site-packages, so the call graph resolves zero
+# callees for every one of them — the callee arm would be a no-op.
 TARGET_NAMES = (
-    "Semver Parsing",
-    "URL Routing",
+    "Nested Config Validator",
+    "Shipping Rate Calculator",
+    "Base64 Payload Classification",
     "Log Level Routing",
-    "Multi-Stage Form Validation",
+    "JSON Config Validation",
+    "Email Validation",
 )
 
 ARMS: dict[str, PromptContextOptions | None] = {
