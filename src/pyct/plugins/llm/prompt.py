@@ -31,19 +31,18 @@ log = logging.getLogger("ct.plugins.llm.prompt")
 
 @dataclass(frozen=True)
 class PromptContextOptions:
-    """Which static-analysis blocks the seed prompt carries.
+    """How much of the target's call graph the seed prompt carries.
 
-    Every flag defaults off, so the prompt stays source-only unless a
-    caller opts in. The three blocks are independent because they carry
-    different information: callee sources expose branch predicates the
-    entry function hides, the CFG restates control flow already visible
-    in that source, and boundary values are extracted literals that
-    include return-value strings alongside genuine input thresholds.
+    Defaults off, so the prompt stays source-only unless a caller opts
+    in. Callee sources are the one block worth sending: the entry
+    function's body hides the predicates its helpers branch on, and
+    nothing else in the call graph carries a fact that source does not.
+    Reachable callees are inlined as source rather than summarised —
+    a predicate stripped of the code around it states a value without
+    stating what to do with it.
     """
 
     include_callees: bool = False
-    include_cfg: bool = False
-    include_boundary_values: bool = False
     max_depth: int = 3
 
 
@@ -53,9 +52,10 @@ def build_seed_prompt(
 ) -> str:
     """Build a prompt asking the LLM to seed initial test inputs.
 
-    Source + signature always; the static-analysis blocks selected by
-    *options* are appended after the target. With no options the prompt
-    is source-only, which is what the engine shipped.
+    Source + signature always. With ``include_callees`` the source of
+    every function the target reaches is inlined into the same code
+    fence, so the block reads as a module. With no options the prompt is
+    source-only, which is what the engine shipped.
 
     Parameters whose defaults aren't Python literals (callables,
     class instances) are excluded from the emitted parameter list so
@@ -65,6 +65,7 @@ def build_seed_prompt(
     seed. The target's real defaults are used for excluded params.
     """
     source = _get_source(ctx.target_function)
+    callees = _callee_sources(ctx, options)
     sig = str(ctx.target_signature)
     param_names = _literalizable_params(ctx.target_signature)
     example_dict = ", ".join(f'"{p}": value' for p in param_names[:3]) or '"param": value'
@@ -75,17 +76,16 @@ def build_seed_prompt(
             "Analyze the following Python function and generate a diverse list",
             "of test inputs that together cover all branches.",
             "",
-            "## Target",
+            _target_heading(ctx, callees),
             "```python",
-            source,
+            _code_block(source, callees),
             "```",
             "",
             f"## Signature\n`{sig}`",
             "",
-            *_analysis_sections(ctx, options),
             "## Request",
             "Generate 6-10 test inputs covering:",
-            "- Each branch of every if/elif/else",
+            _branch_bullet(callees),
             "- Boundary values around comparison operators",
             "- Edge cases (empty strings, zero, negative, None)",
             "- One or two typical valid inputs",
@@ -109,8 +109,9 @@ def build_plateau_prompt(ctx: EngineContext) -> str:
     """Build a prompt asking the LLM to recover from a coverage plateau.
 
     Includes the tried inputs and the covered-line summary so the LLM
-    can aim at the uncovered branches. We skip the CFG because we don't
-    ship a CFG extractor in the rewrite.
+    can aim at the uncovered branches. Callee sources are not inlined
+    here — this prompt fires mid-run, where the uncovered-line list is
+    the signal doing the work.
     """
     source = _get_source(ctx.target_function)
     tried_summary = "\n".join(f"- {inp}" for inp in ctx.inputs_tried[-10:])
@@ -185,48 +186,41 @@ def build_unknown_prompt(ctx: EngineContext, constraint: object) -> str:
     )
 
 
-def _analysis_sections(
+def _target_heading(ctx: EngineContext, callees: list[str]) -> str:
+    """Name what the code fence holds, so extra defs don't read as noise."""
+    if not callees:
+        return "## Target"
+    name = getattr(ctx.target_function, "__name__", "target")
+    return f"## Target: {name} (plus every function it reaches)"
+
+
+def _code_block(source: str, callees: list[str]) -> str:
+    """Target source, followed by each reachable callee's source."""
+    if not callees:
+        return source
+    return "\n".join([source.rstrip(), *callees])
+
+
+def _branch_bullet(callees: list[str]) -> str:
+    """Point the coverage instruction at whatever the fence actually holds."""
+    if not callees:
+        return "- Each branch of every if/elif/else"
+    return "- Both outcomes of every branch, in the target and in the functions it calls"
+
+
+def _callee_sources(
     ctx: EngineContext,
     options: PromptContextOptions | None,
 ) -> list[str]:
-    """Return the static-analysis blocks *options* asks for.
+    """Source of every function the target reaches, or nothing on failure.
 
-    Each block is built independently and each failure is swallowed:
-    a target whose module or source cannot be resolved still gets a
+    A target whose module or call graph cannot be resolved still gets a
     source-only prompt rather than no prompt at all.
     """
-    if options is None:
-        return []
-    sections: list[str] = []
-    if options.include_cfg:
-        sections.extend(_cfg_section(ctx))
-    if options.include_callees:
-        sections.extend(_call_graph_section(ctx, options))
-    return sections
-
-
-def _cfg_section(ctx: EngineContext) -> list[str]:
-    """Format the target's control-flow graph, or nothing on failure."""
-    from pyct.plugins.llm.analysis.cfg_extractor import CFGExtractor
-    from pyct.plugins.llm.analysis.cfg_formatter import format_cfg_for_llm
-
-    try:
-        cfg = CFGExtractor().extract(inspect.getsource(ctx.target_function))
-        text = format_cfg_for_llm(cfg.nodes, cfg.edges)
-    except Exception:  # noqa: BLE001 - context is optional, never fatal
-        log.debug("CFG extraction failed for %s", ctx.target_function, exc_info=True)
-        return []
-    return [text, ""] if text.strip() else []
-
-
-def _call_graph_section(
-    ctx: EngineContext,
-    options: PromptContextOptions,
-) -> list[str]:
-    """Format callee sources and branch conditions, or nothing on failure."""
     from pyct.plugins.llm.analysis.call_graph import CallGraphConfig, analyze_call_graph
-    from pyct.plugins.llm.analysis.call_graph_formatter import format_call_graph_for_llm
 
+    if options is None or not options.include_callees:
+        return []
     module = inspect.getmodule(ctx.target_function)
     if module is None or not getattr(module, "__file__", None):
         return []
@@ -234,16 +228,37 @@ def _call_graph_section(
         analysis = analyze_call_graph(
             ctx.target_function,
             module,
-            CallGraphConfig(
-                project_root=_project_root(module),
-                max_depth=options.max_depth,
-            ),
+            CallGraphConfig(project_root=_project_root(module), max_depth=options.max_depth),
         )
-        text = format_call_graph_for_llm(analysis, options.include_boundary_values)
     except Exception:  # noqa: BLE001 - context is optional, never fatal
         log.debug("Call graph analysis failed for %s", ctx.target_function, exc_info=True)
         return []
-    return [text, ""] if text.strip() else []
+    return [
+        f"\n# called by {caller}\n{func.source.rstrip()}" for caller, func in _reached(analysis)
+    ]
+
+
+def _reached(analysis: object) -> list[tuple[str, object]]:
+    """Pair each reachable function with its caller, in call order.
+
+    Breadth-first from the target so a callee appears after the function
+    that calls it, and each is attributed to that caller rather than to
+    the entry point it was reached from.
+    """
+    by_name = {f.name: f for f in analysis.reachable_functions.values()}  # type: ignore[attr-defined]
+    ordered: list[tuple[str, object]] = []
+    seen: set[str] = set()
+    queue = [analysis.target]  # type: ignore[attr-defined]
+    while queue:
+        caller = queue.pop(0)
+        for called in caller.callees:
+            func = by_name.get(called.rpartition(".")[2])
+            if func is None or func.name in seen:
+                continue
+            seen.add(func.name)
+            ordered.append((caller.name, func))
+            queue.append(func)
+    return ordered
 
 
 def _project_root(module: object) -> str:
