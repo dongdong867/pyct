@@ -1,20 +1,17 @@
-"""Measure the marginal effect of each static-analysis prompt block.
+"""Measure what inlining callee source into the seed prompt buys.
 
-The engine seeds from source + signature only. This experiment restores
-the legacy call-graph and CFG blocks behind
-:class:`PromptContextOptions` and measures what each one buys, holding
-everything downstream identical: same targets, same engine config, same
-concolic run, same coverage measurement. Only the seed prompt varies.
+The engine seeds from the target's source + signature only. This
+experiment adds the source of every function the target reaches and
+measures the coverage effect, holding everything downstream identical:
+same targets, same engine config, same concolic run, same coverage
+measurement. Only the seed prompt varies.
 
-Arms are chosen so each block can be read on its own — ``callees``
-against ``none`` gives the callee-source effect, ``cfg`` against
-``none`` the CFG effect, and ``callees+bounds`` against ``callees``
-isolates extracted literals, which include return-value strings and may
-well hurt.
+Two arms, because the prompt carries one switch — ``callees`` against
+``none`` is the whole contrast.
 
 Run::
 
-    uv run python -m tools.experiments.callgraph_factorial --trials 3
+    uv run python -m tools.experiments.callee_context --trials 3
 """
 
 from __future__ import annotations
@@ -36,7 +33,7 @@ from tools.benchmark.runners import run_concolic_llm
 from tools.benchmark.suite import _build_seed_context
 from tools.benchmark.targets import TEST_SUITE, BenchmarkTarget
 
-log = logging.getLogger("experiment.callgraph")
+log = logging.getLogger("experiment.callee_context")
 
 # Standard-suite targets with the most headroom under the source-only
 # prompt; 10 of the 22 already sit at 100% and can only move downward.
@@ -56,10 +53,7 @@ TARGET_NAMES = (
 
 ARMS: dict[str, PromptContextOptions | None] = {
     "none": None,
-    "cfg": PromptContextOptions(include_cfg=True),
     "callees": PromptContextOptions(include_callees=True),
-    "callees+cfg": PromptContextOptions(include_callees=True, include_cfg=True),
-    "callees+bounds": PromptContextOptions(include_callees=True, include_boundary_values=True),
 }
 
 
@@ -186,13 +180,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--trials", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=60.0)
-    parser.add_argument("--out", default="benchmark/results/callgraph_factorial.json")
+    parser.add_argument("--out", default="benchmark/results/callee_context.json")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.WARNING, format="%(message)s")
     # The benchmark CLI loads .env before touching the client; this
-    # runner bypasses the CLI, so without this every arm would seed
-    # empty and the whole factorial would read as a flat zero.
+    # runner bypasses the CLI, so without this both arms would seed
+    # empty and the contrast would read as a flat zero.
     _load_dotenv()
     config = BenchmarkConfig(timeout=args.timeout, num_attempts=1)
 
