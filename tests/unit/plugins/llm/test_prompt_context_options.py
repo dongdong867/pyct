@@ -1,11 +1,12 @@
-"""Unit tests for optional static-analysis context in seed prompts.
+"""Unit tests for callee context in seed prompts.
 
-The seed prompt carries three independently switchable context blocks:
-callee sources, the CFG, and aggregated boundary values. Each maps to a
-flag on :class:`PromptContextOptions` so an experiment can measure the
-marginal effect of one block without the others.
+The seed prompt carries one optional block: the source of every
+function the target reaches, inlined into the target's own code fence.
+Callees read as source because that is the form the model already
+consumes — a derived restatement of the same predicates carries no fact
+the source does not.
 
-With every flag off the prompt must be byte-identical to the source-only
+With the flag off the prompt must be byte-identical to the source-only
 prompt, so the default path stays exactly what the engine shipped.
 """
 
@@ -66,15 +67,22 @@ def _context_for(func) -> EngineContext:
     )
 
 
+def _target_code_block(prompt: str) -> str:
+    """Return the body of the first ``python`` fence in *prompt*."""
+    _, _, after_open = prompt.partition("```python\n")
+    body, _, _ = after_open.partition("\n```")
+    return body
+
+
 @pytest.fixture
 def ctx() -> EngineContext:
     return _context_for(target)
 
 
-class TestCalleeContext:
-    """``include_callees`` adds callee bodies and their branch conditions."""
+class TestCalleeSourceInlined:
+    """``include_callees`` inlines reachable sources into the target fence."""
 
-    def test_callee_body_included_when_enabled(self, ctx: EngineContext) -> None:
+    def test_callee_source_included_when_enabled(self, ctx: EngineContext) -> None:
         prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
         assert "def _threshold_check(" in prompt
         assert "def _mode_check(" in prompt
@@ -84,54 +92,78 @@ class TestCalleeContext:
         prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
         assert "value > MAX_ATTEMPTS" in prompt
 
-    def test_callee_body_absent_when_disabled(self, ctx: EngineContext) -> None:
-        prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=False))
-        assert "def _threshold_check(" not in prompt
-
-    def test_target_without_callees_emits_no_callee_section(self) -> None:
-        prompt = build_seed_prompt(_context_for(_leaf), PromptContextOptions(include_callees=True))
-        assert "Called Function:" not in prompt
-
-
-class TestCfgContext:
-    """``include_cfg`` adds the control-flow graph block."""
-
-    def test_cfg_included_when_enabled(self, ctx: EngineContext) -> None:
-        prompt = build_seed_prompt(ctx, PromptContextOptions(include_cfg=True))
-        assert "Control Flow Graph" in prompt
-
-    def test_cfg_absent_when_disabled(self, ctx: EngineContext) -> None:
-        prompt = build_seed_prompt(ctx, PromptContextOptions(include_cfg=False))
-        assert "Control Flow Graph" not in prompt
-
-
-class TestBoundaryValueContext:
-    """``include_boundary_values`` adds the aggregated literal block."""
-
-    def test_boundary_values_included_when_enabled(self, ctx: EngineContext) -> None:
-        prompt = build_seed_prompt(
-            ctx, PromptContextOptions(include_callees=True, include_boundary_values=True)
+    def test_callees_share_the_target_code_fence(self, ctx: EngineContext) -> None:
+        """One fence, so the block reads as a module rather than an appendix."""
+        block = _target_code_block(
+            build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
         )
-        assert "Boundary Values" in prompt
+        assert "def target(" in block
+        assert "def _threshold_check(" in block
+        assert "def _mode_check(" in block
 
-    def test_boundary_values_absent_when_disabled(self, ctx: EngineContext) -> None:
-        prompt = build_seed_prompt(
-            ctx,
-            PromptContextOptions(include_callees=True, include_boundary_values=False),
+    def test_each_callee_is_attributed_to_its_caller(self, ctx: EngineContext) -> None:
+        block = _target_code_block(
+            build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
         )
-        assert "Boundary Values" not in prompt
+        assert block.count("# called by target") == 2
+
+    def test_callees_follow_call_order(self, ctx: EngineContext) -> None:
+        block = _target_code_block(
+            build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
+        )
+        assert block.index("def _threshold_check(") < block.index("def _mode_check(")
+
+    def test_request_names_the_called_functions(self, ctx: EngineContext) -> None:
+        prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
+        assert "in the functions it calls" in prompt
+
+
+class TestDerivedBlocksRemoved:
+    """No block restates predicates the inlined source already carries."""
+
+    @pytest.mark.parametrize(
+        "marker",
+        [
+            "Control Flow Graph",
+            "Call Graph Analysis",
+            "Called Function:",
+            "Aggregated Constraints",
+            "Branch conditions:",
+            "Boundary Values",
+        ],
+    )
+    def test_marker_absent_with_callees_enabled(self, ctx: EngineContext, marker: str) -> None:
+        prompt = build_seed_prompt(ctx, PromptContextOptions(include_callees=True))
+        assert marker not in prompt
+
+    def test_options_expose_only_the_callee_switch(self) -> None:
+        """Guards against a removed block returning behind a new default-on flag."""
+        fields = set(PromptContextOptions.__dataclass_fields__)
+        assert fields == {"include_callees", "max_depth"}
 
 
 class TestDefaultsPreserveShippedPrompt:
-    """All flags off must reproduce the source-only prompt exactly."""
+    """Flag off must reproduce the source-only prompt exactly."""
 
-    def test_all_flags_off_matches_no_options(self, ctx: EngineContext) -> None:
+    def test_flag_off_matches_no_options(self, ctx: EngineContext) -> None:
         assert build_seed_prompt(ctx, PromptContextOptions()) == build_seed_prompt(ctx)
 
-    def test_no_options_carries_no_analysis_sections(self, ctx: EngineContext) -> None:
+    def test_no_options_carries_no_callee_source(self, ctx: EngineContext) -> None:
         prompt = build_seed_prompt(ctx)
-        for marker in ("Control Flow Graph", "Called Function:", "Boundary Values"):
-            assert marker not in prompt
+        assert "def _threshold_check(" not in prompt
+        assert "# called by" not in prompt
+
+
+class TestTargetsWithoutCallees:
+    """A leaf target gains nothing and must not gain an empty scaffold."""
+
+    def test_leaf_target_emits_no_attribution_marker(self) -> None:
+        prompt = build_seed_prompt(_context_for(_leaf), PromptContextOptions(include_callees=True))
+        assert "# called by" not in prompt
+
+    def test_leaf_target_still_carries_its_own_source(self) -> None:
+        prompt = build_seed_prompt(_context_for(_leaf), PromptContextOptions(include_callees=True))
+        assert "def _leaf(" in prompt
 
 
 class TestAnalysisFailureDegrades:
@@ -144,8 +176,6 @@ class TestAnalysisFailureDegrades:
 
         prompt = build_seed_prompt(
             _context_for(synthetic),
-            PromptContextOptions(
-                include_callees=True, include_cfg=True, include_boundary_values=True
-            ),
+            PromptContextOptions(include_callees=True),
         )
         assert "# Task: Generate Test Inputs" in prompt
