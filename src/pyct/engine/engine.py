@@ -9,8 +9,9 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
-from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
+from pyct.engine.argument_resolver import wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
+from pyct.engine.binding import Leaf, binding_var_types, build_binding
 from pyct.engine.constraint_optimizer import optimize
 from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
@@ -73,6 +74,11 @@ class Engine:
         # state through every call site. Stays None outside an active
         # ``explore()`` call.
         self.state: ExplorationState | None = None
+        # Maps solver variables to the primitive leaves they stand for
+        # inside dict / list / object arguments. Built once per run from
+        # the seed arguments, since the argument shape is fixed for the
+        # run and only leaf values change. Empty outside ``explore()``.
+        self._binding: tuple[Leaf, ...] = ()
         # Chain ID of the constraint whose solver model fed the most
         # recent iteration; consumed by ``_post_iteration_update`` to
         # attribute the iteration's coverage delta back to the chain.
@@ -159,6 +165,7 @@ class Engine:
             self.solver = None
             self.coverage_tracker = None
             self.state = None
+            self._binding = ()
 
     def _run(
         self,
@@ -174,7 +181,8 @@ class Engine:
         self.coverage_tracker = CoverageTracker(scope)
 
         signature = inspect.signature(target)
-        var_to_types = build_var_to_types(initial_args)
+        self._binding = build_binding(initial_args)
+        var_to_types = binding_var_types(self._binding)
         dispatcher = Dispatcher(self.plugins)
 
         state = ExplorationState(
