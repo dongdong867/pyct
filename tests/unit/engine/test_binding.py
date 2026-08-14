@@ -151,6 +151,28 @@ class TestBuildBinding:
         assert [leaf.param for leaf in binding] == ["cfg"]
 
 
+class TestModelKey:
+    """The name a variable carries once solver output has been parsed."""
+
+    def test_strips_the_var_suffix_from_a_top_level_parameter(self):
+        binding = build_binding({"x": 1})
+
+        assert binding[0].var == "x_VAR"
+        assert binding[0].model_key == "x"
+
+    def test_strips_the_var_suffix_from_a_nested_leaf(self):
+        binding = build_binding({"cfg": {"port": 80}})
+
+        assert binding[0].var.endswith("_VAR")
+        assert binding[0].model_key == binding[0].var[: -len("_VAR")]
+
+    def test_model_keys_stay_unique_after_stripping(self):
+        binding = build_binding({"a": {"b": 1, "c": 2}, "d": 3})
+
+        keys = [leaf.model_key for leaf in binding]
+        assert len(keys) == len(set(keys))
+
+
 class TestBindingVarTypes:
     """The mapping handed to the solver."""
 
@@ -173,7 +195,7 @@ class TestApplyModel:
         args = {"cfg": {"server": {"port": 80}}}
         binding = build_binding(args)
 
-        out = apply_model(args, binding, {binding[0].var: 8080})
+        out = apply_model(args, binding, {binding[0].model_key: 8080})
 
         assert out["cfg"]["server"]["port"] == 8080
 
@@ -181,7 +203,7 @@ class TestApplyModel:
         args = {"cfg": {"server": {"port": 80}}}
         binding = build_binding(args)
 
-        apply_model(args, binding, {binding[0].var: 8080})
+        apply_model(args, binding, {binding[0].model_key: 8080})
 
         assert args["cfg"]["server"]["port"] == 80
 
@@ -190,14 +212,14 @@ class TestApplyModel:
         binding = build_binding(args)
         port = next(leaf for leaf in binding if leaf.route[-1].value == "port")
 
-        out = apply_model(args, binding, {port.var: 9090})
+        out = apply_model(args, binding, {port.model_key: 9090})
 
         assert out["cfg"] == {"port": 9090, "host": "h"}
 
     def test_writes_list_elements_independently(self):
         args = {"items": [1, 2]}
         binding = build_binding(args)
-        model = {leaf.var: 10 * (leaf.route[0].value + 1) for leaf in binding}
+        model = {leaf.model_key: 10 * (leaf.route[0].value + 1) for leaf in binding}
 
         assert apply_model(args, binding, model)["items"] == [10, 20]
 
@@ -209,7 +231,7 @@ class TestApplyModel:
         args = {"rule": Rule()}
         binding = build_binding(args)
 
-        out = apply_model(args, binding, {binding[0].var: 42})
+        out = apply_model(args, binding, {binding[0].model_key: 42})
 
         assert out["rule"].limit == 42
         assert args["rule"].limit == 1
@@ -222,13 +244,22 @@ class TestApplyModel:
         args = {"f": Frozen()}
         binding = build_binding(args)
 
-        assert apply_model(args, binding, {binding[0].var: 7})["f"].limit == 7
+        assert apply_model(args, binding, {binding[0].model_key: 7})["f"].limit == 7
 
     def test_top_level_primitive_is_replaced(self):
         args = {"x": 1}
         binding = build_binding(args)
 
-        assert apply_model(args, binding, {"x_VAR": 99}) == {"x": 99}
+        assert apply_model(args, binding, {"x": 99}) == {"x": 99}
+
+    def test_declared_variable_name_is_not_a_model_key(self):
+        """The parser strips ``_VAR``; looking up by ``var`` finds nothing."""
+        args = {"cfg": {"port": 80}}
+        binding = build_binding(args)
+
+        out = apply_model(args, binding, {binding[0].var: 8080})
+
+        assert out["cfg"]["port"] == 80
 
     def test_unknown_model_keys_are_ignored(self):
         args = {"cfg": {"port": 80}}
@@ -241,7 +272,7 @@ class TestApplyModel:
         args = {"conn": lock, "cfg": {"port": 80}}
         binding = build_binding(args)
 
-        out = apply_model(args, binding, {binding[0].var: 8080})
+        out = apply_model(args, binding, {binding[0].model_key: 8080})
 
         assert out["conn"] is lock
         assert out["cfg"]["port"] == 8080

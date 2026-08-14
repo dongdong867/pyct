@@ -187,14 +187,13 @@ def _execute_post_loop_candidates(
         if tracker is not None and tracker.is_fully_covered():
             return
         constraint = engine.constraints_to_solve.pop(0)
-        model, status = engine._solve(constraint, var_to_types)
-        if model is None:
+        merged, status = engine._solve(constraint, var_to_types, initial_args)
+        if merged is None:
             if status == SolverStatus.UNSAT:
                 state.gen_unsat += 1
             else:
                 state.gen_unknown += 1
             continue
-        merged = {**initial_args, **model}
         if state.has_seen_args(merged):
             continue
         engine._fire_iteration_start(state, merged, Provenance.SOLVER)

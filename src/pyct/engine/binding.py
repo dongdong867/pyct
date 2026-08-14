@@ -80,6 +80,19 @@ class Leaf:
     route: tuple[Segment, ...]
     sort: str
 
+    @property
+    def model_key(self) -> str:
+        """Name this variable carries in a *parsed* solver model.
+
+        ``ModelParser`` strips the ``_VAR`` suffix when it reads solver
+        output, so a model is keyed by the bare name while declarations
+        and constraint text use ``var``. Looking a model up by ``var``
+        silently finds nothing.
+        """
+        if self.var.endswith(_VAR_SUFFIX):
+            return self.var[: -len(_VAR_SUFFIX)]
+        return self.var
+
 
 def build_binding(args: dict[str, Any]) -> tuple[Leaf, ...]:
     """Return one Leaf per solvable primitive reachable from ``args``.
@@ -117,8 +130,11 @@ def apply_model(
     Leaves the model does not mention keep their current value, which is
     why the previous arguments are the starting point rather than a
     structure built from scratch.
+
+    Lookups go through ``Leaf.model_key``, not ``Leaf.var`` — the parser
+    has already stripped the ``_VAR`` suffix by this point.
     """
-    return _rebuild(args, binding, lambda leaf, current: model.get(leaf.var, current))
+    return _rebuild(args, binding, lambda leaf, current: model.get(leaf.model_key, current))
 
 
 def wrap_leaves(

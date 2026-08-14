@@ -28,8 +28,7 @@ def test_nested_dict_leaves_are_solved_individually():
     assert any(p < 1 for p in ports), f"no input drove port below 1: {ports}"
     assert any(p > 65535 for p in ports), f"no input drove port above 65535: {ports}"
     assert any(
-        r.args["config"]["server"]["workers"] > 16
-        and r.args["config"]["server"]["port"] == 8080
+        r.args["config"]["server"]["workers"] > 16 and r.args["config"]["server"]["port"] == 8080
         for r in result.inputs_generated
     ), "no input satisfied the cross-field workers/port branch"
 
@@ -53,9 +52,9 @@ def test_list_elements_get_independent_symbolic_names():
     ), "an iteration received something other than a 2-element list"
     firsts = [r.args["items"][0] for r in result.inputs_generated]
     assert any(v > 100 for v in firsts), f"no input drove items[0] above 100: {firsts}"
-    assert any(
-        r.args["items"][1] < -50 for r in result.inputs_generated
-    ), "no input drove items[1] below -50"
+    assert any(r.args["items"][1] < -50 for r in result.inputs_generated), (
+        "no input drove items[1] below -50"
+    )
     assert result.gen_unknown == 0, (
         f"solver reported {result.gen_unknown} UNKNOWN/ERROR results — "
         "undeclared variables produce malformed formulas"
@@ -78,6 +77,6 @@ def test_object_attributes_are_solved_individually():
     limits = [r.args["rule"].limit for r in result.inputs_generated]
     assert any(v > 100 for v in limits), f"no input drove limit above 100: {limits}"
     assert any(v < 0 for v in limits), f"no input drove limit below 0: {limits}"
-    assert any(
-        r.args["rule"].label == "strict" for r in result.inputs_generated
-    ), "no input reached the strict-label branch"
+    assert any(r.args["rule"].label == "strict" for r in result.inputs_generated), (
+        "no input reached the strict-label branch"
+    )
