@@ -144,8 +144,13 @@ def wrap_leaves(
 ) -> dict[str, Any]:
     """Return ``args`` with every bound leaf replaced by a Concolic value.
 
-    The wrapper carries the leaf's variable name as its expression, so a
-    comparison against it records a constraint the solver can flip.
+    The wrapper carries the leaf's variable name as its expression and the
+    engine reference, so a comparison against it registers a branch with
+    ``engine.path`` and records a constraint the solver can flip.
+
+    Only leaves the table covers are wrapped. Anything it skipped —
+    ``None``, ``bytes``, sets, uncopyable values — passes through
+    unchanged and the target uses it concretely.
     """
     return _rebuild(args, binding, lambda leaf, current: wrap_concolic(current, leaf.var, engine))
 

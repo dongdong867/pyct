@@ -9,9 +9,14 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
-from pyct.engine.argument_resolver import wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
-from pyct.engine.binding import Leaf, apply_model, binding_var_types, build_binding
+from pyct.engine.binding import (
+    Leaf,
+    apply_model,
+    binding_var_types,
+    build_binding,
+    wrap_leaves,
+)
 from pyct.engine.constraint_optimizer import optimize
 from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
@@ -431,7 +436,7 @@ class Engine:
     ) -> str | None:
         """Run one concolic iteration with tracing; return error string or None.
 
-        ``wrap_arguments`` runs inside the containment scope so a Concolic
+        ``wrap_leaves`` runs inside the containment scope so a Concolic
         constructor failure on one seed aborts only that iteration — not
         the whole exploration. Without this guard the exception escapes
         past ``explore()``'s narrow ``(TypeError, OSError)`` filter into
@@ -442,11 +447,11 @@ class Engine:
 
         self.path.reset()
         try:
-            concolic_args = wrap_arguments(args, self)
+            concolic_args = wrap_leaves(args, self._binding, self)
         except Exception as e:
             state.harness_error += 1
-            log.debug("wrap_arguments failed for %r: %s", args, e)
-            return f"wrap_arguments: {type(e).__name__}: {e}"
+            log.debug("wrap_leaves failed for %r: %s", args, e)
+            return f"wrap_leaves: {type(e).__name__}: {e}"
 
         deadline = self._iteration_deadline(state)
         scope_files = self.coverage_tracker.scope.files
@@ -623,7 +628,7 @@ def classify_outcome(iteration_error: str | None, new_lines: frozenset[int]) -> 
     Outcome rules (mutually exclusive, error wins over coverage gain):
     - ``TIMEOUT`` when the iteration error is a tracer-deadline timeout.
     - ``TARGET_ERROR`` for any other non-None error string (target raise,
-      wrap_arguments failure, SystemExit). The non-execution-counters
+      wrap_leaves failure, SystemExit). The non-execution-counters
       sub-task may later split harness errors out into their own counter,
       but for record classification any non-timeout error is TARGET_ERROR.
     - ``COVERED_NEW`` when the iteration completed cleanly and traced at

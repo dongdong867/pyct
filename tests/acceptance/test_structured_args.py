@@ -1,8 +1,8 @@
 """Acceptance tests for structured (dict / list / object) arguments.
 
-Primitives nested inside a container or object are invisible to the
-solver today — ``wrap_arguments`` passes collections through untouched,
-so the target runs fully concretely and exploration stops after the seed.
+Primitives nested inside a container or object would be invisible to
+the solver without the binding table: wrapping only top-level arguments
+leaves the target running concretely, so exploration stops after the seed.
 
 Each test asserts on a *witness*: a specific generated input that could
 only come from the solver reasoning about an individual leaf. Coverage

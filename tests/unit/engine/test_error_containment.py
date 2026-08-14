@@ -1,7 +1,7 @@
 """Engine error-containment: wrap-time failures don't abort exploration.
 
 Regression guard for the ``concolic_llm`` seed-0 crash pathway. Before
-the fix, a ``wrap_arguments`` failure on any iteration escaped past
+the fix, a ``wrap_leaves`` failure on any iteration escaped past
 ``_run_iteration`` → ``_exploration_loop`` → ``explore()`` and was
 caught only by ``_child_entry``'s blanket ``except Exception``, nuking
 the entire subprocess and abandoning every remaining seed.
@@ -24,7 +24,7 @@ def _passthrough(x: int) -> int:
     return x
 
 
-class TestWrapArgumentsFailureDoesNotAbort:
+class TestWrapLeavesFailureDoesNotAbort:
     def test_failing_wrap_on_first_seed_lets_remaining_seeds_run(self, monkeypatch):
         """One seed with failing wrap must not poison the other seeds.
 
@@ -32,16 +32,16 @@ class TestWrapArgumentsFailureDoesNotAbort:
         does not short-circuit on ``full_coverage`` before later seeds
         get their turn.
         """
-        original = engine_module.wrap_arguments
+        original = engine_module.wrap_leaves
         wrap_attempts: list[dict] = []
 
-        def flaky_wrap(args, engine):
+        def flaky_wrap(args, binding, engine):
             wrap_attempts.append(args)
             if args == {"x": 666}:
                 raise AttributeError("simulated Concolic construction failure")
-            return original(args, engine)
+            return original(args, binding, engine)
 
-        monkeypatch.setattr(engine_module, "wrap_arguments", flaky_wrap)
+        monkeypatch.setattr(engine_module, "wrap_leaves", flaky_wrap)
 
         engine = Engine(ExecutionConfig(max_iterations=10, timeout_seconds=5.0))
         result = engine.explore(
@@ -63,17 +63,17 @@ class TestWrapArgumentsFailureDoesNotAbort:
         its plain-execution coverage, losing the llm_only fallback that
         ``_pyct_result_to_runner`` relies on.
         """
-        original = engine_module.wrap_arguments
+        original = engine_module.wrap_leaves
         raised = False
 
-        def wrap_once(args, engine):
+        def wrap_once(args, binding, engine):
             nonlocal raised
             if not raised and args == {"x": 42}:
                 raised = True
                 raise AttributeError("first call fails")
-            return original(args, engine)
+            return original(args, binding, engine)
 
-        monkeypatch.setattr(engine_module, "wrap_arguments", wrap_once)
+        monkeypatch.setattr(engine_module, "wrap_leaves", wrap_once)
 
         engine = Engine(ExecutionConfig(max_iterations=5, timeout_seconds=5.0))
         result = engine.explore(_passthrough, {"x": 42})
