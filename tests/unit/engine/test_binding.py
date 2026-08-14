@@ -8,7 +8,7 @@ into a nested structure.
 """
 
 import threading
-from dataclasses import dataclass
+from dataclasses import FrozenInstanceError, dataclass
 
 import pytest
 
@@ -248,35 +248,41 @@ class TestApplyModel:
 
 
 class TestWrapLeaves:
-    """Naming leaves so branch conditions become symbolic."""
+    """Naming leaves so branch conditions become symbolic.
 
-    def test_nested_leaf_becomes_concolic_with_its_variable_name(self):
+    These tests need a real engine reference: ``Concolic`` silently
+    discards the expression when ``engine`` is None, so an engine-less
+    wrap would leave every leaf carrying its concrete value and the
+    name assertions would pass for the wrong reason.
+    """
+
+    def test_nested_leaf_becomes_concolic_with_its_variable_name(self, engine):
         args = {"cfg": {"port": 80}}
         binding = build_binding(args)
 
-        wrapped = wrap_leaves(args, binding, engine=None)
+        wrapped = wrap_leaves(args, binding, engine)
         leaf_value = wrapped["cfg"]["port"]
 
         assert type(leaf_value).__name__ == "ConcolicInt"
         assert leaf_value.expr == binding[0].var
 
-    def test_wrapping_does_not_mutate_the_original(self):
+    def test_wrapping_does_not_mutate_the_original(self, engine):
         args = {"cfg": {"port": 80}}
         binding = build_binding(args)
 
-        wrap_leaves(args, binding, engine=None)
+        wrap_leaves(args, binding, engine)
 
         assert type(args["cfg"]["port"]).__name__ == "int"
 
-    def test_list_elements_receive_distinct_names(self):
-        args = {"items": [1, 2]}
+    def test_list_elements_receive_distinct_names(self, engine):
+        args = {"items": [7, 7]}
         binding = build_binding(args)
 
-        wrapped = wrap_leaves(args, binding, engine=None)
+        wrapped = wrap_leaves(args, binding, engine)
 
         assert wrapped["items"][0].expr != wrapped["items"][1].expr
 
-    def test_object_attribute_is_wrapped(self):
+    def test_object_attribute_is_wrapped(self, engine):
         class Rule:
             def __init__(self):
                 self.limit = 1
@@ -284,26 +290,26 @@ class TestWrapLeaves:
         args = {"rule": Rule()}
         binding = build_binding(args)
 
-        wrapped = wrap_leaves(args, binding, engine=None)
+        wrapped = wrap_leaves(args, binding, engine)
 
         assert type(wrapped["rule"].limit).__name__ == "ConcolicInt"
         assert type(args["rule"].limit).__name__ == "int"
 
-    def test_values_without_leaves_are_passed_through(self):
+    def test_values_without_leaves_are_passed_through(self, engine):
         lock = threading.Lock()
         args = {"conn": lock}
 
-        assert wrap_leaves(args, (), engine=None)["conn"] is lock
+        assert wrap_leaves(args, (), engine)["conn"] is lock
 
 
 class TestSegmentAndLeaf:
     """Value-object guarantees the engine relies on."""
 
     def test_segment_is_frozen(self):
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             Segment("key", "a").value = "b"  # type: ignore[misc]
 
     def test_leaf_is_frozen(self):
         leaf = Leaf(var="v", param="p", route=(), sort="Int")
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):
             leaf.var = "other"  # type: ignore[misc]
