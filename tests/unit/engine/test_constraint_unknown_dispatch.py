@@ -71,12 +71,22 @@ def _simple_target(x: int) -> int:
     return 0
 
 
-def _build_engine_with_queue(solver_responses, plugin):
-    """Return (engine, dispatcher, state, signature) ready for _next_input."""
+def _build_engine_with_queue(solver_responses, plugin, initial_args=None):
+    """Return (engine, dispatcher, state, signature) ready for _next_input.
+
+    ``initial_args`` must match what the test passes to ``_next_input``:
+    the binding table maps solver variables onto positions inside those
+    arguments, and ``_solve`` writes the model through it. ``_run``
+    builds the table before the loop starts, so a test driving
+    ``_next_input`` directly has to build it here — otherwise every
+    solver model is applied against an empty table and silently
+    discarded.
+    """
     import inspect
     import time
 
     from pyct.config.execution import ExecutionConfig
+    from pyct.engine.binding import build_binding
     from pyct.engine.engine import Engine
     from pyct.engine.plugin.dispatcher import Dispatcher
     from pyct.engine.state import ExplorationState
@@ -84,6 +94,7 @@ def _build_engine_with_queue(solver_responses, plugin):
     engine = Engine(ExecutionConfig())
     engine.solver = _StubSolver(solver_responses)
     engine.constraints_to_solve = ["(> x_VAR 0)", "(< x_VAR 0)"]
+    engine._binding = build_binding({"x": 0} if initial_args is None else initial_args)
     engine.register(plugin)
 
     state = ExplorationState(start_time=time.monotonic(), total_lines=3)

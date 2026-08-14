@@ -9,8 +9,9 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.config.execution import ExecutionConfig
-from pyct.engine.argument_resolver import build_var_to_types, wrap_arguments
+from pyct.engine.argument_resolver import wrap_arguments
 from pyct.engine.ast_transformer import rewrite_target
+from pyct.engine.binding import Leaf, apply_model, binding_var_types, build_binding
 from pyct.engine.constraint_optimizer import optimize
 from pyct.engine.coverage_scope import CoverageScope
 from pyct.engine.coverage_tracker import CoverageTracker
@@ -73,6 +74,11 @@ class Engine:
         # state through every call site. Stays None outside an active
         # ``explore()`` call.
         self.state: ExplorationState | None = None
+        # Maps solver variables to the primitive leaves they stand for
+        # inside dict / list / object arguments. Built once per run from
+        # the seed arguments, since the argument shape is fixed for the
+        # run and only leaf values change. Empty outside ``explore()``.
+        self._binding: tuple[Leaf, ...] = ()
         # Chain ID of the constraint whose solver model fed the most
         # recent iteration; consumed by ``_post_iteration_update`` to
         # attribute the iteration's coverage delta back to the chain.
@@ -159,6 +165,7 @@ class Engine:
             self.solver = None
             self.coverage_tracker = None
             self.state = None
+            self._binding = ()
 
     def _run(
         self,
@@ -174,7 +181,8 @@ class Engine:
         self.coverage_tracker = CoverageTracker(scope)
 
         signature = inspect.signature(target)
-        var_to_types = build_var_to_types(initial_args)
+        self._binding = build_binding(initial_args)
+        var_to_types = binding_var_types(self._binding)
         dispatcher = Dispatcher(self.plugins)
 
         state = ExplorationState(
@@ -358,16 +366,15 @@ class Engine:
             if constraint is None:
                 break
             self._last_picked_chain_id = getattr(constraint, "chain_id", None)
-            model, status = self._solve(constraint, var_to_types)
+            solved_args, status = self._solve(constraint, var_to_types, initial_args)
 
             if state.elapsed_seconds() >= self.config.timeout_seconds:
                 _terminate(state, "timeout")
                 return None
 
-            if model is not None:
-                merged = {**initial_args, **model}
-                if not state.has_seen_args(merged):
-                    return merged, Provenance.SOLVER
+            if solved_args is not None:
+                if not state.has_seen_args(solved_args):
+                    return solved_args, Provenance.SOLVER
                 continue
 
             if status == SolverStatus.UNSAT:
@@ -393,19 +400,28 @@ class Engine:
         self,
         constraint: Any,
         var_to_types: dict[str, str],
+        base_args: dict[str, Any],
     ) -> tuple[dict[str, Any] | None, SolverStatus]:
-        """Call the solver and return ``(model, status)``.
+        """Call the solver and return ``(args, status)``.
 
-        ``model`` is populated when status is SAT; None on UNSAT/UNKNOWN/ERROR.
-        Callers use the status to decide whether to fall back to a
-        resolver plugin — UNSAT means provably unreachable and is not
-        retryable, while UNKNOWN/ERROR may be solvable by an LLM or
-        fuzzing strategy.
+        ``args`` is a complete argument dict — the solver's model applied
+        onto ``base_args`` through the binding table — populated when
+        status is SAT and None on UNSAT/UNKNOWN/ERROR. Callers use the
+        status to decide whether to fall back to a resolver plugin:
+        UNSAT means provably unreachable and is not retryable, while
+        UNKNOWN/ERROR may be solvable by an LLM or fuzzing strategy.
+
+        Applying here rather than at each call site means both solver
+        paths — the main loop and post-loop discovery — get nested values
+        written back, instead of the flat model leaking through as
+        stray top-level keys that ``call_with_args`` would silently drop.
         """
         assert self.solver is not None
         constraint = optimize(constraint, self.state)
         model, status, _error = self.solver.find_model(constraint, var_to_types)
-        return model, status
+        if model is None:
+            return None, status
+        return apply_model(base_args, self._binding, model), status
 
     def _run_iteration(
         self,

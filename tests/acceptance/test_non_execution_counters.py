@@ -59,7 +59,7 @@ def _patch_solve(monkeypatch, engine: Engine, status: SolverStatus) -> None:
     real solver would produce for the target's constraints.
     """
 
-    def fake_solve(constraint, var_to_types):  # noqa: ARG001
+    def fake_solve(constraint, var_to_types, base_args):  # noqa: ARG001
         return None, status
 
     monkeypatch.setattr(engine, "_solve", fake_solve)
