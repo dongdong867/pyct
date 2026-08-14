@@ -9,7 +9,7 @@ The engine emits three diagnostic counters that record events which did
   Counted raw — every UNKNOWN bumps the counter, regardless of whether
   a plugin's ``on_constraint_unknown`` resolver later produced an
   alternate input.
-- ``harness_error``: ``wrap_arguments`` raised. The iteration ran no
+- ``harness_error``: ``wrap_leaves`` raised. The iteration ran no
   target code; the engine logged a record carrying the wrap error and
   bumped this counter.
 """
@@ -165,24 +165,24 @@ class TestUnknownCounter:
 
 
 class TestHarnessErrorCounter:
-    """``wrap_arguments`` failures bump ``harness_error``."""
+    """``wrap_leaves`` failures bump ``harness_error``."""
 
     def test_wrap_failure_increments_counter(self, monkeypatch):
         """
-        Given a wrap_arguments stub that raises on a specific seed
+        Given a wrap_leaves stub that raises on a specific seed
         When the engine attempts that seed
         Then harness_error increments by one for that attempt
           And exploration continues for other seeds
         """
-        original = engine_module.wrap_arguments
+        original = engine_module.wrap_leaves
         crash_args = {"x": 666}
 
-        def flaky_wrap(args, engine):
+        def flaky_wrap(args, binding, engine):
             if args == crash_args:
                 raise AttributeError("simulated wrap failure")
-            return original(args, engine)
+            return original(args, binding, engine)
 
-        monkeypatch.setattr(engine_module, "wrap_arguments", flaky_wrap)
+        monkeypatch.setattr(engine_module, "wrap_leaves", flaky_wrap)
 
         engine = Engine(ExecutionConfig(max_iterations=10, timeout_seconds=5.0))
         result = engine.explore(
@@ -204,10 +204,10 @@ class TestHarnessErrorCounter:
         """
         crash_seeds = [{"x": 1}, {"x": 2}, {"x": 3}]
 
-        def always_crash(args, engine):  # noqa: ARG001
+        def always_crash(args, binding, engine):  # noqa: ARG001
             raise AttributeError("always fails")
 
-        monkeypatch.setattr(engine_module, "wrap_arguments", always_crash)
+        monkeypatch.setattr(engine_module, "wrap_leaves", always_crash)
 
         engine = Engine(ExecutionConfig(max_iterations=10, timeout_seconds=5.0))
         result = engine.explore(

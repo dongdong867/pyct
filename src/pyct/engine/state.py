@@ -181,7 +181,7 @@ class ExplorationState:
             ``unproductive_streak`` tracked in ``or_chain_stats`` so
             telemetry can show the run-total transition count alongside
             per-chain streak depth.
-        harness_error: ``wrap_arguments`` failure count over the run.
+        harness_error: ``wrap_leaves`` failure count over the run.
             Bumped inside ``_run_iteration`` when Concolic construction
             raises before the target is called. The iteration still
             appends a record (carrying the wrap error and TARGET_ERROR
