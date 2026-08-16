@@ -53,7 +53,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short -m 'not slow'"
+markers = [
+    "slow: opt-in test excluded from the default suite; run with `pytest -m slow`.",
+]
 
 [tool.ruff]
 src = ["src", "tests"]
@@ -89,6 +92,7 @@ dev = [
     "ruff>=0.5.0",
     "pyrefly>=0.33.1",
     "mutmut>=3.5.0",
+    "hypothesis>=6.0.0",
 ]
 
 [tool.mutmut]
