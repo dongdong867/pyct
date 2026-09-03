@@ -1,0 +1,47 @@
+[project]
+name = "pyct"
+version = "0.3.0"
+description = "Concolic testing for Python"
+requires-python = ">=3.12"
+authors = [
+    { name = "dongdong867", email = "dongdong0867@gmail.com" },
+]
+dependencies = []
+
+[project.scripts]
+pyct = "pyct.cli:main"
+
+[tool.uv]
+# Until the first slice creates src/pyct there is nothing to build. Remove then.
+package = false
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+src = ["src", "tests"]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.pyrefly]
+project-includes = ["src/**/*", "tests/**/*"]
+project-excludes = ["**/.venv/**/*", "**/__pycache__/**/*"]
+search-path = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.12",
+    "pyrefly>=0.33",
+    "import-linter>=2.0",
+]

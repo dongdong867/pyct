@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+
+# Environments and secrets
+.venv/
+venv/
+env/
+.env
+.env.local
+
+# Tool caches and reports
+.pytest_cache/
+.ruff_cache/
+.pyrefly_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Editors and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Local agent settings
+.claude/
+
+# Never in git
+paper/
+benchmark/results/
