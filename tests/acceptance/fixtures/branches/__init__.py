@@ -1,1 +1,0 @@
-"""Branch-coverage fixture targets."""

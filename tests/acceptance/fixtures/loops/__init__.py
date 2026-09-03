@@ -1,1 +1,0 @@
-"""Loop-exploration fixture targets."""

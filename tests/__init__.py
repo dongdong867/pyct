@@ -1,1 +1,0 @@
-"""PyCT test suite."""
