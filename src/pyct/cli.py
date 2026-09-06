@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import sys
 from collections.abc import Mapping, Sequence
@@ -36,6 +37,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         target = load_target(command.spec)
+        if command.seed_text is None:
+            raise UsageError(missing_args_message(target.signature))
         seed = _parse_seed(command.seed_text)
         result = run(target, seed)
     except UsageError as error:
@@ -61,9 +64,16 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     return RunCommand(spec=namespace.target, seed_text=seed_text)
 
 
-def _parse_seed(seed_text: str | None) -> Mapping[str, object]:
-    if seed_text is None:
-        raise UsageError("args are required")
+def missing_args_message(signature: inspect.Signature) -> str:
+    """Name the parameters the seed must give, and both ways to pass it."""
+    parameters = ", ".join(signature.parameters) or "no parameters"
+    return (
+        f"args are required: a JSON object for {parameters}\n"
+        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args"
+    )
+
+
+def _parse_seed(seed_text: str) -> Mapping[str, object]:
     return json.loads(seed_text)
 
 
