@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from pathlib import Path
 
 from pyct.execution.execute import ExecutionContext, execute
@@ -5,10 +6,12 @@ from pyct.execution.execute import ExecutionContext, execute
 FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_helper.py"
 
 
-def _load_fixture():
+def _load_fixture() -> Callable[..., object]:
     namespace: dict[str, object] = {}
     exec(compile(FIXTURE.read_text(), str(FIXTURE), "exec"), namespace)
-    return namespace["classify"]
+    classify = namespace["classify"]
+    assert callable(classify)
+    return classify
 
 
 def test_execute_returns_the_lines_the_call_ran() -> None:
