@@ -42,6 +42,26 @@ select = ["E", "F", "I", "B", "UP", "SIM"]
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.uv]
-# Until the first slice creates src/pyct there is nothing to build. Remove then.
-package = false
+[tool.importlinter]
+root_package = "pyct"
+
+# The ten layers of CLAUDE.md, top to bottom. A layer in parentheses has no code
+# yet and is optional to import-linter; drop the parentheses when it gets code.
+[[tool.importlinter.contracts]]
+name = "Layers"
+type = "layers"
+layers = [
+  "pyct.cli",
+  "(pyct.sweep)",
+  "(pyct.llm)",
+  "(pyct.run)",
+  "(pyct.rewrite)",
+  "(pyct.solver)",
+  "(pyct.branches)",
+  "(pyct.execution)",
+  "(pyct.binding)",
+  "pyct.results",
+  "(pyct.core)",
+  "(pyct.config)",
+  "(pyct.utils)",
+]
