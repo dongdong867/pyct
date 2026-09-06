@@ -83,3 +83,18 @@ def test_refuses_bad_target_form() -> None:
         assert result.returncode == 2, bad
         assert result.stdout == "", bad
         assert "MODULE::FUNCTION" in result.stderr, bad
+
+
+# trace-the-seed-fails-when-target-not-importable
+def test_fails_when_target_not_importable() -> None:
+    cases = {
+        "targets.trace.broken_import::anything": "targets.trace.broken_import",
+        "targets.trace.no_such_module::f": "targets.trace.no_such_module",
+        "targets.trace.uncalled_helper::no_such_function": "no_such_function",
+    }
+    for spec, named in cases.items():
+        result = run_pyct(spec, '{"x": 1}')
+
+        assert result.returncode == 1, spec
+        assert result.stdout == "", spec
+        assert named in result.stderr, spec
