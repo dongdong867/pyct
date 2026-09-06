@@ -33,13 +33,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the JSON line was printed. 1: the target could not be loaded. 2: usage.
+
+    Checks run in this order: target form, seed shape, import, seed present.
+    The import comes before the seed-present check because that message
+    names the target's parameters, which only the loaded target knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
+        check_spec(command.spec)
+        seed = None if command.seed_text is None else parse_seed(command.seed_text)
         target = load_target(command.spec)
-        if command.seed_text is None:
+        if seed is None:
             raise UsageError(missing_args_message(target.signature))
-        seed = _parse_seed(command.seed_text)
         result = run(target, seed)
     except UsageError as error:
         print(error, file=sys.stderr)
@@ -60,8 +65,29 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
     namespace = parser.parse_args(argv)
+    if namespace.seed is not None and namespace.args_seed is not None:
+        raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
     return RunCommand(spec=namespace.target, seed_text=seed_text)
+
+
+def check_spec(spec: str) -> None:
+    """Refuse anything but ``module::function``. A file path is not a module."""
+    module, separator, function = spec.partition("::")
+    well_formed = separator and module and function and "::" not in function
+    if not well_formed or "/" in module or module.endswith(".py"):
+        raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
+
+
+def parse_seed(seed_text: str) -> Mapping[str, object]:
+    """The seed is a JSON object, one key per parameter."""
+    try:
+        seed = json.loads(seed_text)
+    except json.JSONDecodeError as error:
+        raise UsageError(f"args must be a JSON object: {error}") from error
+    if not isinstance(seed, dict):
+        raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
+    return seed
 
 
 def missing_args_message(signature: inspect.Signature) -> str:
@@ -71,10 +97,6 @@ def missing_args_message(signature: inspect.Signature) -> str:
         f"args are required: a JSON object for {parameters}\n"
         f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args"
     )
-
-
-def _parse_seed(seed_text: str) -> Mapping[str, object]:
-    return json.loads(seed_text)
 
 
 class _Parser(argparse.ArgumentParser):
