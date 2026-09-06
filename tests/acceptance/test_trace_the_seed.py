@@ -63,3 +63,23 @@ def test_refuses_missing_args() -> None:
     assert "required" in result.stderr
     assert "x" in result.stderr.split("required", 1)[1]
     assert "--args" in result.stderr
+
+
+# trace-the-seed-refuses-malformed-args
+def test_refuses_malformed_args() -> None:
+    for bad in ["[1, 2]", "not json", '"x"']:
+        result = run_pyct(TARGET, bad)
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert "JSON object" in result.stderr, bad
+
+
+# trace-the-seed-refuses-bad-target-form
+def test_refuses_bad_target_form() -> None:
+    for bad in ["targets.trace.uncalled_helper", "targets/trace/uncalled_helper.py::classify"]:
+        result = run_pyct(bad, '{"x": 1}')
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert "MODULE::FUNCTION" in result.stderr, bad
