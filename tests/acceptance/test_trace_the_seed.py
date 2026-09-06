@@ -41,3 +41,25 @@ def test_imports_from_the_current_directory() -> None:
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
     assert line["args"] == {"x": 1}
+
+
+# trace-the-seed-counts-lines-against-the-module
+def test_counts_lines_against_the_module() -> None:
+    result = run_pyct(TARGET, '{"x": 1}')
+
+    line = one_line(result.stdout)
+    # docstring, two def lines, four body lines; never_called's body is in the total
+    assert line["total"] == {TARGET_FILE: 7}
+    # only the two lines the seed ran: the if and its return
+    assert line["covered"] == {TARGET_FILE: [5, 6]}
+
+
+# trace-the-seed-refuses-missing-args
+def test_refuses_missing_args() -> None:
+    result = run_pyct(TARGET)
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "required" in result.stderr
+    assert "x" in result.stderr.split("required", 1)[1]
+    assert "--args" in result.stderr
