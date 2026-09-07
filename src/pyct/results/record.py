@@ -11,7 +11,7 @@ class InputRecord:
     """What one input did: the arguments it ran with and the lines it reached."""
 
     args: Mapping[str, object]
-    new_lines: frozenset[int]
+    covered_lines: frozenset[int]
 
 
 @dataclass(frozen=True)
