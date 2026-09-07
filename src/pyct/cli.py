@@ -34,9 +34,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     0: the JSON line was printed. 1: the target could not be loaded. 2: usage.
 
-    Checks run in this order: target form, seed shape, import, seed present.
-    The import comes before the seed-present check because that message
-    names the target's parameters, which only the loaded target knows.
+    Checks run in this order: target form, seed shape, import, seed present,
+    seed fits. The import comes before the seed-present check because that
+    message names the target's parameters, which only the loaded target knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
@@ -45,6 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
+        check_seed_fits(target.signature, seed)
         result = run(target, seed)
     except UsageError as error:
         print(error, file=sys.stderr)
@@ -88,6 +89,17 @@ def parse_seed(seed_text: str) -> Mapping[str, object]:
     if not isinstance(seed, dict):
         raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
     return seed
+
+
+def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
+    """Refuse a seed whose keys do not fit the parameters. Names only, not types."""
+    try:
+        signature.bind(**seed)
+    except TypeError as error:
+        # bind names a missing parameter before an unexpected key, so name the keys too
+        given = ", ".join(seed) or "nothing"
+        parameters = ", ".join(signature.parameters) or "no parameters"
+        raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
 
 
 def missing_args_message(signature: inspect.Signature) -> str:
