@@ -45,7 +45,7 @@ where = ["src"]
 [tool.importlinter]
 root_package = "pyct"
 
-# The ten layers of CLAUDE.md, top to bottom. A layer in parentheses has no code
+# The layers of CLAUDE.md, top to bottom. A layer in parentheses has no code
 # yet and is optional to import-linter; drop the parentheses when it gets code.
 [[tool.importlinter.contracts]]
 name = "Layers"
