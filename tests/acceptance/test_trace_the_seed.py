@@ -78,6 +78,17 @@ def test_refuses_malformed_args() -> None:
         assert "JSON object" in result.stderr, bad
 
 
+# trace-the-seed-refuses-malformed-args
+def test_refuses_a_seed_that_does_not_fit_the_parameters() -> None:
+    for bad, named in {'{"y": 1}': "y", "{}": "x"}.items():
+        result = run_pyct(TARGET, bad)
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert named in result.stderr, bad
+        assert "Traceback" not in result.stderr, bad
+
+
 # trace-the-seed-refuses-bad-target-form
 def test_refuses_bad_target_form() -> None:
     for bad in ["targets.trace.uncalled_helper", "targets/trace/uncalled_helper.py::classify"]:
