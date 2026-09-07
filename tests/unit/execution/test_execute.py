@@ -53,7 +53,7 @@ def test_free_tool_id_takes_an_unassigned_id() -> None:
 
 
 def test_free_tool_id_falls_back_to_a_reserved_id() -> None:
-    for tool_id in (3, 4):
+    for tool_id in (3, 4, 0):
         if sys.monitoring.get_tool(tool_id) is not None:
             pytest.skip(f"tool id {tool_id} is already held")
     sys.monitoring.use_tool_id(3, "test")
