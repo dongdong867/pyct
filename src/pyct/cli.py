@@ -73,10 +73,12 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
 
 
 def check_spec(spec: str) -> None:
-    """Refuse anything but ``module::function``. A file path is not a module."""
+    """Refuse anything but ``module::function``, each part a name. A path is not a module."""
     module, separator, function = spec.partition("::")
-    well_formed = separator and module and function and "::" not in function
-    if not well_formed or "/" in module or module.endswith(".py"):
+    parts = [*module.split("."), function]
+    named = bool(separator) and all(part.isidentifier() for part in parts)
+    # `mod.py` is every part a name, and still a file path rather than a module
+    if not named or module.endswith(".py"):
         raise UsageError(f"target must be MODULE::FUNCTION, got {spec!r}")
 
 
