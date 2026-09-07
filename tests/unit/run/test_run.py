@@ -26,6 +26,6 @@ def test_run_records_the_seed_and_measures_it_against_the_module() -> None:
     assert result.entry == "targets.trace.uncalled_helper::classify"
     assert len(result.records) == 1
     assert result.records[0].args == {"x": 1}
-    assert result.records[0].new_lines == frozenset({5, 6})
+    assert result.records[0].covered_lines == frozenset({5, 6})
     assert result.coverage.covered == {FIXTURE: frozenset({5, 6})}
     assert result.coverage.total == {FIXTURE: 7}

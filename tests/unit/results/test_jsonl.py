@@ -6,7 +6,7 @@ from pyct.results.record import InputRecord
 
 
 def test_render_is_one_json_line_with_sorted_lines() -> None:
-    record = InputRecord(args={"x": 1}, new_lines=frozenset({6, 5}))
+    record = InputRecord(args={"x": 1}, covered_lines=frozenset({6, 5}))
     coverage = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
 
     line = render(record, coverage)
