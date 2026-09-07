@@ -78,7 +78,7 @@ def test_refuses_malformed_args() -> None:
         assert "JSON object" in result.stderr, bad
 
 
-# trace-the-seed-refuses-malformed-args
+# deviation in the trace-the-seed build log: a seed whose keys do not fit is a usage error
 def test_refuses_a_seed_that_does_not_fit_the_parameters() -> None:
     for bad, named in {'{"y": 1}': "y", "{}": "x"}.items():
         result = run_pyct(TARGET, bad)
@@ -114,7 +114,7 @@ def test_fails_when_target_not_importable() -> None:
         assert named in result.stderr, spec
 
 
-# trace-the-seed-fails-when-target-not-importable
+# deviation in the trace-the-seed build log: a module with no Python source is refused
 def test_fails_when_target_has_no_python_source() -> None:
     # math imports and has the function on every CPython, but never has a .py file
     result = run_pyct("math::sqrt", '{"x": 4}')
