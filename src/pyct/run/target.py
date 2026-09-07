@@ -42,6 +42,6 @@ def load_target(spec: str) -> Target:
     if not callable(fn):
         raise TargetError(f"{module_name} has no function {function_name}")
     file = getattr(module, "__file__", None)
-    if file is None:
-        raise TargetError(f"{module_name} has no source file")
+    if file is None or not file.endswith(".py"):
+        raise TargetError(f"{module_name} has no Python source file")
     return Target(spec=spec, fn=fn, file=file, signature=inspect.signature(fn))
