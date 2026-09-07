@@ -1,7 +1,10 @@
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
-from pyct.execution.execute import ExecutionContext, execute
+import pytest
+
+from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
 
 FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_helper.py"
 
@@ -40,3 +43,23 @@ def test_execute_traces_each_call_separately() -> None:
     result = execute(ctx, {"x": 50})
 
     assert result.lines == frozenset({5, 7})
+
+
+def test_free_tool_id_takes_an_unassigned_id() -> None:
+    if sys.monitoring.get_tool(3) is not None:
+        pytest.skip("tool id 3 is already held")
+
+    assert _free_tool_id() == 3
+
+
+def test_free_tool_id_falls_back_to_a_reserved_id() -> None:
+    for tool_id in (3, 4):
+        if sys.monitoring.get_tool(tool_id) is not None:
+            pytest.skip(f"tool id {tool_id} is already held")
+    sys.monitoring.use_tool_id(3, "test")
+    sys.monitoring.use_tool_id(4, "test")
+    try:
+        assert _free_tool_id() == 0
+    finally:
+        sys.monitoring.free_tool_id(3)
+        sys.monitoring.free_tool_id(4)
