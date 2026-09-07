@@ -7,6 +7,9 @@ import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+# 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
+_TOOL_IDS = (3, 4, 0, 1, 2, 5)
+
 
 @dataclass(frozen=True)
 class ExecutionContext:
@@ -72,7 +75,7 @@ class _LineTracer:
 
 
 def _free_tool_id() -> int:
-    for tool_id in range(6):
+    for tool_id in _TOOL_IDS:
         if sys.monitoring.get_tool(tool_id) is None:
             return tool_id
     raise RuntimeError("every sys.monitoring tool id is taken")
