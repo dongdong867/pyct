@@ -1,8 +1,11 @@
 """Acceptance tests for the trace-the-seed story, child run-the-seed-and-print-the-line.
 
-Every test spawns ``python -m pyct`` in a subprocess from the repository root with
+Every test spawns ``python -P -m pyct`` in a subprocess from the repository root with
 ``PYTHONPATH`` removed. The current-directory criterion cannot be proven in-process,
 and the import-path edit ``load_target`` makes would leak between in-process tests.
+``-P`` is what makes that criterion mean anything: without it ``-m`` puts the working
+directory on ``sys.path`` itself, so the target would import even if ``load_target``
+never touched the path.
 """
 
 import json
@@ -19,7 +22,7 @@ TARGET_FILE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     return subprocess.run(
-        [sys.executable, "-m", "pyct", "run", *argv],
+        [sys.executable, "-P", "-m", "pyct", "run", *argv],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
