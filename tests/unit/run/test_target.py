@@ -1,4 +1,5 @@
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -50,7 +51,15 @@ def test_load_target_names_a_function_the_module_lacks() -> None:
         load_target("targets.trace.uncalled_helper::no_such_function")
 
 
-def test_load_target_names_a_module_with_no_python_source() -> None:
-    """A compiled extension module imports and has a ``__file__``, but no source to read."""
-    with pytest.raises(TargetError, match="_crypt has no Python source file"):
-        load_target("_crypt::crypt")
+def test_load_target_names_a_module_with_no_python_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A compiled extension module imports and has a ``__file__``, but no source to read.
+
+    The module is built here rather than borrowed from the stdlib: which
+    extensions ship as ``.so`` files differs by Python version and build.
+    """
+    module = types.ModuleType("fake_ext")
+    module.__file__ = "/nowhere/fake_ext.cpython-312-darwin.so"
+    setattr(module, "f", lambda x: x)  # noqa: B010 - a module built by hand
+    monkeypatch.setitem(sys.modules, "fake_ext", module)
+    with pytest.raises(TargetError, match="fake_ext has no Python source file"):
+        load_target("fake_ext::f")
