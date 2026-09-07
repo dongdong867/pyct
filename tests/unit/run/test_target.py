@@ -48,3 +48,9 @@ def test_load_target_names_a_missing_module() -> None:
 def test_load_target_names_a_function_the_module_lacks() -> None:
     with pytest.raises(TargetError, match="no_such_function"):
         load_target("targets.trace.uncalled_helper::no_such_function")
+
+
+def test_load_target_names_a_module_with_no_python_source() -> None:
+    """A compiled extension module imports and has a ``__file__``, but no source to read."""
+    with pytest.raises(TargetError, match="_crypt has no Python source file"):
+        load_target("_crypt::crypt")

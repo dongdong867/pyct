@@ -101,3 +101,13 @@ def test_fails_when_target_not_importable() -> None:
         assert result.returncode == 1, spec
         assert result.stdout == "", spec
         assert named in result.stderr, spec
+
+
+# trace-the-seed-fails-when-target-not-importable
+def test_fails_when_target_has_no_python_source() -> None:
+    # a compiled extension module imports and has a __file__, but no source to read
+    result = run_pyct("_crypt::crypt", '{"word": "a", "salt": "ab"}')
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert result.stderr.splitlines() == ["_crypt has no Python source file"]
