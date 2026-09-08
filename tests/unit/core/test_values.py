@@ -82,6 +82,38 @@ def test_less_than_carries_the_concrete_result() -> None:
     assert (x < 10).value is False
 
 
+def test_a_compare_adds_up_like_a_bool() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # the return annotation admits NotImplemented, which a compare of two ints never returns
+    assert sum([x < 10, x < 100]) == 2  # type: ignore[no-matching-overload]
+
+    # sum adds, it never tests for truth
+    assert sink == []
+
+
+def test_a_compare_equals_the_bool_it_stands_for() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert (x < 10) == True  # noqa: E712 - comparing to True is what the target may do
+    assert (x < 100) == True  # noqa: E712 - same
+
+    # `==` against an int never tests for truth
+    assert sink == []
+
+
+def test_a_compare_reads_back_as_a_bool() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert repr(x < 10) == "True"
+    assert repr(x < 100) == "True"
+
+    assert sink == []
+
+
 def test_the_truth_test_records_the_fork_where_it_happens() -> None:
     sink: list[Branch] = []
     x = ConcolicInt(3, expression="x", sink=sink)
