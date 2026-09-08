@@ -17,6 +17,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = "targets.trace.uncalled_helper::classify"
 TARGET_FILE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
+TWO_CHECKS = "targets.trace.two_checks::bucket"
+TWO_CHECKS_FILE = str(REPO_ROOT / "targets" / "trace" / "two_checks.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -58,6 +60,38 @@ def test_prints_one_json_line_with_the_forks() -> None:
     assert line["total"] == {TARGET_FILE: 7}
     assert line.get("failure") is None
     assert not line.get("downgrades")
+
+
+# trace-the-seed-lists-forks-in-order
+def test_lists_forks_in_order() -> None:
+    result = run_pyct(TWO_CHECKS, '{"x": 5}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    # the seed passes both checks, so both forks are hit, in the order the target tests them
+    assert line["forks"] == [
+        {
+            "file": TWO_CHECKS_FILE,
+            "line": 3,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 10],
+        },
+        {
+            "file": TWO_CHECKS_FILE,
+            "line": 5,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 100],
+        },
+    ]
+    forks = line["forks"]
+    assert isinstance(forks, list)
+    for fork in forks:
+        assert set(fork) == {"file", "line", "col", "taken", "expression"}
+    # every line but the def, which ran at import
+    assert line["covered"] == {TWO_CHECKS_FILE: [2, 3, 4, 5, 6, 7]}
+    assert line["total"] == {TWO_CHECKS_FILE: 7}
 
 
 # trace-the-seed-imports-from-the-current-directory
