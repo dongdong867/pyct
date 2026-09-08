@@ -7,6 +7,9 @@ import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
+from pyct.binding.bind import bind
+from pyct.core.branch import Branch
+
 # 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
 _TOOL_IDS = (3, 4, 0, 1, 2, 5)
 
@@ -21,20 +24,28 @@ class ExecutionContext:
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    """Raw line numbers in the context's file that one call reached."""
+    """What one call did: the raw line numbers it reached and the forks it took."""
 
     lines: frozenset[int]
+    branches: tuple[Branch, ...]
 
 
 def execute(ctx: ExecutionContext, args: Mapping[str, object]) -> ExecutionResult:
-    """Call ``ctx.fn(**args)`` under a line tracer limited to ``ctx.file``."""
+    """Call ``ctx.fn`` on the seed under a line tracer limited to ``ctx.file``.
+
+    execute takes the raw seed and binds it here, because the sink belongs
+    to one call and nothing outside this function needs it. ``run()`` stays
+    assembly.
+    """
+    sink: list[Branch] = []
+    bound = bind(args, sink)
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        ctx.fn(**args)
+        ctx.fn(**bound)
     finally:
         tracer.stop()
-    return ExecutionResult(lines=frozenset(tracer.seen))
+    return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink))
 
 
 class _LineTracer:
