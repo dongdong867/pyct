@@ -37,6 +37,29 @@ def one_line(stdout: str) -> dict[str, object]:
     return json.loads(lines[0])
 
 
+# trace-the-seed-prints-one-json-line
+def test_prints_one_json_line_with_the_forks() -> None:
+    result = run_pyct(TARGET, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    assert line["args"] == {"x": 3}
+    # the one fork the seed hit: `x < 10` on line 5, column 7, taken
+    assert line["forks"] == [
+        {
+            "file": TARGET_FILE,
+            "line": 5,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 10],
+        }
+    ]
+    assert line["covered"] == {TARGET_FILE: [5, 6]}
+    assert line["total"] == {TARGET_FILE: 7}
+    assert line.get("failure") is None
+    assert not line.get("downgrades")
+
+
 # trace-the-seed-imports-from-the-current-directory
 def test_imports_from_the_current_directory() -> None:
     result = run_pyct(TARGET, '{"x": 1}')
