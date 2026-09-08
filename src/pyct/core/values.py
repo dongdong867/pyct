@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import NotImplementedType
+
 from pyct.core.branch import Branch, BranchSink, Expression, caller_site
 
 
@@ -34,8 +36,11 @@ class ConcolicInt(int):
         self.sink = sink
         return self
 
-    def __lt__(self, other: int) -> ConcolicBool:  # type: ignore[override]
-        concrete = int.__lt__(self, int(other))
+    def __lt__(self, other: int) -> ConcolicBool | NotImplementedType:  # type: ignore[override]
+        # a bool is an int, but `x < True` is not a compare the solver has a leaf for
+        if not isinstance(other, int) or isinstance(other, bool):
+            return NotImplemented
+        concrete = int.__lt__(self, other)
         return ConcolicBool(
             bool(concrete), expression=["<", self.expression, _form_of(other)], sink=self.sink
         )
