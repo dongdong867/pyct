@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import sys
 import types
@@ -12,8 +13,9 @@ from typing import Protocol
 # a condition, operator first, parameter names as leaves: ["<", "x", 10]
 type Expression = list[Expression] | str | int | bool
 
-# pyct's own package directory: every frame inside it is pyct, not the target
-_PYCT_DIR = f"{Path(__file__).resolve().parent.parent}{os.sep}"
+# pyct's own package directory: every frame inside it is pyct, not the target.
+# Unresolved, because a frame's co_filename is the unresolved __file__ it was compiled from.
+_PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
 
 
 @dataclass(frozen=True)
@@ -57,5 +59,5 @@ def caller_site() -> Site:
         frame = frame.f_back
     if frame is None:
         raise RuntimeError("no frame outside pyct to record the fork against")
-    _, _, col, _ = list(frame.f_code.co_positions())[frame.f_lasti // 2]
+    _, _, col, _ = next(itertools.islice(frame.f_code.co_positions(), frame.f_lasti // 2, None))
     return Site(file=frame.f_code.co_filename, line=frame.f_lineno, col=0 if col is None else col)
