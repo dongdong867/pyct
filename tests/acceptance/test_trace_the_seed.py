@@ -85,10 +85,6 @@ def test_lists_forks_in_order() -> None:
             "expression": ["<", "x", 100],
         },
     ]
-    forks = line["forks"]
-    assert isinstance(forks, list)
-    for fork in forks:
-        assert set(fork) == {"file", "line", "col", "taken", "expression"}
     # every line but the def, which ran at import
     assert line["covered"] == {TWO_CHECKS_FILE: [2, 3, 4, 5, 6, 7]}
     assert line["total"] == {TWO_CHECKS_FILE: 7}
