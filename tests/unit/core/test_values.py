@@ -46,8 +46,8 @@ def test_less_than_builds_the_expression_and_records_nothing() -> None:
 
     result = x < 10
 
-    assert result.value is True
     assert result.expression == ["<", "x", 10]
+    assert result == True  # noqa: E712 - the value, not the truth test
     assert sink == []
 
 
@@ -79,15 +79,14 @@ def test_less_than_a_bool_is_pythons_own_compare() -> None:
 def test_less_than_carries_the_concrete_result() -> None:
     x = ConcolicInt(50, expression="x", sink=[])
 
-    assert (x < 10).value is False
+    assert (x < 10) == False  # noqa: E712 - the value, not the truth test
 
 
 def test_a_compare_adds_up_like_a_bool() -> None:
     sink: list[Branch] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # the return annotation admits NotImplemented, which a compare of two ints never returns
-    assert sum([x < 10, x < 100]) == 2  # type: ignore[no-matching-overload]
+    assert sum([x < 10, x < 100]) == 2
 
     # sum adds, it never tests for truth
     assert sink == []

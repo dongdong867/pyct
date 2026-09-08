@@ -7,17 +7,28 @@ from types import NotImplementedType
 from pyct.core.branch import Branch, BranchSink, Expression, caller_site
 
 
-class ConcolicBool:
-    """The result of a symbolic compare. Testing it for truth records the fork."""
+class ConcolicBool(int):
+    """The result of a symbolic compare. Testing it for truth records the fork.
 
-    def __init__(self, value: bool, *, expression: Expression, sink: BranchSink) -> None:
-        self.value = value
+    It is an int the way `bool` is, because `bool` cannot be subclassed.
+    """
+
+    expression: Expression
+    sink: BranchSink
+
+    def __new__(cls, value: bool, *, expression: Expression, sink: BranchSink) -> ConcolicBool:
+        self = super().__new__(cls, value)
         self.expression = expression
         self.sink = sink
+        return self
 
     def __bool__(self) -> bool:
-        self.sink.append(Branch(expression=self.expression, taken=self.value, site=caller_site()))
-        return self.value
+        taken = int.__bool__(self)
+        self.sink.append(Branch(expression=self.expression, taken=taken, site=caller_site()))
+        return taken
+
+    def __repr__(self) -> str:
+        return repr(int.__bool__(self))
 
 
 class ConcolicInt(int):
