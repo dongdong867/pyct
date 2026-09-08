@@ -94,6 +94,18 @@ def test_the_truth_test_records_the_fork_where_it_happens() -> None:
     ]
 
 
+def test_a_reflected_compare_records_the_same_fork() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # int has no way to compare against a subclass, so Python asks x first: `x < 10`
+    assert _probe()(10 > x) == "yes"  # noqa: SIM300 - the reflected form is the point
+
+    assert sink == [
+        Branch(expression=["<", "x", 10], taken=True, site=Site(file="<probe>", line=2, col=7))
+    ]
+
+
 def test_the_truth_test_records_the_side_it_took() -> None:
     sink: list[Branch] = []
     x = ConcolicInt(50, expression="x", sink=sink)
