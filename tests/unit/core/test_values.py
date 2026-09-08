@@ -59,6 +59,23 @@ def test_less_than_takes_the_other_concolics_expression() -> None:
     assert (x < y).expression == ["<", "x", "y"]
 
 
+def test_less_than_a_non_int_is_pythons_own_compare() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # a float is not an int, so the compare is float's and nothing symbolic is recorded
+    assert (x < 3.5) is True
+    assert sink == []
+
+
+def test_less_than_a_bool_is_pythons_own_compare() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert (x < True) is False
+    assert sink == []
+
+
 def test_less_than_carries_the_concrete_result() -> None:
     x = ConcolicInt(50, expression="x", sink=[])
 
