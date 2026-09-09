@@ -1,11 +1,12 @@
 """Acceptance tests for the trace-the-seed story, child run-the-seed-and-print-the-line.
 
-Every test spawns ``python -P -m pyct`` in a subprocess from the repository root with
-``PYTHONPATH`` removed. The current-directory criterion cannot be proven in-process,
-and the import-path edit ``load_target`` makes would leak between in-process tests.
-``-P`` is what makes that criterion mean anything: without it ``-m`` puts the working
-directory on ``sys.path`` itself, so the target would import even if ``load_target``
-never touched the path.
+Every test but the pyct-bug one spawns ``python -P -m pyct`` in a subprocess from the
+repository root with ``PYTHONPATH`` removed. The current-directory criterion cannot be
+proven in-process, and the import-path edit ``load_target`` makes would leak between
+in-process tests. ``-P`` is what makes that criterion mean anything: without it ``-m``
+puts the working directory on ``sys.path`` itself, so the target would import even if
+``load_target`` never touched the path. The pyct-bug test is in-process because a pyct
+bug can only be provoked by patching pyct itself.
 """
 
 import json
@@ -13,6 +14,12 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+
+import pytest
+
+from pyct.cli import main
+from pyct.core import values
+from pyct.core.branch import Site
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = "targets.trace.uncalled_helper::classify"
@@ -40,6 +47,19 @@ def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
         text=True,
         check=False,
     )
+
+
+def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Put this interpreter where a fresh one would be, and undo it after the test.
+
+    ``load_target`` inserts the working directory on ``sys.path`` and leaves the
+    imported target in ``sys.modules``; both are restored so the subprocess tests
+    around this one keep proving what they prove.
+    """
+    monkeypatch.chdir(REPO_ROOT)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+    for name in [n for n in sys.modules if n.split(".", 1)[0] == "targets"]:
+        monkeypatch.delitem(sys.modules, name)
 
 
 def one_line(stdout: str) -> dict[str, object]:
@@ -269,3 +289,21 @@ def test_refuses_a_budget_that_is_not_a_positive_number() -> None:
         assert result.returncode == 2, bad
         assert result.stdout == "", bad
         assert "budget" in result.stderr, bad
+
+
+# trace-the-seed-fails-on-a-pyct-bug
+def test_fails_on_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken() -> Site:
+        raise RuntimeError("boom")
+
+    let_pyct_run_in_process(monkeypatch)
+    # the target's `x < 10` reaches this through pyct's own frames, so pyct is below it
+    monkeypatch.setattr(values, "caller_site", broken)
+
+    code = main(["run", TARGET, '{"x": 3}'])
+
+    assert code == 1
+    line = one_line(capsys.readouterr().out)
+    assert line["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
