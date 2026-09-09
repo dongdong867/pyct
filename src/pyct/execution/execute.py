@@ -10,6 +10,8 @@ from dataclasses import dataclass
 
 from pyct.binding.bind import bind
 from pyct.core.branch import Branch
+from pyct.execution.deadline import DeadlineError
+from pyct.execution.deadline import deadline as deadline_timer
 from pyct.results.failure import Failure, FailureKind
 
 # 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
@@ -37,29 +39,39 @@ class ExecutionResult:
     failure: Failure | None = None
 
 
-def execute(ctx: ExecutionContext, args: Mapping[str, object]) -> ExecutionResult:
+def execute(
+    ctx: ExecutionContext, args: Mapping[str, object], deadline: float | None = None
+) -> ExecutionResult:
     """Call ``ctx.fn`` on the seed under a line tracer limited to ``ctx.file``.
 
-    execute takes the raw seed and binds it here, because the sink belongs
-    to one call and nothing outside this function needs it. ``run()`` stays
-    assembly. A raise in the target is a failure on the result, not an
-    exception here; ``KeyboardInterrupt`` is the person's and passes through.
+    ``deadline`` is the monotonic instant the call must end by, or ``None``
+    for no bound. execute takes the raw seed and binds it here, because the
+    sink belongs to one call and nothing outside this function needs it.
+    ``run()`` stays assembly. A raise in the target is a failure on the
+    result, not an exception here; ``KeyboardInterrupt`` is the person's
+    and passes through.
     """
     sink: list[Branch] = []
     bound = bind(args, sink)
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        failure = _call(ctx.fn, bound)
+        failure = _call(ctx.fn, bound, deadline)
     finally:
         tracer.stop()
     return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink), failure=failure)
 
 
-def _call(fn: Callable[..., object], bound: Mapping[str, object]) -> Failure | None:
+def _call(
+    fn: Callable[..., object], bound: Mapping[str, object], deadline: float | None
+) -> Failure | None:
     """Call the target and say how it ended."""
     try:
-        fn(**bound)
+        with deadline_timer(deadline):
+            fn(**bound)
+    # the timer can land in pyct's own frames too, so the kind is by type, before the rest
+    except DeadlineError:
+        return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     except SystemExit as error:
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=_one_line(error))
     except Exception as error:
