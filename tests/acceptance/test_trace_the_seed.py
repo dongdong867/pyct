@@ -26,6 +26,8 @@ RAISES = "targets.trace.raises::explode"
 RAISES_FILE = str(REPO_ROOT / "targets" / "trace" / "raises.py")
 EXITS = "targets.trace.exits::leave"
 EXITS_FILE = str(REPO_ROOT / "targets" / "trace" / "exits.py")
+NEVER_RETURNS = "targets.trace.never_returns::spin"
+NEVER_RETURNS_FILE = str(REPO_ROOT / "targets" / "trace" / "never_returns.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -240,3 +242,30 @@ def test_reports_a_system_exit() -> None:
     assert line["covered"] == {EXITS_FILE: [5, 6]}
     # the import, the def, and the three body lines
     assert line["total"] == {EXITS_FILE: 5}
+
+
+# trace-the-seed-reports-a-timeout
+def test_reports_a_timeout() -> None:
+    result = run_pyct(NEVER_RETURNS, '{"x": 1}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    failure = line["failure"]
+    assert isinstance(failure, dict)
+    assert failure["kind"] == "timeout"
+    assert isinstance(failure["detail"], str)
+    assert failure["detail"] != ""
+    # the three lines the loop reached before the deadline
+    assert line["covered"] == {NEVER_RETURNS_FILE: [2, 3, 4]}
+    # the def and the three body lines; the compiler drops `return n` after `while True`
+    assert line["total"] == {NEVER_RETURNS_FILE: 4}
+
+
+# README › Rules › the budget
+def test_refuses_a_budget_that_is_not_a_positive_number() -> None:
+    for bad in ["0", "-1", "abc"]:
+        result = run_pyct(TARGET, '{"x": 1}', "--budget", bad)
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert "budget" in result.stderr, bad
