@@ -15,7 +15,13 @@ class FailureKind(StrEnum):
 
 @dataclass(frozen=True)
 class Failure:
-    """One failure: which kind, and one line a person can read."""
+    """One failure: which kind, and one line a person can read.
+
+    ``traceback`` is the whole formatted traceback, kept only for a pyct bug,
+    where the frames are what a person needs to fix pyct. It goes to stderr;
+    the JSON line stays the kind and the detail.
+    """
 
     kind: FailureKind
     detail: str
+    traceback: str | None = None
