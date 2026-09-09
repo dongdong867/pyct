@@ -17,6 +17,11 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = "targets.trace.uncalled_helper::classify"
 TARGET_FILE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
+TWO_CHECKS = "targets.trace.two_checks::bucket"
+TWO_CHECKS_FILE = str(REPO_ROOT / "targets" / "trace" / "two_checks.py")
+CALLS_HELPER = "targets.trace.calls_helper::route"
+CALLS_HELPER_FILE = str(REPO_ROOT / "targets" / "trace" / "calls_helper.py")
+HELPER_CHECK_FILE = str(REPO_ROOT / "targets" / "trace" / "helper_check.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -35,6 +40,86 @@ def one_line(stdout: str) -> dict[str, object]:
     lines = stdout.splitlines()
     assert len(lines) == 1, stdout
     return json.loads(lines[0])
+
+
+# trace-the-seed-prints-one-json-line
+def test_prints_one_json_line_with_the_forks() -> None:
+    result = run_pyct(TARGET, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    assert line["args"] == {"x": 3}
+    # the one fork the seed hit: `x < 10` on line 5, column 7, taken
+    assert line["forks"] == [
+        {
+            "file": TARGET_FILE,
+            "line": 5,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 10],
+        }
+    ]
+    assert line["covered"] == {TARGET_FILE: [5, 6]}
+    assert line["total"] == {TARGET_FILE: 7}
+    assert line.get("failure") is None
+    assert not line.get("downgrades")
+
+
+# trace-the-seed-lists-forks-in-order
+def test_lists_forks_in_order() -> None:
+    result = run_pyct(TWO_CHECKS, '{"x": 5}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    # the seed passes both checks, so both forks are hit, in the order the target tests them
+    assert line["forks"] == [
+        {
+            "file": TWO_CHECKS_FILE,
+            "line": 3,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 10],
+        },
+        {
+            "file": TWO_CHECKS_FILE,
+            "line": 5,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 100],
+        },
+    ]
+    # every line but the def, which ran at import
+    assert line["covered"] == {TWO_CHECKS_FILE: [2, 3, 4, 5, 6, 7]}
+    assert line["total"] == {TWO_CHECKS_FILE: 7}
+
+
+# trace-the-seed-lists-a-fork-in-another-module
+def test_lists_a_fork_in_another_module() -> None:
+    result = run_pyct(CALLS_HELPER, '{"x": 50}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    # the helper's `x < 5` in the helper's own file first, then the target's own `x < 100`:
+    # the order they ran, which is the reverse of the order their files sort in
+    assert line["forks"] == [
+        {
+            "file": HELPER_CHECK_FILE,
+            "line": 2,
+            "col": 7,
+            "taken": False,
+            "expression": ["<", "x", 5],
+        },
+        {
+            "file": CALLS_HELPER_FILE,
+            "line": 7,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 100],
+        },
+    ]
+    # the fork's file does not join the coverage maps: they stay on the target's module
+    assert line["covered"] == {CALLS_HELPER_FILE: [5, 7, 8]}
+    assert line["total"] == {CALLS_HELPER_FILE: 7}
 
 
 # trace-the-seed-imports-from-the-current-directory

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
 
 FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_helper.py"
@@ -63,3 +64,45 @@ def test_free_tool_id_falls_back_to_a_reserved_id() -> None:
     finally:
         sys.monitoring.free_tool_id(3)
         sys.monitoring.free_tool_id(4)
+
+
+def test_execute_returns_the_forks_the_call_hit() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.branches == (
+        Branch(
+            expression=["<", "x", 10],
+            taken=True,
+            site=Site(file=str(FIXTURE), line=5, col=7),
+        ),
+    )
+
+
+def test_execute_records_the_side_the_seed_took() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 50})
+
+    assert [branch.taken for branch in result.branches] == [False]
+
+
+def test_execute_returns_no_forks_when_the_call_takes_none() -> None:
+    def straight(x: int) -> int:
+        return x
+
+    ctx = ExecutionContext(fn=straight, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.branches == ()
+
+
+def test_execute_gives_each_call_its_own_sink() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    execute(ctx, {"x": 1})
+    result = execute(ctx, {"x": 50})
+
+    assert len(result.branches) == 1

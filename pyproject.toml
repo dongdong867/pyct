@@ -59,9 +59,9 @@ layers = [
   "(pyct.solver)",
   "(pyct.branches)",
   "pyct.execution",
-  "(pyct.binding)",
+  "pyct.binding",
   "pyct.results",
-  "(pyct.core)",
+  "pyct.core",
   "(pyct.config)",
   "(pyct.utils)",
 ]
