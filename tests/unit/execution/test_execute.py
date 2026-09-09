@@ -305,7 +305,7 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
         raise OverflowError("timestamp out of range for platform time_t")
 
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
-    # the timer is armed before the target is called, so no frame of the target's is in the traceback
+    # the timer is armed before the target is called, so the traceback has no frame of its own
     monkeypatch.setattr(signal, "setitimer", overflow)
 
     result = execute(ctx, {"x": 1}, time.monotonic() + 1)
