@@ -91,7 +91,7 @@ def test_parse_budget_without_the_flag_is_no_deadline() -> None:
     assert parse_budget(None) == Budget()
 
 
-@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan"])
+@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400"])
 def test_parse_budget_refuses_anything_but_a_positive_number(text: str) -> None:
     with pytest.raises(UsageError, match="budget"):
         parse_budget(text)

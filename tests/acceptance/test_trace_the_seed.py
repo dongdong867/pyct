@@ -288,7 +288,7 @@ def test_reports_a_timeout() -> None:
 
 # README › Rules › the budget
 def test_refuses_a_budget_that_is_not_a_positive_number() -> None:
-    for bad in ["0", "-1", "abc"]:
+    for bad in ["0", "-1", "abc", "inf"]:
         result = run_pyct(TARGET, '{"x": 1}', "--budget", bad)
 
         assert result.returncode == 2, bad
