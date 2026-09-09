@@ -59,5 +59,6 @@ def caller_site() -> Site:
         frame = frame.f_back
     if frame is None:
         raise RuntimeError("no frame outside pyct to record the fork against")
+    # f_lasti counts bytes, co_positions() counts two-byte instructions; traceback.py does the same
     _, _, col, _ = next(itertools.islice(frame.f_code.co_positions(), frame.f_lasti // 2, None))
     return Site(file=frame.f_code.co_filename, line=frame.f_lineno, col=0 if col is None else col)

@@ -28,6 +28,7 @@ class ConcolicBool(int):
         return taken
 
     def __repr__(self) -> str:
+        # int.__bool__, not bool(self): bool() would record a fork
         return repr(int.__bool__(self))
 
 
