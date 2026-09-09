@@ -29,14 +29,6 @@ def _load_fixture() -> Callable[..., object]:
     return _load(FIXTURE, "classify")
 
 
-def _load_raiser() -> Callable[..., object]:
-    return _load(RAISES, "explode")
-
-
-def _load_spinner() -> Callable[..., object]:
-    return _load(NEVER_RETURNS, "spin")
-
-
 def test_execute_returns_the_lines_the_call_ran() -> None:
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
 
@@ -150,7 +142,7 @@ def test_execute_reports_no_failure_when_the_call_returns() -> None:
 
 
 def test_execute_keeps_the_lines_up_to_the_raise() -> None:
-    ctx = ExecutionContext(fn=_load_raiser(), file=str(RAISES))
+    ctx = ExecutionContext(fn=_load(RAISES, "explode"), file=str(RAISES))
 
     result = execute(ctx, {"x": 3})
 
@@ -192,7 +184,7 @@ def test_execute_reports_a_system_exit_as_a_failure_and_keeps_going() -> None:
 
 
 def test_execute_reports_a_timeout_and_keeps_the_lines_it_reached() -> None:
-    ctx = ExecutionContext(fn=_load_spinner(), file=str(NEVER_RETURNS))
+    ctx = ExecutionContext(fn=_load(NEVER_RETURNS, "spin"), file=str(NEVER_RETURNS))
 
     result = execute(ctx, {"x": 1}, time.monotonic() + 0.05)
 
