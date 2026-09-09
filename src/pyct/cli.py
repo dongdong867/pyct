@@ -124,8 +124,7 @@ def parse_budget(budget_text: str | None) -> Budget:
         seconds = float(budget_text)
     except ValueError as error:
         raise UsageError(f"budget must be a number of seconds, got {budget_text!r}") from error
-    # `not > 0` rather than `<= 0`, because every compare against nan is False;
-    # inf passes that and overflows the timer, so finite is checked too
+    # nan fails isfinite; inf passes > 0 and would overflow the timer
     if not (math.isfinite(seconds) and seconds > 0):
         raise UsageError(
             f"budget must be a finite number of seconds above zero, got {budget_text!r}"
