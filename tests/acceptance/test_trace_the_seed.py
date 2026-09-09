@@ -48,6 +48,9 @@ def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
         capture_output=True,
         text=True,
         check=False,
+        # the timeout test spawns a target that never returns, so a broken
+        # budget has to fail the test instead of hanging the suite
+        timeout=30,
     )
 
 
