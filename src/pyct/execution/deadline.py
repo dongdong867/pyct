@@ -6,7 +6,9 @@ reached before it stay on the result. Signals only reach the main
 thread, and ``setitimer`` is Unix only, so a run is both. The signal can
 land between the target returning and the timer being cancelled, so a
 call that finished in the last moment can still report a timeout; the
-window is sub-millisecond and accepted.
+window is sub-millisecond and accepted. A target that catches
+``BaseException`` swallows the one alarm and runs unbounded; a second
+alarm would be caught the same way, so nothing here can stop it.
 """
 
 from __future__ import annotations
