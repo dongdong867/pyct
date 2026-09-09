@@ -1,4 +1,5 @@
 import functools
+import signal
 import sys
 import time
 from collections.abc import Callable
@@ -295,3 +296,20 @@ def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
         ["<", "x", 100],
     ]
     assert result.downgrades == ("__abs__", "__neg__")
+
+
+def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def overflow(which: int, seconds: float) -> None:
+        raise OverflowError("timestamp out of range for platform time_t")
+
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+    # the timer is armed before the target is called, so no frame of the target's is in the traceback
+    monkeypatch.setattr(signal, "setitimer", overflow)
+
+    result = execute(ctx, {"x": 1}, time.monotonic() + 1)
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.traceback is not None
