@@ -11,7 +11,9 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.config.budget import Budget
+from pyct.results.failure import FailureKind
 from pyct.results.jsonl import render
+from pyct.results.record import InputRecord
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
 
@@ -34,7 +36,8 @@ class RunCommand:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
-    0: the JSON line was printed. 1: the target could not be loaded. 2: usage.
+    0: the JSON line was printed. 1: the target could not be loaded, or pyct
+    itself broke during the run. 2: usage.
 
     Checks run in this order: target form, seed shape, budget, import, seed
     present, seed fits. The import comes before the seed-present check because
@@ -57,8 +60,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     except TargetError as error:
         print(error, file=sys.stderr)
         return 1
-    print(render(result.records[0], result.coverage))
-    return 0
+    record = result.records[0]
+    print(render(record, result.coverage))
+    return _exit_code(record)
+
+
+def _exit_code(record: InputRecord) -> int:
+    """The line is printed either way; a pyct bug still ends the command badly."""
+    return 1 if record.failure is not None and record.failure.kind is FailureKind.PYCT_BUG else 0
 
 
 def parse_command(argv: Sequence[str]) -> RunCommand:
