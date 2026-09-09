@@ -95,20 +95,13 @@ def test_lists_forks_in_order() -> None:
 
 # trace-the-seed-lists-a-fork-in-another-module
 def test_lists_a_fork_in_another_module() -> None:
-    result = run_pyct(CALLS_HELPER, '{"x": 200}')
+    result = run_pyct(CALLS_HELPER, '{"x": 50}')
 
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
-    # the target's own `x < 100` first, then the helper's `x < 5` in the helper's own
-    # file: the order they ran, not the order of their files
+    # the helper's `x < 5` in the helper's own file first, then the target's own `x < 100`:
+    # the order they ran, which is the reverse of the order their files sort in
     assert line["forks"] == [
-        {
-            "file": CALLS_HELPER_FILE,
-            "line": 5,
-            "col": 7,
-            "taken": False,
-            "expression": ["<", "x", 100],
-        },
         {
             "file": HELPER_CHECK_FILE,
             "line": 2,
@@ -116,9 +109,16 @@ def test_lists_a_fork_in_another_module() -> None:
             "taken": False,
             "expression": ["<", "x", 5],
         },
+        {
+            "file": CALLS_HELPER_FILE,
+            "line": 7,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 100],
+        },
     ]
     # the fork's file does not join the coverage maps: they stay on the target's module
-    assert line["covered"] == {CALLS_HELPER_FILE: [5, 7, 9]}
+    assert line["covered"] == {CALLS_HELPER_FILE: [5, 7, 8]}
     assert line["total"] == {CALLS_HELPER_FILE: 7}
 
 
