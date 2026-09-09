@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from pyct.binding.bind import bind
 from pyct.core.branch import _PYCT_DIR, Branch, Downgrade, SinkItem
+from pyct.core.values import is_downgrade_frame
 from pyct.execution.deadline import DeadlineError
 from pyct.execution.deadline import deadline as deadline_timer
 from pyct.results.failure import Failure, FailureKind
@@ -92,16 +93,23 @@ def _whose_raise(fn: Callable[..., object], error: Exception) -> Failure:
     below the target's code object in the traceback lives under pyct's package
     directory; otherwise it is **target raised**. Below means deeper in the
     traceback than the target's own frame, so it covers the calls the target
-    made and not the ones that led to it. A pyct bug keeps the whole traceback,
-    because the frames are what a person needs to fix pyct.
+    made and not the ones that led to it. A downgrade frame is exempt: it runs
+    only int's own operation, so a raise inside it is the target's. A pyct bug
+    keeps the whole traceback, because the frames are what a person needs to
+    fix pyct.
     """
-    if any(tb.tb_frame.f_code.co_filename.startswith(_PYCT_DIR) for tb in _below_target(fn, error)):
+    if any(_is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error)):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=_one_line(error),
             traceback="".join(traceback.format_exception(error)),
         )
     return Failure(kind=FailureKind.TARGET_RAISED, detail=_one_line(error))
+
+
+def _is_pyct_frame(code: types.CodeType) -> bool:
+    """A frame of pyct's own: under pyct's directory, and not a downgrade."""
+    return code.co_filename.startswith(_PYCT_DIR) and not is_downgrade_frame(code)
 
 
 def _below_target(fn: Callable[..., object], error: Exception) -> tuple[types.TracebackType, ...]:

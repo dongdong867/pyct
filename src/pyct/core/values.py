@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import types
 from collections.abc import Callable
 from types import NotImplementedType
 
@@ -135,6 +136,15 @@ def _downgraded(name: str) -> Callable[..., object]:
         return result
 
     return downgrade
+
+
+# every closure one `def` makes shares that def's code object, so one of them stands for all
+_DOWNGRADE_CODE = _downgraded("__abs__").__code__
+
+
+def is_downgrade_frame(code: types.CodeType) -> bool:
+    """Whether a frame running ``code`` is a downgrade's."""
+    return code is _DOWNGRADE_CODE
 
 
 # forty-odd methods that differ only in the name they call and record, so a loop writes them
