@@ -70,3 +70,15 @@ def test_render_lists_the_downgrades_in_order() -> None:
     payload = json.loads(render(record, COVERAGE))
 
     assert payload["downgrades"] == ["__abs__", "__add__"]
+
+
+def test_render_keeps_the_traceback_off_the_line() -> None:
+    # the traceback is for the person reading stderr; the line stays one kind and one detail
+    failure = Failure(
+        kind=FailureKind.PYCT_BUG, detail="RuntimeError: boom", traceback="Traceback...\nboom\n"
+    )
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), failure=failure)
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
