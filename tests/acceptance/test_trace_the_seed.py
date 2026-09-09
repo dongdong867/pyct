@@ -35,6 +35,8 @@ EXITS = "targets.trace.exits::leave"
 EXITS_FILE = str(REPO_ROOT / "targets" / "trace" / "exits.py")
 NEVER_RETURNS = "targets.trace.never_returns::spin"
 NEVER_RETURNS_FILE = str(REPO_ROOT / "targets" / "trace" / "never_returns.py")
+THROUGH_ABS = "targets.trace.through_abs::size"
+THROUGH_ABS_FILE = str(REPO_ROOT / "targets" / "trace" / "through_abs.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -307,3 +309,18 @@ def test_fails_on_a_pyct_bug(
     assert code == 1
     line = one_line(capsys.readouterr().out)
     assert line["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
+
+
+# trace-the-seed-records-a-downgrade
+def test_records_a_downgrade() -> None:
+    result = run_pyct(THROUGH_ABS, '{"x": -3}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    # abs drops the condition, so the name of the call it went through is all that is left
+    assert line["downgrades"] == ["__abs__"]
+    # y is a plain int after abs, so `y < 10` is Python's own compare and no fork is recorded
+    assert line["forks"] == []
+    assert line["covered"] == {THROUGH_ABS_FILE: [2, 3, 4]}
+    # the def and the four body lines
+    assert line["total"] == {THROUGH_ABS_FILE: 5}
