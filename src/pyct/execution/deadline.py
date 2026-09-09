@@ -3,7 +3,10 @@
 The timer raises inside whatever the target is doing, so a loop, a
 helper module, and ``time.sleep`` all stop the same way, and the lines
 reached before it stay on the result. Signals only reach the main
-thread, and ``setitimer`` is Unix only, so a run is both.
+thread, and ``setitimer`` is Unix only, so a run is both. The signal can
+land between the target returning and the timer being cancelled, so a
+call that finished in the last moment can still report a timeout; the
+window is sub-millisecond and accepted.
 """
 
 from __future__ import annotations
@@ -12,6 +15,7 @@ import signal
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import NoReturn
 
 # a deadline already past still has to fire, and setitimer(0) would cancel instead
 _AT_ONCE = 1e-6
@@ -40,5 +44,5 @@ def deadline(at: float | None) -> Iterator[None]:
         signal.signal(signal.SIGALRM, previous)
 
 
-def _raise_deadline(signal_number: int, frame: object) -> None:
+def _raise_deadline(signal_number: int, frame: object) -> NoReturn:
     raise DeadlineError
