@@ -94,7 +94,8 @@ class ConcolicInt(int):
 
     expression: Expression
     sink: BranchSink
-    # overriding __eq__ in a class body deletes the inherited __hash__, so say it stays int's
+    # the loop below installs __eq__ after the class exists, which leaves __hash__ alone.
+    # Pinned anyway: it says the hash stays int's, and holds if __eq__ ever moves into the body.
     __hash__ = int.__hash__
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
