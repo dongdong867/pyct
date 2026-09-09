@@ -76,6 +76,17 @@ def test_less_than_a_bool_is_pythons_own_compare() -> None:
     assert sink == []
 
 
+def test_less_than_a_compares_value_is_pythons_own_compare() -> None:
+    sink: list[Branch] = []
+    x = ConcolicInt(0, expression="x", sink=sink)
+    y = ConcolicInt(3, expression="y", sink=sink)
+
+    # a compare's value stands for a truth value, not a number, so `<` against it is
+    # int's own: a plain bool, not a leaf that drops y's compare for its concrete 1
+    assert (x < (y < 5)) is True
+    assert sink == []
+
+
 def test_less_than_carries_the_concrete_result() -> None:
     x = ConcolicInt(50, expression="x", sink=[])
 
