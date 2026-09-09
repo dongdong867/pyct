@@ -326,7 +326,9 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def overflow(which: int, seconds: float) -> None:
-        raise OverflowError("timestamp out of range for platform time_t")
+        # only arming fails; the cancel on the way out is setitimer(..., 0) and must run
+        if seconds:
+            raise OverflowError("timestamp out of range for platform time_t")
 
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
     before = signal.getsignal(signal.SIGALRM)
