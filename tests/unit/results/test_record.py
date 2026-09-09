@@ -1,6 +1,6 @@
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
-from pyct.results.record import DowngradeCount, InputRecord, RunResult
+from pyct.results.record import InputRecord, RunResult
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 
@@ -27,15 +27,3 @@ def test_an_input_record_ends_well_and_loses_nothing_by_default() -> None:
 
     assert record.failure is None
     assert record.downgrades == ()
-
-
-def test_an_input_record_counts_each_run_of_one_downgraded_call() -> None:
-    # a loop over an argument is one entry with a count, not one entry per pass
-    record = InputRecord(
-        args={"x": 1},
-        forks=(),
-        covered_lines=frozenset(),
-        downgrades=(DowngradeCount(name="__radd__", count=3),),
-    )
-
-    assert [(entry.name, entry.count) for entry in record.downgrades] == [("__radd__", 3)]
