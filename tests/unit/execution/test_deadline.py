@@ -40,5 +40,5 @@ def test_deadline_cancels_the_timer_on_the_way_out() -> None:
     with deadline(time.monotonic() + 0.05):
         pass
 
-    # past the instant the timer was set for, and nothing fires
-    time.sleep(0.1)
+    # no timer armed: zero seconds to the next fire, zero interval
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
