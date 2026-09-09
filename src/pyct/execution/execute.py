@@ -5,11 +5,11 @@ from __future__ import annotations
 import sys
 import traceback
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
-from pyct.core.branch import Branch
+from pyct.core.branch import _PYCT_DIR, Branch
 from pyct.execution.deadline import DeadlineError
 from pyct.execution.deadline import deadline as deadline_timer
 from pyct.results.failure import Failure, FailureKind
@@ -75,8 +75,55 @@ def _call(
     except SystemExit as error:
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=_one_line(error))
     except Exception as error:
-        return Failure(kind=FailureKind.TARGET_RAISED, detail=_one_line(error))
+        return _whose_raise(fn, error)
     return None
+
+
+def _whose_raise(fn: Callable[..., object], error: Exception) -> Failure:
+    """Say whose the raise was.
+
+    An exception raised while the target runs is a **pyct bug** when any frame
+    below the target's code object in the traceback lives under pyct's package
+    directory; otherwise it is **target raised**. Below means deeper in the
+    traceback than the target's own frame, so it covers the calls the target
+    made and not the ones that led to it. A pyct bug keeps the whole traceback,
+    because the frames are what a person needs to fix pyct.
+    """
+    if any(tb.tb_frame.f_code.co_filename.startswith(_PYCT_DIR) for tb in _below_target(fn, error)):
+        return Failure(
+            kind=FailureKind.PYCT_BUG,
+            detail=_one_line(error),
+            traceback="".join(traceback.format_exception(error)),
+        )
+    return Failure(kind=FailureKind.TARGET_RAISED, detail=_one_line(error))
+
+
+def _below_target(fn: Callable[..., object], error: Exception) -> tuple[types.TracebackType, ...]:
+    """The traceback entries deeper than the target's own frame, none when it is absent."""
+    entries = tuple(_entries(error.__traceback__))
+    code = getattr(fn, "__code__", None)
+    for index, entry in enumerate(entries):
+        if _is_target_frame(entry, code):
+            return entries[index + 1 :]
+    return ()
+
+
+def _is_target_frame(entry: types.TracebackType, code: types.CodeType | None) -> bool:
+    """The target's own frame runs its code object.
+
+    A callable without one, a ``functools.partial`` say, never gets a frame,
+    so the first frame outside pyct stands in for it.
+    """
+    if code is not None:
+        return entry.tb_frame.f_code is code
+    return not entry.tb_frame.f_code.co_filename.startswith(_PYCT_DIR)
+
+
+def _entries(tb: types.TracebackType | None) -> Iterator[types.TracebackType]:
+    """The traceback as a sequence, outermost frame first."""
+    while tb is not None:
+        yield tb
+        tb = tb.tb_next
 
 
 def _one_line(error: BaseException) -> str:
