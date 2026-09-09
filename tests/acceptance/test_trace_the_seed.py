@@ -22,6 +22,8 @@ TWO_CHECKS_FILE = str(REPO_ROOT / "targets" / "trace" / "two_checks.py")
 CALLS_HELPER = "targets.trace.calls_helper::route"
 CALLS_HELPER_FILE = str(REPO_ROOT / "targets" / "trace" / "calls_helper.py")
 HELPER_CHECK_FILE = str(REPO_ROOT / "targets" / "trace" / "helper_check.py")
+RAISES = "targets.trace.raises::explode"
+RAISES_FILE = str(REPO_ROOT / "targets" / "trace" / "raises.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -61,8 +63,8 @@ def test_prints_one_json_line_with_the_forks() -> None:
     ]
     assert line["covered"] == {TARGET_FILE: [5, 6]}
     assert line["total"] == {TARGET_FILE: 7}
-    assert line.get("failure") is None
-    assert not line.get("downgrades")
+    assert line["failure"] is None
+    assert line["downgrades"] == []
 
 
 # trace-the-seed-lists-forks-in-order
@@ -207,3 +209,17 @@ def test_fails_when_target_has_no_python_source() -> None:
     assert result.returncode == 1
     assert result.stdout == ""
     assert result.stderr.splitlines() == ["math has no Python source file"]
+
+
+# trace-the-seed-reports-a-raise
+def test_reports_a_raise() -> None:
+    result = run_pyct(RAISES, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    assert line["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
+    # the fork before the raise is kept, and the lines up to the raise
+    assert [fork["line"] for fork in line["forks"]] == [2]
+    assert line["covered"] == {RAISES_FILE: [2, 3]}
+    assert line["total"] == {RAISES_FILE: 4}
+    assert line["downgrades"] == []
