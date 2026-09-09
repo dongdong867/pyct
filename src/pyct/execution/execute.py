@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import sys
+import traceback
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
 from pyct.core.branch import Branch
+from pyct.results.failure import Failure, FailureKind
 
 # 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
 _TOOL_IDS = (3, 4, 0, 1, 2, 5)
@@ -24,10 +26,15 @@ class ExecutionContext:
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    """What one call did: the raw line numbers it reached and the forks it took."""
+    """What one call did: the lines it reached, the forks it took, and how it ended.
+
+    On a failure the lines and forks are those reached before it.
+    """
 
     lines: frozenset[int]
     branches: tuple[Branch, ...]
+    downgrades: tuple[str, ...] = ()
+    failure: Failure | None = None
 
 
 def execute(ctx: ExecutionContext, args: Mapping[str, object]) -> ExecutionResult:
@@ -35,17 +42,38 @@ def execute(ctx: ExecutionContext, args: Mapping[str, object]) -> ExecutionResul
 
     execute takes the raw seed and binds it here, because the sink belongs
     to one call and nothing outside this function needs it. ``run()`` stays
-    assembly.
+    assembly. A raise in the target is a failure on the result, not an
+    exception here; ``KeyboardInterrupt`` is the person's and passes through.
     """
     sink: list[Branch] = []
     bound = bind(args, sink)
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        ctx.fn(**bound)
+        failure = _call(ctx.fn, bound)
     finally:
         tracer.stop()
-    return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink))
+    return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink), failure=failure)
+
+
+def _call(fn: Callable[..., object], bound: Mapping[str, object]) -> Failure | None:
+    """Call the target and say how it ended."""
+    try:
+        fn(**bound)
+    except Exception as error:
+        return Failure(kind=FailureKind.TARGET_RAISED, detail=_one_line(error))
+    return None
+
+
+def _one_line(error: BaseException) -> str:
+    """The exception as a person reads it at the end of a traceback, on one line."""
+    # a message with newlines comes back inside one entry, so split each entry too
+    parts = (
+        part.strip()
+        for entry in traceback.format_exception_only(error)
+        for part in entry.splitlines()
+    )
+    return " ".join(part for part in parts if part)
 
 
 class _LineTracer:
