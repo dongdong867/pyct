@@ -11,7 +11,7 @@ from pyct.core.values import is_downgrade_frame
 from pyct.results.failure import Failure, FailureKind
 
 
-def blame(fn: Callable[..., object], error: Exception) -> Failure:
+def blame(fn: Callable[..., object], error: Exception, *, called: bool) -> Failure:
     """Say whose the raise was.
 
     An exception raised while the target runs is a **pyct bug** when any frame
@@ -19,11 +19,11 @@ def blame(fn: Callable[..., object], error: Exception) -> Failure:
     directory; otherwise it is **target raised**. Below means deeper in the
     traceback than the target's own frame, so it covers the calls the target
     made and not the ones that led to it. A downgrade frame is exempt: it runs
-    only int's own operation, so a raise inside it is the target's. A pyct bug
-    keeps the whole traceback, because the frames are what a person needs to
-    fix pyct.
+    only int's own operation, so a raise inside it is the target's. A raise
+    before the target was ``called`` is pyct's own setup. A pyct bug keeps the
+    whole traceback, because the frames are what a person needs to fix pyct.
     """
-    if any(_is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error)):
+    if any(_is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error, called)):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=one_line(error),
@@ -37,19 +37,22 @@ def _is_pyct_frame(code: types.CodeType) -> bool:
     return code.co_filename.startswith(PYCT_DIR) and not is_downgrade_frame(code)
 
 
-def _below_target(fn: Callable[..., object], error: Exception) -> tuple[types.TracebackType, ...]:
+def _below_target(
+    fn: Callable[..., object], error: Exception, called: bool
+) -> tuple[types.TracebackType, ...]:
     """The traceback entries deeper than the target's own frame.
 
-    A target that no frame ran, whether by code object or as the first
-    frame outside pyct, never got its turn, so every entry is below it:
-    the raise came from pyct's own setup.
+    A target that was never called got no turn, so every entry is below it.
+    A called target with no frame of its own ran in C, so nothing is.
     """
     entries = tuple(_entries(error.__traceback__))
+    if not called:
+        return entries
     code = getattr(fn, "__code__", None)
     for index, entry in enumerate(entries):
         if _is_target_frame(entry, code):
             return entries[index + 1 :]
-    return entries
+    return ()
 
 
 def _is_target_frame(entry: types.TracebackType, code: types.CodeType | None) -> bool:

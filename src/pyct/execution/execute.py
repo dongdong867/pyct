@@ -85,9 +85,15 @@ def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
 def _call(
     fn: Callable[..., object], bound: Mapping[str, object], until: float | None
 ) -> Failure | None:
-    """Call the target and say how it ended."""
+    """Call the target and say how it ended.
+
+    ``called`` says whether the target was reached: a target that runs in
+    C leaves no frame, so blame cannot read that from the traceback.
+    """
+    called = False
     try:
         with deadline(until):
+            called = True
             fn(**bound)
     # the timer can land in pyct's own frames too, so the kind is by type, before the rest
     except DeadlineError:
@@ -95,7 +101,7 @@ def _call(
     except SystemExit as error:
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
     except Exception as error:
-        return blame(fn, error)
+        return blame(fn, error, called=called)
     return None
 
 
