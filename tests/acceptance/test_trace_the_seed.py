@@ -95,23 +95,31 @@ def test_lists_forks_in_order() -> None:
 
 # trace-the-seed-lists-a-fork-in-another-module
 def test_lists_a_fork_in_another_module() -> None:
-    result = run_pyct(CALLS_HELPER, '{"x": 2}')
+    result = run_pyct(CALLS_HELPER, '{"x": 200}')
 
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
-    # the only fork is the helper's `x < 5`, on line 2, column 7, in the helper's own file
+    # the target's own `x < 100` first, then the helper's `x < 5` in the helper's own
+    # file: the order they ran, not the order of their files
     assert line["forks"] == [
+        {
+            "file": CALLS_HELPER_FILE,
+            "line": 5,
+            "col": 7,
+            "taken": False,
+            "expression": ["<", "x", 100],
+        },
         {
             "file": HELPER_CHECK_FILE,
             "line": 2,
             "col": 7,
-            "taken": True,
+            "taken": False,
             "expression": ["<", "x", 5],
-        }
+        },
     ]
     # the fork's file does not join the coverage maps: they stay on the target's module
-    assert line["covered"] == {CALLS_HELPER_FILE: [5, 6]}
-    assert line["total"] == {CALLS_HELPER_FILE: 5}
+    assert line["covered"] == {CALLS_HELPER_FILE: [5, 7, 9]}
+    assert line["total"] == {CALLS_HELPER_FILE: 7}
 
 
 # trace-the-seed-imports-from-the-current-directory
