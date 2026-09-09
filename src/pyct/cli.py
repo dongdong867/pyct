@@ -11,9 +11,11 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.config.budget import Budget
+from pyct.results.coverage import Coverage
 from pyct.results.failure import FailureKind
 from pyct.results.jsonl import render
 from pyct.results.record import InputRecord
+from pyct.results.trace import render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
 
@@ -61,8 +63,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 1
     record = result.records[0]
-    print(render(record, result.coverage))
+    _report(record, result.coverage)
     return _exit_code(record)
+
+
+def _report(record: InputRecord, coverage: Coverage) -> None:
+    """The trace a person reads first, then the one line tools read."""
+    print(render_trace(record, coverage), end="", file=sys.stderr)
+    print(render(record, coverage))
 
 
 def _exit_code(record: InputRecord) -> int:
