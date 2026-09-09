@@ -1,3 +1,4 @@
+import functools
 import sys
 import time
 from collections.abc import Callable
@@ -5,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from pyct.core import values
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
 from pyct.results.failure import Failure, FailureKind
@@ -204,3 +206,50 @@ def test_execute_with_no_deadline_lets_the_call_finish() -> None:
     result = execute(ctx, {"x": 1})
 
     assert result.failure is None
+
+
+def test_execute_reports_a_raise_from_pyct_below_the_target_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken() -> Site:
+        raise RuntimeError("boom")
+
+    def compares(x: int) -> bool:
+        return bool(x < 10)
+
+    ctx = ExecutionContext(fn=compares, file=str(FIXTURE))
+    # the compare reaches this through `ConcolicBool.__bool__`, a frame of pyct's own
+    monkeypatch.setattr(values, "caller_site", broken)
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.detail == "RuntimeError: boom"
+    assert result.failure.traceback is not None
+    assert "compares" in result.failure.traceback
+
+
+def test_execute_reports_a_raise_from_a_helper_the_target_calls_as_the_targets() -> None:
+    def helper(x: int) -> None:
+        raise ValueError("too small")
+
+    def calls_helper(x: int) -> None:
+        helper(x)
+
+    ctx = ExecutionContext(fn=calls_helper, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+
+
+def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_targets() -> None:
+    def explode(tag: str, x: int) -> None:
+        raise ValueError("too small")
+
+    ctx = ExecutionContext(fn=functools.partial(explode, "tag"), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
