@@ -1,4 +1,4 @@
-"""A fork the target took, where it took it, and where forks are pushed."""
+"""A fork the target took, a condition it lost, and where both are pushed."""
 
 from __future__ import annotations
 
@@ -36,15 +36,26 @@ class Branch:
     site: Site
 
 
+@dataclass(frozen=True)
+class Downgrade:
+    """One operation pyct has not taught: the dunder that dropped the condition."""
+
+    name: str
+
+
+# what a sink holds: the forks and the downgrades, in the order they happened
+type SinkItem = Branch | Downgrade
+
+
 class BranchSink(Protocol):
-    """Where forks go.
+    """Where forks and downgrades go, in the order they happened.
 
     core defines the one method and pushes, never reads. A plain list
     serves in tests; a real tree serves in a run. The parameter is
     positional-only, which is how ``list.append`` takes it.
     """
 
-    def append(self, branch: Branch, /) -> None: ...
+    def append(self, item: SinkItem, /) -> None: ...
 
 
 def caller_site() -> Site:
