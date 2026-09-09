@@ -255,6 +255,22 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
 
 
+def test_execute_reports_a_raise_inside_a_downgrade_as_the_targets() -> None:
+    def divides(x: int) -> int:
+        return x // 0
+
+    ctx = ExecutionContext(fn=divides, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    # the downgrade frame only runs int's own `//`, so the raise is the target's
+    assert result.failure == Failure(
+        kind=FailureKind.TARGET_RAISED,
+        detail="ZeroDivisionError: integer division or modulo by zero",
+        traceback=None,
+    )
+
+
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     def through_abs(x: int) -> str:
         y = abs(x)
