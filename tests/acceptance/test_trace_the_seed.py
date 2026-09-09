@@ -326,7 +326,7 @@ def test_records_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
     # abs drops the condition, so the name of the call it went through is all that is left
-    assert line["downgrades"] == ["__abs__"]
+    assert line["downgrades"] == [{"name": "__abs__", "count": 1}]
     # y is a plain int after abs, so `y < 10` is Python's own compare and no fork is recorded
     assert line["forks"] == []
     assert line["covered"] == {THROUGH_ABS_FILE: [2, 3, 4]}
@@ -357,3 +357,19 @@ def test_writes_a_readable_trace_to_stderr() -> None:
     raised = run_pyct(RAISES, '{"x": 3}')
 
     assert "ended target raised: ValueError: too small" in raised.stderr.splitlines()
+
+
+# README › Rules › downgrades
+def test_collapses_a_loops_repeated_downgrade_into_one_entry() -> None:
+    result = run_pyct(NEVER_RETURNS, '{"x": 1}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    # `n += x` runs once per pass, so the line would grow one entry per pass without the collapse
+    downgrades = line["downgrades"]
+    assert isinstance(downgrades, list)
+    assert len(downgrades) == 1, downgrades[:3]
+    entry = downgrades[0]
+    assert isinstance(entry, dict)
+    assert entry["name"] == "__radd__"
+    assert entry["count"] > 1
