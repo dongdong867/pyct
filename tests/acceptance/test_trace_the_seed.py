@@ -307,8 +307,13 @@ def test_fails_on_a_pyct_bug(
     code = main(["run", TARGET, '{"x": 3}'])
 
     assert code == 1
-    line = one_line(capsys.readouterr().out)
+    captured = capsys.readouterr()
+    line = one_line(captured.out)
     assert line["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
+    # the traceback a person needs to fix pyct sits under the ended line, indented
+    trace = captured.err.splitlines()
+    ended = trace.index("ended pyct bug: RuntimeError: boom")
+    assert trace[ended + 1] == "    Traceback (most recent call last):"
 
 
 # trace-the-seed-records-a-downgrade
@@ -324,3 +329,28 @@ def test_records_a_downgrade() -> None:
     assert line["covered"] == {THROUGH_ABS_FILE: [2, 3, 4]}
     # the def and the four body lines
     assert line["total"] == {THROUGH_ABS_FILE: 5}
+
+
+# trace-the-seed-writes-readable-trace-to-stderr
+def test_writes_a_readable_trace_to_stderr() -> None:
+    result = run_pyct(CALLS_HELPER, '{"x": 50}')
+
+    assert result.returncode == 0, result.stderr
+    # one fact per line: the seed, each fork in order, the coverage, how it ended, what was lost
+    assert result.stderr.splitlines() == [
+        'seed {"x": 50}',
+        f"fork {HELPER_CHECK_FILE}:2:7  x < 5  not taken",
+        f"fork {CALLS_HELPER_FILE}:7:7  x < 100  taken",
+        f"covered 3 of 7 lines in {CALLS_HELPER_FILE}",
+        "ended returned",
+        "downgrades none",
+    ]
+    assert len(result.stdout.splitlines()) == 1, result.stdout
+
+    lost = run_pyct(THROUGH_ABS, '{"x": -3}')
+
+    assert "downgrades __abs__" in lost.stderr.splitlines()
+
+    raised = run_pyct(RAISES, '{"x": 3}')
+
+    assert "ended target raised: ValueError: too small" in raised.stderr.splitlines()
