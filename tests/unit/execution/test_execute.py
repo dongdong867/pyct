@@ -329,6 +329,7 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
         raise OverflowError("timestamp out of range for platform time_t")
 
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+    before = signal.getsignal(signal.SIGALRM)
     # the timer is armed before the target is called, so the traceback has no frame of its own
     monkeypatch.setattr(signal, "setitimer", overflow)
 
@@ -337,3 +338,5 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
     assert result.failure is not None
     assert result.failure.kind is FailureKind.PYCT_BUG
     assert result.failure.traceback is not None
+    # the cancel on the way out ran, so the handler pyct installed is gone again
+    assert signal.getsignal(signal.SIGALRM) is before
