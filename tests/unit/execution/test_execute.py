@@ -170,3 +170,14 @@ def test_execute_lets_an_interrupt_through() -> None:
 
     with pytest.raises(KeyboardInterrupt):
         execute(ctx, {"x": 1})
+
+
+def test_execute_reports_a_system_exit_as_a_failure_and_keeps_going() -> None:
+    def leave(x: int) -> None:
+        sys.exit(3)
+
+    ctx = ExecutionContext(fn=leave, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.SYSTEM_EXIT, detail="SystemExit: 3")

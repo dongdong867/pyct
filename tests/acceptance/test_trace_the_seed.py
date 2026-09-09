@@ -24,6 +24,8 @@ CALLS_HELPER_FILE = str(REPO_ROOT / "targets" / "trace" / "calls_helper.py")
 HELPER_CHECK_FILE = str(REPO_ROOT / "targets" / "trace" / "helper_check.py")
 RAISES = "targets.trace.raises::explode"
 RAISES_FILE = str(REPO_ROOT / "targets" / "trace" / "raises.py")
+EXITS = "targets.trace.exits::leave"
+EXITS_FILE = str(REPO_ROOT / "targets" / "trace" / "exits.py")
 
 
 def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
@@ -225,3 +227,15 @@ def test_reports_a_raise() -> None:
     assert line["covered"] == {RAISES_FILE: [2, 3]}
     assert line["total"] == {RAISES_FILE: 4}
     assert line["downgrades"] == []
+
+
+# trace-the-seed-reports-a-system-exit
+def test_reports_a_system_exit() -> None:
+    result = run_pyct(EXITS, '{"x": 3}')
+
+    # pyct keeps going: the line is printed and the exit is pyct's own, not the target's 3
+    assert result.returncode == 0, result.stderr
+    line = one_line(result.stdout)
+    assert line["failure"] == {"kind": "system_exit", "detail": "SystemExit: 3"}
+    assert line["covered"] == {EXITS_FILE: [5, 6]}
+    assert line["total"] == {EXITS_FILE: 7}
