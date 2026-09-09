@@ -11,6 +11,7 @@ from pyct.core import values
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
 from pyct.results.failure import Failure, FailureKind
+from pyct.results.record import DowngradeCount
 
 TARGETS = Path(__file__).resolve().parents[3] / "targets" / "trace"
 FIXTURE = TARGETS / "uncalled_helper.py"
@@ -274,7 +275,7 @@ def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     result = execute(ctx, {"x": -3})
 
     # abs drops the condition, so the compare after it is Python's own and no fork is left
-    assert result.downgrades == ("__abs__",)
+    assert result.downgrades == (DowngradeCount(name="__abs__", count=1),)
     assert result.branches == ()
 
 
@@ -295,7 +296,30 @@ def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
         ["<", "x", 10],
         ["<", "x", 100],
     ]
-    assert result.downgrades == ("__abs__", "__neg__")
+    assert result.downgrades == (
+        DowngradeCount(name="__abs__", count=1),
+        DowngradeCount(name="__neg__", count=1),
+    )
+
+
+def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None:
+    def repeats(x: int) -> int:
+        abs(x)
+        abs(x)
+        y = x + 1
+        abs(x)
+        return y
+
+    ctx = ExecutionContext(fn=repeats, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 3})
+
+    # only calls next to each other collapse, so the second run of abs is its own entry
+    assert result.downgrades == (
+        DowngradeCount(name="__abs__", count=2),
+        DowngradeCount(name="__add__", count=1),
+        DowngradeCount(name="__abs__", count=1),
+    )
 
 
 def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(

@@ -3,7 +3,7 @@ import pytest
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import InputRecord
+from pyct.results.record import DowngradeCount, InputRecord
 from pyct.results.trace import render_trace
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
@@ -101,11 +101,18 @@ def test_render_trace_leaves_out_the_traceback_a_failure_does_not_carry() -> Non
     assert lines[3] == "downgrades none"
 
 
-def test_render_trace_joins_the_downgrades_in_order() -> None:
+def test_render_trace_joins_the_downgrades_in_order_and_counts_a_run() -> None:
     record = InputRecord(
-        args={"x": 1}, forks=(), covered_lines=frozenset(), downgrades=("__abs__", "__add__")
+        args={"x": 1},
+        forks=(),
+        covered_lines=frozenset(),
+        downgrades=(
+            DowngradeCount(name="__radd__", count=3),
+            DowngradeCount(name="__abs__", count=1),
+        ),
     )
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    assert lines[-1] == "downgrades __abs__, __add__"
+    # one call is the bare name; more than one carries the count after it
+    assert lines[-1] == "downgrades __radd__ ×3, __abs__"
