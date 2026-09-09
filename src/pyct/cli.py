@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import inspect
 import json
+import math
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -123,9 +124,12 @@ def parse_budget(budget_text: str | None) -> Budget:
         seconds = float(budget_text)
     except ValueError as error:
         raise UsageError(f"budget must be a number of seconds, got {budget_text!r}") from error
-    # `not > 0` rather than `<= 0`, because every compare against nan is False
-    if not seconds > 0:
-        raise UsageError(f"budget must be more than zero seconds, got {budget_text!r}")
+    # `not > 0` rather than `<= 0`, because every compare against nan is False;
+    # inf passes that and overflows the timer, so finite is checked too
+    if not (math.isfinite(seconds) and seconds > 0):
+        raise UsageError(
+            f"budget must be a finite number of seconds above zero, got {budget_text!r}"
+        )
     return Budget(seconds=seconds)
 
 
