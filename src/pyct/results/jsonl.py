@@ -4,6 +4,7 @@ import json
 
 from pyct.core.branch import Branch
 from pyct.results.coverage import Coverage
+from pyct.results.failure import Failure
 from pyct.results.record import InputRecord
 
 
@@ -14,8 +15,17 @@ def render(record: InputRecord, coverage: Coverage) -> str:
         "forks": [_fork(branch) for branch in record.forks],
         "covered": {file: sorted(lines) for file, lines in coverage.covered.items()},
         "total": dict(coverage.total),
+        "failure": _failure(record.failure),
+        "downgrades": list(record.downgrades),
     }
     return json.dumps(payload)
+
+
+def _failure(failure: Failure | None) -> dict[str, str] | None:
+    """How it ended, or ``None`` when the call returned."""
+    if failure is None:
+        return None
+    return {"kind": failure.kind.value, "detail": failure.detail}
 
 
 def _fork(branch: Branch) -> dict[str, object]:
