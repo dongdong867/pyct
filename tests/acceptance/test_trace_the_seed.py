@@ -238,4 +238,5 @@ def test_reports_a_system_exit() -> None:
     line = one_line(result.stdout)
     assert line["failure"] == {"kind": "system_exit", "detail": "SystemExit: 3"}
     assert line["covered"] == {EXITS_FILE: [5, 6]}
-    assert line["total"] == {EXITS_FILE: 7}
+    # the import, the def, and the three body lines
+    assert line["total"] == {EXITS_FILE: 5}

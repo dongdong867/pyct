@@ -60,6 +60,8 @@ def _call(fn: Callable[..., object], bound: Mapping[str, object]) -> Failure | N
     """Call the target and say how it ended."""
     try:
         fn(**bound)
+    except SystemExit as error:
+        return Failure(kind=FailureKind.SYSTEM_EXIT, detail=_one_line(error))
     except Exception as error:
         return Failure(kind=FailureKind.TARGET_RAISED, detail=_one_line(error))
     return None
