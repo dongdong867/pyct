@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pyct.config.budget import Budget
 from pyct.core.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.run import run
@@ -45,3 +46,12 @@ def test_run_records_how_the_seed_ended() -> None:
         kind=FailureKind.TARGET_RAISED, detail="ValueError: too small"
     )
     assert result.records[0].covered_lines == frozenset({2, 3})
+
+
+def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
+    target = load_target("targets.trace.never_returns::spin")
+
+    result = run(target, {"x": 1}, budget=Budget(seconds=0.05))
+
+    assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert result.records[0].covered_lines == frozenset({2, 3, 4})
