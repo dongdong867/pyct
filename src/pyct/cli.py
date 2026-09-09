@@ -1,4 +1,4 @@
-"""The pyct command line. ``pyct run MODULE::FUNCTION [JSON] [--args JSON]``."""
+"""The pyct command line. ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]``."""
 
 from __future__ import annotations
 
@@ -10,11 +10,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
+from pyct.config.budget import Budget
 from pyct.results.jsonl import render
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
 
-USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON]"
+USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]"
 
 
 class UsageError(Exception):
@@ -23,10 +24,11 @@ class UsageError(Exception):
 
 @dataclass(frozen=True)
 class RunCommand:
-    """What the command line asked for: the target spec and the seed text, if any."""
+    """What the command line asked for: the target spec, and the seed and budget text, if any."""
 
     spec: str
     seed_text: str | None
+    budget_text: str | None = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -34,19 +36,21 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     0: the JSON line was printed. 1: the target could not be loaded. 2: usage.
 
-    Checks run in this order: target form, seed shape, import, seed present,
-    seed fits. The import comes before the seed-present check because that
-    message names the target's parameters, which only the loaded target knows.
+    Checks run in this order: target form, seed shape, budget, import, seed
+    present, seed fits. The import comes before the seed-present check because
+    that message names the target's parameters, which only the loaded target
+    knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         check_spec(command.spec)
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
+        budget = parse_budget(command.budget_text)
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
-        result = run(target, seed)
+        result = run(target, seed, budget=budget)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -65,11 +69,12 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
+    run_parser.add_argument("--budget", metavar="SECONDS")
     namespace = parser.parse_args(argv)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
-    return RunCommand(spec=namespace.target, seed_text=seed_text)
+    return RunCommand(spec=namespace.target, seed_text=seed_text, budget_text=namespace.budget)
 
 
 def check_spec(spec: str) -> None:
@@ -91,6 +96,20 @@ def parse_seed(seed_text: str) -> Mapping[str, object]:
     if not isinstance(seed, dict):
         raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
     return seed
+
+
+def parse_budget(budget_text: str | None) -> Budget:
+    """The budget is a positive number of seconds. No flag is no deadline."""
+    if budget_text is None:
+        return Budget()
+    try:
+        seconds = float(budget_text)
+    except ValueError as error:
+        raise UsageError(f"budget must be a number of seconds, got {budget_text!r}") from error
+    # `not > 0` rather than `<= 0`, because every compare against nan is False
+    if not seconds > 0:
+        raise UsageError(f"budget must be more than zero seconds, got {budget_text!r}")
+    return Budget(seconds=seconds)
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
