@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
-from pyct.core.branch import _PYCT_DIR, Branch
+from pyct.core.branch import _PYCT_DIR, Branch, Downgrade, SinkItem
 from pyct.execution.deadline import DeadlineError
 from pyct.execution.deadline import deadline as deadline_timer
 from pyct.results.failure import Failure, FailureKind
@@ -51,7 +51,7 @@ def execute(
     result, not an exception here; ``KeyboardInterrupt`` is the person's
     and passes through.
     """
-    sink: list[Branch] = []
+    sink: list[SinkItem] = []
     bound = bind(args, sink)
     tracer = _LineTracer(ctx.file)
     tracer.start()
@@ -59,7 +59,13 @@ def execute(
         failure = _call(ctx.fn, bound, deadline)
     finally:
         tracer.stop()
-    return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink), failure=failure)
+    # one sink holds both, in the order they happened; the result reports each in its own
+    return ExecutionResult(
+        lines=frozenset(tracer.seen),
+        branches=tuple(item for item in sink if isinstance(item, Branch)),
+        downgrades=tuple(item.name for item in sink if isinstance(item, Downgrade)),
+        failure=failure,
+    )
 
 
 def _call(
