@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from pyct.core.branch import Branch, Site
+from pyct.results.failure import Failure, FailureKind
 from pyct.run.run import run
 from pyct.run.target import load_target
 
@@ -33,3 +34,14 @@ def test_run_records_the_forks_the_seed_took() -> None:
             site=Site(file=FIXTURE, line=5, col=7),
         ),
     )
+
+
+def test_run_records_how_the_seed_ended() -> None:
+    target = load_target("targets.trace.raises::explode")
+
+    result = run(target, {"x": 3})
+
+    assert result.records[0].failure == Failure(
+        kind=FailureKind.TARGET_RAISED, detail="ValueError: too small"
+    )
+    assert result.records[0].covered_lines == frozenset({2, 3})

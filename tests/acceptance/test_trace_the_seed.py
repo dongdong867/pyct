@@ -219,7 +219,9 @@ def test_reports_a_raise() -> None:
     line = one_line(result.stdout)
     assert line["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
     # the fork before the raise is kept, and the lines up to the raise
-    assert [fork["line"] for fork in line["forks"]] == [2]
+    assert line["forks"] == [
+        {"file": RAISES_FILE, "line": 2, "col": 7, "taken": True, "expression": ["<", "x", 10]}
+    ]
     assert line["covered"] == {RAISES_FILE: [2, 3]}
     assert line["total"] == {RAISES_FILE: 4}
     assert line["downgrades"] == []
