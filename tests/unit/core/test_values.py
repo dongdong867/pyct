@@ -181,7 +181,7 @@ def test_the_truth_test_records_the_side_it_took() -> None:
 
     assert _probe()(x < 10) == "no"
 
-    assert [branch.taken for branch in sink] == [False]
+    assert [item.taken for item in sink if isinstance(item, Branch)] == [False]
 
 
 def test_two_truth_tests_reach_the_sink_in_the_order_they_ran() -> None:
@@ -255,16 +255,36 @@ def test_turning_a_concolic_int_into_text_records_a_downgrade() -> None:
     x = ConcolicInt(3, expression="x", sink=sink)
 
     assert str(x) == "3"
-    assert f"{x}" == "3"
+    assert f"{x:d}" == "3"
 
     assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
 
 
-def test_using_a_concolic_int_as_an_index_records_a_downgrade() -> None:
+def test_an_empty_format_goes_through_str_and_records_both() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert f"{x}" == "3"
+
+    # int's own __format__ formats an empty spec by asking str, so the f-string loses it twice
+    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+
+
+def test_using_a_concolic_int_as_an_index_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
     assert list(range(x)) == [0, 1, 2]
+
+    # an int subclass is already an index to CPython, which never asks __index__ for one
+    assert sink == []
+
+
+def test_asking_a_concolic_int_for_its_index_records_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert x.__index__() == 3
 
     assert sink == [Downgrade(name="__index__")]
 

@@ -2,9 +2,61 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import NotImplementedType
 
-from pyct.core.branch import Branch, BranchSink, Expression, caller_site
+from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
+
+# every value-producing int operation pyct has not taught. `__lt__` is taught and stays
+# symbolic; `__hash__`, `__repr__` and the pickling hooks are not the target's path and
+# stay int's, so a dict key and a debugger read cost nothing.
+_UNTAUGHT = (
+    "__add__",
+    "__radd__",
+    "__sub__",
+    "__rsub__",
+    "__mul__",
+    "__rmul__",
+    "__truediv__",
+    "__rtruediv__",
+    "__floordiv__",
+    "__rfloordiv__",
+    "__mod__",
+    "__rmod__",
+    "__divmod__",
+    "__rdivmod__",
+    "__pow__",
+    "__rpow__",
+    "__lshift__",
+    "__rlshift__",
+    "__rshift__",
+    "__rrshift__",
+    "__and__",
+    "__rand__",
+    "__or__",
+    "__ror__",
+    "__xor__",
+    "__rxor__",
+    "__neg__",
+    "__pos__",
+    "__abs__",
+    "__invert__",
+    "__index__",
+    "__int__",
+    "__float__",
+    "__round__",
+    "__trunc__",
+    "__floor__",
+    "__ceil__",
+    "__bool__",
+    "__eq__",
+    "__ne__",
+    "__gt__",
+    "__ge__",
+    "__le__",
+    "__str__",
+    "__format__",
+)
 
 
 class ConcolicBool(int):
@@ -36,11 +88,13 @@ class ConcolicInt(int):
     """A real int with a name and a sink.
 
     Only `<` is symbolic. Any other operation is int's own and returns a
-    plain int; nothing records the loss.
+    plain value, with a downgrade in the sink naming what was lost.
     """
 
     expression: Expression
     sink: BranchSink
+    # overriding __eq__ in a class body deletes the inherited __hash__, so say it stays int's
+    __hash__ = int.__hash__
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
@@ -62,3 +116,27 @@ class ConcolicInt(int):
 def _form_of(value: int) -> Expression:
     """The symbolic form of an operand: its expression if it has one, else itself."""
     return value.expression if isinstance(value, ConcolicInt) else value
+
+
+def _downgraded(name: str) -> Callable[..., object]:
+    """int's own operation, and a note in the sink that the condition was lost.
+
+    The note comes after the call, so an operation that raises records
+    nothing and the raise stays the target's. ``NotImplemented`` is not an
+    answer either: the other operand's reflected method gets its turn, and
+    only a real result is a lost condition.
+    """
+    operation = getattr(int, name)
+
+    def downgrade(self: ConcolicInt, *args: object) -> object:
+        result = operation(self, *args)
+        if result is not NotImplemented:
+            self.sink.append(Downgrade(name=name))
+        return result
+
+    return downgrade
+
+
+# forty-odd methods that differ only in the name they call and record, so a loop writes them
+for _name in _UNTAUGHT:
+    setattr(ConcolicInt, _name, _downgraded(_name))
