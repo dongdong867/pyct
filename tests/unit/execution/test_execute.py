@@ -1,4 +1,5 @@
 import functools
+import math
 import signal
 import sys
 import time
@@ -342,3 +343,32 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
     assert result.failure.traceback is not None
     # the cancel on the way out ran, so the handler pyct installed is gone again
     assert signal.getsignal(signal.SIGALRM) is before
+
+
+def test_execute_reports_a_raise_from_a_c_target_as_the_targets() -> None:
+    # math.isclose runs in C and leaves no frame, so the traceback holds only pyct's frames
+    near = functools.partial(math.isclose, rel_tol=0.0)
+    ctx = ExecutionContext(fn=near, file=str(FIXTURE))
+
+    result = execute(ctx, {"a": 1, "b": "x"})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.TARGET_RAISED
+    assert result.failure.traceback is None
+
+
+def test_execute_reports_a_raise_before_a_c_target_ran_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def overflow(which: int, seconds: float) -> None:
+        if seconds:
+            raise OverflowError("timestamp out of range for platform time_t")
+
+    near = functools.partial(math.isclose, rel_tol=0.0)
+    ctx = ExecutionContext(fn=near, file=str(FIXTURE))
+    monkeypatch.setattr(signal, "setitimer", overflow)
+
+    result = execute(ctx, {"a": 1, "b": 1}, time.monotonic() + 1)
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
