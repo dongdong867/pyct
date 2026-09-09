@@ -40,15 +40,16 @@ def _is_pyct_frame(code: types.CodeType) -> bool:
 def _below_target(fn: Callable[..., object], error: Exception) -> tuple[types.TracebackType, ...]:
     """The traceback entries deeper than the target's own frame.
 
-    A target with a code object that no frame ran never got its turn, so
-    every entry is below it: the raise came from pyct's own setup.
+    A target that no frame ran, whether by code object or as the first
+    frame outside pyct, never got its turn, so every entry is below it:
+    the raise came from pyct's own setup.
     """
     entries = tuple(_entries(error.__traceback__))
     code = getattr(fn, "__code__", None)
     for index, entry in enumerate(entries):
         if _is_target_frame(entry, code):
             return entries[index + 1 :]
-    return entries if code is not None else ()
+    return entries
 
 
 def _is_target_frame(entry: types.TracebackType, code: types.CodeType | None) -> bool:
