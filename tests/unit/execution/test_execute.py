@@ -1,4 +1,5 @@
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -11,6 +12,7 @@ from pyct.results.failure import Failure, FailureKind
 TARGETS = Path(__file__).resolve().parents[3] / "targets" / "trace"
 FIXTURE = TARGETS / "uncalled_helper.py"
 RAISES = TARGETS / "raises.py"
+NEVER_RETURNS = TARGETS / "never_returns.py"
 
 
 def _load(file: Path, name: str) -> Callable[..., object]:
@@ -27,6 +29,10 @@ def _load_fixture() -> Callable[..., object]:
 
 def _load_raiser() -> Callable[..., object]:
     return _load(RAISES, "explode")
+
+
+def _load_spinner() -> Callable[..., object]:
+    return _load(NEVER_RETURNS, "spin")
 
 
 def test_execute_returns_the_lines_the_call_ran() -> None:
@@ -181,3 +187,20 @@ def test_execute_reports_a_system_exit_as_a_failure_and_keeps_going() -> None:
     result = execute(ctx, {"x": 1})
 
     assert result.failure == Failure(kind=FailureKind.SYSTEM_EXIT, detail="SystemExit: 3")
+
+
+def test_execute_reports_a_timeout_and_keeps_the_lines_it_reached() -> None:
+    ctx = ExecutionContext(fn=_load_spinner(), file=str(NEVER_RETURNS))
+
+    result = execute(ctx, {"x": 1}, time.monotonic() + 0.05)
+
+    assert result.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert result.lines == frozenset({2, 3, 4})
+
+
+def test_execute_with_no_deadline_lets_the_call_finish() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is None
