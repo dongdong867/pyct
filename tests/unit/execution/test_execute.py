@@ -1,21 +1,34 @@
+import functools
+import signal
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from pyct.core import values
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
+from pyct.results.failure import Failure, FailureKind
+from pyct.results.record import DowngradeCount
 
-FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_helper.py"
+TARGETS = Path(__file__).resolve().parents[3] / "targets" / "trace"
+FIXTURE = TARGETS / "uncalled_helper.py"
+RAISES = TARGETS / "raises.py"
+NEVER_RETURNS = TARGETS / "never_returns.py"
+
+
+def _load(file: Path, name: str) -> Callable[..., object]:
+    namespace: dict[str, object] = {}
+    exec(compile(file.read_text(), str(file), "exec"), namespace)
+    fn = namespace[name]
+    assert callable(fn)
+    return fn
 
 
 def _load_fixture() -> Callable[..., object]:
-    namespace: dict[str, object] = {}
-    exec(compile(FIXTURE.read_text(), str(FIXTURE), "exec"), namespace)
-    classify = namespace["classify"]
-    assert callable(classify)
-    return classify
+    return _load(FIXTURE, "classify")
 
 
 def test_execute_returns_the_lines_the_call_ran() -> None:
@@ -106,3 +119,221 @@ def test_execute_gives_each_call_its_own_sink() -> None:
     result = execute(ctx, {"x": 50})
 
     assert len(result.branches) == 1
+
+
+def test_execute_reports_a_raise_as_a_failure_and_keeps_what_ran() -> None:
+    def explode(x: int) -> None:
+        if x < 10:
+            raise ValueError("too small")
+
+    ctx = ExecutionContext(fn=explode, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+    assert [branch.taken for branch in result.branches] == [True]
+
+
+def test_execute_reports_no_failure_when_the_call_returns() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is None
+    assert result.downgrades == ()
+
+
+def test_execute_keeps_the_lines_up_to_the_raise() -> None:
+    ctx = ExecutionContext(fn=_load(RAISES, "explode"), file=str(RAISES))
+
+    result = execute(ctx, {"x": 3})
+
+    assert result.lines == frozenset({2, 3})
+
+
+def test_execute_names_a_raise_in_one_line() -> None:
+    def explode(x: int) -> None:
+        raise ValueError("first line\nsecond line")
+
+    ctx = ExecutionContext(fn=explode, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is not None
+    assert "\n" not in result.failure.detail
+    assert result.failure.detail.startswith("ValueError: first line")
+
+
+def test_execute_lets_an_interrupt_through() -> None:
+    def interrupted(x: int) -> None:
+        raise KeyboardInterrupt
+
+    ctx = ExecutionContext(fn=interrupted, file=str(FIXTURE))
+
+    with pytest.raises(KeyboardInterrupt):
+        execute(ctx, {"x": 1})
+
+
+def test_execute_reports_a_system_exit_as_a_failure_and_keeps_going() -> None:
+    def leave(x: int) -> None:
+        sys.exit(3)
+
+    ctx = ExecutionContext(fn=leave, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.SYSTEM_EXIT, detail="SystemExit: 3")
+
+
+def test_execute_reports_a_timeout_and_keeps_the_lines_it_reached() -> None:
+    ctx = ExecutionContext(fn=_load(NEVER_RETURNS, "spin"), file=str(NEVER_RETURNS))
+
+    result = execute(ctx, {"x": 1}, time.monotonic() + 0.05)
+
+    assert result.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert result.lines == frozenset({2, 3, 4})
+
+
+def test_execute_with_no_deadline_lets_the_call_finish() -> None:
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is None
+
+
+def test_execute_reports_a_raise_from_pyct_below_the_target_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken() -> Site:
+        raise RuntimeError("boom")
+
+    def compares(x: int) -> bool:
+        return bool(x < 10)
+
+    ctx = ExecutionContext(fn=compares, file=str(FIXTURE))
+    # the compare reaches this through `ConcolicBool.__bool__`, a frame of pyct's own
+    monkeypatch.setattr(values, "caller_site", broken)
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.detail == "RuntimeError: boom"
+    assert result.failure.traceback is not None
+    assert "compares" in result.failure.traceback
+
+
+def test_execute_reports_a_raise_from_a_helper_the_target_calls_as_the_targets() -> None:
+    def helper(x: int) -> None:
+        raise ValueError("too small")
+
+    def calls_helper(x: int) -> None:
+        helper(x)
+
+    ctx = ExecutionContext(fn=calls_helper, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+
+
+def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_targets() -> None:
+    def explode(tag: str, x: int) -> None:
+        raise ValueError("too small")
+
+    ctx = ExecutionContext(fn=functools.partial(explode, "tag"), file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+
+
+def test_execute_reports_a_raise_inside_a_downgrade_as_the_targets() -> None:
+    def divides(x: int) -> int:
+        return x // 0
+
+    ctx = ExecutionContext(fn=divides, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 1})
+
+    # the downgrade frame only runs int's own `//`, so the raise is the target's
+    assert result.failure == Failure(
+        kind=FailureKind.TARGET_RAISED,
+        detail="ZeroDivisionError: integer division or modulo by zero",
+        traceback=None,
+    )
+
+
+def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
+    def through_abs(x: int) -> str:
+        y = abs(x)
+        return "small" if y < 10 else "big"
+
+    ctx = ExecutionContext(fn=through_abs, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": -3})
+
+    # abs drops the condition, so the compare after it is Python's own and no fork is left
+    assert result.downgrades == (DowngradeCount(name="__abs__", count=1),)
+    assert result.branches == ()
+
+
+def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
+    def mixed(x: int) -> int:
+        n = 0
+        if x < 10:
+            n = abs(x)
+        if x < 100:
+            n = -x
+        return n
+
+    ctx = ExecutionContext(fn=mixed, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 3})
+
+    assert [branch.expression for branch in result.branches] == [
+        ["<", "x", 10],
+        ["<", "x", 100],
+    ]
+    assert result.downgrades == (
+        DowngradeCount(name="__abs__", count=1),
+        DowngradeCount(name="__neg__", count=1),
+    )
+
+
+def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None:
+    def repeats(x: int) -> int:
+        abs(x)
+        abs(x)
+        y = x + 1
+        abs(x)
+        return y
+
+    ctx = ExecutionContext(fn=repeats, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 3})
+
+    # only calls next to each other collapse, so the second run of abs is its own entry
+    assert result.downgrades == (
+        DowngradeCount(name="__abs__", count=2),
+        DowngradeCount(name="__add__", count=1),
+        DowngradeCount(name="__abs__", count=1),
+    )
+
+
+def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def overflow(which: int, seconds: float) -> None:
+        raise OverflowError("timestamp out of range for platform time_t")
+
+    ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
+    # the timer is armed before the target is called, so the traceback has no frame of its own
+    monkeypatch.setattr(signal, "setitimer", overflow)
+
+    result = execute(ctx, {"x": 1}, time.monotonic() + 1)
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.traceback is not None

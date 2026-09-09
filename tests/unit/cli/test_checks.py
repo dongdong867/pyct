@@ -2,7 +2,15 @@ import inspect
 
 import pytest
 
-from pyct.cli import UsageError, check_seed_fits, check_spec, parse_command, parse_seed
+from pyct.cli import (
+    UsageError,
+    check_seed_fits,
+    check_spec,
+    parse_budget,
+    parse_command,
+    parse_seed,
+)
+from pyct.config.budget import Budget
 
 
 def classify(x: int) -> str:
@@ -73,3 +81,17 @@ def test_check_seed_fits_ignores_the_value_type() -> None:
 def test_parse_command_refuses_the_seed_twice() -> None:
     with pytest.raises(UsageError, match="once"):
         parse_command(["run", "m::f", "{}", "--args", "{}"])
+
+
+def test_parse_budget_returns_the_seconds() -> None:
+    assert parse_budget("1.5") == Budget(seconds=1.5)
+
+
+def test_parse_budget_without_the_flag_is_no_deadline() -> None:
+    assert parse_budget(None) == Budget()
+
+
+@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400"])
+def test_parse_budget_refuses_anything_but_a_positive_number(text: str) -> None:
+    with pytest.raises(UsageError, match="budget"):
+        parse_budget(text)

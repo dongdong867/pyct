@@ -1,4 +1,4 @@
-"""A fork the target took, where it took it, and where forks are pushed."""
+"""A fork the target took, a condition it lost, and where both are pushed."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ type Expression = list[Expression] | str | int | bool
 
 # pyct's own package directory: every frame inside it is pyct, not the target.
 # Unresolved, because a frame's co_filename is the unresolved __file__ it was compiled from.
-_PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
+PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
 
 
 @dataclass(frozen=True)
@@ -36,15 +36,26 @@ class Branch:
     site: Site
 
 
+@dataclass(frozen=True)
+class Downgrade:
+    """One operation pyct has not taught: the dunder that dropped the condition."""
+
+    name: str
+
+
+# what a sink holds: the forks and the downgrades, in the order they happened
+type SinkItem = Branch | Downgrade
+
+
 class BranchSink(Protocol):
-    """Where forks go.
+    """Where forks and downgrades go, in the order they happened.
 
     core defines the one method and pushes, never reads. A plain list
     serves in tests; a real tree serves in a run. The parameter is
     positional-only, which is how ``list.append`` takes it.
     """
 
-    def append(self, branch: Branch, /) -> None: ...
+    def append(self, item: SinkItem, /) -> None: ...
 
 
 def caller_site() -> Site:
@@ -55,7 +66,7 @@ def caller_site() -> Site:
     instruction's position, which spans the expression being tested.
     """
     frame: types.FrameType | None = sys._getframe(1)
-    while frame is not None and frame.f_code.co_filename.startswith(_PYCT_DIR):
+    while frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR):
         frame = frame.f_back
     if frame is None:
         raise RuntimeError("no frame outside pyct to record the fork against")

@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
+import itertools
 import sys
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.execution.blame import blame, one_line
+from pyct.execution.deadline import DeadlineError
+from pyct.execution.deadline import deadline as deadline_timer
+from pyct.results.failure import Failure, FailureKind
+from pyct.results.record import DowngradeCount
 
 # 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
 _TOOL_IDS = (3, 4, 0, 1, 2, 5)
@@ -24,28 +30,74 @@ class ExecutionContext:
 
 @dataclass(frozen=True)
 class ExecutionResult:
-    """What one call did: the raw line numbers it reached and the forks it took."""
+    """What one call did: the lines it reached, the forks it took, and how it ended.
+
+    On a failure the lines and forks are those reached before it.
+    """
 
     lines: frozenset[int]
     branches: tuple[Branch, ...]
+    downgrades: tuple[DowngradeCount, ...] = ()
+    failure: Failure | None = None
 
 
-def execute(ctx: ExecutionContext, args: Mapping[str, object]) -> ExecutionResult:
+def execute(
+    ctx: ExecutionContext, args: Mapping[str, object], deadline: float | None = None
+) -> ExecutionResult:
     """Call ``ctx.fn`` on the seed under a line tracer limited to ``ctx.file``.
 
-    execute takes the raw seed and binds it here, because the sink belongs
-    to one call and nothing outside this function needs it. ``run()`` stays
-    assembly.
+    ``deadline`` is the monotonic instant the call must end by, or ``None``
+    for no bound. execute takes the raw seed and binds it here, because the
+    sink belongs to one call and nothing outside this function needs it.
+    ``run()`` stays assembly. A raise in the target is a failure on the
+    result, not an exception here; ``KeyboardInterrupt`` is the person's
+    and passes through.
     """
-    sink: list[Branch] = []
+    sink: list[SinkItem] = []
     bound = bind(args, sink)
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        ctx.fn(**bound)
+        failure = _call(ctx.fn, bound, deadline)
     finally:
         tracer.stop()
-    return ExecutionResult(lines=frozenset(tracer.seen), branches=tuple(sink))
+    # one sink holds both, in the order they happened; the result reports each in its own
+    return ExecutionResult(
+        lines=frozenset(tracer.seen),
+        branches=tuple(item for item in sink if isinstance(item, Branch)),
+        downgrades=_counted(item.name for item in sink if isinstance(item, Downgrade)),
+        failure=failure,
+    )
+
+
+def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
+    """Consecutive calls of one dunder as a single entry, in call order.
+
+    The sink still grows one item per call while the target runs: core
+    pushes and never reads, so a loop over an argument is collapsed here,
+    after the call, and only the result carries the counts.
+    """
+    return tuple(
+        DowngradeCount(name=name, count=sum(1 for _ in run))
+        for name, run in itertools.groupby(names)
+    )
+
+
+def _call(
+    fn: Callable[..., object], bound: Mapping[str, object], deadline: float | None
+) -> Failure | None:
+    """Call the target and say how it ended."""
+    try:
+        with deadline_timer(deadline):
+            fn(**bound)
+    # the timer can land in pyct's own frames too, so the kind is by type, before the rest
+    except DeadlineError:
+        return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    except SystemExit as error:
+        return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
+    except Exception as error:
+        return blame(fn, error)
+    return None
 
 
 class _LineTracer:
