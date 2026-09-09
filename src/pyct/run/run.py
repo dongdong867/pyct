@@ -15,6 +15,10 @@ def run(target: Target, seed: Mapping[str, object]) -> RunResult:
     executed = execute(ctx, seed)
     coverage = Coverage.of(scope, executed.lines)
     record = InputRecord(
-        args=seed, forks=executed.branches, covered_lines=coverage.covered[scope.file]
+        args=seed,
+        forks=executed.branches,
+        covered_lines=coverage.covered[scope.file],
+        failure=executed.failure,
+        downgrades=executed.downgrades,
     )
     return RunResult(entry=target.spec, records=(record,), coverage=coverage)
