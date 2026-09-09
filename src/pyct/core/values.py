@@ -48,8 +48,9 @@ class ConcolicInt(int):
         return self
 
     def __lt__(self, other: int) -> ConcolicBool | NotImplementedType:  # type: ignore[override]
-        # a bool is an int, but `x < True` is not a compare the solver has a leaf for
-        if not isinstance(other, int) or isinstance(other, bool):
+        # a bool is an int, but `x < True` is not a compare the solver has a leaf for;
+        # a compare's value is a bool the same way
+        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
             return NotImplemented
         concrete = int.__lt__(self, other)
         return ConcolicBool(
