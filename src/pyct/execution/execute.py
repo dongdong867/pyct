@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import itertools
 import sys
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
@@ -13,6 +14,7 @@ from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError
 from pyct.execution.deadline import deadline as deadline_timer
 from pyct.results.failure import Failure, FailureKind
+from pyct.results.record import DowngradeCount
 
 # 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
 _TOOL_IDS = (3, 4, 0, 1, 2, 5)
@@ -35,7 +37,7 @@ class ExecutionResult:
 
     lines: frozenset[int]
     branches: tuple[Branch, ...]
-    downgrades: tuple[str, ...] = ()
+    downgrades: tuple[DowngradeCount, ...] = ()
     failure: Failure | None = None
 
 
@@ -63,8 +65,21 @@ def execute(
     return ExecutionResult(
         lines=frozenset(tracer.seen),
         branches=tuple(item for item in sink if isinstance(item, Branch)),
-        downgrades=tuple(item.name for item in sink if isinstance(item, Downgrade)),
+        downgrades=_counted(item.name for item in sink if isinstance(item, Downgrade)),
         failure=failure,
+    )
+
+
+def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
+    """Consecutive calls of one dunder as a single entry, in call order.
+
+    The sink still grows one item per call while the target runs: core
+    pushes and never reads, so a loop over an argument is collapsed here,
+    after the call, and only the result carries the counts.
+    """
+    return tuple(
+        DowngradeCount(name=name, count=sum(1 for _ in run))
+        for name, run in itertools.groupby(names)
     )
 
 

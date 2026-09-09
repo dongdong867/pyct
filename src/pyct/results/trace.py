@@ -5,7 +5,7 @@ import json
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import InputRecord
+from pyct.results.record import DowngradeCount, InputRecord
 
 
 def render_trace(record: InputRecord, coverage: Coverage) -> str:
@@ -17,8 +17,14 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
         for file, covered in coverage.covered.items()
     ]
     lines += _ended(record.failure)
-    lines.append(f"downgrades {', '.join(record.downgrades) or 'none'}")
+    lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
+    lines.append(f"downgrades {lost or 'none'}")
     return "".join(f"{line}\n" for line in lines)
+
+
+def _downgrade(entry: DowngradeCount) -> str:
+    """One call is its bare name; a run of them carries how many."""
+    return entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
 
 
 def _fork(branch: Branch) -> str:

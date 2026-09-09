@@ -5,7 +5,7 @@ import json
 from pyct.core.branch import Branch
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import InputRecord
+from pyct.results.record import DowngradeCount, InputRecord
 
 
 def render(record: InputRecord, coverage: Coverage) -> str:
@@ -16,9 +16,14 @@ def render(record: InputRecord, coverage: Coverage) -> str:
         "covered": {file: sorted(lines) for file, lines in coverage.covered.items()},
         "total": dict(coverage.total),
         "failure": _failure(record.failure),
-        "downgrades": list(record.downgrades),
+        "downgrades": [_downgrade(entry) for entry in record.downgrades],
     }
     return json.dumps(payload)
+
+
+def _downgrade(entry: DowngradeCount) -> dict[str, object]:
+    """One dunder that dropped the condition, and how many calls in a row did."""
+    return {"name": entry.name, "count": entry.count}
 
 
 def _failure(failure: Failure | None) -> dict[str, str] | None:
