@@ -11,8 +11,7 @@ from dataclasses import dataclass
 from pyct.binding.bind import bind
 from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.execution.blame import blame, one_line
-from pyct.execution.deadline import DeadlineError
-from pyct.execution.deadline import deadline as deadline_timer
+from pyct.execution.deadline import DeadlineError, deadline
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
@@ -42,11 +41,11 @@ class ExecutionResult:
 
 
 def execute(
-    ctx: ExecutionContext, args: Mapping[str, object], deadline: float | None = None
+    ctx: ExecutionContext, args: Mapping[str, object], until: float | None = None
 ) -> ExecutionResult:
     """Call ``ctx.fn`` on the seed under a line tracer limited to ``ctx.file``.
 
-    ``deadline`` is the monotonic instant the call must end by, or ``None``
+    ``until`` is the monotonic instant the call must end by, or ``None``
     for no bound. execute takes the raw seed and binds it here, because the
     sink belongs to one call and nothing outside this function needs it.
     ``run()`` stays assembly. A raise in the target is a failure on the
@@ -58,7 +57,7 @@ def execute(
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        failure = _call(ctx.fn, bound, deadline)
+        failure = _call(ctx.fn, bound, until)
     finally:
         tracer.stop()
     # one sink holds both, in the order they happened; the result reports each in its own
@@ -84,11 +83,11 @@ def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
 
 
 def _call(
-    fn: Callable[..., object], bound: Mapping[str, object], deadline: float | None
+    fn: Callable[..., object], bound: Mapping[str, object], until: float | None
 ) -> Failure | None:
     """Call the target and say how it ended."""
     try:
-        with deadline_timer(deadline):
+        with deadline(until):
             fn(**bound)
     # the timer can land in pyct's own frames too, so the kind is by type, before the rest
     except DeadlineError:
