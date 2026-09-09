@@ -9,7 +9,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
-from pyct.core.branch import _PYCT_DIR, Branch, Downgrade, SinkItem
+from pyct.core.branch import PYCT_DIR, Branch, Downgrade, SinkItem
 from pyct.core.values import is_downgrade_frame
 from pyct.execution.deadline import DeadlineError
 from pyct.execution.deadline import deadline as deadline_timer
@@ -109,7 +109,7 @@ def _whose_raise(fn: Callable[..., object], error: Exception) -> Failure:
 
 def _is_pyct_frame(code: types.CodeType) -> bool:
     """A frame of pyct's own: under pyct's directory, and not a downgrade."""
-    return code.co_filename.startswith(_PYCT_DIR) and not is_downgrade_frame(code)
+    return code.co_filename.startswith(PYCT_DIR) and not is_downgrade_frame(code)
 
 
 def _below_target(fn: Callable[..., object], error: Exception) -> tuple[types.TracebackType, ...]:
@@ -130,7 +130,7 @@ def _is_target_frame(entry: types.TracebackType, code: types.CodeType | None) ->
     """
     if code is not None:
         return entry.tb_frame.f_code is code
-    return not entry.tb_frame.f_code.co_filename.startswith(_PYCT_DIR)
+    return not entry.tb_frame.f_code.co_filename.startswith(PYCT_DIR)
 
 
 def _entries(tb: types.TracebackType | None) -> Iterator[types.TracebackType]:

@@ -15,7 +15,7 @@ type Expression = list[Expression] | str | int | bool
 
 # pyct's own package directory: every frame inside it is pyct, not the target.
 # Unresolved, because a frame's co_filename is the unresolved __file__ it was compiled from.
-_PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
+PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def caller_site() -> Site:
     instruction's position, which spans the expression being tested.
     """
     frame: types.FrameType | None = sys._getframe(1)
-    while frame is not None and frame.f_code.co_filename.startswith(_PYCT_DIR):
+    while frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR):
         frame = frame.f_back
     if frame is None:
         raise RuntimeError("no frame outside pyct to record the fork against")
