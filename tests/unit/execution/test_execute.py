@@ -253,3 +253,37 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
     result = execute(ctx, {"x": 1})
 
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+
+
+def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
+    def through_abs(x: int) -> str:
+        y = abs(x)
+        return "small" if y < 10 else "big"
+
+    ctx = ExecutionContext(fn=through_abs, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": -3})
+
+    # abs drops the condition, so the compare after it is Python's own and no fork is left
+    assert result.downgrades == ("__abs__",)
+    assert result.branches == ()
+
+
+def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
+    def mixed(x: int) -> int:
+        n = 0
+        if x < 10:
+            n = abs(x)
+        if x < 100:
+            n = -x
+        return n
+
+    ctx = ExecutionContext(fn=mixed, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 3})
+
+    assert [branch.expression for branch in result.branches] == [
+        ["<", "x", 10],
+        ["<", "x", 100],
+    ]
+    assert result.downgrades == ("__abs__", "__neg__")
