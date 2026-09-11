@@ -43,27 +43,32 @@ def _below_target(
     """The traceback entries deeper than the target's own frame.
 
     A target that was never called got no turn, so every entry is below it.
-    A called target with no frame of its own ran in C, so nothing is.
+    The first entry is otherwise the frame that called the target.
     """
     entries = tuple(_entries(error.__traceback__))
     if not called:
         return entries
     code = getattr(fn, "__code__", None)
+    if code is None:
+        return _below_codeless_target(entries)
     for index, entry in enumerate(entries):
-        if _is_target_frame(entry, code):
+        if entry.tb_frame.f_code is code:
             return entries[index + 1 :]
-    return ()
+    return entries[1:]
 
 
-def _is_target_frame(entry: types.TracebackType, code: types.CodeType | None) -> bool:
-    """The target's own frame runs its code object.
+def _below_codeless_target(
+    entries: tuple[types.TracebackType, ...],
+) -> tuple[types.TracebackType, ...]:
+    """Below a callable without a code object, a ``functools.partial`` say.
 
-    A callable without one, a ``functools.partial`` say, never gets a frame,
-    so the first frame outside pyct stands in for it.
+    One that wraps Python runs the frame right under the caller's, so that
+    frame stands in for it. One that wraps C runs no frame at all, so every
+    entry under the caller's ran under it.
     """
-    if code is not None:
-        return entry.tb_frame.f_code is code
-    return not entry.tb_frame.f_code.co_filename.startswith(PYCT_DIR)
+    if len(entries) > 1 and not entries[1].tb_frame.f_code.co_filename.startswith(PYCT_DIR):
+        return entries[2:]
+    return entries[1:]
 
 
 def _entries(tb: types.TracebackType | None) -> Iterator[types.TracebackType]:
