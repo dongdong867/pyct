@@ -1,3 +1,4 @@
+import bisect
 import functools
 import math
 import signal
@@ -372,3 +373,22 @@ def test_execute_reports_a_raise_before_a_c_target_ran_as_a_pyct_bug(
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.PYCT_BUG
+
+
+def test_execute_reports_a_pyct_raise_below_a_c_target_as_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken() -> Site:
+        raise RuntimeError("boom")
+
+    # bisect_right runs in C and compares `x < a[mid]`, which lands in pyct's own frames
+    target = functools.partial(bisect.bisect_right, [1, 2, 3])
+    ctx = ExecutionContext(fn=target, file=str(FIXTURE))
+    monkeypatch.setattr(values, "caller_site", broken)
+
+    result = execute(ctx, {"x": 2})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.detail == "RuntimeError: boom"
+    assert result.failure.traceback is not None
