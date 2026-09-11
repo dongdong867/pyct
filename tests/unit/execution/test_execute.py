@@ -33,6 +33,12 @@ def _load_fixture() -> Callable[..., object]:
     return _load(FIXTURE, "classify")
 
 
+def _overflow_on_arming(which: int, seconds: float) -> None:
+    """A setitimer that fails only the arming; the cancel is setitimer(..., 0) and must run."""
+    if seconds:
+        raise OverflowError("timestamp out of range for platform time_t")
+
+
 def test_execute_returns_the_lines_the_call_ran() -> None:
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
 
@@ -327,15 +333,10 @@ def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None
 def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def overflow(which: int, seconds: float) -> None:
-        # only arming fails; the cancel on the way out is setitimer(..., 0) and must run
-        if seconds:
-            raise OverflowError("timestamp out of range for platform time_t")
-
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
     before = signal.getsignal(signal.SIGALRM)
     # the timer is armed before the target is called, so the traceback has no frame of its own
-    monkeypatch.setattr(signal, "setitimer", overflow)
+    monkeypatch.setattr(signal, "setitimer", _overflow_on_arming)
 
     result = execute(ctx, {"x": 1}, time.monotonic() + 1)
 
@@ -361,13 +362,9 @@ def test_execute_reports_a_raise_from_a_c_target_as_the_targets() -> None:
 def test_execute_reports_a_raise_before_a_c_target_ran_as_a_pyct_bug(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def overflow(which: int, seconds: float) -> None:
-        if seconds:
-            raise OverflowError("timestamp out of range for platform time_t")
-
     near = functools.partial(math.isclose, rel_tol=0.0)
     ctx = ExecutionContext(fn=near, file=str(FIXTURE))
-    monkeypatch.setattr(signal, "setitimer", overflow)
+    monkeypatch.setattr(signal, "setitimer", _overflow_on_arming)
 
     result = execute(ctx, {"a": 1, "b": 1}, time.monotonic() + 1)
 
