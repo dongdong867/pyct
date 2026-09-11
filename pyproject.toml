@@ -62,6 +62,6 @@ layers = [
   "pyct.binding",
   "pyct.results",
   "pyct.core",
-  "(pyct.config)",
+  "pyct.config",
   "(pyct.utils)",
 ]

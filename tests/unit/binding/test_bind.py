@@ -1,10 +1,10 @@
 from pyct.binding.bind import bind
-from pyct.core.branch import Branch
+from pyct.core.branch import SinkItem
 from pyct.core.values import ConcolicInt
 
 
 def test_an_int_becomes_a_concolic_int_named_after_its_parameter() -> None:
-    sink: list[Branch] = []
+    sink: list[SinkItem] = []
 
     args = bind({"x": 3}, sink)
 

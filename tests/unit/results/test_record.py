@@ -20,3 +20,10 @@ def test_an_input_record_holds_the_forks_the_input_took() -> None:
     record = InputRecord(args={"x": 1}, forks=(FORK,), covered_lines=frozenset({5, 6}))
 
     assert record.forks == (FORK,)
+
+
+def test_an_input_record_ends_well_and_loses_nothing_by_default() -> None:
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
+
+    assert record.failure is None
+    assert record.downgrades == ()

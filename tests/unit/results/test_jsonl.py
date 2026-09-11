@@ -2,8 +2,9 @@ import json
 
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
+from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render
-from pyct.results.record import InputRecord
+from pyct.results.record import DowngradeCount, InputRecord
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
@@ -20,6 +21,8 @@ def test_render_is_one_json_line_with_sorted_lines() -> None:
         "forks": [],
         "covered": {"m.py": [5, 6]},
         "total": {"m.py": 7},
+        "failure": None,
+        "downgrades": [],
     }
 
 
@@ -38,7 +41,7 @@ def test_render_puts_the_forks_between_the_args_and_the_coverage() -> None:
 
     payload = json.loads(render(record, COVERAGE))
 
-    assert list(payload) == ["args", "forks", "covered", "total"]
+    assert list(payload) == ["args", "forks", "covered", "total", "failure", "downgrades"]
 
 
 def test_render_keeps_the_forks_in_execution_order() -> None:
@@ -48,3 +51,43 @@ def test_render_keeps_the_forks_in_execution_order() -> None:
     payload = json.loads(render(record, COVERAGE))
 
     assert [fork["line"] for fork in payload["forks"]] == [5, 9]
+
+
+def test_render_writes_the_failure_as_its_kind_and_detail() -> None:
+    failure = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), failure=failure)
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
+
+
+def test_render_lists_the_downgrades_in_order_with_their_counts() -> None:
+    record = InputRecord(
+        args={"x": 1},
+        forks=(),
+        covered_lines=frozenset(),
+        downgrades=(
+            DowngradeCount(name="__abs__", count=3),
+            DowngradeCount(name="__add__", count=1),
+        ),
+    )
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["downgrades"] == [
+        {"name": "__abs__", "count": 3},
+        {"name": "__add__", "count": 1},
+    ]
+
+
+def test_render_keeps_the_traceback_off_the_line() -> None:
+    # the traceback is for the person reading stderr; the line stays one kind and one detail
+    failure = Failure(
+        kind=FailureKind.PYCT_BUG, detail="RuntimeError: boom", traceback="Traceback...\nboom\n"
+    )
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), failure=failure)
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
