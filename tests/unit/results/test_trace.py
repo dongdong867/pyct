@@ -3,7 +3,7 @@ import pytest
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import DowngradeCount, InputRecord
+from pyct.results.record import Aim, DowngradeCount, InputRecord, Source
 from pyct.results.trace import render_trace
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
@@ -116,3 +116,49 @@ def test_render_trace_joins_the_downgrades_in_order_and_counts_a_run() -> None:
 
     # one call is the bare name; more than one carries the count after it
     assert lines[-1] == "downgrades __radd__ ×3, __abs__"
+
+
+def test_render_trace_opens_a_seed_with_the_word_seed() -> None:
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    assert lines[0] == 'seed {"x": 1}'
+
+
+def test_render_trace_opens_a_solved_input_with_the_word_solver_and_its_aim() -> None:
+    record = InputRecord(
+        args={"x": 12},
+        forks=(FORK,),
+        covered_lines=frozenset({5}),
+        source=Source.SOLVER,
+        aim=Aim(site=Site(file="m.py", line=5, col=7), position=0),
+    )
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    assert lines[:4] == [
+        'solver {"x": 12}',
+        "aim m.py:5:7 at position 0",
+        "reached",
+        "fork m.py:5:7  x < 10  taken",
+    ]
+
+
+def test_render_trace_says_where_a_solved_input_left_the_plan() -> None:
+    record = InputRecord(
+        args={"x": 12},
+        forks=(FORK,),
+        covered_lines=frozenset({5}),
+        source=Source.SOLVER,
+        aim=Aim(site=Site(file="m.py", line=9, col=3), position=1),
+        mismatch_at=1,
+    )
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    assert lines[:3] == [
+        'solver {"x": 12}',
+        "aim m.py:9:3 at position 1",
+        "left the plan at position 1",
+    ]
