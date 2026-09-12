@@ -1,5 +1,4 @@
 from pyct.branches.compare import compare
-
 from pyct.core.branch import Branch, Site
 
 
