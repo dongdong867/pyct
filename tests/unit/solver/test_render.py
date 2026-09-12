@@ -1,7 +1,7 @@
 import pytest
-from pyct.solver.render import render
 
 from pyct.core.branch import Branch, Expression, Site
+from pyct.solver.render import render
 
 SITE = Site(file="m.py", line=2, col=7)
 
