@@ -19,6 +19,7 @@ from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
+from pyct.solver.locate import SolverMissingError, locate
 
 USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]"
 
@@ -39,19 +40,21 @@ class RunCommand:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
-    0: the JSON line was printed. 1: the target could not be loaded, or pyct
-    itself broke during the run. 2: usage.
+    0: the JSON line was printed. 1: cvc5 is missing, the target could not be
+    loaded, or pyct itself broke during the run. 2: usage.
 
-    Checks run in this order: target form, seed shape, budget, import, seed
-    present, seed fits. The import comes before the seed-present check because
-    that message names the target's parameters, which only the loaded target
-    knows.
+    Checks run in this order: target form, seed shape, budget, cvc5, import,
+    seed present, seed fits. cvc5 comes before the import because nothing the
+    target does can make up for a missing solver. The import comes before the
+    seed-present check because that message names the target's parameters,
+    which only the loaded target knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         check_spec(command.spec)
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
+        locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
@@ -60,7 +63,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except TargetError as error:
+    except (SolverMissingError, TargetError) as error:
         print(error, file=sys.stderr)
         return 1
     record = result.records[0]
