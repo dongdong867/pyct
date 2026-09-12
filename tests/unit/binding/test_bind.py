@@ -1,4 +1,4 @@
-from pyct.binding.bind import bind
+from pyct.binding.bind import bind, leaves
 from pyct.core.branch import SinkItem
 from pyct.core.values import ConcolicInt
 
@@ -41,3 +41,15 @@ def test_binding_leaves_the_seed_alone() -> None:
 
     assert seed == {"x": 3}
     assert not isinstance(seed["x"], ConcolicInt)
+
+
+def test_leaves_names_the_type_of_every_argument_bind_would_wrap() -> None:
+    assert leaves({"x": 3, "flag": True, "name": "a"}) == {"x": int}
+
+
+def test_leaves_keeps_the_order_the_seed_gave() -> None:
+    assert list(leaves({"y": 1, "x": 2})) == ["y", "x"]
+
+
+def test_an_empty_seed_has_no_leaves() -> None:
+    assert leaves({}) == {}
