@@ -4,7 +4,7 @@ from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render
-from pyct.results.record import DowngradeCount, InputRecord
+from pyct.results.record import Aim, DowngradeCount, InputRecord, Source
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
@@ -23,6 +23,9 @@ def test_render_is_one_json_line_with_sorted_lines() -> None:
         "total": {"m.py": 7},
         "failure": None,
         "downgrades": [],
+        "source": "seed",
+        "aim": None,
+        "mismatch_at": None,
     }
 
 
@@ -41,7 +44,17 @@ def test_render_puts_the_forks_between_the_args_and_the_coverage() -> None:
 
     payload = json.loads(render(record, COVERAGE))
 
-    assert list(payload) == ["args", "forks", "covered", "total", "failure", "downgrades"]
+    assert list(payload) == [
+        "args",
+        "forks",
+        "covered",
+        "total",
+        "failure",
+        "downgrades",
+        "source",
+        "aim",
+        "mismatch_at",
+    ]
 
 
 def test_render_keeps_the_forks_in_execution_order() -> None:
@@ -91,3 +104,43 @@ def test_render_keeps_the_traceback_off_the_line() -> None:
     payload = json.loads(render(record, COVERAGE))
 
     assert payload["failure"] == {"kind": "pyct_bug", "detail": "RuntimeError: boom"}
+
+
+def test_render_writes_a_seed_as_coming_from_the_seed_with_nothing_aimed_at() -> None:
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["source"] == "seed"
+    assert payload["aim"] is None
+    assert payload["mismatch_at"] is None
+
+
+def test_render_writes_the_aim_as_its_site_and_its_position() -> None:
+    record = InputRecord(
+        args={"x": 12},
+        forks=(FORK,),
+        covered_lines=frozenset({5}),
+        source=Source.SOLVER,
+        aim=Aim(site=Site(file="m.py", line=5, col=7), position=0),
+    )
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["source"] == "solver"
+    assert payload["aim"] == {"file": "m.py", "line": 5, "col": 7, "position": 0}
+
+
+def test_render_writes_the_position_where_the_input_left_the_plan() -> None:
+    record = InputRecord(
+        args={"x": 12},
+        forks=(FORK,),
+        covered_lines=frozenset({5}),
+        source=Source.SOLVER,
+        aim=Aim(site=Site(file="m.py", line=5, col=7), position=1),
+        mismatch_at=1,
+    )
+
+    payload = json.loads(render(record, COVERAGE))
+
+    assert payload["mismatch_at"] == 1
