@@ -1,6 +1,7 @@
 import dataclasses
 
 import pytest
+
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat, model_from
 
 
