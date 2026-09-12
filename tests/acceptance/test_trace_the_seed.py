@@ -9,19 +9,13 @@ puts the working directory on ``sys.path`` itself, so the target would import ev
 bug can only be provoked by patching pyct itself.
 """
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 from pyct.cli import main
 from pyct.core import values
 from pyct.core.branch import Site
+from tests.acceptance.harness import REPO_ROOT, let_pyct_run_in_process, one_line, run_pyct
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = "targets.trace.uncalled_helper::classify"
 TARGET_FILE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 TWO_CHECKS = "targets.trace.two_checks::bucket"
@@ -37,40 +31,6 @@ NEVER_RETURNS = "targets.trace.never_returns::spin"
 NEVER_RETURNS_FILE = str(REPO_ROOT / "targets" / "trace" / "never_returns.py")
 THROUGH_ABS = "targets.trace.through_abs::size"
 THROUGH_ABS_FILE = str(REPO_ROOT / "targets" / "trace" / "through_abs.py")
-
-
-def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    return subprocess.run(
-        [sys.executable, "-P", "-m", "pyct", "run", *argv],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        # the timeout test spawns a target that never returns, so a broken
-        # budget has to fail the test instead of hanging the suite
-        timeout=30,
-    )
-
-
-def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put this interpreter where a fresh one would be, and undo it after the test.
-
-    ``load_target`` inserts the working directory on ``sys.path`` and leaves the
-    imported target in ``sys.modules``; both are restored so the subprocess tests
-    around this one keep proving what they prove.
-    """
-    monkeypatch.chdir(REPO_ROOT)
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    for name in [n for n in sys.modules if n.split(".", 1)[0] == "targets"]:
-        monkeypatch.delitem(sys.modules, name)
-
-
-def one_line(stdout: str) -> dict[str, object]:
-    lines = stdout.splitlines()
-    assert len(lines) == 1, stdout
-    return json.loads(lines[0])
 
 
 # trace-the-seed-prints-one-json-line
