@@ -5,12 +5,12 @@ import json
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import DowngradeCount, InputRecord
+from pyct.results.record import Aim, DowngradeCount, InputRecord
 
 
 def render_trace(record: InputRecord, coverage: Coverage) -> str:
-    """One fact per line, each line ending in a newline: seed, forks, coverage, end, losses."""
-    lines = [f"seed {json.dumps(record.args)}"]
+    """One fact per line, each line ending in a newline: head, forks, coverage, end, losses."""
+    lines = _head(record)
     lines += [_fork(branch) for branch in record.forks]
     lines += [
         f"covered {len(covered)} of {coverage.total[file]} lines in {file}"
@@ -20,6 +20,25 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
     return "".join(f"{line}\n" for line in lines)
+
+
+def _head(record: InputRecord) -> list[str]:
+    """Where the input came from, and, when the solver aimed it, whether it landed."""
+    lines = [f"{record.source.value} {json.dumps(record.args)}"]
+    if record.aim is None:
+        return lines
+    lines.append(_aim(record.aim))
+    if record.reached:
+        lines.append("reached")
+    else:
+        lines.append(f"left the plan at position {record.mismatch_at}")
+    return lines
+
+
+def _aim(aim: Aim) -> str:
+    """The fork the input was solved for, and where on the path it sits."""
+    site = aim.site
+    return f"aim {site.file}:{site.line}:{site.col} at position {aim.position}"
 
 
 def _downgrade(entry: DowngradeCount) -> str:
