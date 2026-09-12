@@ -1,5 +1,4 @@
 from pyct.branches.plan import plan
-
 from pyct.core.branch import Branch, Site
 from pyct.results.record import Aim
 
