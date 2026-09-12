@@ -53,6 +53,13 @@ def one_line(stdout: str) -> dict[str, object]:
     return json.loads(lines[0])
 
 
+def first_line(stdout: str) -> dict[str, object]:
+    """The seed's line. A run prints one line per input, so the solver's may follow it."""
+    lines = stdout.splitlines()
+    assert lines, stdout
+    return json.loads(lines[0])
+
+
 def two_lines(stdout: str) -> tuple[dict[str, object], dict[str, object]]:
     lines = stdout.splitlines()
     assert len(lines) == 2, stdout
