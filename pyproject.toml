@@ -56,7 +56,7 @@ layers = [
   "(pyct.llm)",
   "pyct.run",
   "(pyct.rewrite)",
-  "(pyct.solver)",
+  "pyct.solver",
   "(pyct.branches)",
   "pyct.execution",
   "pyct.binding",
