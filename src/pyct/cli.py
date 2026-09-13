@@ -74,8 +74,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read."""
-    print(render_trace(record, coverage), end="", file=sys.stderr)
-    print(render(record, coverage))
+    print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
+    print(render(record, coverage), flush=True)
 
 
 def _exit_code(records: tuple[InputRecord, ...]) -> int:
