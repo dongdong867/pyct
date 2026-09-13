@@ -22,6 +22,7 @@ IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 RAISES_AFTER_A_CHECK = "targets.flip.raises_after_a_check::probe"
 RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a_check.py")
+RAISES_ON_THE_OTHER_SIDE = "targets.flip.raises_on_the_other_side::guard"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -221,3 +222,14 @@ def test_flips_after_the_seed_raised() -> None:
         "col": 7,
         "position": 0,
     }
+
+
+# flip-one-fork-reports-the-second-input-failure
+def test_reports_the_second_input_failure() -> None:
+    result = run_pyct(RAISES_ON_THE_OTHER_SIDE, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert seed["failure"] is None
+    # the raise waits on the side the seed missed, so the second line is the one that carries it
+    assert solved["failure"] == {"kind": "target_raised", "detail": "ValueError: out of range"}
