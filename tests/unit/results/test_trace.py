@@ -176,9 +176,7 @@ def test_render_trace_says_where_a_solved_input_left_the_plan() -> None:
 
 
 def test_render_trace_names_the_fork_a_solved_input_hit_instead() -> None:
-    elsewhere = Branch(
-        expression=["<", "y", 3], taken=True, site=Site(file="m.py", line=12, col=4)
-    )
+    elsewhere = Branch(expression=["<", "y", 3], taken=True, site=Site(file="m.py", line=12, col=4))
     record = InputRecord(
         args={"x": 12},
         forks=(FORK, elsewhere),
