@@ -75,6 +75,8 @@ def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.records[0].covered_lines == frozenset({2, 3, 4})
+    # both reasons hold; the spent budget is the one the run names
+    assert result.stopped.kind is StopKind.BUDGET
 
 
 def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
