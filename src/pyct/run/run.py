@@ -3,6 +3,7 @@
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import assert_never
 
 from pyct.binding.bind import leaves
 from pyct.binding.model import apply
@@ -20,9 +21,6 @@ _NO_BUDGET = Budget()
 
 # what a caller does with an input the moment it is finished
 type Report = Callable[[InputRecord, Coverage], None]
-
-# what the solver said about a fork it gave no input for, in the run's own words
-_WHY = {Unsat: MissWhy.UNSAT, Unknown: MissWhy.UNKNOWN, Timeout: MissWhy.TIMEOUT}
 
 
 @dataclass(frozen=True)
@@ -91,9 +89,26 @@ def _second_input(
         return Flip(Stop(StopKind.SOLVER_FAILED, answer.detail))
     attempted = Stop(StopKind.ONE_ATTEMPT)
     if not isinstance(answer, Sat):
-        return Flip(attempted, miss=Miss(wanted.aim.site, _WHY[type(answer)]))
+        return Flip(attempted, miss=Miss(wanted.aim.site, _why(answer)))
     args = apply(seed, answer.model)
     return Flip(attempted, record=_record_of(args, execute(ctx, args, until), wanted))
+
+
+def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:
+    """What the solver said about a fork it gave no input for, in the run's own words.
+
+    A match rather than a table, so a new answer fails the type check
+    instead of a run.
+    """
+    match answer:
+        case Unsat():
+            return MissWhy.UNSAT
+        case Unknown():
+            return MissWhy.UNKNOWN
+        case Timeout():
+            return MissWhy.TIMEOUT
+        case _:
+            assert_never(answer)
 
 
 def _record_of(
