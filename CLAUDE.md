@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- Tests: `uv run pytest tests/ -v`
+- Tests: `uv run pytest tests/ -v`. Needs cvc5 on PATH, like every run (`brew install cvc5`)
 - Lint: `uv run ruff check src/ tests/`
 - Types: `uv run pyrefly check`
 - Imports: `uv run lint-imports`
