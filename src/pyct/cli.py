@@ -13,12 +13,14 @@ from typing import NoReturn
 
 from pyct.config.budget import Budget
 from pyct.results.coverage import Coverage
-from pyct.results.failure import FailureKind
+from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
+from pyct.solver.answer import SolverAnswerError
+from pyct.solver.locate import SolverMissingError, locate
 
 USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]"
 
@@ -39,44 +41,51 @@ class RunCommand:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
-    0: the JSON line was printed. 1: the target could not be loaded, or pyct
-    itself broke during the run. 2: usage.
+    0: the lines were printed. 1: cvc5 is missing, the target could not be
+    loaded, or pyct itself broke during the run. 2: usage.
 
-    Checks run in this order: target form, seed shape, budget, import, seed
-    present, seed fits. The import comes before the seed-present check because
-    that message names the target's parameters, which only the loaded target
-    knows.
+    The run prints each input as it finishes, through ``_report``, so a
+    second input that hangs never hides the first one's line.
+
+    Checks run in this order: target form, seed shape, budget, cvc5, import,
+    seed present, seed fits. cvc5 comes before the import because nothing the
+    target does can make up for a missing solver. The import comes before the
+    seed-present check because that message names the target's parameters,
+    which only the loaded target knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         check_spec(command.spec)
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
+        locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
-        result = run(target, seed, budget=budget)
+        result = run(target, seed, budget=budget, report=_report)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except TargetError as error:
+    except (SolverMissingError, SolverAnswerError, TargetError) as error:
         print(error, file=sys.stderr)
         return 1
-    record = result.records[0]
-    _report(record, result.coverage)
-    return _exit_code(record)
+    return _exit_code(result.records)
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read."""
-    print(render_trace(record, coverage), end="", file=sys.stderr)
-    print(render(record, coverage))
+    print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
+    print(render(record, coverage), flush=True)
 
 
-def _exit_code(record: InputRecord) -> int:
-    """The line is printed either way; a pyct bug still ends the command badly."""
-    return 1 if record.failure is not None and record.failure.kind is FailureKind.PYCT_BUG else 0
+def _exit_code(records: tuple[InputRecord, ...]) -> int:
+    """Every line is printed either way; a pyct bug on any input still ends the command badly."""
+    return 1 if any(_is_a_bug(record.failure) for record in records) else 0
+
+
+def _is_a_bug(failure: Failure | None) -> bool:
+    return failure is not None and failure.kind is FailureKind.PYCT_BUG
 
 
 def parse_command(argv: Sequence[str]) -> RunCommand:

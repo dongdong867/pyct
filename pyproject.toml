@@ -26,7 +26,7 @@ build-backend = "setuptools.build_meta"
 [tool.pyrefly]
 project-includes = ["src/**/*", "tests/**/*"]
 project-excludes = ["**/.venv/**/*", "**/__pycache__/**/*"]
-search-path = ["src"]
+search-path = ["src", "."]
 
 [tool.pytest.ini_options]
 addopts = "-v --tb=short"
@@ -56,8 +56,8 @@ layers = [
   "(pyct.llm)",
   "pyct.run",
   "(pyct.rewrite)",
-  "(pyct.solver)",
-  "(pyct.branches)",
+  "pyct.solver",
+  "pyct.branches",
   "pyct.execution",
   "pyct.binding",
   "pyct.results",

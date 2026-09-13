@@ -1,0 +1,51 @@
+import pytest
+
+from pyct.core.branch import Branch, Expression, Site
+from pyct.solver.render import render
+
+SITE = Site(file="m.py", line=2, col=7)
+
+
+def fork(expression: Expression, *, taken: bool) -> Branch:
+    """A fork at one fixed site: only the condition and the side matter here."""
+    return Branch(expression=expression, taken=taken, site=SITE)
+
+
+def test_a_taken_fork_becomes_a_whole_little_program() -> None:
+    text = render((fork(["<", "x", 10], taken=True),), {"x": int})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const x Int)",
+        "(assert (< x 10))",
+        "(check-sat)",
+        "(get-value (x))",
+    ]
+
+
+def test_a_fork_the_run_did_not_take_is_asserted_the_other_way() -> None:
+    text = render((fork(["<", "x", 10], taken=False),), {"x": int})
+
+    assert "(assert (not (< x 10)))" in text.splitlines()
+
+
+def test_a_negative_number_is_written_as_a_subtraction() -> None:
+    text = render((fork(["<", "x", -5], taken=True),), {"x": int})
+
+    assert "(assert (< x (- 5)))" in text.splitlines()
+
+
+def test_a_leaf_no_fork_mentions_is_left_out() -> None:
+    text = render((fork(["<", "x", 10], taken=True),), {"x": int, "y": int})
+
+    assert "y" not in text
+
+
+def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
+    with pytest.raises(ValueError, match="z"):
+        render((fork(["<", "z", 10], taken=True),), {"x": int})
+
+
+def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
+    with pytest.raises(ValueError, match="str"):
+        render((fork(["<", "x", 10], taken=True),), {"x": str})

@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- Tests: `uv run pytest tests/ -v`
+- Tests: `uv run pytest tests/ -v`. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
 - Lint: `uv run ruff check src/ tests/`
 - Types: `uv run pyrefly check`
 - Imports: `uv run lint-imports`
@@ -31,7 +31,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── run/          run(target, seed, *, budget, scope, helpers) -> RunResult.
 │   │                 Composition root for one run. isolation.py runs `pyct run` in a subprocess
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
-│   ├── solver/       solve(prefix, leaves) -> Answer. The cvc5 subprocess.
+│   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue
 │   ├── execution/    one call of the target. execute(ctx, args, deadline) -> ExecutionResult

@@ -9,19 +9,19 @@ puts the working directory on ``sys.path`` itself, so the target would import ev
 bug can only be provoked by patching pyct itself.
 """
 
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
-
 import pytest
 
 from pyct.cli import main
 from pyct.core import values
 from pyct.core.branch import Site
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    let_pyct_run_in_process,
+    one_line,
+    run_pyct,
+)
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
 TARGET = "targets.trace.uncalled_helper::classify"
 TARGET_FILE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 TWO_CHECKS = "targets.trace.two_checks::bucket"
@@ -39,46 +39,13 @@ THROUGH_ABS = "targets.trace.through_abs::size"
 THROUGH_ABS_FILE = str(REPO_ROOT / "targets" / "trace" / "through_abs.py")
 
 
-def run_pyct(*argv: str) -> subprocess.CompletedProcess[str]:
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    return subprocess.run(
-        [sys.executable, "-P", "-m", "pyct", "run", *argv],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        # the timeout test spawns a target that never returns, so a broken
-        # budget has to fail the test instead of hanging the suite
-        timeout=30,
-    )
-
-
-def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Put this interpreter where a fresh one would be, and undo it after the test.
-
-    ``load_target`` inserts the working directory on ``sys.path`` and leaves the
-    imported target in ``sys.modules``; both are restored so the subprocess tests
-    around this one keep proving what they prove.
-    """
-    monkeypatch.chdir(REPO_ROOT)
-    monkeypatch.setattr(sys, "path", list(sys.path))
-    for name in [n for n in sys.modules if n.split(".", 1)[0] == "targets"]:
-        monkeypatch.delitem(sys.modules, name)
-
-
-def one_line(stdout: str) -> dict[str, object]:
-    lines = stdout.splitlines()
-    assert len(lines) == 1, stdout
-    return json.loads(lines[0])
-
-
 # trace-the-seed-prints-one-json-line
 def test_prints_one_json_line_with_the_forks() -> None:
     result = run_pyct(TARGET, '{"x": 3}')
 
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    # one JSON line per input; the seed's is the first of them
+    line = first_line(result.stdout)
     assert line["args"] == {"x": 3}
     # the one fork the seed hit: `x < 10` on line 5, column 7, taken
     assert line["forks"] == [
@@ -129,7 +96,7 @@ def test_lists_a_fork_in_another_module() -> None:
     result = run_pyct(CALLS_HELPER, '{"x": 50}')
 
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     # the helper's `x < 5` in the helper's own file first, then the target's own `x < 100`:
     # the order they ran, which is the reverse of the order their files sort in
     assert line["forks"] == [
@@ -158,7 +125,7 @@ def test_imports_from_the_current_directory() -> None:
     result = run_pyct(TARGET, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     assert line["args"] == {"x": 1}
 
 
@@ -166,7 +133,7 @@ def test_imports_from_the_current_directory() -> None:
 def test_counts_lines_against_the_module() -> None:
     result = run_pyct(TARGET, '{"x": 1}')
 
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     # docstring, two def lines, four body lines; never_called's body is in the total
     assert line["total"] == {TARGET_FILE: 7}
     # only the two lines the seed ran: the if and its return
@@ -245,7 +212,7 @@ def test_reports_a_raise() -> None:
     result = run_pyct(RAISES, '{"x": 3}')
 
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     assert line["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
     # the fork before the raise is kept, and the lines up to the raise
     assert line["forks"] == [
@@ -262,7 +229,7 @@ def test_reports_a_system_exit() -> None:
 
     # pyct keeps going: the line is printed and the exit is pyct's own, not the target's 3
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     assert line["failure"] == {"kind": "system_exit", "detail": "SystemExit: 3"}
     assert line["covered"] == {EXITS_FILE: [5, 6]}
     # the import, the def, and the three body lines
@@ -340,7 +307,7 @@ def test_writes_a_readable_trace_to_stderr() -> None:
 
     assert result.returncode == 0, result.stderr
     # one fact per line: the seed, each fork in order, the coverage, how it ended, what was lost
-    assert result.stderr.splitlines() == [
+    assert result.stderr.splitlines()[:6] == [
         'seed {"x": 50}',
         f"fork {HELPER_CHECK_FILE}:2:7  x < 5  not taken",
         f"fork {CALLS_HELPER_FILE}:7:7  x < 100  taken",
@@ -348,7 +315,8 @@ def test_writes_a_readable_trace_to_stderr() -> None:
         "ended returned",
         "downgrades none",
     ]
-    assert len(result.stdout.splitlines()) == 1, result.stdout
+    # the seed's block is followed by the solver's input, on both streams
+    assert len(result.stdout.splitlines()) == 2, result.stdout
 
     lost = run_pyct(THROUGH_ABS, '{"x": -3}')
 

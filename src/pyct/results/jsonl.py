@@ -5,7 +5,7 @@ import json
 from pyct.core.branch import Branch
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import DowngradeCount, InputRecord
+from pyct.results.record import Aim, DowngradeCount, InputRecord
 
 
 def render(record: InputRecord, coverage: Coverage) -> str:
@@ -17,8 +17,23 @@ def render(record: InputRecord, coverage: Coverage) -> str:
         "total": dict(coverage.total),
         "failure": _failure(record.failure),
         "downgrades": [_downgrade(entry) for entry in record.downgrades],
+        "source": record.source.value,
+        "aim": _aim(record.aim),
+        "mismatch_at": record.mismatch_at,
     }
     return json.dumps(payload)
+
+
+def _aim(aim: Aim | None) -> dict[str, object] | None:
+    """The fork the input was solved for, or ``None`` when nothing was aimed at."""
+    if aim is None:
+        return None
+    return {
+        "file": aim.site.file,
+        "line": aim.site.line,
+        "col": aim.site.col,
+        "position": aim.position,
+    }
 
 
 def _downgrade(entry: DowngradeCount) -> dict[str, object]:
