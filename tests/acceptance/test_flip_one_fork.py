@@ -7,7 +7,7 @@ proves pyct found cvc5, flipped the fork, and printed the line.
 
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, run_pyct, two_lines
+from tests.acceptance.harness import REPO_ROOT, one_line, run_pyct, two_lines
 
 ONE_CHECK = "targets.flip.one_check::classify"
 ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
@@ -16,6 +16,7 @@ NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 TWO_ARGS = "targets.flip.two_args::pick"
 OTHER_SIDE_LONGER = "targets.flip.other_side_longer::grade"
 OTHER_SIDE_LONGER_FILE = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
+NO_CHECK = "targets.flip.no_check::echo"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -131,3 +132,14 @@ def test_writes_the_aim_to_stderr() -> None:
     assert lines[at + 1] == f"aim {ONE_CHECK_FILE}:2:7 at position 0"
     assert lines[at + 2] == "reached"
     assert f"fork {ONE_CHECK_FILE}:2:7  x < 10  not taken" in lines[at:]
+
+
+# flip-one-fork-has-nothing-to-flip
+def test_has_nothing_to_flip() -> None:
+    result = run_pyct(NO_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    # the trace ends with why the run stopped, after the seed's own lines
+    assert result.stderr.splitlines()[-1] == "stopped: no fork to flip"
