@@ -62,8 +62,7 @@ def _left_the_plan(forks: tuple[Branch, ...], at: int) -> str:
 
     A position with no fork means the run stopped forking before the plan
     ran out: a raise, an exit, the deadline, or a concrete value pyct lost
-    track of. No int-only fixture reaches that through the command line
-    today, which is why only a unit test covers it.
+    track of.
     """
     left = f"left the plan at position {at}"
     if at >= len(forks):
