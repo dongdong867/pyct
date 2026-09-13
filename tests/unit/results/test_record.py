@@ -51,25 +51,6 @@ def test_an_input_record_is_a_seed_with_no_aim_by_default() -> None:
     assert record.mismatch_at is None
 
 
-def test_an_input_that_matched_the_plan_reached_it() -> None:
-    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
-
-    assert record.reached is True
-
-
-def test_an_input_that_left_the_plan_did_not_reach_it() -> None:
-    record = InputRecord(
-        args={"x": 1},
-        forks=(FORK,),
-        covered_lines=frozenset({5}),
-        source=Source.SOLVER,
-        aim=Aim(site=Site(file="m.py", line=5, col=7), position=0),
-        mismatch_at=0,
-    )
-
-    assert record.reached is False
-
-
 def test_a_stop_kind_is_the_words_on_the_stderr_line() -> None:
     assert StopKind.NO_FORK.value == "no fork to flip"
     assert StopKind.BUDGET.value == "budget spent"

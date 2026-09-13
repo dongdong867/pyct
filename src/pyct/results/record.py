@@ -54,11 +54,6 @@ class InputRecord:
     aim: Aim | None = None
     mismatch_at: int | None = None
 
-    @property
-    def reached(self) -> bool:
-        """Whether the run followed the whole plan it was solved for."""
-        return self.mismatch_at is None
-
 
 class StopKind(StrEnum):
     """Why a run ended. The values are the words on the ``stopped`` line."""
