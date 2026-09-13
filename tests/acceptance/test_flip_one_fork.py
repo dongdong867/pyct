@@ -281,10 +281,12 @@ def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
         "col": 11,
         "position": 1,
     }
-    assert solved["failure"] == {
-        "kind": "target_raised",
-        "detail": "ZeroDivisionError: integer division or modulo by zero",
-    }
+    # the detail is CPython's own sentence, and 3.14 shortened it, so only the kind
+    # and the exception's name are pyct's to pin
+    failure = solved["failure"]
+    assert isinstance(failure, dict), solved
+    assert failure["kind"] == "target_raised"
+    assert str(failure["detail"]).startswith("ZeroDivisionError:")
     # the plan had two forks and the run recorded one, so the mismatch sits past the path
     assert solved["forks"] == [
         {
