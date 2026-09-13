@@ -21,6 +21,13 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
+
+    What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
+    does not recognize comes back as ``Error(detail)``, so the run keeps the
+    records it already has and says the solver failed. The one exception is
+    a ``sat`` whose model has a value line pyct cannot read: that is
+    ``SolverAnswerError``, because a half-read model would quietly hand the
+    seed's values back as the solver's.
     """
     text = render(prefix, leaves)
     argv = _argv(timeout)
