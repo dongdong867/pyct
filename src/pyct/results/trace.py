@@ -5,7 +5,7 @@ import json
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import Aim, DowngradeCount, InputRecord
+from pyct.results.record import Aim, DowngradeCount, InputRecord, Miss, RunResult, Stop
 
 
 def render_trace(record: InputRecord, coverage: Coverage) -> str:
@@ -20,6 +20,31 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
     return "".join(f"{line}\n" for line in lines)
+
+
+def render_stop(result: RunResult) -> str:
+    """What the run missed and why it ended, after the last input's trace.
+
+    One ``missed`` line per fork the solver gave no input for, then the
+    ``stopped`` line. What a failed solver said goes indented under it.
+    """
+    lines = [_miss(miss) for miss in result.misses]
+    lines += _stopped(result.stopped)
+    return "".join(f"{line}\n" for line in lines)
+
+
+def _miss(miss: Miss) -> str:
+    """The fork the solver was asked about, and the answer that gave no input."""
+    site = miss.site
+    return f"missed {site.file}:{site.line}:{site.col} {miss.why.value}"
+
+
+def _stopped(stop: Stop) -> list[str]:
+    """Why the run ended, in words. A detail follows, indented under the line."""
+    lines = [f"stopped: {stop.kind.value}"]
+    if stop.detail is not None:
+        lines += [f"    {line}" for line in stop.detail.splitlines()]
+    return lines
 
 
 def _head(record: InputRecord) -> list[str]:
