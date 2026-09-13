@@ -167,11 +167,30 @@ def test_render_trace_says_where_a_solved_input_left_the_plan() -> None:
 
     lines = render_trace(record, COVERAGE).splitlines()
 
+    # the record forked once, so the plan's position 1 is past everything it did
     assert lines[:3] == [
         'solver {"x": 12}',
         "aim m.py:9:3 at position 1",
-        "left the plan at position 1",
+        "left the plan at position 1, no fork there",
     ]
+
+
+def test_render_trace_names_the_fork_a_solved_input_hit_instead() -> None:
+    elsewhere = Branch(
+        expression=["<", "y", 3], taken=True, site=Site(file="m.py", line=12, col=4)
+    )
+    record = InputRecord(
+        args={"x": 12},
+        forks=(FORK, elsewhere),
+        covered_lines=frozenset({5}),
+        source=Source.SOLVER,
+        aim=Aim(site=Site(file="m.py", line=9, col=3), position=1),
+        mismatch_at=1,
+    )
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    assert lines[2] == "left the plan at position 1, hit m.py:12:4"
 
 
 def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
