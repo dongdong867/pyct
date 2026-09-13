@@ -41,6 +41,10 @@ class Error:
 type Answer = Sat | Unsat | Unknown | Timeout | Error
 
 
+class SolverAnswerError(Exception):
+    """cvc5 answered, but with a line pyct cannot read."""
+
+
 def model_from(lines: Iterable[str]) -> dict[str, int]:
     """The values cvc5 printed, as a name and a number each.
 
@@ -53,7 +57,7 @@ def model_from(lines: Iterable[str]) -> dict[str, int]:
 def _value(line: str) -> tuple[str, int]:
     matched = VALUE_LINE.fullmatch(line.strip())
     if matched is None:
-        raise ValueError(f"cvc5 answered with a value line pyct cannot read: {line}")
+        raise SolverAnswerError(f"cvc5 answered with a value line pyct cannot read: {line}")
     return matched["name"], _number(matched["value"])
 
 

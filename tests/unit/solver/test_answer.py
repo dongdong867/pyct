@@ -2,7 +2,15 @@ import dataclasses
 
 import pytest
 
-from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat, model_from
+from pyct.solver.answer import (
+    Error,
+    Sat,
+    SolverAnswerError,
+    Timeout,
+    Unknown,
+    Unsat,
+    model_from,
+)
 
 
 def test_a_value_line_names_a_leaf_and_its_number() -> None:
@@ -22,7 +30,7 @@ def test_an_answer_with_no_value_lines_is_an_empty_model() -> None:
 
 
 def test_a_line_the_solver_should_not_have_written_names_itself() -> None:
-    with pytest.raises(ValueError, match=r"\(\(x five\)\)"):
+    with pytest.raises(SolverAnswerError, match=r"\(\(x five\)\)"):
         model_from(["((x five))"])
 
 

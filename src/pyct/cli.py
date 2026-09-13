@@ -19,6 +19,7 @@ from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
+from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
 USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]"
@@ -66,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, TargetError, ValueError) as error:
+    except (SolverMissingError, SolverAnswerError, TargetError) as error:
         print(error, file=sys.stderr)
         return 1
     return _exit_code(result.records)
