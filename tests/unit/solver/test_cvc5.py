@@ -1,3 +1,4 @@
+import logging
 import shutil
 from pathlib import Path
 
@@ -80,6 +81,20 @@ def test_anything_else_is_an_error_that_keeps_what_the_solver_said(
 
     assert isinstance(answer, Error)
     assert "parse error" in answer.detail
+
+
+def test_a_solver_that_failed_to_answer_is_warned_about(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    fake_cvc5(tmp_path, out='(error "parse error")\n', code=1)
+
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.cvc5"):
+        ask(tmp_path, monkeypatch)
+
+    # the run goes on as if the path were unreachable, so the log is the only place the detail lives
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1, caplog.text
+    assert "parse error" in warnings[0].getMessage()
 
 
 def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
