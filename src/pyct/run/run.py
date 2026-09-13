@@ -73,17 +73,19 @@ def _second_input(
 ) -> Flip:
     """The input that takes the other side of the seed's last fork, and why the run stops.
 
-    Nothing to flip or no time to ask ends the run before the solver is
-    called. A solver that crashed ends it as a failure. Any answer is one
-    attempt: an input to run, or a miss on that fork.
+    No time to ask or nothing to flip ends the run before the solver is
+    called, the budget first: a seed that spent it stops on the budget
+    whether or not it forked. A solver that crashed ends the run as a
+    failure. Any answer is one attempt: an input to run, or a miss on that
+    fork.
     """
-    wanted = plan(first.forks)
-    if wanted is None:
-        return Flip(Stop(StopKind.NO_FORK))
     timeout = _seconds_left(until)
     # a deadline that has passed is no time at all; cvc5 reads --tlimit=0 as no limit
     if timeout is not None and timeout <= 0:
         return Flip(Stop(StopKind.BUDGET))
+    wanted = plan(first.forks)
+    if wanted is None:
+        return Flip(Stop(StopKind.NO_FORK))
     answer = solve(wanted.prefix, leaves(seed), timeout)
     if isinstance(answer, Error):
         return Flip(Stop(StopKind.SOLVER_FAILED, answer.detail))
