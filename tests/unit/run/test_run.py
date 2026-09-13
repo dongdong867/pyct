@@ -8,7 +8,7 @@ from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import Aim, InputRecord, Source
+from pyct.results.record import Aim, InputRecord, Source, StopKind
 from pyct.run.run import _second_input, run
 from pyct.run.target import load_target
 
@@ -85,9 +85,10 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     ctx = ExecutionContext(fn=target.fn, file=target.file)
 
-    second = _second_input(ctx, seed, forked, time.monotonic() - 1)
+    flip = _second_input(ctx, seed, forked, time.monotonic() - 1)
 
-    assert second is None
+    assert flip.record is None
+    assert flip.stop.kind is StopKind.BUDGET
 
 
 def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
@@ -168,3 +169,16 @@ def test_run_stops_after_a_seed_that_forked_nowhere() -> None:
 
     assert len(result.records) == 1
     assert result.records[0].source is Source.SEED
+    assert result.stopped.kind is StopKind.NO_FORK
+    assert result.stopped.detail is None
+    assert result.misses == ()
+
+
+def test_run_stops_after_one_attempt_when_the_solver_gave_an_input() -> None:
+    target = load_target("targets.flip.one_check::classify")
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+    assert result.misses == ()
