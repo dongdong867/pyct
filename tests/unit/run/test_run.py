@@ -71,7 +71,6 @@ def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
 
     result = run(target, {"x": 1}, budget=Budget(seconds=0.05))
 
-    # the seed forked nowhere, so there is nothing to ask the solver about
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.records[0].covered_lines == frozenset({2, 3, 4})
