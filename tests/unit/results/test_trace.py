@@ -3,8 +3,18 @@ import pytest
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import Aim, DowngradeCount, InputRecord, Source
-from pyct.results.trace import render_trace
+from pyct.results.record import (
+    Aim,
+    DowngradeCount,
+    InputRecord,
+    Miss,
+    MissWhy,
+    RunResult,
+    Source,
+    Stop,
+    StopKind,
+)
+from pyct.results.trace import render_stop, render_trace
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
@@ -162,3 +172,31 @@ def test_render_trace_says_where_a_solved_input_left_the_plan() -> None:
         "aim m.py:9:3 at position 1",
         "left the plan at position 1",
     ]
+
+
+def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
+    """A run result whose only facts that matter here are how it ended and what it missed."""
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
+    return RunResult(entry="m::f", records=(record,), coverage=COVERAGE, stopped=stop, misses=misses)
+
+
+def test_render_stop_says_why_the_run_ended_on_one_line() -> None:
+    text = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK)))
+
+    assert text == "stopped: no fork to flip\n"
+
+
+def test_render_stop_puts_each_miss_before_the_stop_line() -> None:
+    miss = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
+
+    lines = render_stop(stopped_with(Stop(kind=StopKind.ONE_ATTEMPT), miss)).splitlines()
+
+    assert lines == ["missed m.py:5:7 unsat", "stopped: after one attempt"]
+
+
+def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
+    stop = Stop(kind=StopKind.SOLVER_FAILED, detail="cvc5: boom\nsegmentation fault")
+
+    lines = render_stop(stopped_with(stop)).splitlines()
+
+    assert lines == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
