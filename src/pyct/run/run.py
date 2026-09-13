@@ -38,9 +38,9 @@ def run(
     scope = Scope.of_module(target.file)
     ctx = ExecutionContext(fn=target.fn, file=target.file)
     until = _deadline_for(budget)
-    records = [_record_of(seed, execute(ctx, seed, until), scope)]
+    records = [_record_of(seed, execute(ctx, seed, until))]
     _tell(report, records[0], scope)
-    second = _second_input(ctx, scope, seed, records[0], until)
+    second = _second_input(ctx, seed, records[0], until)
     if second is not None:
         records.append(second)
         _tell(report, second, scope)
@@ -52,7 +52,6 @@ def run(
 
 def _second_input(
     ctx: ExecutionContext,
-    scope: Scope,
     seed: Mapping[str, object],
     first: InputRecord,
     until: float | None,
@@ -73,20 +72,22 @@ def _second_input(
     if not isinstance(answer, Sat):
         return None
     args = apply(seed, answer.model)
-    return _record_of(args, execute(ctx, args, until), scope, wanted)
+    return _record_of(args, execute(ctx, args, until), wanted)
 
 
 def _record_of(
     args: Mapping[str, object],
     executed: ExecutionResult,
-    scope: Scope,
     wanted: Plan | None = None,
 ) -> InputRecord:
-    """What one input did. A plan makes it the solver's, aimed and read against that plan."""
+    """What one input did. A plan makes it the solver's, aimed and read against that plan.
+
+    The lines are the tracer's, unmeasured: Coverage.of is where the scope is applied.
+    """
     return InputRecord(
         args=args,
         forks=executed.branches,
-        covered_lines=executed.lines & scope.lines,
+        covered_lines=executed.lines,
         failure=executed.failure,
         downgrades=executed.downgrades,
         source=Source.SEED if wanted is None else Source.SOLVER,

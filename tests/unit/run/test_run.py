@@ -6,7 +6,7 @@ import pytest
 from pyct.config.budget import Budget
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
-from pyct.results.coverage import Coverage, Scope
+from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Source
 from pyct.run.run import _second_input, run
@@ -85,7 +85,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     ctx = ExecutionContext(fn=target.fn, file=target.file)
 
-    second = _second_input(ctx, Scope.of_module(target.file), seed, forked, time.monotonic() - 1)
+    second = _second_input(ctx, seed, forked, time.monotonic() - 1)
 
     assert second is None
 
