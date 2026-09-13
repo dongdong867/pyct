@@ -66,7 +66,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, TargetError) as error:
+    except (SolverMissingError, TargetError, ValueError) as error:
         print(error, file=sys.stderr)
         return 1
     return _exit_code(result.records)
