@@ -158,7 +158,8 @@ def test_stops_when_the_seed_spent_the_budget() -> None:
     assert isinstance(failure, dict)
     assert failure["kind"] == "timeout"
     # the seed hit a fork, so only the spent budget kept the solver from being asked
-    assert len(seed["forks"]) == 1
+    forks = seed["forks"]
+    assert isinstance(forks, list) and len(forks) == 1, seed
     assert result.stderr.splitlines()[-1] == "stopped: budget spent"
 
 
