@@ -8,15 +8,17 @@ from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import Aim, InputRecord, Source
+from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, StopKind
 from pyct.run.run import _second_input, run
 from pyct.run.target import load_target
+from pyct.solver.answer import Answer, Timeout, Unknown
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 OTHER_SIDE_LONGER = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
+IMPLIED_CHECK = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 
 
 def argument(record: InputRecord, name: str) -> int:
@@ -69,10 +71,11 @@ def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
 
     result = run(target, {"x": 1}, budget=Budget(seconds=0.05))
 
-    # the seed forked nowhere, so there is nothing to ask the solver about
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.records[0].covered_lines == frozenset({2, 3, 4})
+    # both reasons hold; the spent budget is the one the run names
+    assert result.stopped.kind is StopKind.BUDGET
 
 
 def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
@@ -85,9 +88,10 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     ctx = ExecutionContext(fn=target.fn, file=target.file)
 
-    second = _second_input(ctx, seed, forked, time.monotonic() - 1)
+    flip = _second_input(ctx, seed, forked, time.monotonic() - 1)
 
-    assert second is None
+    assert flip.record is None
+    assert flip.stop.kind is StopKind.BUDGET
 
 
 def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
@@ -168,3 +172,73 @@ def test_run_stops_after_a_seed_that_forked_nowhere() -> None:
 
     assert len(result.records) == 1
     assert result.records[0].source is Source.SEED
+    assert result.stopped.kind is StopKind.NO_FORK
+    assert result.stopped.detail is None
+    assert result.misses == ()
+
+
+def test_run_stops_after_one_attempt_when_the_solver_gave_an_input() -> None:
+    target = load_target("targets.flip.one_check::classify")
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+    assert result.misses == ()
+
+
+def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> None:
+    target = load_target("targets.flip.spins_after_a_check::spin")
+
+    result = run(target, {"x": 3}, budget=Budget(seconds=0.05))
+
+    assert len(result.records) == 1
+    assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert result.stopped.kind is StopKind.BUDGET
+
+
+def test_run_records_a_miss_when_the_last_fork_cannot_be_flipped() -> None:
+    target = load_target("targets.flip.implied_check::narrow")
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 1
+    assert result.misses == (
+        Miss(site=Site(file=IMPLIED_CHECK, line=3, col=11), why=MissWhy.UNSAT),
+    )
+    # a miss is what the solver said about one fork; the run still made its one attempt
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"), [(Unknown(), MissWhy.UNKNOWN), (Timeout(), MissWhy.TIMEOUT)]
+)
+def test_run_records_what_the_solver_answered_when_it_gave_up(
+    monkeypatch: pytest.MonkeyPatch, answer: Answer, why: MissWhy
+) -> None:
+    target = load_target("targets.flip.one_check::classify")
+    monkeypatch.setattr("pyct.run.run.solve", lambda *args: answer)
+
+    result = run(target, {"x": 3})
+
+    assert result.misses == (Miss(site=Site(file=ONE_CHECK, line=2, col=7), why=why),)
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+
+
+def test_run_stops_as_a_failure_when_the_solver_died(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = load_target("targets.flip.one_check::classify")
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\nPATH=/bin:/usr/bin\ncat > /dev/null\necho 'cvc5: boom' >&2\nexit 1\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 1
+    assert result.stopped.kind is StopKind.SOLVER_FAILED
+    assert result.stopped.detail == "cvc5: boom"
+    assert result.misses == ()

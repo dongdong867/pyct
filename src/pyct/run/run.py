@@ -2,6 +2,8 @@
 
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from typing import assert_never
 
 from pyct.binding.bind import leaves
 from pyct.binding.model import apply
@@ -10,15 +12,24 @@ from pyct.branches.plan import Plan, plan
 from pyct.config.budget import Budget
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.coverage import Coverage, Scope
-from pyct.results.record import InputRecord, RunResult, Source
+from pyct.results.record import InputRecord, Miss, MissWhy, RunResult, Source, Stop, StopKind
 from pyct.run.target import Target
-from pyct.solver.answer import Sat
+from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 
 _NO_BUDGET = Budget()
 
 # what a caller does with an input the moment it is finished
 type Report = Callable[[InputRecord, Coverage], None]
+
+
+@dataclass(frozen=True)
+class Flip:
+    """How the try at a second input ended: the input, or the miss, and why the run stops."""
+
+    stop: Stop
+    record: InputRecord | None = None
+    miss: Miss | None = None
 
 
 def run(
@@ -40,13 +51,17 @@ def run(
     until = _deadline_for(budget)
     records = [_record_of(seed, execute(ctx, seed, until))]
     _tell(report, records[0], scope)
-    second = _second_input(ctx, seed, records[0], until)
-    if second is not None:
-        records.append(second)
-        _tell(report, second, scope)
+    flip = _second_input(ctx, seed, records[0], until)
+    if flip.record is not None:
+        records.append(flip.record)
+        _tell(report, flip.record, scope)
     covered = frozenset[int]().union(*(record.covered_lines for record in records))
     return RunResult(
-        entry=target.spec, records=tuple(records), coverage=Coverage.of(scope, covered)
+        entry=target.spec,
+        records=tuple(records),
+        coverage=Coverage.of(scope, covered),
+        stopped=flip.stop,
+        misses=() if flip.miss is None else (flip.miss,),
     )
 
 
@@ -55,24 +70,47 @@ def _second_input(
     seed: Mapping[str, object],
     first: InputRecord,
     until: float | None,
-) -> InputRecord | None:
-    """The input that takes the other side of the seed's last fork, if there is one.
+) -> Flip:
+    """The input that takes the other side of the seed's last fork, and why the run stops.
 
-    Nothing to flip, no time to ask, or no input that takes the path: the
-    run ends after the seed. Saying which of the three is the next story's.
+    No time to ask or nothing to flip ends the run before the solver is
+    called, the budget first: a seed that spent it stops on the budget
+    whether or not it forked. A solver that crashed ends the run as a
+    failure. Any answer is one attempt: an input to run, or a miss on that
+    fork.
     """
-    wanted = plan(first.forks)
-    if wanted is None:
-        return None
     timeout = _seconds_left(until)
     # a deadline that has passed is no time at all; cvc5 reads --tlimit=0 as no limit
     if timeout is not None and timeout <= 0:
-        return None
+        return Flip(Stop(StopKind.BUDGET))
+    wanted = plan(first.forks)
+    if wanted is None:
+        return Flip(Stop(StopKind.NO_FORK))
     answer = solve(wanted.prefix, leaves(seed), timeout)
+    if isinstance(answer, Error):
+        return Flip(Stop(StopKind.SOLVER_FAILED, answer.detail))
+    attempted = Stop(StopKind.ONE_ATTEMPT)
     if not isinstance(answer, Sat):
-        return None
+        return Flip(attempted, miss=Miss(wanted.aim.site, _why(answer)))
     args = apply(seed, answer.model)
-    return _record_of(args, execute(ctx, args, until), wanted)
+    return Flip(attempted, record=_record_of(args, execute(ctx, args, until), wanted))
+
+
+def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:
+    """What the solver said about a fork it gave no input for, in the run's own words.
+
+    A match rather than a table, so a new answer fails the type check
+    instead of a run.
+    """
+    match answer:
+        case Unsat():
+            return MissWhy.UNSAT
+        case Unknown():
+            return MissWhy.UNKNOWN
+        case Timeout():
+            return MissWhy.TIMEOUT
+        case _:
+            assert_never(answer)
 
 
 def _record_of(

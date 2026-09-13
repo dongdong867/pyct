@@ -60,10 +60,49 @@ class InputRecord:
         return self.mismatch_at is None
 
 
+class StopKind(StrEnum):
+    """Why a run ended. The values are the words on the ``stopped`` line."""
+
+    NO_FORK = "no fork to flip"
+    BUDGET = "budget spent"
+    ONE_ATTEMPT = "after one attempt"
+    SOLVER_FAILED = "solver failed"
+
+
+@dataclass(frozen=True)
+class Stop:
+    """How the run ended, and, when the solver failed, what it said."""
+
+    kind: StopKind
+    detail: str | None = None
+
+
+class MissWhy(StrEnum):
+    """What the solver answered about a fork it gave no input for. The words on the line."""
+
+    UNSAT = "unsat"
+    UNKNOWN = "unknown"
+    TIMEOUT = "timeout"
+
+
+@dataclass(frozen=True)
+class Miss:
+    """A fork the run asked for and got no input to: where it is, and what the solver said."""
+
+    site: Site
+    why: MissWhy
+
+
 @dataclass(frozen=True)
 class RunResult:
-    """One run of one function: its records and the coverage they add up to."""
+    """One run of one function: its records, the coverage they add up to, and how it ended.
+
+    ``misses`` are the forks the solver gave no input for. A miss is never
+    why the run stopped; ``stopped`` carries the loop's own reason.
+    """
 
     entry: str
     records: tuple[InputRecord, ...]
     coverage: Coverage
+    stopped: Stop
+    misses: tuple[Miss, ...] = ()

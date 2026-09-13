@@ -76,3 +76,17 @@ def test_main_lets_a_value_error_of_its_own_escape_with_its_traceback(
 
     with pytest.raises(ValueError, match="invariant"):
         main(["run", TARGET, '{"x": 3}'])
+
+
+def test_main_ends_stderr_with_why_the_run_stopped(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+
+    code = main(["run", "targets.flip.no_check::echo", '{"x": 3}'])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    assert len(captured.out.splitlines()) == 1
+    # the stop reason is a fact about the run, so it comes after the last input's trace
+    assert captured.err.splitlines()[-1] == "stopped: no fork to flip"

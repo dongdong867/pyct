@@ -7,7 +7,7 @@ proves pyct found cvc5, flipped the fork, and printed the line.
 
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, run_pyct, two_lines
+from tests.acceptance.harness import REPO_ROOT, one_line, run_pyct, two_lines
 
 ONE_CHECK = "targets.flip.one_check::classify"
 ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
@@ -16,6 +16,10 @@ NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 TWO_ARGS = "targets.flip.two_args::pick"
 OTHER_SIDE_LONGER = "targets.flip.other_side_longer::grade"
 OTHER_SIDE_LONGER_FILE = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
+NO_CHECK = "targets.flip.no_check::echo"
+SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
+IMPLIED_CHECK = "targets.flip.implied_check::narrow"
+IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -131,3 +135,70 @@ def test_writes_the_aim_to_stderr() -> None:
     assert lines[at + 1] == f"aim {ONE_CHECK_FILE}:2:7 at position 0"
     assert lines[at + 2] == "reached"
     assert f"fork {ONE_CHECK_FILE}:2:7  x < 10  not taken" in lines[at:]
+
+
+# flip-one-fork-has-nothing-to-flip
+def test_has_nothing_to_flip() -> None:
+    result = run_pyct(NO_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    # the trace ends with why the run stopped, after the seed's own lines
+    assert result.stderr.splitlines()[-1] == "stopped: no fork to flip"
+
+
+# flip-one-fork-stops-when-the-seed-spent-the-budget
+def test_stops_when_the_seed_spent_the_budget() -> None:
+    result = run_pyct(SPINS_AFTER_A_CHECK, '{"x": 3}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    failure = seed["failure"]
+    assert isinstance(failure, dict)
+    assert failure["kind"] == "timeout"
+    # the seed hit a fork, so only the spent budget kept the solver from being asked
+    forks = seed["forks"]
+    assert isinstance(forks, list) and len(forks) == 1, seed
+    assert result.stderr.splitlines()[-1] == "stopped: budget spent"
+
+
+# flip-one-fork-reports-unsat
+def test_reports_unsat() -> None:
+    result = run_pyct(IMPLIED_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    # the inner check cannot go the other way while the outer one holds
+    lines = result.stderr.splitlines()
+    assert lines[-2:] == [
+        f"missed {IMPLIED_CHECK_FILE}:3:11 unsat",
+        "stopped: after one attempt",
+    ]
+
+
+# flip-one-fork-fails-when-the-solver-crashes
+def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
+    # a cvc5 that reads the formula and dies instead of answering
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        "cat > /dev/null\n"
+        "echo 'cvc5: Fatal failure within the solver' >&2\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+
+    result = run_pyct(ONE_CHECK, '{"x": 3}', path=str(tmp_path))
+
+    assert result.returncode == 1, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    lines = result.stderr.splitlines()
+    assert lines[-2:] == [
+        "stopped: solver failed",
+        "    cvc5: Fatal failure within the solver",
+    ]

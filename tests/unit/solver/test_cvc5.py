@@ -91,7 +91,7 @@ def test_a_solver_that_failed_to_answer_is_warned_about(
     with caplog.at_level(logging.WARNING, logger="pyct.solver.cvc5"):
         ask(tmp_path, monkeypatch)
 
-    # the run goes on as if the path were unreachable, so the log is the only place the detail lives
+    # the solver only warns; the run decides the failure is fatal
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1, caplog.text
     assert "parse error" in warnings[0].getMessage()
