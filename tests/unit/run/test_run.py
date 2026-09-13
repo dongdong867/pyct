@@ -8,15 +8,17 @@ from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import Aim, InputRecord, Source, StopKind
+from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, StopKind
 from pyct.run.run import _second_input, run
 from pyct.run.target import load_target
+from pyct.solver.answer import Answer, Timeout, Unknown
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 OTHER_SIDE_LONGER = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
+IMPLIED_CHECK = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 
 
 def argument(record: InputRecord, name: str) -> int:
@@ -192,3 +194,50 @@ def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> Non
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.stopped.kind is StopKind.BUDGET
+
+
+def test_run_records_a_miss_when_the_last_fork_cannot_be_flipped() -> None:
+    target = load_target("targets.flip.implied_check::narrow")
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 1
+    assert result.misses == (
+        Miss(site=Site(file=IMPLIED_CHECK, line=3, col=11), why=MissWhy.UNSAT),
+    )
+    # a miss is what the solver said about one fork; the run still made its one attempt
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"), [(Unknown(), MissWhy.UNKNOWN), (Timeout(), MissWhy.TIMEOUT)]
+)
+def test_run_records_what_the_solver_answered_when_it_gave_up(
+    monkeypatch: pytest.MonkeyPatch, answer: Answer, why: MissWhy
+) -> None:
+    target = load_target("targets.flip.one_check::classify")
+    monkeypatch.setattr("pyct.run.run.solve", lambda *args: answer)
+
+    result = run(target, {"x": 3})
+
+    assert result.misses == (Miss(site=Site(file=ONE_CHECK, line=2, col=7), why=why),)
+    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+
+
+def test_run_stops_as_a_failure_when_the_solver_died(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = load_target("targets.flip.one_check::classify")
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\nPATH=/bin:/usr/bin\ncat > /dev/null\necho 'cvc5: boom' >&2\nexit 1\n"
+    )
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    result = run(target, {"x": 3})
+
+    assert len(result.records) == 1
+    assert result.stopped.kind is StopKind.SOLVER_FAILED
+    assert result.stopped.detail == "cvc5: boom"
+    assert result.misses == ()

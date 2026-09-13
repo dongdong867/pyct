@@ -18,6 +18,8 @@ OTHER_SIDE_LONGER = "targets.flip.other_side_longer::grade"
 OTHER_SIDE_LONGER_FILE = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
 NO_CHECK = "targets.flip.no_check::echo"
 SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
+IMPLIED_CHECK = "targets.flip.implied_check::narrow"
+IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -158,3 +160,44 @@ def test_stops_when_the_seed_spent_the_budget() -> None:
     # the seed hit a fork, so only the spent budget kept the solver from being asked
     assert len(seed["forks"]) == 1
     assert result.stderr.splitlines()[-1] == "stopped: budget spent"
+
+
+# flip-one-fork-reports-unsat
+def test_reports_unsat() -> None:
+    result = run_pyct(IMPLIED_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    # the inner check cannot go the other way while the outer one holds
+    lines = result.stderr.splitlines()
+    assert lines[-2:] == [
+        f"missed {IMPLIED_CHECK_FILE}:3:11 unsat",
+        "stopped: after one attempt",
+    ]
+
+
+# flip-one-fork-fails-when-the-solver-crashes
+def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
+    # a cvc5 that reads the formula and dies instead of answering
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        "cat > /dev/null\n"
+        "echo 'cvc5: Fatal failure within the solver' >&2\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+
+    result = run_pyct(ONE_CHECK, '{"x": 3}', path=str(tmp_path))
+
+    assert result.returncode == 1, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["source"] == "seed"
+    lines = result.stderr.splitlines()
+    assert lines[-2:] == [
+        "stopped: solver failed",
+        "    cvc5: Fatal failure within the solver",
+    ]
