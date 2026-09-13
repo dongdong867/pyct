@@ -1,4 +1,4 @@
-"""The readable trace of one input, the stderr half of what a run says."""
+"""The readable trace, the stderr half of what a run says: each input's lines, then how it ended."""
 
 import json
 
