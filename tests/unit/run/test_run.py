@@ -1,11 +1,15 @@
+import time
 from pathlib import Path
+
+import pytest
 
 from pyct.config.budget import Budget
 from pyct.core.branch import Branch, Site
-from pyct.results.coverage import Coverage
+from pyct.execution.execute import ExecutionContext
+from pyct.results.coverage import Coverage, Scope
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Source
-from pyct.run.run import run
+from pyct.run.run import _second_input, run
 from pyct.run.target import load_target
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -65,10 +69,25 @@ def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
 
     result = run(target, {"x": 1}, budget=Budget(seconds=0.05))
 
-    # the deadline is gone when the seed ends, so the solver is never asked
+    # the seed forked nowhere, so there is nothing to ask the solver about
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.records[0].covered_lines == frozenset({2, 3, 4})
+
+
+def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = load_target("targets.flip.one_check::classify")
+    seed = {"x": 3}
+    forked = run(target, seed).records[0]
+    # no cvc5 on the PATH: asking would raise rather than answer
+    monkeypatch.setenv("PATH", str(tmp_path))
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+
+    second = _second_input(ctx, Scope.of_module(target.file), seed, forked, time.monotonic() - 1)
+
+    assert second is None
 
 
 def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
