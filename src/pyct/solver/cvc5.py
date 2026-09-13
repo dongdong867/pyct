@@ -27,7 +27,10 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
     finished = subprocess.run(argv, input=text, capture_output=True, text=True, check=False)
     answer = _answer(finished.stdout, finished.stderr)
-    logger.debug("cvc5 answered %s", type(answer).__name__)
+    if isinstance(answer, Error):
+        logger.warning("cvc5 failed to answer: %s", answer.detail)
+    else:
+        logger.debug("cvc5 answered %s", type(answer).__name__)
     return answer
 
 
