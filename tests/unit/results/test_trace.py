@@ -177,7 +177,9 @@ def test_render_trace_says_where_a_solved_input_left_the_plan() -> None:
 def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
     """A run result whose only facts that matter here are how it ended and what it missed."""
     record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
-    return RunResult(entry="m::f", records=(record,), coverage=COVERAGE, stopped=stop, misses=misses)
+    return RunResult(
+        entry="m::f", records=(record,), coverage=COVERAGE, stopped=stop, misses=misses
+    )
 
 
 def test_render_stop_says_why_the_run_ended_on_one_line() -> None:

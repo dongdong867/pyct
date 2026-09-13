@@ -182,3 +182,13 @@ def test_run_stops_after_one_attempt_when_the_solver_gave_an_input() -> None:
     assert len(result.records) == 2
     assert result.stopped.kind is StopKind.ONE_ATTEMPT
     assert result.misses == ()
+
+
+def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> None:
+    target = load_target("targets.flip.spins_after_a_check::spin")
+
+    result = run(target, {"x": 3}, budget=Budget(seconds=0.05))
+
+    assert len(result.records) == 1
+    assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert result.stopped.kind is StopKind.BUDGET

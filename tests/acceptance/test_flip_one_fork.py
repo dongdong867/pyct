@@ -17,6 +17,7 @@ TWO_ARGS = "targets.flip.two_args::pick"
 OTHER_SIDE_LONGER = "targets.flip.other_side_longer::grade"
 OTHER_SIDE_LONGER_FILE = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
 NO_CHECK = "targets.flip.no_check::echo"
+SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -143,3 +144,17 @@ def test_has_nothing_to_flip() -> None:
     assert seed["source"] == "seed"
     # the trace ends with why the run stopped, after the seed's own lines
     assert result.stderr.splitlines()[-1] == "stopped: no fork to flip"
+
+
+# flip-one-fork-stops-when-the-seed-spent-the-budget
+def test_stops_when_the_seed_spent_the_budget() -> None:
+    result = run_pyct(SPINS_AFTER_A_CHECK, '{"x": 3}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    failure = seed["failure"]
+    assert isinstance(failure, dict)
+    assert failure["kind"] == "timeout"
+    # the seed hit a fork, so only the spent budget kept the solver from being asked
+    assert len(seed["forks"]) == 1
+    assert result.stderr.splitlines()[-1] == "stopped: budget spent"
