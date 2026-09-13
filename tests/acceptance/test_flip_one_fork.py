@@ -20,6 +20,8 @@ NO_CHECK = "targets.flip.no_check::echo"
 SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+RAISES_AFTER_A_CHECK = "targets.flip.raises_after_a_check::probe"
+RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a_check.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -202,3 +204,20 @@ def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
         "stopped: solver failed",
         "    cvc5: Fatal failure within the solver",
     ]
+
+
+# flip-one-fork-flips-after-the-seed-raised
+def test_flips_after_the_seed_raised() -> None:
+    result = run_pyct(RAISES_AFTER_A_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert seed["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
+    # a raise is an end, not a stop: the fork the seed reached is still flipped
+    assert solved["source"] == "solver"
+    assert solved["aim"] == {
+        "file": RAISES_AFTER_A_CHECK_FILE,
+        "line": 2,
+        "col": 7,
+        "position": 0,
+    }
