@@ -1,7 +1,11 @@
+import io
+import sys
+
 import pytest
 
 from pyct.cli import _report
 from pyct.results.coverage import Coverage
+from pyct.results.jsonl import render
 from pyct.results.record import InputRecord
 
 COVERAGE = Coverage(covered={"m.py": frozenset({5})}, total={"m.py": 7})
@@ -24,3 +28,13 @@ def test_report_leaves_stdout_one_json_line(capsys: pytest.CaptureFixture[str]) 
     _report(RECORD, COVERAGE)
 
     assert len(capsys.readouterr().out.splitlines()) == 1
+
+
+def test_report_flushes_the_line_when_stdout_is_a_pipe(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a pipe is block-buffered: without a flush the line waits in memory until exit
+    pipe = io.TextIOWrapper(io.BytesIO(), encoding="utf-8", write_through=False)
+    monkeypatch.setattr(sys, "stdout", pipe)
+
+    _report(RECORD, COVERAGE)
+
+    assert pipe.buffer.getvalue().decode() == render(RECORD, COVERAGE) + "\n"
