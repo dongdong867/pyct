@@ -62,3 +62,17 @@ def test_main_says_what_it_could_not_read_from_cvc5_without_a_traceback(
     assert len(captured.out.splitlines()) == 1
     assert "cvc5 answered with a value line pyct cannot read" in captured.err
     assert "Traceback" not in captured.err
+
+
+def test_main_lets_a_value_error_of_its_own_escape_with_its_traceback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only cvc5's unreadable answer is handled; a ValueError from pyct's own code is a bug."""
+
+    def broken_run(*args: object, **kwargs: object) -> None:
+        raise ValueError("a pyct invariant broke")
+
+    monkeypatch.setattr("pyct.cli.run", broken_run)
+
+    with pytest.raises(ValueError, match="invariant"):
+        main(["run", TARGET, '{"x": 3}'])
