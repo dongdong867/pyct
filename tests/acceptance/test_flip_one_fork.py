@@ -23,6 +23,8 @@ IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 RAISES_AFTER_A_CHECK = "targets.flip.raises_after_a_check::probe"
 RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a_check.py")
 RAISES_ON_THE_OTHER_SIDE = "targets.flip.raises_on_the_other_side::guard"
+UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
+UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -233,3 +235,29 @@ def test_reports_the_second_input_failure() -> None:
     assert seed["failure"] is None
     # the raise waits on the side the seed missed, so the second line is the one that carries it
     assert solved["failure"] == {"kind": "target_raised", "detail": "ValueError: out of range"}
+
+
+# flip-one-fork-reports-going-off-course
+def test_reports_going_off_course() -> None:
+    result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    _, solved = two_lines(result.stdout)
+    # ``>=`` is a compare pyct does not follow, so the seed records only ``x < 10``,
+    # at position 0
+    assert solved["aim"] == {"file": UNFOLLOWED_GUARD_FILE, "line": 6, "col": 7, "position": 0}
+    # the flip asks for x >= 10, which is exactly the guard, so every model cvc5 can
+    # return enters the block and hits ``x < 20`` at position 0 instead; the guard sits
+    # on the flip boundary on purpose, so the test does not depend on the model picked
+    assert solved["mismatch_at"] == 0
+    forks = solved["forks"]
+    assert isinstance(forks, list) and forks, solved
+    assert forks[0] == {
+        "file": UNFOLLOWED_GUARD_FILE,
+        "line": 3,
+        "col": 11,
+        "taken": argument(solved, "x") < 20,
+        "expression": ["<", "x", 20],
+    }
+    # the trace names the fork that was hit, not only the position it happened at
+    assert f"left the plan at position 0, hit {UNFOLLOWED_GUARD_FILE}:3:11" in result.stderr
