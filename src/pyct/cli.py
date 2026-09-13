@@ -15,8 +15,8 @@ from pyct.config.budget import Budget
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render
-from pyct.results.record import InputRecord
-from pyct.results.trace import render_trace
+from pyct.results.record import InputRecord, RunResult, StopKind
+from pyct.results.trace import render_stop, render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
@@ -41,11 +41,12 @@ class RunCommand:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
-    0: the lines were printed. 1: cvc5 is missing, the target could not be
-    loaded, or pyct itself broke during the run. 2: usage.
+    0: the lines were printed. 1: cvc5 is missing or crashed, the target
+    could not be loaded, or pyct itself broke during the run. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, so a
-    second input that hangs never hides the first one's line.
+    second input that hangs never hides the first one's line. Why the run
+    stopped is a fact about the whole run, so it ends stderr.
 
     Checks run in this order: target form, seed shape, budget, cvc5, import,
     seed present, seed fits. cvc5 comes before the import because nothing the
@@ -70,7 +71,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (SolverMissingError, SolverAnswerError, TargetError) as error:
         print(error, file=sys.stderr)
         return 1
-    return _exit_code(result.records)
+    print(render_stop(result), end="", file=sys.stderr, flush=True)
+    return _exit_code(result)
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
@@ -79,9 +81,11 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
     print(render(record, coverage), flush=True)
 
 
-def _exit_code(records: tuple[InputRecord, ...]) -> int:
-    """Every line is printed either way; a pyct bug on any input still ends the command badly."""
-    return 1 if any(_is_a_bug(record.failure) for record in records) else 0
+def _exit_code(result: RunResult) -> int:
+    """Every line is printed either way; a dead solver or a pyct bug still ends it badly."""
+    if result.stopped.kind is StopKind.SOLVER_FAILED:
+        return 1
+    return 1 if any(_is_a_bug(record.failure) for record in result.records) else 0
 
 
 def _is_a_bug(failure: Failure | None) -> bool:
