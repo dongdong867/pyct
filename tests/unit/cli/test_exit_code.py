@@ -6,7 +6,7 @@ from tests.unit.environment import ENVIRONMENT
 
 BUG = Failure(kind=FailureKind.PYCT_BUG, detail="RuntimeError: boom")
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
-ATTEMPTED = Stop(kind=StopKind.ONE_ATTEMPT)
+EMPTIED = Stop(kind=StopKind.NO_FORK)
 COVERAGE = Coverage(covered={"m.py": frozenset()}, lines={"m.py": frozenset({1})})
 
 
@@ -14,7 +14,7 @@ def record_of(failure: Failure | None) -> InputRecord:
     return InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), failure=failure)
 
 
-def result_of(*failures: Failure | None, stopped: Stop = ATTEMPTED) -> RunResult:
+def result_of(*failures: Failure | None, stopped: Stop = EMPTIED) -> RunResult:
     records = tuple(record_of(failure) for failure in failures)
     return RunResult(
         entry="m::f",

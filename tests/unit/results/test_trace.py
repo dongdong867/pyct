@@ -227,7 +227,7 @@ def test_render_stop_counts_what_the_solver_answered() -> None:
         entry="m::f",
         records=(InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5})), solved),
         coverage=COVERAGE,
-        stopped=Stop(kind=StopKind.ONE_ATTEMPT),
+        stopped=Stop(kind=StopKind.NO_FORK),
         environment=ENVIRONMENT,
         misses=(Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT),),
     )
@@ -241,7 +241,7 @@ def test_render_stop_counts_what_the_solver_answered() -> None:
 def test_render_stop_puts_each_miss_before_the_summary() -> None:
     miss = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
 
-    lines = render_stop(stopped_with(Stop(kind=StopKind.ONE_ATTEMPT), miss)).splitlines()
+    lines = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK), miss)).splitlines()
 
     # the miss came in as the run went; the summary starts at its first covered line
     assert lines == [
@@ -249,7 +249,7 @@ def test_render_stop_puts_each_miss_before_the_summary() -> None:
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
-        "stopped: after one attempt",
+        "stopped: no fork to flip",
     ]
 
 

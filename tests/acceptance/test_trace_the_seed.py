@@ -69,7 +69,7 @@ def test_lists_forks_in_order() -> None:
     result = run_pyct(TWO_CHECKS, '{"x": 5}')
 
     assert result.returncode == 0, result.stderr
-    line = one_line(result.stdout)
+    line = first_line(result.stdout)
     # the seed passes both checks, so both forks are hit, in the order the target tests them
     assert line["forks"] == [
         {
@@ -316,8 +316,9 @@ def test_writes_a_readable_trace_to_stderr() -> None:
         "ended returned",
         "downgrades none",
     ]
-    # the seed's block is followed by the solver's input, on both streams
-    assert len(input_lines(result.stdout)) == 2, result.stdout
+    # the seed's block is followed by the solver's inputs, on both streams: the helper's
+    # fork and the target's own, each taken the other way
+    assert len(input_lines(result.stdout)) == 3, result.stdout
 
     lost = run_pyct(THROUGH_ABS, '{"x": -3}')
 
