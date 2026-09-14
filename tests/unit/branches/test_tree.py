@@ -57,6 +57,19 @@ def test_a_fork_both_sides_of_which_ran_is_never_aimed_at() -> None:
     assert tree.next() is None
 
 
+def test_a_nested_fork_both_sides_of_which_ran_is_never_aimed_at() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(5, taken=True)))
+    tree.add((fork(2, taken=True), fork(5, taken=False)))
+
+    picked = tree.next()
+
+    # line 5 ran both ways under this prefix, so the pick moves up to line 2
+    assert picked is not None
+    assert picked.aim == Aim(site=fork(2, taken=True).site, position=0)
+    assert tree.next() is None
+
+
 def test_the_same_site_under_a_different_prefix_is_a_different_fork() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True), fork(5, taken=True)))
