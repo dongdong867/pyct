@@ -63,6 +63,33 @@ def test_covers_every_branch() -> None:
     assert summary["stopped"] == "no fork to flip"
 
 
+def aim_of(line: dict[str, object]) -> tuple[str, int, int, int] | None:
+    """The fork one input aimed at, as a value two lines can be compared by.
+
+    ``None`` on the seed's line, which aimed at nothing.
+    """
+    aim = line["aim"]
+    if aim is None:
+        return None
+    assert isinstance(aim, dict), line
+    return str(aim["file"]), int(aim["line"]), int(aim["col"]), int(aim["position"])
+
+
+# finish-a-run-aims-each-fork-once
+def test_aims_each_fork_once() -> None:
+    result = run_pyct(NESTED_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    solver = [line for line in lines if line["source"] == "solver"]
+    # one solver input per way out the seed left open, each after a fork of its own
+    assert len(solver) == 2, result.stdout
+    assert aim_of(solver[0]) != aim_of(solver[1]), result.stdout
+    # a fork is spent the moment it is aimed at, so no aim comes back on a later line
+    aimed = [aim for aim in (aim_of(line) for line in lines) if aim is not None]
+    assert len(set(aimed)) == len(aimed), result.stdout
+
+
 # finish-a-run-prints-the-summary-line
 def test_prints_the_summary_line() -> None:
     result = run_pyct(ONE_CHECK, '{"x": 3}')
