@@ -1,4 +1,5 @@
-"""Acceptance tests for the finish-a-run story, child print-the-summary-line.
+"""Acceptance tests for the finish-a-run story, children print-the-summary-line
+and loop-until-no-fork-is-left.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the flip-one-fork
 tests do: the summary line closes stdout after the last input line, so only a real run
@@ -17,12 +18,16 @@ from tests.acceptance.harness import (
 )
 
 ONE_CHECK = "targets.flip.one_check::classify"
+NESTED_CHECKS = "targets.flip.nested_checks::bucket"
+NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
 # the ``x < 10`` below it, lands inside the guard instead, and the line is never run
 NEVER = 8
+# every line of ``bucket`` but its ``def``, which runs at import rather than under an input
+BUCKET_LINES = [2, 3, 4, 5, 6]
 # no solver call ended any way at all
 ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
 
@@ -41,6 +46,21 @@ def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
         for file, covered in numbers_of(line, "covered").items():
             union[file] = union.get(file, set()) | set(covered)
     return {file: sorted(covered) for file, covered in union.items()}
+
+
+# finish-a-run-covers-every-branch
+def test_covers_every_branch() -> None:
+    result = run_pyct(NESTED_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the seed takes both checks; the other side of each is a way out of its own
+    assert len(inputs) == 3, result.stdout
+    assert union_of(inputs) == {NESTED_CHECKS_FILE: BUCKET_LINES}
+    summary = summary_line(result.stdout)
+    # nothing is left over but the ``def`` line no input can run
+    assert numbers_of(summary, "uncovered") == {NESTED_CHECKS_FILE: [1]}
+    assert summary["stopped"] == "no fork to flip"
 
 
 # finish-a-run-prints-the-summary-line
