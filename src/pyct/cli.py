@@ -1,4 +1,7 @@
-"""The pyct command line. ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]``."""
+"""The pyct command line.
+
+``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]``
+"""
 
 from __future__ import annotations
 
@@ -12,6 +15,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.config.budget import Budget
+from pyct.config.plateau import Plateau
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -22,7 +26,7 @@ from pyct.run.target import TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
-USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS]"
+USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
 
 
 class UsageError(Exception):
@@ -31,11 +35,12 @@ class UsageError(Exception):
 
 @dataclass(frozen=True)
 class RunCommand:
-    """What the command line asked for: the target spec, and the seed and budget text, if any."""
+    """What the command line asked for: the target spec, the seed, and the budget and plateau."""
 
     spec: str
     seed_text: str | None
     budget_text: str | None = None
+    plateau_text: str | None = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -51,17 +56,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     stdout after it: the readable text comes first, as it does for every
     input.
 
-    Checks run in this order: target form, seed shape, budget, cvc5, import,
-    seed present, seed fits. cvc5 comes before the import because nothing the
-    target does can make up for a missing solver. The import comes before the
-    seed-present check because that message names the target's parameters,
-    which only the loaded target knows.
+    Checks run in this order: target form, seed shape, budget, plateau, cvc5,
+    import, seed present, seed fits. cvc5 comes before the import because
+    nothing the target does can make up for a missing solver. The import comes
+    before the seed-present check because that message names the target's
+    parameters, which only the loaded target knows.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
         check_spec(command.spec)
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
+        # checked here for its error; the loop reads it once the plateau stop lands
+        parse_plateau(command.plateau_text)
         locate()
         target = load_target(command.spec)
         if seed is None:
@@ -110,11 +117,17 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
     run_parser.add_argument("--budget", metavar="SECONDS")
+    run_parser.add_argument("--plateau", metavar="N")
     namespace = parser.parse_args(argv)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
-    return RunCommand(spec=namespace.target, seed_text=seed_text, budget_text=namespace.budget)
+    return RunCommand(
+        spec=namespace.target,
+        seed_text=seed_text,
+        budget_text=namespace.budget,
+        plateau_text=namespace.plateau,
+    )
 
 
 def check_spec(spec: str) -> None:
@@ -152,6 +165,25 @@ def parse_budget(budget_text: str | None) -> Budget:
             f"budget must be a finite number of seconds above zero, got {budget_text!r}"
         )
     return Budget(seconds=seconds)
+
+
+def parse_plateau(plateau_text: str | None) -> Plateau:
+    """The plateau is a whole number of inputs above zero. No flag is no plateau stop.
+
+    ``int()`` decides what a whole number is: digits with an optional sign.
+    ``1.0`` and ``1e2`` are refused like ``2.5``, so the flag never needs a
+    float parse.
+    """
+    if plateau_text is None:
+        return Plateau()
+    refusal = f"plateau must be a whole number above zero, got {plateau_text!r}"
+    try:
+        inputs = int(plateau_text)
+    except ValueError as error:
+        raise UsageError(refusal) from error
+    if inputs <= 0:
+        raise UsageError(refusal)
+    return Plateau(inputs=inputs)
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
