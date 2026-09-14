@@ -181,10 +181,11 @@ def test_reports_unsat() -> None:
     assert seed["source"] == "seed"
     # the inner check cannot go the other way while the outer one holds
     lines = result.stderr.splitlines()
-    assert lines[-2:] == [
-        f"missed {IMPLIED_CHECK_FILE}:3:11 unsat",
-        "stopped: after one attempt",
-    ]
+    missed = f"missed {IMPLIED_CHECK_FILE}:3:11 unsat"
+    assert missed in lines, result.stderr
+    assert lines[-1] == "stopped: after one attempt"
+    # the miss came in as the run went, so it prints before the summary the run ends on
+    assert lines.index(missed) < lines.index("solver: 0 sat, 1 unsat, 0 unknown, 0 timeout")
 
 
 # flip-one-fork-fails-when-the-solver-crashes

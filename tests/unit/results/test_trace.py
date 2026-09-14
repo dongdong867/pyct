@@ -231,7 +231,8 @@ def test_render_stop_counts_what_the_solver_answered() -> None:
 
     lines = render_stop(result).splitlines()
 
-    assert lines[1] == "solver: 1 sat, 0 unsat, 0 unknown, 1 timeout"
+    # the miss it timed out on comes first, then the coverage the summary opens with
+    assert lines[2] == "solver: 1 sat, 0 unsat, 0 unknown, 1 timeout"
 
 
 def test_render_stop_puts_each_miss_before_the_summary() -> None:

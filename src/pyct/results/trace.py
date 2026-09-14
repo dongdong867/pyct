@@ -5,17 +5,22 @@ import json
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import Aim, DowngradeCount, InputRecord, Miss, RunResult, Stop
+from pyct.results.record import (
+    Aim,
+    DowngradeCount,
+    InputRecord,
+    Miss,
+    RunResult,
+    SolverCounts,
+    Stop,
+)
 
 
 def render_trace(record: InputRecord, coverage: Coverage) -> str:
     """One fact per line, each line ending in a newline: head, forks, coverage, end, losses."""
     lines = _head(record)
     lines += [_fork(branch) for branch in record.forks]
-    lines += [
-        f"covered {len(covered)} of {coverage.total[file]} lines in {file}"
-        for file, covered in coverage.covered.items()
-    ]
+    lines += _coverage(coverage)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
@@ -23,14 +28,38 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
 
 
 def render_stop(result: RunResult) -> str:
-    """What the run missed and why it ended, after the last input's trace.
+    """What the run missed, what it added up to, and why it ended, after the last trace.
 
-    One ``missed`` line per fork the solver gave no input for, then the
-    ``stopped`` line. What a failed solver said goes indented under it.
+    One ``missed`` line per fork the solver gave no input for comes first,
+    as its answer came in during the run. The summary starts at its first
+    ``covered`` line and ends on the ``stopped`` line; what a failed solver
+    said goes indented under that.
     """
     lines = [_miss(miss) for miss in result.misses]
+    lines += _summary(result)
     lines += _stopped(result.stopped)
     return "".join(f"{line}\n" for line in lines)
+
+
+def _summary(result: RunResult) -> list[str]:
+    """What the whole run covered and what the solver answered, in the trace's own words."""
+    return [*_coverage(result.coverage), _solver(result.solver)]
+
+
+def _coverage(coverage: Coverage) -> list[str]:
+    """How much of each file was covered, one line per file, in the map's order."""
+    return [
+        f"covered {len(covered)} of {coverage.total[file]} lines in {file}"
+        for file, covered in coverage.covered.items()
+    ]
+
+
+def _solver(counts: SolverCounts) -> str:
+    """What the solver answered over the run, one count per kind of answer."""
+    return (
+        f"solver: {counts.sat} sat, {counts.unsat} unsat, "
+        f"{counts.unknown} unknown, {counts.timeout} timeout"
+    )
 
 
 def _miss(miss: Miss) -> str:
