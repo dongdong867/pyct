@@ -18,7 +18,7 @@ from pyct.results.trace import render_stop, render_trace
 from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
-COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
+COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))})
 
 
 def test_render_trace_puts_one_fact_on_each_line_in_order() -> None:
@@ -60,7 +60,9 @@ def test_render_trace_wraps_a_nested_condition_in_parentheses() -> None:
 
 def test_render_trace_reads_the_counts_from_the_coverage_maps() -> None:
     # the record holds the target's own lines; the maps are what the trace counts
-    coverage = Coverage(covered={"m.py": frozenset({1, 2, 3})}, total={"m.py": 9})
+    coverage = Coverage(
+        covered={"m.py": frozenset({1, 2, 3})}, lines={"m.py": frozenset(range(1, 10))}
+    )
     record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
 
     lines = render_trace(record, coverage).splitlines()

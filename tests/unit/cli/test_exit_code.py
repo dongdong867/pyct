@@ -7,7 +7,7 @@ from tests.unit.environment import ENVIRONMENT
 BUG = Failure(kind=FailureKind.PYCT_BUG, detail="RuntimeError: boom")
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
 ATTEMPTED = Stop(kind=StopKind.ONE_ATTEMPT)
-COVERAGE = Coverage(covered={"m.py": frozenset()}, total={"m.py": 1})
+COVERAGE = Coverage(covered={"m.py": frozenset()}, lines={"m.py": frozenset({1})})
 
 
 def record_of(failure: Failure | None) -> InputRecord:

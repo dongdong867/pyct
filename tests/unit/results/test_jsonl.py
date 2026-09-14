@@ -19,7 +19,7 @@ from pyct.results.record import (
 from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
-COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
+COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))})
 SEED = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
 SOLVED = InputRecord(args={"x": 12}, forks=(), covered_lines=frozenset({6}), source=Source.SOLVER)
 MISS = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
@@ -170,7 +170,9 @@ def summarized(
     result = RunResult(
         entry="m::f",
         records=records,
-        coverage=Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7}),
+        coverage=Coverage(
+            covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))}
+        ),
         stopped=Stop(kind=stopped),
         environment=ENVIRONMENT,
         misses=misses,

@@ -15,12 +15,12 @@ from pyct.results.record import (
 from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
-COVERAGE = Coverage(covered={"m.py": frozenset()}, total={"m.py": 7})
+COVERAGE = Coverage(covered={"m.py": frozenset()}, lines={"m.py": frozenset(range(1, 8))})
 
 
 def test_run_result_holds_the_entry_its_records_and_coverage() -> None:
     record = InputRecord(args={"x": 1}, forks=(FORK,), covered_lines=frozenset({5, 6}))
-    coverage = Coverage(covered={"m.py": frozenset({5, 6})}, total={"m.py": 7})
+    coverage = Coverage(covered={"m.py": frozenset({5, 6})}, lines={"m.py": frozenset(range(1, 8))})
 
     result = RunResult(
         entry="m::f",
@@ -91,7 +91,7 @@ def test_a_miss_names_the_fork_and_what_the_solver_answered() -> None:
 
 def test_a_run_result_says_why_it_stopped_and_misses_nothing_by_default() -> None:
     record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
-    coverage = Coverage(covered={"m.py": frozenset()}, total={"m.py": 7})
+    coverage = Coverage(covered={"m.py": frozenset()}, lines={"m.py": frozenset(range(1, 8))})
 
     result = RunResult(
         entry="m::f",
