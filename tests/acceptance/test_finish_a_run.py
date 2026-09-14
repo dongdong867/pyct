@@ -26,6 +26,7 @@ IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 # ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
 IMPLIED = 3
 RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
+TWO_CHECKS = "targets.trace.two_checks::bucket"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
@@ -202,6 +203,17 @@ def test_keeps_going_after_a_failed_input() -> None:
     assert raised, result.stdout
     # the fork the raising input hit is still open, so the loop runs an input for it
     assert raised[0] < len(lines) - 1, result.stdout
+
+
+# finish-a-run-runs-without-a-plateau
+def test_runs_without_a_plateau() -> None:
+    result = run_pyct(TWO_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    # the two checks are independent: the seed, then an input per other side
+    assert len(input_lines(result.stdout)) == 3, result.stdout
+    # nothing stops the loop early, because no plateau was asked for
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone
