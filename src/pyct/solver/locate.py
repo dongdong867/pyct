@@ -41,7 +41,7 @@ def _searched() -> tuple[str, ...]:
 
 
 def version(cvc5: Path) -> str | None:
-    """What ``cvc5 --version`` reports, or ``None`` when the probe gave nothing readable.
+    """The version number ``cvc5 --version`` reports, or ``None`` when it named none.
 
     The version is a nicety on the summary line, so every way the probe can
     go wrong is a warning and a ``None`` rather than an error: a run is never
@@ -71,12 +71,16 @@ def _reported(printed: str) -> str | None:
 
     1.2.x writes ``This is cvc5 version 1.2.1 [...]`` and 1.3.x writes
     ``cvc5 1.3.4 [...]``, so the number is found by its own shape rather
-    than by what sits in front of it. A line naming no number is kept
-    whole rather than guessed at.
+    than by what sits in front of it. A line naming no number is nothing
+    readable, so it warns and reports ``None`` rather than passing prose
+    off as a version.
     """
     said = [line.strip() for line in printed.splitlines() if line.strip()]
     if not said:
         logger.warning("cvc5 --version printed nothing")
         return None
     numbered = [word for word in said[0].split() if NUMBER.match(word)]
-    return numbered[0] if numbered else said[0]
+    if not numbered:
+        logger.warning("cvc5 --version printed no version number, it said: %s", said[0])
+        return None
+    return numbered[0]
