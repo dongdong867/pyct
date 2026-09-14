@@ -25,3 +25,13 @@ def test_the_budget_is_read_from_its_flag() -> None:
 
 def test_the_budget_may_be_absent() -> None:
     assert parse_command(["run", "m::f"]).budget_text is None
+
+
+def test_the_plateau_is_read_from_its_flag() -> None:
+    assert parse_command(["run", "m::f", '{"x": 1}', "--plateau", "3"]) == RunCommand(
+        spec="m::f", seed_text='{"x": 1}', plateau_text="3"
+    )
+
+
+def test_the_plateau_may_be_absent() -> None:
+    assert parse_command(["run", "m::f"]).plateau_text is None
