@@ -217,6 +217,16 @@ def test_runs_without_a_plateau() -> None:
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
+# finish-a-run-refuses-a-bad-plateau
+def test_refuses_a_bad_plateau() -> None:
+    for bad in ["0", "-1", "2.5", "abc"]:
+        result = run_pyct(ONE_CHECK, '{"x": 3}', "--plateau", bad)
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert "plateau must be a whole number above zero" in result.stderr, bad
+
+
 # finish-a-run-prints-the-summary-after-the-seed-alone
 def test_prints_the_summary_after_the_seed_alone() -> None:
     result = run_pyct(NO_CHECK, '{"x": 3}')
