@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,9 @@ INSTALL = "install it from https://cvc5.github.io/ (brew install cvc5)"
 
 # the probe prints one line and exits, so anything slower is a cvc5 that is not answering
 PROBE_SECONDS = 5.0
+
+# what a version number looks like at the start of a token, so ``1.1.3-dev.196`` keeps its tail
+NUMBER = re.compile(r"\d+\.\d+(\.\d+)?")
 
 
 class SolverMissingError(Exception):
@@ -63,16 +67,16 @@ def version(cvc5: Path) -> str | None:
 
 
 def _reported(printed: str) -> str | None:
-    """The token after ``version`` on the first line that says anything, or that line.
+    """The first token that starts with a number, on the first line that says anything.
 
     1.2.x writes ``This is cvc5 version 1.2.1 [...]`` and 1.3.x writes
-    ``cvc5 1.3.4 [...]``, so a line naming no version is kept whole rather
-    than guessed at.
+    ``cvc5 1.3.4 [...]``, so the number is found by its own shape rather
+    than by what sits in front of it. A line naming no number is kept
+    whole rather than guessed at.
     """
     said = [line.strip() for line in printed.splitlines() if line.strip()]
     if not said:
         logger.warning("cvc5 --version printed nothing")
         return None
-    words = said[0].split()
-    after = words[words.index("version") + 1 :] if "version" in words else []
-    return after[0] if after else said[0]
+    numbered = [word for word in said[0].split() if NUMBER.match(word)]
+    return numbered[0] if numbered else said[0]
