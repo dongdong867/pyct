@@ -96,7 +96,7 @@ def run(
     ``report`` as it finishes, with the coverage of that input alone, so an
     input that hangs never hides the lines of the ones before it. Each fork
     the solver could not flip goes to ``missed`` the same way, so a reader
-    sees it under the input that opened it rather than at the end.
+    sees it when its answer comes in, before the next input's trace.
     """
     scope = Scope.of_module(target.file)
     ctx = ExecutionContext(fn=target.fn, file=target.file)

@@ -31,7 +31,7 @@ def render_miss(miss: Miss) -> str:
     """The fork the solver was asked about, and the answer that gave no input.
 
     Its own line rather than part of the summary, so a caller can print it
-    the moment the answer comes in, under the input that opened the fork.
+    the moment the answer comes in, before the next input's trace.
     """
     return _written([f"missed {_site(miss.site)} {miss.why.value}"])
 
