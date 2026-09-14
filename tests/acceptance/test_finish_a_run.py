@@ -49,3 +49,37 @@ def test_prints_the_summary_line() -> None:
     assert environment["platform"] == platform.platform()
     cvc5 = environment["cvc5"]
     assert isinstance(cvc5, str) and cvc5, summary
+
+
+def counts_of(summary: dict[str, object], key: str) -> dict[str, object]:
+    """One map off the summary line, narrowed so a lookup on it means something."""
+    payload = summary[key]
+    assert isinstance(payload, dict), summary
+    return payload
+
+
+def after_the_last_trace(stderr: str) -> list[str]:
+    """The stderr lines that sum the run, past the last input's own trace.
+
+    Every input's trace ends on its ``downgrades`` line, so the last one is
+    where the run's summary starts.
+    """
+    lines = stderr.splitlines()
+    last = max(at for at, line in enumerate(lines) if line.startswith("downgrades "))
+    return lines[last + 1 :]
+
+
+# finish-a-run-writes-the-summary-to-stderr
+def test_writes_the_summary_to_stderr() -> None:
+    result = run_pyct(ONE_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    summary = summary_line(result.stdout)
+    covered = counts_of(summary, "covered")
+    total = counts_of(summary, "total")
+    (file,) = covered
+    summed = after_the_last_trace(result.stderr)
+    # the words are the per-input trace's, over the run's own counts
+    assert summed[0] == f"covered {len(covered[file])} of {total[file]} lines in {file}"
+    assert summed[1] == "solver: 1 sat, 0 unsat, 0 unknown, 0 timeout"
+    assert summed[-1].startswith("stopped: "), result.stderr
