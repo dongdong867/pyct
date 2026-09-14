@@ -205,18 +205,47 @@ def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
     )
 
 
-def test_render_stop_says_why_the_run_ended_on_one_line() -> None:
-    text = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK)))
+def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
+    lines = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK))).splitlines()
 
-    assert text == "stopped: no fork to flip\n"
+    # the coverage is worded the way each input's own trace words it, over the run's counts
+    assert lines == [
+        "covered 2 of 7 lines in m.py",
+        "solver: 0 sat, 0 unsat, 0 unknown, 0 timeout",
+        "stopped: no fork to flip",
+    ]
 
 
-def test_render_stop_puts_each_miss_before_the_stop_line() -> None:
+def test_render_stop_counts_what_the_solver_answered() -> None:
+    solved = InputRecord(
+        args={"x": 12}, forks=(), covered_lines=frozenset({6}), source=Source.SOLVER
+    )
+    result = RunResult(
+        entry="m::f",
+        records=(InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5})), solved),
+        coverage=COVERAGE,
+        stopped=Stop(kind=StopKind.ONE_ATTEMPT),
+        environment=ENVIRONMENT,
+        misses=(Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT),),
+    )
+
+    lines = render_stop(result).splitlines()
+
+    assert lines[1] == "solver: 1 sat, 0 unsat, 0 unknown, 1 timeout"
+
+
+def test_render_stop_puts_each_miss_before_the_summary() -> None:
     miss = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
 
     lines = render_stop(stopped_with(Stop(kind=StopKind.ONE_ATTEMPT), miss)).splitlines()
 
-    assert lines == ["missed m.py:5:7 unsat", "stopped: after one attempt"]
+    # the miss came in as the run went; the summary starts at its first covered line
+    assert lines == [
+        "missed m.py:5:7 unsat",
+        "covered 2 of 7 lines in m.py",
+        "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
+        "stopped: after one attempt",
+    ]
 
 
 def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
@@ -224,4 +253,4 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
 
     lines = render_stop(stopped_with(stop)).splitlines()
 
-    assert lines == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
+    assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
