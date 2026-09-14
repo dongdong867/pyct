@@ -239,6 +239,16 @@ def test_stops_on_no_gain() -> None:
     assert summary_line(result.stdout)["stopped"] == "no gain in 1 inputs", result.stdout
 
 
+# finish-a-run-prefers-no-fork-over-no-gain
+def test_prefers_no_fork_over_no_gain() -> None:
+    result = run_pyct(OTHER_SIDE_EMPTY, '{"x": 3}', "--plateau", "1")
+
+    assert result.returncode == 0, result.stderr
+    # the one flip covers no new line and leaves the tree empty: both reasons hold
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip", result.stdout
+
+
 # finish-a-run-prints-the-summary-after-the-seed-alone
 def test_prints_the_summary_after_the_seed_alone() -> None:
     result = run_pyct(NO_CHECK, '{"x": 3}')
