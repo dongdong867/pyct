@@ -7,9 +7,14 @@ through the command line proves the order it comes in and the environment it nam
 
 import platform
 
-from tests.acceptance.harness import input_lines, run_pyct, summary_line
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 
 ONE_CHECK = "targets.flip.one_check::classify"
+UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
+UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
+# ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
+# the ``x < 10`` below it, lands inside the guard instead, and the line is never run
+NEVER = 8
 
 
 def covered_of(line: dict[str, object]) -> dict[str, set[int]]:
@@ -83,3 +88,17 @@ def test_writes_the_summary_to_stderr() -> None:
     assert summed[0] == f"covered {len(covered[file])} of {total[file]} lines in {file}"
     assert summed[1] == "solver: 1 sat, 0 unsat, 0 unknown, 0 timeout"
     assert summed[-1].startswith("stopped: "), result.stderr
+
+
+# finish-a-run-lists-uncovered-lines
+def test_lists_uncovered_lines() -> None:
+    result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    summary = summary_line(result.stdout)
+    uncovered = counts_of(summary, "uncovered")
+    assert NEVER in uncovered[UNFOLLOWED_GUARD_FILE], summary
+    named = [line for line in after_the_last_trace(result.stderr) if line.startswith("uncovered ")]
+    assert len(named) == 1, result.stderr
+    numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNFOLLOWED_GUARD_FILE}")
+    assert str(NEVER) in numbers.split(", "), result.stderr
