@@ -8,7 +8,13 @@ through the command line proves the order it comes in and the environment it nam
 import platform
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    crashing_cvc5,
+    input_lines,
+    run_pyct,
+    summary_line,
+)
 
 ONE_CHECK = "targets.flip.one_check::classify"
 NO_CHECK = "targets.flip.no_check::echo"
@@ -134,17 +140,7 @@ def test_prints_the_summary_after_the_seed_alone() -> None:
 
 # finish-a-run-prints-the-summary-when-the-solver-crashes
 def test_prints_the_summary_when_the_solver_crashes(tmp_path: Path) -> None:
-    # a cvc5 that reads the formula and dies instead of answering, and fails --version too
-    script = tmp_path / "cvc5"
-    script.write_text(
-        "#!/bin/sh\n"
-        # PATH is the tmp directory while the test runs, so the script says where its tools are
-        "PATH=/bin:/usr/bin\n"
-        "cat > /dev/null\n"
-        "echo 'cvc5: Fatal failure within the solver' >&2\n"
-        "exit 1\n"
-    )
-    script.chmod(0o755)
+    script = crashing_cvc5(tmp_path)
 
     result = run_pyct(ONE_CHECK, '{"x": 3}', path=str(tmp_path))
 

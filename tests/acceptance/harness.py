@@ -15,6 +15,9 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# what the crashing cvc5 says before it dies, so a test can pin how pyct passes it on
+CRASH_DETAIL = "cvc5: Fatal failure within the solver"
+
 
 def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess[str]:
     """Spawn ``pyct run`` with the given argv. ``path`` replaces the child's ``PATH``."""
@@ -45,6 +48,25 @@ def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(sys, "path", list(sys.path))
     for name in [n for n in sys.modules if n.split(".", 1)[0] == "targets"]:
         monkeypatch.delitem(sys.modules, name)
+
+
+def crashing_cvc5(tmp_path: Path) -> Path:
+    """A cvc5 that reads the formula and dies instead of answering, for ``run_pyct(path=...)``.
+
+    It fails ``--version`` the same way, so a run pointed at it has no version
+    to report either.
+    """
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        "cat > /dev/null\n"
+        f"echo '{CRASH_DETAIL}' >&2\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+    return script
 
 
 def input_lines(stdout: str) -> list[dict[str, object]]:
