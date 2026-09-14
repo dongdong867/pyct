@@ -6,6 +6,7 @@ through the command line proves the order it comes in and the environment it nam
 """
 
 import platform
+from pathlib import Path
 
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 
@@ -129,3 +130,39 @@ def test_prints_the_summary_after_the_seed_alone() -> None:
     # the solver was never asked, so every kind of answer is at zero
     assert summary["solver"] == ZERO_ANSWERS
     assert summary["misses"] == []
+
+
+# finish-a-run-prints-the-summary-when-the-solver-crashes
+def test_prints_the_summary_when_the_solver_crashes(tmp_path: Path) -> None:
+    # a cvc5 that reads the formula and dies instead of answering, and fails --version too
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        "cat > /dev/null\n"
+        "echo 'cvc5: Fatal failure within the solver' >&2\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+
+    result = run_pyct(ONE_CHECK, '{"x": 3}', path=str(tmp_path))
+
+    assert result.returncode == 1, result.stderr
+    # the crash ends the run, and the summary still closes stdout behind the seed's line
+    assert len(result.stdout.splitlines()) == 2, result.stdout
+    (seed,) = input_lines(result.stdout)
+    assert seed["source"] == "seed"
+    summary = summary_line(result.stdout)
+    assert summary["stopped"] == "solver failed"
+    assert summary["inputs"] == 1
+    # the one call ended in a crash, which is no answer of any kind
+    assert summary["solver"] == ZERO_ANSWERS
+    environment = summary["environment"]
+    assert isinstance(environment, dict), summary
+    # the same cvc5 fails --version, and a failed probe is a null rather than a stop
+    assert environment["cvc5"] is None, summary
+    # the probe runs before the seed, so its warning lands above the trace, not inside it
+    stderr = result.stderr.splitlines()
+    assert stderr[0] == f"{script} --version exited 1", result.stderr
+    assert stderr[1] == 'seed {"x": 3}', result.stderr
