@@ -47,20 +47,40 @@ def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delitem(sys.modules, name)
 
 
-def one_line(stdout: str) -> dict[str, object]:
+def input_lines(stdout: str) -> list[dict[str, object]]:
+    """The one line per input, without the summary line that closes stdout.
+
+    A tool tells the summary from an input line by its ``stopped`` key, and
+    that is how this tells them apart too: a stdout with no such last line is
+    all input lines.
+    """
+    lines = [json.loads(line) for line in stdout.splitlines()]
+    return lines[:-1] if lines and "stopped" in lines[-1] else lines
+
+
+def summary_line(stdout: str) -> dict[str, object]:
+    """The line that closes stdout. It carries ``stopped``; no input line does."""
     lines = stdout.splitlines()
+    assert lines, stdout
+    summary = json.loads(lines[-1])
+    assert "stopped" in summary, stdout
+    return summary
+
+
+def one_line(stdout: str) -> dict[str, object]:
+    lines = input_lines(stdout)
     assert len(lines) == 1, stdout
-    return json.loads(lines[0])
+    return lines[0]
 
 
 def first_line(stdout: str) -> dict[str, object]:
     """The seed's line. A run prints one line per input, so the solver's may follow it."""
-    lines = stdout.splitlines()
+    lines = input_lines(stdout)
     assert lines, stdout
-    return json.loads(lines[0])
+    return lines[0]
 
 
 def two_lines(stdout: str) -> tuple[dict[str, object], dict[str, object]]:
-    lines = stdout.splitlines()
+    lines = input_lines(stdout)
     assert len(lines) == 2, stdout
-    return json.loads(lines[0]), json.loads(lines[1])
+    return lines[0], lines[1]

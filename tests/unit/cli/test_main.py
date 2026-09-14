@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from pyct.cli import main
-from tests.acceptance.harness import let_pyct_run_in_process
+from tests.acceptance.harness import let_pyct_run_in_process, one_line
 
 TARGET = "targets.flip.one_check::classify"
 BROKEN = "targets.trace.broken_import::f"
@@ -87,6 +87,6 @@ def test_main_ends_stderr_with_why_the_run_stopped(
 
     assert code == 0
     captured = capsys.readouterr()
-    assert len(captured.out.splitlines()) == 1
+    one_line(captured.out)
     # the stop reason is a fact about the run, so it comes after the last input's trace
     assert captured.err.splitlines()[-1] == "stopped: no fork to flip"

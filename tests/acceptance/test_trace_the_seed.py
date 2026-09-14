@@ -17,6 +17,7 @@ from pyct.core.branch import Site
 from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
+    input_lines,
     let_pyct_run_in_process,
     one_line,
     run_pyct,
@@ -316,7 +317,7 @@ def test_writes_a_readable_trace_to_stderr() -> None:
         "downgrades none",
     ]
     # the seed's block is followed by the solver's input, on both streams
-    assert len(result.stdout.splitlines()) == 2, result.stdout
+    assert len(input_lines(result.stdout)) == 2, result.stdout
 
     lost = run_pyct(THROUGH_ABS, '{"x": -3}')
 
