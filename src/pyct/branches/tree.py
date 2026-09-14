@@ -19,13 +19,13 @@ class Tree:
     id, and paths that share a prefix walk the same ids along it, so a fork
     names its prefix with that id instead of a copy of it. Copying would
     cost the square of the path's length, and a loop hands the tree a path
-    with one fork per pass.
+    with one fork per pass. A side enters the id table when an input runs
+    it, so the table also says which sides ran.
     """
 
     def __init__(self) -> None:
         self._ids: dict[tuple[int, Site, bool], int] = {}
         self._paths: list[tuple[tuple[Branch, ...], tuple[ForkKey, ...]]] = []
-        self._seen: set[tuple[ForkKey, bool]] = set()
         self._aimed: set[ForkKey] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
@@ -34,7 +34,6 @@ class Tree:
         keys: list[ForkKey] = []
         for fork in forks:
             key = (parent, fork.site)
-            self._seen.add((key, fork.taken))
             parent = self._ids.setdefault((parent, fork.site, fork.taken), len(self._ids))
             keys.append(key)
         self._paths.append((forks, tuple(keys)))
@@ -56,4 +55,5 @@ class Tree:
 
     def _open(self, key: ForkKey, taken: bool) -> bool:
         """A fork no input aimed at, whose other side no input ran."""
-        return key not in self._aimed and (key, not taken) not in self._seen
+        parent, site = key
+        return key not in self._aimed and (parent, site, not taken) not in self._ids
