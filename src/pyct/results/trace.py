@@ -91,7 +91,7 @@ def _indented(detail: str | None) -> list[str]:
 
 def _stopped(stop: Stop) -> list[str]:
     """Why the run ended, in words. A detail follows, indented under the line."""
-    return [f"stopped: {stop.kind.value}", *_indented(stop.detail)]
+    return [f"stopped: {stop.reason}", *_indented(stop.detail)]
 
 
 def _head(record: InputRecord) -> list[str]:
