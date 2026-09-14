@@ -25,6 +25,7 @@ IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 # ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
 IMPLIED = 3
+RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
@@ -180,6 +181,27 @@ def test_lists_uncovered_lines() -> None:
     assert len(named) == 1, result.stderr
     numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNFOLLOWED_GUARD_FILE}")
     assert str(NEVER) in numbers.split(", "), result.stderr
+
+
+def failure_kind(line: dict[str, object]) -> str | None:
+    """How one input failed, off its printed line. ``None`` when it ran to the end."""
+    failure = line["failure"]
+    if failure is None:
+        return None
+    assert isinstance(failure, dict), line
+    return str(failure["kind"])
+
+
+# finish-a-run-keeps-going-after-a-failed-input
+def test_keeps_going_after_a_failed_input() -> None:
+    result = run_pyct(RAISES_BEHIND_A_SECOND_FORK, '{"x": 50}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    raised = [at for at, line in enumerate(lines) if failure_kind(line) == "target_raised"]
+    assert raised, result.stdout
+    # the fork the raising input hit is still open, so the loop runs an input for it
+    assert raised[0] < len(lines) - 1, result.stdout
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone
