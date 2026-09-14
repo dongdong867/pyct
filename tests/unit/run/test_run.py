@@ -168,6 +168,22 @@ def test_run_reports_each_input_as_it_finishes() -> None:
     assert reported[0][1].total == {ONE_CHECK: 4}
 
 
+def test_run_hands_out_a_miss_before_the_input_solved_next() -> None:
+    target = load_target("targets.flip.implied_check::narrow")
+    told: list[InputRecord | Miss] = []
+
+    result = run(
+        target,
+        {"x": 3},
+        report=lambda record, _: told.append(record),
+        missed=lambda miss: told.append(miss),
+    )
+
+    # the inner fork is unsat and the outer one sat, so the miss falls between the two inputs
+    seed, solved = result.records
+    assert told == [seed, *result.misses, solved]
+
+
 def test_run_stops_after_a_seed_that_forked_nowhere() -> None:
     target = load_target("targets.flip.no_check::echo")
 
