@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pyct.results.coverage import Coverage, Scope, executable_lines
+from pyct.results.coverage import Coverage, Scope, executable_lines, no_gain
 
 FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_helper.py"
 
@@ -52,3 +52,37 @@ def test_coverage_of_a_scope_keeps_the_lines_it_measured_against() -> None:
 
     assert coverage.lines == {"m.py": frozenset({1, 2, 3})}
     assert coverage.uncovered == {"m.py": frozenset({1, 3})}
+
+
+def test_no_gain_is_true_when_the_last_input_covered_nothing_new() -> None:
+    covered = [frozenset({1, 2}), frozenset({1})]
+
+    assert no_gain(covered, 1) is True
+
+
+def test_no_gain_is_false_when_an_input_inside_the_window_gained() -> None:
+    covered = [frozenset({1, 2}), frozenset({1})]
+
+    # the seed gained every line it ran, so a window of two reaches a gain
+    assert no_gain(covered, 2) is False
+
+
+def test_no_gain_counts_a_line_an_earlier_input_added_as_no_gain() -> None:
+    covered = [frozenset({1}), frozenset({1, 2}), frozenset({2})]
+
+    # the third only repeats the line the second added first
+    assert no_gain(covered, 1) is True
+
+
+def test_no_gain_is_false_when_the_last_input_added_a_line() -> None:
+    covered = [frozenset({1}), frozenset({1, 2}), frozenset({3})]
+
+    assert no_gain(covered, 1) is False
+
+
+def test_no_gain_is_false_with_fewer_inputs_than_the_plateau() -> None:
+    assert no_gain([frozenset({1})], 2) is False
+
+
+def test_no_gain_is_false_before_any_input_ran() -> None:
+    assert no_gain([], 1) is False
