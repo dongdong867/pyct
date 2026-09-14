@@ -210,7 +210,8 @@ def test_runs_without_a_plateau() -> None:
     result = run_pyct(TWO_CHECKS, '{"x": 3}')
 
     assert result.returncode == 0, result.stderr
-    # the two checks are independent: the seed, then an input per other side
+    # the second check is implied by the first: the seed, then the two flips cvc5 can
+    # make; the try at the implied check is unsat and prints no line
     assert len(input_lines(result.stdout)) == 3, result.stdout
     # nothing stops the loop early, because no plateau was asked for
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
