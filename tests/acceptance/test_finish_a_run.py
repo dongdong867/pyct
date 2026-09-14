@@ -56,11 +56,18 @@ def test_prints_the_summary_line() -> None:
     assert isinstance(cvc5, str) and cvc5, summary
 
 
-def counts_of(summary: dict[str, object], key: str) -> dict[str, object]:
-    """One map off the summary line, narrowed so a lookup on it means something."""
+def numbers_of(summary: dict[str, object], key: str) -> dict[str, list[int]]:
+    """One map of line numbers off the summary line, narrowed so a lookup means something."""
     payload = summary[key]
     assert isinstance(payload, dict), summary
-    return payload
+    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
+
+
+def totals_of(summary: dict[str, object]) -> dict[str, int]:
+    """How many lines each file has, off the summary line."""
+    payload = summary["total"]
+    assert isinstance(payload, dict), summary
+    return {str(file): int(count) for file, count in payload.items()}
 
 
 def after_the_last_trace(stderr: str) -> list[str]:
@@ -80,8 +87,8 @@ def test_writes_the_summary_to_stderr() -> None:
 
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
-    covered = counts_of(summary, "covered")
-    total = counts_of(summary, "total")
+    covered = numbers_of(summary, "covered")
+    total = totals_of(summary)
     (file,) = covered
     summed = after_the_last_trace(result.stderr)
     # the words are the per-input trace's, over the run's own counts
@@ -96,7 +103,7 @@ def test_lists_uncovered_lines() -> None:
 
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
-    uncovered = counts_of(summary, "uncovered")
+    uncovered = numbers_of(summary, "uncovered")
     assert NEVER in uncovered[UNFOLLOWED_GUARD_FILE], summary
     named = [line for line in after_the_last_trace(result.stderr) if line.startswith("uncovered ")]
     assert len(named) == 1, result.stderr
