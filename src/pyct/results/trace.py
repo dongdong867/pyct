@@ -2,7 +2,7 @@
 
 import json
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.record import Aim, DowngradeCount, InputRecord, Miss, RunResult, Stop
@@ -35,8 +35,7 @@ def render_stop(result: RunResult) -> str:
 
 def _miss(miss: Miss) -> str:
     """The fork the solver was asked about, and the answer that gave no input."""
-    site = miss.site
-    return f"missed {site.file}:{site.line}:{site.col} {miss.why.value}"
+    return f"missed {_site(miss.site)} {miss.why.value}"
 
 
 def _stopped(stop: Stop) -> list[str]:
@@ -53,17 +52,27 @@ def _head(record: InputRecord) -> list[str]:
     if record.aim is None:
         return lines
     lines.append(_aim(record.aim))
-    if record.reached:
-        lines.append("reached")
-    else:
-        lines.append(f"left the plan at position {record.mismatch_at}")
+    at = record.mismatch_at
+    lines.append("reached" if at is None else _left_the_plan(record.forks, at))
     return lines
+
+
+def _left_the_plan(forks: tuple[Branch, ...], at: int) -> str:
+    """Where the path left the plan, and what the run hit at that position.
+
+    A position with no fork means the run stopped forking before the plan
+    ran out: a raise, an exit, the deadline, or a concrete value pyct lost
+    track of.
+    """
+    left = f"left the plan at position {at}"
+    if at >= len(forks):
+        return f"{left}, no fork there"
+    return f"{left}, hit {_site(forks[at].site)}"
 
 
 def _aim(aim: Aim) -> str:
     """The fork the input was solved for, and where on the path it sits."""
-    site = aim.site
-    return f"aim {site.file}:{site.line}:{site.col} at position {aim.position}"
+    return f"aim {_site(aim.site)} at position {aim.position}"
 
 
 def _downgrade(entry: DowngradeCount) -> str:
@@ -73,9 +82,13 @@ def _downgrade(entry: DowngradeCount) -> str:
 
 def _fork(branch: Branch) -> str:
     """Where it forked, what it tested, and which side it took."""
-    site = branch.site
     side = "taken" if branch.taken else "not taken"
-    return f"fork {site.file}:{site.line}:{site.col}  {_infix(branch.expression)}  {side}"
+    return f"fork {_site(branch.site)}  {_infix(branch.expression)}  {side}"
+
+
+def _site(site: Site) -> str:
+    """Where a fork is, written the way every line that names one writes it."""
+    return f"{site.file}:{site.line}:{site.col}"
 
 
 def _ended(failure: Failure | None) -> list[str]:

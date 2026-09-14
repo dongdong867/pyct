@@ -20,6 +20,15 @@ NO_CHECK = "targets.flip.no_check::echo"
 SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+RAISES_AFTER_A_CHECK = "targets.flip.raises_after_a_check::probe"
+RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a_check.py")
+RAISES_ON_THE_OTHER_SIDE = "targets.flip.raises_on_the_other_side::guard"
+UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
+UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
+CUT_SHORT_ON_THE_OTHER_SIDE = "targets.flip.cut_short_on_the_other_side::cut"
+CUT_SHORT_ON_THE_OTHER_SIDE_FILE = str(
+    REPO_ROOT / "targets" / "flip" / "cut_short_on_the_other_side.py"
+)
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -202,3 +211,92 @@ def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
         "stopped: solver failed",
         "    cvc5: Fatal failure within the solver",
     ]
+
+
+# flip-one-fork-flips-after-the-seed-raised
+def test_flips_after_the_seed_raised() -> None:
+    result = run_pyct(RAISES_AFTER_A_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert seed["failure"] == {"kind": "target_raised", "detail": "ValueError: too small"}
+    # a raise is an end, not a stop: the fork the seed reached is still flipped
+    assert solved["source"] == "solver"
+    assert solved["aim"] == {
+        "file": RAISES_AFTER_A_CHECK_FILE,
+        "line": 2,
+        "col": 7,
+        "position": 0,
+    }
+
+
+# flip-one-fork-reports-the-second-input-failure
+def test_reports_the_second_input_failure() -> None:
+    result = run_pyct(RAISES_ON_THE_OTHER_SIDE, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert seed["failure"] is None
+    # the raise waits on the side the seed missed, so the second line is the one that carries it
+    assert solved["failure"] == {"kind": "target_raised", "detail": "ValueError: out of range"}
+
+
+# flip-one-fork-reports-going-off-course
+def test_reports_going_off_course() -> None:
+    result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    _, solved = two_lines(result.stdout)
+    # ``>=`` is a compare pyct does not follow, so the seed records only ``x < 10``,
+    # at position 0
+    assert solved["aim"] == {"file": UNFOLLOWED_GUARD_FILE, "line": 6, "col": 7, "position": 0}
+    # the flip asks for x >= 10, which is exactly the guard, so every model cvc5 can
+    # return enters the block and hits ``x < 20`` at position 0 instead; the guard sits
+    # on the flip boundary on purpose, so the test does not depend on the model picked
+    assert solved["mismatch_at"] == 0
+    forks = solved["forks"]
+    assert isinstance(forks, list) and forks, solved
+    assert forks[0] == {
+        "file": UNFOLLOWED_GUARD_FILE,
+        "line": 3,
+        "col": 11,
+        "taken": argument(solved, "x") < 20,
+        "expression": ["<", "x", 20],
+    }
+    # the trace names the fork that was hit, not only the position it happened at
+    assert f"left the plan at position 0, hit {UNFOLLOWED_GUARD_FILE}:3:11" in result.stderr
+
+
+# .ddlc/features/run/README.md › Rules › the stderr trace: ``no fork there``
+def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
+    result = run_pyct(CUT_SHORT_ON_THE_OTHER_SIDE, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    _, solved = two_lines(result.stdout)
+    # the seed takes ``x < 6`` then ``x < 5``; flipping the second under the first admits
+    # only x == 5, which divides by zero before the second fork is tested
+    assert solved["aim"] == {
+        "file": CUT_SHORT_ON_THE_OTHER_SIDE_FILE,
+        "line": 4,
+        "col": 11,
+        "position": 1,
+    }
+    # the detail is CPython's own sentence, and 3.14 shortened it, so only the kind
+    # and the exception's name are pyct's to pin
+    failure = solved["failure"]
+    assert isinstance(failure, dict), solved
+    assert failure["kind"] == "target_raised"
+    assert str(failure["detail"]).startswith("ZeroDivisionError:")
+    # the plan had two forks and the run recorded one, so the mismatch sits past the path
+    assert solved["forks"] == [
+        {
+            "file": CUT_SHORT_ON_THE_OTHER_SIDE_FILE,
+            "line": 2,
+            "col": 7,
+            "taken": True,
+            "expression": ["<", "x", 6],
+        }
+    ]
+    assert solved["mismatch_at"] == 1
+    # the trace says there was nothing at that position rather than naming a fork
+    assert "left the plan at position 1, no fork there" in result.stderr
