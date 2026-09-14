@@ -194,8 +194,10 @@ def test_reports_unsat() -> None:
     assert missed in lines, result.stderr
     # an answer that gave no input is not why the run ended; it ran out of forks
     assert lines[-1] == "stopped: no fork to flip"
-    # the miss came in as the run went, so it prints before the summary the run ends on
-    assert lines.index(missed) < lines.index("solver: 1 sat, 1 unsat, 0 unknown, 0 timeout")
+    # the miss prints the moment the solver answers, so it lands before the next input's trace
+    solved = [at for at, line in enumerate(lines) if line.startswith("solver ")]
+    assert solved, result.stderr
+    assert lines.index(missed) < solved[0], result.stderr
 
 
 # flip-one-fork-fails-when-the-solver-crashes
