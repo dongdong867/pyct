@@ -32,8 +32,9 @@ def render_stop(result: RunResult) -> str:
 
     One ``missed`` line per fork the solver gave no input for comes first,
     as its answer came in during the run. The summary starts at its first
-    ``covered`` line and ends on the ``stopped`` line; what a failed solver
-    said goes indented under that.
+    ``covered`` line and ends on the ``stopped`` line, with an ``uncovered``
+    line in between for each file that has lines left; what a failed solver
+    said goes indented under the ``stopped`` line.
     """
     lines = [_miss(miss) for miss in result.misses]
     lines += _summary(result)
@@ -42,8 +43,11 @@ def render_stop(result: RunResult) -> str:
 
 
 def _summary(result: RunResult) -> list[str]:
-    """What the whole run covered and what the solver answered, in the trace's own words."""
-    return [*_coverage(result.coverage), _solver(result.solver)]
+    """What the whole run covered, what the solver answered, and what it left behind."""
+    coverage = result.coverage
+    lines = [*_coverage(coverage), _solver(result.solver)]
+    lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
+    return lines
 
 
 def _coverage(coverage: Coverage) -> list[str]:
@@ -60,6 +64,12 @@ def _solver(counts: SolverCounts) -> str:
         f"solver: {counts.sat} sat, {counts.unsat} unsat, "
         f"{counts.unknown} unknown, {counts.timeout} timeout"
     )
+
+
+def _uncovered(file: str, lines: frozenset[int]) -> str:
+    """The lines of one file no input ran, ascending. A file with none gets no line at all."""
+    numbers = ", ".join(str(line) for line in sorted(lines))
+    return f"uncovered {numbers} in {file}"
 
 
 def _miss(miss: Miss) -> str:
