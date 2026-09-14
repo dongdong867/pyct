@@ -1,6 +1,7 @@
 """The JSON lines other tools read from stdout: one per input, then one for the run."""
 
 import json
+from collections.abc import Mapping
 
 from pyct.core.branch import Branch
 from pyct.results.coverage import Coverage
@@ -21,7 +22,7 @@ def render(record: InputRecord, coverage: Coverage) -> str:
     payload = {
         "args": record.args,
         "forks": [_fork(branch) for branch in record.forks],
-        "covered": {file: sorted(lines) for file, lines in coverage.covered.items()},
+        "covered": _numbers(coverage.covered),
         "total": dict(coverage.total),
         "failure": _failure(record.failure),
         "downgrades": [_downgrade(entry) for entry in record.downgrades],
@@ -45,12 +46,17 @@ def render_summary(result: RunResult) -> str:
         "inputs": result.inputs,
         "solver": _counts(result.solver),
         "misses": [_miss(miss) for miss in result.misses],
-        "covered": {file: sorted(lines) for file, lines in result.coverage.covered.items()},
+        "covered": _numbers(result.coverage.covered),
         "total": dict(result.coverage.total),
-        "uncovered": {file: sorted(lines) for file, lines in result.coverage.uncovered.items()},
+        "uncovered": _numbers(result.coverage.uncovered),
         "environment": _environment(result.environment),
     }
     return json.dumps(payload)
+
+
+def _numbers(by_file: Mapping[str, frozenset[int]]) -> dict[str, list[int]]:
+    """One map of line numbers, sorted so the text is the same on every run."""
+    return {file: sorted(lines) for file, lines in by_file.items()}
 
 
 def _counts(counts: SolverCounts) -> dict[str, int]:
