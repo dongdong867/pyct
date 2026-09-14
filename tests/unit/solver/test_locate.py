@@ -1,9 +1,11 @@
+import logging
 import os
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from pyct.solver.locate import SolverMissingError, locate
+from pyct.solver.locate import SolverMissingError, locate, version
 
 
 def fake_cvc5(directory: Path) -> Path:
@@ -60,3 +62,108 @@ def test_searched_lists_every_directory_and_drops_the_empty_entries(
         locate()
 
     assert caught.value.searched == (str(tmp_path), str(other))
+
+
+def cvc5_saying(directory: Path, *, out: str = "", code: int = 0) -> Path:
+    """A cvc5 that prints what the test wants when asked for its version."""
+    (directory / "out").write_text(out)
+    script = directory / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        f'cat "{directory}/out"\n'
+        f"exit {code}\n"
+    )
+    script.chmod(0o755)
+    return script
+
+
+def warnings_in(caplog: pytest.LogCaptureFixture) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+
+
+def test_version_reads_the_number_after_the_word_version(tmp_path: Path) -> None:
+    cvc5 = cvc5_saying(tmp_path, out="This is cvc5 version 1.2.1 [git tag cvc5-1.2.1]\ncompiled\n")
+
+    assert version(cvc5) == "1.2.1"
+
+
+def test_version_takes_the_first_line_that_says_something(tmp_path: Path) -> None:
+    cvc5 = cvc5_saying(tmp_path, out="\n   \nThis is cvc5 version 1.2.1\n")
+
+    assert version(cvc5) == "1.2.1"
+
+
+@pytest.mark.parametrize(
+    "printed",
+    [
+        # 1.3.x drops the sentence and prints the number straight after the name
+        "cvc5 1.3.4 [git f3b21c4 on branch HEAD]",
+        # a build that ends on the word itself has no token to take
+        "cvc5 version",
+    ],
+)
+def test_version_falls_back_to_the_first_line_when_no_token_follows(
+    tmp_path: Path, printed: str
+) -> None:
+    cvc5 = cvc5_saying(tmp_path, out=f"  {printed}  \ncompiled\n")
+
+    assert version(cvc5) == printed
+
+
+def test_version_is_nothing_when_cvc5_exits_badly(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cvc5 = cvc5_saying(tmp_path, out="This is cvc5 version 1.2.1\n", code=1)
+
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.locate"):
+        assert version(cvc5) is None
+
+    assert len(warnings_in(caplog)) == 1, caplog.text
+
+
+def test_version_is_nothing_when_cvc5_prints_nothing(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    cvc5 = cvc5_saying(tmp_path, out="\n  \n")
+
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.locate"):
+        assert version(cvc5) is None
+
+    assert len(warnings_in(caplog)) == 1, caplog.text
+
+
+def test_version_is_nothing_when_the_executable_cannot_be_run(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.locate"):
+        assert version(tmp_path / "gone") is None
+
+    assert len(warnings_in(caplog)) == 1, caplog.text
+
+
+def test_version_is_nothing_when_the_probe_runs_out_of_time(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    cvc5 = cvc5_saying(tmp_path, out="This is cvc5 version 1.2.1\n")
+
+    def too_slow(*args: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired(cmd=str(cvc5), timeout=1.0)
+
+    # a real sleep would hold the suite for the probe's whole timeout
+    monkeypatch.setattr(subprocess, "run", too_slow)
+
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.locate"):
+        assert version(cvc5) is None
+
+    assert len(warnings_in(caplog)) == 1, caplog.text
+
+
+def test_version_never_lets_the_probe_hang_the_run(tmp_path: Path) -> None:
+    """A cvc5 that waits on stdin would hang the probe; nothing is written to it."""
+    script = tmp_path / "cvc5"
+    script.write_text("#!/bin/sh\nPATH=/bin:/usr/bin\ncat > /dev/null\necho 'cvc5 1.3.4'\n")
+    script.chmod(0o755)
+
+    assert version(script) == "cvc5 1.3.4"
