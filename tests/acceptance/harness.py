@@ -73,11 +73,12 @@ def input_lines(stdout: str) -> list[dict[str, object]]:
     """The one line per input, without the summary line that closes stdout.
 
     A tool tells the summary from an input line by its ``stopped`` key, and
-    that is how this tells them apart too: a stdout with no such last line is
-    all input lines.
+    that is how this tells them apart too; the summary has to be there, so a
+    run that lost it fails every test that counts lines.
     """
     lines = [json.loads(line) for line in stdout.splitlines()]
-    return lines[:-1] if lines and "stopped" in lines[-1] else lines
+    assert lines and "stopped" in lines[-1], stdout
+    return lines[:-1]
 
 
 def summary_line(stdout: str) -> dict[str, object]:
