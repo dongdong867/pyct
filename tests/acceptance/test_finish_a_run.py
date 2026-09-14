@@ -21,6 +21,8 @@ ONE_CHECK = "targets.flip.one_check::classify"
 NESTED_CHECKS = "targets.flip.nested_checks::bucket"
 NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
+OTHER_SIDE_EMPTY = "targets.flip.other_side_empty::mark"
+TWO_OTHER_SIDES_EMPTY = "targets.flip.two_other_sides_empty::mark"
 IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 # ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
@@ -225,6 +227,16 @@ def test_refuses_a_bad_plateau() -> None:
         assert result.returncode == 2, bad
         assert result.stdout == "", bad
         assert "plateau must be a whole number above zero" in result.stderr, bad
+
+
+# finish-a-run-stops-on-no-gain
+def test_stops_on_no_gain() -> None:
+    result = run_pyct(TWO_OTHER_SIDES_EMPTY, '{"x": 3, "y": 3}', "--plateau", "1")
+
+    assert result.returncode == 0, result.stderr
+    # the seed, then one flip whose other side runs no new line: all a plateau of 1 allows
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert summary_line(result.stdout)["stopped"] == "no gain in 1 inputs", result.stdout
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone
