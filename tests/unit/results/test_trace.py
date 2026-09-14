@@ -15,6 +15,7 @@ from pyct.results.record import (
     StopKind,
 )
 from pyct.results.trace import render_stop, render_trace
+from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
@@ -195,7 +196,12 @@ def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
     """A run result whose only facts that matter here are how it ended and what it missed."""
     record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
     return RunResult(
-        entry="m::f", records=(record,), coverage=COVERAGE, stopped=stop, misses=misses
+        entry="m::f",
+        records=(record,),
+        coverage=COVERAGE,
+        stopped=stop,
+        environment=ENVIRONMENT,
+        misses=misses,
     )
 
 
