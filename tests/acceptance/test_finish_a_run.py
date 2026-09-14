@@ -27,19 +27,19 @@ NEVER = 8
 ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
 
 
-def covered_of(line: dict[str, object]) -> dict[str, set[int]]:
-    """The covered map off a printed line, as sets, so the union means something."""
-    payload = line["covered"]
+def numbers_of(line: dict[str, object], key: str) -> dict[str, list[int]]:
+    """One map of line numbers off a printed line, narrowed so a lookup means something."""
+    payload = line[key]
     assert isinstance(payload, dict), line
-    return {str(file): {int(number) for number in lines} for file, lines in payload.items()}
+    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
 
 
 def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
     """Every input's covered map added up, written the way a printed line writes one."""
     union: dict[str, set[int]] = {}
     for line in lines:
-        for file, covered in covered_of(line).items():
-            union[file] = union.get(file, set()) | covered
+        for file, covered in numbers_of(line, "covered").items():
+            union[file] = union.get(file, set()) | set(covered)
     return {file: sorted(covered) for file, covered in union.items()}
 
 
@@ -64,13 +64,6 @@ def test_prints_the_summary_line() -> None:
     assert environment["platform"] == platform.platform()
     cvc5 = environment["cvc5"]
     assert isinstance(cvc5, str) and cvc5, summary
-
-
-def numbers_of(summary: dict[str, object], key: str) -> dict[str, list[int]]:
-    """One map of line numbers off the summary line, narrowed so a lookup means something."""
-    payload = summary[key]
-    assert isinstance(payload, dict), summary
-    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
 
 
 def totals_of(summary: dict[str, object]) -> dict[str, int]:
