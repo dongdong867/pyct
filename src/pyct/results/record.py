@@ -58,11 +58,10 @@ class InputRecord:
 class StopKind(StrEnum):
     """Why a run ended. The values are the words on the ``stopped`` line."""
 
+    # the pool has no open fork left: every fork of every path was aimed at, or
+    # both its sides ran
     NO_FORK = "no fork to flip"
     BUDGET = "budget spent"
-    # transitional: one flip is the whole loop today, and this leaves with the
-    # loop ticket loop-until-no-fork-is-left
-    ONE_ATTEMPT = "after one attempt"
     SOLVER_FAILED = "solver failed"
 
 

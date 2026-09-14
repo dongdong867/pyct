@@ -1,4 +1,4 @@
-"""Run one target with the seed, then with the input the solver answers."""
+"""Run one target with the seed, then with an input per fork the seed and its inputs left open."""
 
 import platform
 import time
@@ -9,7 +9,8 @@ from typing import assert_never
 from pyct.binding.bind import leaves
 from pyct.binding.model import apply
 from pyct.branches.compare import compare
-from pyct.branches.plan import Plan, plan
+from pyct.branches.plan import Plan
+from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.coverage import Coverage, Scope
@@ -35,12 +36,21 @@ type Report = Callable[[InputRecord, Coverage], None]
 
 
 @dataclass(frozen=True)
-class Flip:
-    """How the try at a second input ended: the input, or the miss, and why the run stops."""
+class Attempt:
+    """What one pass of the loop produced: an input, or a miss, or the reason to stop."""
 
-    stop: Stop
+    stop: Stop | None = None
     record: InputRecord | None = None
     miss: Miss | None = None
+
+
+@dataclass(frozen=True)
+class Loop:
+    """What the loop after the seed ran, what it missed, and why it ended."""
+
+    records: tuple[InputRecord, ...]
+    misses: tuple[Miss, ...]
+    stop: Stop
 
 
 def run(
@@ -50,32 +60,32 @@ def run(
     budget: Budget = _NO_BUDGET,
     report: Report | None = None,
 ) -> RunResult:
-    """Call the target with the seed, then with the other side of its last fork.
+    """Call the target with the seed, then with an input per fork left open.
 
     The budget becomes a deadline here, because the clock starts when the
     call does, not when the person typed the seconds. Each input goes to
-    ``report`` as it finishes, with the coverage of that input alone, so a
-    second input that hangs never hides the first one's line.
+    ``report`` as it finishes, with the coverage of that input alone, so an
+    input that hangs never hides the lines of the ones before it.
     """
     scope = Scope.of_module(target.file)
     ctx = ExecutionContext(fn=target.fn, file=target.file)
     # before the deadline starts: the probe is the run's setup, not its time
     environment = _environment()
     until = _deadline_for(budget)
-    records = [_record_of(seed, execute(ctx, seed, until))]
-    _tell(report, records[0], scope)
-    flip = _second_input(ctx, seed, records[0], until)
-    if flip.record is not None:
-        records.append(flip.record)
-        _tell(report, flip.record, scope)
+    seeded = _record_of(seed, execute(ctx, seed, until))
+    _tell(report, seeded, scope)
+    tree = Tree()
+    tree.add(seeded.forks)
+    looped = _loop(ctx, seed, tree, until, lambda record: _tell(report, record, scope))
+    records = (seeded, *looped.records)
     covered = frozenset[int]().union(*(record.covered_lines for record in records))
     return RunResult(
         entry=target.spec,
-        records=tuple(records),
+        records=records,
         coverage=Coverage.of(scope, covered),
-        stopped=flip.stop,
+        stopped=looped.stop,
         environment=environment,
-        misses=() if flip.miss is None else (flip.miss,),
+        misses=looped.misses,
     )
 
 
@@ -92,35 +102,60 @@ def _environment() -> Environment:
     )
 
 
-def _second_input(
+def _loop(
     ctx: ExecutionContext,
     seed: Mapping[str, object],
-    first: InputRecord,
+    tree: Tree,
     until: float | None,
-) -> Flip:
-    """The input that takes the other side of the seed's last fork, and why the run stops.
+    tell: Callable[[InputRecord], None],
+) -> Loop:
+    """Pick a fork, run what the solver answers for it, until a pass says to stop.
 
-    No time to ask or nothing to flip ends the run before the solver is
-    called, the budget first: a seed that spent it stops on the budget
-    whether or not it forked. A solver that crashed ends the run as a
-    failure. Any answer is one attempt: an input to run, or a miss on that
-    fork.
+    Every input's forks join the tree the next pick draws from, so an input
+    that raised or left its plan feeds the loop like any other. A miss is
+    kept and the loop goes on: the fork is spent either way.
+    """
+    records: list[InputRecord] = []
+    misses: list[Miss] = []
+    while True:
+        attempt = _attempt(ctx, seed, tree, until)
+        if attempt.stop is not None:
+            return Loop(tuple(records), tuple(misses), attempt.stop)
+        if attempt.miss is not None:
+            misses.append(attempt.miss)
+        if attempt.record is not None:
+            records.append(attempt.record)
+            tree.add(attempt.record.forks)
+            tell(attempt.record)
+
+
+def _attempt(
+    ctx: ExecutionContext,
+    seed: Mapping[str, object],
+    tree: Tree,
+    until: float | None,
+) -> Attempt:
+    """One pass of the loop: the clock, a fork to aim at, the solver, the input.
+
+    No time to ask ends the run before the tree is read, the budget first: a
+    run that spent it has paths cut short, so ``no fork to flip`` would claim
+    more than the run knows. A solver that crashed ends the run as a failure.
+    Any other answer is an input to run, or a miss on that fork.
     """
     timeout = _seconds_left(until)
     # a deadline that has passed is no time at all; cvc5 reads --tlimit=0 as no limit
     if timeout is not None and timeout <= 0:
-        return Flip(Stop(StopKind.BUDGET))
-    wanted = plan(first.forks)
+        return Attempt(stop=Stop(StopKind.BUDGET))
+    wanted = tree.next()
     if wanted is None:
-        return Flip(Stop(StopKind.NO_FORK))
+        return Attempt(stop=Stop(StopKind.NO_FORK))
     answer = solve(wanted.prefix, leaves(seed), timeout)
     if isinstance(answer, Error):
-        return Flip(Stop(StopKind.SOLVER_FAILED, answer.detail))
-    attempted = Stop(StopKind.ONE_ATTEMPT)
+        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):
-        return Flip(attempted, miss=Miss(wanted.aim.site, _why(answer)))
+        return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
     args = apply(seed, answer.model)
-    return Flip(attempted, record=_record_of(args, execute(ctx, args, until), wanted))
+    return Attempt(record=_record_of(args, execute(ctx, args, until), wanted))
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:
