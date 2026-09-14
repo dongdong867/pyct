@@ -15,8 +15,8 @@ from pyct.config.budget import Budget
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
-from pyct.results.record import InputRecord, RunResult, StopKind
-from pyct.results.trace import render_stop, render_trace
+from pyct.results.record import InputRecord, Miss, RunResult, StopKind
+from pyct.results.trace import render_miss, render_stop, render_trace
 from pyct.run.run import run
 from pyct.run.target import TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
@@ -44,11 +44,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
     could not be loaded, or pyct itself broke during the run. 2: usage.
 
-    The run prints each input as it finishes, through ``_report``, so a
-    second input that hangs never hides the first one's line. Why the run
-    stopped is a fact about the whole run, so it ends stderr, and the summary
-    line ends stdout after it: the readable text comes first, as it does for
-    every input.
+    The run prints each input as it finishes, through ``_report``, and each
+    fork the solver could not flip, through ``_missed``, so a second input
+    that hangs never hides the first one's line. Why the run stopped is a
+    fact about the whole run, so it ends stderr, and the summary line ends
+    stdout after it: the readable text comes first, as it does for every
+    input.
 
     Checks run in this order: target form, seed shape, budget, cvc5, import,
     seed present, seed fits. cvc5 comes before the import because nothing the
@@ -66,7 +67,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
-        result = run(target, seed, budget=budget, report=_report)
+        result = run(target, seed, budget=budget, report=_report, missed=_missed)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -82,6 +83,11 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read."""
     print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
     print(render(record, coverage), flush=True)
+
+
+def _missed(miss: Miss) -> None:
+    """The fork the solver gave no input for, printed where its answer came in."""
+    print(render_miss(miss), end="", file=sys.stderr, flush=True)
 
 
 def _exit_code(result: RunResult) -> int:

@@ -1,4 +1,5 @@
-"""Acceptance tests for the finish-a-run story, child print-the-summary-line.
+"""Acceptance tests for the finish-a-run story, children print-the-summary-line
+and loop-until-no-fork-is-left.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the flip-one-fork
 tests do: the summary line closes stdout after the last input line, so only a real run
@@ -17,12 +18,22 @@ from tests.acceptance.harness import (
 )
 
 ONE_CHECK = "targets.flip.one_check::classify"
+NESTED_CHECKS = "targets.flip.nested_checks::bucket"
+NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
+IMPLIED_CHECK = "targets.flip.implied_check::narrow"
+IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+# ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
+IMPLIED = 3
+RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
+TWO_CHECKS = "targets.trace.two_checks::bucket"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
 # the ``x < 10`` below it, lands inside the guard instead, and the line is never run
 NEVER = 8
+# every line of ``bucket`` but its ``def``, which runs at import rather than under an input
+BUCKET_LINES = [2, 3, 4, 5, 6]
 # no solver call ended any way at all
 ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
 
@@ -41,6 +52,48 @@ def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
         for file, covered in numbers_of(line, "covered").items():
             union[file] = union.get(file, set()) | set(covered)
     return {file: sorted(covered) for file, covered in union.items()}
+
+
+# finish-a-run-covers-every-branch
+def test_covers_every_branch() -> None:
+    result = run_pyct(NESTED_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the seed takes both checks; the other side of each is a way out of its own
+    assert len(inputs) == 3, result.stdout
+    assert union_of(inputs) == {NESTED_CHECKS_FILE: BUCKET_LINES}
+    summary = summary_line(result.stdout)
+    # nothing is left over but the ``def`` line no input can run
+    assert numbers_of(summary, "uncovered") == {NESTED_CHECKS_FILE: [1]}
+    assert summary["stopped"] == "no fork to flip"
+
+
+def aim_of(line: dict[str, object]) -> tuple[str, int, int, int] | None:
+    """The fork one input aimed at, as a value two lines can be compared by.
+
+    ``None`` on the seed's line, which aimed at nothing.
+    """
+    aim = line["aim"]
+    if aim is None:
+        return None
+    assert isinstance(aim, dict), line
+    return str(aim["file"]), int(aim["line"]), int(aim["col"]), int(aim["position"])
+
+
+# finish-a-run-aims-each-fork-once
+def test_aims_each_fork_once() -> None:
+    result = run_pyct(NESTED_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    solver = [line for line in lines if line["source"] == "solver"]
+    # one solver input per way out the seed left open, each after a fork of its own
+    assert len(solver) == 2, result.stdout
+    assert aim_of(solver[0]) != aim_of(solver[1]), result.stdout
+    # a fork is spent the moment it is aimed at, so no aim comes back on a later line
+    aimed = [aim for aim in (aim_of(line) for line in lines) if aim is not None]
+    assert len(set(aimed)) == len(aimed), result.stdout
 
 
 # finish-a-run-prints-the-summary-line
@@ -64,6 +117,23 @@ def test_prints_the_summary_line() -> None:
     assert environment["platform"] == platform.platform()
     cvc5 = environment["cvc5"]
     assert isinstance(cvc5, str) and cvc5, summary
+
+
+# finish-a-run-counts-solver-answers
+def test_counts_solver_answers() -> None:
+    result = run_pyct(IMPLIED_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    summary = summary_line(result.stdout)
+    # the outer check flipped; the inner one the outer implies could not
+    assert summary["solver"] == {"sat": 1, "unsat": 1, "unknown": 0, "timeout": 0}
+    misses = summary["misses"]
+    assert isinstance(misses, list) and len(misses) == 1, summary
+    (miss,) = misses
+    assert isinstance(miss, dict), summary
+    assert miss["file"] == IMPLIED_CHECK_FILE, summary
+    assert miss["line"] == IMPLIED, summary
+    assert miss["why"] == "unsat", summary
 
 
 def totals_of(summary: dict[str, object]) -> dict[str, int]:
@@ -112,6 +182,39 @@ def test_lists_uncovered_lines() -> None:
     assert len(named) == 1, result.stderr
     numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNFOLLOWED_GUARD_FILE}")
     assert str(NEVER) in numbers.split(", "), result.stderr
+
+
+def failure_kind(line: dict[str, object]) -> str | None:
+    """How one input failed, off its printed line. ``None`` when it ran to the end."""
+    failure = line["failure"]
+    if failure is None:
+        return None
+    assert isinstance(failure, dict), line
+    return str(failure["kind"])
+
+
+# finish-a-run-keeps-going-after-a-failed-input
+def test_keeps_going_after_a_failed_input() -> None:
+    result = run_pyct(RAISES_BEHIND_A_SECOND_FORK, '{"x": 50}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    raised = [at for at, line in enumerate(lines) if failure_kind(line) == "target_raised"]
+    assert raised, result.stdout
+    # the fork the raising input hit is still open, so the loop runs an input for it
+    assert raised[0] < len(lines) - 1, result.stdout
+
+
+# finish-a-run-runs-without-a-plateau
+def test_runs_without_a_plateau() -> None:
+    result = run_pyct(TWO_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    # the second check is implied by the first: the seed, then the two flips cvc5 can
+    # make; the try at the implied check is unsat and prints no line
+    assert len(input_lines(result.stdout)) == 3, result.stdout
+    # nothing stops the loop early, because no plateau was asked for
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone

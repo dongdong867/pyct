@@ -103,6 +103,13 @@ def first_line(stdout: str) -> dict[str, object]:
     return lines[0]
 
 
+def second_line(stdout: str) -> dict[str, object]:
+    """The first solver input's line. The loop may have run more inputs after it."""
+    lines = input_lines(stdout)
+    assert len(lines) > 1, stdout
+    return lines[1]
+
+
 def two_lines(stdout: str) -> tuple[dict[str, object], dict[str, object]]:
     lines = input_lines(stdout)
     assert len(lines) == 2, stdout

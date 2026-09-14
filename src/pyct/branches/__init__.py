@@ -1,5 +1,5 @@
 """The tree. The tree is the queue.
 
-For now only the planning of one flip and the check of a path against that
-plan; the tree itself waits for a run that finishes.
+The paths a run has taken and the fork it aims at next, the planning of that
+flip, and the check of a path against the plan.
 """

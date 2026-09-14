@@ -27,17 +27,24 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
     return _written(lines)
 
 
-def render_stop(result: RunResult) -> str:
-    """What the run missed, what it added up to, and why it ended, after the last trace.
+def render_miss(miss: Miss) -> str:
+    """The fork the solver was asked about, and the answer that gave no input.
 
-    One ``missed`` line per fork the solver gave no input for comes first,
-    as its answer came in during the run. The summary starts at its first
-    ``covered`` line and ends on the ``stopped`` line, with an ``uncovered``
-    line in between for each file that has lines left; what a failed solver
-    said goes indented under the ``stopped`` line.
+    Its own line rather than part of the summary, so a caller can print it
+    the moment the answer comes in, before the next input's trace.
     """
-    lines = [_miss(miss) for miss in result.misses]
-    lines += _summary(result)
+    return _written([f"missed {_site(miss.site)} {miss.why.value}"])
+
+
+def render_stop(result: RunResult) -> str:
+    """What the run added up to and why it ended, after the last trace.
+
+    The summary starts at its first ``covered`` line and ends on the
+    ``stopped`` line, with an ``uncovered`` line in between for each file
+    that has lines left; what a failed solver said goes indented under the
+    ``stopped`` line. A miss is not here: it printed as its answer came in.
+    """
+    lines = _summary(result)
     lines += _stopped(result.stopped)
     return _written(lines)
 
@@ -75,11 +82,6 @@ def _uncovered(file: str, lines: frozenset[int]) -> str:
     """The lines of one file no input ran, ascending. A file with none gets no line at all."""
     numbers = ", ".join(str(line) for line in sorted(lines))
     return f"uncovered {numbers} in {file}"
-
-
-def _miss(miss: Miss) -> str:
-    """The fork the solver was asked about, and the answer that gave no input."""
-    return f"missed {_site(miss.site)} {miss.why.value}"
 
 
 def _indented(detail: str | None) -> list[str]:

@@ -71,7 +71,6 @@ def test_an_input_record_is_a_seed_with_no_aim_by_default() -> None:
 def test_a_stop_kind_is_the_words_on_the_stderr_line() -> None:
     assert StopKind.NO_FORK.value == "no fork to flip"
     assert StopKind.BUDGET.value == "budget spent"
-    assert StopKind.ONE_ATTEMPT.value == "after one attempt"
     assert StopKind.SOLVER_FAILED.value == "solver failed"
 
 

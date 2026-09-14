@@ -11,8 +11,10 @@ from tests.acceptance.harness import (
     CRASH_DETAIL,
     REPO_ROOT,
     crashing_cvc5,
+    first_line,
     one_line,
     run_pyct,
+    second_line,
     two_lines,
 )
 
@@ -91,7 +93,7 @@ def test_flips_the_last_fork() -> None:
     result = run_pyct(NESTED_CHECKS, '{"x": 3}')
 
     assert result.returncode == 0, result.stderr
-    _, solved = two_lines(result.stdout)
+    solved = second_line(result.stdout)
     # the outer check keeps the side the seed took; only the last fork turns over
     assert solved["forks"] == [
         {
@@ -184,15 +186,18 @@ def test_reports_unsat() -> None:
     result = run_pyct(IMPLIED_CHECK, '{"x": 3}')
 
     assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
+    seed = first_line(result.stdout)
     assert seed["source"] == "seed"
     # the inner check cannot go the other way while the outer one holds
     lines = result.stderr.splitlines()
     missed = f"missed {IMPLIED_CHECK_FILE}:3:11 unsat"
     assert missed in lines, result.stderr
-    assert lines[-1] == "stopped: after one attempt"
-    # the miss came in as the run went, so it prints before the summary the run ends on
-    assert lines.index(missed) < lines.index("solver: 0 sat, 1 unsat, 0 unknown, 0 timeout")
+    # an answer that gave no input is not why the run ended; it ran out of forks
+    assert lines[-1] == "stopped: no fork to flip"
+    # the miss prints the moment the solver answers, so it lands before the next input's trace
+    solved = [at for at, line in enumerate(lines) if line.startswith("solver ")]
+    assert solved, result.stderr
+    assert lines.index(missed) < solved[0], result.stderr
 
 
 # flip-one-fork-fails-when-the-solver-crashes
@@ -244,7 +249,7 @@ def test_reports_going_off_course() -> None:
     result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
-    _, solved = two_lines(result.stdout)
+    solved = second_line(result.stdout)
     # ``>=`` is a compare pyct does not follow, so the seed records only ``x < 10``,
     # at position 0
     assert solved["aim"] == {"file": UNFOLLOWED_GUARD_FILE, "line": 6, "col": 7, "position": 0}
@@ -270,7 +275,7 @@ def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
     result = run_pyct(CUT_SHORT_ON_THE_OTHER_SIDE, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
-    _, solved = two_lines(result.stdout)
+    solved = second_line(result.stdout)
     # the seed takes ``x < 6`` then ``x < 5``; flipping the second under the first admits
     # only x == 5, which divides by zero before the second fork is tested
     assert solved["aim"] == {

@@ -14,7 +14,7 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
-from pyct.results.trace import render_stop, render_trace
+from pyct.results.trace import render_miss, render_stop, render_trace
 from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
@@ -194,6 +194,15 @@ def test_render_trace_names_the_fork_a_solved_input_hit_instead() -> None:
     assert lines[2] == "left the plan at position 1, hit m.py:12:4"
 
 
+def test_render_miss_names_the_fork_and_what_the_solver_said() -> None:
+    miss = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
+
+    text = render_miss(miss)
+
+    # one fact on one line, ended the way every other line of the trace ends
+    assert text == "missed m.py:5:7 unsat\n"
+
+
 def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
     """A run result whose only facts that matter here are how it ended and what it missed."""
     record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset())
@@ -227,29 +236,28 @@ def test_render_stop_counts_what_the_solver_answered() -> None:
         entry="m::f",
         records=(InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5})), solved),
         coverage=COVERAGE,
-        stopped=Stop(kind=StopKind.ONE_ATTEMPT),
+        stopped=Stop(kind=StopKind.NO_FORK),
         environment=ENVIRONMENT,
         misses=(Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT),),
     )
 
     lines = render_stop(result).splitlines()
 
-    # the miss it timed out on comes first, then the coverage the summary opens with
-    assert lines[2] == "solver: 1 sat, 0 unsat, 0 unknown, 1 timeout"
+    # the miss it timed out on is counted here, though its own line printed during the run
+    assert lines[1] == "solver: 1 sat, 0 unsat, 0 unknown, 1 timeout"
 
 
-def test_render_stop_puts_each_miss_before_the_summary() -> None:
+def test_render_stop_leaves_the_missed_lines_to_the_run() -> None:
     miss = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
 
-    lines = render_stop(stopped_with(Stop(kind=StopKind.ONE_ATTEMPT), miss)).splitlines()
+    lines = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK), miss)).splitlines()
 
-    # the miss came in as the run went; the summary starts at its first covered line
+    # each miss printed as its answer came in; the summary starts at its first covered line
     assert lines == [
-        "missed m.py:5:7 unsat",
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
-        "stopped: after one attempt",
+        "stopped: no fork to flip",
     ]
 
 

@@ -4,13 +4,14 @@ from pathlib import Path
 
 import pytest
 
+from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, StopKind
-from pyct.run.run import _second_input, run
+from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
+from pyct.run.run import _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Answer, Timeout, Unknown
 
@@ -84,15 +85,16 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
 ) -> None:
     target = load_target("targets.flip.one_check::classify")
     seed = {"x": 3}
-    forked = run(target, seed).records[0]
+    tree = Tree()
+    tree.add(run(target, seed).records[0].forks)
     # no cvc5 on the PATH: asking would raise rather than answer
     monkeypatch.setenv("PATH", str(tmp_path))
     ctx = ExecutionContext(fn=target.fn, file=target.file)
 
-    flip = _second_input(ctx, seed, forked, time.monotonic() - 1)
+    attempt = _attempt(ctx, seed, tree, time.monotonic() - 1)
 
-    assert flip.record is None
-    assert flip.stop.kind is StopKind.BUDGET
+    assert attempt.record is None
+    assert attempt.stop == Stop(kind=StopKind.BUDGET)
 
 
 def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
@@ -166,6 +168,22 @@ def test_run_reports_each_input_as_it_finishes() -> None:
     assert reported[0][1].total == {ONE_CHECK: 4}
 
 
+def test_run_hands_out_a_miss_before_the_input_solved_next() -> None:
+    target = load_target("targets.flip.implied_check::narrow")
+    told: list[InputRecord | Miss] = []
+
+    result = run(
+        target,
+        {"x": 3},
+        report=lambda record, _: told.append(record),
+        missed=lambda miss: told.append(miss),
+    )
+
+    # the inner fork is unsat and the outer one sat, so the miss falls between the two inputs
+    seed, solved = result.records
+    assert told == [seed, *result.misses, solved]
+
+
 def test_run_stops_after_a_seed_that_forked_nowhere() -> None:
     target = load_target("targets.flip.no_check::echo")
 
@@ -178,14 +196,45 @@ def test_run_stops_after_a_seed_that_forked_nowhere() -> None:
     assert result.misses == ()
 
 
-def test_run_stops_after_one_attempt_when_the_solver_gave_an_input() -> None:
+def test_run_stops_when_every_fork_has_been_aimed_at() -> None:
     target = load_target("targets.flip.one_check::classify")
 
     result = run(target, {"x": 3})
 
+    # the one fork went both ways, so the second input leaves nothing to pick
     assert len(result.records) == 2
-    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+    assert result.stopped.kind is StopKind.NO_FORK
     assert result.misses == ()
+
+
+def test_run_keeps_picking_until_the_tree_is_empty() -> None:
+    target = load_target("targets.flip.nested_checks::bucket")
+
+    result = run(target, {"x": 3})
+
+    # the seed takes both checks; the other side of each is an input of its own
+    assert [record.source for record in result.records] == [
+        Source.SEED,
+        Source.SOLVER,
+        Source.SOLVER,
+    ]
+    assert result.coverage.covered == {NESTED_CHECKS: frozenset({2, 3, 4, 5, 6})}
+    assert result.stopped.kind is StopKind.NO_FORK
+
+
+def test_run_gathers_a_miss_from_every_fork_it_aimed_at(monkeypatch: pytest.MonkeyPatch) -> None:
+    target = load_target("targets.flip.nested_checks::bucket")
+    monkeypatch.setattr("pyct.run.run.solve", lambda *args: Unknown())
+
+    result = run(target, {"x": 3})
+
+    # an answer that gives no input is no input to run, and no reason to stop picking
+    assert len(result.records) == 1
+    assert result.misses == (
+        Miss(site=Site(file=NESTED_CHECKS, line=3, col=11), why=MissWhy.UNKNOWN),
+        Miss(site=Site(file=NESTED_CHECKS, line=2, col=7), why=MissWhy.UNKNOWN),
+    )
+    assert result.stopped.kind is StopKind.NO_FORK
 
 
 def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> None:
@@ -203,12 +252,12 @@ def test_run_records_a_miss_when_the_last_fork_cannot_be_flipped() -> None:
 
     result = run(target, {"x": 3})
 
-    assert len(result.records) == 1
     assert result.misses == (
         Miss(site=Site(file=IMPLIED_CHECK, line=3, col=11), why=MissWhy.UNSAT),
     )
-    # a miss is what the solver said about one fork; the run still made its one attempt
-    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+    # the inner fork gave no input, the outer one did, and then nothing was left
+    assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.NO_FORK
 
 
 @pytest.mark.parametrize(
@@ -223,7 +272,7 @@ def test_run_records_what_the_solver_answered_when_it_gave_up(
     result = run(target, {"x": 3})
 
     assert result.misses == (Miss(site=Site(file=ONE_CHECK, line=2, col=7), why=why),)
-    assert result.stopped.kind is StopKind.ONE_ATTEMPT
+    assert result.stopped.kind is StopKind.NO_FORK
 
 
 def test_run_stops_as_a_failure_when_the_solver_died(
