@@ -77,12 +77,14 @@ def _miss(miss: Miss) -> str:
     return f"missed {_site(miss.site)} {miss.why.value}"
 
 
+def _indented(detail: str | None) -> list[str]:
+    """The lines of a detail, under the line it belongs to. No detail is no lines."""
+    return [] if detail is None else [f"    {line}" for line in detail.splitlines()]
+
+
 def _stopped(stop: Stop) -> list[str]:
     """Why the run ended, in words. A detail follows, indented under the line."""
-    lines = [f"stopped: {stop.kind.value}"]
-    if stop.detail is not None:
-        lines += [f"    {line}" for line in stop.detail.splitlines()]
-    return lines
+    return [f"stopped: {stop.kind.value}", *_indented(stop.detail)]
 
 
 def _head(record: InputRecord) -> list[str]:
@@ -135,10 +137,7 @@ def _ended(failure: Failure | None) -> list[str]:
     if failure is None:
         return ["ended returned"]
     kind = failure.kind.value.replace("_", " ")
-    lines = [f"ended {kind}: {failure.detail}"]
-    if failure.traceback is not None:
-        lines += [f"    {line}" for line in failure.traceback.splitlines()]
-    return lines
+    return [f"ended {kind}: {failure.detail}", *_indented(failure.traceback)]
 
 
 def _infix(expression: Expression) -> str:
