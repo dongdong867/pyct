@@ -10,11 +10,14 @@ import platform
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 
 ONE_CHECK = "targets.flip.one_check::classify"
+NO_CHECK = "targets.flip.no_check::echo"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
 # the ``x < 10`` below it, lands inside the guard instead, and the line is never run
 NEVER = 8
+# no solver call ended any way at all
+ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
 
 
 def covered_of(line: dict[str, object]) -> dict[str, set[int]]:
@@ -109,3 +112,20 @@ def test_lists_uncovered_lines() -> None:
     assert len(named) == 1, result.stderr
     numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNFOLLOWED_GUARD_FILE}")
     assert str(NEVER) in numbers.split(", "), result.stderr
+
+
+# finish-a-run-prints-the-summary-after-the-seed-alone
+def test_prints_the_summary_after_the_seed_alone() -> None:
+    result = run_pyct(NO_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    # the seed's line and the summary, and nothing else: no fork means no second input
+    assert len(result.stdout.splitlines()) == 2, result.stdout
+    (seed,) = input_lines(result.stdout)
+    assert seed["source"] == "seed"
+    summary = summary_line(result.stdout)
+    assert summary["stopped"] == "no fork to flip"
+    assert summary["inputs"] == 1
+    # the solver was never asked, so every kind of answer is at zero
+    assert summary["solver"] == ZERO_ANSWERS
+    assert summary["misses"] == []
