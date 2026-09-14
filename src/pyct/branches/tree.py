@@ -6,6 +6,9 @@ from pyct.core.branch import Branch, Site
 # what tells one fork from another: the id of the fork before it, -1 at the root, then its own site
 type ForkKey = tuple[int, Site]
 
+# one input's path: the forks it took, and the key of each
+type Walked = tuple[tuple[Branch, ...], tuple[ForkKey, ...]]
+
 
 class Tree:
     """The paths of a run and which of their forks are still open.
@@ -25,7 +28,7 @@ class Tree:
 
     def __init__(self) -> None:
         self._ids: dict[tuple[int, Site, bool], int] = {}
-        self._paths: list[tuple[tuple[Branch, ...], tuple[ForkKey, ...]]] = []
+        self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
