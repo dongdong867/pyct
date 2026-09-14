@@ -36,7 +36,9 @@ def render_summary(result: RunResult) -> str:
     """The line that closes stdout, one line for the whole run.
 
     A tool tells it from an input line by ``stopped``, which no input line
-    carries. The coverage is written the way an input line writes its own.
+    carries. The coverage is written the way an input line writes its own,
+    and ``uncovered`` is keyed like ``total``: a file with nothing left over
+    carries an empty list rather than dropping out.
     """
     payload = {
         "stopped": result.stopped.kind.value,
@@ -45,6 +47,7 @@ def render_summary(result: RunResult) -> str:
         "misses": [_miss(miss) for miss in result.misses],
         "covered": {file: sorted(lines) for file, lines in result.coverage.covered.items()},
         "total": dict(result.coverage.total),
+        "uncovered": {file: sorted(lines) for file, lines in result.coverage.uncovered.items()},
         "environment": _environment(result.environment),
     }
     return json.dumps(payload)
