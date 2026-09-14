@@ -6,12 +6,14 @@ import pytest
 
 from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
+from pyct.config.limits import Limits
+from pyct.config.plateau import Plateau
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
-from pyct.run.run import _attempt, run
+from pyct.run.run import Bounds, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Answer, Timeout, Unknown
 
@@ -71,7 +73,7 @@ def test_run_records_how_the_seed_ended() -> None:
 def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
     target = load_target("targets.trace.never_returns::spin")
 
-    result = run(target, {"x": 1}, budget=Budget(seconds=0.05))
+    result = run(target, {"x": 1}, limits=Limits(budget=Budget(seconds=0.05)))
 
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
@@ -91,7 +93,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     ctx = ExecutionContext(fn=target.fn, file=target.file)
 
-    attempt = _attempt(ctx, seed, tree, time.monotonic() - 1)
+    attempt = _attempt(ctx, seed, tree, Bounds(until=time.monotonic() - 1), ())
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)
@@ -240,11 +242,32 @@ def test_run_gathers_a_miss_from_every_fork_it_aimed_at(monkeypatch: pytest.Monk
 def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> None:
     target = load_target("targets.flip.spins_after_a_check::spin")
 
-    result = run(target, {"x": 3}, budget=Budget(seconds=0.05))
+    result = run(target, {"x": 3}, limits=Limits(budget=Budget(seconds=0.05)))
 
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert result.stopped.kind is StopKind.BUDGET
+
+
+def test_run_stops_on_no_gain_when_the_last_inputs_covered_nothing_new() -> None:
+    target = load_target("targets.flip.two_other_sides_empty::mark")
+
+    result = run(target, {"x": 3, "y": 3}, limits=Limits(plateau=Plateau(inputs=1)))
+
+    # the flip covers a subset of the seed's lines, and the other check's flip is never asked for
+    assert len(result.records) == 2
+    assert result.stopped == Stop(kind=StopKind.NO_GAIN, plateau=1)
+    assert result.misses == ()
+
+
+def test_run_prefers_no_fork_over_no_gain() -> None:
+    target = load_target("targets.flip.other_side_empty::mark")
+
+    result = run(target, {"x": 3}, limits=Limits(plateau=Plateau(inputs=1)))
+
+    # both reasons hold after the flip; the emptied tree is the one the run names
+    assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.NO_FORK
 
 
 def test_run_records_a_miss_when_the_last_fork_cannot_be_flipped() -> None:
