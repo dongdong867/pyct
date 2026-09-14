@@ -21,6 +21,10 @@ ONE_CHECK = "targets.flip.one_check::classify"
 NESTED_CHECKS = "targets.flip.nested_checks::bucket"
 NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
+IMPLIED_CHECK = "targets.flip.implied_check::narrow"
+IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+# ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
+IMPLIED = 3
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
 # ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
@@ -111,6 +115,23 @@ def test_prints_the_summary_line() -> None:
     assert environment["platform"] == platform.platform()
     cvc5 = environment["cvc5"]
     assert isinstance(cvc5, str) and cvc5, summary
+
+
+# finish-a-run-counts-solver-answers
+def test_counts_solver_answers() -> None:
+    result = run_pyct(IMPLIED_CHECK, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    summary = summary_line(result.stdout)
+    # the outer check flipped; the inner one the outer implies could not
+    assert summary["solver"] == {"sat": 1, "unsat": 1, "unknown": 0, "timeout": 0}
+    misses = summary["misses"]
+    assert isinstance(misses, list) and len(misses) == 1, summary
+    (miss,) = misses
+    assert isinstance(miss, dict), summary
+    assert miss["file"] == IMPLIED_CHECK_FILE, summary
+    assert miss["line"] == IMPLIED, summary
+    assert miss["why"] == "unsat", summary
 
 
 def totals_of(summary: dict[str, object]) -> dict[str, int]:
