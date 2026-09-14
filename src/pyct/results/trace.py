@@ -24,7 +24,7 @@ def render_trace(record: InputRecord, coverage: Coverage) -> str:
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
-    return "".join(f"{line}\n" for line in lines)
+    return _written(lines)
 
 
 def render_stop(result: RunResult) -> str:
@@ -39,6 +39,11 @@ def render_stop(result: RunResult) -> str:
     lines = [_miss(miss) for miss in result.misses]
     lines += _summary(result)
     lines += _stopped(result.stopped)
+    return _written(lines)
+
+
+def _written(lines: list[str]) -> str:
+    """One fact per line, each line ending in a newline. This is the whole trace's shape."""
     return "".join(f"{line}\n" for line in lines)
 
 
