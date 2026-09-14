@@ -83,10 +83,24 @@ def warnings_in(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
 
 
-def test_version_reads_the_number_after_the_word_version(tmp_path: Path) -> None:
-    cvc5 = cvc5_saying(tmp_path, out="This is cvc5 version 1.2.1 [git tag cvc5-1.2.1]\ncompiled\n")
+@pytest.mark.parametrize(
+    ("printed", "expected"),
+    [
+        # 1.2.x wraps the number in a sentence
+        ("This is cvc5 version 1.2.1 [git tag cvc5-1.2.1]", "1.2.1"),
+        # 1.3.x drops the sentence and prints the number straight after the name
+        ("cvc5 1.3.4 [git f3b21c4 on branch HEAD]", "1.3.4"),
+        # a two-part number is a version too, and a dev build keeps what follows its number
+        ("cvc5 1.3 [git f3b21c4]", "1.3"),
+        ("This is cvc5 version 1.1.3-dev.196.g5f2a1b", "1.1.3-dev.196.g5f2a1b"),
+    ],
+)
+def test_version_reads_the_bare_number_out_of_either_banner(
+    tmp_path: Path, printed: str, expected: str
+) -> None:
+    cvc5 = cvc5_saying(tmp_path, out=f"  {printed}  \ncompiled\n")
 
-    assert version(cvc5) == "1.2.1"
+    assert version(cvc5) == expected
 
 
 def test_version_takes_the_first_line_that_says_something(tmp_path: Path) -> None:
@@ -95,21 +109,11 @@ def test_version_takes_the_first_line_that_says_something(tmp_path: Path) -> Non
     assert version(cvc5) == "1.2.1"
 
 
-@pytest.mark.parametrize(
-    "printed",
-    [
-        # 1.3.x drops the sentence and prints the number straight after the name
-        "cvc5 1.3.4 [git f3b21c4 on branch HEAD]",
-        # a build that ends on the word itself has no token to take
-        "cvc5 version",
-    ],
-)
-def test_version_falls_back_to_the_first_line_when_no_token_follows(
-    tmp_path: Path, printed: str
-) -> None:
-    cvc5 = cvc5_saying(tmp_path, out=f"  {printed}  \ncompiled\n")
+def test_version_falls_back_to_the_first_line_when_no_token_is_a_number(tmp_path: Path) -> None:
+    # a build that ends on the word itself names no number, so the line stands for one
+    cvc5 = cvc5_saying(tmp_path, out="  cvc5 version  \ncompiled\n")
 
-    assert version(cvc5) == printed
+    assert version(cvc5) == "cvc5 version"
 
 
 def test_version_is_nothing_when_cvc5_exits_badly(
@@ -166,4 +170,4 @@ def test_version_never_lets_the_probe_hang_the_run(tmp_path: Path) -> None:
     script.write_text("#!/bin/sh\nPATH=/bin:/usr/bin\ncat > /dev/null\necho 'cvc5 1.3.4'\n")
     script.chmod(0o755)
 
-    assert version(script) == "cvc5 1.3.4"
+    assert version(script) == "1.3.4"
