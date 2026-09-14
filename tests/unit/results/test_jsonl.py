@@ -199,6 +199,7 @@ def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
         "misses",
         "covered",
         "total",
+        "uncovered",
         "environment",
     ]
 
@@ -232,6 +233,26 @@ def test_render_summary_writes_the_coverage_the_way_an_input_line_does() -> None
 
     assert payload["covered"] == {"m.py": [5, 6]}
     assert payload["total"] == {"m.py": 7}
+
+
+def test_render_summary_lists_the_lines_no_input_ran() -> None:
+    payload = summarized(SEED)
+
+    # the lines the file has, less the ones the run covered, ascending
+    assert payload["uncovered"] == {"m.py": [1, 2, 3, 4, 7]}
+
+
+def test_render_summary_leaves_a_fully_covered_file_an_empty_list() -> None:
+    result = RunResult(
+        entry="m::f",
+        records=(SEED,),
+        coverage=Coverage(covered={"m.py": frozenset({1, 2})}, lines={"m.py": frozenset({1, 2})}),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    # uncovered is keyed like total, so a file it counts is on the line either way
+    assert json.loads(render_summary(result))["uncovered"] == {"m.py": []}
 
 
 def test_render_summary_names_the_python_the_cvc5_and_the_platform() -> None:
