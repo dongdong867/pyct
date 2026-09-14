@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.config.budget import Budget
+from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
@@ -67,14 +68,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         check_spec(command.spec)
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
-        # checked here for its error; the loop reads it once the plateau stop lands
-        parse_plateau(command.plateau_text)
+        plateau = parse_plateau(command.plateau_text)
         locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
-        result = run(target, seed, budget=budget, report=_report, missed=_missed)
+        result = run(
+            target,
+            seed,
+            limits=Limits(budget=budget, plateau=plateau),
+            report=_report,
+            missed=_missed,
+        )
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
