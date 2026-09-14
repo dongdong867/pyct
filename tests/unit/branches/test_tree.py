@@ -1,3 +1,5 @@
+import time
+
 from pyct.branches.tree import Tree
 from pyct.core.branch import Branch, Site
 from pyct.results.record import Aim
@@ -79,3 +81,18 @@ def test_the_forks_of_a_later_path_join_the_pool() -> None:
     assert picked is not None
     assert picked.prefix == (fork(2, taken=False), fork(4, taken=False))
     assert picked.aim == Aim(site=fork(4, taken=True).site, position=1)
+
+
+def test_a_long_path_is_added_in_linear_time() -> None:
+    """Why a timing test: recording a path must cost the path's length, not its square.
+
+    A loop leaves one fork per pass, so a looping target's seed hands the
+    tree thousands of forks at one site. A key that copies the prefix turns
+    that into minutes, and the run outlives its budget before it can say so.
+    """
+    path = tuple(fork(2, taken=True) for _ in range(3_000))
+
+    started = time.perf_counter()
+    Tree().add(path)
+
+    assert time.perf_counter() - started < 1.0
