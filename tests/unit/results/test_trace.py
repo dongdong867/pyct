@@ -214,6 +214,7 @@ def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
     assert lines == [
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 0 unsat, 0 unknown, 0 timeout",
+        "uncovered 1, 2, 3, 4, 7 in m.py",
         "stopped: no fork to flip",
     ]
 
@@ -247,8 +248,24 @@ def test_render_stop_puts_each_miss_before_the_summary() -> None:
         "missed m.py:5:7 unsat",
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
+        "uncovered 1, 2, 3, 4, 7 in m.py",
         "stopped: after one attempt",
     ]
+
+
+def test_render_stop_leaves_out_a_file_with_nothing_uncovered() -> None:
+    covered = Coverage(covered={"m.py": frozenset({1, 2})}, lines={"m.py": frozenset({1, 2})})
+    result = RunResult(
+        entry="m::f",
+        records=(InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({1, 2})),),
+        coverage=covered,
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    lines = render_stop(result).splitlines()
+
+    assert not [line for line in lines if line.startswith("uncovered ")], lines
 
 
 def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
