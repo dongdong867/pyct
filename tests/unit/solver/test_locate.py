@@ -109,11 +109,16 @@ def test_version_takes_the_first_line_that_says_something(tmp_path: Path) -> Non
     assert version(cvc5) == "1.2.1"
 
 
-def test_version_falls_back_to_the_first_line_when_no_token_is_a_number(tmp_path: Path) -> None:
-    # a build that ends on the word itself names no number, so the line stands for one
+def test_version_is_nothing_when_no_token_is_a_number(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # a build that ends on the word itself names no number, so the line reads as nothing
     cvc5 = cvc5_saying(tmp_path, out="  cvc5 version  \ncompiled\n")
 
-    assert version(cvc5) == "cvc5 version"
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.locate"):
+        assert version(cvc5) is None
+
+    assert len(warnings_in(caplog)) == 1, caplog.text
 
 
 def test_version_is_nothing_when_cvc5_exits_badly(
