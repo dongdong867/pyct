@@ -1,5 +1,6 @@
 """Run one target with the seed, then with the input the solver answers."""
 
+import platform
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -12,10 +13,20 @@ from pyct.branches.plan import Plan, plan
 from pyct.config.budget import Budget
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.coverage import Coverage, Scope
-from pyct.results.record import InputRecord, Miss, MissWhy, RunResult, Source, Stop, StopKind
+from pyct.results.record import (
+    Environment,
+    InputRecord,
+    Miss,
+    MissWhy,
+    RunResult,
+    Source,
+    Stop,
+    StopKind,
+)
 from pyct.run.target import Target
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.locate import locate, version
 
 _NO_BUDGET = Budget()
 
@@ -48,6 +59,8 @@ def run(
     """
     scope = Scope.of_module(target.file)
     ctx = ExecutionContext(fn=target.fn, file=target.file)
+    # before the deadline starts: the probe is the run's setup, not its time
+    environment = _environment()
     until = _deadline_for(budget)
     records = [_record_of(seed, execute(ctx, seed, until))]
     _tell(report, records[0], scope)
@@ -61,7 +74,21 @@ def run(
         records=tuple(records),
         coverage=Coverage.of(scope, covered),
         stopped=flip.stop,
+        environment=environment,
         misses=() if flip.miss is None else (flip.miss,),
+    )
+
+
+def _environment() -> Environment:
+    """What the run ran in, gathered once, from the cvc5 the solver will use.
+
+    A cvc5 that will not say its version leaves the version out; the run is
+    the same run either way.
+    """
+    return Environment(
+        python=platform.python_version(),
+        cvc5=version(locate()),
+        platform=platform.platform(),
     )
 
 

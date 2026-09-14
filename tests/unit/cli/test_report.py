@@ -8,7 +8,7 @@ from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
 from pyct.results.record import InputRecord
 
-COVERAGE = Coverage(covered={"m.py": frozenset({5})}, total={"m.py": 7})
+COVERAGE = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset(range(1, 8))})
 RECORD = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
 
 

@@ -2,11 +2,12 @@ from pyct.cli import _exit_code
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import InputRecord, RunResult, Stop, StopKind
+from tests.unit.environment import ENVIRONMENT
 
 BUG = Failure(kind=FailureKind.PYCT_BUG, detail="RuntimeError: boom")
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
 ATTEMPTED = Stop(kind=StopKind.ONE_ATTEMPT)
-COVERAGE = Coverage(covered={"m.py": frozenset()}, total={"m.py": 1})
+COVERAGE = Coverage(covered={"m.py": frozenset()}, lines={"m.py": frozenset({1})})
 
 
 def record_of(failure: Failure | None) -> InputRecord:
@@ -15,7 +16,13 @@ def record_of(failure: Failure | None) -> InputRecord:
 
 def result_of(*failures: Failure | None, stopped: Stop = ATTEMPTED) -> RunResult:
     records = tuple(record_of(failure) for failure in failures)
-    return RunResult(entry="m::f", records=records, coverage=COVERAGE, stopped=stopped)
+    return RunResult(
+        entry="m::f",
+        records=records,
+        coverage=COVERAGE,
+        stopped=stopped,
+        environment=ENVIRONMENT,
+    )
 
 
 def test_exit_code_is_one_when_pyct_itself_broke() -> None:

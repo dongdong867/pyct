@@ -5,32 +5,76 @@ import json
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.record import Aim, DowngradeCount, InputRecord, Miss, RunResult, Stop
+from pyct.results.record import (
+    Aim,
+    DowngradeCount,
+    InputRecord,
+    Miss,
+    RunResult,
+    SolverCounts,
+    Stop,
+)
 
 
 def render_trace(record: InputRecord, coverage: Coverage) -> str:
     """One fact per line, each line ending in a newline: head, forks, coverage, end, losses."""
     lines = _head(record)
     lines += [_fork(branch) for branch in record.forks]
-    lines += [
-        f"covered {len(covered)} of {coverage.total[file]} lines in {file}"
-        for file, covered in coverage.covered.items()
-    ]
+    lines += _coverage(coverage)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
-    return "".join(f"{line}\n" for line in lines)
+    return _written(lines)
 
 
 def render_stop(result: RunResult) -> str:
-    """What the run missed and why it ended, after the last input's trace.
+    """What the run missed, what it added up to, and why it ended, after the last trace.
 
-    One ``missed`` line per fork the solver gave no input for, then the
-    ``stopped`` line. What a failed solver said goes indented under it.
+    One ``missed`` line per fork the solver gave no input for comes first,
+    as its answer came in during the run. The summary starts at its first
+    ``covered`` line and ends on the ``stopped`` line, with an ``uncovered``
+    line in between for each file that has lines left; what a failed solver
+    said goes indented under the ``stopped`` line.
     """
     lines = [_miss(miss) for miss in result.misses]
+    lines += _summary(result)
     lines += _stopped(result.stopped)
+    return _written(lines)
+
+
+def _written(lines: list[str]) -> str:
+    """One fact per line, each line ending in a newline. This is the whole trace's shape."""
     return "".join(f"{line}\n" for line in lines)
+
+
+def _summary(result: RunResult) -> list[str]:
+    """What the whole run covered, what the solver answered, and what it left behind."""
+    coverage = result.coverage
+    lines = [*_coverage(coverage), _solver(result.solver)]
+    lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
+    return lines
+
+
+def _coverage(coverage: Coverage) -> list[str]:
+    """How much of each file was covered, one line per file, in the map's order."""
+    return [
+        f"covered {len(covered)} of {coverage.total[file]} lines in {file}"
+        for file, covered in coverage.covered.items()
+    ]
+
+
+def _solver(counts: SolverCounts) -> str:
+    """What the solver answered over the run, one count per kind of answer."""
+    return (
+        f"solver: {counts.sat} sat, {counts.unsat} unsat, "
+        f"{counts.unknown} unknown, {counts.timeout} timeout"
+    )
+
+
+def _uncovered(file: str, lines: frozenset[int]) -> str:
+    """The lines of one file no input ran, ascending. A file with none gets no line at all."""
+    numbers = ", ".join(str(line) for line in sorted(lines))
+    return f"uncovered {numbers} in {file}"
 
 
 def _miss(miss: Miss) -> str:
@@ -38,12 +82,14 @@ def _miss(miss: Miss) -> str:
     return f"missed {_site(miss.site)} {miss.why.value}"
 
 
+def _indented(detail: str | None) -> list[str]:
+    """The lines of a detail, under the line it belongs to. No detail is no lines."""
+    return [] if detail is None else [f"    {line}" for line in detail.splitlines()]
+
+
 def _stopped(stop: Stop) -> list[str]:
     """Why the run ended, in words. A detail follows, indented under the line."""
-    lines = [f"stopped: {stop.kind.value}"]
-    if stop.detail is not None:
-        lines += [f"    {line}" for line in stop.detail.splitlines()]
-    return lines
+    return [f"stopped: {stop.kind.value}", *_indented(stop.detail)]
 
 
 def _head(record: InputRecord) -> list[str]:
@@ -96,10 +142,7 @@ def _ended(failure: Failure | None) -> list[str]:
     if failure is None:
         return ["ended returned"]
     kind = failure.kind.value.replace("_", " ")
-    lines = [f"ended {kind}: {failure.detail}"]
-    if failure.traceback is not None:
-        lines += [f"    {line}" for line in failure.traceback.splitlines()]
-    return lines
+    return [f"ended {kind}: {failure.detail}", *_indented(failure.traceback)]
 
 
 def _infix(expression: Expression) -> str:

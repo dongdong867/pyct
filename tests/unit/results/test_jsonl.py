@@ -3,11 +3,26 @@ import json
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.jsonl import render
-from pyct.results.record import Aim, DowngradeCount, InputRecord, Source
+from pyct.results.jsonl import render, render_summary
+from pyct.results.record import (
+    Aim,
+    DowngradeCount,
+    Environment,
+    InputRecord,
+    Miss,
+    MissWhy,
+    RunResult,
+    Source,
+    Stop,
+    StopKind,
+)
+from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
-COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, total={"m.py": 7})
+COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))})
+SEED = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
+SOLVED = InputRecord(args={"x": 12}, forks=(), covered_lines=frozenset({6}), source=Source.SOLVER)
+MISS = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT)
 
 
 def test_render_is_one_json_line_with_sorted_lines() -> None:
@@ -144,3 +159,119 @@ def test_render_writes_the_position_where_the_input_left_the_plan() -> None:
     payload = json.loads(render(record, COVERAGE))
 
     assert payload["mismatch_at"] == 1
+
+
+def summarized(
+    *records: InputRecord,
+    stopped: StopKind = StopKind.NO_FORK,
+    misses: tuple[Miss, ...] = (),
+) -> dict[str, object]:
+    """The summary of a run whose only facts that matter here are its records and misses."""
+    result = RunResult(
+        entry="m::f",
+        records=records,
+        coverage=Coverage(
+            covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))}
+        ),
+        stopped=Stop(kind=stopped),
+        environment=ENVIRONMENT,
+        misses=misses,
+    )
+    return json.loads(render_summary(result))
+
+
+def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
+    line = render_summary(
+        RunResult(
+            entry="m::f",
+            records=(SEED,),
+            coverage=COVERAGE,
+            stopped=Stop(kind=StopKind.NO_FORK),
+            environment=ENVIRONMENT,
+        )
+    )
+
+    assert "\n" not in line
+    assert list(json.loads(line)) == [
+        "stopped",
+        "inputs",
+        "solver",
+        "misses",
+        "covered",
+        "total",
+        "uncovered",
+        "environment",
+    ]
+
+
+def test_render_summary_says_why_the_run_stopped_and_how_many_inputs_ran() -> None:
+    payload = summarized(SEED, SOLVED, stopped=StopKind.BUDGET)
+
+    assert payload["stopped"] == "budget spent"
+    assert payload["inputs"] == 2
+
+
+def test_render_summary_counts_the_solver_answers_by_kind() -> None:
+    payload = summarized(SEED, SOLVED, misses=(MISS,))
+
+    assert payload["solver"] == {"sat": 1, "unsat": 1, "unknown": 0, "timeout": 0}
+
+
+def test_render_summary_writes_each_miss_as_its_site_and_the_answer() -> None:
+    timed_out = Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT)
+
+    payload = summarized(SEED, misses=(MISS, timed_out))
+
+    assert payload["misses"] == [
+        {"file": "m.py", "line": 5, "col": 7, "why": "unsat"},
+        {"file": "m.py", "line": 9, "col": 3, "why": "timeout"},
+    ]
+
+
+def test_render_summary_writes_the_coverage_the_way_an_input_line_does() -> None:
+    payload = summarized(SEED)
+
+    assert payload["covered"] == {"m.py": [5, 6]}
+    assert payload["total"] == {"m.py": 7}
+
+
+def test_render_summary_lists_the_lines_no_input_ran() -> None:
+    payload = summarized(SEED)
+
+    # the lines the file has, less the ones the run covered, ascending
+    assert payload["uncovered"] == {"m.py": [1, 2, 3, 4, 7]}
+
+
+def test_render_summary_leaves_a_fully_covered_file_an_empty_list() -> None:
+    result = RunResult(
+        entry="m::f",
+        records=(SEED,),
+        coverage=Coverage(covered={"m.py": frozenset({1, 2})}, lines={"m.py": frozenset({1, 2})}),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    # uncovered is keyed like total, so a file it counts is on the line either way
+    assert json.loads(render_summary(result))["uncovered"] == {"m.py": []}
+
+
+def test_render_summary_names_the_python_the_cvc5_and_the_platform() -> None:
+    payload = summarized(SEED)
+
+    assert payload["environment"] == {
+        "python": "3.12.0",
+        "cvc5": "1.2.1",
+        "platform": "Test-1.0-arm64",
+    }
+
+
+def test_render_summary_names_no_cvc5_when_the_probe_failed() -> None:
+    result = RunResult(
+        entry="m::f",
+        records=(SEED,),
+        coverage=COVERAGE,
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=Environment(python="3.12.0", cvc5=None, platform="Test-1.0-arm64"),
+    )
+
+    assert json.loads(render_summary(result))["environment"]["cvc5"] is None

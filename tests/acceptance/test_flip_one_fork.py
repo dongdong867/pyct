@@ -7,7 +7,14 @@ proves pyct found cvc5, flipped the fork, and printed the line.
 
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, one_line, run_pyct, two_lines
+from tests.acceptance.harness import (
+    CRASH_DETAIL,
+    REPO_ROOT,
+    crashing_cvc5,
+    one_line,
+    run_pyct,
+    two_lines,
+)
 
 ONE_CHECK = "targets.flip.one_check::classify"
 ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
@@ -181,25 +188,16 @@ def test_reports_unsat() -> None:
     assert seed["source"] == "seed"
     # the inner check cannot go the other way while the outer one holds
     lines = result.stderr.splitlines()
-    assert lines[-2:] == [
-        f"missed {IMPLIED_CHECK_FILE}:3:11 unsat",
-        "stopped: after one attempt",
-    ]
+    missed = f"missed {IMPLIED_CHECK_FILE}:3:11 unsat"
+    assert missed in lines, result.stderr
+    assert lines[-1] == "stopped: after one attempt"
+    # the miss came in as the run went, so it prints before the summary the run ends on
+    assert lines.index(missed) < lines.index("solver: 0 sat, 1 unsat, 0 unknown, 0 timeout")
 
 
 # flip-one-fork-fails-when-the-solver-crashes
 def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
-    # a cvc5 that reads the formula and dies instead of answering
-    script = tmp_path / "cvc5"
-    script.write_text(
-        "#!/bin/sh\n"
-        # PATH is the tmp directory while the test runs, so the script says where its tools are
-        "PATH=/bin:/usr/bin\n"
-        "cat > /dev/null\n"
-        "echo 'cvc5: Fatal failure within the solver' >&2\n"
-        "exit 1\n"
-    )
-    script.chmod(0o755)
+    crashing_cvc5(tmp_path)
 
     result = run_pyct(ONE_CHECK, '{"x": 3}', path=str(tmp_path))
 
@@ -209,7 +207,7 @@ def test_fails_when_the_solver_crashes(tmp_path: Path) -> None:
     lines = result.stderr.splitlines()
     assert lines[-2:] == [
         "stopped: solver failed",
-        "    cvc5: Fatal failure within the solver",
+        f"    {CRASH_DETAIL}",
     ]
 
 

@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 
 from pyct.cli import main
-from tests.acceptance.harness import let_pyct_run_in_process
+from tests.acceptance.harness import (
+    input_lines,
+    let_pyct_run_in_process,
+    one_line,
+    summary_line,
+)
 
 TARGET = "targets.flip.one_check::classify"
 BROKEN = "targets.trace.broken_import::f"
@@ -87,6 +92,22 @@ def test_main_ends_stderr_with_why_the_run_stopped(
 
     assert code == 0
     captured = capsys.readouterr()
-    assert len(captured.out.splitlines()) == 1
+    one_line(captured.out)
     # the stop reason is a fact about the run, so it comes after the last input's trace
     assert captured.err.splitlines()[-1] == "stopped: no fork to flip"
+
+
+def test_main_closes_stdout_with_the_summary_line(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+
+    code = main(["run", "targets.flip.no_check::echo", '{"x": 3}'])
+
+    assert code == 0
+    captured = capsys.readouterr()
+    # the summary is the last line, after the one input line, and says the same as stderr
+    summary = summary_line(captured.out)
+    assert summary["stopped"] == "no fork to flip"
+    assert summary["inputs"] == 1
+    assert len(input_lines(captured.out)) == 1

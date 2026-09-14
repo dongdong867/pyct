@@ -41,13 +41,27 @@ class Scope:
 
 @dataclass(frozen=True)
 class Coverage:
-    """Covered lines and the line count, keyed by file."""
+    """Covered lines and the lines they were measured against, keyed by file.
+
+    ``lines`` is kept rather than its count, so what was covered and what was
+    not are two views of the same fact and can never disagree.
+    """
 
     covered: Mapping[str, frozenset[int]]
-    total: Mapping[str, int]
+    lines: Mapping[str, frozenset[int]]
 
     @classmethod
     def of(cls, scope: Scope, raw_lines: frozenset[int]) -> Coverage:
-        return cls(
-            covered={scope.file: raw_lines & scope.lines}, total={scope.file: len(scope.lines)}
-        )
+        return cls(covered={scope.file: raw_lines & scope.lines}, lines={scope.file: scope.lines})
+
+    @property
+    def total(self) -> Mapping[str, int]:
+        """How many lines each file has to cover."""
+        return {file: len(lines) for file, lines in self.lines.items()}
+
+    @property
+    def uncovered(self) -> Mapping[str, frozenset[int]]:
+        """The lines no input ran, keyed like ``total``. A fully covered file keeps an empty set."""
+        return {
+            file: lines - self.covered.get(file, frozenset()) for file, lines in self.lines.items()
+        }

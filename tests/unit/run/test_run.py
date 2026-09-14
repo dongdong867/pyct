@@ -1,3 +1,4 @@
+import platform
 import time
 from pathlib import Path
 
@@ -242,3 +243,29 @@ def test_run_stops_as_a_failure_when_the_solver_died(
     assert result.stopped.kind is StopKind.SOLVER_FAILED
     assert result.stopped.detail == "cvc5: boom"
     assert result.misses == ()
+
+
+def test_run_names_the_environment_it_ran_in() -> None:
+    target = load_target("targets.flip.no_check::echo")
+
+    result = run(target, {"x": 3})
+
+    assert result.environment.python == platform.python_version()
+    assert result.environment.platform == platform.platform()
+    # the cvc5 on PATH answered the probe, so the summary can name which one solved the run
+    assert result.environment.cvc5
+
+
+def test_a_cvc5_that_will_not_say_its_version_does_not_stop_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    script = tmp_path / "cvc5"
+    script.write_text("#!/bin/sh\nexit 1\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    target = load_target("targets.flip.no_check::echo")
+
+    result = run(target, {"x": 3})
+
+    assert result.environment.cvc5 is None
+    assert result.stopped.kind is StopKind.NO_FORK

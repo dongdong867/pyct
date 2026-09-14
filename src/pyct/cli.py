@@ -14,7 +14,7 @@ from typing import NoReturn
 from pyct.config.budget import Budget
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.jsonl import render
+from pyct.results.jsonl import render, render_summary
 from pyct.results.record import InputRecord, RunResult, StopKind
 from pyct.results.trace import render_stop, render_trace
 from pyct.run.run import run
@@ -46,7 +46,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     The run prints each input as it finishes, through ``_report``, so a
     second input that hangs never hides the first one's line. Why the run
-    stopped is a fact about the whole run, so it ends stderr.
+    stopped is a fact about the whole run, so it ends stderr, and the summary
+    line ends stdout after it: the readable text comes first, as it does for
+    every input.
 
     Checks run in this order: target form, seed shape, budget, cvc5, import,
     seed present, seed fits. cvc5 comes before the import because nothing the
@@ -72,6 +74,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
+    print(render_summary(result), flush=True)
     return _exit_code(result)
 
 

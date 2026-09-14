@@ -24,3 +24,31 @@ def test_coverage_keeps_only_lines_in_scope() -> None:
 
     assert coverage.covered == {"m.py": frozenset({2, 3})}
     assert coverage.total == {"m.py": 3}
+
+
+def test_coverage_counts_the_lines_it_was_measured_against() -> None:
+    coverage = Coverage(covered={"m.py": frozenset({2})}, lines={"m.py": frozenset({1, 2, 3})})
+
+    assert coverage.total == {"m.py": 3}
+
+
+def test_coverage_names_the_lines_no_input_ran() -> None:
+    coverage = Coverage(covered={"m.py": frozenset({2})}, lines={"m.py": frozenset({1, 2, 3})})
+
+    assert coverage.uncovered == {"m.py": frozenset({1, 3})}
+
+
+def test_coverage_leaves_a_fully_covered_file_nothing_uncovered() -> None:
+    # the file is still a key, so a reader of one map finds the same files in the other
+    coverage = Coverage(covered={"m.py": frozenset({1, 2})}, lines={"m.py": frozenset({1, 2})})
+
+    assert coverage.uncovered == {"m.py": frozenset()}
+
+
+def test_coverage_of_a_scope_keeps_the_lines_it_measured_against() -> None:
+    scope = Scope(file="m.py", lines=frozenset({1, 2, 3}))
+
+    coverage = Coverage.of(scope, raw_lines=frozenset({2, 99}))
+
+    assert coverage.lines == {"m.py": frozenset({1, 2, 3})}
+    assert coverage.uncovered == {"m.py": frozenset({1, 3})}
