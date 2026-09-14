@@ -28,6 +28,7 @@ IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 # ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
 IMPLIED = 3
 RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
+SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 TWO_CHECKS = "targets.trace.two_checks::bucket"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
@@ -247,6 +248,20 @@ def test_prefers_no_fork_over_no_gain() -> None:
     # the one flip covers no new line and leaves the tree empty: both reasons hold
     assert len(input_lines(result.stdout)) == 2, result.stdout
     assert summary_line(result.stdout)["stopped"] == "no fork to flip", result.stdout
+
+
+# finish-a-run-stops-when-an-input-spends-the-budget
+def test_stops_when_an_input_spends_the_budget() -> None:
+    result = run_pyct(SPINS_AFTER_A_CHECK, '{"x": 20}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    # the seed returns; its flip lands on the side that never does and spends the rest
+    assert len(lines) == 2, result.stdout
+    assert lines[1]["source"] == "solver", result.stdout
+    assert failure_kind(lines[1]) == "timeout", result.stdout
+    assert summary_line(result.stdout)["stopped"] == "budget spent", result.stdout
+    assert result.stderr.splitlines()[-1] == "stopped: budget spent", result.stderr
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone
