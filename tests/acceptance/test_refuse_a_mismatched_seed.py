@@ -131,3 +131,14 @@ def test_reports_the_seed_before_missing_cvc5(tmp_path: Path) -> None:
     assert result.stdout == ""
     assert "s must be a str, got 5" in result.stderr
     assert "cvc5" not in result.stderr
+
+
+# reports-a-bad-flag-before-the-seed
+def test_reports_a_bad_flag_before_the_seed() -> None:
+    # the flags are read before the target is even imported, so the flag owns the message
+    result = run_pyct(TEXT, '{"s": 5}', "--budget", "0")
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert "budget must be a finite number of seconds above zero" in result.stderr
+    assert "must be a str" not in result.stderr
