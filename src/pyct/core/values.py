@@ -7,10 +7,11 @@ from collections.abc import Callable
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# every value-producing int operation pyct has not taught. The comparisons, the truth test
-# and the arithmetic below are taught and stay symbolic; `__hash__`, `__repr__`, the pickling
-# hooks and the object plumbing (`__new__`, `__getattribute__`, `__sizeof__`) are not the
-# target's path and stay int's, so a dict key and a debugger read cost nothing.
+# every value-producing int operation pyct has not taught. The comparisons, the truth test,
+# the arithmetic and the identities below are taught and stay symbolic; `__hash__`,
+# `__repr__`, the pickling hooks and the object plumbing (`__new__`, `__getattribute__`,
+# `__sizeof__`) are not the target's path and stay int's, so a dict key and a debugger read
+# cost nothing.
 _UNTAUGHT = (
     "__truediv__",
     "__rtruediv__",
@@ -31,15 +32,9 @@ _UNTAUGHT = (
     "__ror__",
     "__xor__",
     "__rxor__",
-    "__pos__",
     "__invert__",
-    "__index__",
     "__int__",
     "__float__",
-    "__round__",
-    "__trunc__",
-    "__floor__",
-    "__ceil__",
     "__str__",
     "__format__",
 )
@@ -189,6 +184,25 @@ def _power(self: ConcolicInt, exponent: object, modulus: object = None) -> objec
     return _POWER_DOWNGRADE(self, exponent, modulus)
 
 
+def _itself(self: ConcolicInt) -> ConcolicInt:
+    """An operation that changes nothing about an int: the value itself, so no node is added.
+
+    `int(x)` is not one of them: Python copies whatever `__int__` hands
+    back into a plain int, so it stays a downgrade (int-conversion-stays-a-downgrade).
+    """
+    return self
+
+
+_ROUND_DOWNGRADE = _downgraded("__round__")
+
+
+def _round(self: ConcolicInt, ndigits: object = None) -> object:
+    """Rounding an int to zero or more digits is the int itself; to a power of ten, it is not."""
+    if ndigits is None or (type(ndigits) is int and ndigits >= 0):
+        return self
+    return _ROUND_DOWNGRADE(self, ndigits)
+
+
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
@@ -224,6 +238,12 @@ class ConcolicInt(int):
     # int promises an int or a float from a power; a downgraded one is int's own, but a kept
     # one is a ConcolicInt, and the union is not what int declared
     __pow__ = _power  # pyrefly: ignore[bad-override]
+    __pos__ = _itself
+    __index__ = _itself
+    __trunc__ = _itself
+    __floor__ = _itself
+    __ceil__ = _itself
+    __round__ = _round  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
