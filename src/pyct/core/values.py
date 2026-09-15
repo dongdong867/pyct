@@ -99,8 +99,7 @@ def _compare(
 
     Now that `==` answers with a ConcolicBool, `x in [1, 2, 3]` and a dict
     lookup on a key that is equal without being the same one test that answer
-    for truth, so each records a fork at the target's line. No criterion
-    covers that, and it is left as it is.
+    for truth, so each records a fork at the target's line.
     """
 
     def compare(self: ConcolicInt, other: int) -> ConcolicBool:
