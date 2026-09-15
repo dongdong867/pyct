@@ -13,6 +13,8 @@ SIX_CHECKS_FILE = str(REPO_ROOT / "targets" / "ints" / "six_checks.py")
 COUNT_LINES = list(range(2, 16))
 REFLECTED_CHECK = "targets.ints.reflected_check::rank"
 REFLECTED_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_check.py")
+TRUTH_TEST = "targets.ints.truth_test::tell"
+TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -81,3 +83,23 @@ def test_flips_a_reflected_comparison() -> None:
         }
     ]
     assert argument(solved, "x") > 10
+
+
+# follow-integers-flips-a-truth-test
+def test_flips_a_truth_test() -> None:
+    result = run_pyct(TRUTH_TEST, '{"x": 5}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # `if x:` is a fork on its own, and the only input that takes the other side is zero
+    assert seed["forks"] == [
+        {
+            "file": TRUTH_TEST_FILE,
+            "line": 2,
+            "col": 7,
+            "taken": True,
+            "expression": ["!=", "x", 0],
+        }
+    ]
+    assert argument(solved, "x") == 0
+    assert union_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
