@@ -403,3 +403,20 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
         Downgrade(name="__str__"),
         Branch(expression=["<", "x", 10], taken=True, site=Site(file="<probe>", line=2, col=7)),
     ]
+
+
+def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
+    # a name none of the three sets holds runs as int's own with no downgrade, silently
+    taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
+    kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
+    downgraded = {
+        name
+        for name, member in vars(ConcolicInt).items()
+        if name.startswith("__") and callable(member) and name not in taught | kept
+    }
+    # int inherits __str__ from object and still counts it: print(x) drops the condition
+    ints_own = {
+        name for name in vars(int) if name.startswith("__") and callable(getattr(int, name))
+    }
+
+    assert downgraded == (ints_own | {"__str__"}) - taught - kept
