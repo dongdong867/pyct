@@ -7,10 +7,6 @@ from pyct.core.values import ConcolicBool, ConcolicInt
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
-    "__add__": lambda x: x + 1,
-    "__radd__": lambda x: 1 + x,
-    "__sub__": lambda x: x - 1,
-    "__mul__": lambda x: x * 2,
     "__truediv__": lambda x: x / 2,
     "__floordiv__": lambda x: x // 2,
     "__mod__": lambda x: x % 2,
@@ -36,6 +32,16 @@ TAUGHT_COMPARES: dict[str, tuple[Callable[[int], object], bool]] = {
     ">=": (lambda x: x >= 3, True),
     "==": (lambda x: x == 3, True),
     "!=": (lambda x: x != 3, False),
+}
+
+# the taught arithmetic: the call, and the expression it builds; each keeps Python's written order
+TAUGHT_ARITHMETIC: dict[str, tuple[Callable[[int], object], list[object]]] = {
+    "x + 1": (lambda x: x + 1, ["+", "x", 1]),
+    "1 + x": (lambda x: 1 + x, ["+", 1, "x"]),
+    "x - 1": (lambda x: x - 1, ["-", "x", 1]),
+    "10 - x": (lambda x: 10 - x, ["-", 10, "x"]),
+    "x * 2": (lambda x: x * 2, ["*", "x", 2]),
+    "2 * x": (lambda x: 2 * x, ["*", 2, "x"]),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -271,6 +277,60 @@ def test_an_untaught_operation_returns_a_plain_value_and_records_its_name(
     assert sink == [Downgrade(name=name)]
 
 
+@pytest.mark.parametrize(
+    ("call", "expression"), TAUGHT_ARITHMETIC.values(), ids=list(TAUGHT_ARITHMETIC)
+)
+def test_a_taught_operation_answers_with_an_int_that_carries_the_expression(
+    call: Callable[[int], object], expression: list[object]
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    result = call(x)
+
+    assert isinstance(result, ConcolicInt)
+    assert result == call(3)
+    assert result.expression == expression
+    assert result.sink is sink
+    # arithmetic tests nothing for truth and loses nothing, so the sink stays empty
+    assert sink == []
+
+
+def test_an_operation_on_two_concolic_ints_names_both() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+    y = ConcolicInt(4, expression="y", sink=sink)
+
+    result = x * y
+
+    assert isinstance(result, ConcolicInt)
+    assert result == 12
+    assert result.expression == ["*", "x", "y"]
+
+
+def test_arithmetic_nests_the_way_it_was_written() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(0, expression="x", sink=sink)
+
+    result = (x + 1) * 2 - 3
+
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["-", ["*", ["+", "x", 1], 2], 3]
+
+
+def test_a_bool_operand_is_pythons_own_arithmetic() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # a bool is an int, but `x + True` is not an operation the solver has a leaf for;
+    # the same rule as the compares, so the value is plain and nothing is recorded
+    result = x + True
+
+    assert result == 4
+    assert not isinstance(result, ConcolicInt)
+    assert sink == []
+
+
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
@@ -418,6 +478,7 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
 def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     # a name none of the three sets holds runs as int's own with no downgrade, silently
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
+    taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {
         name
