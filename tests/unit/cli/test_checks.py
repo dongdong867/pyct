@@ -46,6 +46,15 @@ def stored_as_text(s: str, missing: object) -> None:
 stored_as_text.__annotations__ = {"s": "str", "missing": "Missing", "return": "None"}
 
 
+class Point:
+    """A class target whose body annotation disagrees with its ``__init__``."""
+
+    n: str
+
+    def __init__(self, n: int) -> None:
+        self.value = n
+
+
 def target_for(fn: object) -> Target:
     """A Target around ``fn``; only ``fn`` matters to the seed-type check."""
     assert callable(fn)
@@ -71,6 +80,15 @@ def test_plain_annotations_skips_a_parameter_with_no_annotation() -> None:
 def test_plain_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
     # one bad name costs that parameter alone, not the whole function
     assert plain_annotations(stored_as_text) == {"s": str}
+
+
+def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
+    # the class body says str, the parameter says int; the parameter is what a seed fills
+    assert plain_annotations(Point) == {"n": int}
+
+
+def test_check_seed_types_accepts_a_seed_that_fits_a_class_init() -> None:
+    check_seed_types(target_for(Point), {"n": 5})
 
 
 def test_contradictions_names_the_parameter_the_type_and_the_value() -> None:
