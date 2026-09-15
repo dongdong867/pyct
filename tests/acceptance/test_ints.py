@@ -5,7 +5,14 @@ tests do: an operation is followed only if the fork it built reaches the solver 
 solver's answer runs, so only a real run through the command line proves it.
 """
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line, two_lines
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    input_lines,
+    one_line,
+    run_pyct,
+    summary_line,
+    two_lines,
+)
 
 SIX_CHECKS = "targets.ints.six_checks::count"
 SIX_CHECKS_FILE = str(REPO_ROOT / "targets" / "ints" / "six_checks.py")
@@ -15,6 +22,7 @@ REFLECTED_CHECK = "targets.ints.reflected_check::rank"
 REFLECTED_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_check.py")
 TRUTH_TEST = "targets.ints.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
+BIT_CHECK = "targets.ints.bit_check::parity"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -103,3 +111,15 @@ def test_flips_a_truth_test() -> None:
     ]
     assert argument(solved, "x") == 0
     assert union_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
+
+
+# follow-integers-keeps-bit-operations-as-downgrades
+def test_keeps_bit_operations_as_downgrades() -> None:
+    result = run_pyct(BIT_CHECK, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["downgrades"] == [{"name": "__and__", "count": 1}]
+    # `x & 1` is a plain int, and the truth of a plain int is nothing pyct can flip
+    assert seed["forks"] == []
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
