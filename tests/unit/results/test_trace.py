@@ -228,6 +228,12 @@ def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
     ]
 
 
+def test_render_stop_reads_the_plateau_into_why_the_run_stopped() -> None:
+    lines = render_stop(stopped_with(Stop(kind=StopKind.NO_GAIN, plateau=3))).splitlines()
+
+    assert lines[-1] == "stopped: no gain in 3 inputs"
+
+
 def test_render_stop_counts_what_the_solver_answered() -> None:
     solved = InputRecord(
         args={"x": 12}, forks=(), covered_lines=frozenset({6}), source=Source.SOLVER

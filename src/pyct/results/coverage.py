@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import types
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 
 
@@ -25,6 +25,24 @@ def _walk(code: types.CodeType) -> Iterator[types.CodeType]:
     for constant in code.co_consts:
         if isinstance(constant, types.CodeType):
             yield from _walk(constant)
+
+
+def no_gain(covered: Sequence[frozenset[int]], n: int) -> bool:
+    """True when the last ``n`` inputs each covered no line an earlier input had.
+
+    ``covered`` is one set per input that ran, in run order: an input that
+    raised is in it; a solver miss produced no input and is not. Fewer than
+    ``n`` inputs is False. A walk over the list rather than a counter kept
+    beside it, so there is nothing to keep in step with the records.
+    """
+    if len(covered) < n:
+        return False
+    seen: set[int] = set()
+    gains: list[bool] = []
+    for lines in covered:
+        gains.append(bool(lines - seen))
+        seen |= lines
+    return not any(gains[-n:])
 
 
 @dataclass(frozen=True)

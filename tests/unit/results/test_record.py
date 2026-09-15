@@ -1,3 +1,5 @@
+import pytest
+
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.record import (
@@ -68,15 +70,30 @@ def test_an_input_record_is_a_seed_with_no_aim_by_default() -> None:
     assert record.mismatch_at is None
 
 
-def test_a_stop_kind_is_the_words_on_the_stderr_line() -> None:
+def test_a_stop_kind_holds_the_words_reason_starts_from() -> None:
     assert StopKind.NO_FORK.value == "no fork to flip"
     assert StopKind.BUDGET.value == "budget spent"
+    assert StopKind.NO_GAIN.value == "no gain"
     assert StopKind.SOLVER_FAILED.value == "solver failed"
 
 
 def test_a_stop_carries_no_detail_unless_given_one() -> None:
     assert Stop(kind=StopKind.NO_FORK).detail is None
     assert Stop(kind=StopKind.SOLVER_FAILED, detail="cvc5: boom").detail == "cvc5: boom"
+
+
+def test_a_no_gain_stop_reads_its_plateau_into_the_reason() -> None:
+    assert Stop(kind=StopKind.NO_GAIN, plateau=3).reason == "no gain in 3 inputs"
+
+
+def test_every_other_stop_reads_as_its_bare_kind() -> None:
+    assert Stop(kind=StopKind.NO_FORK).reason == "no fork to flip"
+
+
+def test_a_no_gain_stop_without_a_plateau_is_refused() -> None:
+    # the reason names the N, so a stop that has none could not be written down
+    with pytest.raises(ValueError, match="names its plateau"):
+        Stop(kind=StopKind.NO_GAIN)
 
 
 def test_a_miss_names_the_fork_and_what_the_solver_answered() -> None:

@@ -1,5 +1,4 @@
-"""Acceptance tests for the finish-a-run story, children print-the-summary-line
-and loop-until-no-fork-is-left.
+"""Acceptance tests for the finish-a-run story.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the flip-one-fork
 tests do: the summary line closes stdout after the last input line, so only a real run
@@ -21,11 +20,14 @@ ONE_CHECK = "targets.flip.one_check::classify"
 NESTED_CHECKS = "targets.flip.nested_checks::bucket"
 NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
+OTHER_SIDE_EMPTY = "targets.flip.other_side_empty::mark"
+TWO_OTHER_SIDES_EMPTY = "targets.flip.two_other_sides_empty::mark"
 IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 # ``if x < 10:``, which cannot go the other way while the ``x < 5`` above it holds
 IMPLIED = 3
 RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
+SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 TWO_CHECKS = "targets.trace.two_checks::bucket"
 UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
 UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
@@ -215,6 +217,50 @@ def test_runs_without_a_plateau() -> None:
     assert len(input_lines(result.stdout)) == 3, result.stdout
     # nothing stops the loop early, because no plateau was asked for
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# finish-a-run-refuses-a-bad-plateau
+def test_refuses_a_bad_plateau() -> None:
+    for bad in ["0", "-1", "2.5", "abc"]:
+        result = run_pyct(ONE_CHECK, '{"x": 3}', "--plateau", bad)
+
+        assert result.returncode == 2, bad
+        assert result.stdout == "", bad
+        assert "plateau must be a whole number above zero" in result.stderr, bad
+
+
+# finish-a-run-stops-on-no-gain
+def test_stops_on_no_gain() -> None:
+    result = run_pyct(TWO_OTHER_SIDES_EMPTY, '{"x": 3, "y": 3}', "--plateau", "1")
+
+    assert result.returncode == 0, result.stderr
+    # the seed, then one flip whose other side runs no new line: all a plateau of 1 allows
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert summary_line(result.stdout)["stopped"] == "no gain in 1 inputs", result.stdout
+
+
+# finish-a-run-prefers-no-fork-over-no-gain
+def test_prefers_no_fork_over_no_gain() -> None:
+    result = run_pyct(OTHER_SIDE_EMPTY, '{"x": 3}', "--plateau", "1")
+
+    assert result.returncode == 0, result.stderr
+    # the one flip covers no new line and leaves the tree empty: both reasons hold
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip", result.stdout
+
+
+# finish-a-run-stops-when-an-input-spends-the-budget
+def test_stops_when_an_input_spends_the_budget() -> None:
+    result = run_pyct(SPINS_AFTER_A_CHECK, '{"x": 20}', "--budget", "1")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    # the seed returns; its flip lands on the side that never does and spends the rest
+    assert len(lines) == 2, result.stdout
+    assert lines[1]["source"] == "solver", result.stdout
+    assert failure_kind(lines[1]) == "timeout", result.stdout
+    assert summary_line(result.stdout)["stopped"] == "budget spent", result.stdout
+    assert result.stderr.splitlines()[-1] == "stopped: budget spent", result.stderr
 
 
 # finish-a-run-prints-the-summary-after-the-seed-alone

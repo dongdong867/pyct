@@ -42,7 +42,7 @@ def render_summary(result: RunResult) -> str:
     carries an empty list rather than dropping out.
     """
     payload = {
-        "stopped": result.stopped.kind.value,
+        "stopped": result.stopped.reason,
         "inputs": result.inputs,
         "solver": _counts(result.solver),
         "misses": [_miss(miss) for miss in result.misses],

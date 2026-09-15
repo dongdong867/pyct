@@ -163,17 +163,21 @@ def test_render_writes_the_position_where_the_input_left_the_plan() -> None:
 
 def summarized(
     *records: InputRecord,
-    stopped: StopKind = StopKind.NO_FORK,
+    stopped: StopKind | Stop = StopKind.NO_FORK,
     misses: tuple[Miss, ...] = (),
 ) -> dict[str, object]:
-    """The summary of a run whose only facts that matter here are its records and misses."""
+    """The summary of a run whose only facts that matter here are its records and misses.
+
+    A bare kind is the usual case; a whole ``Stop`` is for the kinds that
+    carry more than their name.
+    """
     result = RunResult(
         entry="m::f",
         records=records,
         coverage=Coverage(
             covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))}
         ),
-        stopped=Stop(kind=stopped),
+        stopped=stopped if isinstance(stopped, Stop) else Stop(kind=stopped),
         environment=ENVIRONMENT,
         misses=misses,
     )
@@ -209,6 +213,12 @@ def test_render_summary_says_why_the_run_stopped_and_how_many_inputs_ran() -> No
 
     assert payload["stopped"] == "budget spent"
     assert payload["inputs"] == 2
+
+
+def test_render_summary_reads_the_plateau_into_why_the_run_stopped() -> None:
+    payload = summarized(SEED, SOLVED, stopped=Stop(kind=StopKind.NO_GAIN, plateau=3))
+
+    assert payload["stopped"] == "no gain in 3 inputs"
 
 
 def test_render_summary_counts_the_solver_answers_by_kind() -> None:

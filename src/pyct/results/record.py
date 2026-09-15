@@ -56,21 +56,43 @@ class InputRecord:
 
 
 class StopKind(StrEnum):
-    """Why a run ended. The values are the words on the ``stopped`` line."""
+    """Why a run ended. ``Stop.reason`` turns a kind into the words on the
+    ``stopped`` line, adding the N a plateau stop names."""
 
     # the pool has no open fork left: every fork of every path was aimed at, or
     # both its sides ran
     NO_FORK = "no fork to flip"
     BUDGET = "budget spent"
+    NO_GAIN = "no gain"
     SOLVER_FAILED = "solver failed"
 
 
 @dataclass(frozen=True)
 class Stop:
-    """How the run ended, and, when the solver failed, what it said."""
+    """How the run ended: what it said when the solver failed, and the plateau it ran out of.
+
+    ``reason`` is the words both the stderr line and the summary line carry,
+    which is the kind's own for every stop but a no-gain one.
+    """
 
     kind: StopKind
     detail: str | None = None
+    plateau: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind is StopKind.NO_GAIN and self.plateau is None:
+            raise ValueError("a no-gain stop names its plateau")
+
+    @property
+    def reason(self) -> str:
+        """Why the run ended, in the words the ``stopped`` line carries.
+
+        One source for the summary line and the stderr line, so the two
+        streams cannot drift apart.
+        """
+        if self.kind is StopKind.NO_GAIN:
+            return f"{self.kind.value} in {self.plateau} inputs"
+        return self.kind.value
 
 
 class MissWhy(StrEnum):
