@@ -404,12 +404,12 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    assert abs(x) == 3
+    assert x >> 1 == 1
     assert str(x) == "3"
     assert _probe()(x < 10) == "yes"
 
     assert sink == [
-        Downgrade(name="__abs__"),
+        Downgrade(name="__rshift__"),
         Downgrade(name="__str__"),
         Branch(expression=["<", "x", 10], taken=True, site=Site(file="<probe>", line=2, col=7)),
     ]

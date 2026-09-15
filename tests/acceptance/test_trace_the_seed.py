@@ -36,8 +36,8 @@ EXITS = "targets.trace.exits::leave"
 EXITS_FILE = str(REPO_ROOT / "targets" / "trace" / "exits.py")
 NEVER_RETURNS = "targets.trace.never_returns::spin"
 NEVER_RETURNS_FILE = str(REPO_ROOT / "targets" / "trace" / "never_returns.py")
-THROUGH_ABS = "targets.trace.through_abs::size"
-THROUGH_ABS_FILE = str(REPO_ROOT / "targets" / "trace" / "through_abs.py")
+THROUGH_SHIFT = "targets.trace.through_shift::size"
+THROUGH_SHIFT_FILE = str(REPO_ROOT / "targets" / "trace" / "through_shift.py")
 
 
 # trace-the-seed-prints-one-json-line
@@ -289,17 +289,17 @@ def test_fails_on_a_pyct_bug(
 
 # trace-the-seed-records-a-downgrade
 def test_records_a_downgrade() -> None:
-    result = run_pyct(THROUGH_ABS, '{"x": -3}')
+    result = run_pyct(THROUGH_SHIFT, '{"x": -3}')
 
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
-    # abs drops the condition, so the name of the call it went through is all that is left
-    assert line["downgrades"] == [{"name": "__abs__", "count": 1}]
-    # y is a plain int after abs, so `y < 10` is Python's own compare and no fork is recorded
+    # a shift drops the condition, so the name of the call it went through is all that is left
+    assert line["downgrades"] == [{"name": "__rshift__", "count": 1}]
+    # y is a plain int after the shift, so `y < 10` is Python's own compare and no fork is recorded
     assert line["forks"] == []
-    assert line["covered"] == {THROUGH_ABS_FILE: [2, 3, 4]}
+    assert line["covered"] == {THROUGH_SHIFT_FILE: [2, 3, 4]}
     # the def and the four body lines
-    assert line["total"] == {THROUGH_ABS_FILE: 5}
+    assert line["total"] == {THROUGH_SHIFT_FILE: 5}
 
 
 # trace-the-seed-writes-readable-trace-to-stderr
@@ -320,9 +320,9 @@ def test_writes_a_readable_trace_to_stderr() -> None:
     # fork and the target's own, each taken the other way
     assert len(input_lines(result.stdout)) == 3, result.stdout
 
-    lost = run_pyct(THROUGH_ABS, '{"x": -3}')
+    lost = run_pyct(THROUGH_SHIFT, '{"x": -3}')
 
-    assert "downgrades __abs__" in lost.stderr.splitlines()
+    assert "downgrades __rshift__" in lost.stderr.splitlines()
 
     raised = run_pyct(RAISES, '{"x": 3}')
 
@@ -335,11 +335,11 @@ def test_collapses_a_loops_repeated_downgrade_into_one_entry() -> None:
 
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
-    # `n += x` runs once per pass, so the line would grow one entry per pass without the collapse
+    # `n ^= x` runs once per pass, so the line would grow one entry per pass without the collapse
     downgrades = line["downgrades"]
     assert isinstance(downgrades, list)
     assert len(downgrades) == 1, downgrades[:3]
     entry = downgrades[0]
     assert isinstance(entry, dict)
-    assert entry["name"] == "__radd__"
+    assert entry["name"] == "__rxor__"
     assert entry["count"] > 1
