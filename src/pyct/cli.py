@@ -211,8 +211,8 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
-    kept as text, which ``from __future__ import annotations`` is what makes
-    happen, is evaluated in the function's own globals. Anything else the
+    kept as text, which is what ``from __future__ import annotations``
+    leaves behind, is read in the function's own globals. Anything else the
     annotation turns out to be, ``str | None`` or ``list[int]`` or a class,
     is not one of the four and is not kept.
     """
@@ -231,7 +231,8 @@ def _resolved(annotation: object, fn: Callable[..., object]) -> object:
     if not isinstance(annotation, str):
         return annotation
     try:
-        return eval(annotation, getattr(fn, "__globals__", {}))  # noqa: S307
+        # the text is the target's own source, read where the target reads its names
+        return eval(annotation, getattr(fn, "__globals__", {}))
     except Exception:
         return None
 
