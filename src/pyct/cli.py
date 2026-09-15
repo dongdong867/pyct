@@ -10,7 +10,7 @@ import inspect
 import json
 import math
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -23,7 +23,7 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
 from pyct.run.run import run
-from pyct.run.target import TargetError, load_target
+from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
@@ -57,11 +57,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     stdout after it: the readable text comes first, as it does for every
     input.
 
-    Checks run in this order: target form, seed shape, budget, plateau, cvc5,
-    import, seed present, seed fits. cvc5 comes before the import because
-    nothing the target does can make up for a missing solver. The import comes
-    before the seed-present check because that message names the target's
-    parameters, which only the loaded target knows.
+    Checks run in this order: target form, seed shape, budget, plateau,
+    import, seed present, seed fits, seed types, cvc5. Everything the command
+    line got wrong is reported first, because a wrong command line is wrong
+    whatever the machine has installed; cvc5 is the last check before the run
+    for the same reason, as it is the only one about the machine. The import
+    comes before the three seed checks because they all read the loaded
+    target: its parameters, and the annotations on them.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
@@ -69,11 +71,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
         plateau = parse_plateau(command.plateau_text)
-        locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
+        check_seed_types(target, seed)
+        locate()
         result = run(
             target,
             seed,
@@ -201,6 +204,70 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         given = ", ".join(seed) or "nothing"
         parameters = ", ".join(signature.parameters) or "no parameters"
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
+
+
+def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
+    """The parameters annotated with a bare ``str``, ``int``, ``float`` or ``bool``.
+
+    Each annotation is resolved on its own, so one name that does not resolve
+    costs that parameter alone rather than the whole function. An annotation
+    kept as text, which is what ``from __future__ import annotations``
+    leaves behind, is read in the function's own globals. Anything else the
+    annotation turns out to be, ``str | None`` or ``list[int]`` or a class,
+    is not one of the four and is not kept.
+    """
+    hints: dict[str, type] = {}
+    for name, annotation in inspect.get_annotations(fn).items():
+        if name == "return":
+            continue
+        resolved = _resolved(annotation, fn)
+        if resolved in (str, int, float, bool):
+            hints[name] = resolved
+    return hints
+
+
+def _resolved(annotation: object, fn: Callable[..., object]) -> object:
+    """The annotation itself, or what its text names. Any failure is no annotation."""
+    if not isinstance(annotation, str):
+        return annotation
+    try:
+        # the text is the target's own source, read where the target reads its names
+        return eval(annotation, getattr(fn, "__globals__", {}))
+    except Exception:
+        return None
+
+
+def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
+    """One line per seeded parameter whose value Python's own typing would not accept.
+
+    The lines come in the order of ``hints``, which is signature order. A
+    value passes when it is an instance of the annotated type, plus the one
+    allowance Python makes itself: an ``int`` stands in where a ``float`` is
+    asked for. ``bool`` being a subclass of ``int`` is Python's rule too, so
+    ``True`` passes ``int`` while ``1`` fails ``bool``. The value is spelled
+    as JSON because the seed was typed as JSON.
+    """
+    return [
+        _refusal(name, hint, seed[name])
+        for name, hint in hints.items()
+        if name in seed and not _accepts(hint, seed[name])
+    ]
+
+
+def _accepts(hint: type, value: object) -> bool:
+    return isinstance(value, hint) or (hint is float and isinstance(value, int))
+
+
+def _refusal(name: str, hint: type, value: object) -> str:
+    article = "an" if hint is int else "a"
+    return f"{name} must be {article} {hint.__name__}, got {json.dumps(value)}"
+
+
+def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
+    """Refuse a seed that contradicts a plain annotation, naming every one at once."""
+    lines = contradictions(plain_annotations(target.fn), seed)
+    if lines:
+        raise UsageError("\n".join(lines))
 
 
 def missing_args_message(signature: inspect.Signature) -> str:

@@ -29,7 +29,7 @@ def test_main_fails_when_cvc5_is_not_on_the_path(
     assert "install" in captured.err
 
 
-def test_main_checks_for_cvc5_before_it_loads_the_target(
+def test_main_loads_the_target_before_it_checks_for_cvc5(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -39,8 +39,8 @@ def test_main_checks_for_cvc5_before_it_loads_the_target(
 
     assert code == 1
     captured = capsys.readouterr()
-    assert "cvc5" in captured.err
-    assert "broken_import" not in captured.err
+    assert "broken_import" in captured.err
+    assert "cvc5" not in captured.err
 
 
 def test_main_says_what_it_could_not_read_from_cvc5_without_a_traceback(
