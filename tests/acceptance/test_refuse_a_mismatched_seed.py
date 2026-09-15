@@ -4,7 +4,7 @@ Every test spawns ``python -P -m pyct`` through the harness. A refusal is a
 usage error: exit 2, nothing on stdout, and the reason on stderr.
 """
 
-from tests.acceptance.harness import run_pyct
+from tests.acceptance.harness import first_line, run_pyct
 
 TEXT = "targets.annotations.plain::echo_text"
 NUMBER = "targets.annotations.plain::echo_number"
@@ -46,3 +46,38 @@ def test_reports_every_contradiction_at_once() -> None:
     lines = result.stderr.splitlines()
     assert [line for line in lines if line.startswith("name ")] == ["name must be a str, got 5"]
     assert [line for line in lines if line.startswith("age ")] == ['age must be an int, got "x"']
+
+
+# runs-a-seed-that-matches
+def test_runs_a_seed_that_matches() -> None:
+    result = run_pyct(TEXT_AND_NUMBER, '{"s": "abc", "n": 1}')
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["args"] == {"s": "abc", "n": 1}
+
+
+# follows-python-on-numbers
+def test_follows_python_on_numbers() -> None:
+    # a bool is an int to Python, and an int stands in where a float is asked for
+    result = run_pyct(NUMBERS, '{"n": true, "x": 3, "y": false}')
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["args"] == {"n": True, "x": 3, "y": False}
+
+
+# refuses-an-int-for-a-bool
+def test_refuses_an_int_for_a_bool() -> None:
+    result = run_pyct(FLAG, '{"b": 1}')
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert "b must be a bool, got 1" in result.stderr
+
+
+# refuses-none-for-a-plain-type
+def test_refuses_none_for_a_plain_type() -> None:
+    result = run_pyct(TEXT, '{"s": null}')
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert "s must be a str, got null" in result.stderr
