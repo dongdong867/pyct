@@ -8,8 +8,9 @@ from collections.abc import Callable
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
 # every value-producing int operation pyct has not taught. The six comparisons and the
-# truth test are taught and stay symbolic; `__hash__`, `__repr__` and the pickling hooks
-# are not the target's path and stay int's, so a dict key and a debugger read cost nothing.
+# truth test are taught and stay symbolic; `__hash__`, `__repr__`, the pickling hooks and
+# the object plumbing (`__new__`, `__getattribute__`, `__sizeof__`) are not the target's
+# path and stay int's, so a dict key and a debugger read cost nothing.
 _UNTAUGHT = (
     "__add__",
     "__radd__",
