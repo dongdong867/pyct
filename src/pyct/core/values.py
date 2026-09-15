@@ -8,9 +8,9 @@ from types import NotImplementedType
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# every value-producing int operation pyct has not taught. `__lt__` is taught and stays
-# symbolic; `__hash__`, `__repr__` and the pickling hooks are not the target's path and
-# stay int's, so a dict key and a debugger read cost nothing.
+# every value-producing int operation pyct has not taught. The six comparisons are taught
+# and stay symbolic; `__hash__`, `__repr__` and the pickling hooks are not the target's
+# path and stay int's, so a dict key and a debugger read cost nothing.
 _UNTAUGHT = (
     "__add__",
     "__radd__",
@@ -50,14 +50,21 @@ _UNTAUGHT = (
     "__floor__",
     "__ceil__",
     "__bool__",
-    "__eq__",
-    "__ne__",
-    "__gt__",
-    "__ge__",
-    "__le__",
     "__str__",
     "__format__",
 )
+
+# Python's six comparisons, and how an expression spells each of them. Python swaps the
+# operands of a reflected compare itself, so `10 < x` runs `x.__gt__(10)` and prints
+# [">", "x", 10]; nothing here has to reflect anything.
+_COMPARISONS = {
+    "__lt__": "<",
+    "__le__": "<=",
+    "__gt__": ">",
+    "__ge__": ">=",
+    "__eq__": "==",
+    "__ne__": "!=",
+}
 
 
 class ConcolicBool(int):
@@ -88,8 +95,8 @@ class ConcolicBool(int):
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
-    Only `<` is symbolic. Any other operation is int's own and returns a
-    plain value, with a downgrade in the sink naming what was lost.
+    The six comparisons are symbolic. Any other operation is int's own and
+    returns a plain value, with a downgrade in the sink naming what was lost.
     """
 
     expression: Expression
@@ -104,20 +111,33 @@ class ConcolicInt(int):
         self.sink = sink
         return self
 
-    def __lt__(self, other: int) -> ConcolicBool | NotImplementedType:  # type: ignore[override]
-        # a bool is an int, but `x < True` is not a compare the solver has a leaf for;
-        # a compare's value is a bool the same way
-        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
-            return NotImplemented
-        concrete = int.__lt__(self, other)
-        return ConcolicBool(
-            bool(concrete), expression=["<", self.expression, _form_of(other)], sink=self.sink
-        )
-
 
 def _form_of(value: int) -> Expression:
     """The symbolic form of an operand: its expression if it has one, else itself."""
     return value.expression if isinstance(value, ConcolicInt) else value
+
+
+def _compare(op: str, operation: Callable[[int, int], bool]) -> Callable[..., object]:
+    """int's own answer to one comparison, carrying the condition that produced it.
+
+    Now that `==` answers with a ConcolicBool, `x in [1, 2, 3]` and a dict
+    lookup on a key that is equal without being the same one test that answer
+    for truth, so each records a fork at the target's line. No criterion
+    covers that, and it is left as it is.
+    """
+
+    def compare(self: ConcolicInt, other: int) -> ConcolicBool | NotImplementedType:
+        # a bool is an int, but `x < True` is not a compare the solver has a leaf for;
+        # a compare's value is a bool the same way
+        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
+            return NotImplemented
+        return ConcolicBool(
+            bool(operation(self, other)),
+            expression=[op, self.expression, _form_of(other)],
+            sink=self.sink,
+        )
+
+    return compare
 
 
 def _downgraded(name: str) -> Callable[..., object]:
@@ -151,3 +171,7 @@ def is_downgrade_frame(code: types.CodeType) -> bool:
 # forty-odd methods that differ only in the name they call and record, so a loop writes them
 for _name in _UNTAUGHT:
     setattr(ConcolicInt, _name, _downgraded(_name))
+
+# and six that differ only in their spelling and the answer int gives them
+for _name, _op in _COMPARISONS.items():
+    setattr(ConcolicInt, _name, _compare(_op, getattr(int, _name)))
