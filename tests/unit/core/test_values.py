@@ -3,7 +3,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.values import ConcolicInt
+from pyct.core.values import ConcolicBool, ConcolicInt
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
@@ -24,10 +24,18 @@ DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
     "__neg__": lambda x: -x,
     "__abs__": abs,
     "__invert__": lambda x: ~x,
-    "__gt__": lambda x: x > 1,
-    "__le__": lambda x: x <= 1,
     "__float__": float,
     "__round__": round,
+}
+
+# the six taught comparisons: the call, and the answer int's own gives for x = 3
+TAUGHT_COMPARES: dict[str, tuple[Callable[[int], object], bool]] = {
+    "<": (lambda x: x < 3, False),
+    "<=": (lambda x: x <= 3, True),
+    ">": (lambda x: x > 3, False),
+    ">=": (lambda x: x >= 3, True),
+    "==": (lambda x: x == 3, True),
+    "!=": (lambda x: x != 3, False),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -61,10 +69,40 @@ def test_a_concolic_int_is_a_real_int() -> None:
     assert x.expression == "x"
 
 
-def test_any_operation_but_less_than_returns_a_plain_int() -> None:
+def test_an_untaught_operation_returns_a_plain_int() -> None:
     x = ConcolicInt(3, expression="x", sink=[])
 
     assert type(x + 1) is int
+
+
+@pytest.mark.parametrize(("op", "case"), TAUGHT_COMPARES.items(), ids=list(TAUGHT_COMPARES))
+def test_a_taught_compare_builds_its_expression_and_records_nothing(
+    op: str, case: tuple[Callable[[int], object], bool]
+) -> None:
+    call, answer = case
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    result = call(x)
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == [op, "x", 3]
+    # int.__bool__, not bool(result): bool() would record the fork this test is not about
+    assert int.__bool__(result) is answer
+    assert sink == []
+
+
+def test_a_taught_compare_against_a_truth_value_is_pythons_own() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+    y = ConcolicInt(3, expression="y", sink=sink)
+
+    # a bool and a compare's value stand for a truth value, not a number, so `>=` against
+    # either is int's own: a plain bool, and no leaf that drops the compare behind it
+    assert (x >= True) is True
+    assert (x >= (y < 5)) is True
+
+    assert sink == []
 
 
 def test_less_than_builds_the_expression_and_records_nothing() -> None:
@@ -230,14 +268,15 @@ def test_reading_a_concolic_int_back_records_nothing() -> None:
     assert sink == []
 
 
-def test_equality_returns_a_plain_bool_and_records_a_downgrade() -> None:
+def test_equality_forks_where_it_is_tested_for_truth() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    result = x == 3
+    assert _probe()(x == 3) == "yes"
 
-    assert result is True
-    assert sink == [Downgrade(name="__eq__")]
+    assert sink == [
+        Branch(expression=["==", "x", 3], taken=True, site=Site(file="<probe>", line=2, col=7))
+    ]
 
 
 def test_a_truth_test_on_a_concolic_int_records_a_downgrade() -> None:
@@ -310,14 +349,16 @@ def test_an_operation_the_other_type_answers_records_nothing() -> None:
     assert sink == []
 
 
-def test_a_reflected_untaught_compare_records_the_reflected_name() -> None:
+def test_a_reflected_compare_records_the_compare_python_ran() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # `10 < x` asks x first, as `x.__gt__(10)`; unlike `<`, `>` is not taught
-    assert (10 < x) is False  # noqa: SIM300 - the reflected form is the point
+    # Python swaps the operands: `10 < x` asks x first, as `x.__gt__(10)`
+    assert _probe()(10 < x) == "no"  # noqa: SIM300 - the reflected form is the point
 
-    assert sink == [Downgrade(name="__gt__")]
+    assert sink == [
+        Branch(expression=[">", "x", 10], taken=False, site=Site(file="<probe>", line=2, col=7))
+    ]
 
 
 def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
