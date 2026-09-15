@@ -270,6 +270,17 @@ def test_run_prefers_no_fork_over_no_gain() -> None:
     assert result.stopped.kind is StopKind.NO_FORK
 
 
+def test_run_does_not_count_a_solver_miss_toward_the_plateau() -> None:
+    target = load_target("targets.flip.implied_check::narrow")
+
+    result = run(target, {"x": 3}, limits=Limits(plateau=Plateau(inputs=1)))
+
+    # the miss produced no input, so the window sees only the seed and the gaining flip
+    assert len(result.misses) == 1
+    assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.NO_FORK
+
+
 def test_run_records_a_miss_when_the_last_fork_cannot_be_flipped() -> None:
     target = load_target("targets.flip.implied_check::narrow")
 
