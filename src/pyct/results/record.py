@@ -56,14 +56,13 @@ class InputRecord:
 
 
 class StopKind(StrEnum):
-    """Why a run ended. The values are the words on the ``stopped`` line."""
+    """Why a run ended. ``Stop.reason`` turns a kind into the words on the
+    ``stopped`` line, adding the N a plateau stop names."""
 
     # the pool has no open fork left: every fork of every path was aimed at, or
     # both its sides ran
     NO_FORK = "no fork to flip"
     BUDGET = "budget spent"
-    # the N lives on the ``Stop`` rather than in the value, so one kind covers
-    # every plateau; ``reason`` is what says it
     NO_GAIN = "no gain"
     SOLVER_FAILED = "solver failed"
 

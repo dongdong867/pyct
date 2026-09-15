@@ -70,7 +70,7 @@ def test_an_input_record_is_a_seed_with_no_aim_by_default() -> None:
     assert record.mismatch_at is None
 
 
-def test_a_stop_kind_is_the_words_on_the_stderr_line() -> None:
+def test_a_stop_kind_holds_the_words_reason_starts_from() -> None:
     assert StopKind.NO_FORK.value == "no fork to flip"
     assert StopKind.BUDGET.value == "budget spent"
     assert StopKind.NO_GAIN.value == "no gain"
