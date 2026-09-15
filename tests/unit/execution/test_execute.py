@@ -273,6 +273,22 @@ def test_execute_reports_a_raise_inside_a_downgrade_as_the_targets() -> None:
     )
 
 
+def test_execute_reports_a_raise_inside_a_taught_operations_fallback_as_the_targets() -> None:
+    def invert(x: int) -> float:
+        return x**-1
+
+    ctx = ExecutionContext(fn=invert, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 0})
+
+    # a negative exponent falls to int's own `**`, so the raise is the target's
+    assert result.failure == Failure(
+        kind=FailureKind.TARGET_RAISED,
+        detail="ZeroDivisionError: 0.0 cannot be raised to a negative power",
+        traceback=None,
+    )
+
+
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     def through_shift(x: int) -> str:
         y = x >> 1
