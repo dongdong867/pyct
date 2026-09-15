@@ -154,6 +154,16 @@ def test_less_than_a_bool_is_pythons_own_compare() -> None:
     assert sink == []
 
 
+def test_equal_to_a_non_int_is_pythons_own_answer() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # both sides answer NotImplemented; Python settles `==` by identity instead of raising
+    assert (x == None) is False  # noqa: E711 - the target's spelling
+    assert (x != "a") is True
+    assert sink == []
+
+
 def test_less_than_a_compares_value_is_pythons_own_compare() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(0, expression="x", sink=sink)
