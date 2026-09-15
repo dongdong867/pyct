@@ -154,15 +154,6 @@ def _downgraded(name: str) -> Callable[..., object]:
     return downgrade
 
 
-# every closure one `def` makes shares that def's code object, so one of them stands for all
-_DOWNGRADE_CODE = _downgraded("__abs__").__code__
-
-
-def is_downgrade_frame(code: types.CodeType) -> bool:
-    """Whether a frame running ``code`` is a downgrade's."""
-    return code is _DOWNGRADE_CODE
-
-
 # cvc5 takes `^` with a constant exponent only, and refuses one at this bound or above
 _POWER_LIMIT = 67_108_864
 _POWER_DOWNGRADE = _downgraded("__pow__")
@@ -201,6 +192,20 @@ def _round(self: ConcolicInt, ndigits: object = None) -> object:
     if ndigits is None or (type(ndigits) is int and ndigits >= 0):
         return self
     return _ROUND_DOWNGRADE(self, ndigits)
+
+
+# every closure one `def` makes shares that def's code object, so one of them stands for all;
+# _power and _round hand their fallback to int's own operation too, so their frames count
+_DOWNGRADE_CODES = frozenset({_downgraded("__invert__").__code__, _power.__code__, _round.__code__})
+
+
+def is_downgrade_frame(code: types.CodeType) -> bool:
+    """Whether a frame running ``code`` only runs int's own operation, so a raise is the target's.
+
+    A downgrade closure is one; so are ``_power`` and ``_round``, whose
+    fallback hands the call to int's own operation.
+    """
+    return code in _DOWNGRADE_CODES
 
 
 class ConcolicInt(int):
