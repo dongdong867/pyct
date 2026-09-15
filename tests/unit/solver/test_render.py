@@ -43,6 +43,12 @@ def test_the_two_equality_operators_are_written_the_way_smt_spells_them() -> Non
     assert "(assert (distinct x 10))" in other.splitlines()
 
 
+def test_arithmetic_is_written_under_its_own_name() -> None:
+    text = render((fork([">", ["-", ["*", ["+", "x", 1], 2], 3], 10], taken=True),), {"x": int})
+
+    assert "(assert (> (- (* (+ x 1) 2) 3) 10))" in text.splitlines()
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})
