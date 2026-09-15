@@ -8,9 +8,9 @@ from types import NotImplementedType
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# every value-producing int operation pyct has not taught. The six comparisons are taught
-# and stay symbolic; `__hash__`, `__repr__` and the pickling hooks are not the target's
-# path and stay int's, so a dict key and a debugger read cost nothing.
+# every value-producing int operation pyct has not taught. The six comparisons and the
+# truth test are taught and stay symbolic; `__hash__`, `__repr__` and the pickling hooks
+# are not the target's path and stay int's, so a dict key and a debugger read cost nothing.
 _UNTAUGHT = (
     "__add__",
     "__radd__",
@@ -49,7 +49,6 @@ _UNTAUGHT = (
     "__trunc__",
     "__floor__",
     "__ceil__",
-    "__bool__",
     "__str__",
     "__format__",
 )
@@ -65,6 +64,17 @@ _COMPARISONS = {
     "__eq__": "==",
     "__ne__": "!=",
 }
+
+
+def _forked(sink: BranchSink, expression: Expression, taken: bool) -> bool:
+    """Record the fork a truth test just took, and answer with the side it took.
+
+    Python demands a real bool back from ``__bool__``, so neither class can
+    answer with a value that carries the condition; the condition goes to the
+    sink here instead. One helper, so both classes record it the same way.
+    """
+    sink.append(Branch(expression=expression, taken=taken, site=caller_site()))
+    return taken
 
 
 class ConcolicBool(int):
@@ -83,9 +93,7 @@ class ConcolicBool(int):
         return self
 
     def __bool__(self) -> bool:
-        taken = int.__bool__(self)
-        self.sink.append(Branch(expression=self.expression, taken=taken, site=caller_site()))
-        return taken
+        return _forked(self.sink, self.expression, int.__bool__(self))
 
     def __repr__(self) -> str:
         # int.__bool__, not bool(self): bool() would record a fork
@@ -95,8 +103,9 @@ class ConcolicBool(int):
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
-    The six comparisons are symbolic. Any other operation is int's own and
-    returns a plain value, with a downgrade in the sink naming what was lost.
+    The six comparisons and the truth test are symbolic. Any other operation is
+    int's own and returns a plain value, with a downgrade in the sink naming
+    what was lost.
     """
 
     expression: Expression
@@ -110,6 +119,10 @@ class ConcolicInt(int):
         self.expression = expression
         self.sink = sink
         return self
+
+    def __bool__(self) -> bool:
+        # the int is the condition: zero is the one value that takes the other side
+        return _forked(self.sink, ["!=", self.expression, 0], int.__bool__(self))
 
 
 def _form_of(value: int) -> Expression:
