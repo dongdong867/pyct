@@ -1,3 +1,4 @@
+import operator
 from collections.abc import Callable
 
 import pytest
@@ -89,7 +90,7 @@ def test_a_concolic_int_is_a_real_int() -> None:
 def test_an_untaught_operation_returns_a_plain_int() -> None:
     x = ConcolicInt(3, expression="x", sink=[])
 
-    assert type(x + 1) is int
+    assert type(x >> 1) is int
 
 
 @pytest.mark.parametrize(("op", "case"), TAUGHT_COMPARES.items(), ids=list(TAUGHT_COMPARES))
@@ -289,7 +290,8 @@ def test_a_taught_operation_answers_with_an_int_that_carries_the_expression(
     result = call(x)
 
     assert isinstance(result, ConcolicInt)
-    assert result == call(3)
+    # operator.index reads the plain value: `==` on the result would fork into the sink
+    assert operator.index(result) == call(3)
     assert result.expression == expression
     assert result.sink is sink
     # arithmetic tests nothing for truth and loses nothing, so the sink stays empty
@@ -304,7 +306,7 @@ def test_an_operation_on_two_concolic_ints_names_both() -> None:
     result = x * y
 
     assert isinstance(result, ConcolicInt)
-    assert result == 12
+    assert operator.index(result) == 12
     assert result.expression == ["*", "x", "y"]
 
 

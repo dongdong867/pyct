@@ -7,17 +7,11 @@ from collections.abc import Callable
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# every value-producing int operation pyct has not taught. The six comparisons and the
-# truth test are taught and stay symbolic; `__hash__`, `__repr__`, the pickling hooks and
-# the object plumbing (`__new__`, `__getattribute__`, `__sizeof__`) are not the target's
-# path and stay int's, so a dict key and a debugger read cost nothing.
+# every value-producing int operation pyct has not taught. The comparisons, the truth test
+# and the arithmetic below are taught and stay symbolic; `__hash__`, `__repr__`, the pickling
+# hooks and the object plumbing (`__new__`, `__getattribute__`, `__sizeof__`) are not the
+# target's path and stay int's, so a dict key and a debugger read cost nothing.
 _UNTAUGHT = (
-    "__add__",
-    "__radd__",
-    "__sub__",
-    "__rsub__",
-    "__mul__",
-    "__rmul__",
     "__truediv__",
     "__rtruediv__",
     "__floordiv__",
@@ -117,12 +111,35 @@ def _compare(
     return compare
 
 
+def _arithmetic(
+    op: str, operation: Callable[[int, int], int], *, reflected: bool = False
+) -> Callable[[ConcolicInt, int], ConcolicInt]:
+    """int's own answer to one arithmetic operation, carrying the expression that built it.
+
+    The expression keeps Python's written order: a reflected method is
+    called on the right operand, so `10 - x` is ["-", 10, "x"]. A bool on
+    the other side is not an operand the solver has a leaf for, and gets
+    NotImplemented the way the compares give it, so Python answers with
+    int's own plain value; follow-booleans owns it.
+    """
+
+    def compute(self: ConcolicInt, other: int) -> ConcolicInt:
+        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
+            return NotImplemented
+        operands = (
+            [_form_of(other), self.expression] if reflected else [self.expression, _form_of(other)]
+        )
+        return ConcolicInt(operation(self, other), expression=[op, *operands], sink=self.sink)
+
+    return compute
+
+
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
-    The six comparisons and the truth test are symbolic. Any other operation is
-    int's own and returns a plain value, with a downgrade in the sink naming
-    what was lost.
+    The six comparisons, the truth test and the arithmetic below are symbolic.
+    Any other operation is int's own and returns a plain value, with a
+    downgrade in the sink naming what was lost.
     """
 
     expression: Expression
@@ -140,6 +157,13 @@ class ConcolicInt(int):
     __ne__ = _compare("!=", int.__ne__)  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = int.__hash__
+
+    __add__ = _arithmetic("+", int.__add__)
+    __radd__ = _arithmetic("+", int.__radd__, reflected=True)
+    __sub__ = _arithmetic("-", int.__sub__)
+    __rsub__ = _arithmetic("-", int.__rsub__, reflected=True)
+    __mul__ = _arithmetic("*", int.__mul__)
+    __rmul__ = _arithmetic("*", int.__rmul__, reflected=True)
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
