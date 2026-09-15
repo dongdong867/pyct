@@ -59,6 +59,12 @@ def test_a_builtin_and_a_unary_minus_are_written_by_arity() -> None:
     assert "(assert (< (- x) (- 3)))" in text.splitlines()
 
 
+def test_a_power_is_written_with_a_caret() -> None:
+    text = render((fork(["==", ["**", "x", 2], 9], taken=True),), {"x": int})
+
+    assert "(assert (= (^ x 2) 9))" in text.splitlines()
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})

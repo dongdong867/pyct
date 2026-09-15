@@ -12,7 +12,6 @@ DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
     "__floordiv__": lambda x: x // 2,
     "__mod__": lambda x: x % 2,
     "__divmod__": lambda x: divmod(x, 2),
-    "__pow__": lambda x: x**2,
     "__lshift__": lambda x: x << 1,
     "__rshift__": lambda x: x >> 1,
     "__and__": lambda x: x & 1,
@@ -43,6 +42,16 @@ TAUGHT_ARITHMETIC: dict[str, tuple[Callable[[int], object], list[object]]] = {
     "2 * x": (lambda x: 2 * x, ["*", 2, "x"]),
     "-x": (lambda x: -x, ["-", "x"]),
     "abs(x)": (abs, ["abs", "x"]),
+    "x ** 2": (lambda x: x**2, ["**", "x", 2]),
+    "x ** 0": (lambda x: x**0, ["**", "x", 0]),
+}
+
+# a power the solver cannot take: each is int's own answer and a `__pow__` downgrade
+DOWNGRADED_POWERS: dict[str, Callable[[int], object]] = {
+    "negative exponent": lambda x: x**-1,
+    "bool exponent": lambda x: x**True,
+    "with a modulus": lambda x: pow(x, 2, 5),
+    "past cvc5's bound": lambda x: x**67_108_864,
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -333,6 +342,40 @@ def test_a_bool_operand_is_pythons_own_arithmetic() -> None:
     assert sink == []
 
 
+@pytest.mark.parametrize("call", DOWNGRADED_POWERS.values(), ids=list(DOWNGRADED_POWERS))
+def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(1, expression="x", sink=sink)
+
+    result = call(x)
+
+    assert result == call(1)
+    assert not isinstance(result, ConcolicInt)
+    assert sink == [Downgrade(name="__pow__")]
+
+
+def test_a_float_exponent_is_floats_own_power() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(4, expression="x", sink=sink)
+
+    # int itself answers NotImplemented to a float exponent and float takes over, so the
+    # condition is lost on the other side and nothing here records it
+    assert x**0.5 == 2.0
+    assert sink == []
+
+
+def test_a_symbolic_exponent_is_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(2, expression="x", sink=sink)
+    y = ConcolicInt(3, expression="y", sink=sink)
+
+    assert x**y == 8
+    assert 2**x == 4
+
+    # cvc5 takes a constant exponent only, so both spellings stay int's own
+    assert sink == [Downgrade(name="__pow__"), Downgrade(name="__rpow__")]
+
+
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
@@ -481,7 +524,7 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     # a name none of the three sets holds runs as int's own with no downgrade, silently
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
     taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
-    taught |= {"__neg__", "__abs__"}
+    taught |= {"__neg__", "__abs__", "__pow__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {
         name
