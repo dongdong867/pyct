@@ -4,6 +4,8 @@ Every test spawns ``python -P -m pyct`` through the harness. A refusal is a
 usage error: exit 2, nothing on stdout, and the reason on stderr.
 """
 
+from pathlib import Path
+
 from tests.acceptance.harness import first_line, run_pyct
 
 TEXT = "targets.annotations.plain::echo_text"
@@ -118,3 +120,14 @@ def test_skips_an_annotation_that_cannot_be_resolved() -> None:
 
     assert result.returncode == 0, result.stderr
     assert first_line(result.stdout)["args"] == {"s": 5}
+
+
+# reports-the-seed-before-missing-cvc5
+def test_reports_the_seed_before_missing_cvc5(tmp_path: Path) -> None:
+    # the seed is wrong whatever the solver is, so the seed owns the message
+    result = run_pyct(TEXT, '{"s": 5}', path=str(tmp_path))
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert "s must be a str, got 5" in result.stderr
+    assert "cvc5" not in result.stderr
