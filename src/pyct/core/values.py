@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import types
 from collections.abc import Callable
-from types import NotImplementedType
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
@@ -53,18 +52,6 @@ _UNTAUGHT = (
     "__format__",
 )
 
-# Python's six comparisons, and how an expression spells each of them. Python swaps the
-# operands of a reflected compare itself, so `10 < x` runs `x.__gt__(10)` and prints
-# [">", "x", 10]; nothing here has to reflect anything.
-_COMPARISONS = {
-    "__lt__": "<",
-    "__le__": "<=",
-    "__gt__": ">",
-    "__ge__": ">=",
-    "__eq__": "==",
-    "__ne__": "!=",
-}
-
 
 def _forked(sink: BranchSink, expression: Expression, taken: bool) -> bool:
     """Record the fork a truth test just took, and answer with the side it took.
@@ -100,37 +87,14 @@ class ConcolicBool(int):
         return repr(int.__bool__(self))
 
 
-class ConcolicInt(int):
-    """A real int with a name and a sink.
-
-    The six comparisons and the truth test are symbolic. Any other operation is
-    int's own and returns a plain value, with a downgrade in the sink naming
-    what was lost.
-    """
-
-    expression: Expression
-    sink: BranchSink
-    # the loop below installs __eq__ after the class exists, which leaves __hash__ alone.
-    # Pinned anyway: it says the hash stays int's, and holds if __eq__ ever moves into the body.
-    __hash__ = int.__hash__
-
-    def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
-
-    def __bool__(self) -> bool:
-        # the int is the condition: zero is the one value that takes the other side
-        return _forked(self.sink, ["!=", self.expression, 0], int.__bool__(self))
-
-
 def _form_of(value: int) -> Expression:
     """The symbolic form of an operand: its expression if it has one, else itself."""
     return value.expression if isinstance(value, ConcolicInt) else value
 
 
-def _compare(op: str, operation: Callable[[int, int], bool]) -> Callable[..., object]:
+def _compare(
+    op: str, operation: Callable[[int, int], bool]
+) -> Callable[[ConcolicInt, int], ConcolicBool]:
     """int's own answer to one comparison, carrying the condition that produced it.
 
     Now that `==` answers with a ConcolicBool, `x in [1, 2, 3]` and a dict
@@ -139,7 +103,7 @@ def _compare(op: str, operation: Callable[[int, int], bool]) -> Callable[..., ob
     covers that, and it is left as it is.
     """
 
-    def compare(self: ConcolicInt, other: int) -> ConcolicBool | NotImplementedType:
+    def compare(self: ConcolicInt, other: int) -> ConcolicBool:
         # a bool is an int, but `x < True` is not a compare the solver has a leaf for;
         # a compare's value is a bool the same way
         if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
@@ -151,6 +115,41 @@ def _compare(op: str, operation: Callable[[int, int], bool]) -> Callable[..., ob
         )
 
     return compare
+
+
+class ConcolicInt(int):
+    """A real int with a name and a sink.
+
+    The six comparisons and the truth test are symbolic. Any other operation is
+    int's own and returns a plain value, with a downgrade in the sink naming
+    what was lost.
+    """
+
+    expression: Expression
+    sink: BranchSink
+
+    # Python swaps the operands of a reflected compare itself, so `10 < x` runs
+    # `x.__gt__(10)` and prints [">", "x", 10]; nothing here has to reflect anything.
+    # int promises a bool from each, and a ConcolicBool is an int that is not a bool,
+    # because bool cannot be subclassed; the override breaks that promise on purpose.
+    __lt__ = _compare("<", int.__lt__)  # pyrefly: ignore[bad-override]
+    __le__ = _compare("<=", int.__le__)  # pyrefly: ignore[bad-override]
+    __gt__ = _compare(">", int.__gt__)  # pyrefly: ignore[bad-override]
+    __ge__ = _compare(">=", int.__ge__)  # pyrefly: ignore[bad-override]
+    __eq__ = _compare("==", int.__eq__)  # pyrefly: ignore[bad-override]
+    __ne__ = _compare("!=", int.__ne__)  # pyrefly: ignore[bad-override]
+    # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
+    __hash__ = int.__hash__
+
+    def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
+        self = super().__new__(cls, value)
+        self.expression = expression
+        self.sink = sink
+        return self
+
+    def __bool__(self) -> bool:
+        # the int is the condition: zero is the one value that takes the other side
+        return _forked(self.sink, ["!=", self.expression, 0], int.__bool__(self))
 
 
 def _downgraded(name: str) -> Callable[..., object]:
@@ -184,7 +183,3 @@ def is_downgrade_frame(code: types.CodeType) -> bool:
 # forty-odd methods that differ only in the name they call and record, so a loop writes them
 for _name in _UNTAUGHT:
     setattr(ConcolicInt, _name, _downgraded(_name))
-
-# and six that differ only in their spelling and the answer int gives them
-for _name, _op in _COMPARISONS.items():
-    setattr(ConcolicInt, _name, _compare(_op, getattr(int, _name)))
