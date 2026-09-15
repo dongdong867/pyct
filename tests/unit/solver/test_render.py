@@ -35,6 +35,19 @@ def test_a_negative_number_is_written_as_a_subtraction() -> None:
     assert "(assert (< x (- 5)))" in text.splitlines()
 
 
+def test_the_two_equality_operators_are_written_the_way_smt_spells_them() -> None:
+    same = render((fork(["==", "x", 10], taken=True),), {"x": int})
+    other = render((fork(["!=", "x", 10], taken=True),), {"x": int})
+
+    assert "(assert (= x 10))" in same.splitlines()
+    assert "(assert (distinct x 10))" in other.splitlines()
+
+
+def test_an_operator_nothing_encodes_is_an_error() -> None:
+    with pytest.raises(ValueError, match="<<"):
+        render((fork(["<<", "x", 1], taken=True),), {"x": int})
+
+
 def test_a_leaf_no_fork_mentions_is_left_out() -> None:
     text = render((fork(["<", "x", 10], taken=True),), {"x": int, "y": int})
 

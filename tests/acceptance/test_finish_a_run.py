@@ -29,9 +29,9 @@ IMPLIED = 3
 RAISES_BEHIND_A_SECOND_FORK = "targets.flip.raises_behind_a_second_fork::guard"
 SPINS_AFTER_A_CHECK = "targets.flip.spins_after_a_check::spin"
 TWO_CHECKS = "targets.trace.two_checks::bucket"
-UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
-UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
-# ``return "never"``, behind the ``x >= 10`` guard pyct does not follow: the flip aims at
+UNTAUGHT_GUARD = "targets.flip.untaught_guard::route"
+UNTAUGHT_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "untaught_guard.py")
+# ``return "never"``, behind the ``x >> 1`` guard pyct has not taught: the flip aims at
 # the ``x < 10`` below it, lands inside the guard instead, and the line is never run
 NEVER = 8
 # every line of ``bucket`` but its ``def``, which runs at import rather than under an input
@@ -174,15 +174,15 @@ def test_writes_the_summary_to_stderr() -> None:
 
 # finish-a-run-lists-uncovered-lines
 def test_lists_uncovered_lines() -> None:
-    result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
+    result = run_pyct(UNTAUGHT_GUARD, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
     uncovered = numbers_of(summary, "uncovered")
-    assert NEVER in uncovered[UNFOLLOWED_GUARD_FILE], summary
+    assert NEVER in uncovered[UNTAUGHT_GUARD_FILE], summary
     named = [line for line in after_the_last_trace(result.stderr) if line.startswith("uncovered ")]
     assert len(named) == 1, result.stderr
-    numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNFOLLOWED_GUARD_FILE}")
+    numbers = named[0].removeprefix("uncovered ").removesuffix(f" in {UNTAUGHT_GUARD_FILE}")
     assert str(NEVER) in numbers.split(", "), result.stderr
 
 

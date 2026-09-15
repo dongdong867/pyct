@@ -32,8 +32,8 @@ IMPLIED_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
 RAISES_AFTER_A_CHECK = "targets.flip.raises_after_a_check::probe"
 RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a_check.py")
 RAISES_ON_THE_OTHER_SIDE = "targets.flip.raises_on_the_other_side::guard"
-UNFOLLOWED_GUARD = "targets.flip.unfollowed_guard::route"
-UNFOLLOWED_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "unfollowed_guard.py")
+UNTAUGHT_GUARD = "targets.flip.untaught_guard::route"
+UNTAUGHT_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "untaught_guard.py")
 CUT_SHORT_ON_THE_OTHER_SIDE = "targets.flip.cut_short_on_the_other_side::cut"
 CUT_SHORT_ON_THE_OTHER_SIDE_FILE = str(
     REPO_ROOT / "targets" / "flip" / "cut_short_on_the_other_side.py"
@@ -246,28 +246,29 @@ def test_reports_the_second_input_failure() -> None:
 
 # flip-one-fork-reports-going-off-course
 def test_reports_going_off_course() -> None:
-    result = run_pyct(UNFOLLOWED_GUARD, '{"x": 1}')
+    result = run_pyct(UNTAUGHT_GUARD, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
     solved = second_line(result.stdout)
-    # ``>=`` is a compare pyct does not follow, so the seed records only ``x < 10``,
-    # at position 0
-    assert solved["aim"] == {"file": UNFOLLOWED_GUARD_FILE, "line": 6, "col": 7, "position": 0}
-    # the flip asks for x >= 10, which is exactly the guard, so every model cvc5 can
-    # return enters the block and hits ``x < 20`` at position 0 instead; the guard sits
-    # on the flip boundary on purpose, so the test does not depend on the model picked
+    # ``>>`` is an operation pyct has not taught, and the int it returns is tested for
+    # truth, so the seed records only ``x < 10``, at position 0
+    assert solved["aim"] == {"file": UNTAUGHT_GUARD_FILE, "line": 6, "col": 7, "position": 0}
+    # the flip asks for x >= 10, and every such x shifts to something above zero, so every
+    # model cvc5 can return enters the block and hits ``x < 20`` at position 0 instead; the
+    # guard holds for the whole side being asked for, so the test does not depend on the
+    # model picked
     assert solved["mismatch_at"] == 0
     forks = solved["forks"]
     assert isinstance(forks, list) and forks, solved
     assert forks[0] == {
-        "file": UNFOLLOWED_GUARD_FILE,
+        "file": UNTAUGHT_GUARD_FILE,
         "line": 3,
         "col": 11,
         "taken": argument(solved, "x") < 20,
         "expression": ["<", "x", 20],
     }
     # the trace names the fork that was hit, not only the position it happened at
-    assert f"left the plan at position 0, hit {UNFOLLOWED_GUARD_FILE}:3:11" in result.stderr
+    assert f"left the plan at position 0, hit {UNTAUGHT_GUARD_FILE}:3:11" in result.stderr
 
 
 # .ddlc/features/run/README.md › Rules › the stderr trace: ``no fork there``

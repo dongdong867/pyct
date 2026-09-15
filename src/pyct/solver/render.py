@@ -7,6 +7,18 @@ from pyct.core.branch import Branch, Expression
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
 SORTS: Mapping[type, str] = {int: "Int"}
 
+# Python's spelling of an operator, and SMT-LIB's. This is the one place the two meet, so
+# a head that is missing raises here and names the gap, rather than handing cvc5 a program
+# it cannot parse, which comes back as `solver failed`.
+OPERATORS: Mapping[str, str] = {
+    "<": "<",
+    "<=": "<=",
+    ">": ">",
+    ">=": ">=",
+    "==": "=",
+    "!=": "distinct",
+}
+
 
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
     """The whole little program: what to declare, what to assert, what to ask.
@@ -64,4 +76,13 @@ def _expression(expression: Expression) -> str:
         return f"(- {-expression})" if expression < 0 else str(expression)
     if isinstance(expression, str):
         return expression
-    return "({})".format(" ".join(_expression(part) for part in expression))
+    head, *operands = expression
+    return "({} {})".format(_operator(head), " ".join(_expression(part) for part in operands))
+
+
+def _operator(head: Expression) -> str:
+    """How SMT-LIB spells the operator a condition leads with."""
+    operator = OPERATORS.get(head) if isinstance(head, str) else None
+    if operator is None:
+        raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+    return operator
