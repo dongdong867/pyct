@@ -251,7 +251,7 @@ def test_keeps_the_condition_through_identity_operations() -> None:
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)
-    # round, int and unary plus change nothing about an int, so the expression is the argument
+    # round and unary plus change nothing about an int, so the expression is the argument itself
     assert [fork["expression"] for fork in forks_of(seed)] == [["<", "x", 10]]
     assert seed["downgrades"] == []
     assert solved["downgrades"] == []

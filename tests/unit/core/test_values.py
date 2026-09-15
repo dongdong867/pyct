@@ -398,15 +398,16 @@ def test_an_identity_operation_hands_the_value_itself_back(
     assert sink == []
 
 
-def test_int_of_a_concolic_int_is_the_value_itself_under_pythons_deprecation() -> None:
+def test_int_of_a_concolic_int_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # Python warns when __int__ hands back a subclass; that is the cost the decision
-    # int-identity-under-deprecation takes, and execute() silences it around the target
-    with pytest.warns(DeprecationWarning, match="__int__ returned non-int"):
-        assert int(x) is x
-    assert sink == []
+    # Python copies whatever __int__ hands back into a plain int, so the condition cannot
+    # survive int(x) from inside the class: int-conversion-stays-a-downgrade
+    result = int(x)
+
+    assert type(result) is int
+    assert sink == [Downgrade(name="__int__")]
 
 
 def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
@@ -504,13 +505,13 @@ def test_using_a_concolic_int_as_an_index_records_nothing() -> None:
     assert sink == []
 
 
-def test_asking_a_concolic_int_for_its_index_records_a_downgrade() -> None:
+def test_asking_a_concolic_int_for_its_index_is_the_value_itself() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    assert x.__index__() == 3
+    assert x.__index__() is x
 
-    assert sink == [Downgrade(name="__index__")]
+    assert sink == []
 
 
 def test_an_operation_that_raises_records_nothing() -> None:
@@ -566,7 +567,7 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
     taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
     taught |= {"__neg__", "__abs__", "__pow__"}
-    taught |= {"__int__", "__pos__", "__index__", "__round__", "__trunc__", "__floor__", "__ceil__"}
+    taught |= {"__pos__", "__index__", "__round__", "__trunc__", "__floor__", "__ceil__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {
         name
