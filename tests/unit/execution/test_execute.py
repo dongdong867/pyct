@@ -257,36 +257,41 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
 
 
-def test_execute_reports_a_raise_inside_a_downgrade_as_the_targets() -> None:
-    def divides(x: int) -> int:
-        return x // 0
+@pytest.mark.parametrize(
+    ("operation", "detail"),
+    [
+        pytest.param(
+            lambda x: x // 0,
+            "ZeroDivisionError: integer division or modulo by zero",
+            id="downgrade",
+        ),
+        pytest.param(
+            lambda x: x**-1,
+            "ZeroDivisionError: 0.0 cannot be raised to a negative power",
+            id="power",
+        ),
+        pytest.param(
+            lambda x: pow(x, 2, 0), "ValueError: pow() 3rd argument cannot be 0", id="modular-power"
+        ),
+        pytest.param(
+            lambda x: round(x, 1.5),  # pyrefly: ignore[no-matching-overload]
+            "TypeError: 'float' object cannot be interpreted as an integer",
+            id="round",
+        ),
+    ],
+)
+def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
+    operation: Callable[[int], object], detail: str
+) -> None:
+    def target(x: int) -> object:
+        return operation(x)
 
-    ctx = ExecutionContext(fn=divides, file=str(FIXTURE))
-
-    result = execute(ctx, {"x": 1})
-
-    # the downgrade frame only runs int's own `//`, so the raise is the target's
-    assert result.failure == Failure(
-        kind=FailureKind.TARGET_RAISED,
-        detail="ZeroDivisionError: integer division or modulo by zero",
-        traceback=None,
-    )
-
-
-def test_execute_reports_a_raise_inside_a_taught_operations_fallback_as_the_targets() -> None:
-    def invert(x: int) -> float:
-        return x**-1
-
-    ctx = ExecutionContext(fn=invert, file=str(FIXTURE))
+    ctx = ExecutionContext(fn=target, file=str(FIXTURE))
 
     result = execute(ctx, {"x": 0})
 
-    # a negative exponent falls to int's own `**`, so the raise is the target's
-    assert result.failure == Failure(
-        kind=FailureKind.TARGET_RAISED,
-        detail="ZeroDivisionError: 0.0 cannot be raised to a negative power",
-        traceback=None,
-    )
+    # a downgrade, and a taught operation's fallback, only run int's own; the raise is the target's
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail=detail, traceback=None)
 
 
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
