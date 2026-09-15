@@ -23,6 +23,7 @@ REFLECTED_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_check.py"
 TRUTH_TEST = "targets.ints.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
 BIT_CHECK = "targets.ints.bit_check::parity"
+TRUE_DIVISION = "targets.ints.true_division::halve"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -121,5 +122,17 @@ def test_keeps_bit_operations_as_downgrades() -> None:
     seed = one_line(result.stdout)
     assert seed["downgrades"] == [{"name": "__and__", "count": 1}]
     # `x & 1` is a plain int, and the truth of a plain int is nothing pyct can flip
+    assert seed["forks"] == []
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-integers-keeps-true-division-as-a-downgrade
+def test_keeps_true_division_as_a_downgrade() -> None:
+    result = run_pyct(TRUE_DIVISION, '{"x": 4}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    assert seed["downgrades"] == [{"name": "__truediv__", "count": 1}]
+    # `x / 2` is a plain float, so the compare after it is Python's own and forks nothing
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
