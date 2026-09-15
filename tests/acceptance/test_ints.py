@@ -26,6 +26,8 @@ BIT_CHECK = "targets.ints.bit_check::parity"
 TRUE_DIVISION = "targets.ints.true_division::halve"
 ARITHMETIC_CHECK = "targets.ints.arithmetic_check::grade"
 ARITHMETIC_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "arithmetic_check.py")
+ABS_AND_NEGATION = "targets.ints.abs_and_negation::place"
+ABS_AND_NEGATION_FILE = str(REPO_ROOT / "targets" / "ints" / "abs_and_negation.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -158,3 +160,30 @@ def test_flips_through_arithmetic() -> None:
     ]
     assert (argument(solved, "x") + 1) * 2 - 3 > 10
     assert union_of([seed, solved]) == {ARITHMETIC_CHECK_FILE: [2, 3, 4]}
+
+
+def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
+    """The forks off a printed line, narrowed so a field lookup means something."""
+    forks = line["forks"]
+    assert isinstance(forks, list), line
+    return [dict(fork) for fork in forks]
+
+
+# follow-integers-flips-through-abs-and-negation
+def test_flips_through_abs_and_negation() -> None:
+    result = run_pyct(ABS_AND_NEGATION, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    seed = inputs[0]
+    # a builtin is its name, and a unary minus is `-` with one operand
+    assert [fork["expression"] for fork in forks_of(seed)] == [
+        [">", ["abs", "x"], 5],
+        ["<", ["-", "x"], -3],
+    ]
+    assert [fork["taken"] for fork in forks_of(seed)] == [False, False]
+    # each fork gets flipped: some input takes the true side of each
+    sides = [tuple(fork["taken"] for fork in forks_of(line)) for line in inputs]
+    assert any(taken[0] for taken in sides if taken)
+    assert any(len(taken) == 2 and taken[1] for taken in sides)
+    assert all(line["downgrades"] == [] for line in inputs)
