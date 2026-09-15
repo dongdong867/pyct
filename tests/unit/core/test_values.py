@@ -18,8 +18,6 @@ DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
     "__and__": lambda x: x & 1,
     "__or__": lambda x: x | 1,
     "__xor__": lambda x: x ^ 1,
-    "__neg__": lambda x: -x,
-    "__abs__": abs,
     "__invert__": lambda x: ~x,
     "__float__": float,
     "__round__": round,
@@ -43,6 +41,8 @@ TAUGHT_ARITHMETIC: dict[str, tuple[Callable[[int], object], list[object]]] = {
     "10 - x": (lambda x: 10 - x, ["-", 10, "x"]),
     "x * 2": (lambda x: x * 2, ["*", "x", 2]),
     "2 * x": (lambda x: 2 * x, ["*", 2, "x"]),
+    "-x": (lambda x: -x, ["-", "x"]),
+    "abs(x)": (abs, ["abs", "x"]),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -481,6 +481,7 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     # a name none of the three sets holds runs as int's own with no downgrade, silently
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
     taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
+    taught |= {"__neg__", "__abs__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {
         name
