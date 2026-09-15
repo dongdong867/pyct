@@ -28,6 +28,8 @@ ARITHMETIC_CHECK = "targets.ints.arithmetic_check::grade"
 ARITHMETIC_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "arithmetic_check.py")
 ABS_AND_NEGATION = "targets.ints.abs_and_negation::place"
 ABS_AND_NEGATION_FILE = str(REPO_ROOT / "targets" / "ints" / "abs_and_negation.py")
+CONSTANT_POWER = "targets.ints.constant_power::root"
+CONSTANT_POWER_FILE = str(REPO_ROOT / "targets" / "ints" / "constant_power.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -187,3 +189,18 @@ def test_flips_through_abs_and_negation() -> None:
     assert any(taken[0] for taken in sides if taken)
     assert any(len(taken) == 2 and taken[1] for taken in sides)
     assert all(line["downgrades"] == [] for line in inputs)
+
+
+# follow-integers-flips-a-constant-power
+def test_flips_a_constant_power() -> None:
+    result = run_pyct(CONSTANT_POWER, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the inner check is reached once the outer fork is flipped, and prints the power as written
+    inner = [fork for line in inputs for fork in forks_of(line) if fork["line"] == 3]
+    assert inner, inputs
+    assert inner[0]["expression"] == ["==", ["**", "x", 2], 9]
+    # only one negative int squares to nine
+    assert any(argument(line, "x") == -3 for line in inputs)
+    assert union_of(inputs) == {CONSTANT_POWER_FILE: [2, 3, 4, 5, 6]}
