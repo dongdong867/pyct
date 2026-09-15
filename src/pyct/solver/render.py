@@ -21,6 +21,7 @@ OPERATORS: Mapping[str, str] = {
     "-": "-",
     "*": "*",
     "abs": "abs",
+    "**": "^",
 }
 
 

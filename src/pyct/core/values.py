@@ -20,7 +20,6 @@ _UNTAUGHT = (
     "__rmod__",
     "__divmod__",
     "__rdivmod__",
-    "__pow__",
     "__rpow__",
     "__lshift__",
     "__rlshift__",
@@ -141,6 +140,55 @@ def _unary(op: str, operation: Callable[[int], int]) -> Callable[[ConcolicInt], 
     return compute
 
 
+def _downgraded(name: str) -> Callable[..., object]:
+    """int's own operation, and a note in the sink that the condition was lost.
+
+    The note comes after the call, so an operation that raises records
+    nothing and the raise stays the target's. ``NotImplemented`` is not an
+    answer either: the other operand's reflected method gets its turn, and
+    only a real result is a lost condition.
+    """
+    operation = getattr(int, name)
+
+    def downgrade(self: ConcolicInt, *args: object) -> object:
+        result = operation(self, *args)
+        if result is not NotImplemented:
+            self.sink.append(Downgrade(name=name))
+        return result
+
+    return downgrade
+
+
+# every closure one `def` makes shares that def's code object, so one of them stands for all
+_DOWNGRADE_CODE = _downgraded("__abs__").__code__
+
+
+def is_downgrade_frame(code: types.CodeType) -> bool:
+    """Whether a frame running ``code`` is a downgrade's."""
+    return code is _DOWNGRADE_CODE
+
+
+# cvc5 takes `^` with a constant exponent only, and refuses one at this bound or above
+_POWER_LIMIT = 67_108_864
+_POWER_DOWNGRADE = _downgraded("__pow__")
+
+
+def _power(self: ConcolicInt, exponent: object, modulus: object = None) -> object:
+    """A constant power keeps the condition; every other power is int's own and a downgrade.
+
+    A plain int exponent from zero up to cvc5's bound is what `^` encodes. A
+    concolic, negative or bool exponent, a float, and a third argument all
+    fall to int's own answer.
+    """
+    if modulus is None and type(exponent) is int and 0 <= exponent < _POWER_LIMIT:
+        return ConcolicInt(
+            int.__pow__(self, exponent),
+            expression=["**", self.expression, exponent],
+            sink=self.sink,
+        )
+    return _POWER_DOWNGRADE(self, exponent, modulus)
+
+
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
@@ -173,6 +221,9 @@ class ConcolicInt(int):
     __rmul__ = _arithmetic("*", int.__rmul__, reflected=True)
     __neg__ = _unary("-", int.__neg__)
     __abs__ = _unary("abs", int.__abs__)
+    # int promises an int or a float from a power; a downgraded one is int's own, but a kept
+    # one is a ConcolicInt, and the union is not what int declared
+    __pow__ = _power  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
@@ -183,34 +234,6 @@ class ConcolicInt(int):
     def __bool__(self) -> bool:
         # the int is the condition: zero is the one value that takes the other side
         return _forked(self.sink, ["!=", self.expression, 0], int.__bool__(self))
-
-
-def _downgraded(name: str) -> Callable[..., object]:
-    """int's own operation, and a note in the sink that the condition was lost.
-
-    The note comes after the call, so an operation that raises records
-    nothing and the raise stays the target's. ``NotImplemented`` is not an
-    answer either: the other operand's reflected method gets its turn, and
-    only a real result is a lost condition.
-    """
-    operation = getattr(int, name)
-
-    def downgrade(self: ConcolicInt, *args: object) -> object:
-        result = operation(self, *args)
-        if result is not NotImplemented:
-            self.sink.append(Downgrade(name=name))
-        return result
-
-    return downgrade
-
-
-# every closure one `def` makes shares that def's code object, so one of them stands for all
-_DOWNGRADE_CODE = _downgraded("__abs__").__code__
-
-
-def is_downgrade_frame(code: types.CodeType) -> bool:
-    """Whether a frame running ``code`` is a downgrade's."""
-    return code is _DOWNGRADE_CODE
 
 
 # forty-odd methods that differ only in the name they call and record, so a loop writes them
