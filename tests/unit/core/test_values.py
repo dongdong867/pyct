@@ -41,6 +41,17 @@ TAUGHT_COMPARES: dict[str, tuple[Callable[[int], object], bool]] = {
 # a probe whose text is fixed here, so the line and column of the fork are exact
 PROBE = "def probe(v):\n    if v:\n        return 'yes'\n    return 'no'\n"
 
+# a probe that asks for the truth of a value the other two ways Python spells it
+NOT_AND_BOOL = (
+    "def probe(x):\n"
+    "    n = 0\n"
+    "    if not x:\n"
+    "        n += 1\n"
+    "    if bool(x):\n"
+    "        n += 1\n"
+    "    return n\n"
+)
+
 # a probe that tests the same value twice, so the order the sink holds is visible
 TWO_CHECKS = (
     "def probe(x):\n"
@@ -284,14 +295,30 @@ def test_equality_forks_where_it_is_tested_for_truth() -> None:
     ]
 
 
-def test_a_truth_test_on_a_concolic_int_records_a_downgrade() -> None:
+def test_a_truth_test_on_a_concolic_int_records_the_fork() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    size = "yes" if x else "no"
+    # the int itself is the condition, so the fork is the probe's `if`, like a compare's
+    assert _probe()(x) == "yes"
 
-    assert size == "yes"
-    assert sink == [Downgrade(name="__bool__")]
+    assert sink == [
+        Branch(expression=["!=", "x", 0], taken=True, site=Site(file="<probe>", line=2, col=7))
+    ]
+
+
+def test_a_truth_test_on_zero_records_the_side_it_took() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(0, expression="x", sink=sink)
+
+    assert _probe(NOT_AND_BOOL)(x) == 1
+
+    # `not` and `bool()` ask __bool__ the way `if` does, so each records its own fork.
+    # The column is the instruction's own: `not x` converts x, so it points at the x.
+    assert sink == [
+        Branch(expression=["!=", "x", 0], taken=False, site=Site(file="<probe>", line=3, col=11)),
+        Branch(expression=["!=", "x", 0], taken=False, site=Site(file="<probe>", line=5, col=7)),
+    ]
 
 
 def test_turning_a_concolic_int_into_text_records_a_downgrade() -> None:
