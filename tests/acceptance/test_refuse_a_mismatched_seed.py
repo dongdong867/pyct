@@ -12,6 +12,10 @@ NAME_AND_AGE = "targets.annotations.plain::echo_name_and_age"
 TEXT_AND_NUMBER = "targets.annotations.plain::echo_text_and_number"
 NUMBERS = "targets.annotations.plain::echo_numbers"
 FLAG = "targets.annotations.plain::echo_flag"
+STORED_AS_TEXT = "targets.annotations.stored_as_text::echo_text"
+NOT_PLAIN = "targets.annotations.not_plain::echo_both"
+BARE = "targets.annotations.bare::echo"
+UNRESOLVED = "targets.annotations.unresolved::echo_text"
 
 
 # refuses-a-number-for-a-str
@@ -81,3 +85,36 @@ def test_refuses_none_for_a_plain_type() -> None:
     assert result.returncode == 2, result.stderr
     assert result.stdout == ""
     assert "s must be a str, got null" in result.stderr
+
+
+# checks-an-annotation-stored-as-text
+def test_checks_an_annotation_stored_as_text() -> None:
+    result = run_pyct(STORED_AS_TEXT, '{"s": 5}')
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    assert "s must be a str, got 5" in result.stderr
+
+
+# skips-an-annotation-that-is-not-plain
+def test_skips_an_annotation_that_is_not_plain() -> None:
+    result = run_pyct(NOT_PLAIN, '{"s": 5, "xs": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["args"] == {"s": 5, "xs": "x"}
+
+
+# skips-a-parameter-with-no-annotation
+def test_skips_a_parameter_with_no_annotation() -> None:
+    result = run_pyct(BARE, '{"s": 5}')
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["args"] == {"s": 5}
+
+
+# skips-an-annotation-that-cannot-be-resolved
+def test_skips_an_annotation_that_cannot_be_resolved() -> None:
+    result = run_pyct(UNRESOLVED, '{"s": 5}')
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["args"] == {"s": 5}
