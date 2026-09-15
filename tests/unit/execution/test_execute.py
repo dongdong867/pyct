@@ -257,33 +257,54 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: too small")
 
 
-def test_execute_reports_a_raise_inside_a_downgrade_as_the_targets() -> None:
-    def divides(x: int) -> int:
-        return x // 0
+@pytest.mark.parametrize(
+    ("operation", "detail"),
+    [
+        pytest.param(
+            lambda x: x // 0,
+            "ZeroDivisionError: integer division or modulo by zero",
+            id="downgrade",
+        ),
+        pytest.param(
+            lambda x: x**-1,
+            "ZeroDivisionError: 0.0 cannot be raised to a negative power",
+            id="power",
+        ),
+        pytest.param(
+            lambda x: pow(x, 2, 0), "ValueError: pow() 3rd argument cannot be 0", id="modular-power"
+        ),
+        pytest.param(
+            lambda x: round(x, 1.5),  # pyrefly: ignore[no-matching-overload]
+            "TypeError: 'float' object cannot be interpreted as an integer",
+            id="round",
+        ),
+    ],
+)
+def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
+    operation: Callable[[int], object], detail: str
+) -> None:
+    def target(x: int) -> object:
+        return operation(x)
 
-    ctx = ExecutionContext(fn=divides, file=str(FIXTURE))
+    ctx = ExecutionContext(fn=target, file=str(FIXTURE))
 
-    result = execute(ctx, {"x": 1})
+    result = execute(ctx, {"x": 0})
 
-    # the downgrade frame only runs int's own `//`, so the raise is the target's
-    assert result.failure == Failure(
-        kind=FailureKind.TARGET_RAISED,
-        detail="ZeroDivisionError: integer division or modulo by zero",
-        traceback=None,
-    )
+    # a downgrade, and a taught operation's fallback, only run int's own; the raise is the target's
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail=detail, traceback=None)
 
 
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
-    def through_abs(x: int) -> str:
-        y = abs(x)
+    def through_shift(x: int) -> str:
+        y = x >> 1
         return "small" if y < 10 else "big"
 
-    ctx = ExecutionContext(fn=through_abs, file=str(FIXTURE))
+    ctx = ExecutionContext(fn=through_shift, file=str(FIXTURE))
 
     result = execute(ctx, {"x": -3})
 
-    # abs drops the condition, so the compare after it is Python's own and no fork is left
-    assert result.downgrades == (DowngradeCount(name="__abs__", count=1),)
+    # a shift drops the condition, so the compare after it is Python's own and no fork is left
+    assert result.downgrades == (DowngradeCount(name="__rshift__", count=1),)
     assert result.branches == ()
 
 
@@ -291,9 +312,9 @@ def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
     def mixed(x: int) -> int:
         n = 0
         if x < 10:
-            n = abs(x)
+            n = x >> 1
         if x < 100:
-            n = -x
+            n = ~x
         return n
 
     ctx = ExecutionContext(fn=mixed, file=str(FIXTURE))
@@ -305,28 +326,28 @@ def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
         ["<", "x", 100],
     ]
     assert result.downgrades == (
-        DowngradeCount(name="__abs__", count=1),
-        DowngradeCount(name="__neg__", count=1),
+        DowngradeCount(name="__rshift__", count=1),
+        DowngradeCount(name="__invert__", count=1),
     )
 
 
 def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None:
     def repeats(x: int) -> int:
-        abs(x)
-        abs(x)
-        y = x + 1
-        abs(x)
+        x >> 1
+        x >> 1
+        y = x | 1
+        x >> 1
         return y
 
     ctx = ExecutionContext(fn=repeats, file=str(FIXTURE))
 
     result = execute(ctx, {"x": 3})
 
-    # only calls next to each other collapse, so the second run of abs is its own entry
+    # only calls next to each other collapse, so the second run of shifts is its own entry
     assert result.downgrades == (
-        DowngradeCount(name="__abs__", count=2),
-        DowngradeCount(name="__add__", count=1),
-        DowngradeCount(name="__abs__", count=1),
+        DowngradeCount(name="__rshift__", count=2),
+        DowngradeCount(name="__or__", count=1),
+        DowngradeCount(name="__rshift__", count=1),
     )
 
 

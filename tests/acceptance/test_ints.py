@@ -24,6 +24,17 @@ TRUTH_TEST = "targets.ints.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
 BIT_CHECK = "targets.ints.bit_check::parity"
 TRUE_DIVISION = "targets.ints.true_division::halve"
+ARITHMETIC_CHECK = "targets.ints.arithmetic_check::grade"
+ARITHMETIC_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "arithmetic_check.py")
+ABS_AND_NEGATION = "targets.ints.abs_and_negation::place"
+ABS_AND_NEGATION_FILE = str(REPO_ROOT / "targets" / "ints" / "abs_and_negation.py")
+CONSTANT_POWER = "targets.ints.constant_power::root"
+CONSTANT_POWER_FILE = str(REPO_ROOT / "targets" / "ints" / "constant_power.py")
+TWO_ARGUMENTS = "targets.ints.two_arguments::product"
+TWO_ARGUMENTS_FILE = str(REPO_ROOT / "targets" / "ints" / "two_arguments.py")
+TAUGHT_ONLY = "targets.ints.taught_only::check"
+SYMBOLIC_EXPONENT = "targets.ints.symbolic_exponent::grow"
+IDENTITY_CHECK = "targets.ints.identity_check::small"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -136,3 +147,112 @@ def test_keeps_true_division_as_a_downgrade() -> None:
     # `x / 2` is a plain float, so the compare after it is Python's own and forks nothing
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-integers-flips-through-arithmetic
+def test_flips_through_arithmetic() -> None:
+    result = run_pyct(ARITHMETIC_CHECK, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # the expression is the arithmetic as written, innermost first, with the compare on top
+    assert seed["forks"] == [
+        {
+            "file": ARITHMETIC_CHECK_FILE,
+            "line": 2,
+            "col": 7,
+            "taken": False,
+            "expression": [">", ["-", ["*", ["+", "x", 1], 2], 3], 10],
+        }
+    ]
+    assert (argument(solved, "x") + 1) * 2 - 3 > 10
+    assert union_of([seed, solved]) == {ARITHMETIC_CHECK_FILE: [2, 3, 4]}
+
+
+def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
+    """The forks off a printed line, narrowed so a field lookup means something."""
+    forks = line["forks"]
+    assert isinstance(forks, list), line
+    return [dict(fork) for fork in forks]
+
+
+# follow-integers-flips-through-abs-and-negation
+def test_flips_through_abs_and_negation() -> None:
+    result = run_pyct(ABS_AND_NEGATION, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    seed = inputs[0]
+    # a builtin is its name, and a unary minus is `-` with one operand
+    assert [fork["expression"] for fork in forks_of(seed)] == [
+        [">", ["abs", "x"], 5],
+        ["<", ["-", "x"], -3],
+    ]
+    assert [fork["taken"] for fork in forks_of(seed)] == [False, False]
+    # each fork gets flipped: some input takes the true side of each
+    sides = [tuple(fork["taken"] for fork in forks_of(line)) for line in inputs]
+    assert any(taken[0] for taken in sides if taken)
+    assert any(len(taken) == 2 and taken[1] for taken in sides)
+    assert all(line["downgrades"] == [] for line in inputs)
+
+
+# follow-integers-flips-a-constant-power
+def test_flips_a_constant_power() -> None:
+    result = run_pyct(CONSTANT_POWER, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the inner check is reached once the outer fork is flipped, and prints the power as written
+    inner = [fork for line in inputs for fork in forks_of(line) if fork["line"] == 3]
+    assert inner, inputs
+    assert inner[0]["expression"] == ["==", ["**", "x", 2], 9]
+    # only one negative int squares to nine
+    assert any(argument(line, "x") == -3 for line in inputs)
+    assert union_of(inputs) == {CONSTANT_POWER_FILE: [2, 3, 4, 5, 6]}
+
+
+# follow-integers-follows-two-arguments-together
+def test_follows_two_arguments_together() -> None:
+    result = run_pyct(TWO_ARGUMENTS, '{"x": 2, "y": 2}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert [fork["expression"] for fork in forks_of(seed)] == [["==", ["*", "x", "y"], 12]]
+    # the solver may move either argument; what it hands back multiplies to twelve
+    assert argument(solved, "x") * argument(solved, "y") == 12
+    assert union_of([seed, solved]) == {TWO_ARGUMENTS_FILE: [2, 3, 4]}
+
+
+# follow-integers-drops-taught-operations-from-the-downgrade-list
+def test_drops_taught_operations_from_the_downgrade_list() -> None:
+    result = run_pyct(TAUGHT_ONLY, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed = input_lines(result.stdout)[0]
+    # `+`, `abs` and `==` each keep the condition, so nothing was lost on the way
+    assert seed["downgrades"] == []
+
+
+# follow-integers-keeps-a-symbolic-exponent-as-a-downgrade
+def test_keeps_a_symbolic_exponent_as_a_downgrade() -> None:
+    result = run_pyct(SYMBOLIC_EXPONENT, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # cvc5 takes a constant exponent only, so `2 ** x` reaches int's own reflected power
+    assert seed["downgrades"] == [{"name": "__rpow__", "count": 1}]
+    assert seed["forks"] == []
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-integers-keeps-the-condition-through-identity-operations
+def test_keeps_the_condition_through_identity_operations() -> None:
+    result = run_pyct(IDENTITY_CHECK, '{"x": 20}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # round and unary plus change nothing about an int, so the expression is the argument itself
+    assert [fork["expression"] for fork in forks_of(seed)] == [["<", "x", 10]]
+    assert seed["downgrades"] == []
+    assert solved["downgrades"] == []
+    assert argument(solved, "x") < 10
