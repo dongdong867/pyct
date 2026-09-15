@@ -215,12 +215,15 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     leaves behind, is read in the function's own globals. Anything else the
     annotation turns out to be, ``str | None`` or ``list[int]`` or a class,
     is not one of the four and is not kept.
+
+    The parameters come from the signature, the same source ``check_seed_fits``
+    reads, so a class target is read at its ``__init__``.
     """
     hints: dict[str, type] = {}
-    for name, annotation in inspect.get_annotations(fn).items():
-        if name == "return":
+    for name, parameter in inspect.signature(fn).parameters.items():
+        if parameter.annotation is inspect.Parameter.empty:
             continue
-        resolved = _resolved(annotation, fn)
+        resolved = _resolved(parameter.annotation, fn)
         if resolved in (str, int, float, bool):
             hints[name] = resolved
     return hints
