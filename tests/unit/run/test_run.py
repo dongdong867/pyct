@@ -278,8 +278,8 @@ def test_run_does_not_count_a_solver_miss_toward_the_plateau() -> None:
         target,
         {"x": 3},
         limits=Limits(plateau=Plateau(inputs=1)),
-        report=lambda record, coverage: events.append("input"),
-        missed=lambda miss: events.append("miss"),
+        report=lambda *_: events.append("input"),
+        missed=lambda *_: events.append("miss"),
     )
 
     # the miss sits inside the window and produced no input, so the window skips it
