@@ -32,9 +32,7 @@ _UNTAUGHT = (
     "__ror__",
     "__xor__",
     "__rxor__",
-    "__neg__",
     "__pos__",
-    "__abs__",
     "__invert__",
     "__index__",
     "__int__",
@@ -134,6 +132,15 @@ def _arithmetic(
     return compute
 
 
+def _unary(op: str, operation: Callable[[int], int]) -> Callable[[ConcolicInt], ConcolicInt]:
+    """int's own answer to one unary operation, under the head the builtin or operator has."""
+
+    def compute(self: ConcolicInt) -> ConcolicInt:
+        return ConcolicInt(operation(self), expression=[op, self.expression], sink=self.sink)
+
+    return compute
+
+
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
@@ -164,6 +171,8 @@ class ConcolicInt(int):
     __rsub__ = _arithmetic("-", int.__rsub__, reflected=True)
     __mul__ = _arithmetic("*", int.__mul__)
     __rmul__ = _arithmetic("*", int.__rmul__, reflected=True)
+    __neg__ = _unary("-", int.__neg__)
+    __abs__ = _unary("abs", int.__abs__)
 
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
