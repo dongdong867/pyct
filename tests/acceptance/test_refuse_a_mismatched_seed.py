@@ -26,9 +26,7 @@ def test_refuses_a_number_for_a_str() -> None:
 
     assert result.returncode == 2, result.stderr
     assert result.stdout == ""
-    assert "s" in result.stderr
-    assert "str" in result.stderr
-    assert "5" in result.stderr
+    assert "s must be a str, got 5" in result.stderr
 
 
 # refuses-text-for-an-int
@@ -37,10 +35,8 @@ def test_refuses_text_for_an_int() -> None:
 
     assert result.returncode == 2, result.stderr
     assert result.stdout == ""
-    assert "n" in result.stderr
-    assert "int" in result.stderr
     # the value is spelled the way it was typed, so the quotes stay on
-    assert '"5"' in result.stderr
+    assert 'n must be an int, got "5"' in result.stderr
 
 
 # reports-every-contradiction-at-once
