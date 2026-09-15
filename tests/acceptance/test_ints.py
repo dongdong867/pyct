@@ -24,6 +24,8 @@ TRUTH_TEST = "targets.ints.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "ints" / "truth_test.py")
 BIT_CHECK = "targets.ints.bit_check::parity"
 TRUE_DIVISION = "targets.ints.true_division::halve"
+ARITHMETIC_CHECK = "targets.ints.arithmetic_check::grade"
+ARITHMETIC_CHECK_FILE = str(REPO_ROOT / "targets" / "ints" / "arithmetic_check.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -136,3 +138,23 @@ def test_keeps_true_division_as_a_downgrade() -> None:
     # `x / 2` is a plain float, so the compare after it is Python's own and forks nothing
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-integers-flips-through-arithmetic
+def test_flips_through_arithmetic() -> None:
+    result = run_pyct(ARITHMETIC_CHECK, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # the expression is the arithmetic as written, innermost first, with the compare on top
+    assert seed["forks"] == [
+        {
+            "file": ARITHMETIC_CHECK_FILE,
+            "line": 2,
+            "col": 7,
+            "taken": False,
+            "expression": [">", ["-", ["*", ["+", "x", 1], 2], 3], 10],
+        }
+    ]
+    assert (argument(solved, "x") + 1) * 2 - 3 > 10
+    assert union_of([seed, solved]) == {ARITHMETIC_CHECK_FILE: [2, 3, 4]}
