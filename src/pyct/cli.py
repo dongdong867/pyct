@@ -57,12 +57,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     stdout after it: the readable text comes first, as it does for every
     input.
 
-    Checks run in this order: target form, seed shape, budget, plateau, cvc5,
-    import, seed present, seed fits, seed types. cvc5 comes before the import
-    because nothing the target does can make up for a missing solver. The
-    import comes before the seed-present check because that message names the
-    target's parameters, which only the loaded target knows, and the two seed
-    checks read the loaded target too.
+    Checks run in this order: target form, seed shape, budget, plateau,
+    import, seed present, seed fits, seed types, cvc5. Everything the command
+    line got wrong is reported first, because a wrong command line is wrong
+    whatever the machine has installed; cvc5 is the last check before the run
+    for the same reason, as it is the only one about the machine. The import
+    comes before the three seed checks because they all read the loaded
+    target: its parameters, and the annotations on them.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
@@ -70,12 +71,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
         plateau = parse_plateau(command.plateau_text)
-        locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
         check_seed_types(target, seed)
+        locate()
         result = run(
             target,
             seed,
