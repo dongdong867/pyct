@@ -1,5 +1,4 @@
-"""Acceptance tests for the finish-a-run story, children print-the-summary-line
-and loop-until-no-fork-is-left.
+"""Acceptance tests for the finish-a-run story.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the flip-one-fork
 tests do: the summary line closes stdout after the last input line, so only a real run
