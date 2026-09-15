@@ -154,7 +154,9 @@ def _downgraded(name: str) -> Callable[..., object]:
     return downgrade
 
 
-# cvc5 takes `^` with a constant exponent only, and refuses one at this bound or above
+# cvc5 takes `^` with a constant exponent only, and refuses to parse one at this bound or
+# above. Parsing is all the bound promises: how long the solve takes is the budget's business,
+# as for any nonlinear fork, and a run with no budget can wait on a large power.
 _POWER_LIMIT = 67_108_864
 _POWER_DOWNGRADE = _downgraded("__pow__")
 
