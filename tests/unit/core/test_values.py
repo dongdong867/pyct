@@ -1,3 +1,4 @@
+import math
 import operator
 from collections.abc import Callable
 
@@ -19,7 +20,6 @@ DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
     "__xor__": lambda x: x ^ 1,
     "__invert__": lambda x: ~x,
     "__float__": float,
-    "__round__": round,
 }
 
 # the six taught comparisons: the call, and the answer int's own gives for x = 3
@@ -44,6 +44,17 @@ TAUGHT_ARITHMETIC: dict[str, tuple[Callable[[int], object], list[object]]] = {
     "abs(x)": (abs, ["abs", "x"]),
     "x ** 2": (lambda x: x**2, ["**", "x", 2]),
     "x ** 0": (lambda x: x**0, ["**", "x", 0]),
+}
+
+# an operation that changes nothing about an int: each hands the value itself back
+IDENTITIES: dict[str, Callable[[ConcolicInt], object]] = {
+    "+x": lambda x: +x,
+    "round(x)": round,
+    "round(x, 1)": lambda x: round(x, 1),
+    "x.__index__()": lambda x: x.__index__(),
+    "math.trunc(x)": math.trunc,
+    "math.floor(x)": math.floor,
+    "math.ceil(x)": math.ceil,
 }
 
 # a power the solver cannot take: each is int's own answer and a `__pow__` downgrade
@@ -376,6 +387,36 @@ def test_a_symbolic_exponent_is_a_downgrade() -> None:
     assert sink == [Downgrade(name="__pow__"), Downgrade(name="__rpow__")]
 
 
+@pytest.mark.parametrize("call", IDENTITIES.values(), ids=list(IDENTITIES))
+def test_an_identity_operation_hands_the_value_itself_back(
+    call: Callable[[ConcolicInt], object],
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    assert call(x) is x
+    assert sink == []
+
+
+def test_int_of_a_concolic_int_is_the_value_itself_under_pythons_deprecation() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # Python warns when __int__ hands back a subclass; that is the cost the decision
+    # int-identity-under-deprecation takes, and execute() silences it around the target
+    with pytest.warns(DeprecationWarning, match="__int__ returned non-int"):
+        assert int(x) is x
+    assert sink == []
+
+
+def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(1234, expression="x", sink=sink)
+
+    assert round(x, -2) == 1200
+    assert sink == [Downgrade(name="__round__")]
+
+
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
@@ -525,6 +566,7 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
     taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
     taught |= {"__neg__", "__abs__", "__pow__"}
+    taught |= {"__int__", "__pos__", "__index__", "__round__", "__trunc__", "__floor__", "__ceil__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {
         name
