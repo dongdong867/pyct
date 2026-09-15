@@ -46,6 +46,24 @@ def stored_as_text(s: str, missing: object) -> None:
 stored_as_text.__annotations__ = {"s": "str", "missing": "Missing", "return": "None"}
 
 
+class OnlyClaimsToBeStr:
+    """An annotation object that compares equal to anything, ``str`` included."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    def __hash__(self) -> int:
+        return 0
+
+
+def annotated_by_a_claim(s: object) -> None:
+    return None
+
+
+# an annotation is any object the source put there, and this one is not a type at all
+annotated_by_a_claim.__annotations__ = {"s": OnlyClaimsToBeStr(), "return": None}
+
+
 class Point:
     """A class target whose body annotation disagrees with its ``__init__``."""
 
@@ -85,6 +103,11 @@ def test_plain_annotations_resolves_text_and_skips_only_what_it_cannot() -> None
 def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
     # the class body says str, the parameter says int; the parameter is what a seed fills
     assert plain_annotations(Point) == {"n": int}
+
+
+def test_plain_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
+    # equal to str is not str; keeping it would hand isinstance something that is not a type
+    assert plain_annotations(annotated_by_a_claim) == {}
 
 
 def test_check_seed_types_accepts_a_seed_that_fits_a_class_init() -> None:
