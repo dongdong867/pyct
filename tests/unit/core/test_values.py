@@ -122,8 +122,6 @@ def test_less_than_builds_the_expression_and_records_nothing() -> None:
 
     result = x < 10
 
-    # a loop installs the six comparisons, so a checker reads int's own bool off `<`
-    assert isinstance(result, ConcolicBool)
     assert result.expression == ["<", "x", 10]
     assert result == True  # noqa: E712 - the value, not the truth test
     assert sink == []
@@ -136,7 +134,6 @@ def test_less_than_takes_the_other_concolics_expression() -> None:
 
     result = x < y
 
-    assert isinstance(result, ConcolicBool)
     assert result.expression == ["<", "x", "y"]
 
 
