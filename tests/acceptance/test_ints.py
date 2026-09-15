@@ -34,6 +34,7 @@ TWO_ARGUMENTS = "targets.ints.two_arguments::product"
 TWO_ARGUMENTS_FILE = str(REPO_ROOT / "targets" / "ints" / "two_arguments.py")
 TAUGHT_ONLY = "targets.ints.taught_only::check"
 SYMBOLIC_EXPONENT = "targets.ints.symbolic_exponent::grow"
+IDENTITY_CHECK = "targets.ints.identity_check::small"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -242,3 +243,16 @@ def test_keeps_a_symbolic_exponent_as_a_downgrade() -> None:
     assert seed["downgrades"] == [{"name": "__rpow__", "count": 1}]
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-integers-keeps-the-condition-through-identity-operations
+def test_keeps_the_condition_through_identity_operations() -> None:
+    result = run_pyct(IDENTITY_CHECK, '{"x": 20}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # round, int and unary plus change nothing about an int, so the expression is the argument
+    assert [fork["expression"] for fork in forks_of(seed)] == [["<", "x", 10]]
+    assert seed["downgrades"] == []
+    assert solved["downgrades"] == []
+    assert argument(solved, "x") < 10
