@@ -272,12 +272,18 @@ def test_run_prefers_no_fork_over_no_gain() -> None:
 
 def test_run_does_not_count_a_solver_miss_toward_the_plateau() -> None:
     target = load_target("targets.flip.implied_check::narrow")
+    events: list[str] = []
 
-    result = run(target, {"x": 3}, limits=Limits(plateau=Plateau(inputs=1)))
+    result = run(
+        target,
+        {"x": 3},
+        limits=Limits(plateau=Plateau(inputs=1)),
+        report=lambda record, coverage: events.append("input"),
+        missed=lambda miss: events.append("miss"),
+    )
 
-    # the miss produced no input, so the window sees only the seed and the gaining flip
-    assert len(result.misses) == 1
-    assert len(result.records) == 2
+    # the miss sits inside the window and produced no input, so the window skips it
+    assert events == ["input", "miss", "input"]
     assert result.stopped.kind is StopKind.NO_FORK
 
 
