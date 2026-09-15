@@ -30,6 +30,10 @@ ABS_AND_NEGATION = "targets.ints.abs_and_negation::place"
 ABS_AND_NEGATION_FILE = str(REPO_ROOT / "targets" / "ints" / "abs_and_negation.py")
 CONSTANT_POWER = "targets.ints.constant_power::root"
 CONSTANT_POWER_FILE = str(REPO_ROOT / "targets" / "ints" / "constant_power.py")
+TWO_ARGUMENTS = "targets.ints.two_arguments::product"
+TWO_ARGUMENTS_FILE = str(REPO_ROOT / "targets" / "ints" / "two_arguments.py")
+TAUGHT_ONLY = "targets.ints.taught_only::check"
+SYMBOLIC_EXPONENT = "targets.ints.symbolic_exponent::grow"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -204,3 +208,37 @@ def test_flips_a_constant_power() -> None:
     # only one negative int squares to nine
     assert any(argument(line, "x") == -3 for line in inputs)
     assert union_of(inputs) == {CONSTANT_POWER_FILE: [2, 3, 4, 5, 6]}
+
+
+# follow-integers-follows-two-arguments-together
+def test_follows_two_arguments_together() -> None:
+    result = run_pyct(TWO_ARGUMENTS, '{"x": 2, "y": 2}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert [fork["expression"] for fork in forks_of(seed)] == [["==", ["*", "x", "y"], 12]]
+    # the solver may move either argument; what it hands back multiplies to twelve
+    assert argument(solved, "x") * argument(solved, "y") == 12
+    assert union_of([seed, solved]) == {TWO_ARGUMENTS_FILE: [2, 3, 4]}
+
+
+# follow-integers-drops-taught-operations-from-the-downgrade-list
+def test_drops_taught_operations_from_the_downgrade_list() -> None:
+    result = run_pyct(TAUGHT_ONLY, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed = input_lines(result.stdout)[0]
+    # `+`, `abs` and `==` each keep the condition, so nothing was lost on the way
+    assert seed["downgrades"] == []
+
+
+# follow-integers-keeps-a-symbolic-exponent-as-a-downgrade
+def test_keeps_a_symbolic_exponent_as_a_downgrade() -> None:
+    result = run_pyct(SYMBOLIC_EXPONENT, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # cvc5 takes a constant exponent only, so `2 ** x` reaches int's own reflected power
+    assert seed["downgrades"] == [{"name": "__rpow__", "count": 1}]
+    assert seed["forks"] == []
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
