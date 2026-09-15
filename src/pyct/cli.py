@@ -214,7 +214,8 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     kept as text, which is what ``from __future__ import annotations``
     leaves behind, is read in the function's own globals. Anything else the
     annotation turns out to be, ``str | None`` or ``list[int]`` or a class,
-    is not one of the four and is not kept.
+    is not one of the four and is not kept. The four are matched by identity,
+    so an annotation that merely compares equal to ``str`` is not kept either.
 
     The parameters come from the signature, the same source ``check_seed_fits``
     reads, so a class target is read at its ``__init__``.
@@ -224,7 +225,7 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
         if parameter.annotation is inspect.Parameter.empty:
             continue
         resolved = _resolved(parameter.annotation, fn)
-        if resolved in (str, int, float, bool):
+        if resolved is str or resolved is int or resolved is float or resolved is bool:
             hints[name] = resolved
     return hints
 
