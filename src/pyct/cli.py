@@ -235,8 +235,10 @@ def _resolved(annotation: object, fn: Callable[..., object]) -> object:
     if not isinstance(annotation, str):
         return annotation
     try:
-        # the text is the target's own source, read where the target reads its names
-        return eval(annotation, getattr(fn, "__globals__", {}))
+        # the text is the target's own source, read where the target reads its names;
+        # a class carries no __globals__, so its module's are reached by name
+        names = getattr(fn, "__globals__", None) or vars(sys.modules[fn.__module__])
+        return eval(annotation, names)
     except Exception:
         return None
 
