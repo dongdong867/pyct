@@ -73,6 +73,21 @@ class Point:
         self.value = n
 
 
+# a name this module defines, so only this module's names can resolve it
+Number = int
+
+
+class Named:
+    """A class target whose ``__init__`` annotation is text naming a module alias."""
+
+    def __init__(self, n: int) -> None:
+        self.value = n
+
+
+# what ``from __future__ import annotations`` leaves behind on a class target
+Named.__init__.__annotations__ = {"n": "Number", "return": "None"}
+
+
 def target_for(fn: object) -> Target:
     """A Target around ``fn``; only ``fn`` matters to the seed-type check."""
     assert callable(fn)
@@ -103,6 +118,11 @@ def test_plain_annotations_resolves_text_and_skips_only_what_it_cannot() -> None
 def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
     # the class body says str, the parameter says int; the parameter is what a seed fills
     assert plain_annotations(Point) == {"n": int}
+
+
+def test_plain_annotations_reads_a_class_target_text_annotation_in_its_module() -> None:
+    # a class has no __globals__; the text is still read where the class was written
+    assert plain_annotations(Named) == {"n": int}
 
 
 def test_plain_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
