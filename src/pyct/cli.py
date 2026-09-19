@@ -246,6 +246,8 @@ def _names(fn: Callable[..., object]) -> dict[str, object]:
     # a class carries no __globals__; the text is its __init__'s, which the MRO may
     # take from another module. A slot wrapper __init__ has none, so the module answers
     owner = fn.__init__ if isinstance(fn, type) else fn
+    # the signature is read through __wrapped__, so a decorator's own globals are not it
+    owner = inspect.unwrap(owner)
     return getattr(owner, "__globals__", None) or vars(sys.modules[fn.__module__])
 
 
