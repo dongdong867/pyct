@@ -607,16 +607,11 @@ def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None
         and (code := getattr(member, "__code__", None)) is not None
         and code.co_filename == values.__file__
     }
+    # a downgrade closure reaches int through the helper itself, so handing it the call counts
+    reaches_int = {"_own"} | {name for name in vars(values) if name.endswith("_DOWNGRADE")}
     without_the_helper = {
-        name for name, code in written_here.items() if "_own" not in code.co_names
+        name for name, code in written_here.items() if not reaches_int & set(code.co_names)
     }
 
     # these hand the value itself back and never call int, so they have nothing to guard
-    assert without_the_helper == {
-        "__pos__",
-        "__index__",
-        "__trunc__",
-        "__floor__",
-        "__ceil__",
-        "__round__",
-    }
+    assert without_the_helper == {"__pos__", "__index__", "__trunc__", "__floor__", "__ceil__"}
