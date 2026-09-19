@@ -6,11 +6,12 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import inspect
 import json
 import math
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
@@ -23,7 +24,7 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
 from pyct.run.run import run
-from pyct.run.target import TargetError, load_target
+from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
@@ -57,11 +58,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     stdout after it: the readable text comes first, as it does for every
     input.
 
-    Checks run in this order: target form, seed shape, budget, plateau, cvc5,
-    import, seed present, seed fits. cvc5 comes before the import because
-    nothing the target does can make up for a missing solver. The import comes
-    before the seed-present check because that message names the target's
-    parameters, which only the loaded target knows.
+    Checks run in this order: target form, seed shape, budget, plateau,
+    import, seed present, seed fits, seed types, cvc5. Everything the command
+    line got wrong is reported first, because a wrong command line is wrong
+    whatever the machine has installed; cvc5 is the last check before the run
+    for the same reason, as it is the only one about the machine. The import
+    comes before the three seed checks because they all read the loaded
+    target: its parameters, and the annotations on them.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
@@ -69,11 +72,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
         plateau = parse_plateau(command.plateau_text)
-        locate()
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
         check_seed_fits(target.signature, seed)
+        check_seed_types(target, seed)
+        locate()
         result = run(
             target,
             seed,
@@ -201,6 +205,171 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         given = ", ".join(seed) or "nothing"
         parameters = ", ".join(signature.parameters) or "no parameters"
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
+
+
+def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
+    """The parameters annotated with a bare ``str``, ``int``, ``float`` or ``bool``.
+
+    Each annotation is resolved on its own, so one name that does not resolve
+    costs that parameter alone rather than the whole function. An annotation
+    kept as text, which is what ``from __future__ import annotations`` leaves
+    behind, is resolved in every module the text could have been written in:
+    the target's, each wrapper's, and the one supplying an ``__init__``,
+    ``__new__`` or ``__call__`` the target did not write itself, a base's or
+    a metaclass's. It is kept only when every
+    module that knows the name gives the same type. A name no module
+    resolves, or that two modules resolve differently, skips its own
+    parameter and no other. Anything else the annotation turns out to be,
+    ``str | None`` or ``list[int]`` or a class, is not one of the four and is
+    not kept. The four are matched by identity, so an annotation that merely
+    compares equal to ``str`` is not kept either.
+
+    The parameters come from the signature, the same source ``check_seed_fits``
+    reads, so a class target is read at its ``__init__``.
+    """
+    hints: dict[str, type] = {}
+    for name, parameter in inspect.signature(fn).parameters.items():
+        if parameter.annotation is inspect.Parameter.empty:
+            continue
+        resolved = _resolved(parameter.annotation, fn)
+        if resolved is str or resolved is int or resolved is float or resolved is bool:
+            hints[name] = resolved
+    return hints
+
+
+def _resolved(annotation: object, fn: Callable[..., object]) -> object:
+    """The annotation itself, or the one type every module that knows its text names.
+
+    A namespace whose eval raises does not know the name and says nothing.
+    The answer stands only when something resolved it and everything that
+    did landed on the same object; a disagreement is no annotation, as any
+    failure is.
+    """
+    if not isinstance(annotation, str):
+        return annotation
+    answers: list[object] = []
+    for names in _namespaces(fn):
+        try:
+            answers.append(eval(annotation, names))
+        except Exception:
+            continue
+    if not answers or any(answer is not answers[0] for answer in answers):
+        return None
+    return answers[0]
+
+
+def _namespaces(fn: object) -> list[dict[str, object]]:
+    """Every module's names the annotation text on ``fn`` could have been written against.
+
+    Which module ``inspect.signature`` took the text from is not knowable
+    from the outside: picking one went wrong round after round. So every
+    module that could have written it answers and agreement decides. An
+    extra namespace costs at most a skipped check; a missing one could
+    refuse a seed the target accepts.
+    """
+    if isinstance(fn, functools.partial):
+        return _namespaces(fn.func)
+    spaces: list[dict[str, object]] = []
+    for owner in _owners(fn):
+        for step in _chain(owner):
+            names = getattr(step, "__globals__", None)
+            # a slot wrapper such as object.__init__ carries none, and names nothing
+            if isinstance(names, dict):
+                spaces.append(names)
+    spaces.extend(_module_names(fn))
+    # by identity: a namespace reached twice is one namespace, and a dict is unhashable
+    return list({id(names): names for names in spaces}.values())
+
+
+def _owners(fn: object) -> list[object]:
+    """The callables whose globals could hold ``fn``'s annotation text.
+
+    A class is read at the ``__init__`` and ``__new__`` attribute lookup
+    gives, so an inherited one is the base's function, and at its
+    metaclass's ``__call__``, which ``inspect.signature`` prefers to both
+    when there is one. For an ordinary class that is ``type.__call__``, a
+    slot wrapper naming nothing. Which of the three ``inspect.signature``
+    picks is its business; all three are candidates here.
+
+    A callable object is a candidate beside its ``__call__``, because a
+    class-based decorator sets ``__wrapped__`` by hand and it hangs on the
+    object rather than on the method.
+    """
+    if isinstance(fn, type):
+        return [
+            getattr(fn, "__init__", None),
+            getattr(fn, "__new__", None),
+            getattr(type(fn), "__call__", None),  # noqa: B004 - the function, not a test
+        ]
+    method = getattr(fn, "__func__", None)
+    if method is not None:
+        return [method]
+    if not inspect.isroutine(fn):
+        return [fn, getattr(type(fn), "__call__", None)]  # noqa: B004 - the function, not a test
+    return [fn]
+
+
+def _chain(fn: object) -> list[object]:
+    """``fn`` and everything its ``__wrapped__`` chain reaches. A cycle ends the walk.
+
+    ``inspect.signature`` follows this chain, except that a wrapper
+    declaring its own ``__signature__`` stops it there. Walking the whole
+    chain covers the text wherever it was written, without asking which.
+    """
+    steps: list[object] = []
+    seen: set[int] = set()
+    step = fn
+    while step is not None and id(step) not in seen:
+        seen.add(id(step))
+        steps.append(step)
+        step = getattr(step, "__wrapped__", None)
+    return steps
+
+
+def _module_names(fn: object) -> list[dict[str, object]]:
+    """The names of the modules ``fn`` says it was written in.
+
+    A class and a callable object carry no globals of their own, so the
+    module each names is what stands in for them.
+    """
+    named = [getattr(fn, "__module__", None)]
+    if not isinstance(fn, type) and not inspect.isroutine(fn):
+        named.append(getattr(type(fn), "__module__", None))
+    modules = [sys.modules.get(name) for name in named if isinstance(name, str)]
+    return [vars(module) for module in modules if module is not None]
+
+
+def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
+    """One line per seeded parameter whose value Python's own typing would not accept.
+
+    The lines come in the order of ``hints``, which is signature order. A
+    value passes when it is an instance of the annotated type, plus the one
+    allowance Python makes itself: an ``int`` stands in where a ``float`` is
+    asked for. ``bool`` being a subclass of ``int`` is Python's rule too, so
+    ``True`` passes ``int`` while ``1`` fails ``bool``. The value is spelled
+    as JSON because the seed was typed as JSON.
+    """
+    return [
+        _refusal(name, hint, seed[name])
+        for name, hint in hints.items()
+        if name in seed and not _accepts(hint, seed[name])
+    ]
+
+
+def _accepts(hint: type, value: object) -> bool:
+    return isinstance(value, hint) or (hint is float and isinstance(value, int))
+
+
+def _refusal(name: str, hint: type, value: object) -> str:
+    article = "an" if hint is int else "a"
+    return f"{name} must be {article} {hint.__name__}, got {json.dumps(value)}"
+
+
+def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
+    """Refuse a seed that contradicts a plain annotation, naming every one at once."""
+    lines = contradictions(plain_annotations(target.fn), seed)
+    if lines:
+        raise UsageError("\n".join(lines))
 
 
 def missing_args_message(signature: inspect.Signature) -> str:
