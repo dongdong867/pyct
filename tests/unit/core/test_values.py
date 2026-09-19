@@ -11,9 +11,6 @@ from pyct.core.values import ConcolicBool, ConcolicInt, raised_by_target
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
     "__truediv__": lambda x: x / 2,
-    "__floordiv__": lambda x: x // 2,
-    "__mod__": lambda x: x % 2,
-    "__divmod__": lambda x: divmod(x, 2),
     "__lshift__": lambda x: x << 1,
     "__rshift__": lambda x: x >> 1,
     "__and__": lambda x: x & 1,
@@ -594,6 +591,8 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
     taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
     taught |= {"__neg__", "__abs__", "__pow__"}
+    taught |= {"__floordiv__", "__rfloordiv__", "__mod__", "__rmod__"}
+    taught |= {"__divmod__", "__rdivmod__"}
     taught |= {"__pos__", "__index__", "__round__", "__trunc__", "__floor__", "__ceil__"}
     kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
     downgraded = {

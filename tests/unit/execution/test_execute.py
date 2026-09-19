@@ -260,10 +260,16 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
 @pytest.mark.parametrize(
     ("operation", "detail"),
     [
+        pytest.param(lambda x: x / 0, "ZeroDivisionError: division by zero", id="downgrade"),
         pytest.param(
             lambda x: x // 0,
             "ZeroDivisionError: integer division or modulo by zero",
-            id="downgrade",
+            id="division",
+        ),
+        pytest.param(
+            lambda x: divmod(x, 0),
+            "ZeroDivisionError: integer division or modulo by zero",
+            id="divmod",
         ),
         pytest.param(
             lambda x: x**-1,

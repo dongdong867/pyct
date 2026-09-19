@@ -5,6 +5,8 @@ tests do: an operation is followed only if the fork it built reaches the solver 
 solver's answer runs, so only a real run through the command line proves it.
 """
 
+from subprocess import CompletedProcess
+
 from tests.acceptance.harness import (
     REPO_ROOT,
     input_lines,
@@ -35,6 +37,15 @@ TWO_ARGUMENTS_FILE = str(REPO_ROOT / "targets" / "ints" / "two_arguments.py")
 TAUGHT_ONLY = "targets.ints.taught_only::check"
 SYMBOLIC_EXPONENT = "targets.ints.symbolic_exponent::grow"
 IDENTITY_CHECK = "targets.ints.identity_check::small"
+DIVMOD_CHECK = "targets.ints.divmod_check::split"
+NEGATIVE_FLOOR = "targets.ints.negative_floor::band"
+NEGATIVE_FLOOR_FILE = str(REPO_ROOT / "targets" / "ints" / "negative_floor.py")
+NEGATIVE_MODULO = "targets.ints.negative_modulo::band"
+NEGATIVE_MODULO_FILE = str(REPO_ROOT / "targets" / "ints" / "negative_modulo.py")
+FLOOR_DIVISION = "targets.ints.floor_division::share"
+FLOOR_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "floor_division.py")
+REFLECTED_DIVISION = "targets.ints.reflected_division::share"
+REFLECTED_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_division.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -256,3 +267,77 @@ def test_keeps_the_condition_through_identity_operations() -> None:
     assert seed["downgrades"] == []
     assert solved["downgrades"] == []
     assert argument(solved, "x") < 10
+
+
+# follow-integers-flips-divmod
+def test_flips_divmod() -> None:
+    result = run_pyct(DIVMOD_CHECK, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # divmod hands back both halves at once; the check reads the remainder, so that is
+    # the half the fork is built on, and the divisor is a constant, so nothing forks on it
+    assert [fork["expression"] for fork in forks_of(seed)] == [["==", ["%", "x", 5], 3]]
+    assert [fork["taken"] for fork in forks_of(solved)] == [True]
+
+
+# follow-integers-flips-floor-division-with-a-negative-divisor
+def test_flips_floor_division_with_a_negative_divisor() -> None:
+    result = run_pyct(NEGATIVE_FLOOR, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # Python floors toward minus infinity, so `9 // -2` is -5 while `8 // -2` and `7 // -2`
+    # are -4; an encoding that truncated instead would hand back an x that misses the block
+    assert [fork["taken"] for fork in forks_of(solved)] == [True]
+    assert solved["mismatch_at"] is None
+    assert union_of([seed, solved]) == {NEGATIVE_FLOOR_FILE: [2, 3, 4]}
+
+
+# follow-integers-flips-modulo-with-a-negative-divisor
+def test_flips_modulo_with_a_negative_divisor() -> None:
+    result = run_pyct(NEGATIVE_MODULO, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # Python's modulo takes the divisor's sign, so `2 % -3` is -1; a remainder that came
+    # back non-negative would never equal -1 and the flip would miss the block
+    assert [fork["taken"] for fork in forks_of(solved)] == [True]
+    assert solved["mismatch_at"] is None
+    assert union_of([seed, solved]) == {NEGATIVE_MODULO_FILE: [2, 3, 4]}
+
+
+def assert_the_zero_fork_was_flipped(result: CompletedProcess[str], file: str) -> None:
+    """The whole story of a division by a symbolic divisor, which both forms tell alike.
+
+    The seed divides by something that is not zero and records the fork that
+    says so; flipping it is asking for the divisor the division cannot take,
+    and the input that comes back crashes on it.
+    """
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    division = {"file": file, "line": 2, "col": 11}
+    assert forks_of(seed) == [{**division, "taken": True, "expression": ["!=", "y", 0]}]
+    assert solved["aim"] == {**division, "position": 0}
+    assert argument(solved, "y") == 0
+    assert forks_of(solved) == [{**division, "taken": False, "expression": ["!=", "y", 0]}]
+    # the detail is CPython's own sentence, so only the kind and the name are pyct's to pin
+    failure = solved["failure"]
+    assert isinstance(failure, dict), solved
+    assert failure["kind"] == "target_raised"
+    assert str(failure["detail"]).startswith("ZeroDivisionError:")
+
+
+# follow-integers-finds-the-division-by-zero
+def test_finds_the_division_by_zero() -> None:
+    result = run_pyct(FLOOR_DIVISION, '{"x": 7, "y": 2}')
+
+    assert_the_zero_fork_was_flipped(result, FLOOR_DIVISION_FILE)
+
+
+# follow-integers-finds-the-division-by-zero-on-the-reflected-side
+def test_finds_the_division_by_zero_on_the_reflected_side() -> None:
+    result = run_pyct(REFLECTED_DIVISION, '{"y": 2}')
+
+    # `7 // y` runs int's reflected divide on y, and the fork is the same divisor's
+    assert_the_zero_fork_was_flipped(result, REFLECTED_DIVISION_FILE)
