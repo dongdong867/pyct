@@ -18,6 +18,7 @@ from pyct.config.budget import Budget
 from pyct.config.plateau import Plateau
 from pyct.run.target import Target
 from tests.unit.cli.inherited_init import Base
+from tests.unit.cli.wrapping_decorator import wrapped_elsewhere
 
 
 def classify(x: int) -> str:
@@ -93,6 +94,15 @@ class Inheriting(Base):
     """A class target whose ``__init__``, and its text, come from another module."""
 
 
+def counts(n: int) -> None:
+    return None
+
+
+# what ``from __future__ import annotations`` leaves behind, set before the decorator wraps it
+counts.__annotations__ = {"n": "Number", "return": "None"}
+wrapped = wrapped_elsewhere(counts)
+
+
 def target_for(fn: object) -> Target:
     """A Target around ``fn``; only ``fn`` matters to the seed-type check."""
     assert callable(fn)
@@ -133,6 +143,11 @@ def test_plain_annotations_reads_a_class_target_text_annotation_in_its_module() 
 def test_plain_annotations_reads_an_inherited_init_text_where_it_lives() -> None:
     # the text is the base's, so the base's module resolves Number, not the class's
     assert plain_annotations(Inheriting) == {"n": str}
+
+
+def test_plain_annotations_reads_a_wrapped_target_text_where_it_lives() -> None:
+    # the text is the wrapped function's, so this module resolves Number, not the decorator's
+    assert plain_annotations(wrapped) == {"n": int}
 
 
 def test_plain_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
