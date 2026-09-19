@@ -32,7 +32,14 @@ class AgreeingBase:
 class MakingBase:
     """A base whose ``__new__``, and its text, an inheriting target takes."""
 
-    def __new__(cls, n: str) -> "MakingBase":
+    def __new__(cls, n: str, m: int) -> "MakingBase":
+        return super().__new__(cls)
+
+
+class AgreeingMakingBase:
+    """A base whose ``__new__`` text only this module can resolve."""
+
+    def __new__(cls, n: str) -> "AgreeingMakingBase":
         return super().__new__(cls)
 
 
@@ -67,7 +74,8 @@ class AgreeingMeta(type):
 # what ``from __future__ import annotations`` leaves behind on each dunder
 Base.__init__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 AgreeingBase.__init__.__annotations__ = {"n": "Elsewhere", "return": "None"}
-MakingBase.__new__.__annotations__ = {"n": "Number", "return": "MakingBase"}
+MakingBase.__new__.__annotations__ = {"n": "Number", "m": "int", "return": "MakingBase"}
+AgreeingMakingBase.__new__.__annotations__ = {"n": "Elsewhere", "return": "AgreeingMakingBase"}
 CallingBase.__call__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 AgreeingCallingBase.__call__.__annotations__ = {"n": "Elsewhere", "return": "None"}
 Meta.__call__.__annotations__ = {"n": "Number", "m": "int", "return": "object"}

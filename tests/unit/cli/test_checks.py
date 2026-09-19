@@ -23,6 +23,7 @@ from tests.unit.cli.declaring_decorator import declares_its_signature
 from tests.unit.cli.inherited import (
     AgreeingBase,
     AgreeingCallingBase,
+    AgreeingMakingBase,
     AgreeingMeta,
     Base,
     CallingBase,
@@ -122,6 +123,14 @@ class MakingElsewhere(MakingBase):
 MakingElsewhere.__init__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 
 
+class Making(MakingBase):
+    """A class target read at a ``__new__``, and its text, from another module."""
+
+
+class MakingAgreeing(AgreeingMakingBase):
+    """A class target whose inherited ``__new__`` text only the base's module knows."""
+
+
 class ViaMeta(metaclass=Meta):
     """A class target read through its metaclass's ``__call__``, written elsewhere."""
 
@@ -160,6 +169,53 @@ def written_elsewhere(n: int, m: int) -> None:
 written_elsewhere.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 # a plain function knows one namespace of its own; __module__ is the only way it names a second
 written_elsewhere.__module__ = "tests.unit.cli.inherited"
+
+
+class Counting:
+    """The three kinds of method a module-level name can hold, bound or plain."""
+
+    def counts(self, n: int, m: int) -> None:
+        return None
+
+    def counts_here(self, n: int) -> None:
+        return None
+
+    @classmethod
+    def made(cls, n: int, m: int) -> None:
+        return None
+
+    @classmethod
+    def made_here(cls, n: int) -> None:
+        return None
+
+    @staticmethod
+    def helps(n: int, m: int) -> None:
+        return None
+
+    @staticmethod
+    def helps_here(n: int) -> None:
+        return None
+
+
+# a method knows one namespace too, the one its function was written in
+Counting.counts.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
+Counting.counts.__module__ = "tests.unit.cli.inherited"
+Counting.counts_here.__annotations__ = {"n": "Here", "return": "None"}
+Counting.made.__func__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
+Counting.made.__func__.__module__ = "tests.unit.cli.inherited"
+Counting.made_here.__func__.__annotations__ = {"n": "Here", "return": "None"}
+Counting.helps.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
+Counting.helps.__module__ = "tests.unit.cli.inherited"
+Counting.helps_here.__annotations__ = {"n": "Here", "return": "None"}
+
+# a bound method is reached through an instance, a classmethod and a staticmethod through
+# the class; the seed fills what each one's signature leaves, so no self and no cls
+bound_clashing = Counting().counts
+bound_agreeing = Counting().counts_here
+class_method_clashing = Counting.made
+class_method_agreeing = Counting.made_here
+static_clashing = Counting.helps
+static_agreeing = Counting.helps_here
 
 
 def counts(n: int, m: int) -> None:
@@ -242,12 +298,16 @@ def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
     ("target", "expected"),
     [
         pytest.param(reads_here, {"n": int}, id="plain function"),
+        pytest.param(bound_agreeing, {"n": int}, id="bound method"),
+        pytest.param(class_method_agreeing, {"n": int}, id="class method"),
+        pytest.param(static_agreeing, {"n": int}, id="static method"),
         pytest.param(wrapped_agreeing, {"n": int}, id="wraps decorator"),
         pytest.param(by_hand_agreeing, {"n": int}, id="wrapping object"),
         pytest.param(declared_agreeing, {"n": str}, id="declared signature"),
         # a class has no __globals__; its __init__'s are the names the text was written against
         pytest.param(Named, {"n": int}, id="own init"),
         pytest.param(InheritingAgreeing, {"n": str}, id="inherited init"),
+        pytest.param(MakingAgreeing, {"n": str}, id="inherited new"),
         pytest.param(ViaAgreeingMeta, {"n": str}, id="metaclass call"),
         pytest.param(calling_agreeing, {"n": str}, id="inherited call"),
         pytest.param(partial_agreeing, {"n": int}, id="partial"),
@@ -264,11 +324,15 @@ def test_plain_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
     "target",
     [
         pytest.param(written_elsewhere, id="plain function"),
+        pytest.param(bound_clashing, id="bound method"),
+        pytest.param(class_method_clashing, id="class method"),
+        pytest.param(static_clashing, id="static method"),
         pytest.param(wrapped_clashing, id="wraps decorator"),
         pytest.param(by_hand_clashing, id="wrapping object"),
         pytest.param(declared_clashing, id="declared signature"),
         pytest.param(MakingElsewhere, id="own init"),
         pytest.param(Inheriting, id="inherited init"),
+        pytest.param(Making, id="inherited new"),
         pytest.param(ViaMeta, id="metaclass call"),
         pytest.param(calling, id="inherited call"),
         pytest.param(partial_clashing, id="partial"),
