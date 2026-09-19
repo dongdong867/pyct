@@ -90,7 +90,7 @@ class ConcolicBool(int):
         return self
 
     def __bool__(self) -> bool:
-        return _forked(self.sink, self.expression, int.__bool__(self))
+        return _forked(self.sink, self.expression, _own(int.__bool__, self))
 
     def __repr__(self) -> str:
         # int.__bool__, not bool(self): bool() would record a fork
@@ -269,7 +269,7 @@ class ConcolicInt(int):
 
     def __bool__(self) -> bool:
         # the int is the condition: zero is the one value that takes the other side
-        return _forked(self.sink, ["!=", self.expression, 0], int.__bool__(self))
+        return _forked(self.sink, ["!=", self.expression, 0], _own(int.__bool__, self))
 
 
 # forty-odd methods that differ only in the name they call and record, so a loop writes them
