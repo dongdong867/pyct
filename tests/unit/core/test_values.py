@@ -5,7 +5,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.values import ConcolicBool, ConcolicInt
+from pyct.core.values import ConcolicBool, ConcolicInt, raised_by_target
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
@@ -523,6 +523,21 @@ def test_an_operation_that_raises_records_nothing() -> None:
 
     # nothing was lost: the raise is the target's own
     assert sink == []
+
+
+def test_a_raise_out_of_ints_own_operation_is_marked_as_the_targets() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    with pytest.raises(ZeroDivisionError) as raised:
+        _ = x // 0
+
+    # pyct only ran int's own divide, so the raise that came out of it is the target's
+    assert raised_by_target(raised.value)
+
+
+def test_a_raise_pyct_made_itself_carries_no_mark() -> None:
+    assert not raised_by_target(ValueError("pyct's own"))
 
 
 def test_an_operation_the_other_type_answers_records_nothing() -> None:

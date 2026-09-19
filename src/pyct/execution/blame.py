@@ -7,7 +7,7 @@ import types
 from collections.abc import Callable, Iterator
 
 from pyct.core.branch import PYCT_DIR
-from pyct.core.values import is_downgrade_frame
+from pyct.core.values import raised_by_target
 from pyct.results.failure import Failure, FailureKind
 
 
@@ -18,12 +18,15 @@ def blame(fn: Callable[..., object], error: Exception, *, called: bool) -> Failu
     below the target's code object in the traceback lives under pyct's package
     directory; otherwise it is **target raised**. Below means deeper in the
     traceback than the target's own frame, so it covers the calls the target
-    made and not the ones that led to it. A downgrade frame is exempt: it runs
-    only int's own operation, so a raise inside it is the target's. A raise
-    before the target was ``called`` is pyct's own setup. A pyct bug keeps the
-    whole traceback, because the frames are what a person needs to fix pyct.
+    made and not the ones that led to it. A raise the base type's own operation
+    made carries a mark saying so, and that mark wins: pyct ran the operation
+    but did not fail. A raise before the target was ``called`` is pyct's own
+    setup. A pyct bug keeps the whole traceback, because the frames are what a
+    person needs to fix pyct.
     """
-    if any(_is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error, called)):
+    if not raised_by_target(error) and any(
+        _is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error, called)
+    ):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=one_line(error),
@@ -33,8 +36,8 @@ def blame(fn: Callable[..., object], error: Exception, *, called: bool) -> Failu
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:
-    """A frame of pyct's own: under pyct's directory, and not a downgrade."""
-    return code.co_filename.startswith(PYCT_DIR) and not is_downgrade_frame(code)
+    """A frame of pyct's own: one whose code lives under pyct's directory."""
+    return code.co_filename.startswith(PYCT_DIR)
 
 
 def _below_target(

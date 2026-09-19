@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import types
 from collections.abc import Callable
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
@@ -38,6 +37,30 @@ _UNTAUGHT = (
     "__str__",
     "__format__",
 )
+
+
+# the mark that says a raise came out of the base type's own operation. The call that made it
+# is the only code that knows, so it writes the mark there and blame reads it back
+_TARGET_RAISE = "__pyct_target_raise__"
+
+
+def _own[T](operation: Callable[..., T], *args: object) -> T:
+    """The base type's own answer, with a raise out of it marked as the target's.
+
+    Every call pyct makes into the base type goes through here, taught
+    operation and downgrade alike. A raise under one of them is the target's
+    program failing, not a pyct bug.
+    """
+    try:
+        return operation(*args)
+    except BaseException as error:
+        setattr(error, _TARGET_RAISE, True)
+        raise
+
+
+def raised_by_target(error: BaseException) -> bool:
+    """Whether this raise came out of the base type's own operation."""
+    return getattr(error, _TARGET_RAISE, False) is True
 
 
 def _forked(sink: BranchSink, expression: Expression, taken: bool) -> bool:
@@ -95,7 +118,7 @@ def _compare(
         if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
             return NotImplemented
         return ConcolicBool(
-            bool(operation(self, other)),
+            bool(_own(operation, self, other)),
             expression=[op, self.expression, _form_of(other)],
             sink=self.sink,
         )
@@ -121,7 +144,7 @@ def _arithmetic(
         operands = (
             [_form_of(other), self.expression] if reflected else [self.expression, _form_of(other)]
         )
-        return ConcolicInt(operation(self, other), expression=[op, *operands], sink=self.sink)
+        return ConcolicInt(_own(operation, self, other), expression=[op, *operands], sink=self.sink)
 
     return compute
 
@@ -130,7 +153,7 @@ def _unary(op: str, operation: Callable[[int], int]) -> Callable[[ConcolicInt], 
     """int's own answer to one unary operation, under the head the builtin or operator has."""
 
     def compute(self: ConcolicInt) -> ConcolicInt:
-        return ConcolicInt(operation(self), expression=[op, self.expression], sink=self.sink)
+        return ConcolicInt(_own(operation, self), expression=[op, self.expression], sink=self.sink)
 
     return compute
 
@@ -146,7 +169,7 @@ def _downgraded(name: str) -> Callable[..., object]:
     operation = getattr(int, name)
 
     def downgrade(self: ConcolicInt, *args: object) -> object:
-        result = operation(self, *args)
+        result = _own(operation, self, *args)
         if result is not NotImplemented:
             self.sink.append(Downgrade(name=name))
         return result
@@ -170,7 +193,7 @@ def _power(self: ConcolicInt, exponent: object, modulus: object = None) -> objec
     """
     if modulus is None and type(exponent) is int and 0 <= exponent < _POWER_LIMIT:
         return ConcolicInt(
-            int.__pow__(self, exponent),
+            _own(int.__pow__, self, exponent),
             expression=["**", self.expression, exponent],
             sink=self.sink,
         )
@@ -194,20 +217,6 @@ def _round(self: ConcolicInt, ndigits: object = None) -> object:
     if ndigits is None or (type(ndigits) is int and ndigits >= 0):
         return self
     return _ROUND_DOWNGRADE(self, ndigits)
-
-
-# every closure one `def` makes shares that def's code object, so one of them stands for all;
-# _power and _round hand their fallback to int's own operation too, so their frames count
-_DOWNGRADE_CODES = frozenset({_downgraded("__invert__").__code__, _power.__code__, _round.__code__})
-
-
-def is_downgrade_frame(code: types.CodeType) -> bool:
-    """Whether a frame running ``code`` only runs int's own operation, so a raise is the target's.
-
-    A downgrade closure is one; so are ``_power`` and ``_round``, whose
-    fallback hands the call to int's own operation.
-    """
-    return code in _DOWNGRADE_CODES
 
 
 class ConcolicInt(int):
