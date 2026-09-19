@@ -49,11 +49,12 @@ def _own[T](operation: Callable[..., T], *args: object) -> T:
 
     Every call pyct makes into the base type goes through here, taught
     operation and downgrade alike. A raise under one of them is the target's
-    program failing, not a pyct bug.
+    program failing, not a pyct bug. Only an ``Exception`` is one: a deadline
+    and a keyboard interrupt land here too, and neither is the operation's.
     """
     try:
         return operation(*args)
-    except BaseException as error:
+    except Exception as error:
         setattr(error, _TARGET_RAISE, True)
         raise
 
