@@ -17,6 +17,7 @@ from pyct.cli import (
 from pyct.config.budget import Budget
 from pyct.config.plateau import Plateau
 from pyct.run.target import Target
+from tests.unit.cli.inherited_init import Base
 
 
 def classify(x: int) -> str:
@@ -88,6 +89,10 @@ class Named:
 Named.__init__.__annotations__ = {"n": "Number", "return": "None"}
 
 
+class Inheriting(Base):
+    """A class target whose ``__init__``, and its text, come from another module."""
+
+
 def target_for(fn: object) -> Target:
     """A Target around ``fn``; only ``fn`` matters to the seed-type check."""
     assert callable(fn)
@@ -123,6 +128,11 @@ def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
 def test_plain_annotations_reads_a_class_target_text_annotation_in_its_module() -> None:
     # a class has no __globals__; the text is still read where the class was written
     assert plain_annotations(Named) == {"n": int}
+
+
+def test_plain_annotations_reads_an_inherited_init_text_where_it_lives() -> None:
+    # the text is the base's, so the base's module resolves Number, not the class's
+    assert plain_annotations(Inheriting) == {"n": str}
 
 
 def test_plain_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
