@@ -1,8 +1,8 @@
 """A decorator, written here, that wraps a target written in another module.
 
-``Number`` is a ``str`` here and an ``int`` in ``test_checks``, so the text
-annotation ``inspect.signature`` reads through ``__wrapped__`` resolves to a
-different plain type depending on which module's names read it.
+``Number`` is a ``str`` here and an ``int`` in ``test_checks``, so a text
+annotation spelling it means a different plain type in each of the two
+modules a decorated target is written across.
 """
 
 import functools
