@@ -29,7 +29,7 @@ from tests.unit.cli.inherited import (
     MakingBase,
     Meta,
 )
-from tests.unit.cli.wrapping_decorator import wrapped_elsewhere
+from tests.unit.cli.wrapping_decorator import WrapsByHand, wrapped_elsewhere
 
 
 def classify(x: int) -> str:
@@ -169,6 +169,7 @@ def counts(n: int, m: int) -> None:
 # what ``from __future__ import annotations`` leaves behind, set before the decorator wraps it
 counts.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 wrapped_clashing = wrapped_elsewhere(counts)
+by_hand_clashing = WrapsByHand(counts)
 declared_clashing = declares_its_signature(counts, {"n": "Number", "m": "int"})
 declared_agreeing = declares_its_signature(counts, {"n": "Elsewhere"})
 
@@ -179,6 +180,7 @@ def counts_here(n: int) -> None:
 
 counts_here.__annotations__ = {"n": "Here", "return": "None"}
 wrapped_agreeing = wrapped_elsewhere(counts_here)
+by_hand_agreeing = WrapsByHand(counts_here)
 
 
 def takes_two(first: int, n: int) -> None:
@@ -241,6 +243,7 @@ def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
     [
         pytest.param(reads_here, {"n": int}, id="plain function"),
         pytest.param(wrapped_agreeing, {"n": int}, id="wraps decorator"),
+        pytest.param(by_hand_agreeing, {"n": int}, id="wrapping object"),
         pytest.param(declared_agreeing, {"n": str}, id="declared signature"),
         # a class has no __globals__; its __init__'s are the names the text was written against
         pytest.param(Named, {"n": int}, id="own init"),
@@ -262,6 +265,7 @@ def test_plain_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
     [
         pytest.param(written_elsewhere, id="plain function"),
         pytest.param(wrapped_clashing, id="wraps decorator"),
+        pytest.param(by_hand_clashing, id="wrapping object"),
         pytest.param(declared_clashing, id="declared signature"),
         pytest.param(MakingElsewhere, id="own init"),
         pytest.param(Inheriting, id="inherited init"),
