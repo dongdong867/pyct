@@ -618,8 +618,13 @@ def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None
         and (code := getattr(member, "__code__", None)) is not None
         and code.co_filename == values.__file__
     }
-    # a downgrade closure reaches int through the helper itself, so handing it the call counts
-    reaches_int = {"_own"} | {name for name in vars(values) if name.endswith("_DOWNGRADE")}
+    # a downgrade closure reaches int through the helper itself, so handing it the call counts;
+    # what makes one is being built by _downgraded, not what it is called
+    reaches_int = {"_own"} | {
+        name
+        for name, value in vars(values).items()
+        if getattr(value, "__qualname__", "").startswith("_downgraded.")
+    }
     without_the_helper = {
         name for name, code in written_here.items() if not reaches_int & set(code.co_names)
     }
