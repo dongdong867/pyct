@@ -541,6 +541,17 @@ def test_a_raise_pyct_made_itself_carries_no_mark() -> None:
     assert not raised_by_target(ValueError("pyct's own"))
 
 
+def test_a_raise_that_is_not_the_operations_carries_no_mark() -> None:
+    def interrupted() -> int:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt) as raised:
+        values._own(interrupted)
+
+    # a deadline and a keyboard interrupt land inside int's own operation too, and are not its raise
+    assert not raised_by_target(raised.value)
+
+
 def test_an_operation_the_other_type_answers_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
