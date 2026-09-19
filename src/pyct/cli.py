@@ -214,8 +214,9 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     costs that parameter alone rather than the whole function. An annotation
     kept as text, which is what ``from __future__ import annotations`` leaves
     behind, is resolved in every module the text could have been written in:
-    the target's, each wrapper's, and the one supplying an inherited
-    ``__init__``, ``__new__`` or ``__call__``. It is kept only when every
+    the target's, each wrapper's, and the one supplying an ``__init__``,
+    ``__new__`` or ``__call__`` the target did not write itself, a base's or
+    a metaclass's. It is kept only when every
     module that knows the name gives the same type. A name no module
     resolves, or that two modules resolve differently, skips its own
     parameter and no other. Anything else the annotation turns out to be,
@@ -261,7 +262,7 @@ def _namespaces(fn: object) -> list[dict[str, object]]:
     """Every module's names the annotation text on ``fn`` could have been written against.
 
     Which module ``inspect.signature`` took the text from is not knowable
-    from the outside: three rounds of picking one got it wrong. So every
+    from the outside: picking one went wrong round after round. So every
     module that could have written it answers and agreement decides. An
     extra namespace costs at most a skipped check; a missing one could
     refuse a seed the target accepts.
@@ -284,11 +285,18 @@ def _owners(fn: object) -> list[object]:
     """The callables whose globals could hold ``fn``'s annotation text.
 
     A class is read at the ``__init__`` and ``__new__`` attribute lookup
-    gives, so an inherited one is the base's function. Which of the two
-    ``inspect.signature`` picks is its business; both are candidates here.
+    gives, so an inherited one is the base's function, and at its
+    metaclass's ``__call__``, which ``inspect.signature`` prefers to both
+    when there is one. For an ordinary class that is ``type.__call__``, a
+    slot wrapper naming nothing. Which of the three ``inspect.signature``
+    picks is its business; all three are candidates here.
     """
     if isinstance(fn, type):
-        return [getattr(fn, "__init__", None), getattr(fn, "__new__", None)]
+        return [
+            getattr(fn, "__init__", None),
+            getattr(fn, "__new__", None),
+            getattr(type(fn), "__call__", None),  # noqa: B004 - the function, not a test
+        ]
     method = getattr(fn, "__func__", None)
     if method is not None:
         return [method]
