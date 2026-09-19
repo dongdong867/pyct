@@ -212,10 +212,11 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
     kept as text, which is what ``from __future__ import annotations``
-    leaves behind, is read in the function's own globals. Anything else the
-    annotation turns out to be, ``str | None`` or ``list[int]`` or a class,
-    is not one of the four and is not kept. The four are matched by identity,
-    so an annotation that merely compares equal to ``str`` is not kept either.
+    leaves behind, is read in the globals of the function carrying it, where
+    its names were written. Anything else the annotation turns out to be,
+    ``str | None`` or ``list[int]`` or a class, is not one of the four and is
+    not kept. The four are matched by identity, so an annotation that merely
+    compares equal to ``str`` is not kept either.
 
     The parameters come from the signature, the same source ``check_seed_fits``
     reads, so a class target is read at its ``__init__``.
@@ -235,12 +236,17 @@ def _resolved(annotation: object, fn: Callable[..., object]) -> object:
     if not isinstance(annotation, str):
         return annotation
     try:
-        # the text is the target's own source, read where the target reads its names;
-        # a class carries no __globals__, so its module's are reached by name
-        names = getattr(fn, "__globals__", None) or vars(sys.modules[fn.__module__])
-        return eval(annotation, names)
+        return eval(annotation, _names(fn))
     except Exception:
         return None
+
+
+def _names(fn: Callable[..., object]) -> dict[str, object]:
+    """The names the annotation text was written against, read where it lives."""
+    # a class carries no __globals__; the text is its __init__'s, which the MRO may
+    # take from another module. A slot wrapper __init__ has none, so the module answers
+    owner = fn.__init__ if isinstance(fn, type) else fn
+    return getattr(owner, "__globals__", None) or vars(sys.modules[fn.__module__])
 
 
 def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
