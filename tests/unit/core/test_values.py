@@ -4,6 +4,7 @@ from collections.abc import Callable
 
 import pytest
 
+from pyct.core import values
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.values import ConcolicBool, ConcolicInt, raised_by_target
 
@@ -595,3 +596,27 @@ def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
     }
 
     assert downgraded == (ints_own | {"__str__"}) - taught - kept
+
+
+def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
+    # a call into int written without the helper leaves its raise blamed on pyct, silently
+    written_here = {
+        name: code
+        for name, member in vars(ConcolicInt).items()
+        if name.startswith("__")
+        and (code := getattr(member, "__code__", None)) is not None
+        and code.co_filename == values.__file__
+    }
+    without_the_helper = {
+        name for name, code in written_here.items() if "_own" not in code.co_names
+    }
+
+    # these hand the value itself back and never call int, so they have nothing to guard
+    assert without_the_helper == {
+        "__pos__",
+        "__index__",
+        "__trunc__",
+        "__floor__",
+        "__ceil__",
+        "__round__",
+    }
