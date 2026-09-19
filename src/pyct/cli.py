@@ -290,6 +290,10 @@ def _owners(fn: object) -> list[object]:
     when there is one. For an ordinary class that is ``type.__call__``, a
     slot wrapper naming nothing. Which of the three ``inspect.signature``
     picks is its business; all three are candidates here.
+
+    A callable object is a candidate beside its ``__call__``, because a
+    class-based decorator sets ``__wrapped__`` by hand and it hangs on the
+    object rather than on the method.
     """
     if isinstance(fn, type):
         return [
@@ -301,7 +305,7 @@ def _owners(fn: object) -> list[object]:
     if method is not None:
         return [method]
     if not inspect.isroutine(fn):
-        return [getattr(type(fn), "__call__", None)]  # noqa: B004 - the function, not a test
+        return [fn, getattr(type(fn), "__call__", None)]  # noqa: B004 - the function, not a test
     return [fn]
 
 
