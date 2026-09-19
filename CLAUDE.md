@@ -9,10 +9,8 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- Tests: `uv run pytest tests/ -v`. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
-- Lint: `uv run ruff check src/ tests/`
-- Types: `uv run pyrefly check`
-- Imports: `uv run lint-imports`
+- test: `uv run pytest tests/ -v`. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
+- lint: `uv run ruff check src/ tests/ && uv run pyrefly check && uv run lint-imports` — style, types, import layers
 - Format: `uv run ruff format src/ tests/`
 - Run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
 
