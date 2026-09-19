@@ -43,6 +43,28 @@ def test_the_two_equality_operators_are_written_the_way_smt_spells_them() -> Non
     assert "(assert (distinct x 10))" in other.splitlines()
 
 
+def test_arithmetic_is_written_under_its_own_name() -> None:
+    text = render((fork([">", ["-", ["*", ["+", "x", 1], 2], 3], 10], taken=True),), {"x": int})
+
+    assert "(assert (> (- (* (+ x 1) 2) 3) 10))" in text.splitlines()
+
+
+def test_a_builtin_and_a_unary_minus_are_written_by_arity() -> None:
+    text = render(
+        (fork([">", ["abs", "x"], 5], taken=True), fork(["<", ["-", "x"], -3], taken=True)),
+        {"x": int},
+    )
+
+    assert "(assert (> (abs x) 5))" in text.splitlines()
+    assert "(assert (< (- x) (- 3)))" in text.splitlines()
+
+
+def test_a_power_is_written_with_a_caret() -> None:
+    text = render((fork(["==", ["**", "x", 2], 9], taken=True),), {"x": int})
+
+    assert "(assert (= (^ x 2) 9))" in text.splitlines()
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})
