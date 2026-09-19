@@ -1,6 +1,6 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
 
@@ -23,6 +23,28 @@ OPERATORS: Mapping[str, str] = {
     "abs": "abs",
     "**": "^",
 }
+
+
+def _euclidean_agrees(a: str, b: str) -> str:
+    """When SMT-LIB's division is already Python's: a positive divisor, or nothing left over."""
+    return f"(or (> {b} 0) (= (mod {a} {b}) 0))"
+
+
+# SMT-LIB's `div` and `mod` are Euclidean: the remainder is never negative. Python floors
+# toward minus infinity and its `%` takes the divisor's sign. The two agree when the divisor
+# is positive or the remainder is zero; otherwise Python's quotient is one lower and its
+# remainder is shifted by the divisor. Decision division-floor-correction-in-render.
+def _floor_division(a: str, b: str) -> str:
+    return f"(ite {_euclidean_agrees(a, b)} (div {a} {b}) (- (div {a} {b}) 1))"
+
+
+def _modulo(a: str, b: str) -> str:
+    return f"(ite {_euclidean_agrees(a, b)} (mod {a} {b}) (+ (mod {a} {b}) {b}))"
+
+
+# an operation SMT-LIB has no operator for, written out as the form that means it. The
+# operands arrive rendered, so a form only joins text.
+FORMS: Mapping[str, Callable[[str, str], str]] = {"//": _floor_division, "%": _modulo}
 
 
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
@@ -82,7 +104,11 @@ def _expression(expression: Expression) -> str:
     if isinstance(expression, str):
         return expression
     head, *operands = expression
-    return "({} {})".format(_operator(head), " ".join(_expression(part) for part in operands))
+    rendered = [_expression(part) for part in operands]
+    form = FORMS.get(head) if isinstance(head, str) else None
+    if form is not None and len(rendered) == 2:
+        return form(rendered[0], rendered[1])
+    return "({} {})".format(_operator(head), " ".join(rendered))
 
 
 def _operator(head: Expression) -> str:
