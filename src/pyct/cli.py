@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import functools
 import inspect
 import json
 import math
@@ -211,9 +212,13 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
-    kept as text, which is what ``from __future__ import annotations``
-    leaves behind, is read in the globals of the function carrying it, where
-    its names were written. Anything else the annotation turns out to be,
+    kept as text, which is what ``from __future__ import annotations`` leaves
+    behind, is resolved in every module the text could have been written in:
+    the target's, each wrapper's, and the one supplying an inherited
+    ``__init__``, ``__new__`` or ``__call__``. It is kept only when every
+    module that knows the name gives the same type. A name no module
+    resolves, or that two modules resolve differently, skips its own
+    parameter and no other. Anything else the annotation turns out to be,
     ``str | None`` or ``list[int]`` or a class, is not one of the four and is
     not kept. The four are matched by identity, so an annotation that merely
     compares equal to ``str`` is not kept either.
@@ -232,23 +237,94 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
 
 
 def _resolved(annotation: object, fn: Callable[..., object]) -> object:
-    """The annotation itself, or what its text names. Any failure is no annotation."""
+    """The annotation itself, or the one type every module that knows its text names.
+
+    A namespace whose eval raises does not know the name and says nothing.
+    The answer stands only when something resolved it and everything that
+    did landed on the same object; a disagreement is no annotation, as any
+    failure is.
+    """
     if not isinstance(annotation, str):
         return annotation
-    try:
-        return eval(annotation, _names(fn))
-    except Exception:
+    answers: list[object] = []
+    for names in _namespaces(fn):
+        try:
+            answers.append(eval(annotation, names))
+        except Exception:
+            continue
+    if not answers or any(answer is not answers[0] for answer in answers):
         return None
+    return answers[0]
 
 
-def _names(fn: Callable[..., object]) -> dict[str, object]:
-    """The names the annotation text was written against, read where it lives."""
-    # a class carries no __globals__; the text is its __init__'s, which the MRO may
-    # take from another module. A slot wrapper __init__ has none, so the module answers
-    owner = fn.__init__ if isinstance(fn, type) else fn
-    # the signature is read through __wrapped__, so a decorator's own globals are not it
-    owner = inspect.unwrap(owner)
-    return getattr(owner, "__globals__", None) or vars(sys.modules[fn.__module__])
+def _namespaces(fn: object) -> list[dict[str, object]]:
+    """Every module's names the annotation text on ``fn`` could have been written against.
+
+    Which module ``inspect.signature`` took the text from is not knowable
+    from the outside: three rounds of picking one got it wrong. So every
+    module that could have written it answers and agreement decides. An
+    extra namespace costs at most a skipped check; a missing one could
+    refuse a seed the target accepts.
+    """
+    if isinstance(fn, functools.partial):
+        return _namespaces(fn.func)
+    spaces: list[dict[str, object]] = []
+    for owner in _owners(fn):
+        for step in _chain(owner):
+            names = getattr(step, "__globals__", None)
+            # a slot wrapper such as object.__init__ carries none, and names nothing
+            if isinstance(names, dict):
+                spaces.append(names)
+    spaces.extend(_module_names(fn))
+    # by identity: a namespace reached twice is one namespace, and a dict is unhashable
+    return list({id(names): names for names in spaces}.values())
+
+
+def _owners(fn: object) -> list[object]:
+    """The callables whose globals could hold ``fn``'s annotation text.
+
+    A class is read at the ``__init__`` and ``__new__`` attribute lookup
+    gives, so an inherited one is the base's function. Which of the two
+    ``inspect.signature`` picks is its business; both are candidates here.
+    """
+    if isinstance(fn, type):
+        return [getattr(fn, "__init__", None), getattr(fn, "__new__", None)]
+    method = getattr(fn, "__func__", None)
+    if method is not None:
+        return [method]
+    if not inspect.isroutine(fn):
+        return [getattr(type(fn), "__call__", None)]  # noqa: B004 - the function, not a test
+    return [fn]
+
+
+def _chain(fn: object) -> list[object]:
+    """``fn`` and everything its ``__wrapped__`` chain reaches. A cycle ends the walk.
+
+    ``inspect.signature`` follows this chain, except that a wrapper
+    declaring its own ``__signature__`` stops it there. Walking the whole
+    chain covers the text wherever it was written, without asking which.
+    """
+    steps: list[object] = []
+    seen: set[int] = set()
+    step = fn
+    while step is not None and id(step) not in seen:
+        seen.add(id(step))
+        steps.append(step)
+        step = getattr(step, "__wrapped__", None)
+    return steps
+
+
+def _module_names(fn: object) -> list[dict[str, object]]:
+    """The names of the modules ``fn`` says it was written in.
+
+    A class and a callable object carry no globals of their own, so the
+    module each names is what stands in for them.
+    """
+    named = [getattr(fn, "__module__", None)]
+    if not isinstance(fn, type) and not inspect.isroutine(fn):
+        named.append(getattr(type(fn), "__module__", None))
+    modules = [sys.modules.get(name) for name in named if isinstance(name, str)]
+    return [vars(module) for module in modules if module is not None]
 
 
 def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
