@@ -1,4 +1,7 @@
-"""Bases whose ``__init__``, ``__new__`` or ``__call__`` a target elsewhere takes.
+"""Where a target elsewhere gets an ``__init__``, a ``__new__`` or a ``__call__``.
+
+A base gives the first three; a metaclass gives the ``__call__``
+``inspect.signature`` reads a class through when it has one.
 
 ``Number`` is a ``str`` here and an ``int`` in ``test_checks``, so a text
 annotation written here means a different plain type depending on which
@@ -47,9 +50,25 @@ class AgreeingCallingBase:
         return None
 
 
+class Meta(type):
+    """A metaclass whose ``__call__``, and its text, a class elsewhere is read through."""
+
+    def __call__(cls, n: str, m: int) -> object:
+        return super().__call__()
+
+
+class AgreeingMeta(type):
+    """A metaclass whose ``__call__`` text only this module can resolve."""
+
+    def __call__(cls, n: str) -> object:
+        return super().__call__()
+
+
 # what ``from __future__ import annotations`` leaves behind on each dunder
 Base.__init__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 AgreeingBase.__init__.__annotations__ = {"n": "Elsewhere", "return": "None"}
 MakingBase.__new__.__annotations__ = {"n": "Number", "return": "MakingBase"}
 CallingBase.__call__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
 AgreeingCallingBase.__call__.__annotations__ = {"n": "Elsewhere", "return": "None"}
+Meta.__call__.__annotations__ = {"n": "Number", "m": "int", "return": "object"}
+AgreeingMeta.__call__.__annotations__ = {"n": "Elsewhere", "return": "object"}

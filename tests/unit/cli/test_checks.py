@@ -23,9 +23,11 @@ from tests.unit.cli.declaring_decorator import declares_its_signature
 from tests.unit.cli.inherited import (
     AgreeingBase,
     AgreeingCallingBase,
+    AgreeingMeta,
     Base,
     CallingBase,
     MakingBase,
+    Meta,
 )
 from tests.unit.cli.wrapping_decorator import wrapped_elsewhere
 
@@ -118,6 +120,17 @@ class MakingElsewhere(MakingBase):
 
 # the text on the target's own __init__; the __new__ beside it was written elsewhere
 MakingElsewhere.__init__.__annotations__ = {"n": "Number", "m": "int", "return": "None"}
+
+
+class ViaMeta(metaclass=Meta):
+    """A class target read through its metaclass's ``__call__``, written elsewhere."""
+
+    def __init__(self) -> None:
+        self.value = None
+
+
+class ViaAgreeingMeta(metaclass=AgreeingMeta):
+    """A class target whose metaclass ``__call__`` text only the metaclass's module knows."""
 
 
 class Calling(CallingBase):
@@ -232,6 +245,7 @@ def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
         # a class has no __globals__; its __init__'s are the names the text was written against
         pytest.param(Named, {"n": int}, id="own init"),
         pytest.param(InheritingAgreeing, {"n": str}, id="inherited init"),
+        pytest.param(ViaAgreeingMeta, {"n": str}, id="metaclass call"),
         pytest.param(calling_agreeing, {"n": str}, id="inherited call"),
         pytest.param(partial_agreeing, {"n": int}, id="partial"),
     ],
@@ -251,6 +265,7 @@ def test_plain_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
         pytest.param(declared_clashing, id="declared signature"),
         pytest.param(MakingElsewhere, id="own init"),
         pytest.param(Inheriting, id="inherited init"),
+        pytest.param(ViaMeta, id="metaclass call"),
         pytest.param(calling, id="inherited call"),
         pytest.param(partial_clashing, id="partial"),
     ],
