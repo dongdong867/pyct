@@ -7,19 +7,13 @@ from collections.abc import Callable
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
 # every value-producing int operation pyct has not taught. The comparisons, the truth test,
-# the arithmetic and the identities below are taught and stay symbolic; `__hash__`,
+# the arithmetic, the division and the identities below are taught and stay symbolic; `__hash__`,
 # `__repr__`, the pickling hooks and the object plumbing (`__new__`, `__getattribute__`,
 # `__sizeof__`) are not the target's path and stay int's, so a dict key and a debugger read
 # cost nothing.
 _UNTAUGHT = (
     "__truediv__",
     "__rtruediv__",
-    "__floordiv__",
-    "__rfloordiv__",
-    "__mod__",
-    "__rmod__",
-    "__divmod__",
-    "__rdivmod__",
     "__rpow__",
     "__lshift__",
     "__rlshift__",
@@ -127,6 +121,11 @@ def _compare(
     return compare
 
 
+def _operands(self: ConcolicInt, other: int, *, reflected: bool) -> list[Expression]:
+    """The two sides in Python's written order: a reflected method ran on the right one."""
+    return [_form_of(other), self.expression] if reflected else [self.expression, _form_of(other)]
+
+
 def _arithmetic(
     op: str, operation: Callable[[int, int], int], *, reflected: bool = False
 ) -> Callable[[ConcolicInt, int], ConcolicInt]:
@@ -142,10 +141,67 @@ def _arithmetic(
     def compute(self: ConcolicInt, other: int) -> ConcolicInt:
         if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
             return NotImplemented
-        operands = (
-            [_form_of(other), self.expression] if reflected else [self.expression, _form_of(other)]
-        )
+        operands = _operands(self, other, reflected=reflected)
         return ConcolicInt(_own(operation, self, other), expression=[op, *operands], sink=self.sink)
+
+    return compute
+
+
+def _zero_fork(divisor: int) -> None:
+    """The fork a symbolic divisor takes on its way into a division: `["!=", divisor, 0]`.
+
+    Testing it for truth is what records it, so `ConcolicInt.__bool__` and
+    `_forked` stay the one place a fork is written. A plain int divisor has
+    nothing to flip and records nothing.
+    """
+    if isinstance(divisor, ConcolicInt):
+        bool(divisor)
+
+
+def _division(
+    op: str, operation: Callable[[int, int], int], *, reflected: bool = False
+) -> Callable[[ConcolicInt, int], ConcolicInt]:
+    """int's own answer to one division, with the zero fork recorded before the call.
+
+    The fork goes in first, where `_downgraded` notes its loss after the
+    call; a division is the one operation whose fork is about whether the
+    call raises at all. `execute` keeps what the sink held when the raise
+    happened, so recording it first is what lets the crashing input's line
+    list the fork it died on. It also puts `divisor != 0` earlier in the
+    prefix of every solver query that divides by a symbolic divisor, where
+    SMT-LIB leaves division by zero uninterpreted.
+    """
+
+    def compute(self: ConcolicInt, other: int) -> ConcolicInt:
+        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
+            return NotImplemented
+        _zero_fork(self if reflected else other)
+        operands = _operands(self, other, reflected=reflected)
+        return ConcolicInt(_own(operation, self, other), expression=[op, *operands], sink=self.sink)
+
+    return compute
+
+
+def _divmod(
+    *, reflected: bool = False
+) -> Callable[[ConcolicInt, int], tuple[ConcolicInt, ConcolicInt]]:
+    """int's own divmod: the quotient and the remainder, each carrying its own expression.
+
+    One call divides once, so it records one zero fork, where `x // y` and
+    `x % y` written out would record two.
+    """
+    operation = int.__rdivmod__ if reflected else int.__divmod__
+
+    def compute(self: ConcolicInt, other: int) -> tuple[ConcolicInt, ConcolicInt]:
+        if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
+            return NotImplemented
+        _zero_fork(self if reflected else other)
+        operands = _operands(self, other, reflected=reflected)
+        quotient, remainder = _own(operation, self, other)
+        return (
+            ConcolicInt(quotient, expression=["//", *operands], sink=self.sink),
+            ConcolicInt(remainder, expression=["%", *operands], sink=self.sink),
+        )
 
     return compute
 
@@ -223,9 +279,8 @@ def _round(self: ConcolicInt, ndigits: object = None) -> object:
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
-    The six comparisons, the truth test and the arithmetic below are symbolic.
-    Any other operation is int's own and returns a plain value, with a
-    downgrade in the sink naming what was lost.
+    The operations taught below stay symbolic. Any other operation is int's own and
+    returns a plain value, with a downgrade in the sink naming what was lost.
     """
 
     expression: Expression
@@ -250,6 +305,12 @@ class ConcolicInt(int):
     __rsub__ = _arithmetic("-", int.__rsub__, reflected=True)
     __mul__ = _arithmetic("*", int.__mul__)
     __rmul__ = _arithmetic("*", int.__rmul__, reflected=True)
+    __floordiv__ = _division("//", int.__floordiv__)
+    __rfloordiv__ = _division("//", int.__rfloordiv__, reflected=True)
+    __mod__ = _division("%", int.__mod__)
+    __rmod__ = _division("%", int.__rmod__, reflected=True)
+    __divmod__ = _divmod()
+    __rdivmod__ = _divmod(reflected=True)
     __neg__ = _unary("-", int.__neg__)
     __abs__ = _unary("abs", int.__abs__)
     # int promises an int or a float from a power; a downgraded one is int's own, but a kept

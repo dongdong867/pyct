@@ -65,6 +65,39 @@ def test_a_power_is_written_with_a_caret() -> None:
     assert "(assert (= (^ x 2) 9))" in text.splitlines()
 
 
+def test_floor_division_is_written_as_smts_own_with_the_floor_correction() -> None:
+    # SMT-LIB's div is Euclidean, so Python's quotient is one lower exactly when the
+    # divisor is negative and something is left over: division-floor-correction-in-render
+    text = render((fork(["==", ["//", "x", "y"], 4], taken=True),), {"x": int, "y": int})
+
+    assert "(assert (= (ite (or (> y 0) (= (mod x y) 0)) (div x y) (- (div x y) 1)) 4))" in (
+        text.splitlines()
+    )
+
+
+def test_modulo_is_written_as_smts_own_shifted_onto_the_divisors_sign() -> None:
+    text = render((fork(["==", ["%", "x", "y"], 1], taken=True),), {"x": int, "y": int})
+
+    assert "(assert (= (ite (or (> y 0) (= (mod x y) 0)) (mod x y) (+ (mod x y) y)) 1))" in (
+        text.splitlines()
+    )
+
+
+def test_a_negative_divisor_reaches_the_forms_already_written_as_a_subtraction() -> None:
+    quotient = render((fork(["==", ["//", "x", -2], -4], taken=True),), {"x": int})
+    remainder = render((fork(["==", ["%", "x", -3], -1], taken=True),), {"x": int})
+
+    # a form joins rendered text, so `-2` arrives spelled the way every other operand is
+    assert (
+        "(assert (= (ite (or (> (- 2) 0) (= (mod x (- 2)) 0))"
+        " (div x (- 2)) (- (div x (- 2)) 1)) (- 4)))" in quotient.splitlines()
+    )
+    assert (
+        "(assert (= (ite (or (> (- 3) 0) (= (mod x (- 3)) 0))"
+        " (mod x (- 3)) (+ (mod x (- 3)) (- 3))) (- 1)))" in remainder.splitlines()
+    )
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})
