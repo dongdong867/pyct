@@ -279,9 +279,9 @@ def _round(self: ConcolicInt, ndigits: object = None) -> object:
 class ConcolicInt(int):
     """A real int with a name and a sink.
 
-    The six comparisons, the truth test and the arithmetic below are symbolic.
-    Any other operation is int's own and returns a plain value, with a
-    downgrade in the sink naming what was lost.
+    The operations taught below stay symbolic; the comment on `_UNTAUGHT` names them.
+    Any other operation is int's own and returns a plain value, with a downgrade in
+    the sink naming what was lost.
     """
 
     expression: Expression

@@ -25,21 +25,23 @@ OPERATORS: Mapping[str, str] = {
 }
 
 
-def _euclidean_agrees(a: str, b: str) -> str:
+def _euclidean_agrees(dividend: str, divisor: str) -> str:
     """When SMT-LIB's division is already Python's: a positive divisor, or nothing left over."""
-    return f"(or (> {b} 0) (= (mod {a} {b}) 0))"
+    return f"(or (> {divisor} 0) (= (mod {dividend} {divisor}) 0))"
 
 
 # SMT-LIB's `div` and `mod` are Euclidean: the remainder is never negative. Python floors
 # toward minus infinity and its `%` takes the divisor's sign. The two agree when the divisor
 # is positive or the remainder is zero; otherwise Python's quotient is one lower and its
 # remainder is shifted by the divisor. Decision division-floor-correction-in-render.
-def _floor_division(a: str, b: str) -> str:
-    return f"(ite {_euclidean_agrees(a, b)} (div {a} {b}) (- (div {a} {b}) 1))"
+def _floor_division(dividend: str, divisor: str) -> str:
+    quotient = f"(div {dividend} {divisor})"
+    return f"(ite {_euclidean_agrees(dividend, divisor)} {quotient} (- {quotient} 1))"
 
 
-def _modulo(a: str, b: str) -> str:
-    return f"(ite {_euclidean_agrees(a, b)} (mod {a} {b}) (+ (mod {a} {b}) {b}))"
+def _modulo(dividend: str, divisor: str) -> str:
+    remainder = f"(mod {dividend} {divisor})"
+    return f"(ite {_euclidean_agrees(dividend, divisor)} {remainder} (+ {remainder} {divisor}))"
 
 
 # an operation SMT-LIB has no operator for, written out as the form that means it. The
