@@ -1,5 +1,6 @@
 import math
 import operator
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -61,6 +62,21 @@ DOWNGRADED_POWERS: dict[str, Callable[[int], object]] = {
     "bool exponent": lambda x: x**True,
     "with a modulus": lambda x: pow(x, 2, 5),
     "past cvc5's bound": lambda x: x**67_108_864,
+}
+
+# int's plain members, the ones pyct wraps in nothing: each call is int's own answer. The four
+# attributes are read and never called; `from_bytes` is a classmethod and has its own test
+PLAIN_INT_MEMBERS: dict[str, Callable[[int], object]] = {
+    "as_integer_ratio": lambda x: x.as_integer_ratio(),
+    "bit_count": lambda x: x.bit_count(),
+    "bit_length": lambda x: x.bit_length(),
+    "conjugate": lambda x: x.conjugate(),
+    "denominator": lambda x: x.denominator,
+    "imag": lambda x: x.imag,
+    "is_integer": lambda x: x.is_integer(),
+    "numerator": lambda x: x.numerator,
+    "real": lambda x: x.real,
+    "to_bytes": lambda x: x.to_bytes(1),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -436,6 +452,59 @@ def test_reading_a_concolic_int_back_records_nothing() -> None:
     assert sink == []
 
 
+def test_the_object_plumbing_on_a_concolic_int_records_nothing() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # pickling and the interpreter's own reads are not the target's path
+    assert x.__getnewargs__() == (3,)
+    assert x.__sizeof__() == (3).__sizeof__()
+    assert x.__getattribute__("real") == 3
+
+    assert sink == []
+
+
+@pytest.mark.parametrize("call", PLAIN_INT_MEMBERS.values(), ids=list(PLAIN_INT_MEMBERS))
+def test_a_plain_int_member_gives_ints_own_answer_and_records_nothing(
+    call: Callable[[int], object],
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # each hands back a plain value, so `==` against int's own answer forks nothing
+    assert call(x) == call(3)
+    assert sink == []
+
+
+def test_int_from_bytes_on_a_concolic_int_records_nothing() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # from_bytes is int's classmethod, so no tracked value reaches it as a receiver. Bound to
+    # the subclass it asks ConcolicInt for a value with no expression and no sink, and int's
+    # own TypeError comes back; whatever it answers, it records nothing
+    with pytest.raises(TypeError):
+        x.from_bytes(b"\x03")
+
+    assert sink == []
+
+
+def test_an_operation_on_a_compares_value_records_no_downgrade() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+    b = x < 10
+
+    # a ConcolicBool teaches the truth test and nothing else, and wraps nothing in a downgrade
+    assert b + 1 == 2
+    assert (b & 1) == 1
+    assert (b >> 1) == 0
+    assert str(b) == "True"
+    assert float(b) == 1.0
+    assert b / 2 == 0.5
+
+    assert [item for item in sink if isinstance(item, Downgrade)] == []
+
+
 def test_equality_forks_where_it_is_tested_for_truth() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
@@ -586,26 +655,39 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
     ]
 
 
-def test_every_int_operation_is_taught_kept_or_downgraded() -> None:
-    # a name none of the three sets holds runs as int's own with no downgrade, silently
-    taught = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"}
-    taught |= {"__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__"}
-    taught |= {"__neg__", "__abs__", "__pow__"}
-    taught |= {"__floordiv__", "__rfloordiv__", "__mod__", "__rmod__"}
-    taught |= {"__divmod__", "__rdivmod__"}
-    taught |= {"__pos__", "__index__", "__round__", "__trunc__", "__floor__", "__ceil__"}
-    kept = {"__new__", "__getattribute__", "__hash__", "__repr__", "__sizeof__", "__getnewargs__"}
+@pytest.mark.skipif(
+    sys.version_info[:2] != (3, 12),
+    reason="the eighteen are counted on the floor; a newer Python may define another int method",
+)
+def test_a_concolic_int_downgrades_the_eighteen_operations_it_has_not_taught() -> None:
+    # written out, because the derivation reads the same sets the production code does: a name
+    # that slipped out of the taught set would run as int's own with no downgrade, silently
     downgraded = {
         name
         for name, member in vars(ConcolicInt).items()
-        if name.startswith("__") and callable(member) and name not in taught | kept
-    }
-    # int inherits __str__ from object and still counts it: print(x) drops the condition
-    ints_own = {
-        name for name in vars(int) if name.startswith("__") and callable(getattr(int, name))
+        if getattr(member, "__qualname__", "").startswith("_downgraded.")
     }
 
-    assert downgraded == (ints_own | {"__str__"}) - taught - kept
+    assert downgraded == {
+        "__truediv__",
+        "__rtruediv__",
+        "__rpow__",
+        "__lshift__",
+        "__rlshift__",
+        "__rshift__",
+        "__rrshift__",
+        "__and__",
+        "__rand__",
+        "__or__",
+        "__ror__",
+        "__xor__",
+        "__rxor__",
+        "__invert__",
+        "__int__",
+        "__float__",
+        "__str__",
+        "__format__",
+    }
 
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
