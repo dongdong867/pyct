@@ -79,6 +79,30 @@ PLAIN_INT_MEMBERS: dict[str, Callable[[int], object]] = {
     "to_bytes": lambda x: x.to_bytes(1),
 }
 
+# the operations ConcolicInt leaves to int, written out because the derivation reads the same
+# sets the production code does: a name that slipped out of the taught set would run as int's
+# own with no downgrade, silently. Eighteen on the floor version; a newer Python may add another
+UNTAUGHT_OPERATIONS = (
+    "__truediv__",
+    "__rtruediv__",
+    "__rpow__",
+    "__lshift__",
+    "__rlshift__",
+    "__rshift__",
+    "__rrshift__",
+    "__and__",
+    "__rand__",
+    "__or__",
+    "__ror__",
+    "__xor__",
+    "__rxor__",
+    "__invert__",
+    "__int__",
+    "__float__",
+    "__str__",
+    "__format__",
+)
+
 # a probe whose text is fixed here, so the line and column of the fork are exact
 PROBE = "def probe(v):\n    if v:\n        return 'yes'\n    return 'no'\n"
 
@@ -111,6 +135,15 @@ def _probe(source: str = PROBE) -> Callable[..., object]:
     probe = namespace["probe"]
     assert callable(probe)
     return probe
+
+
+# the names the derivation wrapped: what `_downgraded` built, and nothing else on the class
+def _derived_downgrades() -> set[str]:
+    return {
+        name
+        for name, member in vars(ConcolicInt).items()
+        if getattr(member, "__qualname__", "").startswith("_downgraded.")
+    }
 
 
 def test_a_concolic_int_is_a_real_int() -> None:
@@ -660,34 +693,18 @@ def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
     reason="the eighteen are counted on the floor; a newer Python may define another int method",
 )
 def test_a_concolic_int_downgrades_the_eighteen_operations_it_has_not_taught() -> None:
-    # written out, because the derivation reads the same sets the production code does: a name
-    # that slipped out of the taught set would run as int's own with no downgrade, silently
-    downgraded = {
-        name
-        for name, member in vars(ConcolicInt).items()
-        if getattr(member, "__qualname__", "").startswith("_downgraded.")
-    }
+    assert _derived_downgrades() == set(UNTAUGHT_OPERATIONS)
 
-    assert downgraded == {
-        "__truediv__",
-        "__rtruediv__",
-        "__rpow__",
-        "__lshift__",
-        "__rlshift__",
-        "__rshift__",
-        "__rrshift__",
-        "__and__",
-        "__rand__",
-        "__or__",
-        "__ror__",
-        "__xor__",
-        "__rxor__",
-        "__invert__",
-        "__int__",
-        "__float__",
-        "__str__",
-        "__format__",
-    }
+
+def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> None:
+    derived = _derived_downgrades()
+
+    # the version gate above is on the count, not on the list; these eighteen exist on every
+    # Python pyct runs on, so each one is a downgrade there too
+    assert set(UNTAUGHT_OPERATIONS) <= derived
+    # a wrapped kept name would cost a dict key a downgrade, and a wrapped `__getattribute__`
+    # recurses on the first attribute read; the stand-in tests show the class body is skipped
+    assert derived.isdisjoint(values._KEPT + values._NOT_YET)
 
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
