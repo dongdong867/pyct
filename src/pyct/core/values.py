@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Callable
+from typing import Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
@@ -12,8 +13,10 @@ from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_s
 # name what is left to int on purpose, and the derivation at the bottom of the file downgrades
 # every other method int defines.
 
-# not the target's path: `__hash__`, `__repr__`, the pickling hook and the object plumbing,
-# so a dict key and a debugger read cost nothing
+# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
+# harder reason: the downgrade wrapper reads `self.sink`, which goes through `__getattribute__`
+# itself, so a wrapped one recurses on the first attribute read
 _KEPT = (
     "__hash__",
     "__repr__",
@@ -221,6 +224,12 @@ def _unary(op: str, operation: Callable[[int], int]) -> Callable[[ConcolicInt], 
     return compute
 
 
+class _Sinked(Protocol):
+    """A value with a sink: all a downgrade needs of the type it is set on."""
+
+    sink: BranchSink
+
+
 def _downgraded(base: type, name: str) -> Callable[..., object]:
     """The base type's own operation, and a note in the sink that the condition was lost.
 
@@ -231,7 +240,7 @@ def _downgraded(base: type, name: str) -> Callable[..., object]:
     """
     operation = getattr(base, name)
 
-    def downgrade(self: ConcolicInt, *args: object) -> object:
+    def downgrade(self: _Sinked, *args: object) -> object:
         result = _own(operation, self, *args)
         if result is not NotImplemented:
             self.sink.append(Downgrade(name=name))
