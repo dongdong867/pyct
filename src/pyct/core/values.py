@@ -2,35 +2,44 @@
 
 from __future__ import annotations
 
+import types
 from collections.abc import Callable
+from typing import Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# every value-producing int operation pyct has not taught. The comparisons, the truth test,
-# the arithmetic, the division and the identities below are taught and stay symbolic; `__hash__`,
-# `__repr__`, the pickling hooks and the object plumbing (`__new__`, `__getattribute__`,
-# `__sizeof__`) are not the target's path and stay int's, so a dict key and a debugger read
-# cost nothing.
-_UNTAUGHT = (
-    "__truediv__",
-    "__rtruediv__",
-    "__rpow__",
-    "__lshift__",
-    "__rlshift__",
-    "__rshift__",
-    "__rrshift__",
-    "__and__",
-    "__rand__",
-    "__or__",
-    "__ror__",
-    "__xor__",
-    "__rxor__",
-    "__invert__",
-    "__int__",
-    "__float__",
-    "__str__",
-    "__format__",
+# the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
+# arithmetic, the division and the identities it writes stay symbolic. The three tuples here
+# name what is left to int on purpose, and the derivation at the bottom of the file downgrades
+# every other method int defines.
+
+# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
+# harder reason: the downgrade wrapper reads `self.sink`, which goes through `__getattribute__`
+# itself, so a wrapped one recurses on the first attribute read
+_KEPT = (
+    "__hash__",
+    "__repr__",
+    "__getnewargs__",
+    "__new__",
+    "__getattribute__",
+    "__sizeof__",
 )
+
+# int's plain methods record nothing yet. The ticket that wraps them is
+# `report-a-plain-int-method-as-a-downgrade`; until it lands, these stay int's own
+_NOT_YET = (
+    "as_integer_ratio",
+    "bit_count",
+    "bit_length",
+    "conjugate",
+    "is_integer",
+    "to_bytes",
+)
+
+# int inherits `__str__` from object, so reading what int itself defines never reaches it, and
+# `print(x)` still drops the condition
+_INHERITED = ("__str__",)
 
 
 # the mark that says a raise came out of the base type's own operation. The call that made it
@@ -215,17 +224,23 @@ def _unary(op: str, operation: Callable[[int], int]) -> Callable[[ConcolicInt], 
     return compute
 
 
-def _downgraded(name: str) -> Callable[..., object]:
-    """int's own operation, and a note in the sink that the condition was lost.
+class _Sinked(Protocol):
+    """A value with a sink: all a downgrade needs of the type it is set on."""
+
+    sink: BranchSink
+
+
+def _downgraded(base: type, name: str) -> Callable[..., object]:
+    """The base type's own operation, and a note in the sink that the condition was lost.
 
     The note comes after the call, so an operation that raises records
     nothing and the raise stays the target's. ``NotImplemented`` is not an
     answer either: the other operand's reflected method gets its turn, and
     only a real result is a lost condition.
     """
-    operation = getattr(int, name)
+    operation = getattr(base, name)
 
-    def downgrade(self: ConcolicInt, *args: object) -> object:
+    def downgrade(self: _Sinked, *args: object) -> object:
         result = _own(operation, self, *args)
         if result is not NotImplemented:
             self.sink.append(Downgrade(name=name))
@@ -234,11 +249,38 @@ def _downgraded(name: str) -> Callable[..., object]:
     return downgrade
 
 
+def _called_on_a_value(member: object) -> bool:
+    """Whether a name a type defines is a method called on a value of it."""
+    return isinstance(
+        member, types.FunctionType | types.WrapperDescriptorType | types.MethodDescriptorType
+    )
+
+
+def _downgrade_the_rest(
+    cls: type, base: type, *, kept: tuple[str, ...], inherited: tuple[str, ...]
+) -> None:
+    """Downgrade every method of the base type the concolic type has not taught.
+
+    A type teaches what its class body defines and names what it keeps as
+    the base type's; every other method the base type defines is a
+    downgrade, worked out here once the class is built. Only a method
+    called on a value counts: a classmethod, a staticmethod, an attribute
+    and the rest never take a tracked value as their receiver, so none of
+    them can lose a condition. A name the base type inherits is reached
+    only by naming it, and a kept name the base type does not define is
+    simply not there to wrap.
+    """
+    candidates = {name for name, member in vars(base).items() if _called_on_a_value(member)}
+    candidates |= set(inherited)
+    for name in sorted(candidates - set(vars(cls)) - set(kept)):
+        setattr(cls, name, _downgraded(base, name))
+
+
 # cvc5 takes `^` with a constant exponent only, and refuses to parse one at this bound or
 # above. Parsing is all the bound promises: how long the solve takes is the budget's business,
 # as for any nonlinear fork, and a run with no budget can wait on a large power.
 _POWER_LIMIT = 67_108_864
-_POWER_DOWNGRADE = _downgraded("__pow__")
+_POWER_DOWNGRADE = _downgraded(int, "__pow__")
 
 
 def _power(self: ConcolicInt, exponent: object, modulus: object = None) -> object:
@@ -266,7 +308,7 @@ def _itself(self: ConcolicInt) -> ConcolicInt:
     return self
 
 
-_ROUND_DOWNGRADE = _downgraded("__round__")
+_ROUND_DOWNGRADE = _downgraded(int, "__round__")
 
 
 def _round(self: ConcolicInt, ndigits: object = None) -> object:
@@ -334,6 +376,6 @@ class ConcolicInt(int):
         return _forked(self.sink, ["!=", self.expression, 0], _own(int.__bool__, self))
 
 
-# forty-odd methods that differ only in the name they call and record, so a loop writes them
-for _name in _UNTAUGHT:
-    setattr(ConcolicInt, _name, _downgraded(_name))
+# the class body above is everything ConcolicInt teaches. The rest of int, and the `__str__`
+# int inherits, differ only in the name they call and record, so the derivation writes them
+_downgrade_the_rest(ConcolicInt, int, kept=_KEPT + _NOT_YET, inherited=_INHERITED)
