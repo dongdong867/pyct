@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from typing import TypeGuard
 
 from pyct.core.branch import BranchSink
-from pyct.core.values import ConcolicInt
+from pyct.core.ints import ConcolicInt
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
