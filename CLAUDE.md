@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v` — healthy: `563 passed`, and never fewer. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
+- test: `uv run pytest tests/ -v` — healthy: `704 passed`, and never fewer. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
 - lint: `uv run ruff check src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Contracts: 1 kept, 0 broken.` Style, types, import layers
 - format: `uv run ruff format src/ tests/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
@@ -42,7 +42,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── acceptance/   one test per acceptance criterion, through the CLI or run()
 │   └── unit/         mirrors src/pyct/, one directory per layer
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
-    └── ints/         a follow story's fixtures, under the type it follows. strs/, floats/ later
+    ├── ints/         a follow story's fixtures, under the type it follows
+    └── strs/         the same for strings. floats/ later
 ```
 
 `core` is the runtime behavior of a concolic value. `rewrite` is the source

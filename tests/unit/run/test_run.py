@@ -115,6 +115,22 @@ def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
     assert argument(solved, "x") >= 10
 
 
+def test_run_follows_a_str_through_a_deep_copy() -> None:
+    target = load_target("targets.strs.deep_copy::check")
+
+    result = run(target, {"name": "x"})
+
+    # the copy is the tracked str itself, so the compare after it is a fork the solver flips
+    assert result.records[0].failure is None
+    assert [
+        (record.args, [(fork.expression, fork.taken) for fork in record.forks])
+        for record in result.records
+    ] == [
+        ({"name": "x"}, [(["==", "name", "'admin'"], False)]),
+        ({"name": "admin"}, [(["==", "name", "'admin'"], True)]),
+    ]
+
+
 def test_run_keeps_the_earlier_forks_and_flips_the_last() -> None:
     target = load_target("targets.flip.nested_checks::bucket")
 

@@ -1,7 +1,10 @@
+from collections.abc import Callable
+
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.render import render
+from pyct.solver.strings import above, below
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -115,5 +118,89 @@ def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
 
 
 def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
-    with pytest.raises(ValueError, match="str"):
-        render((fork(["<", "x", 10], taken=True),), {"x": str})
+    with pytest.raises(ValueError, match="float"):
+        render((fork(["<", "x", 10], taken=True),), {"x": float})
+
+
+def test_a_str_leaf_is_declared_a_string() -> None:
+    text = render((fork(["==", "s", "'abc'"], taken=True),), {"s": str})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const s String)",
+        '(assert (= s "abc"))',
+        "(check-sat)",
+        "(get-value (s))",
+    ]
+
+
+def test_a_string_literal_is_written_the_way_cvc5_reads_it() -> None:
+    # the expression carries the literal as repr writes it; the program carries SMT-LIB's
+    literal = repr('a\nb"c\\d é')
+
+    text = render((fork(["!=", "s", literal], taken=True),), {"s": str})
+
+    assert '(assert (distinct s "a\\u{a}b""c\\u{5c}d \\u{e9}"))' in text.splitlines()
+
+
+def test_a_string_literal_is_not_a_name() -> None:
+    # either quote opens a literal: repr picks double quotes for a value holding a single one
+    text = render((fork(["==", "s", '"it\'s"'], taken=True),), {"s": str, "t": str})
+
+    assert "(declare-const s String)" in text.splitlines()
+    assert "declare-const t" not in text
+    assert '(assert (= s "it\'s"))' in text.splitlines()
+
+
+def test_two_str_leaves_are_compared_as_they_are() -> None:
+    text = render((fork(["==", "s", "t"], taken=False),), {"s": str, "t": str})
+
+    assert "(assert (not (= s t)))" in text.splitlines()
+
+
+# an order against a literal, and the side of it strings.py writes: `>` and `>=` swap, so the
+# term sits above the literal
+ORDERS_AGAINST_A_LITERAL: dict[str, tuple[Callable[..., str], bool]] = {
+    "<": (below, False),
+    "<=": (below, True),
+    ">": (above, False),
+    ">=": (above, True),
+}
+
+
+@pytest.mark.parametrize(
+    ("op", "side"), ORDERS_AGAINST_A_LITERAL.items(), ids=list(ORDERS_AGAINST_A_LITERAL)
+)
+def test_an_order_against_a_literal_is_written_letter_by_letter(
+    op: str, side: tuple[Callable[..., str], bool]
+) -> None:
+    written, or_equal = side
+    text = render((fork([op, "s", "'mn'"], taken=True),), {"s": str})
+
+    assert f"(assert {written('s', 'mn', or_equal=or_equal)})" in text.splitlines()
+
+
+def test_a_literal_on_the_left_of_an_order_is_written_letter_by_letter_too() -> None:
+    text = render((fork(["<", "'mn'", "s"], taken=True),), {"s": str})
+
+    assert f"(assert {above('s', 'mn', or_equal=False)})" in text.splitlines()
+
+
+def test_a_greater_than_on_strings_is_the_same_term_as_the_less_than_it_mirrors() -> None:
+    greater = render((fork([">", "s", "t"], taken=True),), {"s": str, "t": str})
+    less = render((fork(["<", "t", "s"], taken=True),), {"s": str, "t": str})
+
+    assert "(assert (str.< t s))" in greater.splitlines()
+    assert "(assert (str.< t s))" in less.splitlines()
+
+
+def test_an_order_on_two_str_names_is_cvc5s_own() -> None:
+    text = render((fork(["<=", "s", "t"], taken=False),), {"s": str, "t": str})
+
+    assert "(assert (not (str.<= s t)))" in text.splitlines()
+
+
+def test_an_order_on_ints_is_still_written_as_arithmetic() -> None:
+    text = render((fork([">=", "x", "y"], taken=True),), {"x": int, "y": int})
+
+    assert "(assert (>= x y))" in text.splitlines()

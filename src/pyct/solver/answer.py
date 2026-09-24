@@ -4,8 +4,11 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-# one value of a model, as cvc5 writes it: ((x 5)) or ((x (- 6)))
-VALUE_LINE = re.compile(r"\(\((?P<name>[^\s()]+) (?P<value>\(- \d+\)|-?\d+)\)\)")
+from pyct.solver.strings import decode
+
+# one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))) or ((s "a""b\u{a}")). A string
+# value holds no bare quote, only a doubled one, so its closing quote is the first lone one
+VALUE_LINE = re.compile(r'\(\((?P<name>[^\s()]+) (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*")\)\)')
 
 
 @dataclass(frozen=True)
@@ -45,8 +48,8 @@ class SolverAnswerError(Exception):
     """cvc5 answered, but with a line pyct cannot read."""
 
 
-def model_from(lines: Iterable[str]) -> dict[str, int]:
-    """The values cvc5 printed, as a name and a number each.
+def model_from(lines: Iterable[str]) -> dict[str, int | str]:
+    """The values cvc5 printed, as a name and a number or a str each.
 
     A line pyct cannot read is an error rather than a skip: a model missing
     one of its leaves would quietly become the seed's value again.
@@ -54,11 +57,23 @@ def model_from(lines: Iterable[str]) -> dict[str, int]:
     return dict(_value(line) for line in lines)
 
 
-def _value(line: str) -> tuple[str, int]:
+def _value(line: str) -> tuple[str, int | str]:
+    """One leaf's name and value. A value in quotes is a string, any other a number."""
     matched = VALUE_LINE.fullmatch(line.strip())
     if matched is None:
-        raise SolverAnswerError(f"cvc5 answered with a value line pyct cannot read: {line}")
-    return matched["name"], _number(matched["value"])
+        raise _unreadable(line)
+    value = matched["value"]
+    if not value.startswith('"'):
+        return matched["name"], _number(value)
+    try:
+        return matched["name"], decode(value)
+    except ValueError as error:
+        raise _unreadable(line) from error
+
+
+def _unreadable(line: str) -> SolverAnswerError:
+    """The error for a value line pyct cannot read, which names the line."""
+    return SolverAnswerError(f"cvc5 answered with a value line pyct cannot read: {line}")
 
 
 def _number(text: str) -> int:

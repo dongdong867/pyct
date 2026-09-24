@@ -5,10 +5,11 @@ from typing import TypeGuard
 
 from pyct.core.branch import BranchSink
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int in the seed its parameter's name and the sink.
+    """Give every int and str in the seed its parameter's name and the sink.
 
     A bool is an int to Python but not a number to bind: it has no ``<``
     worth tracking. Every other value passes through as it came.
@@ -25,12 +26,14 @@ def leaves(seed: Mapping[str, object]) -> Mapping[str, type]:
     return {name: type(value) for name, value in seed.items() if _binds(value)}
 
 
-def _binds(value: object) -> TypeGuard[int]:
+def _binds(value: object) -> TypeGuard[int | str]:
     """Whether bind wraps this value: the one rule both sides read."""
-    return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, int | str) and not isinstance(value, bool)
 
 
 def _bound(name: str, value: object, sink: BranchSink) -> object:
-    if _binds(value):
-        return ConcolicInt(value, expression=name, sink=sink)
-    return value
+    if not _binds(value):
+        return value
+    if isinstance(value, str):
+        return ConcolicStr(value, expression=name, sink=sink)
+    return ConcolicInt(value, expression=name, sink=sink)

@@ -48,6 +48,18 @@ def forked(sink: BranchSink, expression: Expression, taken: bool) -> bool:
     return taken
 
 
+def copy_as_itself[T](value: T, memo: object = None) -> T:
+    """A copy of a concolic value, shallow or deep: the value itself.
+
+    A concolic value cannot change, so copy hands it back as it is, the way
+    it hands back a plain str or int, with its expression and sink on it.
+    Set as ``__copy__`` and ``__deepcopy__``, which the copy module asks for
+    before it would rebuild the value through ``__new__`` without them. The
+    memo is what ``__deepcopy__`` is given, and nothing here needs it.
+    """
+    return value
+
+
 class _Sinked(Protocol):
     """A value with a sink: all a downgrade needs of the type it is set on."""
 
