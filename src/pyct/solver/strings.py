@@ -4,8 +4,9 @@ A literal is wrapped in double quotes, and a double quote inside it is
 written twice. A printable ASCII character other than the backslash is
 written as itself. Every other character up to U+2FFFF, the last one cvc5
 holds, is written as ``\\u{hex}`` with its code point in lowercase hex.
-cvc5 prints a value by the same rule, so reading one back undoes exactly
-these steps; a literal that breaks the rule is an error.
+cvc5 prints a value by the same rule, so reading one back undoes these
+steps. A literal outside double quotes, a piece that is none of the three
+forms, or an escape past U+2FFFF is an error.
 
 An order between a string term and a literal is written letter by letter,
 the way Python defines string order: the first character that differs
