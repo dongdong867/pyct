@@ -344,6 +344,20 @@ def test_execute_reads_the_sink_before_it_writes_the_failure(
     assert result.downgrades == ()
 
 
+def _downgrades_then_raises(v: str) -> None:
+    v.upper()
+    raise ValueError(v)
+
+
+def test_execute_keeps_the_targets_downgrades_when_it_raises() -> None:
+    ctx = ExecutionContext(fn=_downgrades_then_raises, file=str(FIXTURE))
+
+    result = execute(ctx, {"v": "abc"})
+
+    # the target's own downgrade before the raise stays; writing the failure adds none
+    assert result.downgrades == (DowngradeCount(name="upper", count=1),)
+
+
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     def through_shift(x: int) -> str:
         y = x >> 1
