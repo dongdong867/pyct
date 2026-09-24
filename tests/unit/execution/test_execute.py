@@ -355,6 +355,7 @@ def test_execute_keeps_the_targets_downgrades_when_it_raises() -> None:
     result = execute(ctx, {"v": "abc"})
 
     # the target's own downgrade before the raise stays; writing the failure adds none
+    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: abc")
     assert result.downgrades == (DowngradeCount(name="upper", count=1),)
 
 
