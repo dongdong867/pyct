@@ -115,5 +115,41 @@ def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
 
 
 def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
-    with pytest.raises(ValueError, match="str"):
-        render((fork(["<", "x", 10], taken=True),), {"x": str})
+    with pytest.raises(ValueError, match="float"):
+        render((fork(["<", "x", 10], taken=True),), {"x": float})
+
+
+def test_a_str_leaf_is_declared_a_string() -> None:
+    text = render((fork(["==", "s", "'abc'"], taken=True),), {"s": str})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const s String)",
+        '(assert (= s "abc"))',
+        "(check-sat)",
+        "(get-value (s))",
+    ]
+
+
+def test_a_string_literal_is_written_the_way_cvc5_reads_it() -> None:
+    # the expression carries the literal as repr writes it; the program carries SMT-LIB's
+    literal = repr('a\nb"c\\d é')
+
+    text = render((fork(["!=", "s", literal], taken=True),), {"s": str})
+
+    assert '(assert (distinct s "a\\u{a}b""c\\u{5c}d \\u{e9}"))' in text.splitlines()
+
+
+def test_a_string_literal_is_not_a_name() -> None:
+    # either quote opens a literal: repr picks double quotes for a value holding a single one
+    text = render((fork(["==", "s", '"it\'s"'], taken=True),), {"s": str, "t": str})
+
+    assert "(declare-const s String)" in text.splitlines()
+    assert "declare-const t" not in text
+    assert '(assert (= s "it\'s"))' in text.splitlines()
+
+
+def test_two_str_leaves_are_compared_as_they_are() -> None:
+    text = render((fork(["==", "s", "t"], taken=False),), {"s": str, "t": str})
+
+    assert "(assert (not (= s t)))" in text.splitlines()

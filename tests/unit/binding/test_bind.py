@@ -1,6 +1,7 @@
 from pyct.binding.bind import bind, leaves
 from pyct.core.branch import SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 
 
 def test_an_int_becomes_a_concolic_int_named_after_its_parameter() -> None:
@@ -21,8 +22,20 @@ def test_a_bool_is_not_an_int_to_bind() -> None:
     assert args["flag"] is True
 
 
+def test_a_str_becomes_a_concolic_str_named_after_its_parameter() -> None:
+    sink: list[SinkItem] = []
+
+    args = bind({"s": "text"}, sink)
+
+    bound = args["s"]
+    assert isinstance(bound, ConcolicStr)
+    assert bound == "text"
+    assert bound.expression == "s"
+    assert bound.sink is sink
+
+
 def test_every_other_value_passes_through_untouched() -> None:
-    seed = {"s": "text", "f": 1.5, "n": None, "xs": [1, 2]}
+    seed = {"f": 1.5, "n": None, "xs": [1, 2]}
 
     args = bind(seed, [])
 
@@ -44,7 +57,7 @@ def test_binding_leaves_the_seed_alone() -> None:
 
 
 def test_leaves_names_the_type_of_every_argument_bind_would_wrap() -> None:
-    assert leaves({"x": 3, "flag": True, "name": "a"}) == {"x": int}
+    assert leaves({"x": 3, "flag": True, "name": "a", "f": 1.5}) == {"x": int, "name": str}
 
 
 def test_leaves_keeps_the_order_the_seed_gave() -> None:

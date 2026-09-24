@@ -29,6 +29,26 @@ def test_an_answer_with_no_value_lines_is_an_empty_model() -> None:
     assert model_from([]) == {}
 
 
+def test_a_string_value_is_read_back_as_the_str_it_spells() -> None:
+    # cvc5's own printing of a value holding a newline, a quote, two backslashes and an é
+    line = '((s "a\\u{a}b""c\\u{5c}\\u{5c}d \\u{e9}"))'
+
+    assert model_from([line]) == {"s": 'a\nb"c\\\\d é'}
+
+
+def test_a_string_value_may_hold_what_closes_the_line() -> None:
+    assert model_from(['((s "x)) ((y"))']) == {"s": "x)) ((y"}
+
+
+def test_strings_and_numbers_are_read_from_one_answer() -> None:
+    assert model_from(['((s ""))', "((x (- 6)))"]) == {"s": "", "x": -6}
+
+
+def test_a_string_value_cvc5_would_not_print_names_its_line() -> None:
+    with pytest.raises(SolverAnswerError, match=r'\(\(s "a\\b"\)\)'):
+        model_from(['((s "a\\b"))'])
+
+
 def test_a_line_the_solver_should_not_have_written_names_itself() -> None:
     with pytest.raises(SolverAnswerError, match=r"\(\(x five\)\)"):
         model_from(["((x five))"])

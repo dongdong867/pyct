@@ -1,11 +1,17 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
+import ast
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
+from pyct.solver.strings import encode
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
-SORTS: Mapping[type, str] = {int: "Int"}
+SORTS: Mapping[type, str] = {int: "Int", str: "String"}
+
+# what opens a string literal in an expression: repr writes one in either quote, and a
+# parameter name holds neither
+_QUOTES = ("'", '"')
 
 # Python's spelling of an operator, and SMT-LIB's. This is the one place the two meet, so
 # a head that is missing raises here and names the gap, rather than handing cvc5 a program
@@ -78,7 +84,7 @@ def _mentioned(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> list[s
 def _names(expression: Expression) -> set[str]:
     """Every parameter name in a condition. A list leads with its operator, not a leaf."""
     if isinstance(expression, str):
-        return {expression}
+        return set() if _is_literal(expression) else {expression}
     if isinstance(expression, list):
         return {name for part in expression[1:] for name in _names(part)}
     return set()
@@ -104,13 +110,26 @@ def _expression(expression: Expression) -> str:
     if isinstance(expression, int):
         return f"(- {-expression})" if expression < 0 else str(expression)
     if isinstance(expression, str):
-        return expression
+        return _string(expression) if _is_literal(expression) else expression
     head, *operands = expression
     rendered = [_expression(part) for part in operands]
     form = FORMS.get(head) if isinstance(head, str) else None
     if form is not None and len(rendered) == 2:
         return form(rendered[0], rendered[1])
     return "({} {})".format(_operator(head), " ".join(rendered))
+
+
+def _is_literal(leaf: str) -> bool:
+    """Whether a str leaf is a string literal, which opens with a quote, or a parameter name."""
+    return leaf.startswith(_QUOTES)
+
+
+def _string(literal: str) -> str:
+    """A string literal, written as repr writes it, rewritten as SMT-LIB writes it."""
+    value = ast.literal_eval(literal)
+    if not isinstance(value, str):
+        raise ValueError(f"pyct cannot render {literal}: it is not a string literal")
+    return encode(value)
 
 
 def _operator(head: Expression) -> str:
