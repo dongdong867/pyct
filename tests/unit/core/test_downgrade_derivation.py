@@ -1,3 +1,7 @@
+import subprocess
+import sys
+import textwrap
+
 import pytest
 
 from pyct.core import values
@@ -69,8 +73,8 @@ class Taught(StandIn):
 # installed under a name the concolic type never wrote
 UNTAUGHT_BODY = frozenset(vars(Untaught))
 
-values._downgrade_the_rest(Untaught, StandIn, kept=KEPT, inherited=INHERITED)
-values._downgrade_the_rest(Taught, StandIn, kept=KEPT, inherited=INHERITED)
+values.downgrade_the_rest(Untaught, StandIn, kept=KEPT, inherited=INHERITED)
+values.downgrade_the_rest(Taught, StandIn, kept=KEPT, inherited=INHERITED)
 
 
 def test_a_method_neither_set_names_becomes_a_downgrade() -> None:
@@ -156,3 +160,41 @@ def test_a_method_that_answers_not_implemented_records_nothing() -> None:
     assert value.undecided() is NotImplemented
 
     assert sink == []
+
+
+def test_a_stand_in_derives_through_the_shared_module_alone() -> None:
+    # this session has already imported every core module, so only a fresh interpreter shows
+    # what the shared module needs on its own. None in sys.modules makes importing that name
+    # raise, so a shared module that reached into ints or bools would fail here
+    script = textwrap.dedent(
+        """
+        import sys
+
+        sys.modules["pyct.core.ints"] = None
+        sys.modules["pyct.core.bools"] = None
+
+        from pyct.core.values import downgrade_the_rest
+
+
+        class StandIn:
+            def untaught(self):
+                return "the base type's"
+
+
+        class Untaught(StandIn):
+            def __init__(self, sink):
+                self.sink = sink
+
+
+        downgrade_the_rest(Untaught, StandIn, kept=(), inherited=())
+        sink = []
+        print(Untaught(sink).untaught(), sink)
+        """
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "the base type's [Downgrade(name='untaught')]\n"

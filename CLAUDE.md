@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v` — healthy: `550 passed`, and never fewer. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
+- test: `uv run pytest tests/ -v` — healthy: `563 passed`, and never fewer. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
 - lint: `uv run ruff check src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Contracts: 1 kept, 0 broken.` Style, types, import layers
 - format: `uv run ruff format src/ tests/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
@@ -64,3 +64,4 @@ engine state.
 - Explicit imports, grouped stdlib, third-party, local.
 - Functions about 20 lines. Five parameters at most. Files under 500 lines.
 - Logging with lazy `%` formatting. DEBUG internals, INFO milestones, WARNING recoverable, ERROR failures.
+- A name or comment says what the code handles. It never lists what the code misses; such a list is never complete. When a review finds a claim that outruns its check, narrow the claim, or widen the check when the missed case is one the code will realistically meet.
