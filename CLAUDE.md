@@ -42,7 +42,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── acceptance/   one test per acceptance criterion, through the CLI or run()
 │   └── unit/         mirrors src/pyct/, one directory per layer
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
-    └── ints/         a follow story's fixtures, under the type it follows. strs/, floats/ later
+    ├── ints/         a follow story's fixtures, under the type it follows
+    └── strs/         the same for strings. floats/ later
 ```
 
 `core` is the runtime behavior of a concolic value. `rewrite` is the source
