@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pyct.core.bools import compare
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import forked, own
+from pyct.core.values import downgraded, forked, own
 
 # the last character cvc5 holds: its strings run from U+0000 to here, and the solver writes
 # every one of them
@@ -26,6 +28,35 @@ def _operand(other: object) -> Expression | None:
     return None
 
 
+def _within_cvc5(other: object) -> bool:
+    """Whether the solver reads the other side of a compare as it is.
+
+    A tracked str is read by its expression, and a non-str is Python's own
+    business, so only a plain str's characters are checked, each against the
+    last one cvc5 holds.
+    """
+    if isinstance(other, ConcolicStr) or not isinstance(other, str):
+        return True
+    return all(ord(character) <= LAST_CHARACTER for character in other)
+
+
+def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
+    """str's own answer to one compare, followed while the solver reads the other side.
+
+    A literal holding a character past the last one cvc5 holds is answered
+    by str alone, and the downgrade names the compare's dunder. It is not
+    NotImplemented: the literal's reflected compare would answer instead,
+    and the line would never say the condition was lost.
+    """
+    followed = compare(op, getattr(str, name), _operand)
+    downgrade = downgraded(str, name)
+
+    def compute(self: ConcolicStr, other: object) -> object:
+        return followed(self, other) if _within_cvc5(other) else downgrade(self, other)
+
+    return compute
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
@@ -39,12 +70,12 @@ class ConcolicStr(str):
     # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.
     # str promises a bool from each, and a ConcolicBool is an int that is not a bool,
     # because bool cannot be subclassed; the override breaks that promise on purpose.
-    __lt__ = compare("<", str.__lt__, _operand)  # pyrefly: ignore[bad-override]
-    __le__ = compare("<=", str.__le__, _operand)  # pyrefly: ignore[bad-override]
-    __gt__ = compare(">", str.__gt__, _operand)  # pyrefly: ignore[bad-override]
-    __ge__ = compare(">=", str.__ge__, _operand)  # pyrefly: ignore[bad-override]
-    __eq__ = compare("==", str.__eq__, _operand)  # pyrefly: ignore[bad-override]
-    __ne__ = compare("!=", str.__ne__, _operand)  # pyrefly: ignore[bad-override]
+    __lt__ = _compare("<", "__lt__")  # pyrefly: ignore[bad-override]
+    __le__ = _compare("<=", "__le__")  # pyrefly: ignore[bad-override]
+    __gt__ = _compare(">", "__gt__")  # pyrefly: ignore[bad-override]
+    __ge__ = _compare(">=", "__ge__")  # pyrefly: ignore[bad-override]
+    __eq__ = _compare("==", "__eq__")  # pyrefly: ignore[bad-override]
+    __ne__ = _compare("!=", "__ne__")  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = str.__hash__
 

@@ -4,7 +4,7 @@ import pytest
 
 from pyct.core import bools, strs, values
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, SinkItem, Site
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"
@@ -116,6 +116,56 @@ def test_equal_to_a_non_str_is_pythons_own_answer() -> None:
     assert (s == 5) is False
     assert (s != 5) is True
     assert (s == None) is False  # noqa: E711 - the target's spelling
+    assert sink == []
+
+
+# each compare against a literal holding U+30000, one past the last character cvc5 holds, and
+# the dunder that names the downgrade; the answer is str's own for s = "abc"
+PAST_THE_LAST_CHARACTER: dict[str, tuple[Callable[[str], object], bool]] = {
+    "__lt__": (lambda s: s < "a\U00030000", True),
+    "__le__": (lambda s: s <= "a\U00030000", True),
+    "__gt__": (lambda s: s > "a\U00030000", False),
+    "__ge__": (lambda s: s >= "a\U00030000", False),
+    "__eq__": (lambda s: s == "a\U00030000", False),
+    "__ne__": (lambda s: s != "a\U00030000", True),
+}
+
+
+@pytest.mark.parametrize(
+    ("name", "case"), PAST_THE_LAST_CHARACTER.items(), ids=list(PAST_THE_LAST_CHARACTER)
+)
+def test_a_literal_past_the_last_character_is_strs_own_compare_and_a_downgrade(
+    name: str, case: tuple[Callable[[str], object], bool]
+) -> None:
+    call, answer = case
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    result = call(s)
+
+    assert result is answer
+    assert sink == [Downgrade(name=name)]
+
+
+def test_a_literal_up_to_the_last_character_is_followed() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    result = s == "a\U0002ffff"
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == ["==", "s", repr("a\U0002ffff")]
+    assert sink == []
+
+
+def test_a_tracked_str_holding_a_character_past_the_last_is_still_followed() -> None:
+    # the solver reads the expression, never the value, so the value may hold any character
+    sink: list[SinkItem] = []
+    s = ConcolicStr("\U00030000", expression="s", sink=sink)
+    t = ConcolicStr("\U00030000", expression="t", sink=sink)
+
+    assert isinstance(s == "abc", ConcolicBool)
+    assert isinstance(s == t, ConcolicBool)
     assert sink == []
 
 

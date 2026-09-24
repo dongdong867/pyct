@@ -29,6 +29,7 @@ COMPARE_LINES = [3, 5, 7, 9, 11, 13]
 COUNT_LINES = list(range(2, 16))
 TRUTH_TEST = "targets.strs.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "strs" / "truth_test.py")
+PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -145,6 +146,18 @@ def test_round_trips_a_literal_with_special_characters() -> None:
     assert text(solved, "s") == SPECIAL_LITERAL
     assert [fork["expression"] for fork in forks_of(seed)] == [["==", "s", repr(SPECIAL_LITERAL)]]
     assert [fork["taken"] for fork in forks_of(solved)] == [True]
+
+
+# follow-strings-downgrades-a-literal-the-solver-cannot-hold
+def test_downgrades_a_literal_the_solver_cannot_hold() -> None:
+    result = run_pyct(PAST_THE_LAST_CHARACTER, '{"s": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # U+30000 is one past the last character cvc5 holds, so Python answers the compare alone
+    assert seed["downgrades"] == [{"name": "__eq__", "count": 1}]
+    assert seed["forks"] == []
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
 # follow-strings-reads-the-type-from-the-seed
