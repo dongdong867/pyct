@@ -27,6 +27,8 @@ SIX_COMPARES_FILE = str(REPO_ROOT / "targets" / "strs" / "six_compares.py")
 # the line of each compare in ``count``, and every line of it but its ``def``
 COMPARE_LINES = [3, 5, 7, 9, 11, 13]
 COUNT_LINES = list(range(2, 16))
+TRUTH_TEST = "targets.strs.truth_test::tell"
+TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "strs" / "truth_test.py")
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -106,6 +108,21 @@ def test_follows_every_string_compare() -> None:
     assert isinstance(solver, dict), summary
     assert (solver["unknown"], solver["timeout"]) == (0, 0)
     assert summary["stopped"] == "no fork to flip"
+
+
+# follow-strings-follows-the-truth-test
+def test_follows_the_truth_test() -> None:
+    result = run_pyct(TRUTH_TEST, '{"s": "abc"}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # `if not s:` tests s for truth, and the empty string is the one value on the other side
+    assert [fork["expression"] for fork in forks_of(seed)] == [["!=", "s", "''"]]
+    assert [fork["taken"] for fork in forks_of(seed)] == [True]
+    assert seed["downgrades"] == []
+    assert text(solved, "s") == ""
+    assert [fork["taken"] for fork in forks_of(solved)] == [False]
+    assert covered_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
 
 
 # follow-strings-round-trips-a-literal-with-special-characters

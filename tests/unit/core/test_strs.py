@@ -4,7 +4,7 @@ import pytest
 
 from pyct.core import bools, strs, values
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Branch, SinkItem, Site
 from pyct.core.strs import ConcolicStr
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"
@@ -126,6 +126,38 @@ def test_a_concolic_str_hashes_as_its_value() -> None:
     assert hash(s) == hash("abc")
 
 
+# a probe whose text is fixed here, so the line and column of the fork are exact
+PROBE = "def probe(v):\n    if v:\n        return 'yes'\n    return 'no'\n"
+
+
+def _probe() -> Callable[[object], object]:
+    namespace: dict[str, object] = {}
+    exec(compile(PROBE, "<probe>", "exec"), namespace)
+    probe = namespace["probe"]
+    assert callable(probe)
+    return probe
+
+
+@pytest.mark.parametrize(("value", "taken"), [("abc", True), ("", False)])
+def test_the_truth_test_records_the_fork_against_the_empty_string(value: str, taken: bool) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr(value, expression="s", sink=sink)
+
+    answer = _probe()(s)
+
+    # the empty string is the one value that takes the other side, as zero is for an int
+    assert answer == ("yes" if taken else "no")
+    assert sink == [
+        Branch(expression=["!=", "s", "''"], taken=taken, site=Site(file="<probe>", line=2, col=7))
+    ]
+
+
+def test_the_truth_test_answers_with_a_real_bool() -> None:
+    s = ConcolicStr("abc", expression="s", sink=[])
+
+    assert s.__bool__() is True
+
+
 def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None:
     # a call into str written without the helper leaves its raise blamed on pyct, silently.
     # ConcolicStr's dunders are written in three files: its own, bools for the compare closures
@@ -144,7 +176,9 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     }
 
     # the scan read the taught compares, so an empty answer is not an empty scan
-    assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"} <= written_here.keys()
+    assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"} <= (
+        written_here.keys()
+    )
     assert without_the_helper == set()
 
 

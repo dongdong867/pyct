@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pyct.core.bools import compare
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.values import forked, own
 
 # the last character cvc5 holds: its strings run from U+0000 to here, and the solver writes
 # every one of them
@@ -52,3 +53,8 @@ class ConcolicStr(str):
         self.expression = expression
         self.sink = sink
         return self
+
+    def __bool__(self) -> bool:
+        # str has no __bool__ and Python falls to __len__; this one comes first. The empty
+        # string is the one value that takes the other side, written as repr writes it
+        return forked(self.sink, ["!=", self.expression, "''"], own(str.__len__, self) > 0)
