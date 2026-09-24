@@ -9,9 +9,10 @@ from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicStr` body below is the taught set: the compares and the truth test it writes stay
-# symbolic. The tuple here names what is left to str on purpose, and the derivation at the
-# bottom of the file downgrades every other method str defines, plain methods and operators
-# alike. str defines `__str__` and `__format__` itself, so nothing inherited needs naming.
+# symbolic, and a copy is the value itself. The tuple here names what is left to str on
+# purpose, and the derivation at the bottom of the file downgrades every other method str
+# defines, plain methods and operators alike. str defines `__str__` and `__format__` itself,
+# so nothing inherited needs naming.
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. str takes `__getattribute__` from
@@ -78,10 +79,10 @@ def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
-    The operations taught below stay symbolic. Any other method called on the value is
-    str's own and returns a plain value, with a downgrade in the sink naming what was
-    lost: a method by its name, an operator by its dunder (``README.md › Rules ›
-    downgrades``).
+    The operations taught below stay symbolic. Any other method called on the value,
+    but the few left to str in `_KEPT`, is str's own and returns a plain value, with a
+    downgrade in the sink naming what was lost: a method by its name, an operator by its
+    dunder (``README.md › Rules › downgrades``).
     """
 
     expression: Expression
