@@ -9,6 +9,10 @@ from pyct.core.strs import ConcolicStr
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"
 TAUGHT_COMPARES: dict[str, tuple[Callable[[str], object], bool]] = {
+    "<": (lambda s: s < "abc", False),
+    "<=": (lambda s: s <= "abc", True),
+    ">": (lambda s: s > "abc", False),
+    ">=": (lambda s: s >= "abc", True),
     "==": (lambda s: s == "abc", True),
     "!=": (lambda s: s != "abc", False),
 }
@@ -74,6 +78,27 @@ def test_a_literal_on_the_left_is_the_compare_python_runs() -> None:
     assert result.expression == ["==", "s", "'abc'"]
 
 
+def test_a_literal_on_the_left_of_an_order_is_the_reflected_compare() -> None:
+    s = ConcolicStr("abc", expression="s", sink=[])
+
+    # Python swaps the operands itself, so `"b" < s` runs `s > "b"`; nothing here reflects
+    result = "b" < s  # noqa: SIM300 - the order this test is about
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == [">", "s", "'b'"]
+    assert int.__bool__(result) is False
+
+
+def test_less_than_a_non_str_is_left_to_python_to_refuse() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    # both sides answer NotImplemented, so Python raises the TypeError the target wrote
+    with pytest.raises(TypeError, match="'<' not supported"):
+        s < 5  # pyrefly: ignore[unsupported-operation]  # noqa: B015 - the raise is the point
+    assert sink == []
+
+
 def test_a_str_of_the_targets_own_is_a_literal_of_its_plain_value() -> None:
     s = ConcolicStr("abc", expression="s", sink=[])
 
@@ -119,7 +144,7 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     }
 
     # the scan read the taught compares, so an empty answer is not an empty scan
-    assert {"__eq__", "__ne__"} <= written_here.keys()
+    assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"} <= written_here.keys()
     assert without_the_helper == set()
 
 

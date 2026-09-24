@@ -22,6 +22,11 @@ SPECIAL_CHARACTERS = "targets.strs.special_characters::match"
 SPECIAL_LITERAL = 'a\nb"c\\d é'
 MIXED_EQUALITY = "targets.strs.mixed_equality::count"
 ORDERED_WITH_NUMBER = "targets.strs.ordered_with_number::rank"
+SIX_COMPARES = "targets.strs.six_compares::count"
+SIX_COMPARES_FILE = str(REPO_ROOT / "targets" / "strs" / "six_compares.py")
+# the line of each compare in ``count``, and every line of it but its ``def``
+COMPARE_LINES = [3, 5, 7, 9, 11, 13]
+COUNT_LINES = list(range(2, 16))
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -71,6 +76,36 @@ def test_flips_a_string_equality() -> None:
     assert forks_of(solved) == [{**fork, "taken": True}]
     assert text(solved, "s") == "abc"
     assert covered_of([seed, solved]) == {EQUALITY_FILE: [2, 3, 4]}
+
+
+# follow-strings-follows-every-string-compare
+def test_follows_every_string_compare() -> None:
+    result = run_pyct(SIX_COMPARES, '{"s": "a"}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # each compare is its own fork, written under the operator the target wrote
+    assert [fork["expression"] for fork in forks_of(inputs[0])] == [
+        ["<", "s", "'b'"],
+        ["<=", "s", "'c'"],
+        [">", "s", "'d'"],
+        [">=", "s", "'e'"],
+        ["==", "s", "'f'"],
+        ["!=", "s", "'g'"],
+    ]
+    # every fork is flipped: some input takes each side of each compare, and every input the
+    # solver handed back took the side it was aimed at
+    sides = {(fork["line"], fork["taken"]) for line in inputs for fork in forks_of(line)}
+    assert sides == {(line, taken) for line in COMPARE_LINES for taken in (True, False)}
+    assert [line["mismatch_at"] for line in inputs[1:]] == [None] * (len(inputs) - 1)
+    assert covered_of(inputs) == {SIX_COMPARES_FILE: COUNT_LINES}
+    summary = summary_line(result.stdout)
+    # a fork the solver gave no input for is one whose other side no input can take: unsat,
+    # never a question the solver ran out of time on
+    solver = summary["solver"]
+    assert isinstance(solver, dict), summary
+    assert (solver["unknown"], solver["timeout"]) == (0, 0)
+    assert summary["stopped"] == "no fork to flip"
 
 
 # follow-strings-round-trips-a-literal-with-special-characters

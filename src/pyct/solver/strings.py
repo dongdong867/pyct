@@ -1,4 +1,4 @@
-"""A Python str as an SMT-LIB string literal, and a literal cvc5 prints as a str again.
+"""Python strs in SMT-LIB: a literal both ways, and an order against a literal.
 
 A literal is wrapped in double quotes, and a double quote inside it is
 written twice. A printable ASCII character other than the backslash is
@@ -6,6 +6,13 @@ written as itself. Every other character up to U+2FFFF, the last one cvc5
 holds, is written as ``\\u{hex}`` with its code point in lowercase hex.
 cvc5 prints a value by the same rule, so reading one back undoes exactly
 these steps; a literal that breaks the rule is an error.
+
+An order between a string term and a literal is written letter by letter,
+the way Python defines string order: the first character that differs
+decides, and a string that runs out first is the smaller. cvc5's own
+``str.<`` can run to any time limit on a few orders against one-letter
+literals that this form answers in milliseconds; decision
+string-order-against-a-literal-letter-by-letter.
 """
 
 import re
@@ -28,14 +35,65 @@ def encode(value: str) -> str:
 
 def _encoded(character: str) -> str:
     """One character as it sits inside a literal."""
-    code = ord(character)
+    code = _code_point(character)
     if character == '"':
         return '""'
     if _FIRST_PRINTABLE <= code <= _LAST_PRINTABLE and character != "\\":
         return character
+    return f"\\u{{{code:x}}}"
+
+
+def _code_point(character: str) -> int:
+    """A character's code point, for one cvc5 holds."""
+    code = ord(character)
     if code > LAST_CHARACTER:
         raise ValueError(f"cvc5 holds characters up to U+{LAST_CHARACTER:X}, not U+{code:X}")
-    return f"\\u{{{code:x}}}"
+    return code
+
+
+def below(term: str, literal: str, *, or_equal: bool) -> str:
+    """``term < literal``, or ``term <= literal`` with ``or_equal``, written letter by letter.
+
+    ``term`` is any String term as SMT-LIB writes it, and ``literal`` the
+    Python value. A term that runs out before the literal needs no step of
+    its own: ``str.at`` past the end is the empty string, whose code is -1,
+    below every character.
+    """
+    if not literal:
+        return f'(= {term} "")' if or_equal else "false"
+    steps = [_differs(term, literal, at, "<") for at in range(len(literal))]
+    return _any(_equal(term, literal, or_equal) + steps)
+
+
+def above(term: str, literal: str, *, or_equal: bool) -> str:
+    """``literal < term``, or ``literal <= term`` with ``or_equal``, written letter by letter.
+
+    The literal running out first is the last step: the term holds all of
+    it and goes on.
+    """
+    if not literal:
+        return "true" if or_equal else f'(distinct {term} "")'
+    steps = [_differs(term, literal, at, ">") for at in range(len(literal))]
+    longer = f"(and (str.prefixof {encode(literal)} {term}) (> (str.len {term}) {len(literal)}))"
+    return _any(_equal(term, literal, or_equal) + steps + [longer])
+
+
+def _differs(term: str, literal: str, at: int, op: str) -> str:
+    """The term agrees with the literal before ``at``, and its letter there is ``op`` of it."""
+    letter = f"({op} (str.to_code (str.at {term} {at})) {_code_point(literal[at])})"
+    if at == 0:
+        return letter
+    return f"(and (str.prefixof {encode(literal[:at])} {term}) {letter})"
+
+
+def _equal(term: str, literal: str, or_equal: bool) -> list[str]:
+    """The equality an ``or_equal`` order also takes, or nothing for a strict one."""
+    return [f"(= {term} {encode(literal)})"] if or_equal else []
+
+
+def _any(parts: list[str]) -> str:
+    """Any of the parts holds. One part is itself."""
+    return parts[0] if len(parts) == 1 else f"(or {' '.join(parts)})"
 
 
 def decode(literal: str) -> str:

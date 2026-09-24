@@ -34,8 +34,14 @@ class ConcolicStr(str):
     expression: Expression
     sink: BranchSink
 
+    # Python swaps the operands of a reflected compare itself, so `"b" < s` runs
+    # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.
     # str promises a bool from each, and a ConcolicBool is an int that is not a bool,
     # because bool cannot be subclassed; the override breaks that promise on purpose.
+    __lt__ = compare("<", str.__lt__, _operand)  # pyrefly: ignore[bad-override]
+    __le__ = compare("<=", str.__le__, _operand)  # pyrefly: ignore[bad-override]
+    __gt__ = compare(">", str.__gt__, _operand)  # pyrefly: ignore[bad-override]
+    __ge__ = compare(">=", str.__ge__, _operand)  # pyrefly: ignore[bad-override]
     __eq__ = compare("==", str.__eq__, _operand)  # pyrefly: ignore[bad-override]
     __ne__ = compare("!=", str.__ne__, _operand)  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
