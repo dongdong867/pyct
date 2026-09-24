@@ -72,6 +72,7 @@ def _value(line: str) -> tuple[str, int | str]:
 
 
 def _unreadable(line: str) -> SolverAnswerError:
+    """The error for a value line pyct cannot read, which names the line."""
     return SolverAnswerError(f"cvc5 answered with a value line pyct cannot read: {line}")
 
 

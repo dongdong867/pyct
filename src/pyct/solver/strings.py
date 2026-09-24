@@ -19,7 +19,8 @@ import re
 
 from pyct.core.strs import LAST_CHARACTER
 
-# the printable ASCII characters, space to tilde: each is written as itself but these two
+# the printable ASCII characters, space to tilde: each is written as itself, but for the double
+# quote and the backslash
 _FIRST_PRINTABLE = 0x20
 _LAST_PRINTABLE = 0x7E
 
