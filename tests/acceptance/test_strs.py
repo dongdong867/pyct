@@ -125,6 +125,15 @@ def test_follows_the_truth_test() -> None:
     assert covered_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
 
 
+# follow-strings-prints-the-fork-in-infix-on-stderr
+def test_prints_the_fork_in_infix_on_stderr() -> None:
+    result = run_pyct(EQUALITY, '{"s": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    # the literal keeps the quotes it has on the stdout line, so the name reads apart from it
+    assert f"fork {EQUALITY_FILE}:2:7  s == 'abc'  not taken" in result.stderr.splitlines()
+
+
 # follow-strings-round-trips-a-literal-with-special-characters
 def test_round_trips_a_literal_with_special_characters() -> None:
     result = run_pyct(SPECIAL_CHARACTERS, '{"s": ""}')
