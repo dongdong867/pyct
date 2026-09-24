@@ -73,7 +73,7 @@ def _underscored_attributes(tree: ast.Module) -> list[str]:
 
 
 def _underscored_reaches(source: str) -> list[str]:
-    """Each underscored name an import form here takes from a core module, as module.name."""
+    """The underscored core names the source reaches through the import shapes read here."""
     tree = ast.parse(source)
     return _underscored_imports(tree) + _underscored_attributes(tree)
 
@@ -90,10 +90,8 @@ def test_no_core_module_imports_another_modules_underscored_name() -> None:
     assert reached_in == {}
 
 
-# each import form the guard reads that reaches ints' underscored _operand, as the source that
-# does it. Two ways in are not read: a name built while the code runs, like
-# getattr(ints, "_" + name), which reading the source cannot see, and a path through the core
-# package itself, like `import pyct.core as core` then core.ints._operand, which nothing writes
+# one sample per import shape the guard reads, each reaching ints' underscored _operand;
+# any other way in passes the guard
 SIDE_DOORS: dict[str, str] = {
     "from-import": "from pyct.core.ints import _operand",
     "relative-from-import": "from .ints import _operand",
@@ -115,7 +113,7 @@ NOTHING_PRIVATE: dict[str, str] = {
 
 
 @pytest.mark.parametrize("source", SIDE_DOORS.values(), ids=list(SIDE_DOORS))
-def test_the_guard_sees_each_import_form_that_reaches_an_underscored_name(source: str) -> None:
+def test_the_guard_sees_each_side_door(source: str) -> None:
     assert _underscored_reaches(source) == ["pyct.core.ints._operand"]
 
 
