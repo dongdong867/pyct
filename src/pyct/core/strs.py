@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from pyct.core.bools import compare
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicStr` body below is the taught set: the compares and the truth test it writes stay
 # symbolic. The tuple here names what is left to str on purpose, and the derivation at the
@@ -98,6 +98,8 @@ class ConcolicStr(str):
     __ne__ = _compare("!=", "__ne__")  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = str.__hash__
+    __copy__ = copy_as_itself
+    __deepcopy__ = copy_as_itself
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

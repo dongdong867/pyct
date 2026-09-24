@@ -1,3 +1,5 @@
+import copy
+import dataclasses
 import types
 from collections.abc import Callable
 
@@ -259,6 +261,35 @@ def test_a_kept_operation_is_strs_own_and_records_nothing(call: Callable[[str], 
     assert sink == []
 
 
+@dataclasses.dataclass
+class Holder:
+    """A dataclass the target keeps a str in."""
+
+    name: str
+
+
+# copy, deepcopy and asdict, each on data holding a tracked str: the call, and the str it hands back
+COPIES: dict[str, Callable[[str], object]] = {
+    "copy.copy(s)": copy.copy,
+    "copy.deepcopy(s)": copy.deepcopy,
+    "copy.deepcopy({'name': s})": lambda s: copy.deepcopy({"name": s})["name"],
+    "dataclasses.asdict(Holder(s))": lambda s: dataclasses.asdict(Holder(s))["name"],
+}
+
+
+@pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
+def test_a_copy_of_a_concolic_str_is_the_value_itself(call: Callable[[str], object]) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    copied = call(s)
+
+    # copy hands a plain str back as it is, because a str cannot change; a tracked one comes
+    # back the same way, its expression and sink with it, so nothing is lost
+    assert copied is s
+    assert sink == []
+
+
 def test_an_f_string_records_str_and_then_format() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr("abc", expression="s", sink=sink)
@@ -335,7 +366,8 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"} <= (
         written_here.keys()
     )
-    assert without_the_helper == set()
+    # these hand the value itself back and never call str, so they have nothing to guard
+    assert without_the_helper == {"__copy__", "__deepcopy__"}
 
 
 def _reaches_through_the_helper(function: object) -> bool:
