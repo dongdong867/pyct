@@ -78,9 +78,10 @@ def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
-    The operations taught below stay symbolic. Any other operation is str's own and
-    returns a plain value, with a downgrade in the sink naming what was lost: a method
-    by its name, an operator by its dunder.
+    The operations taught below stay symbolic. Any other method called on the value is
+    str's own and returns a plain value, with a downgrade in the sink naming what was
+    lost: a method by its name, an operator by its dunder (``README.md › Rules ›
+    downgrades``).
     """
 
     expression: Expression
