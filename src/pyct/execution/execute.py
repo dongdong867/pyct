@@ -62,12 +62,12 @@ def execute(
         tracer.stop()
     # the sink is read before the failure is written: writing it asks the raise for its text,
     # which asks any tracked value in it for its own, and that call is pyct's, not the target's
-    taken = tuple(sink)
+    recorded = tuple(sink)
     # one sink holds both, in the order they happened; the result reports each in its own
     return ExecutionResult(
         lines=frozenset(tracer.seen),
-        branches=tuple(item for item in taken if isinstance(item, Branch)),
-        downgrades=_counted(item.name for item in taken if isinstance(item, Downgrade)),
+        branches=tuple(item for item in recorded if isinstance(item, Branch)),
+        downgrades=_counted(item.name for item in recorded if isinstance(item, Downgrade)),
         failure=_failure(ctx.fn, ending),
     )
 
