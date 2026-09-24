@@ -300,6 +300,50 @@ def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail=detail, traceback=None)
 
 
+def _raises_it(v: int | str) -> None:
+    raise ValueError(v)
+
+
+def _exits_with_it(v: int | str) -> None:
+    sys.exit(v)
+
+
+@pytest.mark.parametrize(
+    ("target", "value", "failure"),
+    [
+        pytest.param(
+            _raises_it,
+            "abc",
+            Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: abc"),
+            id="raise-str",
+        ),
+        pytest.param(
+            _raises_it,
+            3,
+            Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: 3"),
+            id="raise-int",
+        ),
+        pytest.param(
+            _exits_with_it,
+            "abc",
+            Failure(kind=FailureKind.SYSTEM_EXIT, detail="SystemExit: abc"),
+            id="exit-str",
+        ),
+    ],
+)
+def test_execute_reads_the_sink_before_it_writes_the_failure(
+    target: Callable[[int | str], None], value: int | str, failure: Failure
+) -> None:
+    ctx = ExecutionContext(fn=target, file=str(FIXTURE))
+
+    result = execute(ctx, {"v": value})
+
+    # writing the failure asks the tracked value for its text; that call is pyct's, not the
+    # target's, so it is not a downgrade
+    assert result.failure == failure
+    assert result.downgrades == ()
+
+
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     def through_shift(x: int) -> str:
         y = x >> 1

@@ -57,15 +57,18 @@ def execute(
     tracer = _LineTracer(ctx.file)
     tracer.start()
     try:
-        failure = _call(ctx.fn, bound, until)
+        ending = _call(ctx.fn, bound, until)
     finally:
         tracer.stop()
+    # the sink is read before the failure is written: writing it asks the raise for its text,
+    # which asks any tracked value in it for its own, and that call is pyct's, not the target's
+    taken = tuple(sink)
     # one sink holds both, in the order they happened; the result reports each in its own
     return ExecutionResult(
         lines=frozenset(tracer.seen),
-        branches=tuple(item for item in sink if isinstance(item, Branch)),
-        downgrades=_counted(item.name for item in sink if isinstance(item, Downgrade)),
-        failure=failure,
+        branches=tuple(item for item in taken if isinstance(item, Branch)),
+        downgrades=_counted(item.name for item in taken if isinstance(item, Downgrade)),
+        failure=_failure(ctx.fn, ending),
     )
 
 
@@ -82,26 +85,40 @@ def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
     )
 
 
-def _call(
-    fn: Callable[..., object], bound: Mapping[str, object], until: float | None
-) -> Failure | None:
-    """Call the target and say how it ended.
+@dataclass(frozen=True)
+class _Ending:
+    """How the call ended: the raise that ended it, if any, and whether the target was reached.
 
     ``called`` says whether the target was reached: a target that runs in
     C leaves no frame, so blame cannot read that from the traceback.
     """
+
+    error: BaseException | None
+    called: bool
+
+
+def _call(fn: Callable[..., object], bound: Mapping[str, object], until: float | None) -> _Ending:
+    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read."""
     called = False
     try:
         with deadline(until):
             called = True
             fn(**bound)
+    except (DeadlineError, SystemExit, Exception) as error:
+        return _Ending(error=error, called=called)
+    return _Ending(error=None, called=called)
+
+
+def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
+    """The failure a raise ended the call with, or None for a call that returned."""
+    error = ending.error
     # the timer can land in pyct's own frames too, so the kind is by type, before the rest
-    except DeadlineError:
+    if isinstance(error, DeadlineError):
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
-    except SystemExit as error:
+    if isinstance(error, SystemExit):
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
-    except Exception as error:
-        return blame(fn, error, called=called)
+    if isinstance(error, Exception):
+        return blame(fn, error, called=ending.called)
     return None
 
 
