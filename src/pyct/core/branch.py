@@ -38,7 +38,7 @@ class Branch:
 
 @dataclass(frozen=True)
 class Downgrade:
-    """One operation pyct has not taught: the dunder that dropped the condition."""
+    """One operation pyct has not taught. ``name`` is a method name or a dunder."""
 
     name: str
 

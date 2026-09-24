@@ -101,7 +101,7 @@ def _aim(aim: Aim | None) -> dict[str, object] | None:
 
 
 def _downgrade(entry: DowngradeCount) -> dict[str, object]:
-    """One dunder that dropped the condition, and how many calls in a row did."""
+    """One method or dunder that dropped the condition, and how many calls in a row did."""
     return {"name": entry.name, "count": entry.count}
 
 

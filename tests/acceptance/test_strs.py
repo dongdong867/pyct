@@ -30,6 +30,9 @@ COUNT_LINES = list(range(2, 16))
 TRUTH_TEST = "targets.strs.truth_test::tell"
 TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "strs" / "truth_test.py")
 PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
+ENCODE_CHECK = "targets.strs.encode_check::check"
+TEXT_CONVERSION = "targets.strs.text_conversion::show"
+LENGTH_CHECK = "targets.strs.length_check::check"
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -183,6 +186,42 @@ def test_treats_a_mixed_equality_as_plain() -> None:
     assert seed["forks"] == []
     assert seed["downgrades"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-strings-records-an-untaught-method-as-a-downgrade
+def test_records_an_untaught_method_as_a_downgrade() -> None:
+    result = run_pyct(ENCODE_CHECK, '{"s": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # a method is named by its own name, and what it hands back is plain, so nothing forks on it
+    assert seed["downgrades"] == [{"name": "encode", "count": 1}]
+    assert seed["forks"] == []
+
+
+# follow-strings-counts-text-conversion-as-a-downgrade
+def test_counts_text_conversion_as_a_downgrade() -> None:
+    result = run_pyct(TEXT_CONVERSION, '{"s": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # str(s) runs __str__; an f-string with no format spec runs __format__, which runs
+    # __str__ first, so the two __str__ calls in a row are one entry
+    assert seed["downgrades"] == [
+        {"name": "__str__", "count": 2},
+        {"name": "__format__", "count": 1},
+    ]
+
+
+# follow-strings-counts-len-as-a-downgrade
+def test_counts_len_as_a_downgrade() -> None:
+    result = run_pyct(LENGTH_CHECK, '{"s": "abc"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # Python makes what __len__ hands back a plain int before the target sees it
+    assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["forks"] == []
 
 
 # follow-strings-reports-an-ordered-compare-with-a-number

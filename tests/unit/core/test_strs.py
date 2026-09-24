@@ -1,3 +1,4 @@
+import types
 from collections.abc import Callable
 
 import pytest
@@ -6,6 +7,7 @@ from pyct.core import bools, strs, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
+from pyct.core.values import raised_by_target
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"
 TAUGHT_COMPARES: dict[str, tuple[Callable[[str], object], bool]] = {
@@ -206,6 +208,110 @@ def test_the_truth_test_answers_with_a_real_bool() -> None:
     s = ConcolicStr("abc", expression="s", sink=[])
 
     assert s.__bool__() is True
+
+
+# a spread of what ConcolicStr has not taught: the call, and the name its downgrade carries.
+# A method is named by its own name and an operator by its dunder
+DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
+    "s.encode()": (lambda s: s.encode(), "encode"),
+    "s.upper()": (lambda s: s.upper(), "upper"),
+    "s.split()": (lambda s: s.split(), "split"),
+    "len(s)": (len, "__len__"),
+    "str(s)": (str, "__str__"),
+    "s[0]": (lambda s: s[0], "__getitem__"),
+    "'a' in s": (lambda s: "a" in s, "__contains__"),
+    "s + 'x'": (lambda s: s + "x", "__add__"),
+    "s * 2": (lambda s: s * 2, "__mul__"),
+    "next(iter(s))": (lambda s: next(iter(s)), "__iter__"),
+}
+
+# what stays str's own and records nothing: a dict key, a debugger's read, pickling, the size
+KEPT_CALLS: dict[str, Callable[[str], object]] = {
+    "hash(s)": hash,
+    "repr(s)": repr,
+    "s.__getnewargs__()": lambda s: s.__getnewargs__(),
+    "s.__sizeof__()": lambda s: s.__sizeof__(),
+}
+
+
+@pytest.mark.parametrize(("call", "name"), DOWNGRADED_CALLS.values(), ids=list(DOWNGRADED_CALLS))
+def test_an_untaught_operation_is_strs_own_and_a_downgrade(
+    call: Callable[[str], object], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    result = call(s)
+
+    # str's own answer, plain: nothing in it carries the condition on
+    assert result == call("abc")
+    assert not isinstance(result, ConcolicStr | ConcolicBool)
+    assert sink == [Downgrade(name=name)]
+
+
+@pytest.mark.parametrize("call", KEPT_CALLS.values(), ids=list(KEPT_CALLS))
+def test_a_kept_operation_is_strs_own_and_records_nothing(call: Callable[[str], object]) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    call(s)
+
+    assert sink == []
+
+
+def test_an_f_string_records_str_and_then_format() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    # with no format spec, str's __format__ asks for __str__ itself before it returns
+    assert f"{s}" == "abc"
+    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+
+
+def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    with pytest.raises(ValueError, match="substring not found") as raised:
+        s.index("z")
+
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
+def _derived_downgrades() -> set[str]:
+    """The names the derivation wrapped: what `downgraded` built, and nothing else on the class."""
+    return {
+        name
+        for name, member in vars(ConcolicStr).items()
+        if getattr(member, "__qualname__", "").startswith("downgraded.")
+    }
+
+
+def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept() -> None:
+    methods = {
+        name
+        for name, member in vars(str).items()
+        if isinstance(
+            member, types.FunctionType | types.WrapperDescriptorType | types.MethodDescriptorType
+        )
+    }
+
+    # whatever str defines on the Python that runs this, the only methods left unwrapped are
+    # the six compares taught above and the four str keeps
+    assert methods - _derived_downgrades() == {
+        "__lt__",
+        "__le__",
+        "__gt__",
+        "__ge__",
+        "__eq__",
+        "__ne__",
+        "__hash__",
+        "__repr__",
+        "__getnewargs__",
+        "__sizeof__",
+    }
+    assert _derived_downgrades().isdisjoint(strs._KEPT)
 
 
 def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None:

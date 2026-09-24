@@ -70,7 +70,7 @@ def execute(
 
 
 def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
-    """Consecutive calls of one dunder as a single entry, in call order.
+    """Consecutive calls of one method or dunder as a single entry, in call order.
 
     The sink still grows one item per call while the target runs: core
     pushes and never reads, so a loop over an argument is collapsed here,

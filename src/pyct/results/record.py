@@ -26,7 +26,7 @@ class Aim:
 
 @dataclass(frozen=True)
 class DowngradeCount:
-    """A run of consecutive calls of one dunder that dropped the condition."""
+    """A run of consecutive calls of one method or dunder that dropped the condition."""
 
     name: str
     count: int
@@ -37,8 +37,8 @@ class InputRecord:
     """What one input did: its arguments, the forks it took, the lines it reached.
 
     ``failure`` is how it ended when it did not return. ``downgrades`` names
-    each call that dropped the condition, in order, a run of one dunder
-    counted as a single entry.
+    each call that dropped the condition, in order, a run of one method or
+    dunder counted as a single entry.
 
     ``aim`` is the fork the solver was asked for, and ``mismatch_at`` the
     first position where the run left that plan. A seed is aimed at nothing,

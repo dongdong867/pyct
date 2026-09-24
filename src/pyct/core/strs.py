@@ -6,7 +6,25 @@ from collections.abc import Callable
 
 from pyct.core.bools import compare
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import downgraded, forked, own
+from pyct.core.values import downgrade_the_rest, downgraded, forked, own
+
+# the `ConcolicStr` body below is the taught set: the compares and the truth test it writes stay
+# symbolic. The tuple here names what is left to str on purpose, and the derivation at the
+# bottom of the file downgrades every other method str defines, plain methods and operators
+# alike. str defines `__str__` and `__format__` itself, so nothing inherited needs naming.
+
+# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# plumbing, so a dict key and a debugger read cost nothing. str takes `__getattribute__` from
+# object today; it is kept all the same, because the downgrade wrapper reads `self.sink`
+# through it, and a wrapped one would recurse on the first attribute read
+_KEPT = (
+    "__hash__",
+    "__repr__",
+    "__getnewargs__",
+    "__new__",
+    "__getattribute__",
+    "__sizeof__",
+)
 
 # the last character cvc5 holds: its strings run from U+0000 to here, and the solver writes
 # every one of them
@@ -60,7 +78,9 @@ def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
-    The operations taught below stay symbolic.
+    The operations taught below stay symbolic. Any other operation is str's own and
+    returns a plain value, with a downgrade in the sink naming what was lost: a method
+    by its name, an operator by its dunder.
     """
 
     expression: Expression
@@ -89,3 +109,8 @@ class ConcolicStr(str):
         # str has no __bool__ and Python falls to __len__; this one comes first. The empty
         # string is the one value that takes the other side, written as repr writes it
         return forked(self.sink, ["!=", self.expression, "''"], own(str.__len__, self) > 0)
+
+
+# the class body above is everything ConcolicStr teaches. The rest of str differs only in the
+# name it calls and records, so the derivation writes it
+downgrade_the_rest(ConcolicStr, str, kept=_KEPT, inherited=())
