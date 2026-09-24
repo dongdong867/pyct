@@ -64,4 +64,4 @@ engine state.
 - Explicit imports, grouped stdlib, third-party, local.
 - Functions about 20 lines. Five parameters at most. Files under 500 lines.
 - Logging with lazy `%` formatting. DEBUG internals, INFO milestones, WARNING recoverable, ERROR failures.
-- A name or comment says what the code handles, never what it misses. When a review finds a claim that outruns its check, narrow the claim unless the missed case is one the code will realistically meet.
+- A name or comment says what the code handles. It never lists what the code misses; such a list is never complete. When a review finds a claim that outruns its check, narrow the claim, or widen the check when the missed case is one the code will realistically meet.
