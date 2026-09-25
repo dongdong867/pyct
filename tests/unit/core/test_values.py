@@ -1,3 +1,5 @@
+import copy
+import dataclasses
 import math
 import operator
 import sys
@@ -56,6 +58,23 @@ IDENTITIES: dict[str, Callable[[ConcolicInt], object]] = {
     "math.trunc(x)": math.trunc,
     "math.floor(x)": math.floor,
     "math.ceil(x)": math.ceil,
+}
+
+
+@dataclasses.dataclass
+class Holder:
+    """A dataclass the target keeps an int in."""
+
+    value: int
+
+
+# copy, deepcopy and asdict, each on data holding a tracked int or a compare's value: the call,
+# and the value it hands back
+COPIES: dict[str, Callable[[int], object]] = {
+    "copy.copy(v)": copy.copy,
+    "copy.deepcopy(v)": copy.deepcopy,
+    "copy.deepcopy({'value': v})": lambda v: copy.deepcopy({"value": v})["value"],
+    "dataclasses.asdict(Holder(v))": lambda v: dataclasses.asdict(Holder(v))["value"],
 }
 
 # a power the solver cannot take: each is int's own answer and a `__pow__` downgrade
@@ -447,6 +466,27 @@ def test_an_identity_operation_hands_the_value_itself_back(
     assert sink == []
 
 
+@pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
+def test_a_copy_of_a_concolic_int_is_the_value_itself(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    # copy hands a plain int back as it is, because an int cannot change; a tracked one comes
+    # back the same way, its expression and sink with it, so nothing is lost
+    assert call(x) is x
+    assert sink == []
+
+
+@pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
+def test_a_copy_of_a_compares_value_is_the_value_itself(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    big = ConcolicInt(3, expression="x", sink=sink) > 10
+
+    # the same holds for the value a compare hands back, so testing the copy records the fork
+    assert call(big) is big
+    assert sink == []
+
+
 def test_int_of_a_concolic_int_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
@@ -732,4 +772,12 @@ def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None
     }
 
     # these hand the value itself back and never call int, so they have nothing to guard
-    assert without_the_helper == {"__pos__", "__index__", "__trunc__", "__floor__", "__ceil__"}
+    assert without_the_helper == {
+        "__pos__",
+        "__index__",
+        "__trunc__",
+        "__floor__",
+        "__ceil__",
+        "__copy__",
+        "__deepcopy__",
+    }

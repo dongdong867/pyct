@@ -11,7 +11,7 @@ from collections.abc import Callable
 from typing import Protocol
 
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import forked, own
+from pyct.core.values import copy_as_itself, forked, own
 
 
 class ConcolicBool(int):
@@ -22,6 +22,9 @@ class ConcolicBool(int):
 
     expression: Expression
     sink: BranchSink
+
+    __copy__ = copy_as_itself
+    __deepcopy__ = copy_as_itself
 
     def __new__(cls, value: bool, *, expression: Expression, sink: BranchSink) -> ConcolicBool:
         self = super().__new__(cls, value)
