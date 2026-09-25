@@ -131,12 +131,54 @@ def test_in_records_its_fork_where_it_runs_and_not_in_reverses_the_side() -> Non
     ]
 
 
+# a probe for the searches that raise when the substring is missing, one per line
+RAISING_PROBE = "def probe(v, sub):\n    return v.index(sub)\n"
+
+
+def _raising_probe() -> Callable[[object, object], object]:
+    namespace: dict[str, object] = {}
+    exec(compile(RAISING_PROBE, "<probe>", "exec"), namespace)
+    probe = namespace["probe"]
+    assert callable(probe)
+    return probe
+
+
+def test_index_records_the_in_fork_at_the_call_before_its_answer() -> None:
+    sink: list[SinkItem] = []
+
+    result = _raising_probe()(_tracked(sink=sink), "b")
+
+    # the fork says the substring is there, in Python's operand order, at the call's column
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["index", "s", "'b'"]
+    assert int.__index__(result) == 1
+    assert sink == [
+        Branch(expression=["in", "'b'", "s"], taken=True, site=Site(file="<probe>", line=2, col=11))
+    ]
+
+
+def test_index_of_a_missing_substring_raises_as_the_targets_after_its_fork() -> None:
+    sink: list[SinkItem] = []
+
+    with pytest.raises(ValueError, match="substring not found") as raised:
+        _raising_probe()(_tracked(sink=sink), "x")
+
+    # the fork went in first, so the raising input's line lists it, taken false
+    assert raised_by_target(raised.value)
+    assert sink == [
+        Branch(
+            expression=["in", "'x'", "s"], taken=False, site=Site(file="<probe>", line=2, col=11)
+        )
+    ]
+
+
 # a taught search in a form pyct does not encode: the call, and the name its downgrade carries
 FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
     "past the last character in s": (lambda s: "\U00030000" in s, "__contains__"),
     "s.find('b', 2)": (lambda s: s.find("b", 2), "find"),
     "s.find('b', 0, 2)": (lambda s: s.find("b", 0, 2), "find"),
     "s.find(past the last character)": (lambda s: s.find("\U00030000"), "find"),
+    "s.index('b', 2)": (lambda s: s.index("b", 2), "index"),
 }
 
 
@@ -158,6 +200,8 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
 REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s.find(5)": (lambda s: s.find(5), TypeError),  # pyrefly: ignore[bad-argument-type]
     "5 in s": (lambda s: 5 in s, TypeError),  # pyrefly: ignore[unsupported-operation]
+    # a form pyct does not encode raises out of str's own call, with no fork before it
+    "s.index('x', 2)": (lambda s: s.index("x", 2), ValueError),
 }
 
 

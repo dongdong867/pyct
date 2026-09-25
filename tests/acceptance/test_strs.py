@@ -39,6 +39,8 @@ FIND_FROM_POSITION = "targets.strs.find_from_position::check"
 FIND_BELOW = "targets.strs.find_below::check"
 IN_WHERE_IT_RUNS = "targets.strs.in_where_it_runs::look"
 IN_WHERE_IT_RUNS_FILE = str(REPO_ROOT / "targets" / "strs" / "in_where_it_runs.py")
+MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
+MISSING_SUBSTRING_FILE = str(REPO_ROOT / "targets" / "strs" / "missing_substring.py")
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -254,6 +256,25 @@ def test_counts_len_as_a_downgrade() -> None:
     # Python makes what __len__ hands back a plain int before the target sees it
     assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
     assert seed["forks"] == []
+
+
+# follow-strings-finds-the-missing-substring
+def test_finds_the_missing_substring() -> None:
+    result = run_pyct(MISSING_SUBSTRING, '{"s": "axb"}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # index records whether the substring is there before str's own index may raise
+    fork = {"file": MISSING_SUBSTRING_FILE, "line": 2, "col": 11, "expression": ["in", "'x'", "s"]}
+    assert forks_of(seed) == [{**fork, "taken": True}]
+    assert solved["aim"] == {"file": MISSING_SUBSTRING_FILE, "line": 2, "col": 11, "position": 0}
+    assert "x" not in text(solved, "s")
+    assert forks_of(solved) == [{**fork, "taken": False}]
+    # the detail is CPython's own sentence, so only the kind and the name are pyct's to pin
+    failure = solved["failure"]
+    assert isinstance(failure, dict), solved
+    assert failure["kind"] == "target_raised"
+    assert str(failure["detail"]).startswith("ValueError:")
 
 
 # follow-strings-records-in-where-it-runs

@@ -68,6 +68,8 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
     "%": _modulo,
     "in": contains,
     "find": first_index,
+    # index answers only past its `in` fork, where sub is in s and index is find
+    "index": first_index,
 }
 
 

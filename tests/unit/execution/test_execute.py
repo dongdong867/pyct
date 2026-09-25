@@ -311,6 +311,7 @@ def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
             "TypeError: 'in <string>' requires string as left operand, not int",
             id="in-str-refuses",
         ),
+        pytest.param(lambda s: s.index("x"), "ValueError: substring not found", id="index-missing"),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(

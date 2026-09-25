@@ -88,11 +88,15 @@ def _needle(args: tuple[object, ...]) -> Expression | None:
     return _operand(args[0])
 
 
-def _search(name: str, answer: type[ConcolicBool] | type[ConcolicInt]) -> Callable[..., object]:
+def _search(
+    name: str, answer: type[ConcolicBool] | type[ConcolicInt], *, raises: bool = False
+) -> Callable[..., object]:
     """str's own answer to one search, carrying `[name, s, sub]`, as a tracked bool or int.
 
-    A call in a form pyct does not encode is str's own answer and a
-    downgrade named by the method (``README.md › Rules › downgrades``).
+    A search that ``raises`` on a missing substring records whether sub is
+    in s first (see `_found`). A call in a form pyct does not encode is
+    str's own answer and a downgrade named by the method
+    (``README.md › Rules › downgrades``).
     """
     operation = getattr(str, name)
     downgrade = downgraded(str, name)
@@ -101,10 +105,23 @@ def _search(name: str, answer: type[ConcolicBool] | type[ConcolicInt]) -> Callab
         form = _needle(args)
         if form is None:
             return downgrade(self, *args)
+        if raises:
+            _found(self, form, args[0])
         expression = [name, self.expression, form]
         return answer(own(operation, self, *args), expression=expression, sink=self.sink)
 
     return compute
+
+
+def _found(self: ConcolicStr, form: Expression, sub: object) -> None:
+    """The fork a search takes on its way to a raise: `["in", sub, s]`, taken when sub is there.
+
+    It goes in before str's own call, the way a division records its zero
+    fork (``README.md › Rules › forks``): a missing sub raises ValueError out
+    of that call, and the raising input's line already lists the fork,
+    taken false. On every path past it sub is in s.
+    """
+    forked(self.sink, ["in", form, self.expression], own(str.__contains__, self, sub))
 
 
 _CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
@@ -159,6 +176,7 @@ class ConcolicStr(str):
     # override breaks str's on purpose
     __contains__ = _contains  # pyrefly: ignore[bad-override]
     find = _search("find", ConcolicInt)  # pyrefly: ignore[bad-override]
+    index = _search("index", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

@@ -209,6 +209,8 @@ def test_an_order_on_ints_is_still_written_as_arithmetic() -> None:
 # each search as the expression carries it, and the term the program carries for it
 SEARCHES: dict[str, tuple[Expression, str]] = {
     "find": (["find", "s", "'x'"], '(str.indexof s "x" 0)'),
+    # index answers only on a path where its `in` fork held, so it is find there
+    "index": (["index", "s", "'x'"], '(str.indexof s "x" 0)'),
 }
 
 

@@ -303,8 +303,8 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     sink: list[SinkItem] = []
     s = ConcolicStr("abc", expression="s", sink=sink)
 
-    with pytest.raises(ValueError, match="substring not found") as raised:
-        s.index("z")
+    with pytest.raises(LookupError, match="unknown encoding") as raised:
+        s.encode("no-such-codec")
 
     assert raised_by_target(raised.value)
     assert sink == []
@@ -339,6 +339,7 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
         "__ne__",
         "__contains__",
         "find",
+        "index",
         "__hash__",
         "__repr__",
         "__getnewargs__",
