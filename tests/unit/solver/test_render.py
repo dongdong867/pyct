@@ -4,7 +4,7 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.render import render
-from pyct.solver.strings import above, below
+from pyct.solver.strings import above, below, last_index, occurrences
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -211,12 +211,17 @@ SEARCHES: dict[str, tuple[Expression, str]] = {
     "find": (["find", "s", "'x'"], '(str.indexof s "x" 0)'),
     # index answers only on a path where its `in` fork held, so it is find there
     "index": (["index", "s", "'x'"], '(str.indexof s "x" 0)'),
+    "rfind": (["rfind", "s", "'ab'"], last_index("s", '"ab"')),
+    # rindex answers only past its `in` fork too, so it is rfind there
+    "rindex": (["rindex", "s", "'ab'"], last_index("s", '"ab"')),
+    "count": (["count", "s", "'ab'"], occurrences("s", '"ab"')),
+    "count-tracked": (["count", "s", "t"], occurrences("s", "t")),
 }
 
 
 @pytest.mark.parametrize(("expression", "term"), SEARCHES.values(), ids=list(SEARCHES))
 def test_a_search_is_written_as_the_term_that_means_it(expression: Expression, term: str) -> None:
-    text = render((fork(["==", expression, 1], taken=True),), {"s": str})
+    text = render((fork(["==", expression, 1], taken=True),), {"s": str, "t": str})
 
     assert f"(assert (= {term} 1))" in text.splitlines()
 
@@ -226,6 +231,8 @@ SEARCH_TRUTHS: dict[str, tuple[Expression, str]] = {
     # the expression keeps Python's order, needle first; cvc5's contains takes the string first
     "in": (["in", "'x'", "s"], '(str.contains s "x")'),
     "in-tracked": (["in", "t", "s"], "(str.contains s t)"),
+    "startswith": (["startswith", "s", "'ab'"], '(str.prefixof "ab" s)'),
+    "endswith": (["endswith", "s", "'ab'"], '(str.suffixof "ab" s)'),
 }
 
 

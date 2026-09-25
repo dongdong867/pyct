@@ -41,6 +41,22 @@ IN_WHERE_IT_RUNS = "targets.strs.in_where_it_runs::look"
 IN_WHERE_IT_RUNS_FILE = str(REPO_ROOT / "targets" / "strs" / "in_where_it_runs.py")
 MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
 MISSING_SUBSTRING_FILE = str(REPO_ROOT / "targets" / "strs" / "missing_substring.py")
+SEARCH = "targets.strs.search::kind"
+# each fork the seed takes in ``kind``, in order: the line, the expression, and the side. index
+# and rindex add their `in` fork on the line of the compare they feed
+SEARCH_FORKS: list[tuple[int, list[object], bool]] = [
+    (2, ["in", "'@'", "s"], False),
+    (4, ["startswith", "s", "'http'"], False),
+    (6, ["endswith", "s", "'.py'"], False),
+    (8, ["==", ["find", "s", "':'"], 4], False),
+    (10, [">", ["rfind", "s", "'/'"], 0], False),
+    (12, ["==", ["count", "s", "'-'"], 2], False),
+    (14, ["in", "t", "s"], False),
+    (16, ["in", "'#'", "s"], True),
+    (16, [">", ["rindex", "s", "'#'"], 3], False),
+    (18, ["in", "'='", "s"], True),
+    (18, ["==", ["index", "s", "'='"], 0], False),
+]
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -166,6 +182,31 @@ def test_round_trips_a_literal_with_special_characters() -> None:
     assert text(solved, "s") == SPECIAL_LITERAL
     assert [fork["expression"] for fork in forks_of(seed)] == [["==", "s", repr(SPECIAL_LITERAL)]]
     assert [fork["taken"] for fork in forks_of(solved)] == [True]
+
+
+# follow-strings-follows-search
+def test_follows_search() -> None:
+    result = run_pyct(SEARCH, '{"s": "a=#", "t": "!"}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    assert [
+        (fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(inputs[0])
+    ] == SEARCH_FORKS
+    # every fork is flipped: some input takes each side of each, and every input the solver
+    # handed back took the side it was aimed at, so Python agrees with the solver on each
+    sides = {
+        (fork["line"], repr(fork["expression"]), fork["taken"])
+        for line in inputs
+        for fork in forks_of(line)
+    }
+    assert sides == {
+        (line, repr(expression), taken)
+        for line, expression, _ in SEARCH_FORKS
+        for taken in (True, False)
+    }
+    assert [line["mismatch_at"] for line in inputs[1:]] == [None] * (len(inputs) - 1)
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
 # follow-strings-tracks-an-int-made-from-a-string

@@ -170,13 +170,19 @@ class ConcolicStr(str):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
 
-    # a position is a tracked int, so `s.find("x") < n` is one fork on s and n, and `in` is a
-    # tracked bool for the reason the compares are. A search takes whatever arguments it is
-    # given and hands a form it does not encode to str, so its signature is not str's; the
-    # override breaks str's on purpose
+    # a position or a count is a tracked int, so `s.find("x") < n` is one fork on s and n, and
+    # `in`, `startswith` and `endswith` answer with a tracked bool for the reason the compares
+    # do. index and rindex record their `in` fork before they may raise. A search takes any
+    # arguments and hands a form it does not encode to str, so its signature is not str's;
+    # the override breaks str's on purpose
     __contains__ = _contains  # pyrefly: ignore[bad-override]
+    startswith = _search("startswith", ConcolicBool)  # pyrefly: ignore[bad-override]
+    endswith = _search("endswith", ConcolicBool)  # pyrefly: ignore[bad-override]
     find = _search("find", ConcolicInt)  # pyrefly: ignore[bad-override]
+    rfind = _search("rfind", ConcolicInt)  # pyrefly: ignore[bad-override]
+    count = _search("count", ConcolicInt)  # pyrefly: ignore[bad-override]
     index = _search("index", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
+    rindex = _search("rindex", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

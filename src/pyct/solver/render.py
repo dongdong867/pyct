@@ -4,7 +4,17 @@ import ast
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.strings import above, below, contains, encode, first_index
+from pyct.solver.strings import (
+    above,
+    below,
+    contains,
+    encode,
+    ends_with,
+    first_index,
+    last_index,
+    occurrences,
+    starts_with,
+)
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
 SORTS: Mapping[type, str] = {int: "Int", str: "String"}
@@ -67,9 +77,15 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
     "//": _floor_division,
     "%": _modulo,
     "in": contains,
+    "startswith": starts_with,
+    "endswith": ends_with,
     "find": first_index,
-    # index answers only past its `in` fork, where sub is in s and index is find
+    "rfind": last_index,
+    "count": occurrences,
+    # index and rindex answer only past their `in` fork, where sub is in s and each is the
+    # find it mirrors
     "index": first_index,
+    "rindex": last_index,
 }
 
 
