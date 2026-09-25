@@ -6,12 +6,12 @@ from collections.abc import Callable
 
 from pyct.core.bools import ConcolicBool, compare
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
-# arithmetic, the division and the identities it writes stay symbolic. The three tuples here
-# name what is left to int on purpose, and the derivation at the bottom of the file downgrades
-# every other method int defines.
+# arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
+# itself. The three tuples here name what is left to int on purpose, and the derivation at the
+# bottom of the file downgrades every other method int defines.
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
@@ -215,6 +215,8 @@ class ConcolicInt(int):
     __ne__ = compare("!=", int.__ne__, _operand)  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = int.__hash__
+    __copy__ = copy_as_itself
+    __deepcopy__ = copy_as_itself
 
     __add__ = _arithmetic("+", int.__add__)
     __radd__ = _arithmetic("+", int.__radd__, reflected=True)
