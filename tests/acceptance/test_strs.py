@@ -1,7 +1,8 @@
-"""Acceptance tests for the follow-string-compares child of the follow-strings story.
+"""Acceptance tests for the follow-string-compares and follow-string-search children of the
+follow-strings story.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the follow-integers
-tests do: a compare is followed only if the fork it built reaches the solver and the
+tests do: an operation is followed only if the fork it built reaches the solver and the
 solver's answer runs, so only a real run through the command line proves it.
 """
 
@@ -33,6 +34,7 @@ PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
 ENCODE_CHECK = "targets.strs.encode_check::check"
 TEXT_CONVERSION = "targets.strs.text_conversion::show"
 LENGTH_CHECK = "targets.strs.length_check::check"
+FIND_FROM_POSITION = "targets.strs.find_from_position::check"
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -221,6 +223,17 @@ def test_counts_len_as_a_downgrade() -> None:
     seed = one_line(result.stdout)
     # Python makes what __len__ hands back a plain int before the target sees it
     assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["forks"] == []
+
+
+# follow-strings-downgrades-a-search-from-a-position
+def test_downgrades_a_search_from_a_position() -> None:
+    result = run_pyct(FIND_FROM_POSITION, '{"s": "abcx"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # a start position is a form pyct does not encode, so str answers and the method is named
+    assert seed["downgrades"] == [{"name": "find", "count": 1}]
     assert seed["forks"] == []
 
 
