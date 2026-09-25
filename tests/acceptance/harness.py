@@ -69,6 +69,29 @@ def crashing_cvc5(tmp_path: Path) -> Path:
     return script
 
 
+def hanging_cvc5(tmp_path: Path) -> Path:
+    """A cvc5 that says its version at once but never answers a formula, for ``run_pyct``.
+
+    It reads the formula and then sleeps past any limit pyct gives it, so only
+    pyct can end the solve. ``exec`` makes the sleep the script's own process,
+    so ending that process ends the sleep too.
+    """
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        'if [ "$1" = "--version" ]; then\n'
+        "    echo 'cvc5 1.3.4'\n"
+        "    exit 0\n"
+        "fi\n"
+        "cat > /dev/null\n"
+        "exec sleep 3600\n"
+    )
+    script.chmod(0o755)
+    return script
+
+
 def input_lines(stdout: str) -> list[dict[str, object]]:
     """The one line per input, without the summary line that closes stdout.
 

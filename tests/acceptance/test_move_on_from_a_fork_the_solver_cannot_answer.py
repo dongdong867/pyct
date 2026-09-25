@@ -8,9 +8,11 @@ tracked strings, which cvc5 1.3.4 does not answer even in 20 seconds.
 
 import subprocess
 import time
+from pathlib import Path
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    hanging_cvc5,
     input_lines,
     run_pyct,
     summary_line,
@@ -138,3 +140,19 @@ def test_refuses_a_bad_limit() -> None:
         assert len(lines) == 1, result.stderr
         assert "solver timeout" in lines[0], result.stderr
         assert repr(bad) in lines[0], result.stderr
+
+
+# move-on-from-a-fork-the-solver-cannot-answer-stops-a-solver-that-overruns
+def test_stops_a_solver_that_overruns(tmp_path: Path) -> None:
+    hanging_cvc5(tmp_path)
+
+    result, elapsed = timed(ORDER, SEED, "--solver-timeout", "1", path=str(tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    # nothing is ever answered: both forks are aimed at, both are misses, and no input follows
+    assert sorted(misses_of(result.stdout)) == [(OUTER, "timeout"), (INNER, "timeout")]
+    assert len(input_lines(result.stdout)) == 1, result.stdout
+    summary = summary_line(result.stdout)
+    assert summary["solver"] == {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 2}, summary
+    assert summary["stopped"] == "no fork to flip", summary
+    assert elapsed < 10, elapsed
