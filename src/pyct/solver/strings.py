@@ -16,8 +16,9 @@ literals that this form answers in milliseconds; decision
 string-order-against-a-literal-letter-by-letter.
 
 A search is written as the SMT-LIB term that gives Python's answer, empty
-substring included. Each takes its operands already written, the string
-first and then the substring.
+substring included. Each takes its operands already written, in the order
+the expression holds them: the string and then the substring, but for
+``in``, whose needle comes first.
 """
 
 import re
@@ -100,6 +101,15 @@ def _equal(term: str, literal: str, or_equal: bool) -> list[str]:
 def _any(parts: list[str]) -> str:
     """Any of the parts holds. One part is itself."""
     return parts[0] if len(parts) == 1 else f"(or {' '.join(parts)})"
+
+
+def contains(sub: str, term: str) -> str:
+    """``sub in s``, taking its operands in Python's order, the needle first.
+
+    cvc5's ``str.contains`` takes them the other way round. The empty
+    substring is in every string in both.
+    """
+    return f"(str.contains {term} {sub})"
 
 
 def first_index(term: str, sub: str) -> str:

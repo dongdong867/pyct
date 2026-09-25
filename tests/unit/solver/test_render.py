@@ -219,6 +219,23 @@ def test_a_search_is_written_as_the_term_that_means_it(expression: Expression, t
     assert f"(assert (= {term} 1))" in text.splitlines()
 
 
+# each search that answers with a bool, and the term the program asserts for it
+SEARCH_TRUTHS: dict[str, tuple[Expression, str]] = {
+    # the expression keeps Python's order, needle first; cvc5's contains takes the string first
+    "in": (["in", "'x'", "s"], '(str.contains s "x")'),
+    "in-tracked": (["in", "t", "s"], "(str.contains s t)"),
+}
+
+
+@pytest.mark.parametrize(("expression", "term"), SEARCH_TRUTHS.values(), ids=list(SEARCH_TRUTHS))
+def test_a_search_that_answers_with_a_bool_is_asserted_as_its_term(
+    expression: Expression, term: str
+) -> None:
+    text = render((fork(expression, taken=False),), {"s": str, "t": str})
+
+    assert f"(assert (not {term}))" in text.splitlines()
+
+
 def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
     text = render((fork(["<", ["find", "s", "'x'"], "n"], taken=False),), {"s": str, "n": int})
 

@@ -107,6 +107,24 @@ def _search(name: str, answer: type[ConcolicBool] | type[ConcolicInt]) -> Callab
     return compute
 
 
+_CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
+
+
+def _contains(self: ConcolicStr, sub: object) -> object:
+    """str's own answer to `sub in s`, carrying `["in", sub, s]` in Python's operand order.
+
+    CPython tests the answer for truth where the `in` runs, so that is where
+    the fork is recorded, and `not in` records the same fork with its side
+    reversed (``README.md › Rules › forks``). A call in a form pyct does not
+    encode is str's own answer and a `__contains__` downgrade.
+    """
+    form = _needle((sub,))
+    if form is None:
+        return _CONTAINS_DOWNGRADE(self, sub)
+    expression = ["in", form, self.expression]
+    return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
@@ -135,9 +153,11 @@ class ConcolicStr(str):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
 
-    # a position is a tracked int, so `s.find("x") < n` is one fork on s and n. A search takes
-    # whatever arguments it is given and hands a form it does not encode to str, so its
-    # signature is not str's; the override breaks str's on purpose
+    # a position is a tracked int, so `s.find("x") < n` is one fork on s and n, and `in` is a
+    # tracked bool for the reason the compares are. A search takes whatever arguments it is
+    # given and hands a form it does not encode to str, so its signature is not str's; the
+    # override breaks str's on purpose
+    __contains__ = _contains  # pyrefly: ignore[bad-override]
     find = _search("find", ConcolicInt)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:

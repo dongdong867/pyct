@@ -4,7 +4,7 @@ import ast
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.strings import above, below, encode, first_index
+from pyct.solver.strings import above, below, contains, encode, first_index
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
 SORTS: Mapping[type, str] = {int: "Int", str: "String"}
@@ -66,6 +66,7 @@ def _modulo(dividend: str, divisor: str) -> str:
 FORMS: Mapping[str, Callable[[str, str], str]] = {
     "//": _floor_division,
     "%": _modulo,
+    "in": contains,
     "find": first_index,
 }
 

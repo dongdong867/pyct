@@ -6,7 +6,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
@@ -81,8 +81,59 @@ def test_a_search_answer_compared_with_a_tracked_int_is_one_expression() -> None
     assert result.expression == ["<", ["find", "s", "'x'"], "n"]
 
 
+def test_in_answers_as_str_does_in_pythons_operand_order() -> None:
+    sink: list[SinkItem] = []
+
+    result = _tracked(sink=sink).__contains__("b")
+
+    # the needle comes first, the way the target wrote `"b" in s`
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == ["in", "'b'", "s"]
+    assert int.__bool__(result) is True
+    assert sink == []
+
+
+def test_in_on_a_tracked_needle_is_written_by_its_expression() -> None:
+    sink: list[SinkItem] = []
+    t = ConcolicStr("cb", expression="t", sink=sink)
+
+    result = _tracked(sink=sink).__contains__(t)
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == ["in", "t", "s"]
+
+
+# a probe whose text is fixed here, so the line and column of each fork are exact
+PROBE = "def probe(v):\n    y = 'b' in v\n    z = 'x' not in v\n    return y, z\n"
+
+
+def _probe() -> Callable[[object], object]:
+    namespace: dict[str, object] = {}
+    exec(compile(PROBE, "<probe>", "exec"), namespace)
+    probe = namespace["probe"]
+    assert callable(probe)
+    return probe
+
+
+def test_in_records_its_fork_where_it_runs_and_not_in_reverses_the_side() -> None:
+    sink: list[SinkItem] = []
+
+    answer = _probe()(_tracked(sink=sink))
+
+    # CPython tests the answer of `in` for truth on the spot, so each fork is on its own
+    # assignment, at the column the `in` starts; `not in` records `in` with its own answer
+    assert answer == (True, True)
+    assert sink == [
+        Branch(expression=["in", "'b'", "s"], taken=True, site=Site(file="<probe>", line=2, col=8)),
+        Branch(
+            expression=["in", "'x'", "s"], taken=False, site=Site(file="<probe>", line=3, col=8)
+        ),
+    ]
+
+
 # a taught search in a form pyct does not encode: the call, and the name its downgrade carries
 FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
+    "past the last character in s": (lambda s: "\U00030000" in s, "__contains__"),
     "s.find('b', 2)": (lambda s: s.find("b", 2), "find"),
     "s.find('b', 0, 2)": (lambda s: s.find("b", 0, 2), "find"),
     "s.find(past the last character)": (lambda s: s.find("\U00030000"), "find"),
@@ -106,6 +157,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
 # a taught search given what str refuses: the call, and the error str raises for it
 REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s.find(5)": (lambda s: s.find(5), TypeError),  # pyrefly: ignore[bad-argument-type]
+    "5 in s": (lambda s: 5 in s, TypeError),  # pyrefly: ignore[unsupported-operation]
 }
 
 

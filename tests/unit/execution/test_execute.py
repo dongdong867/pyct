@@ -306,6 +306,11 @@ def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
         pytest.param(
             lambda s: s.find(5), "TypeError: must be str, not int", id="search-str-refuses"
         ),
+        pytest.param(
+            lambda s: 5 in s,
+            "TypeError: 'in <string>' requires string as left operand, not int",
+            id="in-str-refuses",
+        ),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
