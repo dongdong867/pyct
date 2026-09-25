@@ -9,9 +9,9 @@ from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
-# arithmetic, the division and the identities it writes stay symbolic. The three tuples here
-# name what is left to int on purpose, and the derivation at the bottom of the file downgrades
-# every other method int defines.
+# arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
+# itself. The three tuples here name what is left to int on purpose, and the derivation at the
+# bottom of the file downgrades every other method int defines.
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
