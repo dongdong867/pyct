@@ -1,4 +1,4 @@
-"""Python strs in SMT-LIB: a literal both ways, and an order against a literal.
+"""Python strs in SMT-LIB: a literal both ways, an order against a literal, and the searches.
 
 A literal is wrapped in double quotes, and a double quote inside it is
 written twice. A printable ASCII character other than the backslash is
@@ -14,6 +14,10 @@ decides, and a string that runs out first is the smaller. cvc5's own
 ``str.<`` can run to any time limit on a few orders against one-letter
 literals that this form answers in milliseconds; decision
 string-order-against-a-literal-letter-by-letter.
+
+A search is written as the SMT-LIB term that gives Python's answer, empty
+substring included. Each takes its operands already written, the string
+first and then the substring.
 """
 
 import re
@@ -96,6 +100,15 @@ def _equal(term: str, literal: str, or_equal: bool) -> list[str]:
 def _any(parts: list[str]) -> str:
     """Any of the parts holds. One part is itself."""
     return parts[0] if len(parts) == 1 else f"(or {' '.join(parts)})"
+
+
+def first_index(term: str, sub: str) -> str:
+    """``s.find(sub)``: where sub first starts in s, or -1.
+
+    cvc5's ``str.indexof`` from 0 is Python's answer as it stands, the empty
+    substring found at 0 included.
+    """
+    return f"(str.indexof {term} {sub} 0)"
 
 
 def decode(literal: str) -> str:

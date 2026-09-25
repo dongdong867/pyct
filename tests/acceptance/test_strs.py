@@ -35,6 +35,7 @@ ENCODE_CHECK = "targets.strs.encode_check::check"
 TEXT_CONVERSION = "targets.strs.text_conversion::show"
 LENGTH_CHECK = "targets.strs.length_check::check"
 FIND_FROM_POSITION = "targets.strs.find_from_position::check"
+FIND_BELOW = "targets.strs.find_below::check"
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -43,6 +44,15 @@ def text(line: dict[str, object], name: str) -> str:
     assert isinstance(args, dict), line
     value = args[name]
     assert isinstance(value, str), line
+    return value
+
+
+def number(line: dict[str, object], name: str) -> int:
+    """One int argument off a printed line, narrowed so the comparison means something."""
+    args = line["args"]
+    assert isinstance(args, dict), line
+    value = args[name]
+    assert isinstance(value, int), line
     return value
 
 
@@ -151,6 +161,23 @@ def test_round_trips_a_literal_with_special_characters() -> None:
     assert text(solved, "s") == SPECIAL_LITERAL
     assert [fork["expression"] for fork in forks_of(seed)] == [["==", "s", repr(SPECIAL_LITERAL)]]
     assert [fork["taken"] for fork in forks_of(solved)] == [True]
+
+
+# follow-strings-tracks-an-int-made-from-a-string
+def test_tracks_an_int_made_from_a_string() -> None:
+    result = run_pyct(FIND_BELOW, '{"s": "abc", "n": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # find answers with a tracked int, so its compare with n is one fork on both parameters
+    expression = ["<", ["find", "s", "'x'"], "n"]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [(expression, True)]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(solved)] == [
+        (expression, False)
+    ]
+    assert solved["mismatch_at"] is None
+    # the solver may change s, n, or both; Python has to agree the input takes the other side
+    assert text(solved, "s").find("x") >= number(solved, "n")
 
 
 # follow-strings-downgrades-a-literal-the-solver-cannot-hold

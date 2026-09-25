@@ -1,0 +1,134 @@
+"""The searches a ConcolicStr teaches: what each answers, the expression it carries, and the
+forms it leaves to str as a downgrade."""
+
+from collections.abc import Callable
+
+import pytest
+
+from pyct.core.bools import ConcolicBool
+from pyct.core.branch import Downgrade, SinkItem
+from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
+from pyct.core.values import raised_by_target
+
+# each taught search on s = "abcb": the call, the expression it carries, and str's own answer
+TAUGHT_SEARCHES: dict[str, tuple[Callable[[str], object], list[object], object]] = {
+    "s.find('b')": (lambda s: s.find("b"), ["find", "s", "'b'"], 1),
+}
+
+
+class Label(str):
+    """A str of the target's own, the way an enum member or a library's name type is one."""
+
+
+def _tracked(value: str = "abcb", sink: list[SinkItem] | None = None) -> ConcolicStr:
+    return ConcolicStr(value, expression="s", sink=[] if sink is None else sink)
+
+
+@pytest.mark.parametrize(
+    ("call", "expression", "answer"), TAUGHT_SEARCHES.values(), ids=list(TAUGHT_SEARCHES)
+)
+def test_a_taught_search_answers_as_str_does_and_carries_its_expression(
+    call: Callable[[str], object], expression: list[object], answer: object
+) -> None:
+    sink: list[SinkItem] = []
+
+    result = call(_tracked(sink=sink))
+
+    # a bool answer is a ConcolicBool and a position or a count a ConcolicInt, so a compare
+    # on it later is a fork on s
+    assert isinstance(result, ConcolicBool if isinstance(answer, bool) else ConcolicInt)
+    assert result.expression == expression
+    # int.__eq__, not ==: a tracked answer's == builds a compare rather than answering
+    assert int.__eq__(result, answer)
+    assert sink == []
+
+
+def test_a_tracked_substring_is_written_by_its_expression() -> None:
+    sink: list[SinkItem] = []
+    s = _tracked(sink=sink)
+    t = ConcolicStr("c", expression="t", sink=sink)
+
+    result = s.find(t)
+
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["find", "s", "t"]
+    assert int.__index__(result) == 2
+
+
+def test_a_substring_of_the_targets_own_str_type_is_a_literal_of_its_plain_value() -> None:
+    result = _tracked().find(Label("c"))
+
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["find", "s", "'c'"]
+
+
+def test_an_empty_substring_is_followed_as_python_answers_it() -> None:
+    result = _tracked().find("")
+
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["find", "s", "''"]
+    assert int.__index__(result) == 0
+
+
+def test_a_search_answer_compared_with_a_tracked_int_is_one_expression() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(1, expression="n", sink=sink)
+
+    result = _tracked(sink=sink).find("x") < n
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == ["<", ["find", "s", "'x'"], "n"]
+
+
+# a taught search in a form pyct does not encode: the call, and the name its downgrade carries
+FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
+    "s.find('b', 2)": (lambda s: s.find("b", 2), "find"),
+    "s.find('b', 0, 2)": (lambda s: s.find("b", 0, 2), "find"),
+    "s.find(past the last character)": (lambda s: s.find("\U00030000"), "find"),
+}
+
+
+@pytest.mark.parametrize(("call", "name"), FORMS_NOT_ENCODED.values(), ids=list(FORMS_NOT_ENCODED))
+def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
+    call: Callable[[str], object], name: str
+) -> None:
+    sink: list[SinkItem] = []
+
+    result = call(_tracked(sink=sink))
+
+    # str's own answer, plain, and the line names the method
+    assert result == call("abcb")
+    assert not isinstance(result, ConcolicBool | ConcolicInt)
+    assert sink == [Downgrade(name=name)]
+
+
+# a taught search given what str refuses: the call, and the error str raises for it
+REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
+    "s.find(5)": (lambda s: s.find(5), TypeError),  # pyrefly: ignore[bad-argument-type]
+}
+
+
+@pytest.mark.parametrize(("call", "error"), REFUSED.values(), ids=list(REFUSED))
+def test_what_str_refuses_raises_as_the_targets_and_records_nothing(
+    call: Callable[[str], object], error: type[Exception]
+) -> None:
+    sink: list[SinkItem] = []
+
+    with pytest.raises(error) as raised:
+        call(_tracked(sink=sink))
+
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
+def test_a_keyword_is_refused_the_way_str_refuses_it_and_records_nothing() -> None:
+    sink: list[SinkItem] = []
+
+    # str's searches take no keywords, so the call raises before anything runs
+    with pytest.raises(TypeError, match="keyword"):
+        _tracked(sink=sink).find("b", start=2)  # pyrefly: ignore[unexpected-keyword]
+
+    with pytest.raises(TypeError, match="keyword"):
+        "abcb".find("b", start=2)  # pyrefly: ignore[unexpected-keyword]
+    assert sink == []

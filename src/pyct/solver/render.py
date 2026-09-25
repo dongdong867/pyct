@@ -4,7 +4,7 @@ import ast
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.strings import above, below, encode
+from pyct.solver.strings import above, below, encode, first_index
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
 SORTS: Mapping[type, str] = {int: "Int", str: "String"}
@@ -60,9 +60,14 @@ def _modulo(dividend: str, divisor: str) -> str:
     return f"(ite {_euclidean_agrees(dividend, divisor)} {remainder} (+ {remainder} {divisor}))"
 
 
-# an operation SMT-LIB has no operator for, written out as the form that means it. The
-# operands arrive rendered, so a form only joins text.
-FORMS: Mapping[str, Callable[[str, str], str]] = {"//": _floor_division, "%": _modulo}
+# an operation SMT-LIB has no operator for, or spells in another order, written out as the form
+# that means it. The operands arrive rendered, in the expression's order, so a form only joins
+# text.
+FORMS: Mapping[str, Callable[[str, str], str]] = {
+    "//": _floor_division,
+    "%": _modulo,
+    "find": first_index,
+}
 
 
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:

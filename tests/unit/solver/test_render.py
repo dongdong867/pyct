@@ -204,3 +204,30 @@ def test_an_order_on_ints_is_still_written_as_arithmetic() -> None:
     text = render((fork([">=", "x", "y"], taken=True),), {"x": int, "y": int})
 
     assert "(assert (>= x y))" in text.splitlines()
+
+
+# each search as the expression carries it, and the term the program carries for it
+SEARCHES: dict[str, tuple[Expression, str]] = {
+    "find": (["find", "s", "'x'"], '(str.indexof s "x" 0)'),
+}
+
+
+@pytest.mark.parametrize(("expression", "term"), SEARCHES.values(), ids=list(SEARCHES))
+def test_a_search_is_written_as_the_term_that_means_it(expression: Expression, term: str) -> None:
+    text = render((fork(["==", expression, 1], taken=True),), {"s": str})
+
+    assert f"(assert (= {term} 1))" in text.splitlines()
+
+
+def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
+    text = render((fork(["<", ["find", "s", "'x'"], "n"], taken=False),), {"s": str, "n": int})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const s String)",
+        "(declare-const n Int)",
+        '(assert (not (< (str.indexof s "x" 0) n)))',
+        "(check-sat)",
+        "(get-value (s))",
+        "(get-value (n))",
+    ]
