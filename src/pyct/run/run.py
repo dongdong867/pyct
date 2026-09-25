@@ -15,6 +15,7 @@ from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
+from pyct.config.solver_timeout import DEFAULT_SECONDS
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.coverage import Coverage, Scope, no_gain
 from pyct.results.record import (
@@ -68,19 +69,25 @@ class Tell:
 
 @dataclass(frozen=True)
 class Bounds:
-    """When the loop must stop asking: the instant the budget ends by, and the plateau.
+    """When the loop must stop asking, and how long one solve may take.
 
     The budget becomes an instant here, because the clock starts when the call
-    does, not when the person typed the seconds. Both in one value, so the loop
-    and each pass keep to five parameters.
+    does, not when the person typed the seconds. The solver timeout stays
+    seconds, because each solve starts its own clock. All in one value, so the
+    loop and each pass keep to five parameters.
     """
 
     until: float | None = None
     plateau: int | None = None
+    solver_timeout: float = DEFAULT_SECONDS
 
     @classmethod
     def of(cls, limits: Limits) -> Bounds:
-        return cls(until=_deadline_for(limits.budget), plateau=limits.plateau.inputs)
+        return cls(
+            until=_deadline_for(limits.budget),
+            plateau=limits.plateau.inputs,
+            solver_timeout=limits.solver_timeout.seconds,
+        )
 
 
 @dataclass(frozen=True)
@@ -205,19 +212,21 @@ def _attempt(
     for a second rule to read. Then the tree, then the plateau, so a run that
     emptied the tree says so even when the plateau also holds.
 
-    A solver that crashed ends the run as a failure. Any other answer is an
-    input to run, or a miss on that fork.
+    Each solve gets the solver timeout, or what is left of the budget when
+    that is less, so the budget still bounds the solver. A solver that
+    crashed ends the run as a failure. Any other answer is an input to run,
+    or a miss on that fork.
     """
-    timeout = _seconds_left(bounds.until)
+    left = _seconds_left(bounds.until)
     # a deadline that has passed is no time at all; cvc5 reads --tlimit=0 as no limit
-    if timeout is not None and timeout <= 0:
+    if left is not None and left <= 0:
         return Attempt(stop=Stop(StopKind.BUDGET))
     wanted = tree.next()
     if wanted is None:
         return Attempt(stop=Stop(StopKind.NO_FORK))
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
-    answer = solve(wanted.prefix, leaves(seed), timeout)
+    answer = solve(wanted.prefix, leaves(seed), _solve_limit(bounds, left))
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):
@@ -272,3 +281,12 @@ def _deadline_for(budget: Budget) -> float | None:
 def _seconds_left(until: float | None) -> float | None:
     """The seconds the deadline still allows. No deadline, no limit."""
     return None if until is None else until - time.monotonic()
+
+
+def _solve_limit(bounds: Bounds, left: float | None) -> float:
+    """The seconds one solve gets: the solver timeout, or ``left`` when the budget has less.
+
+    ``left`` is read once, before the budget check, so a solve always gets
+    the same time the check found above zero.
+    """
+    return bounds.solver_timeout if left is None else min(bounds.solver_timeout, left)
