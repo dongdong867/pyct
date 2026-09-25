@@ -1,6 +1,7 @@
 """The pyct command line.
 
-``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]``
+``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
+[--solver-timeout SECONDS]``
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from typing import NoReturn
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
+from pyct.config.solver_timeout import SolverTimeout
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -28,7 +30,10 @@ from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
-USAGE = "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
+USAGE = (
+    "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
+    " [--solver-timeout SECONDS]"
+)
 
 
 class UsageError(Exception):
@@ -37,12 +42,13 @@ class UsageError(Exception):
 
 @dataclass(frozen=True)
 class RunCommand:
-    """What the command line asked for: the target spec, the seed, and the budget and plateau."""
+    """What the command line asked for: the target spec, the seed, and the three limits."""
 
     spec: str
     seed_text: str | None
     budget_text: str | None = None
     plateau_text: str | None = None
+    solver_timeout_text: str | None = None
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -59,12 +65,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     input.
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    import, seed present, seed fits, seed types, cvc5. Everything the command
-    line got wrong is reported first, because a wrong command line is wrong
-    whatever the machine has installed; cvc5 is the last check before the run
-    for the same reason, as it is the only one about the machine. The import
-    comes before the three seed checks because they all read the loaded
-    target: its parameters, and the annotations on them.
+    solver timeout, import, seed present, seed fits, seed types, cvc5.
+    Everything the command line got wrong is reported first, because a wrong
+    command line is wrong whatever the machine has installed; cvc5 is the
+    last check before the run for the same reason, as it is the only one
+    about the machine. The import comes before the three seed checks because
+    they all read the loaded target: its parameters, and the annotations on
+    them.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
@@ -72,6 +79,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed = None if command.seed_text is None else parse_seed(command.seed_text)
         budget = parse_budget(command.budget_text)
         plateau = parse_plateau(command.plateau_text)
+        solver_timeout = parse_solver_timeout(command.solver_timeout_text)
         target = load_target(command.spec)
         if seed is None:
             raise UsageError(missing_args_message(target.signature))
@@ -81,7 +89,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = run(
             target,
             seed,
-            limits=Limits(budget=budget, plateau=plateau),
+            limits=Limits(budget=budget, plateau=plateau, solver_timeout=solver_timeout),
             report=_report,
             missed=_missed,
         )
@@ -128,6 +136,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
     run_parser.add_argument("--budget", metavar="SECONDS")
     run_parser.add_argument("--plateau", metavar="N")
+    run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     namespace = parser.parse_args(argv)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
@@ -137,6 +146,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
         seed_text=seed_text,
         budget_text=namespace.budget,
         plateau_text=namespace.plateau,
+        solver_timeout_text=namespace.solver_timeout,
     )
 
 
@@ -194,6 +204,29 @@ def parse_plateau(plateau_text: str | None) -> Plateau:
     if inputs <= 0:
         raise UsageError(refusal)
     return Plateau(inputs=inputs)
+
+
+def parse_solver_timeout(solver_timeout_text: str | None) -> SolverTimeout:
+    """The seconds each solve may take, a positive number. No flag is the default limit.
+
+    Checked as the budget is, finite and above zero, so no value turns the
+    limit off.
+    """
+    if solver_timeout_text is None:
+        return SolverTimeout()
+    try:
+        seconds = float(solver_timeout_text)
+    except ValueError as error:
+        raise UsageError(
+            f"solver timeout must be a number of seconds, got {solver_timeout_text!r}"
+        ) from error
+    # nan fails isfinite; inf passes > 0 and would be no limit at all
+    if not (math.isfinite(seconds) and seconds > 0):
+        raise UsageError(
+            "solver timeout must be a finite number of seconds above zero,"
+            f" got {solver_timeout_text!r}"
+        )
+    return SolverTimeout(seconds=seconds)
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
