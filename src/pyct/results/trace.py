@@ -1,6 +1,7 @@
 """The readable trace, the stderr half of what a run says: each input's lines, then how it ended."""
 
 import json
+import keyword
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -151,18 +152,39 @@ def _infix(expression: Expression) -> str:
     """The condition the way a person writes it, whatever the operator is.
 
     Operator first is how the expression is stored, so one operand reads
-    ``op a`` and the rest read as ``a op b``, joined by the operator.
+    ``op a`` and the rest read as ``a op b``, joined by the operator. A
+    method reads as Python calls it, ``a.method(b)``.
     """
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
     operator, *operands = expression
+    if _is_call(expression):
+        receiver, *arguments = operands
+        called = ", ".join(_infix(argument) for argument in arguments)
+        return f"{_operand(receiver)}.{operator}({called})"
     written = [_operand(operand) for operand in operands]
     if len(written) == 1:
         return f"{operator} {written[0]}"
     return f" {operator} ".join(written)
 
 
+def _is_call(expression: list[Expression]) -> bool:
+    """Whether a condition is a method call: a head that is a name, not a keyword, on operands.
+
+    A keyword such as ``in`` is an operator Python writes between its
+    operands, and a head with one operand, such as ``abs``, keeps the
+    ``op a`` it always had.
+    """
+    head = expression[0]
+    return (
+        isinstance(head, str)
+        and head.isidentifier()
+        and not keyword.iskeyword(head)
+        and len(expression) > 2
+    )
+
+
 def _operand(expression: Expression) -> str:
-    """A condition inside a condition gets parentheses; a leaf stands on its own."""
+    """A condition inside a condition gets parentheses; a leaf and a method call stand alone."""
     written = _infix(expression)
-    return f"({written})" if isinstance(expression, list) else written
+    return f"({written})" if isinstance(expression, list) and not _is_call(expression) else written
