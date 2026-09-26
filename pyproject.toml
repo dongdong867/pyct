@@ -49,11 +49,11 @@ branch = true
 source = ["pyct"]
 patch = ["subprocess", "fork"]
 
-# fail_under is the lowest total of four full runs when this floor was set,
-# 98.52%, rounded down to 0.1. Raise it when coverage rises; a total that
+# fail_under is the lowest total of three full runs when this floor was set,
+# 98.696%, rounded down to 0.1. Raise it when coverage rises; a total that
 # rounds to less fails the run.
 [tool.coverage.report]
-fail_under = 98.5
+fail_under = 98.6
 precision = 1
 show_missing = true
 skip_covered = true

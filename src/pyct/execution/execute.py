@@ -114,7 +114,8 @@ def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
     error = ending.error
     # the timer can land in pyct's own frames too, so the kind is by type, before the rest
     if isinstance(error, DeadlineError):
-        return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+        # only a fired alarm reaches here, and those tests run without coverage
+        return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")  # pragma: no cover
     if isinstance(error, SystemExit):
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
     if isinstance(error, Exception):
