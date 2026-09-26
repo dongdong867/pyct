@@ -53,8 +53,18 @@ skip_covered = true
 src = ["src", "tests"]
 line-length = 100
 
+# C901, PLR0913 and PLR0915 hold the size rules of CLAUDE.md › Conventions.
+# tests/line_limits.py holds the two ruff has no rule for: body and file lines.
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM"]
+select = ["E", "F", "I", "B", "UP", "SIM", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+# max-args counts parameters the way CLAUDE.md does, with self and cls left out
+[tool.ruff.lint.pylint]
+max-args = 5
+max-statements = 20
 
 [tool.setuptools.packages.find]
 where = ["src"]
