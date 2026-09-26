@@ -66,7 +66,7 @@ def isolation(target: Target, isolated: bool) -> Isolation:
     """Choose once, for the whole run, where its inputs run."""
     if not isolated:
         return _in_process(target)
-    if running() == 1:
+    if running() <= 1:
         alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
         return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
     if not _named(target):
