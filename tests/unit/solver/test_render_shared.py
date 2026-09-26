@@ -102,12 +102,14 @@ def test_the_edit_loop_hands_the_solver_the_string_it_started_from() -> None:
     assert not any(line.startswith("(define-fun") for line in text)
 
 
-# pieces that do not make one piece: a gap, a bound counted from the end, and two strings
+# pieces that do not make one piece: a gap, a bound counted from the end, two strings, two
+# pieces out of order, and a second piece that stops before it starts
 UNJOINED: dict[str, Expression] = {
     "s[:1] + s[2:]": ["+", ["[:]", "s", None, 1], ["[:]", "s", 2, None]],
     "s[:-1] + s[-1]": ["+", ["[:]", "s", None, -1], ["[]", "s", -1]],
     "s[:1] + t[1:]": ["+", ["[:]", "s", None, 1], ["[:]", "t", 1, None]],
     "s[2:] + s[:2]": ["+", ["[:]", "s", 2, None], ["[:]", "s", None, 2]],
+    "s[:3] + s[3:2]": ["+", ["[:]", "s", None, 3], ["[:]", "s", 3, 2]],
 }
 
 
@@ -116,6 +118,18 @@ def test_pieces_that_make_no_one_piece_are_joined_as_they_stand() -> None:
         assert _asserted(["==", expression, "'abc'"], {"s": str, "t": str}).startswith(
             "(assert (= (str.++ "
         )
+
+
+def test_a_sum_of_two_operations_on_ints_is_added_as_it_stands() -> None:
+    expression: Expression = ["==", ["+", ["-", "x", 1], ["-", "x", 2]], 5]
+
+    assert _asserted(expression, {"x": int}) == "(assert (= (+ (- x 1) (- x 2)) 5))"
+
+
+def test_a_fork_on_a_bare_truth_value_holds_no_part() -> None:
+    text = render((fork(True, taken=False),), {})
+
+    assert text.splitlines() == ["(set-logic ALL)", "(assert (not true))", "(check-sat)"]
 
 
 def _marked_loop(passes: int) -> tuple[Branch, ...]:

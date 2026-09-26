@@ -120,9 +120,29 @@ def test_a_negative_divisor_reaches_the_forms_already_written_as_a_subtraction()
     )
 
 
+def test_an_operation_with_a_number_on_its_left_is_written_on_ints() -> None:
+    # core writes `10 - x` as the reflected subtraction, the number first
+    text = render((fork(["==", ["-", 10, "x"], 3], taken=True),), {"x": int})
+
+    assert "(assert (= (- 10 x) 3))" in text.splitlines()
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})
+
+
+def test_an_operator_nothing_encodes_is_an_error_where_it_is_held_twice() -> None:
+    part: Expression = ["<<", "x", 1]
+
+    # a part held twice is defined once, but one of no type is written out, naming its gap
+    with pytest.raises(ValueError, match="<< on int"):
+        render((fork(["==", part, part], taken=True),), {"x": int})
+
+
+def test_a_head_that_is_no_name_is_an_error() -> None:
+    with pytest.raises(ValueError, match="cannot render 7"):
+        render((fork([7, "x"], taken=True),), {"x": int})
 
 
 def test_a_leaf_no_fork_mentions_is_left_out() -> None:
