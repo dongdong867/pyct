@@ -346,6 +346,21 @@ def test_a_plus_on_two_pieces_joins_strings() -> None:
     assert f'(assert (= (str.++ {both}) "bb"))' in text.splitlines()
 
 
+@pytest.mark.parametrize("head", ["removeprefix", "removesuffix"])
+def test_a_piece_given_a_piece_binds_each_once(head: str) -> None:
+    string, affix = sliced("s", 1, None), sliced("t", 1, None)
+
+    text = render(
+        (fork(["==", [head, ["[:]", "s", 1, None], ["[:]", "t", 1, None]], "'x'"], taken=True),),
+        {"s": str, "t": str},
+    )
+
+    # the form reads both its string and what it removes more than once; each is written once,
+    # bound side by side
+    assert f"(let ((s! {string}) (a! {affix})) (ite " in text
+    assert (text.count(string), text.count(affix)) == (1, 1)
+
+
 def test_every_head_render_writes_says_what_type_its_value_is() -> None:
     written = {head for head, _ in OPERATORS} | set(FORMS) | set(POSITIONED) | set(STRING_ORDERS)
 

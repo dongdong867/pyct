@@ -196,6 +196,42 @@ def test_cvc5_replaces_an_old_string_that_overlaps_itself_as_python_does() -> No
     assert asked(lines) == python
 
 
+# the pieces that take a str to remove, and the term each is written as
+AFFIXES: dict[str, Callable[[str, str], str]] = {
+    "removeprefix": without_prefix,
+    "removesuffix": without_suffix,
+}
+
+
+def _affix_case(rng: random.Random, at: int) -> tuple[list[str], str]:
+    """`s[1:].removeprefix(t[1:])` or the suffix alike: the lines asking it, and Python's answer.
+
+    Both operands are pieces, so the form binds each. Most of the time t[1:]
+    is cut from the end of s[1:] it names, so about a third of the cases
+    remove something.
+    """
+    head = rng.choice(list(AFFIXES))
+    value = _value(rng, 5)
+    kept, cut = value[1:], rng.randint(0, 2)
+    end = kept[:cut] if head == "removeprefix" else kept[len(kept) - cut :]
+    other = rng.choice(ALPHABET) + (end if rng.random() < 0.6 else _value(rng, 2))
+    term = AFFIXES[head](sliced(f"s{at}", 1, None), sliced(f"t{at}", 1, None))
+    lines = [f"(declare-const s{at} String)", f"(assert (= s{at} {encode(value)}))"]
+    lines += [f"(declare-const t{at} String)", f"(assert (= t{at} {encode(other)}))"]
+    lines += [f"(declare-const v{at} String)", f"(assert (= v{at} {term}))"]
+    return lines, getattr(str, head)(kept, other[1:])
+
+
+@needs_cvc5
+def test_cvc5_agrees_with_python_when_a_piece_removes_a_piece() -> None:
+    rng = random.Random(1)
+    cases = [_affix_case(rng, at) for at in range(120)]
+    lines = ["(set-logic ALL)", *(line for case, _ in cases for line in case)]
+    lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(cases)))}))"]
+
+    assert asked(lines) == [answer for _, answer in cases]
+
+
 # what each head on a piece path means in Python, to hold a model against the plan
 PYTHON_HEADS: dict[str, Callable[..., object]] = {
     "[]": operator.getitem,
