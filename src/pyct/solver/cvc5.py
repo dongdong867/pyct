@@ -15,7 +15,17 @@ logger = logging.getLogger(__name__)
 # read one SMT-LIB program from stdin, print a model with the answer, say nothing else
 ARGUMENTS = ("--produce-models", "--lang", "smt", "--quiet")
 
-# cvc5 stops itself at --tlimit; pyct stops it this much later when it does not
+# asked after the program's last command, so the last line cvc5 prints is why it answered
+# unknown, or an error after any other answer
+WHY = "(get-info :reason-unknown)\n"
+
+# cvc5's reply to WHY when its time limit ended the check
+OUT_OF_TIME = "(:reason-unknown timeout)"
+
+# how cvc5's reply to WHY starts after an answer other than unknown, which has no reason
+NO_REASON = "(error "
+
+# cvc5 answers unknown at --tlimit-per; pyct stops it this much later when it does not
 GRACE_SECONDS = 1.0
 
 # the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
@@ -28,10 +38,13 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
 
-    ``timeout`` is finite and above zero, and cvc5 is told it as its limit. A
-    cvc5 still running ``GRACE_SECONDS`` past it is stopped by pyct, and that
-    is a ``Timeout()`` as well, so every solve ends near its limit. A limit
-    longer than Python can wait, about 24 days, is cut to what it can.
+    ``timeout`` is finite and above zero, and cvc5 is told it as its limit. At
+    the limit cvc5 answers ``unknown`` and, asked why, says ``timeout``: that
+    is a ``Timeout()``, and an ``unknown`` for any other reason stays an
+    ``Unknown()``. A cvc5 still running ``GRACE_SECONDS`` past the limit is
+    stopped by pyct, and that is a ``Timeout()`` as well, so every solve ends
+    near its limit. A limit longer than Python can wait, about 24 days, is
+    cut to what it can.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -40,7 +53,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    text = render(prefix, leaves)
+    text = render(prefix, leaves) + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
@@ -67,22 +80,28 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
 def _argv(timeout: float) -> list[str]:
     """The command. cvc5 counts its limit in milliseconds, and rounds up is the honest way.
 
-    Rounding up also keeps any limit above zero at 1 or more, since cvc5
-    reads ``--tlimit=0`` as no limit.
+    The limit is on the check, ``--tlimit-per``, where cvc5 answers
+    ``unknown`` and exits. ``--tlimit`` would end the whole process with
+    ``abort()``, which the system records as a crash. Rounding up also keeps
+    any limit above zero at 1 or more, since cvc5 reads ``--tlimit-per=0``
+    as no limit.
     """
-    return [str(locate()), *ARGUMENTS, f"--tlimit={math.ceil(timeout * 1000)}"]
+    return [str(locate()), *ARGUMENTS, f"--tlimit-per={math.ceil(timeout * 1000)}"]
 
 
 def _answer(stdout: str, stderr: str) -> Answer:
-    """What cvc5 said. The first word decides; anything unrecognized is kept whole."""
+    """What cvc5 said. The first word decides; anything unrecognized is kept whole.
+
+    The last line is cvc5's reply to ``WHY``, so a model is the lines between
+    the answer and that reply. A ``sat`` whose last line is not that reply is
+    an ``Error``: the line dropped as the reply might have been a value.
+    """
     lines = stdout.strip().splitlines()
     head = lines[0] if lines else ""
-    if head == "sat":
-        return Sat(model_from(lines[1:]))
+    if head == "sat" and lines[-1].startswith(NO_REASON):
+        return Sat(model_from(lines[1:-1]))
     if head == "unsat":
         return Unsat()
     if head == "unknown":
-        return Unknown()
-    if not lines and "timeout" in stderr:
-        return Timeout()
+        return Timeout() if lines[-1] == OUT_OF_TIME else Unknown()
     return Error(f"{stdout}\n{stderr}".strip())

@@ -218,7 +218,7 @@ def _attempt(
     or a miss on that fork.
     """
     left = _seconds_left(bounds.until)
-    # a deadline that has passed is no time at all; cvc5 reads --tlimit=0 as no limit
+    # a deadline that has passed is no time at all; cvc5 reads --tlimit-per=0 as no limit
     if left is not None and left <= 0:
         return Attempt(stop=Stop(StopKind.BUDGET))
     wanted = tree.next()
