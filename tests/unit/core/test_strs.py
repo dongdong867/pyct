@@ -311,13 +311,13 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
 
 
 # a keyword each downgraded str method takes: the call, and the name its downgrade carries. The
-# value has a tab, a newline and a field, so each keyword changes str's answer
+# value has two commas, a tab, a newline and a field, so each keyword changes str's answer
 KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     's.split(sep=",")': (lambda s: s.split(sep=","), "split"),
     's.split(",", maxsplit=1)': (lambda s: s.split(",", maxsplit=1), "split"),
     's.rsplit(sep=",")': (lambda s: s.rsplit(sep=","), "rsplit"),
     "s.splitlines(keepends=True)": (lambda s: s.splitlines(keepends=True), "splitlines"),
-    's.encode(encoding="utf-8")': (lambda s: s.encode(encoding="utf-8"), "encode"),
+    's.encode(encoding="utf-16")': (lambda s: s.encode(encoding="utf-16"), "encode"),
     "s.expandtabs(tabsize=4)": (lambda s: s.expandtabs(tabsize=4), "expandtabs"),
     "s.format(x=1)": (lambda s: s.format(x=1), "format"),
 }
@@ -328,10 +328,10 @@ def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("a,b\t{x}\n", expression="s", sink=sink)
+    s = ConcolicStr("a,b\t{x},c\n", expression="s", sink=sink)
 
     # the keyword reaches str's own method as the target wrote it
-    assert call(s) == call("a,b\t{x}\n")
+    assert call(s) == call("a,b\t{x},c\n")
     assert sink == [Downgrade(name=name)]
 
 
