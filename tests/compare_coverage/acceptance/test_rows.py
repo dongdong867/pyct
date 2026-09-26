@@ -1,7 +1,7 @@
 """Acceptance tests for compare-coverage-on-the-fixtures: rows from real runs of both sides.
 
 Each test runs the checker as a person does, against a real checkout of main built once per
-session, on one committed entry. The legacy marker lets ``-m "not legacy"`` skip them; the
+session, on committed entries. The legacy marker lets ``-m "not legacy"`` skip them; the
 timeout marker leaves room for the first test to build the checkout.
 """
 

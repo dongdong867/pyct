@@ -1,4 +1,4 @@
-"""A target's own lines, read from the file by Python's parser."""
+"""A target's own lines, read from its compiled code, with Python's parser to place each line."""
 
 import ast
 from pathlib import Path

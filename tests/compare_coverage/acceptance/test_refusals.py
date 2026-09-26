@@ -1,7 +1,8 @@
-"""Acceptance tests for compare-coverage-on-the-fixtures: refusals before any target runs.
+"""Acceptance tests for compare-coverage-on-the-fixtures: the checks before any target runs.
 
-Each leaves stdout empty. A usage error exits 2, a bad legacy checkout exits 2 and a missing
-cvc5 exits 1, as ``pyct run`` does.
+Each refusal leaves stdout empty. A usage error exits 2, a bad legacy checkout exits 2 and a
+missing cvc5 exits 1, as ``pyct run`` does. A relative legacy checkout is not refused: it is
+found from the working directory, and its run prints rows.
 """
 
 import json
