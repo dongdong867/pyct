@@ -6,15 +6,14 @@ never disagree about it (decision own-lines-from-the-compiled-code). The rule:
 - ``NAME`` is the last top-level ``def``, ``async def`` or ``class`` of that name in the file.
   Module-level code after it that binds or deletes the name is refused: a call would then
   run another object, and both sides would cover none of this body. The check reads the
-  module's own scope after the def: the statements, the blocks of their ``if``, ``for``,
-  ``while``, ``with``, ``try`` and ``match``, and the expressions they hold, each up to a
-  function, class, lambda or comprehension, which opens a scope of its own. It refuses an
-  assignment of any kind, a ``for``, ``with``, ``except`` or ``match`` target, ``del``, an
-  import, or a ``def`` or ``class`` of the name. ``NAME = wrap(NAME)``, a call of another
-  function that takes ``NAME`` as an argument, wraps the target as a decorator does and is
-  kept. An ``import *`` after the def is refused, since the file cannot show whether it
-  binds the name. The block of ``if __name__ == "__main__":`` runs only when the file runs
-  as a script, never when a side imports it, so a binding there is kept.
+  statements after the def, the blocks of their ``if``, ``for``, ``while``, ``with``, ``try``
+  and ``match``, and the expressions they hold, stopping at a function, class, lambda or
+  comprehension. It refuses an assignment of any kind, a ``for``, ``with``, ``except`` or
+  ``match`` target, ``del``, an import, or a ``def`` or ``class`` of the name.
+  ``NAME = wrap(NAME)``, a call of another function with ``NAME`` as an argument, is read
+  as a wrap and kept. An ``import *`` after the def is refused, since the file cannot show
+  whether it binds the name. The block of ``if __name__ == "__main__":`` runs only when the
+  file runs as a script, never when a side imports it, so a binding there is kept.
 - Its own lines are the lines its compiled code runs, read from the line table of its code
   object and of the code nested in it, such as an inner function. A line inside a statement
   that spans several lines stands for the innermost statement that holds it, as Python's
@@ -122,10 +121,10 @@ def _rebinding(tree: ast.Module, definition: Definition) -> str | None:
 
 
 def _module_level(node: ast.AST, name: str) -> Iterator[ast.AST]:
-    """``node`` and what it holds in the module's own scope, each before what it holds.
+    """``node`` and what it holds, each before what it holds, stopping at a nested scope.
 
-    The walk stops at a function, class, lambda or comprehension, which opens a scope of its
-    own, and reads what ``_children`` gives of any other node. It keeps its own stack, so it
+    The walk stops at a function, class, lambda or comprehension, and reads what
+    ``_children`` gives of any other node. It keeps its own stack, so it
     reads an expression of any depth.
     """
     stack = [node]
