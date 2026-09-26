@@ -59,14 +59,25 @@ def _read(value: str) -> object:
 
 
 def python(expression: Expression, s: str, heads: Heads) -> object:
-    """What Python makes of a condition on s. A leaf is s, a literal, a number, or None."""
-    if isinstance(expression, list):
-        head, *operands = expression
-        assert isinstance(head, str)
-        return heads[head](*(python(part, s, heads) for part in operands))
-    if isinstance(expression, str):
-        return s if expression == "s" else ast.literal_eval(expression)
-    return expression
+    """What Python makes of a condition on s. A leaf is s, a literal, a number, or None.
+
+    A part the condition holds in more than one place is worked out once, so
+    a condition that doubles written out costs one step per distinct part.
+    """
+    values: dict[int, object] = {}
+
+    def value(part: Expression) -> object:
+        if isinstance(part, list):
+            if id(part) not in values:
+                head, *operands = part
+                assert isinstance(head, str)
+                values[id(part)] = heads[head](*(value(operand) for operand in operands))
+            return values[id(part)]
+        if isinstance(part, str):
+            return s if part == "s" else ast.literal_eval(part)
+        return part
+
+    return value(expression)
 
 
 def flipped_path(

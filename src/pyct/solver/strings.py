@@ -29,13 +29,13 @@ or a slice, a replace, and a removed prefix or suffix. A position arrives
 as the int it is, or None for a slice's missing bound, and the clamping
 Python does is written inside the term.
 
-A form that reads a compound operand more than once, a piece, ``rfind``,
-``count`` or an order, binds it by ``let`` and writes it once, so a piece
-of a piece grows the program by one level, not by a multiple of it.
+A form may write an operand more than once. Render names every compound
+operand a form reads and defines it once, so a form is handed a name or a
+literal, and a piece of a piece grows the program by one level, not by a
+multiple of it.
 """
 
 import re
-from collections.abc import Callable
 
 from pyct.core.strs import LAST_CHARACTER
 
@@ -78,15 +78,10 @@ def below(term: str, literal: str, *, or_equal: bool) -> str:
     ``term`` is any String term as SMT-LIB writes it, and ``literal`` the
     Python value. A term that runs out before the literal needs no step of
     its own: ``str.at`` past the end is the empty string, whose code is -1,
-    below every character. A compound term is written once (see `_once`).
+    below every character.
     """
     if not literal:
         return f'(= {term} "")' if or_equal else "false"
-    return _once(lambda read: _below(read, literal, or_equal), term)
-
-
-def _below(term: str, literal: str, or_equal: bool) -> str:
-    """`below` written on a term it may read more than once."""
     steps = [_differs(term, literal, at, "<") for at in range(len(literal))]
     return _any(_equal(term, literal, or_equal) + steps)
 
@@ -95,15 +90,10 @@ def above(term: str, literal: str, *, or_equal: bool) -> str:
     """``literal < term``, or ``literal <= term`` with ``or_equal``, written letter by letter.
 
     The literal running out first is the last step: the term holds all of
-    it and goes on. A compound term is written once (see `_once`).
+    it and goes on.
     """
     if not literal:
         return "true" if or_equal else f'(distinct {term} "")'
-    return _once(lambda read: _above(read, literal, or_equal), term)
-
-
-def _above(term: str, literal: str, or_equal: bool) -> str:
-    """`above` written on a term it may read more than once."""
     steps = [_differs(term, literal, at, ">") for at in range(len(literal))]
     longer = f"(and (str.prefixof {encode(literal)} {term}) (> (str.len {term}) {len(literal)}))"
     return _any(_equal(term, literal, or_equal) + steps + [longer])
@@ -162,13 +152,8 @@ def last_index(term: str, sub: str) -> str:
     back from the end, so the empty substring is found at ``len(s)``, as
     Python finds it. The answer is held at or above the first index, where
     it always is: without that bound cvc5 ran paths holding both to its time
-    limit. A compound operand is written once (see `_once`).
+    limit.
     """
-    return _once(_last_index, term, sub)
-
-
-def _last_index(term: str, sub: str) -> str:
-    """`last_index` written on terms it may read more than once."""
     first = first_index(term, sub)
     reversed_first = f"(str.indexof {_reversed(term)} {_reversed(sub)} 0)"
     back = f"(- (- {_length(term)} {_length(sub)}) {reversed_first})"
@@ -184,14 +169,8 @@ def occurrences(term: str, sub: str) -> str:
     count on the plain strings with a last index to its time limit. The
     count is held at one or more where sub is in s and is 0 where it is not,
     which cvc5 does not work out from the removal. The empty substring
-    occurs ``len(s) + 1`` times, as Python counts it. A compound operand is
-    written once (see `_once`).
+    occurs ``len(s) + 1`` times, as Python counts it.
     """
-    return _once(_occurrences, term, sub)
-
-
-def _occurrences(term: str, sub: str) -> str:
-    """`occurrences` written on terms it may read more than once."""
     removed = f'(str.replace_all {_reversed(term)} {_reversed(sub)} "")'
     counted = f"(div (- {_length(term)} (str.len {removed})) {_length(sub)})"
     return (
@@ -200,36 +179,13 @@ def _occurrences(term: str, sub: str) -> str:
     )
 
 
-# the names a piece binds its operands to, so it writes each once however often it reads it.
-# `!` is in no Python name, so a bound name never meets a parameter
-_BOUND = ("s!", "a!")
-
-
-def _once(form: Callable[..., str], *terms: str) -> str:
-    """A form that reads an operand more than once, each compound operand written once.
-
-    A name or a literal is written where it is read. A compound term is
-    bound by ``let`` to a name in `_BOUND`, and the form reads the name.
-    Written out at every read, a piece of a piece of s doubles its text or
-    more with each level, and a loop that cuts s down pass by pass nests one
-    level per pass. The bindings are made side by side, so each term is read
-    where the form stands, and a piece nested in one binds its own names
-    inside it.
-    """
-    named = list(zip(_BOUND[: len(terms)], terms, strict=True))
-    read = [name if term.startswith("(") else term for name, term in named]
-    bindings = [f"({name} {term})" for name, term in named if term.startswith("(")]
-    written = form(*read)
-    return f"(let ({' '.join(bindings)}) {written})" if bindings else written
-
-
 def character(term: str, index: int) -> str:
     """``s[i]``: the character at i, a negative i counted back from the end.
 
     It answers only past the fork that says s is long enough for i, so i is
     in range wherever the term is read.
     """
-    return _once(lambda s: f"(str.at {s} {_counted(s, index)})", term)
+    return f"(str.at {term} {_counted(term, index)})"
 
 
 def sliced(term: str, start: int | None, stop: int | None) -> str:
@@ -241,11 +197,6 @@ def sliced(term: str, start: int | None, stop: int | None) -> str:
     the end or a length of zero or less, and stops at the end of the string,
     which is Python's clamping for the rest.
     """
-    return _once(lambda s: _substring(s, start, stop), term)
-
-
-def _substring(term: str, start: int | None, stop: int | None) -> str:
-    """`sliced` written on a term it may read more than once."""
     if start is None:
         low = "0"
     elif start >= 0:
@@ -273,22 +224,12 @@ def replaced(term: str, old: str, new: str) -> str:
 
 def without_prefix(term: str, prefix: str) -> str:
     """``s.removeprefix(prefix)``: s past the prefix when s starts with it, else s itself."""
-    return _once(_past_prefix, term, prefix)
-
-
-def _past_prefix(term: str, prefix: str) -> str:
-    """`without_prefix` written on terms it may read more than once."""
     rest = f"(str.substr {term} {_length(prefix)} (- {_length(term)} {_length(prefix)}))"
     return f"(ite (str.prefixof {prefix} {term}) {rest} {term})"
 
 
 def without_suffix(term: str, suffix: str) -> str:
     """``s.removesuffix(suffix)``: s up to the suffix when s ends with it, else s itself."""
-    return _once(_before_suffix, term, suffix)
-
-
-def _before_suffix(term: str, suffix: str) -> str:
-    """`without_suffix` written on terms it may read more than once."""
     rest = f"(str.substr {term} 0 (- {_length(term)} {_length(suffix)}))"
     return f"(ite (str.suffixof {suffix} {term}) {rest} {term})"
 

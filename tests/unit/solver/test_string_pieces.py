@@ -9,13 +9,10 @@ import pytest
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.render import render
 from pyct.solver.strings import (
-    above,
-    below,
     character,
     encode,
-    last_index,
-    occurrences,
     replaced,
     sliced,
     without_prefix,
@@ -24,6 +21,7 @@ from pyct.solver.strings import (
 from tests.unit.solver.agreement import (
     ALPHABET,
     PATH_LETTERS,
+    SITE,
     asked,
     disagrees,
     flipped_path,
@@ -61,24 +59,28 @@ def test_a_removed_prefix_or_suffix_reads_a_literal_length_as_a_number() -> None
     )
 
 
-# `s[1:][1:]`, a piece of a piece, as the program writes it
-TWICE_CUT = sliced(sliced("s", 1, None), 1, None)
+# `s[1:][1:]`, a piece of a piece
+TWICE_CUT: Expression = ["[:]", ["[:]", "s", 1, None], 1, None]
 
-# each search and order that reads its string more than once, written on a piece
-READ_MORE_THAN_ONCE: dict[str, str] = {
-    "rfind": last_index(TWICE_CUT, '"x"'),
-    "count": occurrences(TWICE_CUT, '"x"'),
-    "<": below(TWICE_CUT, "abcd", or_equal=False),
-    ">=": above(TWICE_CUT, "abcd", or_equal=True),
-    "rfind-a-piece": last_index("t", TWICE_CUT),
-    "count-a-piece": occurrences("t", TWICE_CUT),
+# each search and order that reads its string more than once, on a piece
+READ_MORE_THAN_ONCE: dict[str, Expression] = {
+    "rfind": [">", ["rfind", TWICE_CUT, "'x'"], 0],
+    "count": [">", ["count", TWICE_CUT, "'x'"], 0],
+    "<": ["<", TWICE_CUT, "'abcd'"],
+    ">=": [">=", TWICE_CUT, "'abcd'"],
+    "rfind-a-piece": [">", ["rfind", "t", TWICE_CUT], 0],
+    "count-a-piece": [">", ["count", "t", TWICE_CUT], 0],
 }
 
 
-@pytest.mark.parametrize("written", READ_MORE_THAN_ONCE.values(), ids=list(READ_MORE_THAN_ONCE))
-def test_a_search_or_an_order_writes_a_piece_once(written: str) -> None:
-    # the form reads the piece several times, and a let names it once for all of them
-    assert written.count(TWICE_CUT) == 1
+@pytest.mark.parametrize("condition", READ_MORE_THAN_ONCE.values(), ids=list(READ_MORE_THAN_ONCE))
+def test_a_search_or_an_order_writes_a_piece_once(condition: Expression) -> None:
+    text = render((Branch(expression=condition, taken=True, site=SITE),), {"s": str, "t": str})
+
+    # the form reads the piece several times, and the program defines it once for all of them
+    assert text.count(sliced("s", 1, None)) == 1
+    assert text.count(sliced("e!0", 1, None)) == 1
+    assert "e!1" in text.split("(assert ")[1]
 
 
 def _value(rng: random.Random, longest: int) -> str:
@@ -230,7 +232,7 @@ AFFIXES: dict[str, Callable[[str, str], str]] = {
 def _affix_case(rng: random.Random, at: int) -> tuple[list[str], str]:
     """`s[1:].removeprefix(t[1:])` or the suffix alike: the lines asking it, and Python's answer.
 
-    Both operands are pieces, so the form binds each. Most of the time t[1:]
+    Both operands are pieces, written in full here. Most of the time t[1:]
     is cut from the end of s[1:] it names, so about a third of the cases
     remove something.
     """
@@ -280,7 +282,7 @@ def _literal(rng: random.Random, longest: int) -> str:
     return repr("".join(rng.choices(PATH_LETTERS, k=rng.randint(0, longest))))
 
 
-def _piece_of(
+def piece_of(
     rng: random.Random, receiver: Expression = "s", heads: tuple[str, ...] = PIECE_HEADS
 ) -> tuple[Expression, Expression | None]:
     """One random piece of the receiver, and the fork an index records before it, if any."""
@@ -319,11 +321,11 @@ def _compared(rng: random.Random) -> tuple[Expression, Expression | None]:
     the time it is joined to a second piece of s, so a `+` has no name and no
     literal on either side.
     """
-    term, long_enough = _piece_of(rng)
+    term, long_enough = piece_of(rng)
     if rng.random() < 0.3:
-        term, _ = _piece_of(rng, term, UNFORKED_HEADS)
+        term, _ = piece_of(rng, term, UNFORKED_HEADS)
     if rng.random() < 0.2:
-        term = ["+", term, _piece_of(rng, "s", UNFORKED_HEADS)[0]]
+        term = ["+", term, piece_of(rng, "s", UNFORKED_HEADS)[0]]
     return [rng.choice(["==", "!=", "<", ">="]), term, _literal(rng, 2)], long_enough
 
 

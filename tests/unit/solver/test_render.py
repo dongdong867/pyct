@@ -291,7 +291,8 @@ PIECES: dict[str, tuple[Expression, str]] = {
     "replace": (["replace", "s", "'a'", "t"], replaced("s", '"a"', "t")),
     "removeprefix": (["removeprefix", "s", "'x'"], without_prefix("s", '"x"')),
     "removesuffix": (["removesuffix", "s", "t"], without_suffix("s", "t")),
-    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character(sliced("s", 1, None), 0)),
+    # the piece the index reads is defined once and read by its name
+    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character("e!0", 0)),
 }
 
 
@@ -321,19 +322,15 @@ def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
     assert "(assert (< (+ x 1) 3))" in text.splitlines()
 
 
-def test_an_order_on_a_piece_against_a_literal_is_written_letter_by_letter() -> None:
-    text = render((fork(["<", ["[:]", "s", 1, 3], "'mn'"], taken=True),), {"s": str})
-
-    assert f"(assert {below(sliced('s', 1, 3), 'mn', or_equal=False)})" in text.splitlines()
-
-
 def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
     # neither side is a literal or a name, so the heads alone say both sides are strings
     text = render(
         (fork([">=", ["[]", "s", 0], ["+", "t", "t"]], taken=True),), {"s": str, "t": str}
-    )
+    ).splitlines()
 
-    assert f"(assert (str.<= (str.++ t t) {character('s', 0)}))" in text.splitlines()
+    assert f"(define-fun e!0 () String {character('s', 0)})" in text
+    assert "(define-fun e!1 () String (str.++ t t))" in text
+    assert "(assert (str.<= e!1 e!0))" in text
 
 
 def test_a_plus_on_two_pieces_joins_strings() -> None:
@@ -347,7 +344,7 @@ def test_a_plus_on_two_pieces_joins_strings() -> None:
 
 
 @pytest.mark.parametrize("head", ["removeprefix", "removesuffix"])
-def test_a_piece_given_a_piece_binds_each_once(head: str) -> None:
+def test_a_piece_given_a_piece_defines_each_once(head: str) -> None:
     string, affix = sliced("s", 1, None), sliced("t", 1, None)
 
     text = render(
@@ -355,9 +352,12 @@ def test_a_piece_given_a_piece_binds_each_once(head: str) -> None:
         {"s": str, "t": str},
     )
 
-    # the form reads both its string and what it removes more than once; each is written once,
-    # bound side by side
-    assert f"(let ((s! {string}) (a! {affix})) (ite " in text
+    # the form reads both its string and what it removes more than once; each is defined once
+    # and read by its name
+    lines = text.splitlines()
+    assert f"(define-fun e!0 () String {string})" in lines
+    assert f"(define-fun e!1 () String {affix})" in lines
+    assert f'(assert (= {FORMS[head]("e!0", "e!1")} "x"))' in lines
     assert (text.count(string), text.count(affix)) == (1, 1)
 
 
