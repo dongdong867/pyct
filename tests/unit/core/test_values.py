@@ -693,6 +693,32 @@ def test_a_raise_that_is_not_the_operations_carries_no_mark() -> None:
     assert not raised_by_target(raised.value)
 
 
+def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+    to_bytes = values.downgraded(int, "to_bytes")
+
+    # no int downgrade takes a keyword today; to_bytes does, so the factory is built on it here
+    assert to_bytes(x, length=2, byteorder="big") == b"\x00\x03"
+    assert sink == [Downgrade(name="to_bytes")]
+
+
+def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    with pytest.raises(TypeError) as plain:
+        (3).__format__(operation="d")  # pyrefly: ignore[bad-argument-count, unexpected-keyword]
+    with pytest.raises(TypeError) as raised:
+        x.__format__(operation="d")  # pyrefly: ignore[bad-argument-count, unexpected-keyword]
+
+    # operation is the name pyct gives the base type's method; int refuses the keyword itself,
+    # in its own words, the way it does on a plain value
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
 def test_an_operation_the_other_type_answers_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)

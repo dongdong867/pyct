@@ -310,6 +310,70 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     assert sink == []
 
 
+# a keyword each downgraded str method takes: the call, and the name its downgrade carries. The
+# value has two commas, a tab, a newline and a field, so each keyword changes str's answer
+KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
+    's.split(sep=",")': (lambda s: s.split(sep=","), "split"),
+    's.split(",", maxsplit=1)': (lambda s: s.split(",", maxsplit=1), "split"),
+    's.rsplit(sep=",")': (lambda s: s.rsplit(sep=","), "rsplit"),
+    "s.splitlines(keepends=True)": (lambda s: s.splitlines(keepends=True), "splitlines"),
+    's.encode(encoding="utf-16")': (lambda s: s.encode(encoding="utf-16"), "encode"),
+    "s.expandtabs(tabsize=4)": (lambda s: s.expandtabs(tabsize=4), "expandtabs"),
+    "s.format(x=1)": (lambda s: s.format(x=1), "format"),
+}
+
+
+@pytest.mark.parametrize(("call", "name"), KEYWORD_CALLS.values(), ids=list(KEYWORD_CALLS))
+def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
+    call: Callable[[str], object], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("a,b\t{x},c\n", expression="s", sink=sink)
+
+    # the keyword reaches str's own method as the target wrote it
+    assert call(s) == call("a,b\t{x},c\n")
+    assert sink == [Downgrade(name=name)]
+
+
+def test_a_keyword_named_like_pycts_own_parameters_reaches_strs_own_method() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("{self}-{operation}", expression="s", sink=sink)
+
+    # self and operation are the names pyct's wrappers give the receiver and the method; a
+    # target keyword of either name still reaches str's own format as the target wrote it
+    assert s.format(self=1, operation=2) == "1-2"  # pyrefly: ignore[no-matching-overload]
+    assert sink == [Downgrade(name="format")]
+
+
+# a keyword str's own method refuses: one encode names nowhere, and one to a taught search,
+# whose str method takes none; index is the search that forks before it may raise, and self
+# is the name pyct's search gives its receiver
+REFUSED_KEYWORDS: dict[str, Callable[[str], object]] = {
+    "s.encode(bogus=1)": lambda s: s.encode(bogus=1),  # pyrefly: ignore[unexpected-keyword]
+    's.find("x", start=1)': lambda s: s.find("x", start=1),  # pyrefly: ignore[unexpected-keyword]
+    's.index("x", start=1)': lambda s: s.index("x", start=1),  # pyrefly: ignore[unexpected-keyword]
+    's.find("x", self=1)': lambda s: s.find("x", self=1),  # pyrefly: ignore[unexpected-keyword]
+}
+
+
+@pytest.mark.parametrize("call", REFUSED_KEYWORDS.values(), ids=list(REFUSED_KEYWORDS))
+def test_a_keyword_str_refuses_is_strs_own_raise_and_records_nothing(
+    call: Callable[[str], object],
+) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    with pytest.raises(TypeError) as plain:
+        call("abc")
+    with pytest.raises(TypeError) as raised:
+        call(s)
+
+    # str's own sentence, the one plain Python gives, and never one naming pyct's code
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
 def _derived_downgrades() -> set[str]:
     """The names the derivation wrapped: what `downgraded` built, and nothing else on the class."""
     return {

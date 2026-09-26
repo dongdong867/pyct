@@ -94,17 +94,18 @@ def _search(
     """str's own answer to one search, carrying `[name, s, sub]`, as a tracked bool or int.
 
     A search that ``raises`` on a missing substring records whether sub is
-    in s first (see `_found`). A call in a form pyct does not encode is
-    str's own answer and a downgrade named by the method
-    (``README.md › Rules › downgrades``).
+    in s first (see `_found`). A call in a form pyct does not encode, a
+    keyword included, goes to str's own method as written: its answer and a
+    downgrade named by the method (``README.md › Rules › downgrades``), or
+    the raise str makes of it.
     """
     operation = getattr(str, name)
     downgrade = downgraded(str, name)
 
-    def compute(self: ConcolicStr, *args: object) -> object:
-        form = _needle(args)
+    def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
+        form = None if kwargs else _needle(args)
         if form is None:
-            return downgrade(self, *args)
+            return downgrade(self, *args, **kwargs)
         if raises:
             _found(self, form, args[0])
         expression = [name, self.expression, form]
