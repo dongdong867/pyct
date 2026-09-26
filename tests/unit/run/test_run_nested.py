@@ -1,8 +1,11 @@
 """run() with seeds only a caller can give: a seed that holds itself, and keys JSON cannot hold."""
 
+from collections.abc import Mapping
+
 import pytest
 
-from pyct.results.record import StopKind
+from pyct.binding import bind
+from pyct.results.record import Source, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
@@ -55,3 +58,25 @@ def test_run_stops_cleanly_on_a_seed_too_deep_to_hand_to_a_fresh_interpreter() -
     assert result.stopped.kind is StopKind.COULD_NOT_START
     assert result.stopped.detail is not None
     assert "fresh interpreter" in result.stopped.detail
+
+
+def test_run_walks_the_seed_once_and_once_more_per_solver_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    walks: list[object] = []
+    rebuilt = bind._Walk.rebuilt
+
+    def counted(walk: bind._Walk, seed: Mapping[str, object]) -> dict[str, object]:
+        walks.append(seed)
+        return rebuilt(walk, seed)
+
+    monkeypatch.setattr(bind._Walk, "rebuilt", counted)
+    target = load_target("targets.nested.two_items::classify")
+
+    # each input's own walk, bind's, happens in the input's process and is not counted here
+    result = run(target, {"items": [1, 2]}, isolation=Isolation.FORK)
+
+    solved = [record for record in result.records if record.source is Source.SOLVER]
+    assert len(solved) >= 2
+    # the leaves once for the run, then the one rebuild that writes each answer
+    assert len(walks) == 1 + len(solved)

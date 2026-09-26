@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import assert_never
 
-from pyct.binding.bind import leaves
+from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.branches.compare import compare
 from pyct.branches.plan import Plan
@@ -213,8 +213,10 @@ def _loop(
     records: list[InputRecord] = []
     misses: list[Miss] = []
     covered = [seeded.covered_lines & told.scope.lines]
+    # the seed's leaves, walked for once for the whole loop
+    seed = Seed.of(seeded.args)
     while True:
-        attempt = _attempt(call, seeded.args, tree, bounds, covered)
+        attempt = _attempt(call, seed, tree, bounds, covered)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop)
         if attempt.miss is not None:
@@ -229,7 +231,7 @@ def _loop(
 
 def _attempt(
     call: Call,
-    seed: Mapping[str, object],
+    seed: Seed,
     tree: Tree,
     bounds: Bounds,
     covered: Sequence[frozenset[int]],
@@ -259,7 +261,7 @@ def _attempt(
         return Attempt(stop=Stop(StopKind.NO_FORK))
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
-    answer = solve(wanted.prefix, leaves(seed), _solve_limit(bounds, left))
+    answer = solve(wanted.prefix, seed.leaves, _solve_limit(bounds, left))
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):

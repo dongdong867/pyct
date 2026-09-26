@@ -93,7 +93,7 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
 
 @dataclass(frozen=True)
 class _Leaves:
-    """The seed's leaves by name, with their types and the constant each is declared as."""
+    """The seed's leaves by name, with their types and the constant each mentioned one gets."""
 
     kinds: Mapping[str, type]
     constants: Mapping[str, str]
@@ -117,51 +117,59 @@ class _Leaves:
         return None if name is None else self.kinds.get(name)
 
 
+@dataclass(frozen=True)
+class Program:
+    """The SMT-LIB program for one path, and the leaf each constant it declares stands for."""
+
+    text: str
+    leaves: Mapping[str, str]
+
+    def read(self, model: Mapping[str, object]) -> dict[str, object]:
+        """A model cvc5 wrote by constant, named by the leaves the constants were declared for."""
+        return {self.leaves[constant]: value for constant, value in model.items()}
+
+
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
-    """The whole little program: what to declare, what to assert, what to ask.
+    """The whole little program: what to declare, what to assert, what to ask."""
+    return program(prefix, leaves).text
+
+
+def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
+    """The program for a path, with the table that reads its answer back.
 
     Only the leaves the prefix mentions are declared, so the answer names
     nothing the path did not depend on. ``leaves`` names each leaf as
-    ``pyct.binding`` does, and each is declared under its constant.
+    ``pyct.binding`` does. A parameter's constant is its own name. A value
+    inside one is ``leaf.<n>``, n its position among the seed's leaves: its
+    access is no symbol SMT-LIB reads, and a key may hold ``|`` or a
+    backslash, which not even a quoted symbol can.
     """
-    known = _Leaves(kinds=leaves, constants=constants(leaves))
-    mentioned = _mentioned(prefix, known)
-    declared = [(known.constants[name], _sort(name, leaves[name])) for name in mentioned]
+    constants = _constants(prefix, leaves)
+    known = _Leaves(kinds=leaves, constants=constants)
+    declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     lines = ["(set-logic ALL)"]
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
     lines += [_assertion(fork, known) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
-    return "\n".join(lines) + "\n"
+    text = "\n".join(lines) + "\n"
+    return Program(text=text, leaves={constant: name for name, constant in constants.items()})
 
 
-def constants(leaves: Mapping[str, type]) -> dict[str, str]:
-    """The SMT-LIB constant each leaf is declared as, by the leaf's name.
-
-    A parameter keeps its own name. A value inside one is ``leaf.<n>``, n its
-    position among the seed's leaves: its access is no symbol SMT-LIB reads,
-    and a key may hold ``|`` or a backslash, which not even a quoted symbol can.
-    """
-    return {
-        name: name if name.isidentifier() else f"leaf.{index}" for index, name in enumerate(leaves)
-    }
-
-
-def by_leaf(model: Mapping[str, object], leaves: Mapping[str, type]) -> dict[str, object]:
-    """A model cvc5 wrote by constant, named by the leaves the constants were declared for."""
-    names = {constant: name for name, constant in constants(leaves).items()}
-    return {names[constant]: value for constant, value in model.items()}
-
-
-def _mentioned(prefix: tuple[Branch, ...], leaves: _Leaves) -> list[str]:
-    """The leaves the prefix names, in the order the seed bound them."""
+def _constants(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
+    """The constant of each leaf the prefix names, in the order the seed bound them."""
+    known = _Leaves(kinds=leaves, constants={})
     named: set[str] = set()
     for fork in prefix:
-        named |= _names(fork.expression, leaves)
-    unknown = sorted(named - set(leaves.kinds))
+        named |= _names(fork.expression, known)
+    unknown = sorted(named - set(leaves))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return [name for name in leaves.kinds if name in named]
+    return {
+        name: name if name.isidentifier() else f"leaf.{index}"
+        for index, name in enumerate(leaves)
+        if name in named
+    }
 
 
 def _names(expression: Expression, leaves: _Leaves) -> set[str]:

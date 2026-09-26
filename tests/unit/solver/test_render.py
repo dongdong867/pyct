@@ -4,7 +4,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import by_leaf, constants, render
+from pyct.solver.render import program, render
 from pyct.solver.strings import above, below, last_index, occurrences
 
 SITE = Site(file="m.py", line=2, col=7)
@@ -310,11 +310,13 @@ def test_an_access_the_seed_does_not_hold_names_its_parameter_in_the_error() -> 
         render((fork(["<", ["[]", "items", 5], 1], taken=True),), {json.dumps(FIRST): int})
 
 
-def test_a_parameter_keeps_its_name_and_a_value_inside_one_gets_its_position() -> None:
-    assert constants({"x": int, json.dumps(PORT): str}) == {"x": "x", json.dumps(PORT): "leaf.1"}
+def test_a_program_reads_its_answer_back_by_leaf() -> None:
+    leaves = {"x": int, "y": int, json.dumps(PORT): int}
+    path = (fork([">", ["+", "x", PORT], 1], taken=True),)
 
+    written = program(path, leaves)
 
-def test_a_model_by_constant_comes_back_by_leaf() -> None:
-    leaves = {"x": int, json.dumps(PORT): int}
-
-    assert by_leaf({"x": 3, "leaf.1": 70000}, leaves) == {"x": 3, json.dumps(PORT): 70000}
+    # y is not on the path, so it is neither declared nor read
+    assert written.leaves == {"x": "x", "leaf.2": json.dumps(PORT)}
+    assert written.read({"x": 3, "leaf.2": 70000}) == {"x": 3, json.dumps(PORT): 70000}
+    assert written.text == render(path, leaves)

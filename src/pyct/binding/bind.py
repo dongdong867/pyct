@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeGuard
 
@@ -30,6 +31,22 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     came.
     """
     return walked(seed, lambda value, access: _tracked(value, access, sink))
+
+
+@dataclass(frozen=True)
+class Seed:
+    """A run's seed and the values bind tracks in it, walked for once per run.
+
+    The seed never changes during a run, so neither do its leaves: every
+    solve and every answer reads these rather than walking the seed again.
+    """
+
+    args: Mapping[str, object]
+    leaves: Mapping[str, type]
+
+    @classmethod
+    def of(cls, args: Mapping[str, object]) -> "Seed":
+        return cls(args=args, leaves=leaves(args))
 
 
 def leaves(seed: Mapping[str, object]) -> dict[str, type]:
