@@ -106,6 +106,7 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "and-inside-a-compare": (["==", ["&", "a", "b"], True], "a & b == True"),
     "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "(- x) + 1"),
     "power-under-a-unary-minus": (["-", ["**", "x", 2]], "- (x ** 2)"),
+    "operator-the-table-does-not-rank": (["@", ["+", "x", 1], "y"], "(x + 1) @ y"),
 }
 
 
