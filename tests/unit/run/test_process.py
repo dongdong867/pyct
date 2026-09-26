@@ -2,6 +2,7 @@
 
 import dataclasses
 import os
+import select
 import signal
 import time
 
@@ -226,9 +227,29 @@ def exited() -> int:
     pid = os.fork()
     if pid == 0:
         os._exit(4)
-    # long enough for the exit; waiting any other way would reap it
-    time.sleep(0.1)
+    ended_unreaped(pid)
     return pid
+
+
+def ended_unreaped(pid: int) -> None:
+    """Wait until ``pid`` has ended, leaving its status for a later wait to reap."""
+    if hasattr(os, "waitid"):
+        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)
+        return
+    queue = select.kqueue()
+    ends = select.kevent(
+        pid,
+        filter=select.KQ_FILTER_PROC,
+        flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+        fflags=select.KQ_NOTE_EXIT,
+    )
+    try:
+        assert queue.control([ends], 1, 10.0), f"process {pid} did not end"
+    except ProcessLookupError:
+        # it ended before the watch was set up
+        pass
+    finally:
+        queue.close()
 
 
 def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept() -> None:
