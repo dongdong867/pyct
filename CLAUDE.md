@@ -64,7 +64,8 @@ engine state.
 - Type hints on every public signature and dataclass field. `X | None`.
 - `@dataclass(frozen=True)` for config and value objects. No static-only classes. No mutable defaults.
 - Explicit imports, grouped stdlib, third-party, local.
-- Functions about 20 lines. Five parameters at most, not counting `self` or `cls`. Files under 500 lines. Lint fails a function of more than 20 statements, more than 30 lines of body after the docstring, or complexity over 10, and a file of 500 lines or more.
+- Functions about 20 lines. Five parameters at most, not counting `self` or `cls`. Files under 500 lines.
+- Lint fails a function with more than five parameters, more than 20 statements, complexity over 10 or more than 30 body lines, and a file of 500 lines or more. Ruff counts every parameter but `self`, `cls`, `*args`, `**kwargs` and names that start with `_`, in functions not marked `@override` or `@overload`, and counts a docstring as a statement. `tests/line_limits.py` counts body lines from the first statement after the docstring to the function's last line.
 - Logging with lazy `%` formatting. DEBUG internals, INFO milestones, WARNING recoverable, ERROR failures.
 - A name or comment says what the code handles. It never lists what the code misses; such a list is never complete. When a review finds a claim that outruns its check, narrow the claim, or widen the check when the missed case is one the code will realistically meet.
 - A test compares an error message from Python itself to what plain Python says in the same run. CPython rewords its errors between versions, and the project supports every version from 3.12.
