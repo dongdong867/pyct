@@ -12,7 +12,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import Answer, Sat, Unsat
+from pyct.solver.answer import Answer, Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.strings import (
     contains,
@@ -255,6 +255,8 @@ def test_cvc5_agrees_with_python_on_every_search_path_it_answers() -> None:
 
     answers = [solve(path, {"s": str}, 1.0) for path in paths]
 
+    # an error is cvc5 failing to answer at all, which is never agreement
+    assert [answer for answer in answers if isinstance(answer, Error)] == []
     # the paths cvc5 answered reach every search, so a clean result is not a narrow one
     answered = [
         path for path, answer in zip(paths, answers, strict=True) if isinstance(answer, Sat | Unsat)
