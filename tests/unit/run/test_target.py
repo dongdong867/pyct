@@ -1,5 +1,6 @@
 import contextlib
 import importlib
+import inspect
 import sys
 import types
 from pathlib import Path
@@ -91,3 +92,20 @@ def test_load_target_names_the_module_on_the_watch_while_it_imports(
 
     assert named == [module]
     assert watch.module() is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["pick", "partial_max", "looped", "bad_signature", "wrong_signature_type", "builtin_alias"],
+)
+def test_load_target_refuses_a_target_whose_signature_python_cannot_read(name: str) -> None:
+    spec = f"targets.load.unreadable_signatures::{name}"
+
+    with pytest.raises(TargetError) as refused:
+        load_target(spec)
+
+    # what plain Python says of the same object, in this run
+    fn = getattr(sys.modules["targets.load.unreadable_signatures"], name)
+    with pytest.raises((ValueError, TypeError)) as unread:
+        inspect.signature(fn)
+    assert str(refused.value) == f"cannot read the signature of {spec}: {unread.value}"

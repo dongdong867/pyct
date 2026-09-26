@@ -94,7 +94,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     input.
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, import, seed present, seed fits, seed types, cvc5.
+    solver timeout, import and signature, seed present, seed fits, seed
+    types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one

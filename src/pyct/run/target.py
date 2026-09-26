@@ -15,7 +15,11 @@ from pyct.run.import_watch import ImportWatch
 
 
 class TargetError(Exception):
-    """The target could not be loaded: the module does not import or lacks the function."""
+    """The target could not be loaded, and the message says why.
+
+    The module does not import, lacks the function, or has no Python source,
+    or Python cannot read the function's signature.
+    """
 
 
 @dataclass(frozen=True)
@@ -46,7 +50,7 @@ def load_target(spec: str, watch: ImportWatch | None = None) -> Target:
     file = getattr(module, "__file__", None)
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
-    return Target(spec=spec, fn=fn, file=file, signature=inspect.signature(fn))
+    return Target(spec=spec, fn=fn, file=file, signature=_signature(spec, fn))
 
 
 def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
@@ -61,3 +65,15 @@ def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
             return importlib.import_module(module_name)
     except (Exception, SystemExit) as error:
         raise TargetError(f"cannot import {module_name}: {error!r}") from error
+
+
+def _signature(spec: str, fn: Callable[..., object]) -> inspect.Signature:
+    """``fn``'s signature. One ``inspect.signature`` cannot read is a ``TargetError``.
+
+    ``inspect.signature`` says so by ValueError or TypeError, and its message
+    is the reason the refusal gives.
+    """
+    try:
+        return inspect.signature(fn)
+    except (ValueError, TypeError) as error:
+        raise TargetError(f"cannot read the signature of {spec}: {error}") from error
