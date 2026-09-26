@@ -41,7 +41,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 ├── tests/
 │   ├── acceptance/   one test per acceptance criterion, through the CLI or run()
 │   ├── unit/         mirrors src/pyct/, one directory per layer
-│   └── line_limits.py  the size rules ruff has no rule for, run by lint. Tested beside it
+│   ├── line_limits.py  the size rules ruff has no rule for, run by lint. Tested beside it
+│   └── test_timeout.py  the per-test timeout ends a test stuck on coverage's lock
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
     ├── ints/         a follow story's fixtures, under the type it follows
     └── strs/         the same for strings. floats/ later
