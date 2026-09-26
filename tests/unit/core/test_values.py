@@ -703,7 +703,7 @@ def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
     assert sink == [Downgrade(name="to_bytes")]
 
 
-def test_a_keyword_named_like_the_downgrades_own_parameter_is_ints_own_raise() -> None:
+def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 

@@ -81,11 +81,10 @@ def test_raises_what_python_raises() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
-    # the detail is CPython's own sentence, and 3.13 reworded it, so plain Python on the
-    # interpreter the harness ran pyct with gives the expected text
+    # the detail is str's own sentence, and 3.13 reworded it, so plain Python on the
+    # interpreter the harness ran pyct with gives the expected text; the raise is the target's
     with pytest.raises(TypeError) as plain:
         "abc".encode(bogus=1)  # pyrefly: ignore[unexpected-keyword]
-    # str's own sentence, the one plain Python gives, and the raise is the target's
     assert seed["failure"] == {
         "kind": "target_raised",
         "detail": f"TypeError: {plain.value}",
