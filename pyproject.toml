@@ -42,8 +42,10 @@ timeout_method = "thread"
 
 # Measured when pytest runs with --cov. The acceptance tests start pyct in a
 # subprocess, and patch = subprocess measures the code it runs there too. fork
-# measures a forked child. No _exit: it makes os._exit save coverage first, and
-# the timeout's os._exit would then wait on the lock a stuck test holds.
+# starts measuring in a forked child, whose data is saved only when it exits
+# normally. No _exit: it makes os._exit save coverage first, and the timeout's
+# os._exit would then wait on the lock a stuck test holds, so a child ending in
+# os._exit saves nothing.
 [tool.coverage.run]
 branch = true
 source = ["pyct"]
