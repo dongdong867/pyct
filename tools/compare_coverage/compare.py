@@ -77,7 +77,7 @@ def compare(run: Run, sides: Sides, streams: Streams) -> int:
     # the file --accept rewrites, or None when this run only reads records or has none
     rewriting = run.accepted if run.accepted is not None and run.accepted.accept else None
     if rewriting is not None:
-        write_records(rewriting.path, rewritten(rewriting, rows))
+        write_records(rewriting.path, run.limits, rewritten(rewriting, rows))
     return exit_code(rows, accepting=rewriting is not None)
 
 

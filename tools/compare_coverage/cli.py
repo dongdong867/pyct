@@ -133,7 +133,7 @@ def _accepted(flags: Flags, target_list: TargetList) -> Accepted | None:
     )
     if flags.accept:
         check_writable(flags.accepted)
-    records = read_records(flags.accepted, flags.accept)
+    records = read_records(flags.accepted, flags.accept, flags.limits)
     return Accepted(path=flags.accepted, records=records, accept=flags.accept, listed=listed)
 
 

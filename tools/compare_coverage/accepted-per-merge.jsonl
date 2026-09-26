@@ -1,3 +1,4 @@
+{"budget": 5.0, "plateau": 5, "solver_timeout": 10.0}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_parse::parse_number", "seed": {"s": "1"}, "status": "differs", "only_legacy": [14, 16], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_unprotected::parse_digit", "seed": {"c": "5"}, "status": "differs", "only_legacy": [17], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.length_check::check_length", "seed": {"s": ""}, "status": "differs", "only_legacy": [14, 15, 16], "only_v2": []}

@@ -87,12 +87,25 @@ def table_rows(stderr: str, target: str) -> list[str]:
     return [line for line in stderr.splitlines() if target in line]
 
 
-def write_records(file: Path, *records: Mapping[str, Any]) -> None:
-    file.write_text("".join(json.dumps(record) + "\n" for record in records))
+# the limits a run with no limit flag has, as an accepted file's first line records them
+DEFAULT_LIMITS = {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0}
 
 
-def read_records(file: Path) -> list[dict[str, object]]:
-    return [json.loads(line) for line in file.read_text().splitlines()]
+def write_records(
+    file: Path, *records: Mapping[str, Any], limits: Mapping[str, Any] | None = None
+) -> None:
+    """An accepted file: the limits it was made with, the defaults unless given, then records."""
+    lines = [DEFAULT_LIMITS if limits is None else limits, *records]
+    file.write_text("".join(json.dumps(line) + "\n" for line in lines))
+
+
+def read_limits(file: Path) -> dict[str, Any]:
+    return json.loads(file.read_text().splitlines()[0])
+
+
+def read_records(file: Path) -> list[dict[str, Any]]:
+    """The records after the limits line."""
+    return [json.loads(line) for line in file.read_text().splitlines()[1:]]
 
 
 def v2_side(program: tuple[str, ...] = (sys.executable, "-P", "-m", "pyct")) -> V2Side:

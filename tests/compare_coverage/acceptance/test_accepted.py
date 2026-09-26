@@ -7,10 +7,12 @@ committed seed of ``one_check`` covers lines 2, 3 and 4 in v2.
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 from tests.compare_coverage.acceptance.checker import (
+    DEFAULT_LIMITS,
     IMPLIED_CHECK,
     ONE_CHECK,
     ONE_CHECK_FILE,
@@ -20,6 +22,7 @@ from tests.compare_coverage.acceptance.checker import (
     compare_on,
     legacy_side,
     one_row,
+    read_limits,
     read_records,
     rows,
     run_checker,
@@ -79,6 +82,7 @@ def test_accepts_the_new_state(stub_checkout: StubCheckout, tmp_path: Path) -> N
     row = one_row(result.stdout, result.stderr)
     assert row["status"] == "same"
     assert row["record"] == "changed"
+    assert read_limits(accepted) == DEFAULT_LIMITS
     assert read_records(accepted) == [IMPLIED_GAP, TWO_ARGS_GAP]
     assert result.returncode == 0, result.stderr
 
@@ -161,10 +165,11 @@ class LegacyFails:
     def run(self, v2_lines: list[int], error: str, accept: bool = False) -> tuple[int, Row]:
         self.lines.write_text(json.dumps(v2_lines))
         self.stub.script({ONE_CHECK: {"success": False, "stopped": "error", "error": error}})
-        records = read_file(self.file, accept)
+        run = a_run([ONE_CHECK_ENTRY], self.roots)
+        records = read_file(self.file, accept, run.limits)
         listed = frozenset({key_of(ONE_CHECK, {"x": 0})})
         accepted = Accepted(path=self.file, records=records, accept=accept, listed=listed)
-        run = a_run([ONE_CHECK_ENTRY], self.roots, accepted=accepted)
+        run = replace(run, accepted=accepted)
         code, (row,), _ = compare_on(run, self.sides)
         return code, row
 
@@ -194,3 +199,29 @@ def test_fails_a_changed_failure(stub_checkout: StubCheckout, tmp_path: Path) ->
         "changed",
         "legacy failure was 'error: boom', now 'error: bang'",
     )
+
+
+def test_refuses_a_file_made_with_other_limits(stub_checkout: StubCheckout, tmp_path: Path) -> None:
+    """compare-coverage-against-legacy-refuses-a-file-made-with-other-limits"""
+    stub_checkout.script({IMPLIED_CHECK: {"lines": [2, 3, 4, 5, 6]}})
+    accepted = tmp_path / "accepted.jsonl"
+    five = {"budget": 5.0, "plateau": 5, "solver_timeout": 10.0}
+    write_records(accepted, IMPLIED_GAP, limits=five)
+    written = accepted.read_text()
+    command = ("--legacy", str(stub_checkout.path), "--target", IMPLIED_CHECK)
+
+    for accept in ([], ["--accept"]):
+        result = run_checker(*command, "--accepted", str(accepted), *accept)
+
+        assert (
+            f"--accepted: {accepted} was made with budget 5 s, plateau 5, solver timeout 10 s; "
+            "this run has budget 30 s, plateau 5, solver timeout 10 s"
+        ) in result.stderr
+        assert result.stdout == ""
+        assert accepted.read_text() == written
+        assert result.returncode == 2
+
+    result = run_checker(*command, "--accepted", str(accepted), "--budget", "5")
+
+    assert one_row(result.stdout, result.stderr)["record"] == "accepted"
+    assert result.returncode == 0, result.stderr

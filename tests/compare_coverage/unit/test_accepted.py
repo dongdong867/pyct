@@ -19,6 +19,7 @@ from tools.compare_coverage.accepted import (
     write_records,
 )
 from tools.compare_coverage.rows import Row, SideView, Status
+from tools.compare_coverage.sides import Limits
 
 DIFFERS = Row(
     set="v2",
@@ -40,6 +41,15 @@ LINE = {
     "only_legacy": [4],
     "only_v2": [],
 }
+LIMITS = Limits(budget=5.0, plateau=5, solver_timeout=10.0)
+HEADER = json.dumps({"budget": 5.0, "plateau": 5, "solver_timeout": 10.0})
+
+
+def a_file(tmp_path: Path, *lines: str, header: str = HEADER) -> Path:
+    """An accepted file: its limits line, then ``lines``."""
+    file = tmp_path / "accepted.jsonl"
+    file.write_text("".join(f"{line}\n" for line in (header, *lines)))
+    return file
 
 
 V2_RAN = SideView(file="/t.py", covered=(2, 3, 4), stopped="done", inputs=2, failure=None)
@@ -79,11 +89,11 @@ def test_a_failed_row_is_recorded_with_its_reasons_and_what_the_other_side_cover
     accepted = Accepted(path=file, records={}, accept=True, listed=frozenset())
 
     records = rewritten(accepted, [FAILED])
-    write_records(file, records)
+    write_records(file, LIMITS, records)
 
     assert records == [FAILED_RECORD]
-    assert json.loads(file.read_text()) == FAILED_LINE
-    assert read_records(file, accept=False) == {FAILED_RECORD.key: FAILED_RECORD}
+    assert json.loads(file.read_text().splitlines()[1]) == FAILED_LINE
+    assert read_records(file, False, LIMITS) == {FAILED_RECORD.key: FAILED_RECORD}
 
 
 def test_both_sides_failing_records_both_reasons_and_no_lines() -> None:
@@ -131,11 +141,10 @@ def test_a_failed_row_that_now_runs_names_what_changed_without_naming_a_side() -
 
 
 def test_a_failed_record_without_its_reasons_or_lines_is_refused(tmp_path: Path) -> None:
-    file = tmp_path / "accepted.jsonl"
-    file.write_text(json.dumps({**LINE, "status": "v2 failed"}) + "\n")
+    file = a_file(tmp_path, json.dumps({**LINE, "status": "v2 failed"}))
 
-    with pytest.raises(RecordsError, match="line 1 is not a record"):
-        read_records(file, accept=False)
+    with pytest.raises(RecordsError, match="line 2 is not a record"):
+        read_records(file, False, LIMITS)
 
 
 def test_a_record_is_found_by_its_target_and_canonical_seed() -> None:
@@ -143,19 +152,47 @@ def test_a_record_is_found_by_its_target_and_canonical_seed() -> None:
     assert RECORD.key == ("m::f", '{"x": 0}')
 
 
-def test_records_are_read_one_per_line(tmp_path: Path) -> None:
-    file = tmp_path / "accepted.jsonl"
-    file.write_text(json.dumps(LINE) + "\n")
+def test_records_are_read_one_per_line_after_the_limits(tmp_path: Path) -> None:
+    file = a_file(tmp_path, json.dumps(LINE))
 
-    assert read_records(file, accept=False) == {RECORD.key: RECORD}
+    assert read_records(file, False, LIMITS) == {RECORD.key: RECORD}
+
+
+def test_a_file_made_with_other_limits_is_refused_naming_both(tmp_path: Path) -> None:
+    file = a_file(tmp_path, json.dumps(LINE))
+
+    with pytest.raises(
+        RecordsError,
+        match=rf"--accepted: {file} was made with budget 5 s, plateau 5, solver timeout 10 s; "
+        "this run has budget 30 s, plateau 5, solver timeout 10 s",
+    ):
+        read_records(file, True, Limits(budget=30.0))
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        json.dumps(LINE),
+        "",
+        json.dumps({"budget": 5.0, "plateau": 5}),
+        json.dumps({"budget": "5", "plateau": 5, "solver_timeout": 10.0}),
+        json.dumps({"budget": 5.0, "plateau": True, "solver_timeout": 10.0}),
+        json.dumps([5.0, 5, 10.0]),
+    ],
+)
+def test_a_file_whose_first_line_is_not_its_limits_is_refused(tmp_path: Path, header: str) -> None:
+    file = a_file(tmp_path, header=header)
+
+    with pytest.raises(RecordsError, match=rf"{file} line 1 does not record the limits"):
+        read_records(file, True, LIMITS)
 
 
 def test_a_missing_file_holds_no_records_only_when_accepting(tmp_path: Path) -> None:
     missing = tmp_path / "accepted.jsonl"
 
-    assert read_records(missing, accept=True) == {}
+    assert read_records(missing, True, LIMITS) == {}
     with pytest.raises(RecordsError, match=rf"--accepted: cannot read {missing}: no such file"):
-        read_records(missing, accept=False)
+        read_records(missing, False, LIMITS)
 
 
 def test_a_file_accept_writes_needs_a_folder_it_can_write(tmp_path: Path) -> None:
@@ -179,7 +216,7 @@ def test_a_file_accept_writes_needs_a_folder_it_can_write(tmp_path: Path) -> Non
 
 def test_a_file_that_cannot_be_read_is_refused(tmp_path: Path) -> None:
     with pytest.raises(RecordsError, match=rf"--accepted: cannot read {tmp_path}"):
-        read_records(tmp_path, accept=True)
+        read_records(tmp_path, True, LIMITS)
 
 
 @pytest.mark.parametrize(
@@ -195,20 +232,18 @@ def test_a_file_that_cannot_be_read_is_refused(tmp_path: Path) -> None:
     ],
 )
 def test_a_line_that_is_not_a_record_is_refused_naming_it(tmp_path: Path, line: str) -> None:
-    file = tmp_path / "accepted.jsonl"
-    file.write_text(json.dumps(LINE) + "\n" + line + "\n")
+    file = a_file(tmp_path, json.dumps(LINE), line)
 
-    with pytest.raises(RecordsError, match=rf"--accepted: {file} line 2 is not a record"):
-        read_records(file, accept=False)
+    with pytest.raises(RecordsError, match=rf"--accepted: {file} line 3 is not a record"):
+        read_records(file, False, LIMITS)
 
 
 def test_two_records_for_one_target_and_seed_are_refused_naming_both(tmp_path: Path) -> None:
-    file = tmp_path / "accepted.jsonl"
-    other = json.dumps({**LINE, "target": "m::g"})
-    file.write_text(f"{json.dumps(LINE)}\n{other}\n{json.dumps({**LINE, 'only_legacy': [5]})}\n")
+    other, again = json.dumps({**LINE, "target": "m::g"}), json.dumps({**LINE, "only_legacy": [5]})
+    file = a_file(tmp_path, json.dumps(LINE), other, again)
 
-    with pytest.raises(RecordsError, match=rf"--accepted: {file} lines 1 and 3 record m::f"):
-        read_records(file, accept=False)
+    with pytest.raises(RecordsError, match=rf"--accepted: {file} lines 2 and 4 record m::f"):
+        read_records(file, False, LIMITS)
 
 
 def test_a_row_that_matches_its_record_is_accepted_and_passes() -> None:
@@ -274,9 +309,9 @@ def test_a_rewrite_replaces_run_rows_keeps_the_rest_and_drops_the_gone() -> None
     ]
 
 
-def test_records_are_written_one_per_line_in_the_records_key_order(tmp_path: Path) -> None:
+def test_records_are_written_one_per_line_after_the_limits(tmp_path: Path) -> None:
     file = tmp_path / "accepted.jsonl"
 
-    write_records(file, [RECORD, RECORD])
+    write_records(file, LIMITS, [RECORD, RECORD])
 
-    assert file.read_text() == 2 * (json.dumps(LINE) + "\n")
+    assert file.read_text() == f"{HEADER}\n" + 2 * (json.dumps(LINE) + "\n")

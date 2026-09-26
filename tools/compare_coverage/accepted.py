@@ -1,6 +1,7 @@
 """The file of accepted differences: a row a person accepted passes until it changes.
 
-``--accepted FILE`` holds one JSON record per line, ``{set, target, seed, status,
+``--accepted FILE`` opens with the limits it was made with, ``{budget, plateau,
+solver_timeout}``, then holds one JSON record per line, ``{set, target, seed, status,
 only_legacy, only_v2}``, sorted by set, target and seed, so a change to the file shows which
 gaps moved (decision parity-gate-accepted-differences-pass-until-they-change). A record of a
 failed row also holds ``failures``, each failed side's reason by side, and ``covered``, the
@@ -10,7 +11,10 @@ lines the side that ran covered, none when both failed.
   the same lines only each side covered and, for a failed row, the same reasons and the same
   lines covered by the side that ran, is ``accepted`` and passes whatever its status. One
   that does not is ``changed``, says what changed, and fails; a closed gap is a change.
-- ``--accept`` rewrites FILE after the last row: each row this run produced replaces its
+- A row that ends on the budget can change with the budget, so a run is compared only with
+  a file made with the same limits, with or without ``--accept``.
+- ``--accept`` rewrites FILE after the last row, with the run's limits first: each row this
+  run produced replaces its
   record, a ``same``, ``left out`` or ``not listed`` row leaves none, records for entries
   this run did not run stay, and a record whose entry the list no longer holds is dropped.
 """
@@ -22,6 +26,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from tools.compare_coverage.rows import Row, SideView, Status
+from tools.compare_coverage.sides import Limits
 
 type Key = tuple[str, str]
 
@@ -68,8 +73,8 @@ def key_of(target: str, seed: Mapping[str, object]) -> Key:
     return target, json.dumps(seed, sort_keys=True)
 
 
-def read_records(path: Path, accept: bool) -> dict[Key, Record]:
-    """The records in ``path``. A missing file holds none when ``--accept`` will write it."""
+def read_records(path: Path, accept: bool, limits: Limits) -> dict[Key, Record]:
+    """The records in ``path``, made with ``limits``. With ``--accept``, a missing file has none."""
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -78,17 +83,55 @@ def read_records(path: Path, accept: bool) -> dict[Key, Record]:
         raise RecordsError(f"--accepted: cannot read {path}: no such file") from None
     except OSError as error:
         raise RecordsError(f"--accepted: cannot read {path}: {error.strerror}") from error
+    first, *rest = text.splitlines() or [""]
+    made_with = _limits(first, path)
+    if made_with != limits:
+        raise RecordsError(
+            f"--accepted: {path} was made with {describe(made_with)}; "
+            f"this run has {describe(limits)}"
+        )
+    return _records(rest, path)
+
+
+def _limits(line: str, path: Path) -> Limits:
+    """The limits the file's first line records."""
+    refusal = RecordsError(
+        f"--accepted: {path} line 1 does not record the limits it was made with: "
+        '{"budget": SECONDS, "plateau": N, "solver_timeout": SECONDS}'
+    )
+    try:
+        raw = json.loads(line)
+    except json.JSONDecodeError:
+        raise refusal from None
+    if not isinstance(raw, dict) or set(raw) != {"budget", "plateau", "solver_timeout"}:
+        raise refusal
+    if not all(type(value) in (int, float) for value in raw.values()):
+        raise refusal
+    return Limits(
+        budget=raw["budget"], plateau=raw["plateau"], solver_timeout=raw["solver_timeout"]
+    )
+
+
+def describe(limits: Limits) -> str:
+    return (
+        f"budget {limits.budget:g} s, plateau {limits.plateau}, "
+        f"solver timeout {limits.solver_timeout:g} s"
+    )
+
+
+def _records(lines: list[str], path: Path) -> dict[Key, Record]:
+    """The records on the lines after the first, each read once."""
     records: dict[Key, Record] = {}
-    lines: dict[Key, int] = {}
-    for number, line in enumerate(text.splitlines(), 1):
+    numbers: dict[Key, int] = {}
+    for number, line in enumerate(lines, 2):
         record = _record(line, f"{path} line {number}")
         if record.key in records:
-            first = lines[record.key]
+            first = numbers[record.key]
             raise RecordsError(
                 f"--accepted: {path} lines {first} and {number} record {record.target} "
                 f"with the same seed; keep one"
             )
-        records[record.key], lines[record.key] = record, number
+        records[record.key], numbers[record.key] = record, number
     return records
 
 
@@ -232,9 +275,14 @@ def _record_of(row: Row, target: str, seed: Mapping[str, object]) -> Record:
     )
 
 
-def write_records(path: Path, records: Collection[Record]) -> None:
-    """One record per line, its keys in the order the module docstring gives."""
-    lines = [json.dumps(_fields(record)) for record in records]
+def write_records(path: Path, limits: Limits, records: Collection[Record]) -> None:
+    """The limits, then one record per line, keys in the order the module docstring gives."""
+    made_with = {
+        "budget": limits.budget,
+        "plateau": limits.plateau,
+        "solver_timeout": limits.solver_timeout,
+    }
+    lines = [json.dumps(made_with), *(json.dumps(_fields(record)) for record in records)]
     path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
 
 

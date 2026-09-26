@@ -13,8 +13,8 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 - lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 2 kept, 0 broken.` Style, sizes, types, import layers, and the compare tool never importing pyct
 - format: `uv run ruff format src/ tests/ tools/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
-- compare: `uv run python -m tools.compare_coverage --legacy DIR` — runs every target in `tools/compare_coverage/targets.json` through v2 and through legacy at a 30 s budget, on demand. DIR is a checkout of `main` with its own environment: `git worktree add DIR main && uv sync --project DIR --frozen`
-- compare gate, per merge: `uv run python -m tools.compare_coverage --legacy DIR --set v2 --set fixtures --budget 5 --accepted tools/compare_coverage/accepted.jsonl` — healthy: exit 0, every row `same`, `left out` or `accepted`. A change that closes or opens a gap reruns it with `--accept` and commits the file; a new file under `targets/` needs an entry
+- compare, per merge: `uv run python -m tools.compare_coverage --legacy DIR --set v2 --set fixtures --budget 5 --accepted tools/compare_coverage/accepted-per-merge.jsonl` — healthy: exit 0, every row `same`, `left out` or `accepted`. The file's first line records the 5 s limits it was made with. A change that closes or opens a gap reruns this with `--accept` and commits the file; a new file under `targets/` needs an entry in `tools/compare_coverage/targets.json`. DIR is a checkout of `main` with its own environment: `git worktree add DIR main && uv sync --project DIR --frozen`
+- compare, full run on demand: `uv run python -m tools.compare_coverage --legacy DIR --accepted tools/compare_coverage/accepted-full.jsonl` — every set at the default 30 s budget, against a file of its own, since a file holds one set of limits and the checker refuses a file made with others. The first run adds `--accept` to create the file
 
 ## Layout
 

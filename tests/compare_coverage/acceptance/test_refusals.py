@@ -63,7 +63,11 @@ def test_a_relative_legacy_checkout_is_found_from_the_working_directory(
         (["--accept"], "--accept needs --accepted FILE"),
         (["--bogus"], "unrecognized arguments: --bogus"),
         (["--accepted", "TMP/missing.jsonl"], "--accepted: cannot read TMP/missing.jsonl"),
-        (["--accepted", "TMP/not-a-record.jsonl"], "--accepted: TMP/not-a-record.jsonl line 2"),
+        (
+            ["--accepted", "TMP/no-limits.jsonl"],
+            "--accepted: TMP/no-limits.jsonl line 1 does not record the limits",
+        ),
+        (["--accepted", "TMP/not-a-record.jsonl"], "--accepted: TMP/not-a-record.jsonl line 3"),
         (
             ["--accepted", "TMP/no-folder/accepted.jsonl", "--accept"],
             "--accepted: cannot write TMP/no-folder/accepted.jsonl: no folder TMP/no-folder",
@@ -78,7 +82,9 @@ def test_refuses_a_bad_flag(
         {"set": "v2", "target": "m::f", "seed": {}, "status": "differs"}
         | {"only_legacy": [], "only_v2": []}
     )
-    (tmp_path / "not-a-record.jsonl").write_text(f"{record}\n[1, 2]\n")
+    limits = json.dumps({"budget": 30.0, "plateau": 5, "solver_timeout": 10.0})
+    (tmp_path / "no-limits.jsonl").write_text(f"{record}\n")
+    (tmp_path / "not-a-record.jsonl").write_text(f"{limits}\n{record}\n[1, 2]\n")
     flags = [flag.replace("TMP/", f"{tmp_path}/") for flag in flags]
     says = says.replace("TMP/", f"{tmp_path}/")
 
