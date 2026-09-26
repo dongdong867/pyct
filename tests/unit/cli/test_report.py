@@ -1,5 +1,6 @@
 import io
 import sys
+from collections.abc import Sequence
 
 import pytest
 
@@ -7,6 +8,7 @@ from pyct.cli import _report
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
+from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 
@@ -65,8 +67,18 @@ def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPa
     assert stdout.writes == [render(RECORD, COVERAGE) + "\n"]
 
 
-def test_report_prints_each_line_as_it_prints_on_its_own(
-    capsys: pytest.CaptureFixture[str],
+def _count_cuts(monkeypatch: pytest.MonkeyPatch, calls: list[str], module: str) -> None:
+    """Note each time ``module`` cuts a record's forks, by the module's name."""
+
+    def counted(forks: Sequence[Branch]) -> tuple[Expression, ...]:
+        calls.append(module)
+        return printed_forks(forks)
+
+    monkeypatch.setattr(f"{module}.printed_forks", counted)
+
+
+def test_report_cuts_the_forks_once_for_both_lines(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # a loop's forks each hold the string of every pass before theirs, past the cap from the
     # eighth pass on
@@ -78,10 +90,15 @@ def test_report_prints_each_line_as_it_prints_on_its_own(
         )
         term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
     record = InputRecord(args={"s": "abc"}, forks=tuple(forks), covered_lines=frozenset({5}))
+    calls: list[str] = []
+    for module in ("pyct.cli", "pyct.results.jsonl", "pyct.results.trace"):
+        _count_cuts(monkeypatch, calls, module)
 
     _report(record, COVERAGE)
 
-    # the forks are cut once for both lines, and each line is what it would be alone
+    # the report cuts the forks once and hands the cut to both lines, which cut none of their own
+    assert calls == ["pyct.cli"]
+    # and each line is what it would be alone
     captured = capsys.readouterr()
     assert captured.out == render(record, COVERAGE) + "\n"
     assert captured.err == render_trace(record, COVERAGE)
