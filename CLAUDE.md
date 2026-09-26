@@ -66,3 +66,4 @@ engine state.
 - Functions about 20 lines. Five parameters at most. Files under 500 lines.
 - Logging with lazy `%` formatting. DEBUG internals, INFO milestones, WARNING recoverable, ERROR failures.
 - A name or comment says what the code handles. It never lists what the code misses; such a list is never complete. When a review finds a claim that outruns its check, narrow the claim, or widen the check when the missed case is one the code will realistically meet.
+- A test compares an error message from Python itself to what plain Python says in the same run. CPython rewords its errors between versions, and the project supports every version from 3.12.
