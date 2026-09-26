@@ -6,7 +6,7 @@ written twice. A printable ASCII character other than the backslash is
 written as itself. Every other character up to U+2FFFF, the last one cvc5
 holds, is written as ``\\u{hex}`` with its code point in lowercase hex.
 cvc5 prints a value by the same rule, so reading one back undoes these
-steps. A literal outside double quotes, a piece that is none of the three
+steps. A literal outside double quotes, a token that is none of the three
 forms, or an escape past U+2FFFF is an error.
 
 An order between a string term and a literal is written letter by letter,
@@ -39,9 +39,9 @@ from pyct.core.strs import LAST_CHARACTER
 _FIRST_PRINTABLE = 0x20
 _LAST_PRINTABLE = 0x7E
 
-# one piece of a literal as cvc5 prints it: a doubled quote, an escape, or a printable ASCII
+# one token of a literal as cvc5 prints it: a doubled quote, an escape, or a printable ASCII
 # character that is neither the quote nor the backslash
-_PIECE = re.compile(r'(?P<quote>"")|\\u\{(?P<code>[0-9a-f]{1,5})\}|(?P<plain>[ !#-\[\]-~])')
+_TOKEN = re.compile(r'(?P<quote>"")|\\u\{(?P<code>[0-9a-f]{1,5})\}|(?P<plain>[ !#-\[\]-~])')
 
 
 def encode(value: str) -> str:
@@ -183,7 +183,7 @@ def character(term: str, index: int) -> str:
     return f"(str.at {term} {_counted(term, index)})"
 
 
-def piece(term: str, start: int | None, stop: int | None) -> str:
+def sliced(term: str, start: int | None, stop: int | None) -> str:
     """``s[start:stop]``: Python's slice, each bound clamped to the string.
 
     A missing start is 0 and a missing stop the length. A negative bound
@@ -256,24 +256,24 @@ def decode(literal: str) -> str:
     if len(literal) < 2 or literal[0] != '"' or literal[-1] != '"':
         raise ValueError(f"cvc5 prints a string value in double quotes, not {literal}")
     body = literal[1:-1]
-    pieces: list[str] = []
+    characters: list[str] = []
     at = 0
     while at < len(body):
-        piece = _PIECE.match(body, at)
-        if piece is None:
+        token = _TOKEN.match(body, at)
+        if token is None:
             raise ValueError(f"cvc5 prints no string value like {literal}")
-        pieces.append(_decoded(piece, literal))
-        at = piece.end()
-    return "".join(pieces)
+        characters.append(_decoded(token, literal))
+        at = token.end()
+    return "".join(characters)
 
 
-def _decoded(piece: re.Match[str], literal: str) -> str:
-    """One piece of a literal as the character it stands for."""
-    if piece["quote"] is not None:
+def _decoded(token: re.Match[str], literal: str) -> str:
+    """One token of a literal as the character it stands for."""
+    if token["quote"] is not None:
         return '"'
-    if piece["plain"] is not None:
-        return piece["plain"]
-    code = int(piece["code"], 16)
+    if token["plain"] is not None:
+        return token["plain"]
+    code = int(token["code"], 16)
     if code > LAST_CHARACTER:
         raise ValueError(f"cvc5 holds characters up to U+{LAST_CHARACTER:X}: {literal}")
     return chr(code)

@@ -10,8 +10,8 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.strings import (
     character,
     encode,
-    piece,
     replaced,
+    sliced,
     without_prefix,
     without_suffix,
 )
@@ -39,11 +39,11 @@ def test_a_slice_clamps_a_start_that_counts_back_past_the_beginning() -> None:
     back = "(- (str.len s) 2)"
     start = f"(ite (< {back} 0) 0 {back})"
 
-    assert piece("s", -2, None) == f"(str.substr s {start} (- (str.len s) {start}))"
+    assert sliced("s", -2, None) == f"(str.substr s {start} (- (str.len s) {start}))"
 
 
 def test_a_slice_with_both_bounds_missing_is_the_whole_string() -> None:
-    assert piece("s", None, None) == "(str.substr s 0 (- (str.len s) 0))"
+    assert sliced("s", None, None) == "(str.substr s 0 (- (str.len s) 0))"
 
 
 def test_a_removed_prefix_or_suffix_reads_a_literal_length_as_a_number() -> None:
@@ -82,7 +82,7 @@ def _index_case(rng: random.Random, value: str, _: Written) -> Case:
 
 def _slice_case(rng: random.Random, value: str, _: Written) -> Case:
     start, stop = rng.choice(BOUNDS), rng.choice(BOUNDS)
-    return (lambda s: piece(s, start, stop)), value[start:stop]
+    return (lambda s: sliced(s, start, stop)), value[start:stop]
 
 
 def _replace_case(rng: random.Random, value: str, held: Written) -> Case:

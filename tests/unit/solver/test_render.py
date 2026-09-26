@@ -12,8 +12,8 @@ from pyct.solver.strings import (
     character,
     last_index,
     occurrences,
-    piece,
     replaced,
+    sliced,
     without_prefix,
     without_suffix,
 )
@@ -283,15 +283,15 @@ PIECES: dict[str, tuple[Expression, str]] = {
     "index": (["[]", "s", 0], character("s", 0)),
     # a negative index reaches its form as the number it is, not a subtraction already written
     "negative-index": (["[]", "s", -1], character("s", -1)),
-    "slice": (["[:]", "s", 1, 3], piece("s", 1, 3)),
-    "slice-missing-stop": (["[:]", "s", 2, None], piece("s", 2, None)),
-    "slice-missing-start": (["[:]", "s", None, -1], piece("s", None, -1)),
+    "slice": (["[:]", "s", 1, 3], sliced("s", 1, 3)),
+    "slice-missing-stop": (["[:]", "s", 2, None], sliced("s", 2, None)),
+    "slice-missing-start": (["[:]", "s", None, -1], sliced("s", None, -1)),
     "plus": (["+", "s", "t"], "(str.++ s t)"),
     "plus-literal-first": (["+", "'x'", "s"], '(str.++ "x" s)'),
     "replace": (["replace", "s", "'a'", "t"], replaced("s", '"a"', "t")),
     "removeprefix": (["removeprefix", "s", "'x'"], without_prefix("s", '"x"')),
     "removesuffix": (["removesuffix", "s", "t"], without_suffix("s", "t")),
-    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character(piece("s", 1, None), 0)),
+    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character(sliced("s", 1, None), 0)),
 }
 
 
@@ -324,7 +324,7 @@ def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
 def test_an_order_on_a_piece_against_a_literal_is_written_letter_by_letter() -> None:
     text = render((fork(["<", ["[:]", "s", 1, 3], "'mn'"], taken=True),), {"s": str})
 
-    assert f"(assert {below(piece('s', 1, 3), 'mn', or_equal=False)})" in text.splitlines()
+    assert f"(assert {below(sliced('s', 1, 3), 'mn', or_equal=False)})" in text.splitlines()
 
 
 def test_an_order_on_two_pieces_is_cvc5s_own() -> None:

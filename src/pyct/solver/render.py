@@ -17,8 +17,8 @@ from pyct.solver.strings import (
     first_index,
     last_index,
     occurrences,
-    piece,
     replaced,
+    sliced,
     starts_with,
     without_prefix,
     without_suffix,
@@ -108,7 +108,7 @@ FORMS: Mapping[str, Callable[..., str]] = {
 
 # a piece taken at positions: the string arrives rendered, and each position as the plain int
 # it is, or None for a slice's missing bound, so the form sees its sign
-POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": piece}
+POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced}
 
 
 @dataclass(frozen=True)
