@@ -72,9 +72,9 @@ def crashing_cvc5(tmp_path: Path) -> Path:
 def hanging_cvc5(tmp_path: Path) -> Path:
     """A cvc5 that says its version at once but never answers a formula, for ``run_pyct``.
 
-    It reads the formula and then sleeps past any limit pyct gives it, so only
-    pyct can end the solve. ``exec`` makes the sleep the script's own process,
-    so ending that process ends the sleep too.
+    It reads the formula and then sleeps an hour, far past the limits these
+    tests give it, so only pyct can end the solve. ``exec`` makes the sleep
+    the script's own process, so ending that process ends the sleep too.
     """
     script = tmp_path / "cvc5"
     script.write_text(
