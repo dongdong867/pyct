@@ -3,6 +3,8 @@
 import time
 import tracemalloc
 
+import pytest
+
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
@@ -209,25 +211,44 @@ def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
     assert len(render(record, coverage).encode()) < 1_000_000
 
 
-def _gathered(characters: int) -> list[Branch]:
-    """`c = s[i]`, then `if c == "x":`, then `t = t + c`, for each i, and a last fork on t.
+# the string a gathering loop takes its pieces of: a parameter, and a string the target made
+GATHERED_FROM: dict[str, Expression] = {"s": "s", "s[1:]": ["[:]", "s", 1, None]}
+
+
+def _gathered(characters: int, string: Expression) -> list[Branch]:
+    """`c = u[i]`, then `if c == "x":`, then `t = t + c`, for each i, and a last fork on t.
 
     Each piece is held by its own fork and by t, so the count of each waits
-    until the last fork's walk reads it.
+    until the last fork's walk reads it. Every piece, and every length fork,
+    holds the one string u.
     """
     term: Expression = "''"
     forks: list[Branch] = []
     for i in range(characters):
-        piece: Expression = ["[]", "s", i]
-        forks.append(Branch(expression=[">", ["len", "s"], i], taken=True, site=Site("m.py", 2, 7)))
+        piece: Expression = ["[]", string, i]
+        forks.append(
+            Branch(expression=[">", ["len", string], i], taken=True, site=Site("m.py", 2, 7))
+        )
         forks.append(Branch(expression=["==", piece, "'x'"], taken=False, site=Site("m.py", 3, 7)))
         term = ["+", term, piece]
     forks.append(Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7)))
     return forks
 
 
+@pytest.mark.parametrize("string", GATHERED_FROM.values(), ids=list(GATHERED_FROM))
+def test_gathered_pieces_count_each_node_they_reach_once(string: Expression) -> None:
+    forks = _gathered(300, string)
+
+    written = printed_forks(forks)[-1]
+
+    # the gathered string reaches each piece, and each piece the one string it was taken of
+    cuts = _cut_from(written, forks[-1].expression)
+    assert cuts
+    assert all(count == _distinct(part) for count, part in cuts)
+
+
 def test_forks_that_gather_forty_thousand_pieces_are_counted_in_little_memory() -> None:
-    forks = _gathered(40_000)
+    forks = _gathered(40_000, "s")
 
     tracemalloc.start()
     try:
