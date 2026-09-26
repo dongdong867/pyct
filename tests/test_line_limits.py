@@ -5,10 +5,14 @@ import pytest
 from tests.line_limits import MAX_BODY_LINES, MAX_FILE_LINES, check_file, main
 
 
+def statements(count: int, indent: str = "    ") -> str:
+    """``count`` lines of code, one statement each."""
+    return "".join(f"{indent}x{n} = {n}\n" for n in range(count))
+
+
 def function_of(body_lines: int, docstring: str = "") -> str:
     """A function whose body after the docstring is ``body_lines`` lines long."""
-    body = "".join(f"    x{n} = {n}\n" for n in range(body_lines))
-    return f"def long_one():\n{docstring}{body}"
+    return f"def long_one():\n{docstring}{statements(body_lines)}"
 
 
 def write(tmp_path: Path, text: str, name: str = "module.py") -> Path:
@@ -41,6 +45,46 @@ def test_the_docstring_is_not_part_of_the_body(tmp_path: Path) -> None:
     assert check_file(path) == []
 
 
+def test_a_signature_over_several_lines_is_not_part_of_the_body(tmp_path: Path) -> None:
+    # the colons inside the brackets belong to the signature; the one after them ends it
+    signature = (
+        "def long_one(\n"
+        "    key=lambda item: item,\n"
+        "    table: dict[str, int] = {1: 2},\n"
+        ") -> None:\n"
+    )
+    path = write(tmp_path, signature + statements(MAX_BODY_LINES))
+
+    assert check_file(path) == []
+
+
+def test_comments_above_the_first_statement_count(tmp_path: Path) -> None:
+    comments = "    # why the test reads what it reads\n" * 3
+    path = write(tmp_path, f"def long_one():\n{comments}{statements(MAX_BODY_LINES - 2)}")
+
+    (broken,) = check_file(path)
+
+    assert broken.detail == (
+        f"long_one has {MAX_BODY_LINES + 1} body lines, at most {MAX_BODY_LINES}"
+    )
+
+
+def test_a_first_statement_counts_its_decorators(tmp_path: Path) -> None:
+    text = (
+        "def outer(fn):\n"
+        "    @functools.wraps(fn)\n"
+        "    @functools.cache\n"
+        "    def wrapper():\n"
+        f"{statements(MAX_BODY_LINES - 3, indent='        ')}"
+        "    return wrapper\n"
+    )
+    path = write(tmp_path, text)
+
+    (broken,) = check_file(path)
+
+    assert broken.detail == f"outer has {MAX_BODY_LINES + 1} body lines, at most {MAX_BODY_LINES}"
+
+
 def test_blank_lines_and_comments_inside_the_body_count(tmp_path: Path) -> None:
     body = "    x = 1\n" + "\n    # a comment\n" * (MAX_BODY_LINES // 2) + "    return x\n"
     path = write(tmp_path, f"def long_one():\n{body}")
@@ -51,12 +95,11 @@ def test_blank_lines_and_comments_inside_the_body_count(tmp_path: Path) -> None:
 
 
 def test_methods_async_functions_and_nested_functions_are_checked(tmp_path: Path) -> None:
-    inner = "".join(f"            y{n} = {n}\n" for n in range(MAX_BODY_LINES + 1))
     text = (
         "class Holder:\n"
         "    async def method(self):\n"
         "        def nested():\n"
-        f"{inner}"
+        f"{statements(MAX_BODY_LINES + 1, indent='            ')}"
         "        return nested\n"
     )
     path = write(tmp_path, text)

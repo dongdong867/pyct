@@ -81,12 +81,5 @@ def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None
     }
 
     # these hand the value itself back and never call int, so they have nothing to guard
-    assert without_the_helper == {
-        "__pos__",
-        "__index__",
-        "__trunc__",
-        "__floor__",
-        "__ceil__",
-        "__copy__",
-        "__deepcopy__",
-    }
+    rounding = {"__trunc__", "__floor__", "__ceil__"}
+    assert without_the_helper == {"__pos__", "__index__", "__copy__", "__deepcopy__"} | rounding

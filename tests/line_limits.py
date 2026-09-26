@@ -1,15 +1,17 @@
 """The size rules ruff has no rule for: function body lines and file lines.
 
-The lint command runs it as ``python -m tests.line_limits src/ tests/``. A
-function's body runs from its first statement after the docstring to its last
-line, blank lines and comments included, so documenting a function never
-pushes it over. A nested function counts toward the function that holds it
-and is checked on its own as well. A file counts every line.
+The lint command runs it as ``python -m tests.line_limits src/ tests/``. A function's body is
+every line after its signature, blank lines and comments included, less the lines of its
+docstring; a body on the signature's own line is one line. A nested function counts toward the
+function that holds it and is checked on its own as well. A file counts every line.
 """
 
 import ast
+import bisect
+import io
 import sys
-from collections.abc import Iterator, Sequence
+import tokenize
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -42,29 +44,56 @@ def check_file(path: Path) -> list[Broken]:
     if lines > MAX_FILE_LINES:
         broken.append(Broken(path, 1, "file-lines", f"{lines} lines, at most {MAX_FILE_LINES}"))
     try:
-        tree = ast.parse(text, filename=str(path))
+        bodies = function_bodies(text, str(path))
     except SyntaxError as error:
         return [*broken, Broken(path, error.lineno or 1, "syntax", str(error.msg))]
-    return [*broken, *_long_bodies(path, tree)]
+    for function, length in bodies:
+        if length > MAX_BODY_LINES:
+            detail = f"{function.name} has {length} body lines, at most {MAX_BODY_LINES}"
+            broken.append(Broken(path, function.lineno, "function-body-lines", detail))
+    return broken
 
 
-def _long_bodies(path: Path, tree: ast.Module) -> Iterator[Broken]:
+def function_bodies(text: str, filename: str = "<source>") -> list[tuple[Function, int]]:
+    """Every function in ``text`` and its body lines, counted as the module docstring says."""
+    tree = ast.parse(text, filename=filename)
+    colons = _outer_colons(text)
+    bodies = []
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            lines = body_lines(node)
-            if lines > MAX_BODY_LINES:
-                detail = f"{node.name} has {lines} body lines, at most {MAX_BODY_LINES}"
-                yield Broken(path, node.lineno, "function-body-lines", detail)
+            # the signature ends at the first colon outside brackets after the `def`
+            header_end, _ = colons[bisect.bisect(colons, (node.lineno, node.col_offset))]
+            bodies.append((node, _body_lines(node, header_end)))
+    return bodies
 
 
-def body_lines(function: Function) -> int:
-    """How many lines the body spans after the docstring; 0 when nothing follows it."""
-    body = function.body
+def _outer_colons(text: str) -> list[tuple[int, int]]:
+    """Where each colon outside every bracket sits, in order; a signature ends at one."""
+    depth = 0
+    colons = []
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type != tokenize.OP:
+            continue
+        if token.string in ("(", "[", "{"):
+            depth += 1
+        elif token.string in (")", "]", "}"):
+            depth -= 1
+        elif token.string == ":" and depth == 0:
+            colons.append(token.start)
+    return colons
+
+
+def _body_lines(function: Function, header_end: int) -> int:
+    """The lines after the signature through the function's last, less the docstring's."""
+    assert function.end_lineno is not None
+    # a body written on the signature's own line starts there
+    first = min(header_end + 1, function.body[0].lineno)
+    lines = function.end_lineno - first + 1
     if ast.get_docstring(function, clean=False) is not None:
-        body = body[1:]
-    if not body or function.end_lineno is None:
-        return 0
-    return function.end_lineno - body[0].lineno + 1
+        docstring = function.body[0]
+        assert docstring.end_lineno is not None
+        lines -= docstring.end_lineno - max(docstring.lineno, first) + 1
+    return lines
 
 
 def python_files(roots: Sequence[Path]) -> list[Path]:
