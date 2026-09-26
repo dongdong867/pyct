@@ -347,9 +347,9 @@ def test_a_record_longer_than_what_was_committed_is_unreadable() -> None:
 def test_a_part_that_is_not_a_list_is_unreadable() -> None:
     buffer = journal()
     JournalWriter(buffer).fork(FORK)
-    # the first part, ["+", "y", 1], becomes a number of the same length
-    at = buffer.index(b'["+", "y", 1]')
-    buffer[at : at + 13] = b"7            "
+    # the first part, numbered 0, becomes a number of the same length
+    at = buffer.index(b'[0, "+", "y", 1]')
+    buffer[at : at + 16] = b"7               "
 
     reading = read(buffer)
 

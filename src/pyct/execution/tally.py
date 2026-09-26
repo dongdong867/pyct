@@ -47,8 +47,9 @@ class Tally:
         self.branches: list[Branch] = []
         self.watch = watch
         self.sealed = False
-        self._names: list[str] = []
-        self._counts: list[int] = []
+        # each entry one object, so the deadline landing between two steps can lose a call,
+        # never pair a name with another entry's count
+        self._entries: list[_Entry] = []
 
     def append(self, item: SinkItem, /) -> None:
         """Keep a fork or a downgrade the call just made. The ``BranchSink`` core pushes to."""
@@ -75,16 +76,22 @@ class Tally:
 
     def counted(self) -> tuple[DowngradeCount, ...]:
         """The downgrades as the line lists them, one entry per run of one name."""
-        return tuple(
-            DowngradeCount(name=name, count=count)
-            for name, count in zip(self._names, self._counts, strict=True)
-        )
+        return tuple(DowngradeCount(name=entry.name, count=entry.count) for entry in self._entries)
 
     def _downgrade(self, name: str) -> None:
-        if self._names and self._names[-1] == name:
-            self._counts[-1] += 1
+        if self._entries and self._entries[-1].name == name:
+            self._entries[-1].count += 1
         else:
-            self._names.append(name)
-            self._counts.append(1)
+            self._entries.append(_Entry(name))
         if self.watch is not None:
-            self.watch.downgrade(name, self._counts[-1])
+            self.watch.downgrade(name, self._entries[-1].count)
+
+
+class _Entry:
+    """One run of calls of one name, counted as they come."""
+
+    __slots__ = ("count", "name")
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.count = 1

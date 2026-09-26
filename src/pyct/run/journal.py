@@ -16,16 +16,18 @@ Then records, each an 8-byte little-endian head (u32 payload length, u8
 kind) and its payload, padded to 8 bytes:
 
 - line: an i64, the first time the call reaches that line.
-- part: one list of an expression, as JSON. A leaf is a JSON scalar and a
-  list inside it is ``[n]``, the part written n-th. An expression is a
-  graph in which one list can sit in many places, and a loop that doubles
-  a value doubles the expression written out on every pass, so each list
-  is written once, however many places hold it, and read back as one list
-  in all of them.
+- part: one list of an expression, as JSON ``[n, head, ...]``: its number,
+  then its items. A leaf is a JSON scalar and a list inside it is ``[n]``,
+  the part numbered n. An expression is a graph in which one list can sit
+  in many places, and a loop that doubles a value doubles the expression
+  written out on every pass, so each list is written once, however many
+  places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col]``, the expression a
   leaf or ``[n]``.
 - downgrade: a native u64 count, then the name. A repeat of the last
-  entry rewrites its count in place.
+  entry rewrites its count in place. A record of the last entry's name
+  with a higher count carries that entry on, as a write the alarm cut short
+  can leave; the reader joins the two.
 - end: JSON ``null`` for a call that returned, else ``[kind, detail,
   traceback]``.
 
@@ -39,6 +41,12 @@ lists and scalars only, never to an object whose code runs, which matters
 because the writer ran the target's code in its own process; and it
 writes an int subclass by int's own repr, so no target code runs on the
 way out either.
+
+The deadline's alarm can raise inside the writer, between any two lines,
+and the writer goes on after it. So a part carries the number it was
+given before it was written, and a count grows in place only on the entry
+it was written for: whatever the writer's own notes lost, a later fact
+still reads back as written.
 
 A journal past ``CAPACITY``, or a fact the writer cannot encode, stops the
 writer: it notes why and writes nothing more. A record the reader cannot
@@ -96,9 +104,12 @@ class JournalWriter:
         self._words = memoryview(buffer)[: len(buffer) // _WORD.size * _WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
+        # where the last downgrade entry's count sits, and the name it counts
         self._count_at: int | None = None
+        self._count_name: str | None = None
         # each list already written, by identity, with the list itself so its id stays its own
         self._parts: dict[int, tuple[int, list[Expression]]] = {}
+        self._next_part = 0
 
     def fork(self, branch: Branch) -> None:
         """Write a fork the call took, and every part of its expression not written yet."""
@@ -115,14 +126,16 @@ class JournalWriter:
         self._record(_LINE, _NUMBER.pack(number))
 
     def downgrade(self, name: str, count: int) -> None:
-        """Write a new downgrade entry at a count of 1, or grow the last one in place."""
-        if count > 1 and self._count_at is not None:
+        """Grow the last entry in place when it counts ``name``, or write a new entry."""
+        if count > 1 and self._count_name == name and self._count_at is not None:
             if self._open:
                 self._words[self._count_at // _WORD.size] = count
             return
+        self._count_name = None
         at = self._at
         if self._record(_DOWNGRADE, _WORD.pack(count) + name.encode()):
             self._count_at = at + _HEAD.size
+            self._count_name = name
 
     def end(self, failure: Failure | None) -> None:
         """Write how the call ended. The reader takes it as the input's own ending."""
@@ -160,13 +173,15 @@ class JournalWriter:
         return [self._parts[id(expression)][0]] if id(expression) in self._parts else None
 
     def _part(self, part: list[Expression]) -> None:
-        """Write one list whose inner lists are all written, and remember its number."""
-        payload = [
+        """Write one list whose inner lists are all written, under a number of its own."""
+        items = [
             [self._parts[id(child)][0]] if isinstance(child, list) else _leaf(child)
             for child in part
         ]
-        if self._json(_PART, payload):
-            self._parts[id(part)] = (len(self._parts), part)
+        number = self._next_part
+        self._next_part = number + 1
+        if self._json(_PART, [number, *items]):
+            self._parts[id(part)] = (number, part)
 
     def _json(self, kind: int, value: object) -> bool:
         return self._record(kind, json.dumps(value).encode())
@@ -288,7 +303,7 @@ class _Facts:
     lines: set[int] = field(default_factory=set)
     branches: list[Branch] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
-    parts: list[list[Expression]] = field(default_factory=list)
+    parts: dict[int, list[Expression]] = field(default_factory=dict)
     ended: bool = False
     end: Failure | None = None
 
@@ -303,16 +318,31 @@ class _Facts:
         if kind == _LINE:
             self.lines.add(_NUMBER.unpack(payload)[0])
         elif kind == _PART:
-            self.parts.append([self._expression(child) for child in _list(json.loads(payload))])
+            number, items = _numbered(json.loads(payload))
+            self.parts[number] = [self._expression(item) for item in items]
         elif kind == _FORK:
             self.branches.append(self._fork(json.loads(payload)))
         elif kind == _DOWNGRADE:
-            (count,) = _WORD.unpack_from(payload)
-            self.downgrades.append(DowngradeCount(payload[_WORD.size :].decode(), count))
+            self._downgrade(payload)
         elif kind == _END:
             self.ended, self.end = True, _ending(json.loads(payload))
         else:
             raise ValueError(f"no record of kind {kind}")
+
+    def _downgrade(self, payload: bytes) -> None:
+        """Start an entry, or carry the last one on when this record is its later count.
+
+        A record that carries an entry on names it and counts more. An entry
+        written after a lost one of another name starts again at a count of 1,
+        which is never more, so the two stay apart.
+        """
+        (count,) = _WORD.unpack_from(payload)
+        entry = DowngradeCount(payload[_WORD.size :].decode(), count)
+        last = self.downgrades[-1] if self.downgrades else None
+        if last is not None and last.name == entry.name and entry.count > last.count:
+            self.downgrades[-1] = entry
+        else:
+            self.downgrades.append(entry)
 
     def _fork(self, value: object) -> Branch:
         match value:
@@ -324,9 +354,7 @@ class _Facts:
     def _expression(self, value: object) -> Expression:
         """A leaf, or the one list a part number stands for, shared wherever it is named."""
         match value:
-            case [int() as number] if not isinstance(number, bool) and 0 <= number < len(
-                self.parts
-            ):
+            case [int() as number] if not isinstance(number, bool) and number in self.parts:
                 return self.parts[number]
         if isinstance(value, list) or not _is_leaf(value):
             raise ValueError("an expression holds leaves and parts already read")
@@ -343,10 +371,12 @@ class _Facts:
         )
 
 
-def _list(value: object) -> list[object]:
-    if not isinstance(value, list) or not value:
-        raise ValueError("a part is a list with a head")
-    return value
+def _numbered(value: object) -> tuple[int, list[object]]:
+    """A part as written: its number, and its items, head first."""
+    match value:
+        case [int() as number, head, *rest] if not isinstance(number, bool):
+            return number, [head, *rest]
+    raise ValueError("a part is [number, head, ...]")
 
 
 def _ending(value: object) -> Failure | None:
