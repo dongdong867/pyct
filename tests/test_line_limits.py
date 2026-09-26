@@ -1,3 +1,4 @@
+import codecs
 from pathlib import Path
 
 import pytest
@@ -17,7 +18,7 @@ def function_of(body_lines: int, docstring: str = "") -> str:
 
 def write(tmp_path: Path, text: str, name: str = "module.py") -> Path:
     path = tmp_path / name
-    path.write_text(text)
+    path.write_text(text, encoding="utf-8")
     return path
 
 
@@ -122,6 +123,37 @@ def test_a_file_one_line_over_the_cap_is_named(tmp_path: Path) -> None:
     assert str(broken) == (
         f"{path}:1: file-lines {MAX_FILE_LINES + 1} lines, at most {MAX_FILE_LINES}"
     )
+
+
+def test_a_form_feed_or_a_line_separator_in_a_string_ends_no_line(tmp_path: Path) -> None:
+    text = "\f\n" + 's = "a b"\n' + "x = 1\n" * (MAX_FILE_LINES - 2)
+    path = write(tmp_path, text)
+
+    assert check_file(path) == []
+
+
+def test_a_file_that_starts_with_a_bom_is_read_as_python_reads_it(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(codecs.BOM_UTF8 + b"def f():\n    return 1\n")
+
+    assert check_file(path) == []
+
+
+def test_a_file_with_an_encoding_cookie_is_read_in_that_encoding(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(b"# -*- coding: latin-1 -*-\ns = '\xe9'\n")
+
+    assert check_file(path) == []
+
+
+def test_a_file_that_does_not_decode_is_reported_rather_than_raised(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(b"s = '\xe9'\n")
+
+    (broken,) = check_file(path)
+
+    assert (broken.line, broken.rule) == (1, "syntax")
+    assert broken.detail.startswith("cannot read the source: ")
 
 
 def test_a_file_that_does_not_parse_is_reported_rather_than_raised(tmp_path: Path) -> None:

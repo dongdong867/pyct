@@ -1,9 +1,10 @@
 """The size rules ruff has no rule for: function body lines and file lines.
 
-The lint command runs it as ``python -m tests.line_limits src/ tests/``. A function's body is
-every line after its signature, blank lines and comments included, less the lines of its
-docstring; a body on the signature's own line is one line. A nested function counts toward the
-function that holds it and is checked on its own as well. A file counts every line.
+The lint command runs it as ``python -m tests.line_limits src/ tests/``. A file is read the way
+Python reads source, so a BOM or an encoding cookie is honored, and its lines are counted by
+their line ends. A function's body is every line after its signature, blank lines and comments
+included, less the lines of its docstring; a body on the signature's own line is one line. A
+nested function counts toward the function that holds it and is checked on its own as well.
 """
 
 import ast
@@ -38,9 +39,13 @@ class Broken:
 
 def check_file(path: Path) -> list[Broken]:
     """Every rule the file at ``path`` breaks, the file's own length first."""
-    text = path.read_text(encoding="utf-8")
+    try:
+        with tokenize.open(path) as file:
+            text = file.read()
+    except (SyntaxError, UnicodeDecodeError) as error:
+        return [Broken(path, 1, "syntax", f"cannot read the source: {error}")]
     broken = []
-    lines = len(text.splitlines())
+    lines = line_count(text)
     if lines > MAX_FILE_LINES:
         broken.append(Broken(path, 1, "file-lines", f"{lines} lines, at most {MAX_FILE_LINES}"))
     try:
@@ -52,6 +57,11 @@ def check_file(path: Path) -> list[Broken]:
             detail = f"{function.name} has {length} body lines, at most {MAX_BODY_LINES}"
             broken.append(Broken(path, function.lineno, "function-body-lines", detail))
     return broken
+
+
+def line_count(text: str) -> int:
+    """Each line end in ``text``, read with universal newlines, and a last line that has none."""
+    return text.count("\n") + (1 if text and not text.endswith("\n") else 0)
 
 
 def function_bodies(text: str, filename: str = "<source>") -> list[tuple[Function, int]]:
