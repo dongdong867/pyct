@@ -19,14 +19,13 @@ class Alarm(BaseException):
     """What the deadline raises, landing inside pyct's code."""
 
 
-def at_every_line(source: str, trial: Callable[[Interrupt, int], None]) -> int:
+def at_every_line(source: str, trial: Callable[[Interrupt, int], None]) -> None:
     """Run ``trial`` once for each line its step runs in ``source``, the raise landing there.
 
     ``trial(interrupt, at)`` sets up, runs its step through ``interrupt`` and
     checks what comes after; ``at`` names the line, for the trial's messages.
-    The trials stop at the first step that finished without a raise. Returns
-    how many landed, which must be some: none means ``source`` named no file
-    the step runs.
+    The trials stop at the first step that finished without a raise. Some
+    raise must land: none means ``source`` named no file the step runs.
     """
     at = 1
     while True:
@@ -36,7 +35,6 @@ def at_every_line(source: str, trial: Callable[[Interrupt, int], None]) -> int:
             break
         at += 1
     assert at > 1, f"no line of {source} ran under the step"
-    return at - 1
 
 
 def _landing(landed: list[bool], at: int, source: str, step: Callable[[], object]) -> None:
