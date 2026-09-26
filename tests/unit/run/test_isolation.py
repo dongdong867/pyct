@@ -8,6 +8,7 @@ import os
 import signal
 import subprocess
 import sys
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import isolation as isolation_module
 from pyct.run.isolation import in_a_child, isolation
-from pyct.run.process import InputStartError
+from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import Target, load_target
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -307,3 +308,28 @@ def test_a_run_in_process_for_want_of_a_name_says_so_once_on_stderr() -> None:
     said = [line for line in finished.stderr.splitlines() if "threads" in line]
     assert len(said) == 1, finished.stderr
     assert said[0].startswith("each input runs in pyct's process")
+
+
+def spins_then_cleans_up(x: int) -> int:
+    try:
+        while True:
+            x ^= 1
+    finally:
+        x = 0
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_python_hang_ends_by_its_own_alarm_before_pyct_kills_it() -> None:
+    cleaned_up = spins_then_cleans_up.__code__.co_firstlineno + 5
+    started = time.monotonic()
+
+    result = in_a_child(
+        ExecutionContext(fn=spins_then_cleans_up, file=__file__, alone=True),
+        {"x": 1},
+        started + 0.2,
+    )
+
+    # the call wrote its own ending, finally block included, well before the kill was due
+    assert result.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert cleaned_up in result.lines
+    assert time.monotonic() - started < 0.2 + KILL_GRACE
