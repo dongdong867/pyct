@@ -88,3 +88,31 @@ def test_an_entry_lost_between_two_entries_of_one_name_keeps_them_apart() -> Non
         if not landed:
             break
         at += 1
+
+
+def test_an_entry_that_grows_past_one_of_its_name_before_a_lost_one_stays_apart() -> None:
+    at = 1
+    while True:
+        buffer = bytearray(1 << 16)
+        writer = JournalWriter(buffer)
+        writer.downgrade("__abs__", 1)
+        landed = interrupted(functools.partial(writer.downgrade, "__neg__", 1), at, JOURNAL)
+        for count in (1, 2, 3):
+            writer.downgrade("__abs__", count)
+
+        downgrades = read(buffer).downgrades
+        # the later entry counts more than the earlier one and is still its own
+        assert downgrades in (
+            (
+                DowngradeCount(name="__abs__", count=1),
+                DowngradeCount(name="__neg__", count=1),
+                DowngradeCount(name="__abs__", count=3),
+            ),
+            (
+                DowngradeCount(name="__abs__", count=1),
+                DowngradeCount(name="__abs__", count=3),
+            ),
+        ), at
+        if not landed:
+            break
+        at += 1

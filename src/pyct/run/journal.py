@@ -28,9 +28,10 @@ kind) and its payload, padded to 8 bytes:
 - fork: JSON ``[expression, taken, file, line, col]``, the expression a
   leaf or ``[n]``.
 - downgrade: a native u64 count, then the name. A repeat of the last
-  entry rewrites its count in place. A record of the last entry's name
-  with a higher count carries that entry on, as a write the alarm cut short
-  can leave; the reader joins the two.
+  entry rewrites its count in place.
+- carry-on: the same, for a count past 1 the writer could not grow in place,
+  because the alarm cut its note of the last entry short. The reader joins
+  it to the entry before when that one has its name.
 - end: JSON ``null`` for a call that returned, else ``[kind, detail,
   traceback]``.
 
@@ -87,7 +88,7 @@ RECORDS = _NOTE_AT + _NOTE_SIZE
 _HEAD = struct.Struct("<IB3x")
 _NUMBER = struct.Struct("<q")
 
-_LINE, _PART, _FORK, _DOWNGRADE, _END, _START = 1, 2, 3, 4, 5, 6
+_LINE, _PART, _FORK, _DOWNGRADE, _END, _START, _CARRY_ON = 1, 2, 3, 4, 5, 6, 7
 _OPEN, _FULL, _UNENCODABLE = 0, 1, 2
 
 
@@ -140,7 +141,8 @@ class JournalWriter:
             return
         self._count_name = None
         at = self._at
-        if self._record(_DOWNGRADE, _WORD.pack(count) + name.encode()):
+        kind = _DOWNGRADE if count == 1 else _CARRY_ON
+        if self._record(kind, _WORD.pack(count) + name.encode()):
             self._count_at = at + _HEAD.size
             self._count_name = name
 
@@ -334,24 +336,23 @@ class _Facts:
             self.parts[number] = [self._expression(item) for item in items]
         elif kind == _FORK:
             self.branches.append(self._fork(json.loads(payload)))
-        elif kind == _DOWNGRADE:
-            self._downgrade(payload)
+        elif kind in (_DOWNGRADE, _CARRY_ON):
+            self._downgrade(payload, carries_on=kind == _CARRY_ON)
         elif kind == _END:
             self.ended, self.end = True, _ending(json.loads(payload))
         else:
             raise ValueError(f"no record of kind {kind}")
 
-    def _downgrade(self, payload: bytes) -> None:
+    def _downgrade(self, payload: bytes, *, carries_on: bool) -> None:
         """Start an entry, or carry the last one on when this record is its later count.
 
-        A record that carries an entry on names it and counts more. An entry
-        written after a lost one of another name starts again at a count of 1,
-        which is never more, so the two stay apart.
+        Only the writer knows a count carries an entry on, so it says so by the
+        record's kind. A new entry after a lost one of another name is a plain
+        downgrade record, and stays its own however far it grows.
         """
         (count,) = _WORD.unpack_from(payload)
         entry = DowngradeCount(payload[_WORD.size :].decode(), count)
-        last = self.downgrades[-1] if self.downgrades else None
-        if last is not None and last.name == entry.name and entry.count > last.count:
+        if carries_on and self.downgrades and self.downgrades[-1].name == entry.name:
             self.downgrades[-1] = entry
         else:
             self.downgrades.append(entry)
