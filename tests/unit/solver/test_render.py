@@ -369,6 +369,74 @@ def test_every_head_render_writes_says_what_type_its_value_is() -> None:
     assert written - set(RESULTS) == set()
 
 
+# a term each head builds, grouped by the type of its value in Python: `+` builds an int from
+# ints and a str from strs
+INT_TERMS: list[Expression] = [
+    ["+", "x", 1],
+    ["-", "x", 1],
+    ["*", "x", 2],
+    ["**", "x", 2],
+    ["abs", "x"],
+    ["//", "x", 2],
+    ["%", "x", 2],
+    ["find", "s", "'a'"],
+    ["rfind", "s", "'a'"],
+    ["index", "s", "'a'"],
+    ["rindex", "s", "'a'"],
+    ["count", "s", "'a'"],
+    ["len", "s"],
+]
+STR_TERMS: list[Expression] = [
+    ["+", "s", "'a'"],
+    ["[]", "s", 0],
+    ["[:]", "s", 1, None],
+    ["replace", "s", "'a'", "'b'"],
+    ["removeprefix", "s", "'a'"],
+    ["removesuffix", "s", "'a'"],
+]
+BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
+    ["in", "'a'", "s"],
+    ["startswith", "s", "'a'"],
+    ["endswith", "s", "'a'"],
+]
+TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "s": str, "t": str}
+
+
+def _head(term: Expression) -> str:
+    assert isinstance(term, list) and isinstance(term[0], str), term
+    return term[0]
+
+
+def _asserted(text: str) -> str:
+    """The one assertion a one-fork program holds."""
+    return next(line for line in text.splitlines() if line.startswith("(assert "))
+
+
+def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
+    assert {_head(term) for term in INT_TERMS + STR_TERMS + BOOL_TERMS} == set(RESULTS)
+
+
+@pytest.mark.parametrize("term", INT_TERMS, ids=[_head(term) for term in INT_TERMS])
+def test_a_head_that_builds_an_int_is_ordered_as_an_int(term: Expression) -> None:
+    text = render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
+
+    assert _asserted(text).startswith("(assert (< ")
+
+
+@pytest.mark.parametrize("term", STR_TERMS, ids=[_head(term) for term in STR_TERMS])
+def test_a_head_that_builds_a_str_is_ordered_as_a_str(term: Expression) -> None:
+    text = render((fork(["<", term, "t"], taken=True),), TYPED_LEAVES)
+
+    assert _asserted(text).startswith("(assert (str.< ")
+
+
+@pytest.mark.parametrize("term", BOOL_TERMS, ids=[_head(term) for term in BOOL_TERMS])
+def test_a_head_that_builds_a_bool_is_no_operand_of_an_order(term: Expression) -> None:
+    # core never orders a truth value, so render refuses it rather than guess a sort
+    with pytest.raises(ValueError, match="on bool"):
+        render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
+
+
 def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
     with pytest.raises(ValueError, match="position"):
         render((fork(["==", ["[]", "s", "n"], "'a'"], taken=True),), {"s": str, "n": int})
