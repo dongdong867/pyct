@@ -180,6 +180,34 @@ def test_a_class_leaves_out_its_class_level_lines_and_each_method_def_line(
     assert body.cut(range(22, 37)) == frozenset({30, 36})
 
 
+CLASS_LEVEL_CODE = """\
+class Klass:
+    items = list(
+        n
+        for n in range(3)
+    )
+    key = (lambda self:
+           self.n)
+
+    def __init__(self, n: int) -> None:
+        if n > 0:
+            self.n = n
+        else:
+            self.n = 0
+
+    if True:
+        def other(self):
+            return 1
+"""
+
+
+def test_a_class_level_lambda_or_generator_adds_no_own_line(tmp_path: Path) -> None:
+    # both run at import, over several lines; a def in a class-level block is still a method
+    body = read_body(write(tmp_path, CLASS_LEVEL_CODE), "Klass")
+
+    assert body.own_lines == frozenset({10, 11, 13, 17})
+
+
 def test_a_decorated_function_leaves_out_its_decorators(tmp_path: Path) -> None:
     body = read_body(write(tmp_path, SHAPES), "wrapped")
 

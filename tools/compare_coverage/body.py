@@ -20,12 +20,12 @@ never disagree about it (decision own-lines-from-the-compiled-code). The rule:
   so that line is left out. Python compiles no code for a docstring or for ``global`` and
   ``nonlocal``, so those lines are never own lines.
 - A class's own lines are those of the functions its body defines, its methods, each without
-  its starting line. The rest of the class body runs at import, as does a class nested in it,
-  whose methods count the same way.
+  its starting line, in the class body's blocks too. The rest of the class body runs at
+  import, a lambda or generator in a class-level assignment among it; a class nested in it
+  counts its own methods the same way.
 """
 
 import ast
-import inspect
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -69,8 +69,7 @@ def read_body(file: Path, name: str) -> Body:
     if rebinding is not None:
         raise BodyError(f"{file} {rebinding}")
     first_line = _first_lines(definition)
-    code = _find(_codes(_compile(tree, file)), definition, file)
-    lines = _lines_run(code, isinstance(definition, ast.ClassDef))
+    lines = _lines_run(definition, _codes(_compile(tree, file)), file)
     own_lines = frozenset(first_line[line] for line in lines if line in first_line)
     return Body(own_lines=own_lines, first_line=first_line)
 
@@ -180,15 +179,30 @@ def _find(
     return code
 
 
-def _lines_run(code: CodeType, is_class: bool) -> set[int]:
-    """The lines a call runs in ``code``: all but its starting line, or a class's methods'."""
-    if not is_class:
+def _lines_run(
+    definition: Definition, codes: Mapping[tuple[str, int], CodeType], file: Path
+) -> set[int]:
+    """The lines a call runs: all a function's code holds but its starting line.
+
+    A class's are those of the functions and classes its body defines, in its blocks too:
+    the rest of the body, lambdas and generators in its assignments among it, runs at import.
+    """
+    if not isinstance(definition, ast.ClassDef):
+        code = _find(codes, definition, file)
         return _lines(code) - {code.co_firstlineno}
     lines: set[int] = set()
-    for nested in _nested(code):
-        # a function's code runs in fresh locals; a class body's runs in the class namespace
-        lines |= _lines_run(nested, is_class=not nested.co_flags & inspect.CO_OPTIMIZED)
+    for member in _members(definition):
+        lines |= _lines_run(member, codes, file)
     return lines
+
+
+def _members(node: ast.AST) -> Iterator[Definition]:
+    """The defs and classes a class body holds, in its blocks too, and not inside them."""
+    for statement in _blocks(node):
+        if isinstance(statement, DEFINITIONS):
+            yield statement
+        else:
+            yield from _members(statement)
 
 
 def _lines(code: CodeType) -> set[int]:
