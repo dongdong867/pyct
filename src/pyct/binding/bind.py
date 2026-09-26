@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable, Iterable, Mapping
+from enum import Enum
 from typing import Any, TypeGuard
 
 from pyct.core.branch import BranchSink, Expression
@@ -139,22 +140,35 @@ class _Walk:
         return entries
 
 
-def _step(container: Expression | None, key: Expression | None) -> Expression | None:
-    """The access one step further in, ``["[]", container, key]``, or None when either is."""
-    return None if container is None or key is None else ["[]", container, key]
+class _Unnamed(Enum):
+    """What ``_key`` answers for a key no access can write, apart from every literal."""
+
+    KEY = "a key no access can name"
 
 
-def _key(key: object) -> Expression | None:
+def _step(container: Expression | None, key: Expression | _Unnamed) -> Expression | None:
+    """The access one step further in, ``["[]", container, key]``.
+
+    None when the container has no access, or the key cannot be written.
+    """
+    if container is None or key is _Unnamed.KEY:
+        return None
+    return ["[]", container, key]
+
+
+def _key(key: object) -> Expression | _Unnamed:
     """A key as an access writes it: a str in its Python quotes, an int as itself.
 
-    Any other key is None: no access names the value under it.
+    Any other key is ``_Unnamed.KEY``: no access names the value under it.
+    The answer is apart from every literal, so a key written as ``null`` can
+    join them later.
     """
     if isinstance(key, str):
         # str's own repr: a key of the target's own str subclass may print itself another way
         return str.__repr__(key)
     if isinstance(key, int) and not isinstance(key, bool):
         return int(key)
-    return None
+    return _Unnamed.KEY
 
 
 def _tracked(value: int | str, access: Expression, sink: BranchSink) -> object:
