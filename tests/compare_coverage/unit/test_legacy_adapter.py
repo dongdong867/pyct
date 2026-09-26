@@ -110,9 +110,18 @@ def test_a_failure_without_text_names_the_input_the_watchdog_stopped(root: Path)
     assert line["failure"] == "timeout: timeout: child exceeded wall-clock timeout"
 
 
-def test_a_checkpoint_without_text_does_not_name_an_earlier_raise(root: Path) -> None:
-    # a child that died between inputs leaves a checkpoint: no stopped input, no error
-    inputs = (Record(error="ValueError: seed raises"), Record(error=None))
+@pytest.mark.parametrize(
+    "inputs",
+    [
+        (Record(error="ValueError: seed raises"), Record(error=None)),
+        (Record(error=None), Record(error="ValueError: the last input raises")),
+    ],
+)
+def test_a_checkpoint_without_text_does_not_name_a_raise(
+    root: Path, inputs: tuple[Record, ...]
+) -> None:
+    # a child that died between inputs leaves a checkpoint: no stopped input, no error; its
+    # last input's raise is the target's, as only a timeout stop ends on a stopped input
     answer = Answer(success=False, termination_reason="partial_checkpoint", inputs_generated=inputs)
 
     line = report(a_request(root), fake_engine(answer, []))
