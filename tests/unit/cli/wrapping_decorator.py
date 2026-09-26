@@ -1,6 +1,6 @@
 """Two decorators, written here, that wrap a target written in another module.
 
-``Number`` is a ``str`` here and an ``int`` in ``test_checks``, so a text
+``Number`` is a ``str`` here and an ``int`` in ``test_seed_types``, so a text
 annotation spelling it means a different plain type in each of the two
 modules a decorated target is written across.
 """

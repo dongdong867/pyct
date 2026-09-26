@@ -3,10 +3,10 @@
 A base gives the first three; a metaclass gives the ``__call__``
 ``inspect.signature`` reads a class through when it has one.
 
-``Number`` is a ``str`` here and an ``int`` in ``test_checks``, so a text
+``Number`` is a ``str`` here and an ``int`` in ``test_seed_types``, so a text
 annotation written here means a different plain type depending on which
 module's names read it. ``Elsewhere`` is spelled only here, so it is a name
-this module knows and ``test_checks`` does not.
+this module knows and ``test_seed_types`` does not.
 """
 
 # the name both modules spell, each meaning a different plain type
