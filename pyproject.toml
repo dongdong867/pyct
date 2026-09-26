@@ -13,9 +13,11 @@ pyct = "pyct.cli:main"
 
 [dependency-groups]
 dev = [
+  "coverage>=7.10",
   "import-linter>=2.0",
   "pyrefly>=0.33",
   "pytest>=8.0",
+  "pytest-cov>=7.1",
   "ruff>=0.12",
 ]
 
@@ -31,6 +33,21 @@ search-path = ["src", "."]
 [tool.pytest.ini_options]
 addopts = "-v --tb=short"
 testpaths = ["tests"]
+
+# Measured when pytest runs with --cov. The acceptance tests start pyct in a
+# subprocess, and patch = subprocess measures the code it runs there too.
+[tool.coverage.run]
+branch = true
+source = ["pyct"]
+patch = ["subprocess"]
+
+# fail_under is the branch coverage the suite reached when this floor was set,
+# rounded down. Raise it when coverage rises; a drop below it fails the run.
+[tool.coverage.report]
+fail_under = 98
+precision = 2
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 src = ["src", "tests"]

@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v` — healthy: every test passes, and no fewer pass than on the base branch. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
+- test: `uv run pytest tests/ -v --cov` — healthy: every test passes, no fewer pass than on the base branch, and it prints `Required test coverage of … reached`: branch coverage of `pyct`, subprocesses included, is at or above `fail_under` in pyproject.toml. Drop `--cov` for a quick run. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
 - lint: `uv run ruff check src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Contracts: 1 kept, 0 broken.` Style, types, import layers
 - format: `uv run ruff format src/ tests/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
