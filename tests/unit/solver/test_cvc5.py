@@ -1,3 +1,4 @@
+import json
 import logging
 import shutil
 import time
@@ -220,3 +221,17 @@ def test_the_real_cvc5_says_when_it_ran_out_of_time() -> None:
     assert answer == Timeout()
     # cvc5 stopped itself at its limit; pyct's own stop would have taken the grace too
     assert time.monotonic() - started < 0.2 + GRACE_SECONDS, answer
+
+
+@pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
+def test_the_real_cvc5_answers_about_a_value_inside_by_its_access() -> None:
+    # a key holding the two characters no SMT-LIB symbol can, `|` and a backslash
+    access: Expression = ["[]", "d", repr("a|b\\c")]
+    name = json.dumps(access)
+
+    answer = solve((fork(["<", access, 1], taken=True),), {"x": int, name: int}, 10.0)
+
+    assert isinstance(answer, Sat)
+    assert list(answer.model) == [name]
+    value = answer.model[name]
+    assert isinstance(value, int) and value < 1

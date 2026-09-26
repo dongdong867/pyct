@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from pyct.binding.model import apply
@@ -28,3 +30,19 @@ def test_a_model_about_a_key_the_seed_does_not_have_is_an_error() -> None:
     # the solver answered about a leaf that does not exist; the name says which
     with pytest.raises(ValueError, match="z"):
         apply({"x": 3}, {"z": 12})
+
+
+def test_the_model_writes_a_value_inside_at_its_access() -> None:
+    seed: dict[str, object] = {"config": {"server": {"port": 1, "host": "x"}}, "items": [1, 2]}
+    port = json.dumps(["[]", ["[]", "config", "'server'"], "'port'"])
+    second = json.dumps(["[]", "items", 1])
+
+    args = apply(seed, {port: 70000, second: -60})
+
+    assert args == {"config": {"server": {"port": 70000, "host": "x"}}, "items": [1, -60]}
+    assert seed == {"config": {"server": {"port": 1, "host": "x"}}, "items": [1, 2]}
+
+
+def test_a_model_about_an_access_the_seed_does_not_have_is_an_error() -> None:
+    with pytest.raises(ValueError, match="items"):
+        apply({"items": [1]}, {json.dumps(["[]", "items", 1]): 5})

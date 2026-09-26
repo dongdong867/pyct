@@ -1,4 +1,7 @@
-from pyct.binding.bind import bind, leaves
+import json
+from collections import OrderedDict
+
+from pyct.binding.bind import bind, leaf_name, leaves
 from pyct.core.branch import SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -35,7 +38,7 @@ def test_a_str_becomes_a_concolic_str_named_after_its_parameter() -> None:
 
 
 def test_every_other_value_passes_through_untouched() -> None:
-    seed = {"f": 1.5, "n": None, "xs": [1, 2]}
+    seed = {"f": 1.5, "n": None, "xs": {1, 2}}
 
     args = bind(seed, [])
 
@@ -66,3 +69,105 @@ def test_leaves_keeps_the_order_the_seed_gave() -> None:
 
 def test_an_empty_seed_has_no_leaves() -> None:
     assert leaves({}) == {}
+
+
+def test_a_value_inside_a_dict_is_named_by_the_access_that_reaches_it() -> None:
+    sink: list[SinkItem] = []
+
+    args = bind({"config": {"server": {"port": 80}}}, sink)
+
+    config = args["config"]
+    assert isinstance(config, dict)
+    port = config["server"]["port"]
+    assert isinstance(port, ConcolicInt)
+    assert port == 80
+    assert port.expression == ["[]", ["[]", "config", "'server'"], "'port'"]
+    assert port.sink is sink
+
+
+def test_a_value_inside_a_list_is_named_by_its_index() -> None:
+    args = bind({"items": [1, "a"]}, [])
+
+    items = args["items"]
+    assert isinstance(items, list)
+    first, second = items
+    assert isinstance(first, ConcolicInt)
+    assert first.expression == ["[]", "items", 0]
+    assert isinstance(second, ConcolicStr)
+    assert second.expression == ["[]", "items", 1]
+
+
+def test_a_key_is_written_as_python_writes_it() -> None:
+    args = bind({"d": {"0": 1, "it's": 2}}, [])
+
+    d = args["d"]
+    assert isinstance(d, dict)
+    assert [value.expression for value in d.values()] == [
+        ["[]", "d", "'0'"],
+        ["[]", "d", '"it\'s"'],
+    ]
+
+
+def test_an_int_key_names_its_value_by_the_int() -> None:
+    args = bind({"by_id": {1: 5}}, [])
+
+    by_id = args["by_id"]
+    assert isinstance(by_id, dict)
+    assert by_id[1].expression == ["[]", "by_id", 1]
+
+
+def test_a_value_under_a_key_of_another_type_passes_through() -> None:
+    args = bind({"d": {(1, 2): 5, True: 6}}, [])
+
+    d = args["d"]
+    assert isinstance(d, dict)
+    assert [type(value) for value in d.values()] == [int, int]
+
+
+def test_keys_nulls_and_bools_inside_stay_plain() -> None:
+    args = bind({"d": {"k": None, "b": True, "f": 1.5}}, [])
+
+    d = args["d"]
+    assert isinstance(d, dict)
+    assert d == {"k": None, "b": True, "f": 1.5}
+    assert [type(key) for key in d] == [str, str, str]
+    assert d["b"] is True
+
+
+def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
+    seed: dict[str, object] = {"config": {"items": [0]}}
+
+    args = bind(seed, [])
+
+    config = args["config"]
+    assert isinstance(config, dict)
+    config["items"].append(1)
+    config["seen"] = True
+    assert seed == {"config": {"items": [0]}}
+    assert type(config) is dict
+    assert type(config["items"]) is list
+
+
+def test_a_subclass_of_dict_passes_through_as_it_came() -> None:
+    seed = {"d": OrderedDict(k=1)}
+
+    args = bind(seed, [])
+
+    assert args["d"] is seed["d"]
+
+
+def test_leaves_names_each_value_inside_by_its_access_in_seed_order() -> None:
+    seed = {"items": [1, "a", True, None], "config": {"k": 2}, "x": 3}
+
+    assert leaves(seed) == {
+        json.dumps(["[]", "items", 0]): int,
+        json.dumps(["[]", "items", 1]): str,
+        json.dumps(["[]", "config", "'k'"]): int,
+        "x": int,
+    }
+    assert list(leaves(seed))[0] == json.dumps(["[]", "items", 0])
+
+
+def test_leaf_name_is_a_parameters_own_name_or_its_access_as_json() -> None:
+    assert leaf_name("x") == "x"
+    assert leaf_name(["[]", "items", 0]) == '["[]", "items", 0]'

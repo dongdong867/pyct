@@ -16,6 +16,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
+from pyct.binding.annotations import Check, check_of, contradictions
+from pyct.binding.call import call_arguments
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
@@ -248,9 +250,14 @@ def _positive_seconds(text: str, flag: str) -> float:
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
-    """Refuse a seed whose keys do not fit the parameters. Names only, not types."""
+    """Refuse a seed whose keys do not fit the parameters. Names only, not types.
+
+    A positional-only parameter is named too, and bound by position, as the
+    call will pass it.
+    """
+    positional, keywords = call_arguments(signature, seed)
     try:
-        signature.bind(**seed)
+        signature.bind(*positional, **keywords)
     except TypeError as error:
         # bind names a missing parameter before an unexpected key, so name the keys too
         given = ", ".join(seed) or "nothing"
@@ -258,8 +265,11 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
 
 
-def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
-    """The parameters annotated with a bare ``str``, ``int``, ``float`` or ``bool``.
+def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
+    """The parameters whose annotation asks something of the seed, and what it asks.
+
+    What an annotation asks is ``check_of``'s: a bare ``str``, ``int``,
+    ``float`` or ``bool``, or a list or dict of them.
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
@@ -268,43 +278,42 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     the target's, each wrapper's, and the one supplying an ``__init__``,
     ``__new__`` or ``__call__`` the target did not write itself, a base's or
     a metaclass's. It is kept only when every
-    module that knows the name gives the same type. A name no module
+    module that knows the name reads it as asking the same. A name no module
     resolves, or that two modules resolve differently, skips its own
-    parameter and no other. Anything else the annotation turns out to be,
-    ``str | None`` or ``list[int]`` or a class, is not one of the four and is
-    not kept. The four are matched by identity, so an annotation that merely
-    compares equal to ``str`` is not kept either.
+    parameter and no other. An annotation that asks nothing, such as
+    ``str | None`` or a class, is not kept.
 
     The parameters come from the signature, the same source ``check_seed_fits``
     reads, so a class target is read at its ``__init__``.
     """
-    hints: dict[str, type] = {}
+    hints: dict[str, Check] = {}
     for name, parameter in inspect.signature(fn).parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        resolved = _resolved(parameter.annotation, fn)
-        if resolved is str or resolved is int or resolved is float or resolved is bool:
-            hints[name] = resolved
+        check = _resolved(parameter.annotation, fn)
+        if check is not None:
+            hints[name] = check
     return hints
 
 
-def _resolved(annotation: object, fn: Callable[..., object]) -> object:
-    """The annotation itself, or the one type every module that knows its text names.
+def _resolved(annotation: object, fn: Callable[..., object]) -> Check | None:
+    """What the annotation asks, or what every module that knows its text reads it as asking.
 
     A namespace whose eval raises does not know the name and says nothing.
     The answer stands only when something resolved it and everything that
-    did landed on the same object; a disagreement is no annotation, as any
-    failure is.
+    did asks the same; a disagreement is no annotation, as any failure is.
+    Two modules can build two ``list[int]`` objects from one text, so they
+    agree on what the text asks rather than on the object.
     """
     if not isinstance(annotation, str):
-        return annotation
-    answers: list[object] = []
+        return check_of(annotation)
+    answers: list[Check | None] = []
     for names in _namespaces(fn):
         try:
-            answers.append(eval(annotation, names))
+            answers.append(check_of(eval(annotation, names)))
         except Exception:
             continue
-    if not answers or any(answer is not answers[0] for answer in answers):
+    if not answers or any(answer != answers[0] for answer in answers):
         return None
     return answers[0]
 
@@ -390,35 +399,9 @@ def _module_names(fn: object) -> list[dict[str, object]]:
     return [vars(module) for module in modules if module is not None]
 
 
-def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
-    """One line per seeded parameter whose value Python's own typing would not accept.
-
-    The lines come in the order of ``hints``, which is signature order. A
-    value passes when it is an instance of the annotated type, plus the one
-    allowance Python makes itself: an ``int`` stands in where a ``float`` is
-    asked for. ``bool`` being a subclass of ``int`` is Python's rule too, so
-    ``True`` passes ``int`` while ``1`` fails ``bool``. The value is spelled
-    as JSON because the seed was typed as JSON.
-    """
-    return [
-        _refusal(name, hint, seed[name])
-        for name, hint in hints.items()
-        if name in seed and not _accepts(hint, seed[name])
-    ]
-
-
-def _accepts(hint: type, value: object) -> bool:
-    return isinstance(value, hint) or (hint is float and isinstance(value, int))
-
-
-def _refusal(name: str, hint: type, value: object) -> str:
-    article = "an" if hint is int else "a"
-    return f"{name} must be {article} {hint.__name__}, got {json.dumps(value)}"
-
-
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
-    """Refuse a seed that contradicts a plain annotation, naming every one at once."""
-    lines = contradictions(plain_annotations(target.fn), seed)
+    """Refuse a seed that contradicts an annotation, naming every value at once."""
+    lines = contradictions(checked_annotations(target.fn), seed)
     if lines:
         raise UsageError("\n".join(lines))
 

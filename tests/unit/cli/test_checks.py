@@ -71,6 +71,19 @@ def test_check_seed_fits_refuses_a_missing_key() -> None:
         check_seed_fits(SIGNATURE, {})
 
 
+def check(value: str, /, strict: bool = False) -> str:
+    return value if strict else ""
+
+
+def test_check_seed_fits_takes_a_positional_only_parameter_by_name() -> None:
+    check_seed_fits(inspect.signature(check), {"value": "x", "strict": True})
+
+
+def test_check_seed_fits_refuses_a_missing_positional_only_parameter() -> None:
+    with pytest.raises(UsageError, match="value"):
+        check_seed_fits(inspect.signature(check), {"strict": True})
+
+
 def test_check_seed_fits_accepts_a_fitting_seed() -> None:
     check_seed_fits(SIGNATURE, {"x": 1})
 

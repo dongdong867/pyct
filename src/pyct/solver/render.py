@@ -2,7 +2,9 @@
 
 import ast
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
+from pyct.binding.bind import leaf_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver.strings import (
     above,
@@ -89,38 +91,86 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
 }
 
 
+@dataclass(frozen=True)
+class _Leaves:
+    """The seed's leaves by name, with their types and the constant each is declared as."""
+
+    kinds: Mapping[str, type]
+    constants: Mapping[str, str]
+
+    def named(self, part: Expression) -> str | None:
+        """The name of the leaf a part of a condition is, or None for a literal or an operation.
+
+        A parameter is its bare name. A value inside one is its access, which
+        reads as indexing does: only an access to one of the seed's own leaves
+        is a value, and any other is an operation on a tracked value.
+        """
+        if isinstance(part, str):
+            return None if _is_literal(part) else part
+        if isinstance(part, list) and part[:1] == ["[]"] and leaf_name(part) in self.kinds:
+            return leaf_name(part)
+        return None
+
+    def kind(self, part: Expression) -> type | None:
+        """The type of the leaf a part is, or None for anything else."""
+        name = self.named(part)
+        return None if name is None else self.kinds.get(name)
+
+
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
     """The whole little program: what to declare, what to assert, what to ask.
 
     Only the leaves the prefix mentions are declared, so the answer names
-    nothing the path did not depend on.
+    nothing the path did not depend on. ``leaves`` names each leaf as
+    ``pyct.binding`` does, and each is declared under its constant.
     """
-    mentioned = _mentioned(prefix, leaves)
+    known = _Leaves(kinds=leaves, constants=constants(leaves))
+    mentioned = _mentioned(prefix, known)
+    declared = [(known.constants[name], _sort(name, leaves[name])) for name in mentioned]
     lines = ["(set-logic ALL)"]
-    lines += [f"(declare-const {name} {_sort(name, leaves[name])})" for name in mentioned]
-    lines += [_assertion(fork, leaves) for fork in prefix]
+    lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [_assertion(fork, known) for fork in prefix]
     lines.append("(check-sat)")
-    lines += [f"(get-value ({name}))" for name in mentioned]
+    lines += [f"(get-value ({constant}))" for constant, _ in declared]
     return "\n".join(lines) + "\n"
 
 
-def _mentioned(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> list[str]:
+def constants(leaves: Mapping[str, type]) -> dict[str, str]:
+    """The SMT-LIB constant each leaf is declared as, by the leaf's name.
+
+    A parameter keeps its own name. A value inside one is ``leaf.<n>``, n its
+    position among the seed's leaves: its access is no symbol SMT-LIB reads,
+    and a key may hold ``|`` or a backslash, which not even a quoted symbol can.
+    """
+    return {
+        name: name if name.isidentifier() else f"leaf.{index}" for index, name in enumerate(leaves)
+    }
+
+
+def by_leaf(model: Mapping[str, object], leaves: Mapping[str, type]) -> dict[str, object]:
+    """A model cvc5 wrote by constant, named by the leaves the constants were declared for."""
+    names = {constant: name for name, constant in constants(leaves).items()}
+    return {names[constant]: value for constant, value in model.items()}
+
+
+def _mentioned(prefix: tuple[Branch, ...], leaves: _Leaves) -> list[str]:
     """The leaves the prefix names, in the order the seed bound them."""
     named: set[str] = set()
     for fork in prefix:
-        named |= _names(fork.expression)
-    unknown = sorted(named - set(leaves))
+        named |= _names(fork.expression, leaves)
+    unknown = sorted(named - set(leaves.kinds))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return [name for name in leaves if name in named]
+    return [name for name in leaves.kinds if name in named]
 
 
-def _names(expression: Expression) -> set[str]:
-    """Every parameter name in a condition. A list leads with its operator, not a leaf."""
-    if isinstance(expression, str):
-        return set() if _is_literal(expression) else {expression}
+def _names(expression: Expression, leaves: _Leaves) -> set[str]:
+    """Every leaf a condition names. A list leads with its operator, not a leaf."""
+    name = leaves.named(expression)
+    if name is not None:
+        return {name}
     if isinstance(expression, list):
-        return {name for part in expression[1:] for name in _names(part)}
+        return {name for part in expression[1:] for name in _names(part, leaves)}
     return set()
 
 
@@ -131,20 +181,23 @@ def _sort(name: str, kind: type) -> str:
     return sort
 
 
-def _assertion(fork: Branch, leaves: Mapping[str, type]) -> str:
+def _assertion(fork: Branch, leaves: _Leaves) -> str:
     """The condition as the run met it: the side it took decides the negation."""
     condition = _expression(fork.expression, leaves)
     return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
 
-def _expression(expression: Expression, leaves: Mapping[str, type]) -> str:
+def _expression(expression: Expression, leaves: _Leaves) -> str:
     """One condition, operator first. A negative number is a subtraction from nothing."""
     if isinstance(expression, bool):
         return "true" if expression else "false"
     if isinstance(expression, int):
         return f"(- {-expression})" if expression < 0 else str(expression)
+    name = leaves.named(expression)
+    if name is not None:
+        return leaves.constants[name]
     if isinstance(expression, str):
-        return encode(_value(expression)) if _is_literal(expression) else expression
+        return encode(_value(expression))
     head, *operands = expression
     rendered = [_expression(part, leaves) for part in operands]
     form = FORMS.get(head) if isinstance(head, str) else None
@@ -155,15 +208,12 @@ def _expression(expression: Expression, leaves: Mapping[str, type]) -> str:
     return "({} {})".format(_operator(head), " ".join(rendered))
 
 
-def _on_strings(operands: list[Expression], leaves: Mapping[str, type]) -> bool:
-    """Whether a compare's operands are strings: a string literal, or a name bound to a str.
+def _on_strings(operands: list[Expression], leaves: _Leaves) -> bool:
+    """Whether a compare's operands are strings: a string literal, or a leaf bound to a str.
 
     Both operands of a compare are of one sort, so one string between them decides it.
     """
-    return any(
-        _literal(part) is not None or (isinstance(part, str) and leaves.get(part) is str)
-        for part in operands
-    )
+    return any(_literal(part) is not None or leaves.kind(part) is str for part in operands)
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:

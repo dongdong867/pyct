@@ -4,7 +4,8 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.cli import UsageError, check_seed_types, contradictions, plain_annotations
+from pyct.binding.annotations import Items
+from pyct.cli import UsageError, check_seed_types, checked_annotations
 from pyct.run.target import Target
 from tests.unit.cli.declaring_decorator import declares_its_signature
 from tests.unit.cli.inherited import (
@@ -24,12 +25,23 @@ def four_plain_types(s: str, n: int, x: float, b: bool) -> str:
     return f"{s}{n}{x}{b}"
 
 
-def not_plain(s: str | None, xs: list[int], c: Target) -> None:
+def not_plain(s: str | None, xs: tuple[int, ...], c: Target) -> None:
     return None
 
 
 def no_annotation(s) -> None:
     return None
+
+
+def items(xs: list[int], cfg: dict[str, list[str]], bare: list, d: dict) -> None:
+    return None
+
+
+def items_as_text(xs: list[int]) -> None:
+    return None
+
+
+items_as_text.__annotations__ = {"xs": "list[int]", "return": "None"}
 
 
 def stored_as_text(s: str, missing: object) -> None:
@@ -248,30 +260,44 @@ def target_for(fn: object) -> Target:
     return Target(spec="m::f", fn=fn, file="m.py", signature=inspect.signature(fn))
 
 
-def test_plain_annotations_keeps_the_four_plain_types() -> None:
-    assert plain_annotations(four_plain_types) == {"s": str, "n": int, "x": float, "b": bool}
+def test_checked_annotations_keeps_the_four_plain_types() -> None:
+    assert checked_annotations(four_plain_types) == {"s": str, "n": int, "x": float, "b": bool}
 
 
-def test_plain_annotations_skips_the_return() -> None:
-    assert "return" not in plain_annotations(four_plain_types)
+def test_checked_annotations_skips_the_return() -> None:
+    assert "return" not in checked_annotations(four_plain_types)
 
 
-def test_plain_annotations_skips_an_annotation_that_is_not_plain() -> None:
-    assert plain_annotations(not_plain) == {}
+def test_checked_annotations_skips_an_annotation_that_is_not_plain() -> None:
+    assert checked_annotations(not_plain) == {}
 
 
-def test_plain_annotations_skips_a_parameter_with_no_annotation() -> None:
-    assert plain_annotations(no_annotation) == {}
+def test_checked_annotations_keeps_a_list_or_dict_of_what_it_checks() -> None:
+    assert checked_annotations(items) == {
+        "xs": Items(list, int),
+        "cfg": Items(dict, Items(list, str)),
+        "bare": Items(list, None),
+        "d": Items(dict, None),
+    }
 
 
-def test_plain_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
+def test_checked_annotations_resolves_list_and_dict_text() -> None:
+    # two namespaces build two list[int] objects from one text; they agree on what they ask
+    assert checked_annotations(items_as_text) == {"xs": Items(list, int)}
+
+
+def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
+    assert checked_annotations(no_annotation) == {}
+
+
+def test_checked_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
     # one bad name costs that parameter alone, not the whole function
-    assert plain_annotations(stored_as_text) == {"s": str}
+    assert checked_annotations(stored_as_text) == {"s": str}
 
 
-def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
+def test_checked_annotations_reads_a_class_target_at_its_init() -> None:
     # the class body says str, the parameter says int; the parameter is what a seed fills
-    assert plain_annotations(Point) == {"n": int}
+    assert checked_annotations(Point) == {"n": int}
 
 
 @pytest.mark.parametrize(
@@ -293,11 +319,11 @@ def test_plain_annotations_reads_a_class_target_at_its_init() -> None:
         pytest.param(partial_agreeing, {"n": int}, id="partial"),
     ],
 )
-def test_plain_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
+def test_checked_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
     target: Callable[..., object], expected: dict[str, type]
 ) -> None:
     # every module the text could have been written in reads it, and exactly one answers
-    assert plain_annotations(target) == expected
+    assert checked_annotations(target) == expected
 
 
 @pytest.mark.parametrize(
@@ -318,73 +344,27 @@ def test_plain_annotations_keeps_text_one_module_knows_and_no_other_contradicts(
         pytest.param(partial_clashing, id="partial"),
     ],
 )
-def test_plain_annotations_skips_text_two_modules_read_differently(
+def test_checked_annotations_skips_text_two_modules_read_differently(
     target: Callable[..., object],
 ) -> None:
     # Number is an int in one candidate module and a str in the other, so n alone goes;
     # m, whose text both modules read as int, is still checked
-    assert plain_annotations(target) == {"m": int}
+    assert checked_annotations(target) == {"m": int}
 
 
-def test_plain_annotations_ends_on_a_wrapped_cycle() -> None:
+def test_checked_annotations_ends_on_a_wrapped_cycle() -> None:
     # inspect stops at the declared signature and never walks the cycle below it, so
     # reading the namespaces is what meets it; a walk that did not stop would not end
-    assert plain_annotations(declared_over_a_cycle) == {"n": int}
+    assert checked_annotations(declared_over_a_cycle) == {"n": int}
 
 
-def test_plain_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
+def test_checked_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
     # equal to str is not str; keeping it would hand isinstance something that is not a type
-    assert plain_annotations(annotated_by_a_claim) == {}
+    assert checked_annotations(annotated_by_a_claim) == {}
 
 
 def test_check_seed_types_accepts_a_seed_that_fits_a_class_init() -> None:
     check_seed_types(target_for(Point), {"n": 5})
-
-
-def test_contradictions_names_the_parameter_the_type_and_the_value() -> None:
-    assert contradictions({"s": str}, {"s": 5}) == ["s must be a str, got 5"]
-
-
-def test_contradictions_spells_the_value_as_json() -> None:
-    assert contradictions({"n": int}, {"n": "5"}) == ['n must be an int, got "5"']
-
-
-def test_contradictions_says_an_before_int() -> None:
-    assert contradictions({"n": int}, {"n": 1.5}) == ["n must be an int, got 1.5"]
-
-
-def test_contradictions_follows_python_on_numbers() -> None:
-    # bool is an int to Python, and an int is accepted where a float is asked for
-    assert contradictions({"n": int, "x": float, "y": float}, {"n": True, "x": 3, "y": False}) == []
-
-
-def test_contradictions_refuses_an_int_for_a_bool() -> None:
-    assert contradictions({"b": bool}, {"b": 1}) == ["b must be a bool, got 1"]
-
-
-def test_contradictions_refuses_none_for_every_plain_type() -> None:
-    hints = {"s": str, "n": int, "x": float, "b": bool}
-    assert contradictions(hints, dict.fromkeys(hints)) == [
-        "s must be a str, got null",
-        "n must be an int, got null",
-        "x must be a float, got null",
-        "b must be a bool, got null",
-    ]
-
-
-def test_contradictions_keeps_the_signature_order() -> None:
-    assert contradictions({"name": str, "age": int}, {"age": "x", "name": 5}) == [
-        "name must be a str, got 5",
-        'age must be an int, got "x"',
-    ]
-
-
-def test_contradictions_ignores_a_parameter_the_seed_does_not_name() -> None:
-    assert contradictions({"s": str}, {}) == []
-
-
-def test_contradictions_accepts_a_matching_seed() -> None:
-    assert contradictions({"s": str, "n": int}, {"s": "abc", "n": 1}) == []
 
 
 def test_check_seed_types_raises_one_line_per_contradiction() -> None:

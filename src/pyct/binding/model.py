@@ -2,17 +2,21 @@
 
 from collections.abc import Mapping
 
+from pyct.binding.bind import leaf_name, leaves, walked
+
 
 def apply(seed: Mapping[str, object], model: Mapping[str, object]) -> dict[str, object]:
-    """The seed with every key the model names replaced by the model's value.
+    """The seed rebuilt, with the model's value at every access it names.
 
-    A key the model does not name keeps the seed's value: the solver answers
-    only about the leaves, and the rest of the input rides along unchanged.
-    A key the seed does not have is an error, because the solver would be
-    answering about a leaf that does not exist.
+    The model names each value as ``leaves`` does. A value the model does not
+    name keeps the seed's: the solver answers only about the leaves, and the
+    rest of the input rides along unchanged, in the seed's shape. A name the
+    seed does not hold is an error, because the solver would be answering
+    about a leaf that does not exist.
     """
-    unknown = [name for name in model if name not in seed]
+    held = leaves(seed)
+    unknown = [name for name in model if name not in held]
     if unknown:
         named = ", ".join(unknown)
-        raise ValueError(f"the model names arguments the seed does not have: {named}")
-    return {name: model.get(name, value) for name, value in seed.items()}
+        raise ValueError(f"the model names values the seed does not hold: {named}")
+    return walked(seed, lambda value, access: model.get(leaf_name(access), value))

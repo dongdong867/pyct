@@ -66,6 +66,15 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "keyword": (["in", "'a'", "s"], "'a' in s"),
     "builtin": (["abs", "x"], "abs x"),
     "unary-minus": (["-", "x"], "- x"),
+    "key": (["[]", "config", "'port'"], "config['port']"),
+    "key-of-a-key": (
+        ["<", ["[]", ["[]", "config", "'server'"], "'port'"], 1],
+        "config['server']['port'] < 1",
+    ),
+    "key-in-double-quotes": (["[]", "d", '"it\'s"'], 'd["it\'s"]'),
+    "index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
+    "method-on-an-item": (["find", ["[]", "items", 0], "'x'"], "items[0].find('x')"),
+    "index-of-a-condition": (["[]", ["+", "s", "t"], 0], "(s + t)[0]"),
 }
 
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
+from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, deadline
@@ -98,13 +100,18 @@ class _Ending:
 
 
 def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | None) -> _Ending:
-    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read."""
+    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read.
+
+    A positional-only parameter is passed by position, read from the
+    signature as ``load_target`` reads it.
+    """
+    positional, keywords = call_arguments(inspect.signature(ctx.fn), bound)
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
         with deadline(until):
             called = True
-            ctx.fn(**bound)
+            ctx.fn(*positional, **keywords)
     except caught as error:
         return _Ending(error=error, called=called)
     return _Ending(error=None, called=called)

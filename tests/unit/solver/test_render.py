@@ -1,9 +1,10 @@
+import json
 from collections.abc import Callable
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import render
+from pyct.solver.render import by_leaf, constants, render
 from pyct.solver.strings import above, below, last_index, occurrences
 
 SITE = Site(file="m.py", line=2, col=7)
@@ -257,3 +258,63 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
         "(get-value (s))",
         "(get-value (n))",
     ]
+
+
+# a value inside an argument, as bind names it and as leaves keys it
+PORT: Expression = ["[]", ["[]", "config", "'server'"], "'port'"]
+FIRST: Expression = ["[]", "items", 0]
+SECOND: Expression = ["[]", "items", 1]
+
+
+def test_a_value_inside_an_argument_is_declared_under_a_constant_of_its_own() -> None:
+    text = render((fork(["<", PORT, 1], taken=True),), {json.dumps(PORT): int})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const leaf.0 Int)",
+        "(assert (< leaf.0 1))",
+        "(check-sat)",
+        "(get-value (leaf.0))",
+    ]
+
+
+def test_two_values_inside_one_argument_are_two_constants() -> None:
+    leaves = {"x": int, json.dumps(FIRST): int, json.dumps(SECOND): int}
+
+    text = render((fork(["==", FIRST, SECOND], taken=False),), leaves)
+
+    lines = text.splitlines()
+    assert lines[1:3] == ["(declare-const leaf.1 Int)", "(declare-const leaf.2 Int)"]
+    assert "(assert (not (= leaf.1 leaf.2)))" in lines
+
+
+def test_a_str_inside_an_argument_compares_as_a_string() -> None:
+    text = render((fork(["==", FIRST, "'x'"], taken=True),), {json.dumps(FIRST): str})
+
+    lines = text.splitlines()
+    assert "(declare-const leaf.0 String)" in lines
+    assert '(assert (= leaf.0 "x"))' in lines
+    ordered = render(
+        (fork(["<", FIRST, SECOND], taken=True),),
+        {
+            json.dumps(FIRST): str,
+            json.dumps(SECOND): str,
+        },
+    )
+    assert "(assert (str.< leaf.0 leaf.1))" in ordered.splitlines()
+
+
+def test_an_access_the_seed_does_not_hold_names_its_parameter_in_the_error() -> None:
+    # not a leaf, so an operation on items, and items is no leaf either
+    with pytest.raises(ValueError, match="items"):
+        render((fork(["<", ["[]", "items", 5], 1], taken=True),), {json.dumps(FIRST): int})
+
+
+def test_a_parameter_keeps_its_name_and_a_value_inside_one_gets_its_position() -> None:
+    assert constants({"x": int, json.dumps(PORT): str}) == {"x": "x", json.dumps(PORT): "leaf.1"}
+
+
+def test_a_model_by_constant_comes_back_by_leaf() -> None:
+    leaves = {"x": int, json.dumps(PORT): int}
+
+    assert by_leaf({"x": 3, "leaf.1": 70000}, leaves) == {"x": 3, json.dumps(PORT): 70000}
