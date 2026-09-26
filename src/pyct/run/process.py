@@ -19,6 +19,9 @@ pyct blocks in ``waitpid``; its own SIGALRM handler kills and does not
 raise, so Python retries the wait, which then returns the killed
 process's status. A handler that raised could land after the wait had
 already reaped the process and lose its status.
+
+``Child`` and ``how`` also serve the process the shell started, which
+watches the command's process the same way (see ``launch``).
 """
 
 from __future__ import annotations
@@ -74,11 +77,11 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
     the two and leaves the process running. It then goes on, as
     KeyboardInterrupt, once the process is ended and reaped.
     """
-    child: _Child | None = None
+    child: Child | None = None
     try:
         # a Ctrl-C held here goes on as the block ends, with the process in the guard's hands
         with _ctrl_c_held():
-            child = _Child(start())
+            child = Child(start())
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
     finally:
@@ -110,8 +113,8 @@ def _ctrl_c_held() -> Generator[None]:
             signal.raise_signal(signal.SIGINT)
 
 
-class _Child:
-    """One input's process, from its start until pyct has reaped it."""
+class Child:
+    """One process pyct started, an input's or the command's, from its start until it is reaped."""
 
     def __init__(self, pid: int) -> None:
         self.pid = pid
@@ -131,23 +134,30 @@ class _Child:
         return Waited.of(status, killed=self.killed)
 
     def kill_if_running(self, *_: object) -> None:
-        """Kill the process unless it has ended. The kill timer's handler: it never raises.
+        """Kill the process unless it has ended. The kill timer's handler: it never raises."""
+        if self.send_if_running(signal.SIGKILL):
+            self.killed = True
 
-        The status is asked for without waiting first. A process that ended
-        is reaped here and its status kept for ``wait``; one ``wait`` already
-        reaped is left alone.
+    def send_if_running(self, number: int) -> bool:
+        """Send the process signal ``number`` unless it has ended, and say whether it was sent.
+
+        A signal handler can call it, since it never raises. The status is
+        asked for without waiting first. A process that ended is reaped here
+        and its status kept for ``wait``; one ``wait`` already reaped is left
+        alone, so its pid, which may belong to another process by now, gets
+        no signal.
         """
         if self.status is not None:
-            return
+            return False
         try:
             pid, status = os.waitpid(self.pid, os.WNOHANG)
         except ChildProcessError:
-            return
+            return False
         if pid != 0:
             self.status = status
-            return
-        os.kill(self.pid, signal.SIGKILL)
-        self.killed = True
+            return False
+        os.kill(self.pid, number)
+        return True
 
     def end(self) -> None:
         """Kill and reap the process unless pyct already reaped it. Every way out passes here.
@@ -200,15 +210,15 @@ def _failure(reading: Reading, waited: Waited) -> Failure | None:
     if waited.killed:
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     if not reading.started:
-        detail = f"the input's process ended before its call began: {_how(waited)}"
+        detail = f"the input's process ended before its call began: {how(waited)}"
         return Failure(kind=FailureKind.PYCT_BUG, detail=detail)
     if waited.signal is not None:
-        return Failure(kind=FailureKind.CRASHED, detail=_how(waited))
-    return Failure(kind=FailureKind.SYSTEM_EXIT, detail=_how(waited))
+        return Failure(kind=FailureKind.CRASHED, detail=how(waited))
+    return Failure(kind=FailureKind.SYSTEM_EXIT, detail=how(waited))
 
 
-def _how(waited: Waited) -> str:
-    """How the process ended, in the words a line gives."""
+def how(waited: Waited) -> str:
+    """How the process ended, in the words an input's line and a failed import's line give."""
     if waited.signal is not None:
         return f"killed by {_named(waited.signal)}"
     return f"exited with code {waited.code}"

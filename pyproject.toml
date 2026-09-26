@@ -9,7 +9,7 @@ authors = [
 dependencies = []
 
 [project.scripts]
-pyct = "pyct.cli:main"
+pyct = "pyct.cli:entry"
 
 [dependency-groups]
 dev = [

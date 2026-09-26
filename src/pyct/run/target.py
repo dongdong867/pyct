@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import inspect
 import os
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from types import ModuleType
+
+from pyct.run.launch import ImportWatch
 
 
 class TargetError(Exception):
@@ -24,20 +28,18 @@ class Target:
     signature: inspect.Signature
 
 
-def load_target(spec: str) -> Target:
+def load_target(spec: str, watch: ImportWatch | None = None) -> Target:
     """Import ``module`` from the current directory and take ``function`` from it.
 
     The working directory goes first on the import path, so a module under
-    it resolves with no ``PYTHONPATH`` set.
+    it resolves with no ``PYTHONPATH`` set. While the module imports,
+    ``watch`` names it for the process that watches this one, when one does.
     """
     module_name, function_name = spec.split("::", 1)
     cwd = os.getcwd()
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
-    try:
-        module = importlib.import_module(module_name)
-    except Exception as error:
-        raise TargetError(f"cannot import {module_name}: {error!r}") from error
+    module = _imported(module_name, watch)
     fn = getattr(module, function_name, None)
     if not callable(fn):
         raise TargetError(f"{module_name} has no function {function_name}")
@@ -45,3 +47,17 @@ def load_target(spec: str) -> Target:
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
     return Target(spec=spec, fn=fn, file=file, signature=inspect.signature(fn))
+
+
+def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
+    """The module, imported. A raise or a ``SystemExit`` at its import is a ``TargetError``.
+
+    Either reads by its repr. A KeyboardInterrupt goes on to end pyct, as a
+    Ctrl-C does.
+    """
+    importing = contextlib.nullcontext() if watch is None else watch.importing(module_name)
+    try:
+        with importing:
+            return importlib.import_module(module_name)
+    except (Exception, SystemExit) as error:
+        raise TargetError(f"cannot import {module_name}: {error!r}") from error
