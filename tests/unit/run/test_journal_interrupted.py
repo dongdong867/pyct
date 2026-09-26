@@ -6,16 +6,13 @@ every n a write has, and the facts written after it must still read back exactly
 """
 
 import functools
-import sys
-import types
-from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.record import DowngradeCount
 from pyct.run import journal
 from pyct.run.journal import JournalWriter, read
+from tests.unit.interrupted import interrupted
 
 SITE = Site(file="t.py", line=3, col=7)
 SHARED: list[Expression] = ["+", "x", 1]
@@ -24,32 +21,7 @@ FIRST = Branch(expression=[">", SHARED, 10], taken=False, site=SITE)
 LATER = Branch(expression=["==", ["-", ["*", "x", 3], 7], SHARED], taken=False, site=SITE)
 
 
-class Alarm(BaseException):
-    """What the deadline raises, landing inside the writer."""
-
-
-def interrupted(write: Callable[[], None], at: int) -> bool:
-    """Run ``write``, raising Alarm at its ``at``-th line in the journal. False if it has fewer."""
-    lines = [0]
-    source = str(Path(journal.__file__))
-
-    def trace(frame: types.FrameType, event: str, arg: Any) -> Any:
-        if frame.f_code.co_filename != source:
-            return None
-        if event == "line":
-            lines[0] += 1
-            if lines[0] == at:
-                raise Alarm
-        return trace
-
-    sys.settrace(trace)
-    try:
-        write()
-    except Alarm:
-        return True
-    finally:
-        sys.settrace(None)
-    return False
+JOURNAL = str(Path(journal.__file__))
 
 
 def test_a_fork_after_an_interrupted_fork_reads_back_as_written() -> None:
@@ -57,7 +29,7 @@ def test_a_fork_after_an_interrupted_fork_reads_back_as_written() -> None:
     while True:
         buffer = bytearray(1 << 16)
         writer = JournalWriter(buffer)
-        landed = interrupted(functools.partial(writer.fork, FIRST), at)
+        landed = interrupted(functools.partial(writer.fork, FIRST), at, JOURNAL)
         writer.fork(LATER)
 
         reading = read(buffer)
@@ -75,7 +47,7 @@ def test_counts_after_an_interrupted_downgrade_land_on_their_own_entry() -> None
         buffer = bytearray(1 << 16)
         writer = JournalWriter(buffer)
         writer.downgrade("__abs__", 1)
-        landed = interrupted(functools.partial(writer.downgrade, "__neg__", 1), at)
+        landed = interrupted(functools.partial(writer.downgrade, "__neg__", 1), at, JOURNAL)
         writer.downgrade("__neg__", 2)
         writer.downgrade("__neg__", 3)
         writer.downgrade("__abs__", 1)
@@ -97,7 +69,7 @@ def test_an_entry_lost_between_two_entries_of_one_name_keeps_them_apart() -> Non
         writer = JournalWriter(buffer)
         writer.downgrade("__rshift__", 1)
         writer.downgrade("__rshift__", 2)
-        landed = interrupted(functools.partial(writer.downgrade, "__or__", 1), at)
+        landed = interrupted(functools.partial(writer.downgrade, "__or__", 1), at, JOURNAL)
         writer.downgrade("__rshift__", 1)
 
         downgrades = read(buffer).downgrades

@@ -1,10 +1,10 @@
+import functools
 import sys
-import types
-from typing import Any
 
 from pyct.core.branch import Branch, Downgrade, Site
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
+from tests.unit.interrupted import interrupted
 
 SITE = Site(file="t.py", line=3, col=7)
 FORK = Branch(expression=["<", "x", 10], taken=True, site=SITE)
@@ -123,33 +123,16 @@ def test_a_line_seen_before_is_not_told_again() -> None:
 
 
 def test_an_alarm_between_a_downgrade_s_steps_leaves_the_tally_readable() -> None:
-    lines = [0]
     source = sys.modules[Tally.__module__].__file__
-
-    def trace(frame: types.FrameType, event: str, arg: Any) -> Any:
-        if frame.f_code.co_filename != source:
-            return None
-        if event == "line":
-            lines[0] += 1
-            if lines[0] == at:
-                raise Alarm
-        return trace
-
-    for at in range(1, 12):
-        lines[0] = 0
+    assert source is not None
+    at = 1
+    while True:
         tally = Tally()
-        sys.settrace(trace)
-        try:
-            tally.append(Downgrade(name="__abs__"))
-        except Alarm:
-            pass
-        finally:
-            sys.settrace(None)
+        landed = interrupted(functools.partial(tally.append, Downgrade(name="__abs__")), at, source)
         tally.append(Downgrade(name="__neg__"))
 
         # the interrupted call may be lost, never the entries around it
         assert tally.counted()[-1] == DowngradeCount(name="__neg__", count=1), at
-
-
-class Alarm(BaseException):
-    """What the deadline raises, landing inside the tally."""
+        if not landed:
+            break
+        at += 1
