@@ -77,7 +77,7 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
     child: _Child | None = None
     try:
         # a Ctrl-C held here goes on as the block ends, with the process in the guard's hands
-        with ctrl_c_held():
+        with _ctrl_c_held():
             child = _Child(start())
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
@@ -87,7 +87,7 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
 
 
 @contextlib.contextmanager
-def ctrl_c_held() -> Generator[None]:
+def _ctrl_c_held() -> Generator[None]:
     """Hold a Ctrl-C until the block ends, then let it go on as it would have.
 
     The signal mask holds it for this thread, and a child forked inside the
@@ -159,7 +159,7 @@ class _Child:
         """
         if self.status is not None:
             return
-        with ctrl_c_held():
+        with _ctrl_c_held():
             self._kill_and_reap()
 
     def _kill_and_reap(self) -> None:
