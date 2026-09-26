@@ -27,7 +27,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyrefly]
-project-includes = ["src/**/*", "tests/**/*"]
+project-includes = ["src/**/*", "tests/**/*", "tools/**/*"]
 project-excludes = ["**/.venv/**/*", "**/__pycache__/**/*"]
 search-path = ["src", "."]
 
@@ -39,16 +39,20 @@ testpaths = ["tests"]
 # lock. The thread method, because pyct's deadline owns SIGALRM
 timeout = 60
 timeout_method = "thread"
+markers = [
+  "legacy: runs legacy's engine from a checkout of main, built once per session; -m 'not legacy' skips it",
+]
 
-# Measured when pytest runs with --cov. The acceptance tests start pyct in a
-# subprocess, and patch = subprocess measures the code it runs there too. fork
+# Measured when pytest runs with --cov: pyct, and the compare tool in tools/. The
+# acceptance tests start pyct and the tool in a subprocess, and patch = subprocess
+# measures the code they run there too; the tool keeps it out of the sides it runs. fork
 # starts measuring in a forked child, whose data is saved only when it exits
 # normally. No _exit: it makes os._exit save coverage first, and the timeout's
 # os._exit would then wait on the lock a stuck test holds, so a child ending in
 # os._exit saves nothing.
 [tool.coverage.run]
 branch = true
-source = ["pyct"]
+source = ["pyct", "tools"]
 patch = ["subprocess", "fork"]
 
 # fail_under is the lowest total of three full runs when this floor was set,
@@ -61,7 +65,7 @@ show_missing = true
 skip_covered = true
 
 [tool.ruff]
-src = ["src", "tests"]
+src = ["src", "tests", "."]
 line-length = 100
 
 # C901, PLR0913 and PLR0915 hold the size rules of CLAUDE.md › Conventions.
@@ -83,7 +87,7 @@ max-statements = 20
 where = ["src"]
 
 [tool.importlinter]
-root_package = "pyct"
+root_packages = ["pyct", "tools"]
 
 # The layers of CLAUDE.md, top to bottom. A layer in parentheses has no code
 # yet and is optional to import-linter; drop the parentheses when it gets code.
@@ -105,3 +109,11 @@ layers = [
   "pyct.config",
   "(pyct.utils)",
 ]
+
+# The compare tool treats v2 as a black box: it runs `pyct run` and reads its lines, so it
+# measures what a person runs. Decision compare-tool-outside-pyct-layers
+[[tool.importlinter.contracts]]
+name = "The compare tool never imports pyct"
+type = "forbidden"
+source_modules = ["tools"]
+forbidden_modules = ["pyct"]
