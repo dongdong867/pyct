@@ -1,6 +1,7 @@
 """The cap on a printed expression: whole up to the limit, past it the top with cut parts."""
 
 import time
+import tracemalloc
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -206,3 +207,35 @@ def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
     record = InputRecord(args={"s": "a" * 1000}, forks=(forks[-1],), covered_lines=frozenset({5}))
     coverage = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset({5, 7})})
     assert len(render(record, coverage).encode()) < 1_000_000
+
+
+def _gathered(characters: int) -> list[Branch]:
+    """`c = s[i]`, then `if c == "x":`, then `t = t + c`, for each i, and a last fork on t.
+
+    Each piece is held by its own fork and by t, so the count of each waits
+    until the last fork's walk reads it.
+    """
+    term: Expression = "''"
+    forks: list[Branch] = []
+    for i in range(characters):
+        piece: Expression = ["[]", "s", i]
+        forks.append(Branch(expression=[">", ["len", "s"], i], taken=True, site=Site("m.py", 2, 7)))
+        forks.append(Branch(expression=["==", piece, "'x'"], taken=False, site=Site("m.py", 3, 7)))
+        term = ["+", term, piece]
+    forks.append(Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7)))
+    return forks
+
+
+def test_forks_that_gather_forty_thousand_pieces_are_counted_in_little_memory() -> None:
+    forks = _gathered(40_000)
+
+    tracemalloc.start()
+    try:
+        printed_forks(forks)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+
+    # what a waiting piece reaches is kept as wide as the numbers it spans, a few bits, so the
+    # memory grows with the pieces; kept as wide as the walk so far, it grew with their square
+    assert peak < 200_000_000

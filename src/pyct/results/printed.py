@@ -34,6 +34,11 @@ type _Pending = tuple[list[Expression], list[Expression]]
 # a list of an expression, as the walk meets it
 type _Node = list[Expression]
 
+# the nodes a list reaches, by their numbers in the walk: the lowest number, and bits from it,
+# bit k set for number lowest + k. Kept from the lowest number up, a reach is as wide as the
+# numbers it spans, not as the walk so far
+type _Reach = tuple[int, int]
+
 
 @dataclass(frozen=True)
 class _Counts:
@@ -162,29 +167,37 @@ def _walked(expressions: tuple[Expression, ...]) -> tuple[list[_Node], dict[int,
 def _counted(order: list[_Node], holders: dict[int, int]) -> _Counts:
     """Both counts of every list, each worked out once, after the lists it holds.
 
-    A list's own nodes are itself and its leaves, and each list gets bits of
-    its own in one numbering. What a list reaches is its own bits and the
-    bits each list it holds reaches, so the distinct nodes are the bits set,
-    a list reached twice being the same bits. A list's bits are kept only
-    until every place that holds it has read them.
+    A list's own nodes are itself and its leaves, and each list gets numbers
+    of its own in one numbering. What a list reaches is its own numbers and
+    those each list it holds reaches, so the distinct nodes are the numbers
+    reached, a list reached twice adding the same numbers. A list's reach is
+    kept only until every place that holds it has read it.
     """
     written: dict[int, int] = {}
     distinct: dict[int, int] = {}
-    reached: dict[int, int] = {}
+    reached: dict[int, _Reach] = {}
     unread = dict(holders)
     first = 0
     for node in order:
         held = [part for part in node[1:] if isinstance(part, list)]
         own = len(node) - len(held)
-        bits = ((1 << own) - 1) << first
+        reach: _Reach = (first, (1 << own) - 1)
         first += own
         for part in held:
-            bits |= reached[id(part)]
+            reach = _joined(reach, reached[id(part)])
             unread[id(part)] -= 1
             if not unread[id(part)]:
                 del reached[id(part)]
         written[id(node)] = own + sum(written[id(part)] for part in held)
-        distinct[id(node)] = bits.bit_count()
+        distinct[id(node)] = reach[1].bit_count()
         if unread.get(id(node)):
-            reached[id(node)] = bits
+            reached[id(node)] = reach
     return _Counts(written=written, distinct=distinct)
+
+
+def _joined(reach: _Reach, other: _Reach) -> _Reach:
+    """Two reaches as one, numbered from the lower of their lowest numbers."""
+    (low, bits), (other_low, other_bits) = reach, other
+    if other_low < low:
+        return other_low, (bits << (low - other_low)) | other_bits
+    return low, bits | (other_bits << (other_low - low))
