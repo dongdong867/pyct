@@ -7,6 +7,7 @@
     "library": {"origin": "installed"}
   },
   "entries": [
+    {"set": "v2", "target": "targets.annotations.any_items::echo_any", "seed": {"cfg": {"k": [1]}, "xs": [1, null]}},
     {"set": "v2", "target": "targets.annotations.bare::echo", "seed": {"s": 5}},
     {"set": "v2", "target": "targets.annotations.items::echo_items", "seed": {"xs": [1], "cfg": {"a": ["b"]}}},
     {"set": "v2", "target": "targets.annotations.items_as_text::echo_items", "seed": {"xs": [1], "cfg": {"a": ["b"]}}},

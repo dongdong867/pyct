@@ -1,6 +1,9 @@
+import typing
+from typing import Any, Optional
+
 import pytest
 
-from pyct.binding.annotations import Check, Items, check_of, contradictions
+from pyct.binding.annotations import Check, Items, OneOf, check_of, contradictions
 from pyct.run.target import Target
 
 
@@ -68,17 +71,39 @@ def test_check_of_reads_a_plain_list_or_dict_annotation(annotation: object, chec
     assert check_of(annotation) == check
 
 
+# the kind of the value None, which a union names when it holds None
+NONE = type(None)
+
+
+@pytest.mark.parametrize(
+    ("annotation", "check"),
+    [
+        pytest.param(list[Any], Items(list, None), id="list of anything"),
+        pytest.param(dict[str, Any], Items(dict, None), id="dict of anything"),
+        pytest.param(dict[str, Target], Items(dict, None), id="dict of a class"),
+        pytest.param(typing.List, Items(list, None), id="typing list"),  # noqa: UP006
+        pytest.param(typing.Dict, Items(dict, None), id="typing dict"),  # noqa: UP006
+        pytest.param(typing.List[int], Items(list, int), id="typing list of int"),  # noqa: UP006
+        pytest.param(list[int | None], Items(list, OneOf((int, NONE))), id="int or null"),
+        pytest.param(list[Optional[str]], Items(list, OneOf((str, NONE))), id="optional"),  # noqa: UP045
+        pytest.param(dict[str, int | str], Items(dict, OneOf((int, str))), id="int or str"),
+        pytest.param(list[list[int] | None], Items(list, None), id="union past plain"),
+        # Python builds this alias without a word; only a type checker refuses it
+        pytest.param(list[int, str], Items(list, None), id="two items"),  # pyrefly: ignore[bad-specialization]
+    ],
+)
+def test_check_of_checks_the_kind_whatever_the_items_are(annotation: object, check: Check) -> None:
+    assert check_of(annotation) == check
+
+
 @pytest.mark.parametrize(
     "annotation",
     [
         pytest.param(tuple[int, int], id="tuple"),
         pytest.param(dict[int, str], id="int keys"),
         pytest.param(list[int] | None, id="union"),
-        pytest.param(list[int | None], id="union inside"),
-        pytest.param(dict[str, Target], id="class inside"),
+        pytest.param(int | None, id="union of plain types"),
         pytest.param(Target, id="class"),
-        # Python builds this alias without a word; only a type checker refuses it
-        pytest.param(list[int, str], id="two items"),  # pyrefly: ignore[bad-specialization]
     ],
 )
 def test_check_of_asks_nothing_of_any_other_annotation(annotation: object) -> None:
@@ -112,3 +137,21 @@ def test_contradictions_gives_an_item_the_allowances_a_parameter_has() -> None:
     checks: dict[str, Check] = {"xs": Items(list, float)}
 
     assert contradictions(checks, {"xs": [1, True, 2.5]}) == []
+
+
+def test_contradictions_checks_an_item_against_every_type_of_its_union() -> None:
+    checks: dict[str, Check] = {
+        "xs": Items(list, OneOf((int, NONE))),
+        "ys": Items(list, OneOf((int, str, NONE))),
+    }
+
+    assert contradictions(checks, {"xs": [1, None, True, "a"], "ys": [1.5]}) == [
+        'xs[3] must be an int or null, got "a"',
+        "ys[0] must be an int, a str, or null, got 1.5",
+    ]
+
+
+def test_contradictions_checks_the_kind_alone_when_the_items_ask_nothing() -> None:
+    assert contradictions({"cfg": Items(dict, None)}, {"cfg": [1]}) == [
+        "cfg must be a dict, got [1]"
+    ]

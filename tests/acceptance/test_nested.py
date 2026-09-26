@@ -32,6 +32,7 @@ DEPTH = 2000
 ITEMS = "targets.annotations.items::echo_items"
 ITEMS_AS_TEXT = "targets.annotations.items_as_text::echo_items"
 KINDS = "targets.annotations.kinds::echo_kinds"
+ANY_ITEMS = "targets.annotations.any_items::echo_any"
 UNCHECKED = "targets.annotations.unchecked::echo_unchecked"
 ACCEPTED = REPO_ROOT / "tools" / "compare_coverage" / "accepted-per-merge.jsonl"
 # legacy's two fixtures of values inside a dict and a list, as the compare tool names them
@@ -284,6 +285,20 @@ def test_refuses_a_container_of_the_wrong_kind() -> None:
     lines = result.stderr.splitlines()
     assert 'items must be a list, got {"a": 1}' in lines
     assert "cfg must be a dict, got [1]" in lines
+
+
+# run-with-nested-arguments: a list or dict annotation checks the kind whatever its items are
+def test_refuses_the_wrong_kind_under_items_it_does_not_check() -> None:
+    result = run_pyct(ANY_ITEMS, '{"cfg": [1], "xs": [1, null, "a"]}')
+
+    assert result.returncode == 2, result.stderr
+    assert result.stdout == ""
+    lines = result.stderr.splitlines()
+    assert "cfg must be a dict, got [1]" in lines
+    # an item of a union of plain types is checked against the union, null for None
+    assert 'xs[2] must be an int or null, got "a"' in lines
+    assert "xs[1]" not in result.stderr
+    assert run_pyct(ANY_ITEMS, '{"cfg": {"k": [1]}, "xs": [1, null]}').returncode == 0
 
 
 # run-with-nested-arguments-reports-a-missing-key-as-the-target-s-raise
