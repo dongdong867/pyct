@@ -119,13 +119,16 @@ def test_a_limit_under_a_millisecond_reaches_the_solver_as_one(
     assert "--tlimit=1" in (tmp_path / "argv").read_text().split()
 
 
-def test_a_limit_longer_than_python_can_wait_still_gets_an_answer(
+def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
 
     # about 115 days, past the 2**31 - 1 milliseconds Python's poll can wait
     assert ask(tmp_path, monkeypatch, timeout=1e7) == Unsat()
+
+    # cut to that wait less the grace second, and no shorter
+    assert "--tlimit=2147482000" in (tmp_path / "argv").read_text().split()
 
 
 def test_a_solver_that_runs_past_its_limit_is_stopped_as_a_timeout(
