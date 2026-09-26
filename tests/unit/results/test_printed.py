@@ -177,6 +177,29 @@ def test_forks_that_share_their_parts_are_each_printed_as_it_prints_alone() -> N
     assert any(_cuts(expression) for expression in written)
 
 
+def test_a_list_reached_through_two_operands_is_counted_once() -> None:
+    # the last operand reaches `first`, `early`, a long chain and `shared`, numbered in that
+    # order; the ones before it reach `early` and `shared` again, far apart, and are joined first
+    first: Expression = ["j", "z"]
+    early: Expression = ["k", "z"]
+    chain: Expression = ["-", "w"]
+    for _ in range(100):
+        chain = ["-", chain]
+    shared: Expression = ["g", "y"]
+    pads: list[Expression] = [["p", "a", "b"] for _ in range(LIMIT // 2)]
+    expression: Expression = [
+        "top",
+        *pads,
+        ["h", early, shared],
+        ["f", shared, chain, early, first],
+    ]
+
+    written = printed(expression)
+
+    # too many operands to open within the limit, so the whole expression is one cut part
+    assert written == [CUT, _distinct(expression)]
+
+
 def _edit_loop(passes: int) -> list[Branch]:
     """`s = s[:i] + s[i] + s[i+1:]` for each i, each pass forking on `len(s) > i`, then `s == …`.
 
@@ -247,8 +270,11 @@ def test_gathered_pieces_count_each_node_they_reach_once(string: Expression) -> 
     assert all(count == _distinct(part) for count, part in cuts)
 
 
-def test_forks_that_gather_forty_thousand_pieces_are_counted_in_little_memory() -> None:
-    forks = _gathered(40_000, "s")
+@pytest.mark.parametrize("string", GATHERED_FROM.values(), ids=list(GATHERED_FROM))
+def test_forks_that_gather_forty_thousand_pieces_are_counted_in_little_memory(
+    string: Expression,
+) -> None:
+    forks = _gathered(40_000, string)
 
     tracemalloc.start()
     try:
@@ -257,6 +283,7 @@ def test_forks_that_gather_forty_thousand_pieces_are_counted_in_little_memory() 
     finally:
         tracemalloc.stop()
 
-    # what a waiting piece reaches is kept as wide as the numbers it spans, a few bits, so the
-    # memory grows with the pieces; kept as wide as the walk so far, it grew with their square
+    # what a waiting piece reaches is kept as runs of the numbers it holds, its own nodes and the
+    # string's, so the memory grows with the pieces; kept as wide as the walk from the string's
+    # first number, it grew with their square
     assert peak < 200_000_000

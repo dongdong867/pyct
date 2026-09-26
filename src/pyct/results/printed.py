@@ -34,10 +34,18 @@ type _Pending = tuple[list[Expression], list[Expression]]
 # a list of an expression, as the walk meets it
 type _Node = list[Expression]
 
-# the nodes a list reaches, by their numbers in the walk: the lowest number, and bits from it,
-# bit k set for number lowest + k. Kept from the lowest number up, a reach is as wide as the
-# numbers it spans, not as the walk so far
-type _Reach = tuple[int, int]
+# a stretch of the numbers a list reaches: the lowest number, and bits from it, bit k set for
+# number lowest + k
+type _Run = tuple[int, int]
+
+# the nodes a list reaches, by their numbers in the walk: runs in order, apart by more than
+# `_GAP`. A reach is as wide as the numbers it holds, not as the walk so far, where a list
+# that reaches one shared early part would span everything numbered since
+type _Reach = tuple[_Run, ...]
+
+# how many numbers two runs may leave between them and still be kept as one: a word of zero
+# bits costs less than a run of its own
+_GAP = 64
 
 
 @dataclass(frozen=True)
@@ -181,7 +189,7 @@ def _counted(order: list[_Node], holders: dict[int, int]) -> _Counts:
     for node in order:
         held = [part for part in node[1:] if isinstance(part, list)]
         own = len(node) - len(held)
-        reach: _Reach = (first, (1 << own) - 1)
+        reach: _Reach = ((first, (1 << own) - 1),)
         first += own
         for part in held:
             reach = _joined(reach, reached[id(part)])
@@ -189,15 +197,24 @@ def _counted(order: list[_Node], holders: dict[int, int]) -> _Counts:
             if not unread[id(part)]:
                 del reached[id(part)]
         written[id(node)] = own + sum(written[id(part)] for part in held)
-        distinct[id(node)] = reach[1].bit_count()
+        distinct[id(node)] = sum(bits.bit_count() for _, bits in reach)
         if unread.get(id(node)):
             reached[id(node)] = reach
     return _Counts(written=written, distinct=distinct)
 
 
 def _joined(reach: _Reach, other: _Reach) -> _Reach:
-    """Two reaches as one, numbered from the lower of their lowest numbers."""
-    (low, bits), (other_low, other_bits) = reach, other
-    if other_low < low:
-        return other_low, (bits << (low - other_low)) | other_bits
-    return low, bits | (other_bits << (other_low - low))
+    """Two reaches as one: their runs in order, a run that overlaps or nears the last merged in.
+
+    Runs that overlap share numbers, and merged they count each once.
+    """
+    runs: list[_Run] = []
+    end = 0
+    for low, bits in sorted(reach + other):
+        if runs and low <= end + _GAP:
+            start, merged = runs[-1]
+            runs[-1] = (start, merged | (bits << (low - start)))
+        else:
+            runs.append((low, bits))
+        end = max(end, low + bits.bit_length())
+    return tuple(runs)
