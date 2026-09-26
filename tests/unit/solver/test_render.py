@@ -338,7 +338,7 @@ def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
 
 def test_a_plus_on_two_pieces_joins_strings() -> None:
     # `s.replace("a", "b") + s.removeprefix("x") == "bb"`: no name and no literal on the `+`
-    joined = ["+", ["replace", "s", "'a'", "'b'"], ["removeprefix", "s", "'x'"]]
+    joined: Expression = ["+", ["replace", "s", "'a'", "'b'"], ["removeprefix", "s", "'x'"]]
 
     text = render((fork(["==", joined, "'bb'"], taken=True),), {"s": str})
 

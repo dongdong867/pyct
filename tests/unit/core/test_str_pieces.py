@@ -93,7 +93,10 @@ def test_a_tracked_str_on_either_side_is_written_by_its_expression() -> None:
 def test_a_piece_of_a_piece_nests_its_expression() -> None:
     sink: list[SinkItem] = []
 
-    result = _tracked(sink=sink)[1:][0]
+    piece = _tracked(sink=sink)[1:]
+    assert isinstance(piece, ConcolicStr)
+
+    result = piece[0]
 
     assert _expression_of(result) == ["[]", ["[:]", "s", 1, None], 0]
     # the index measures the piece it indexes
@@ -139,7 +142,8 @@ def test_an_index_records_whether_s_is_long_enough_before_it_indexes(
     result = _probe()(_tracked(sink=sink), index)
 
     assert sink == [Branch(expression=fork, taken=taken, site=Site("<probe>", 2, 11))]
-    assert _expression_of(result) == ["[]", "s", int(index)]
+    assert isinstance(result, ConcolicStr)
+    assert result.expression == ["[]", "s", int(index)]
     assert str.__eq__(result, "abcb"[index]) is True
 
 
@@ -229,8 +233,8 @@ def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
 REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s + 1": (lambda s: s + 1, TypeError),  # pyrefly: ignore[unsupported-operation]
     "s['a']": (lambda s: s["a"], TypeError),  # pyrefly: ignore[bad-index]
-    "s.replace(1, 'x')": (lambda s: s.replace(1, "x"), TypeError),  # pyrefly: ignore[bad-argument-type]
-    "s.removeprefix(1)": (lambda s: s.removeprefix(1), TypeError),  # pyrefly: ignore[bad-argument-type]
+    "s.replace(1, 'x')": (lambda s: s.replace(1, "x"), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s.removeprefix(1)": (lambda s: s.removeprefix(1), TypeError),  # pyrefly: ignore[no-matching-overload]
 }
 
 
