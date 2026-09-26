@@ -5,6 +5,8 @@ target wrote reaching pyct's wrapper instead of str's own method, and only a rea
 shows what the target was handed and whose raise the line reports.
 """
 
+import pytest
+
 from tests.acceptance.harness import REPO_ROOT, one_line, run_pyct
 
 SPLIT_KEYWORD = "targets.strs.split_keyword::split_on_comma"
@@ -79,9 +81,13 @@ def test_raises_what_python_raises() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
+    # the detail is CPython's own sentence, and 3.13 reworded it, so plain Python on the
+    # interpreter the harness ran pyct with gives the expected text
+    with pytest.raises(TypeError) as plain:
+        "abc".encode(bogus=1)  # pyrefly: ignore[unexpected-keyword]
     # str's own sentence, the one plain Python gives, and the raise is the target's
     assert seed["failure"] == {
         "kind": "target_raised",
-        "detail": "TypeError: 'bogus' is an invalid keyword argument for encode()",
+        "detail": f"TypeError: {plain.value}",
     }
     assert seed["downgrades"] == []
