@@ -129,6 +129,7 @@ def test_forced_fork_forks_while_other_threads_run(caplog: pytest.LogCaptureFixt
         result = inputs({"x": 3}, None)
 
     assert inputs.ran == [Isolation.FORK]
+    assert inputs.isolated
     assert [branch.taken for branch in result.branches] == [True]
     assert caplog.messages == []
 
@@ -152,6 +153,34 @@ def test_a_target_no_name_finds_runs_in_process_once_another_thread_runs(
     assert calls == [1]
     (said,) = caplog.messages
     assert said.startswith("each input runs in pyct's process, because pyct's process runs other")
+
+
+def test_forced_fresh_starts_a_fresh_interpreter_for_every_input(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    inputs = Inputs(one_check(), Isolation.FRESH)
+
+    with caplog.at_level(logging.WARNING):
+        results = [inputs({"x": x}, None) for x in (3, 20)]
+
+    assert inputs.ran == [Isolation.FRESH, Isolation.FRESH]
+    assert inputs.isolated
+    assert [[branch.taken for branch in result.branches] for result in results] == [[True], [False]]
+    assert caplog.messages == []
+
+
+def test_a_run_that_forked_and_then_ran_in_process_was_not_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    counting(monkeypatch, 1, 2)
+    closure = dataclasses.replace(one_check(), fn=lambda x: x, signature=one_check().signature)
+    inputs = Inputs(closure, Isolation.AUTO)
+
+    inputs({"x": 3}, None)
+    inputs({"x": 20}, None)
+
+    assert inputs.ran == [Isolation.FORK, Isolation.IN_PROCESS]
+    assert not inputs.isolated
 
 
 def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
