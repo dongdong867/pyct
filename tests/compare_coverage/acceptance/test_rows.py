@@ -103,7 +103,8 @@ def test_counts_only_lines_a_call_runs(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", function, "--target", cls)
 
-    counter, tally = rows(result.stdout, result.stderr)
+    by_target = {row["target"]: row for row in rows(result.stdout, result.stderr)}
+    tally, counter = by_target[function], by_target[cls]
     # no def line 6, docstring 7, global 8 or nonlocal 12; the inner def line 11 and its body
     assert tally["own_lines"] == [9, 11, 13, 15, 16, 17]
     # no class line 20, docstring 21, class-level assignment 23 or method def line 25
