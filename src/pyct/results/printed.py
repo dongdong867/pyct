@@ -1,20 +1,25 @@
 """The cap on what a line prints of a fork's expression.
 
-A printed expression holds at most `LIMIT` nodes: every list is one node,
-and so is every leaf. Past the limit, the top of the expression is kept and
-each part cut from it is written ``["...", N]``, N being how many nodes that
-part stands for. Only the printing is cut: the solver gets the whole
-condition. The stdout line and the stderr fork line both print what
+A printed expression holds at most `LIMIT` nodes, counted as the line
+writes them: every list is one node, and so is every leaf, and a part
+Python shares is written, and counted, at each place that holds it. Past
+the limit, the top of the expression is kept and each part cut from it is
+written ``["...", N]``, N being how many distinct nodes that part holds: a
+list the part reaches more than once counts once, with its leaves. So N
+stays near the number of operations that built the part, however often the
+part repeats written out. Only the printing is cut: the solver gets the
+whole condition. The stdout line and the stderr fork line both print what
 `printed_forks` hands them, cut once for the two (``README.md › Rules ›
 the stdout line``).
 """
 
 from collections import deque
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
 
-# the most nodes a printed expression holds
+# the most nodes a printed expression holds, as the line writes them
 LIMIT = 1000
 
 # the head of a cut part, `["...", N]`
@@ -26,6 +31,22 @@ _CUT_NODES = 2
 # a part still to open: the list the line holds for it, and the part itself
 type _Pending = tuple[list[Expression], list[Expression]]
 
+# a list of an expression, as the walk meets it
+type _Node = list[Expression]
+
+
+@dataclass(frozen=True)
+class _Counts:
+    """Two counts of every list the expressions hold, keyed by its identity.
+
+    ``written`` is how many nodes a list holds written out, as the line would
+    write it whole, so it decides what fits. ``distinct`` is how many distinct
+    nodes it reaches, each counted once, so it is what a cut part says.
+    """
+
+    written: dict[int, int]
+    distinct: dict[int, int]
+
 
 def printed(expression: Expression) -> Expression:
     """The expression as a line prints it: whole within `LIMIT` nodes, else cut down to it.
@@ -35,9 +56,7 @@ def printed(expression: Expression) -> Expression:
     two pieces of itself doubles the expression written out on every pass,
     and it is counted without being written out.
     """
-    sizes: dict[int, int] = {}
-    _count(expression, sizes)
-    return _printed(expression, sizes)
+    return _printed_all((expression,))[0]
 
 
 def printed_forks(forks: Sequence[Branch]) -> tuple[Expression, ...]:
@@ -49,20 +68,21 @@ def printed_forks(forks: Sequence[Branch]) -> tuple[Expression, ...]:
     forks keep their expressions, so each list keeps its identity while the
     count is read.
     """
-    sizes: dict[int, int] = {}
-    for fork in forks:
-        _count(fork.expression, sizes)
-    return tuple(_printed(fork.expression, sizes) for fork in forks)
+    return _printed_all(tuple(fork.expression for fork in forks))
 
 
-def _printed(expression: Expression, sizes: dict[int, int]) -> Expression:
-    """The expression whole within `LIMIT` nodes, else cut down to it, its lists counted."""
-    if not isinstance(expression, list) or sizes[id(expression)] <= LIMIT:
-        return expression
-    return _cut(expression, sizes)
+def _printed_all(expressions: tuple[Expression, ...]) -> tuple[Expression, ...]:
+    """Each expression whole within `LIMIT` nodes, else cut down to it, all counted together."""
+    counts = _counted(*_walked(expressions))
+    return tuple(
+        _cut(expression, counts)
+        if isinstance(expression, list) and counts.written[id(expression)] > LIMIT
+        else expression
+        for expression in expressions
+    )
 
 
-def _cut(expression: list[Expression], sizes: dict[int, int]) -> Expression:
+def _cut(expression: list[Expression], counts: _Counts) -> Expression:
     """The top of the expression, opened breadth first while the line has room.
 
     Every part starts cut. Shallowest first, and under one operator its
@@ -70,17 +90,17 @@ def _cut(expression: list[Expression], sizes: dict[int, int]) -> Expression:
     it fits, else opened to its operator if that fits, else left cut. The
     order is fixed, so an expression is cut the same way every time.
     """
-    root: list[Expression] = [CUT, sizes[id(expression)]]
+    root: list[Expression] = [CUT, counts.distinct[id(expression)]]
     spent = _CUT_NODES
     queue: deque[_Pending] = deque([(root, expression)])
     while queue:
         slot, part = queue.popleft()
-        whole = sizes[id(part)]
+        whole = counts.written[id(part)]
         if spent - _CUT_NODES + whole <= LIMIT:
             slot[:] = part
             spent += whole - _CUT_NODES
             continue
-        opened, cost, pending = _opened(part, sizes)
+        opened, cost, pending = _opened(part, counts)
         if spent - _CUT_NODES + cost <= LIMIT:
             slot[:] = opened
             spent += cost - _CUT_NODES
@@ -89,47 +109,82 @@ def _cut(expression: list[Expression], sizes: dict[int, int]) -> Expression:
 
 
 def _opened(
-    part: list[Expression], sizes: dict[int, int]
+    part: list[Expression], counts: _Counts
 ) -> tuple[list[Expression], int, list[_Pending]]:
     """A part opened to its operator: what the line holds, what it costs, and what stays cut.
 
-    An operand no larger than a cut part is written whole; each larger one
-    is cut, and waits to be opened in turn, smallest first.
+    An operand no larger written out than a cut part is written whole; each
+    larger one is cut, and waits to be opened in turn, smallest first.
     """
     head, *operands = part
+    written = [
+        counts.written[id(operand)] if isinstance(operand, list) else 1 for operand in operands
+    ]
     opened: list[Expression] = [head]
     pending: list[_Pending] = []
-    for operand in operands:
-        if isinstance(operand, list) and sizes[id(operand)] > _CUT_NODES:
-            stand_in: list[Expression] = [CUT, sizes[id(operand)]]
+    for operand, size in zip(operands, written, strict=True):
+        if isinstance(operand, list) and size > _CUT_NODES:
+            stand_in: list[Expression] = [CUT, counts.distinct[id(operand)]]
             opened.append(stand_in)
             pending.append((stand_in, operand))
         else:
             opened.append(operand)
-    cost = 1 + sum(min(_size(operand, sizes), _CUT_NODES) for operand in operands)
-    return opened, cost, sorted(pending, key=lambda waiting: sizes[id(waiting[1])])
+    cost = 1 + sum(min(size, _CUT_NODES) for size in written)
+    return opened, cost, sorted(pending, key=lambda waiting: counts.written[id(waiting[1])])
 
 
-def _size(expression: Expression, sizes: dict[int, int]) -> int:
-    """How many nodes an expression holds written out: a leaf is one."""
-    return sizes[id(expression)] if isinstance(expression, list) else 1
+def _walked(expressions: tuple[Expression, ...]) -> tuple[list[_Node], dict[int, int]]:
+    """Every distinct list the expressions hold, each after the lists it holds.
 
-
-def _count(expression: Expression, sizes: dict[int, int]) -> None:
-    """Add how many nodes each list in the expression holds written out, keyed by its identity.
-
-    Each list is counted once however many parts share it, a list already in
-    the sizes is not counted again, and nothing is counted by recursion, so
-    neither a deep expression nor a shared one costs more than one step per
-    list.
+    Also how many places in those lists hold each list, keyed by its
+    identity. Each list is walked once however many parts share it, and
+    without recursion, so neither a deep expression nor a shared one costs
+    more than one step per list.
     """
-    stack: list[tuple[list[Expression], bool]] = (
-        [(expression, False)] if isinstance(expression, list) else []
-    )
+    order: list[_Node] = []
+    holders: dict[int, int] = {}
+    seen: set[int] = set()
+    stack = [(part, False) for part in reversed(expressions) if isinstance(part, list)]
     while stack:
-        part, counted = stack.pop()
-        if counted:
-            sizes[id(part)] = 1 + sum(_size(operand, sizes) for operand in part[1:])
-        elif id(part) not in sizes:
-            stack.append((part, True))
-            stack.extend((operand, False) for operand in part[1:] if isinstance(operand, list))
+        node, finished = stack.pop()
+        if finished:
+            order.append(node)
+        elif id(node) not in seen:
+            seen.add(id(node))
+            stack.append((node, True))
+            held = [part for part in node[1:] if isinstance(part, list)]
+            for part in held:
+                holders[id(part)] = holders.get(id(part), 0) + 1
+            stack.extend((part, False) for part in held)
+    return order, holders
+
+
+def _counted(order: list[_Node], holders: dict[int, int]) -> _Counts:
+    """Both counts of every list, each worked out once, after the lists it holds.
+
+    A list's own nodes are itself and its leaves, and each list gets bits of
+    its own in one numbering. What a list reaches is its own bits and the
+    bits each list it holds reaches, so the distinct nodes are the bits set,
+    a list reached twice being the same bits. A list's bits are kept only
+    until every place that holds it has read them.
+    """
+    written: dict[int, int] = {}
+    distinct: dict[int, int] = {}
+    reached: dict[int, int] = {}
+    unread = dict(holders)
+    first = 0
+    for node in order:
+        held = [part for part in node[1:] if isinstance(part, list)]
+        own = len(node) - len(held)
+        bits = ((1 << own) - 1) << first
+        first += own
+        for part in held:
+            bits |= reached[id(part)]
+            unread[id(part)] -= 1
+            if not unread[id(part)]:
+                del reached[id(part)]
+        written[id(node)] = own + sum(written[id(part)] for part in held)
+        distinct[id(node)] = bits.bit_count()
+        if unread.get(id(node)):
+            reached[id(node)] = bits
+    return _Counts(written=written, distinct=distinct)

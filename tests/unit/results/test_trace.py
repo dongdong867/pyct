@@ -342,7 +342,7 @@ def test_render_trace_writes_an_expression_past_the_cap_cut() -> None:
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # the fork line holds what the stdout line holds, each cut part as the nodes it stands for
+    # the fork line holds what the stdout line holds, each cut part as the distinct nodes it holds
     assert lines[1].startswith("fork m.py:5:7  (")
     assert lines[1].endswith(" == 'abc'  not taken")
     assert " nodes)" in lines[1]
