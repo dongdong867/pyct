@@ -1,36 +1,29 @@
 """The pieces in SMT-LIB: the terms strings.py writes, and cvc5 held against Python on them."""
 
-import ast
-import itertools
 import operator
 import random
-import re
-import shutil
-import subprocess
 from collections.abc import Callable
 
-import pytest
-
-from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import Answer, Error, Sat, Unsat
+from pyct.core.branch import Branch, Expression
+from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.strings import (
     character,
-    decode,
     encode,
     piece,
     replaced,
     without_prefix,
     without_suffix,
 )
-
-SITE = Site("m.py", 2, 7)
-
-needs_cvc5 = pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
-
-# the characters the random strings are made of: ASCII letters, the edges of what cvc5 holds,
-# a letter past ASCII, a lone surrogate and an emoji
-ALPHABET = ["a", "b", "z", "\x00", "\x7f", "é", "\ud800", "\U0001f600", "\U0002ffff"]
+from tests.unit.solver.agreement import (
+    ALPHABET,
+    PATH_LETTERS,
+    asked,
+    disagrees,
+    flipped_path,
+    heads_named,
+    needs_cvc5,
+)
 
 # the bounds a random slice picks from: missing, negative, and past either end of a string of
 # up to five characters
@@ -163,24 +156,11 @@ def _holder(rng: random.Random, lines: list[str], at: int) -> Written:
     return held
 
 
-def _answers(lines: list[str]) -> list[str]:
-    """What cvc5 says each asked string is, in order."""
-    answer = subprocess.run(
-        ["cvc5", "--produce-models", "--lang", "smt", "--quiet"],
-        input="\n".join(lines) + "\n",
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
-    assert answer.startswith("sat"), answer
-    return [decode(value) for value in re.findall(r'\(v\d+ ("(?:[^"]|"")*")\)', answer)]
-
-
 @needs_cvc5
 def test_cvc5_agrees_with_python_on_every_piece() -> None:
     lines, python = _program(600)
 
-    answers = _answers(lines)
+    answers = asked(lines)
 
     # every value is fixed, so cvc5 only works each term out: this holds the terms to Python
     assert len(answers) == len(python)
@@ -208,21 +188,8 @@ PYTHON_HEADS: dict[str, Callable[..., object]] = {
     ">=": operator.ge,
 }
 
-# the pieces a random path picks from, and the letters of its strings: two ASCII letters and
-# one past ASCII
+# the pieces a random path picks from
 PIECE_HEADS = ["[]", "[:]", "+", "replace", "removeprefix", "removesuffix"]
-PATH_LETTERS = ["a", "b", "é"]
-
-
-def _python(expression: Expression, s: str) -> object:
-    """What Python makes of a condition on s. A leaf is s, a literal, a number, or None."""
-    if isinstance(expression, list):
-        head, *operands = expression
-        assert isinstance(head, str)
-        return PYTHON_HEADS[head](*(_python(part, s) for part in operands))
-    if isinstance(expression, str):
-        return s if expression == "s" else ast.literal_eval(expression)
-    return expression
 
 
 def _literal(rng: random.Random, longest: int) -> str:
@@ -248,51 +215,16 @@ def _piece_of(rng: random.Random) -> tuple[Expression, Expression | None]:
 
 
 def _flipped_path(rng: random.Random) -> tuple[Branch, ...]:
-    """The forks some string takes through random compares on pieces, the last one flipped.
-
-    That is the question a run asks the solver: every fork before the last
-    is one a real input took, so only the flip can make it unsat.
-    """
+    """The forks some string takes through random compares on pieces, the last one flipped."""
     s = "".join(rng.choices(PATH_LETTERS, k=rng.randint(0, 5)))
-    forks: list[Branch] = []
-    for _ in range(rng.randint(1, 5)):
-        term, long_enough = _piece_of(rng)
-        if long_enough is not None:
-            taken = bool(_python(long_enough, s))
-            forks.append(Branch(expression=long_enough, taken=taken, site=SITE))
-            if not taken:
-                break
-        compare: Expression = [rng.choice(["==", "!=", "<", ">="]), term, _literal(rng, 2)]
-        forks.append(Branch(expression=compare, taken=bool(_python(compare, s)), site=SITE))
-    last = forks[-1]
-    return (*forks[:-1], Branch(expression=last.expression, taken=not last.taken, site=SITE))
+    pieces = (_compared(rng) for _ in range(rng.randint(1, 5)))
+    return flipped_path(s, pieces, PYTHON_HEADS)
 
 
-def _takes(path: tuple[Branch, ...], s: str) -> bool:
-    """Whether s takes every fork of the path the way the plan says."""
-    return all(bool(_python(fork.expression, s)) == fork.taken for fork in path)
-
-
-def _disagrees(path: tuple[Branch, ...], answer: Answer) -> bool:
-    """Whether Python disagrees with an answer: a model off the plan, or an unsat with a witness.
-
-    A witness is looked for among the strings of up to five of the path's
-    letters and one more, so an unsat is checked as far as that reaches.
-    """
-    if isinstance(answer, Sat):
-        s = answer.model["s"]
-        assert isinstance(s, str)
-        return not _takes(path, s)
-    if isinstance(answer, Unsat):
-        letters = [*PATH_LETTERS, "z"]
-        short = ("".join(p) for k in range(6) for p in itertools.product(letters, repeat=k))
-        return any(_takes(path, s) for s in short)
-    return False
-
-
-def _heads(path: tuple[Branch, ...]) -> set[str]:
-    """Every piece head a path's forks name."""
-    return {head for fork in path for head in PIECE_HEADS if f"'{head}'" in str(fork.expression)}
+def _compared(rng: random.Random) -> tuple[Expression, Expression | None]:
+    """A random piece compared with a literal, and the fork the piece records first, if any."""
+    term, long_enough = _piece_of(rng)
+    return [rng.choice(["==", "!=", "<", ">="]), term, _literal(rng, 2)], long_enough
 
 
 @needs_cvc5
@@ -308,8 +240,12 @@ def test_cvc5_agrees_with_python_on_every_piece_path_it_answers() -> None:
     answered = [
         path for path, answer in zip(paths, answers, strict=True) if isinstance(answer, Sat | Unsat)
     ]
-    assert set().union(*(_heads(path) for path in answered)) == set(PIECE_HEADS)
+    assert set().union(*(heads_named(path, PIECE_HEADS) for path in answered)) == set(PIECE_HEADS)
     # a timeout or an unknown is a miss, which the run reports as one; only an answer can be
     # wrong, so a miss fails this test only by leaving a piece unanswered
-    wrong = [path for path, answer in zip(paths, answers, strict=True) if _disagrees(path, answer)]
+    wrong = [
+        path
+        for path, answer in zip(paths, answers, strict=True)
+        if disagrees(path, answer, PYTHON_HEADS, [*PATH_LETTERS, "z"], 5)
+    ]
     assert wrong == []
