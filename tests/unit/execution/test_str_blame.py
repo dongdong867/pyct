@@ -12,26 +12,19 @@ FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_
 
 
 @pytest.mark.parametrize(
-    ("operation", "detail"),
+    "operation",
     [
-        pytest.param(
-            lambda s: s.find(5), "TypeError: must be str, not int", id="search-str-refuses"
-        ),
-        pytest.param(
-            lambda s: 5 in s,
-            "TypeError: 'in <string>' requires string as left operand, not int",
-            id="in-str-refuses",
-        ),
-        pytest.param(lambda s: s.index("x"), "ValueError: substring not found", id="index-missing"),
+        pytest.param(lambda s: s.find(5), id="search-str-refuses"),
+        pytest.param(lambda s: 5 in s, id="in-str-refuses"),
+        pytest.param(lambda s: s.index("x"), id="index-missing"),
         pytest.param(
             lambda s: s.find("b", start=1),  # pyrefly: ignore[unexpected-keyword]
-            "TypeError: str.find() takes no keyword arguments",
             id="search-keyword-refused",
         ),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
-    operation: Callable[[str], object], detail: str
+    operation: Callable[[str], object],
 ) -> None:
     def target(s: str) -> object:
         return operation(s)
@@ -40,5 +33,12 @@ def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
 
     result = execute(ctx, {"s": "abc"})
 
+    # the detail is CPython's own sentence, so plain Python on this interpreter gives it
+    with pytest.raises((TypeError, ValueError)) as plain:
+        operation("abc")
     # a taught search runs str's own, and so does the downgrade it falls back to
-    assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail=detail, traceback=None)
+    assert result.failure == Failure(
+        kind=FailureKind.TARGET_RAISED,
+        detail=f"{type(plain.value).__name__}: {plain.value}",
+        traceback=None,
+    )
