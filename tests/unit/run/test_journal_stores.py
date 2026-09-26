@@ -9,8 +9,8 @@ from typing import NoReturn
 
 from pyct.run.journal import RECORDS, JournalWriter
 
-# how many times the reader looks at the two words while the writer writes them
-LOOKS = 300_000
+# how long the reader looks at the two words while the writer writes them
+SAMPLING = 1.0
 # how long the writer may take to write the two words at all
 STARTS_WITHIN = 5.0
 # where the first count sits: the downgrade record comes first, its count after its 8-byte head
@@ -62,5 +62,11 @@ def started(words: memoryview) -> None:
 
 
 def zeros_seen(words: memoryview) -> int:
-    """How often the mark or the count read 0 over ``LOOKS`` looks."""
-    return sum(1 for _ in range(LOOKS) if words[0] == 0 or words[COUNT_AT] == 0)
+    """How often the mark or the count read 0 over ``SAMPLING`` seconds of looking."""
+    zeros = 0
+    stop = time.monotonic() + SAMPLING
+    while time.monotonic() < stop:
+        for _ in range(10_000):
+            if words[0] == 0 or words[COUNT_AT] == 0:
+                zeros += 1
+    return zeros
