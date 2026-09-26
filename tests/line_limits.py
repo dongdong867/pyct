@@ -52,7 +52,7 @@ def check_file(path: Path) -> list[Broken]:
     try:
         bodies = function_bodies(text, str(path))
     except SyntaxError as error:
-        return [*broken, Broken(path, error.lineno or 1, "syntax", str(error.msg))]
+        return [*broken, Broken(path, error.lineno or 1, "syntax", error.msg)]
     for function, length in bodies:
         if length > MAX_BODY_LINES:
             detail = f"{function.name} has {length} body lines, at most {MAX_BODY_LINES}"
