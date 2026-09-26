@@ -114,7 +114,7 @@ class Attempt:
 
 @dataclass(frozen=True)
 class Loop:
-    """What the loop after the seed ran, what it missed, and why it ended."""
+    """The inputs that ran, the seed's first, what the solver missed, and why they stopped."""
 
     records: tuple[InputRecord, ...]
     misses: tuple[Miss, ...]
