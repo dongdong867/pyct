@@ -23,9 +23,10 @@ already reaped the process and lose its status.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import signal
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from dataclasses import dataclass
 
 from pyct.execution.deadline import alarm
@@ -73,18 +74,44 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
     the two and leaves the process running. It then goes on, as
     KeyboardInterrupt, once the process is ended and reaped.
     """
-    held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    holding = contextlib.ExitStack()
+    holding.enter_context(ctrl_c_held())
     try:
         child = _Child(start())
     except BaseException:
-        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        holding.close()
         raise
     try:
-        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        # a Ctrl-C held until now goes on here, with the process in the guard's hands
+        holding.close()
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
     finally:
         child.end()
+
+
+@contextlib.contextmanager
+def ctrl_c_held() -> Generator[None]:
+    """Hold a Ctrl-C until the block ends, then let it go on as it would have.
+
+    The signal mask holds it for this thread, and a child forked inside the
+    block starts with that mask. The system can still hand SIGINT to another
+    thread of pyct's process, and Python then raises in this thread anyway,
+    so a handler that only notes it holds it here too. On the way out the old
+    handler comes back, and a noted Ctrl-C is raised again for it. Like the
+    rest of ``run()``, this needs the main thread.
+    """
+    noted: list[int] = []
+    previous = signal.signal(signal.SIGINT, lambda number, frame: noted.append(number))
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    try:
+        yield
+    finally:
+        # unblocking runs the noting handler for a Ctrl-C this thread held
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        signal.signal(signal.SIGINT, signal.SIG_DFL if previous is None else previous)
+        if noted:
+            signal.raise_signal(signal.SIGINT)
 
 
 class _Child:
@@ -136,11 +163,8 @@ class _Child:
         """
         if self.status is not None:
             return
-        held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
-        try:
+        with ctrl_c_held():
             self._kill_and_reap()
-        finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
     def _kill_and_reap(self) -> None:
         try:

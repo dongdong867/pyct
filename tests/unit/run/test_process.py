@@ -374,3 +374,67 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_still_reaps_it(
 
     with pytest.raises(ChildProcessError):
         os.waitpid(pid, os.WNOHANG)
+
+
+@contextlib.contextmanager
+def another_thread() -> Generator[None]:
+    """A thread beside the main one, which takes a SIGINT aimed at the whole process."""
+    stop = threading.Event()
+    thread = threading.Thread(target=stop.wait, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join()
+
+
+def still_running(pid: int) -> bool:
+    """Whether ``pid`` still runs unreaped; one that does is killed and reaped here."""
+    try:
+        done, _ = os.waitpid(pid, os.WNOHANG)
+    except ChildProcessError:
+        return False
+    if done == 0:
+        os.kill(pid, signal.SIGKILL)
+        os.waitpid(pid, 0)
+    return True
+
+
+def test_a_ctrl_c_as_the_process_starts_ends_it_while_another_thread_runs() -> None:
+    started: list[int] = []
+
+    def start_then_interrupt() -> int:
+        pid = sleeper(10)
+        started.append(pid)
+        # aimed at the whole process: with SIGINT held in this thread, the other thread takes it,
+        # while this one is still starting the process
+        os.kill(os.getpid(), signal.SIGINT)
+        time.sleep(0.05)
+        return pid
+
+    with another_thread(), pytest.raises(KeyboardInterrupt):
+        watched(start_then_interrupt, None)
+
+    assert not still_running(started[0])
+
+
+def test_a_second_ctrl_c_as_pyct_ends_the_process_reaps_it_while_another_thread_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pid = sleeper(10)
+    real_kill = os.kill
+
+    def kill_then_interrupt(target: int, sig: int) -> None:
+        real_kill(target, sig)
+        # aimed at the whole process, landing on the other thread before the reap
+        real_kill(os.getpid(), signal.SIGINT)
+        time.sleep(0.05)
+
+    monkeypatch.setattr(os, "kill", kill_then_interrupt)
+
+    with another_thread(), pytest.raises(KeyboardInterrupt):
+        _Child(pid).end()
+
+    monkeypatch.undo()
+    assert not still_running(pid)
