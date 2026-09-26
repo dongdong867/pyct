@@ -16,11 +16,12 @@ The child writes each fact of its call into a journal in shared memory (see
 it ended (see ``process``).
 
 A copy of a process can hang on a lock another thread held at the copy.
-pyct's process runs no threads of its own, so a thread in it at the start
-of a run is one the target's import left running, and then each input runs
-in a fresh interpreter instead (see ``fresh``). That interpreter imports
-the target by name, so a target no module attribute names, a closure handed
-to ``run()``, runs in pyct's process instead. Either way pyct says so once.
+When the target's import left threads running (see ``Target.threads``),
+each input runs in a fresh interpreter instead (see ``fresh``). Threads
+that ran before the import, such as a test runner's watchdog, do not count.
+The fresh interpreter imports the target by name, so a target no module
+attribute names, such as a closure made from the imported module, runs in
+pyct's process instead. Either way pyct says so once.
 
 ``--in-process`` runs every input in pyct's own process instead, exactly as
 before isolation: state carries over, the target writes to pyct's stdout,
@@ -46,7 +47,6 @@ from pyct.run.fresh import in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import Target
-from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
 
@@ -66,19 +66,17 @@ def isolation(target: Target, isolated: bool) -> Isolation:
     """Choose once, for the whole run, where its inputs run."""
     if not isolated:
         return _in_process(target)
-    if running() <= 1:
+    if target.threads == 0:
         alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
         return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
     if not _named(target):
         logger.warning(
-            "each input runs in pyct's process, because threads are running in it after the"
-            " target's import, and no module attribute names the target for a fresh"
-            " interpreter to import"
+            "each input runs in pyct's process, because the target's import left threads"
+            " running and no module attribute names the target for a fresh interpreter to import"
         )
         return _in_process(target)
     logger.warning(
-        "each input runs in a fresh interpreter, because threads are running in pyct's"
-        " process after the target's import"
+        "each input runs in a fresh interpreter, because the target's import left threads running"
     )
     fresh = functools.partial(in_a_fresh_interpreter, target.spec, target.file)
     return Isolation(call=fresh, isolated=True)

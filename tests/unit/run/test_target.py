@@ -1,4 +1,5 @@
 import sys
+import threading
 import types
 from pathlib import Path
 
@@ -46,3 +47,22 @@ def test_load_target_names_a_module_with_no_python_source(monkeypatch: pytest.Mo
     monkeypatch.setitem(sys.modules, "fake_ext", module)
     with pytest.raises(TargetError, match="fake_ext has no Python source file"):
         load_target("fake_ext::f")
+
+
+def test_load_target_counts_no_thread_for_an_import_that_starts_none() -> None:
+    assert load_target("targets.flip.one_check::classify").threads == 0
+
+
+def test_load_target_counts_the_threads_the_import_left_running() -> None:
+    assert load_target("targets.isolate.threaded::count").threads == 1
+
+
+def test_load_target_does_not_count_threads_running_before_the_import() -> None:
+    stop = threading.Event()
+    thread = threading.Thread(target=stop.wait, daemon=True)
+    thread.start()
+    try:
+        assert load_target("targets.flip.one_check::classify").threads == 0
+    finally:
+        stop.set()
+        thread.join()
