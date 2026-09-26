@@ -1,6 +1,7 @@
 """The pieces a ConcolicStr teaches: the tracked str each hands back, the fork an index records
 before it may raise, and the forms left to str as a downgrade."""
 
+import operator
 import sys
 from collections.abc import Callable
 
@@ -272,9 +273,12 @@ def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
 
     # a keyword is a form pyct does not encode, and str's replace refuses it on the 3.12 floor,
     # in its own words and as the target's raise
-    with pytest.raises(TypeError, match="takes no keyword arguments") as raised:
+    with pytest.raises(TypeError) as plain:
+        "abcb".replace("b", "x", count=1)  # pyrefly: ignore[no-matching-overload]
+    with pytest.raises(TypeError) as raised:
         _tracked(sink=sink).replace("b", "x", count=1)  # pyrefly: ignore[unexpected-keyword]
 
+    assert str(raised.value) == str(plain.value)
     assert raised_by_target(raised.value)
     assert sink == []
 
@@ -316,7 +320,11 @@ def test_a_number_on_the_left_of_plus_is_refused_by_python_and_records_nothing()
     sink: list[SinkItem] = []
 
     # the reflected method hands the number back to Python, which refuses int + str itself
-    with pytest.raises(TypeError, match="unsupported operand"):
+    with pytest.raises(TypeError) as plain:
+        operator.add(1, "abcb")  # pyrefly: ignore[no-matching-overload]
+    with pytest.raises(TypeError) as raised:
         1 + _tracked(sink=sink)  # pyrefly: ignore[unsupported-operation]
 
+    # Python's own sentence, naming the tracked str's type where plain Python names str
+    assert str(raised.value) == str(plain.value).replace("'str'", "'ConcolicStr'")
     assert sink == []
