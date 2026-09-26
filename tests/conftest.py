@@ -12,11 +12,11 @@ and the child would then hang on it until pyct kills it, which changes the
 child's line. A test whose deadline fires in a child takes the
 ``deadline_fires_in_a_child`` fixture.
 
-Without coverage.py measuring, the hook does nothing.
+Without coverage.py measuring in this process, the hook imports nothing
+and changes nothing.
 """
 
 import contextlib
-import importlib
 import os
 import sys
 from collections.abc import Iterator
@@ -34,12 +34,11 @@ _measured = True
 
 
 def _current() -> object | None:
-    """The coverage.py measurement running in this process, or None."""
-    try:
-        coverage = importlib.import_module("coverage")
-    except ImportError:
+    """The coverage.py measurement running in this process, or None. Imports nothing."""
+    coverage = sys.modules.get("coverage")
+    if coverage is None:
         return None
-    return coverage.Coverage.current()
+    return coverage.Coverage.current()  # pyrefly: ignore[missing-attribute]
 
 
 def _saving_exit(status: int) -> NoReturn:
@@ -53,14 +52,15 @@ def _saving_exit(status: int) -> NoReturn:
 
 
 def _after_fork_in_child() -> None:
-    if _measured:
-        child = sys.modules.get("pyct.run.child")
-        if child is not None:
-            child._EXIT = _saving_exit  # pyrefly: ignore[missing-attribute]
-        return
     measuring = _current()
-    if measuring is not None:
+    if measuring is None:
+        return
+    if not _measured:
         measuring.stop()  # pyrefly: ignore[missing-attribute]
+        return
+    child = sys.modules.get("pyct.run.child")
+    if child is not None:
+        child._EXIT = _saving_exit  # pyrefly: ignore[missing-attribute]
 
 
 os.register_at_fork(after_in_child=_after_fork_in_child)
