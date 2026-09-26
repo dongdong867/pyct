@@ -160,14 +160,19 @@ def _installed_file(module: str, library: Library, installed: Installed | None) 
 
 
 def _view(report: SideReport, file: Path | None, body: Body, library: Library | None) -> SideView:
-    """The side as the row shows it. Lines of a file other than the entry's are not its lines."""
-    failure = None if library is None else _library_failure(library, report.library)
+    """The side as the row shows it. Lines of a file other than the entry's are not its lines.
+
+    The library is checked only on a side that said which one it has: a side stopped, or
+    ended with no line, keeps the reason it failed.
+    """
+    checked = library is not None and report.library is not None
+    failure = _library_failure(library, report.library) if checked else None
     return SideView(
         file=report.file,
         covered=tuple(sorted(body.cut(report.covered))) if _in(report, file) else (),
         stopped=report.stopped,
         inputs=report.inputs,
-        failure=failure or report.failure or _file_failure(report, file),
+        failure=failure or report.failure or _file_failure(report, file, library),
         library=None if report.library is None else report.library.version,
     )
 
@@ -186,10 +191,12 @@ def _in(report: SideReport, file: Path | None) -> bool:
     return Path(report.file).resolve() == file.resolve()
 
 
-def _file_failure(report: SideReport, file: Path | None) -> str | None:
+def _file_failure(report: SideReport, file: Path | None, library: Library | None) -> str | None:
     """Why the report's lines are not the entry's file's lines, or ``None`` when they are."""
     if report.file is None:
         return "the report names no file"
+    if file is None and library is not None:
+        return f"the side did not say where its {library.name} is"
     return None if _in(report, file) else f"loaded {report.file}, the entry names {file}"
 
 

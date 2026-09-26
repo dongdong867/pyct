@@ -103,8 +103,9 @@ def _side_text(name: str, view: SideView, row: Row) -> str:
 
 
 def _library_text(pin: str, version: str | None) -> str:
-    """The library's name and the version a side has: ``werkzeug 3.1.3``, or ``werkzeug none``."""
-    return f"{pin.partition('==')[0]} {version or 'none'}"
+    """The library's name and the version a side has: ``werkzeug 3.1.3``, or ``werkzeug ?`` for
+    a side without it or one that did not say; its failure says which."""
+    return f"{pin.partition('==')[0]} {version or '?'}"
 
 
 def _details(row: Row) -> list[str]:

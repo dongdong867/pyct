@@ -3,11 +3,14 @@
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from tools.compare_coverage.body import Body
 from tools.compare_coverage.entries import Entry, Library, Unlisted
 from tools.compare_coverage.rows import (
     Files,
     Reports,
+    Row,
     SideView,
     Status,
     compared_row,
@@ -173,18 +176,33 @@ def test_a_side_with_another_version_fails_first_and_shows_no_lines() -> None:
     )
 
 
-def test_a_side_without_the_library_or_without_saying_fails_naming_none() -> None:
-    missing = in_folder("/legacy", 2, version=None)
-    silent = SideReport(failure="no summary line")
+def legacy_row(legacy: SideReport) -> Row:
+    """The row of an installed entry whose v2 side has the pinned werkzeug."""
+    reports = Reports(v2=in_folder("/v2", 2), legacy=legacy)
+    return compared_row(LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports)
 
-    for report in (missing, silent):
-        reports = Reports(v2=in_folder("/v2", 2), legacy=report)
-        row = compared_row(
-            LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports
-        )
 
-        assert row.legacy is not None
-        assert row.legacy.failure == "the entry pins werkzeug 3.1.3; this side has none"
+def test_a_side_without_the_library_fails_naming_none() -> None:
+    row = legacy_row(in_folder("/legacy", 2, version=None))
+
+    assert row.legacy is not None
+    assert row.legacy.failure == "the entry pins werkzeug 3.1.3; this side has none"
+
+
+@pytest.mark.parametrize("failure", ["no summary line", "stopped after 90 s", "exit 1: boom"])
+def test_a_side_that_said_nothing_of_its_library_keeps_its_own_failure(failure: str) -> None:
+    row = legacy_row(SideReport(failure=failure))
+
+    assert row.legacy is not None
+    assert (row.legacy.failure, row.legacy.library) == (failure, None)
+
+
+def test_a_side_that_ran_without_naming_its_library_fails_saying_so() -> None:
+    row = legacy_row(SideReport(file="/legacy/w/http.py", covered=frozenset({2}), stopped="done"))
+
+    assert row.legacy is not None
+    assert row.legacy.failure == "the side did not say where its werkzeug is"
+    assert row.legacy.covered == ()
 
 
 def test_a_library_neither_side_has_reads_no_file() -> None:

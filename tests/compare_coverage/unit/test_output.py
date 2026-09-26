@@ -146,13 +146,14 @@ def test_a_table_line_for_a_file_names_the_file_and_the_reason() -> None:
 
 
 def test_a_table_line_for_an_installed_entry_names_each_sides_version() -> None:
+    # a side with no version is one without the library, or one that did not say
     missing = replace(V2, library=None)
     row = replace(
         DIFFERS, library="werkzeug==3.1.3", v2=missing, legacy=replace(LEGACY, library="3.1.3")
     )
 
     assert table_line(row).startswith(
-        "v2  m::f  v2 covered 2 of 3 (no fork to flip, 2 inputs, werkzeug none)"
+        "v2  m::f  v2 covered 2 of 3 (no fork to flip, 2 inputs, werkzeug ?)"
         "  legacy covered 3 of 3 (exhausted, 4 inputs, werkzeug 3.1.3)"
     )
     assert json.loads(row_line(row))["legacy"]["library"] == "3.1.3"
