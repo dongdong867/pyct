@@ -43,7 +43,7 @@ from dataclasses import dataclass
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, serve
-from pyct.run.fresh import in_a_fresh_interpreter
+from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import Target
@@ -78,7 +78,7 @@ def isolation(target: Target, isolated: bool) -> Isolation:
     logger.warning(
         "each input runs in a fresh interpreter, because the target's import left threads running"
     )
-    fresh = functools.partial(in_a_fresh_interpreter, target.spec, target.file)
+    fresh = functools.partial(in_a_fresh_interpreter, fresh_for(target.spec, target.file))
     return Isolation(call=fresh, isolated=True)
 
 

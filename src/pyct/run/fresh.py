@@ -8,9 +8,12 @@ library, so it is the way only when forking is unsafe.
 
 Only the input crosses on the way in: pyct's import path, the target's name
 and file, the arguments and the deadline, pickled into a file the new
-interpreter reads. The facts come back through the same journal a forked
-child writes, backed by a file both processes map. The new interpreter's
-stdin is empty and its stdout is stderr from its first instruction.
+interpreter reads. Every interpreter of one run gets the same hash seed,
+so a target whose path follows the order of a set of strings takes the
+same path for the same input, as it would in forked children. The facts
+come back through the same journal a forked child writes, backed by a
+file both processes map. The new interpreter's stdin is empty and its
+stdout is stderr from its first instruction.
 """
 
 from __future__ import annotations
@@ -20,11 +23,13 @@ import functools
 import mmap
 import os
 import pickle
+import random
 import signal
 import subprocess
 import sys
 import tempfile
 from collections.abc import Generator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
@@ -44,12 +49,34 @@ _BOOT = (
 _PYCT_ROOT = str(Path(PYCT_DIR).parent)
 
 
+# the largest seed PYTHONHASHSEED takes
+_MOST_SEED = 2**32 - 1
+
+
+@dataclass(frozen=True)
+class Fresh:
+    """What every fresh interpreter of one run shares: the target's name and file, one hash seed."""
+
+    spec: str
+    file: str
+    hash_seed: str
+
+
+def fresh_for(spec: str, file: str) -> Fresh:
+    """The run's fresh interpreters, hashing with the seed pyct was given, or one picked now."""
+    given = os.environ.get("PYTHONHASHSEED", "random")
+    seed = str(random.randint(1, _MOST_SEED)) if given == "random" else given
+    return Fresh(spec=spec, file=file, hash_seed=seed)
+
+
 def in_a_fresh_interpreter(
-    spec: str, file: str, args: Mapping[str, object], until: float | None
+    fresh: Fresh, args: Mapping[str, object], until: float | None
 ) -> ExecutionResult:
-    """Run one input of the target ``spec`` names in a new interpreter, and read what it did."""
-    with _journal() as (journal, buffer), _request(spec, file, args, until) as request:
-        waited = watched(functools.partial(_spawned, request, journal), until)
+    """Run one input of the run's target in a new interpreter, and read what it did."""
+    handed = _request(fresh.spec, fresh.file, args, until)
+    with _journal() as (journal, buffer), handed as request:
+        start = functools.partial(_spawned, request, journal, fresh.hash_seed)
+        waited = watched(start, until)
         return ending(read(buffer), waited)
 
 
@@ -117,7 +144,7 @@ def _command(request: int, journal: int) -> list[str]:
     return [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)]
 
 
-def _spawned(request: int, journal: int) -> int:
+def _spawned(request: int, journal: int, hash_seed: str) -> int:
     """Start the new interpreter and return its pid.
 
     Ctrl-C has its default action from the start, and stdin and stdout are
@@ -129,7 +156,7 @@ def _spawned(request: int, journal: int) -> int:
         return os.posix_spawn(
             sys.executable,
             _command(request, journal),
-            os.environ,
+            {**os.environ, "PYTHONHASHSEED": hash_seed},
             file_actions=[
                 (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
                 (os.POSIX_SPAWN_DUP2, 2, 1),
