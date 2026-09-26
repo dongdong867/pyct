@@ -71,8 +71,18 @@ def read_records(path: Path, accept: bool) -> dict[Key, Record]:
         raise RecordsError(f"--accepted: cannot read {path}: no such file") from None
     except OSError as error:
         raise RecordsError(f"--accepted: cannot read {path}: {error.strerror}") from error
-    records = [_record(line, f"{path} line {n}") for n, line in enumerate(text.splitlines(), 1)]
-    return {record.key: record for record in records}
+    records: dict[Key, Record] = {}
+    lines: dict[Key, int] = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        record = _record(line, f"{path} line {number}")
+        if record.key in records:
+            first = lines[record.key]
+            raise RecordsError(
+                f"--accepted: {path} lines {first} and {number} record {record.target} "
+                f"with the same seed; keep one"
+            )
+        records[record.key], lines[record.key] = record, number
+    return records
 
 
 def check_writable(path: Path) -> None:

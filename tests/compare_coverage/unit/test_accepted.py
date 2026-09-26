@@ -106,6 +106,15 @@ def test_a_line_that_is_not_a_record_is_refused_naming_it(tmp_path: Path, line: 
         read_records(file, accept=False)
 
 
+def test_two_records_for_one_target_and_seed_are_refused_naming_both(tmp_path: Path) -> None:
+    file = tmp_path / "accepted.jsonl"
+    other = json.dumps({**LINE, "target": "m::g"})
+    file.write_text(f"{json.dumps(LINE)}\n{other}\n{json.dumps({**LINE, 'only_legacy': [5]})}\n")
+
+    with pytest.raises(RecordsError, match=rf"--accepted: {file} lines 1 and 3 record m::f"):
+        read_records(file, accept=False)
+
+
 def test_a_row_that_matches_its_record_is_accepted_and_passes() -> None:
     marked = mark(DIFFERS, {RECORD.key: RECORD})
 
