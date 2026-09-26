@@ -16,12 +16,18 @@ from tools.compare_coverage.legacy_adapter import Engine, main, report
 
 
 @dataclass(frozen=True)
+class Record:
+    error: str | None
+
+
+@dataclass(frozen=True)
 class Answer:
     success: bool = True
     executed_lines: frozenset[int] = frozenset({2, 3})
     iterations: int = 4
     termination_reason: str = "exhausted"
     error: str | None = None
+    inputs_generated: tuple[Record, ...] = ()
 
 
 @pytest.fixture
@@ -87,6 +93,24 @@ def test_an_engine_that_says_it_failed_is_a_failure_with_its_text(root: Path) ->
     line = report(a_request(root), fake_engine(answer, []))
 
     assert line["failure"] == "error: cannot inspect target"
+
+
+def test_a_failure_without_text_names_the_last_inputs_error(root: Path) -> None:
+    # legacy's watchdog returns its last checkpoint with no error, and the stopped input last
+    inputs = (Record(error=None), Record(error="timeout: child exceeded wall-clock timeout"))
+    answer = Answer(success=False, termination_reason="timeout", inputs_generated=inputs)
+
+    line = report(a_request(root), fake_engine(answer, []))
+
+    assert line["failure"] == "timeout: timeout: child exceeded wall-clock timeout"
+
+
+def test_a_failure_with_no_text_anywhere_says_the_result_is_partial(root: Path) -> None:
+    answer = Answer(success=False, termination_reason="partial_checkpoint")
+
+    line = report(a_request(root), fake_engine(answer, []))
+
+    assert line["failure"] == "partial_checkpoint: legacy gave a partial result and no error"
 
 
 def test_a_target_that_does_not_import_is_a_failure(root: Path) -> None:

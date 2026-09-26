@@ -54,6 +54,7 @@ class Result:
     iterations: int
     termination_reason: str
     error: str | None
+    inputs_generated: tuple[Any, ...] = ()
 
 
 def run_concolic(
