@@ -8,9 +8,9 @@ library, so it is the way only when forking is unsafe.
 
 Only the input crosses on the way in: pyct's import path, the target's name
 and file, the arguments and the deadline, pickled into a file the new
-interpreter reads. Every interpreter of one run gets the same hash seed,
-so a target whose path follows the order of a set of strings takes the
-same path for the same input, as it would in forked children. The facts
+interpreter reads. Every fresh interpreter of one run gets the same hash
+seed, so a target whose path follows the order of a set of strings takes
+the same path for the same input in each of them. The facts
 come back through the same journal a forked child writes, backed by a
 file both processes map. The new interpreter's stdin is empty and its
 stdout is stderr from its first instruction.
@@ -63,7 +63,8 @@ class Fresh:
 
 def fresh_for(spec: str, file: str) -> Fresh:
     """The run's fresh interpreters, hashing with the seed pyct was given, or one picked now."""
-    given = os.environ.get("PYTHONHASHSEED", "random")
+    # unset or empty, Python hashes at random
+    given = os.environ.get("PYTHONHASHSEED") or "random"
     # from the system, never from random's own generator, which is the target's
     drawn = int.from_bytes(os.urandom(4), "little") % _MOST_SEED + 1
     seed = str(drawn) if given == "random" else given
@@ -139,9 +140,12 @@ def _command(request: int, journal: int) -> list[str]:
     in for it. The target's import still sees pyct's own path, which the
     request carries. The flags are pyct's, so ``-O`` and the rest hold for
     the target the same way whether a run forks or starts interpreters.
+    Only the flags that would make the new interpreter ignore the run's
+    hash seed are left out: ``-E``, and ``-I``, which stands in as ``-s``.
     """
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
-    flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
+    given = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
+    flags = ["-s" if flag == "-I" else flag for flag in given if flag != "-E"]
     return [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)]
 
 

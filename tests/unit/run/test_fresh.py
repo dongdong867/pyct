@@ -154,7 +154,7 @@ def test_a_fresh_interpreter_runs_with_pyct_s_own_interpreter_flags(
     assert fresh_result.failure is None
 
 
-def test_every_input_of_a_run_hashes_strings_the_same_way() -> None:
+def test_every_fresh_interpreter_of_a_run_hashes_strings_the_same_way() -> None:
     target = load_target("targets.isolate.hash_order::place")
     fresh = fresh_for(target.spec, target.file)
 
@@ -190,3 +190,32 @@ def test_picking_a_run_s_hash_seed_leaves_the_target_s_random_alone(
     fresh_for(ONE_CHECK, "one_check.py")
 
     assert random.getstate() == before
+
+
+def test_an_empty_hash_seed_is_no_seed_and_the_run_picks_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Python reads an empty PYTHONHASHSEED as random
+    monkeypatch.setenv("PYTHONHASHSEED", "")
+
+    seed = fresh_for(ONE_CHECK, "one_check.py").hash_seed
+
+    assert 0 < int(seed) < 2**32
+
+
+@pytest.mark.parametrize(
+    ("flags", "kept", "left_out"),
+    [
+        pytest.param(["-E", "-O"], ["-O"], ["-E"], id="ignoring-the-environment"),
+        pytest.param(["-I"], ["-s", "-P"], ["-I"], id="isolated"),
+    ],
+)
+def test_a_fresh_interpreter_reads_the_hash_seed_whatever_pyct_s_flags(
+    monkeypatch: pytest.MonkeyPatch, flags: list[str], kept: list[str], left_out: list[str]
+) -> None:
+    monkeypatch.setattr(subprocess, "_args_from_interpreter_flags", lambda: flags)
+
+    command = fresh._command(3, 4)
+
+    assert all(flag in command for flag in kept), command
+    assert not any(flag in command for flag in left_out), command
