@@ -69,7 +69,9 @@ def write(tmp_path: Path, text: str = SOURCE) -> Path:
     return file
 
 
-def test_own_lines_are_every_statement_in_the_body_at_its_first_line(tmp_path: Path) -> None:
+def test_own_lines_are_the_lines_the_body_runs_at_each_statements_first_line(
+    tmp_path: Path,
+) -> None:
     body = read_body(write(tmp_path), "target")
 
     expected = {17, 19, 20, 22, 23, 24, 26, 28, 30, 32, 35, 36, 38, 40, 41, 42, 44, 45}
@@ -101,10 +103,93 @@ def test_lines_outside_the_body_are_dropped(tmp_path: Path) -> None:
     assert body.cut([1, 3, 6, 7, 999]) == frozenset()
 
 
-def test_a_class_body_holds_its_methods(tmp_path: Path) -> None:
+def test_a_class_is_the_bodies_of_its_methods(tmp_path: Path) -> None:
     body = read_body(write(tmp_path), "Box")
 
-    assert body.own_lines == frozenset({51, 53, 54})
+    # the class line, its docstring, size = 1 and the method's def line run at import
+    assert body.own_lines == frozenset({54})
+    assert body.cut([48, 49, 51, 53, 54]) == frozenset({54})
+
+
+# the three shapes whose lines compile to no code a call runs
+SHAPES = '''\
+COUNT = 0
+
+
+def tally(x):
+    """Count x in, through an inner function."""
+    global COUNT
+    step = 1
+
+    def bump():
+        nonlocal step
+        step += x
+
+    bump()
+    COUNT += step
+    return step
+
+
+def logged(fn):
+    return fn
+
+
+class Counter:
+    """A counter."""
+
+    start = 0
+
+    @staticmethod
+    @logged
+    def of(n):
+        return n
+
+    class Inner:
+        depth = 1
+
+        def deeper(self):
+            return self.depth
+
+
+@logged
+@logged
+def wrapped(x):
+    return x
+'''
+
+
+def test_a_function_leaves_out_its_def_docstring_global_and_nonlocal_lines(
+    tmp_path: Path,
+) -> None:
+    body = read_body(write(tmp_path, SHAPES), "tally")
+
+    # the inner function's def line and body run during the call
+    assert body.own_lines == frozenset({7, 9, 11, 13, 14, 15})
+    assert body.cut([4, 5, 6, 10]) == frozenset()
+
+
+def test_a_class_leaves_out_its_class_level_lines_and_each_method_def_line(
+    tmp_path: Path,
+) -> None:
+    body = read_body(write(tmp_path, SHAPES), "Counter")
+
+    # a nested class is class-level code too; its methods' bodies are the class's own lines
+    assert body.own_lines == frozenset({30, 36})
+    assert body.cut(range(22, 37)) == frozenset({30, 36})
+
+
+def test_a_decorated_function_leaves_out_its_decorators(tmp_path: Path) -> None:
+    body = read_body(write(tmp_path, SHAPES), "wrapped")
+
+    assert body.own_lines == frozenset({42})
+    assert body.cut([39, 40, 41, 42]) == frozenset({42})
+
+
+def test_a_module_that_does_not_compile_is_refused_naming_it(tmp_path: Path) -> None:
+    file = write(tmp_path, "def f():\n    nonlocal y\n")
+
+    with pytest.raises(BodyError, match=rf"{file} does not compile: .*nonlocal"):
+        read_body(file, "f")
 
 
 def test_the_last_definition_of_the_name_is_the_target(tmp_path: Path) -> None:

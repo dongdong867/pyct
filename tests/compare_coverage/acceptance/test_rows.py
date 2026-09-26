@@ -14,6 +14,7 @@ from tests.compare_coverage.acceptance.checker import (
     ONE_CHECK_FILE,
     REPO_ROOT,
     one_row,
+    rows,
     run_checker,
     summary,
     table_rows,
@@ -93,6 +94,26 @@ def test_reads_under_the_decorator(legacy_checkout: Path) -> None:
     assert row["own_lines"] == [8, 9, 10]
     assert row["v2"]["covered"] == row["legacy"]["covered"] == [8, 9, 10]
     assert row["v2"]["file"] == row["legacy"]["file"] == str(COMPARE / "decorated.py")
+
+
+def test_counts_only_lines_a_call_runs(legacy_checkout: Path) -> None:
+    """compare-coverage-against-legacy-counts-only-lines-a-call-runs"""
+    function = "targets.compare.runs_code::tally"
+    cls = "targets.compare.runs_code::Counter"
+
+    result = run_checker("--legacy", str(legacy_checkout), "--target", function, "--target", cls)
+
+    counter, tally = rows(result.stdout, result.stderr)
+    # no def line 6, docstring 7, global 8 or nonlocal 12; the inner def line 11 and its body
+    assert tally["own_lines"] == [9, 11, 13, 15, 16, 17]
+    # no class line 20, docstring 21, class-level assignment 23 or method def line 25
+    assert counter["own_lines"] == [26]
+    for row, target in ((tally, function), (counter, cls)):
+        assert row["v2"]["covered"] == row["legacy"]["covered"] == row["own_lines"], row
+        count = len(row["own_lines"])
+        (line,) = table_rows(result.stderr, target)
+        assert f"v2 covered {count} of {count}" in line
+        assert f"legacy covered {count} of {count}" in line
 
 
 def test_shows_how_each_side_stopped(legacy_checkout: Path) -> None:

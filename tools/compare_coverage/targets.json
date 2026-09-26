@@ -18,6 +18,8 @@
     {"set": "v2", "module": "targets.compare.decorator", "left_out": "the decorator of targets.compare.decorated, not a target"},
     {"set": "v2", "target": "targets.compare.helper_beside::route", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.compare.long_statement::total", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.compare.runs_code::Counter", "seed": {"n": 0}},
+    {"set": "v2", "target": "targets.compare.runs_code::tally", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.compare.sixty_checks::sixty_checks", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.flip.cut_short_on_the_other_side::cut", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.flip.implied_check::narrow", "seed": {"x": 3}},
