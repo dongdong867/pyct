@@ -1,12 +1,16 @@
 """The command line: its flags, their checks, and the exit codes ``main`` gives."""
 
+import json
+import os
 from pathlib import Path
 
 import pytest
 
+from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage import cli
 from tools.compare_coverage.cli import Flags, UsageError, main, parse_flags
 from tools.compare_coverage.compare import exit_code
+from tools.compare_coverage.entries import Unlisted
 from tools.compare_coverage.rows import Row, Status
 from tools.compare_coverage.sides import Limits
 
@@ -48,6 +52,54 @@ def test_sets_and_targets_repeat() -> None:
 def test_a_limit_pyct_run_would_refuse_is_refused(flags: list[str], says: str) -> None:
     with pytest.raises(UsageError, match=says):
         parse_flags(flags)
+
+
+@pytest.fixture
+def small_list(
+    tmp_path: Path, stub_checkout: StubCheckout, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, Path]:
+    """A list over a v2 checkout with one listed and one new target, and an old fixture."""
+    v2 = tmp_path / "v2"
+    (v2 / "targets").mkdir(parents=True)
+    fixtures = stub_checkout.path / "tests" / "acceptance" / "fixtures"
+    fixtures.mkdir(parents=True)
+    for file in (v2 / "targets" / "listed.py", v2 / "targets" / "new.py", fixtures / "old.py"):
+        file.write_text("def f(x):\n    return x\n")
+    sets = {
+        "v2": {"origin": "v2", "scan": "targets"},
+        "fixtures": {"origin": "legacy", "scan": "tests/acceptance/fixtures"},
+    }
+    entries = [{"set": "v2", "target": "targets.listed::f", "seed": {"x": 0}}]
+    list_file = tmp_path / "targets.json"
+    list_file.write_text(json.dumps({"sets": sets, "entries": entries}))
+    monkeypatch.setattr(cli, "LIST_FILE", list_file)
+    monkeypatch.setattr(cli, "REPO_ROOT", v2)
+    return v2 / "targets" / "new.py", fixtures / "old.py"
+
+
+def test_prepare_scans_every_set_with_no_flag_and_waits_the_full_grace(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path]
+) -> None:
+    new, old = small_list
+
+    run, _ = cli.prepare(["--legacy", str(stub_checkout.path)], os.environ)
+
+    assert run.unlisted == (Unlisted("v2", new), Unlisted("fixtures", old))
+    assert run.grace == 60
+    assert [entry.target for entry in run.entries] == ["targets.listed::f"]
+
+
+def test_prepare_scans_only_the_named_sets(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path]
+) -> None:
+    new, _ = small_list
+    legacy = ["--legacy", str(stub_checkout.path)]
+
+    by_set, _ = cli.prepare([*legacy, "--set", "v2"], os.environ)
+    by_target, _ = cli.prepare([*legacy, "--target", "targets.listed::f"], os.environ)
+
+    assert by_set.unlisted == (Unlisted("v2", new),)
+    assert by_target.unlisted == ()
 
 
 def test_ctrl_c_exits_130(monkeypatch: pytest.MonkeyPatch) -> None:
