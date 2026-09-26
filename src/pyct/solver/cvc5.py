@@ -54,7 +54,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
             timeout=timeout + GRACE_SECONDS,
         )
     except subprocess.TimeoutExpired:
-        logger.warning("pyct stopped cvc5 after %g s, past its time limit", timeout + GRACE_SECONDS)
+        logger.warning("pyct stopped cvc5, which ran past its time limit")
         return Timeout()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Error):

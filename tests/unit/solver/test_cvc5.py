@@ -135,7 +135,8 @@ def test_a_solver_that_runs_past_its_limit_is_stopped_as_a_timeout(
     assert 0.1 + GRACE_SECONDS <= elapsed < 0.1 + GRACE_SECONDS + 1.0, elapsed
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1, caplog.text
-    assert "stopped cvc5" in warnings[0].getMessage()
+    # the command line holds the limit, so the warning does not repeat it
+    assert warnings[0].getMessage() == "pyct stopped cvc5, which ran past its time limit"
 
 
 @pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
