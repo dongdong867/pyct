@@ -4,7 +4,6 @@ import contextlib
 import dataclasses
 import functools
 import os
-import select
 import signal
 import threading
 import time
@@ -253,64 +252,81 @@ def test_a_ctrl_c_while_pyct_waits_ends_the_process_and_goes_on() -> None:
         os.waitpid(started[0], os.WNOHANG)
 
 
-def exited() -> int:
-    """A child that has exited and is not reaped yet: a zombie whose status waits for pyct."""
+# a pid no real process of this test holds: the system calls on it are the fake's
+FAKE_PID = 999_999
+
+
+class Exited:
+    """A process that has exited with ``code`` and waits to be reaped, as the system reports it.
+
+    It answers os.waitpid and os.kill in its place. No real process gives
+    this state on demand: the system can report a child ended before it lets
+    a wait reap it, so a test waiting for that state races the system.
+    """
+
+    def __init__(self, code: int) -> None:
+        # a raw status as waitpid gives it: the exit code above the low byte
+        self.status = code << 8
+        self.reaped = False
+        self.killed: list[int] = []
+
+    def waitpid(self, pid: int, options: int) -> tuple[int, int]:
+        if self.reaped:
+            raise ChildProcessError(10, "No child processes")
+        self.reaped = True
+        return pid, self.status
+
+    def kill(self, pid: int, sig: int) -> None:
+        self.killed.append(sig)
+
+
+def exited(monkeypatch: pytest.MonkeyPatch) -> Exited:
+    """A process that exited with code 4, not yet reaped, standing in for the system."""
+    process = Exited(4)
+    monkeypatch.setattr(os, "waitpid", process.waitpid)
+    monkeypatch.setattr(os, "kill", process.kill)
+    return process
+
+
+def reaped() -> int:
+    """The pid of a real child that exited and was reaped already."""
     pid = os.fork()
     if pid == 0:
         os._exit(4)
-    ended_unreaped(pid)
+    os.waitpid(pid, 0)
     return pid
 
 
-def ended_unreaped(pid: int) -> None:
-    """Wait until ``pid`` has ended, leaving its status for a later wait to reap."""
-    if hasattr(os, "waitid"):
-        os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)
-        return
-    queue = select.kqueue()
-    ends = select.kevent(
-        pid,
-        filter=select.KQ_FILTER_PROC,
-        flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
-        fflags=select.KQ_NOTE_EXIT,
-    )
-    try:
-        assert queue.control([ends], 1, 10.0), f"process {pid} did not end"
-    except ProcessLookupError:
-        # it ended before the watch was set up
-        pass
-    finally:
-        queue.close()
-
-
-def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept() -> None:
-    child = _Child(exited())
+def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    process = exited(monkeypatch)
+    child = _Child(FAKE_PID)
 
     # the timer fires after the process ended and before the wait reaped it
     child.kill_if_running()
     waited = child.wait()
 
     assert waited == Waited(signal=None, code=4, killed=False)
+    assert process.killed == []
 
 
 def test_the_kill_timer_leaves_a_process_it_already_read_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    child = _Child(exited())
-    child.kill_if_running()
-    killed: list[int] = []
-    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
-
+    process = exited(monkeypatch)
+    child = _Child(FAKE_PID)
     child.kill_if_running()
 
-    assert killed == []
+    child.kill_if_running()
+
+    assert process.killed == []
 
 
 def test_the_kill_timer_leaves_a_process_the_wait_reaped_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    pid = exited()
-    os.waitpid(pid, 0)
+    pid = reaped()
     killed: list[int] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
 
@@ -321,8 +337,7 @@ def test_the_kill_timer_leaves_a_process_the_wait_reaped_alone(
 
 
 def test_a_wait_on_a_process_no_one_kept_the_status_of_raises() -> None:
-    pid = exited()
-    os.waitpid(pid, 0)
+    pid = reaped()
 
     with pytest.raises(ChildProcessError):
         _Child(pid).wait()
@@ -331,13 +346,12 @@ def test_a_wait_on_a_process_no_one_kept_the_status_of_raises() -> None:
 def test_ending_a_process_that_exited_reaps_it_without_a_kill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    child = _Child(exited())
-    killed: list[int] = []
-    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+    process = exited(monkeypatch)
+    child = _Child(FAKE_PID)
 
     child.end()
 
-    assert killed == []
+    assert process.killed == []
     assert child.status is not None
     assert Waited.of(child.status) == Waited(signal=None, code=4)
 
