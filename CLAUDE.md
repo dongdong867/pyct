@@ -50,7 +50,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   └── compare_coverage/  v2's coverage against legacy's, target by target. `python -m tools.compare_coverage`
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
     ├── ints/         a follow story's fixtures, under the type it follows
-    ├── strs/         the same for strings. floats/ later
+    ├── strs/         the same for strings
+    ├── floats/       the same for floats
     └── nested/       values inside an argument: a dict's and a list's
 ```
 
