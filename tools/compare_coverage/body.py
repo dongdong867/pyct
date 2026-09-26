@@ -12,7 +12,8 @@ never disagree about it (decision own-lines-from-the-compiled-code). The rule:
   read inside functions, classes, lambdas or comprehensions. ``NAME = wrap(NAME)``, a call
   of another function that takes ``NAME`` as an argument, wraps the target as a decorator
   does and is kept. An ``import *`` after the def is refused, since the file cannot show
-  whether it binds the name.
+  whether it binds the name. The block of ``if __name__ == "__main__":`` runs only when the
+  file runs as a script, never when a side imports it, so a binding there is kept.
 - Its own lines are the lines its compiled code runs, read from the line table of its code
   object and of the code nested in it, such as an inner function. A line inside a statement
   that spans several lines stands for the innermost statement that holds it, as Python's
@@ -42,6 +43,9 @@ SCOPES = (*DEFINITIONS, ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast
 
 # what binds the name its ``name`` field holds
 BINDERS = (*DEFINITIONS, ast.ExceptHandler, ast.MatchAs, ast.MatchStar)
+
+# the test of ``if __name__ == "__main__":``, whose block runs only when the file is a script
+MAIN_GUARD = ast.dump(ast.parse('__name__ == "__main__"', mode="eval").body)
 
 
 class BodyError(Exception):
@@ -132,11 +136,14 @@ def _module_level(node: ast.AST, name: str) -> Iterator[ast.AST]:
 
 
 def _children(node: ast.AST, name: str) -> list[ast.AST]:
-    """What the walk reads in ``node``: a wrap's value, an annotation alone, else all it holds."""
+    """What the walk reads in ``node``: all it holds, but only a wrap's value, an annotation
+    alone's annotation, and a main guard's test and ``else``."""
     if isinstance(node, ast.Assign) and _wraps(node, name):
         return [node.value]
     if isinstance(node, ast.AnnAssign) and node.value is None:
         return [node.annotation]
+    if isinstance(node, ast.If) and ast.dump(node.test) == MAIN_GUARD:
+        return [node.test, *node.orelse]
     return list(ast.iter_child_nodes(node))
 
 

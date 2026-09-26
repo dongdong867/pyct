@@ -362,6 +362,21 @@ def test_setting_an_attribute_or_wrapping_the_name_keeps_the_definition(
     assert read_body(write(tmp_path, source), "f").own_lines == frozenset({6})
 
 
+MAIN_GUARD = "if __name__ == '__main__':\n    f = 3\n    from unittest import main as f"
+
+
+def test_a_name_bound_only_when_the_file_runs_as_a_script_keeps_the_definition(
+    tmp_path: Path,
+) -> None:
+    # a side imports the module, so the block under the guard never runs
+    file = write(tmp_path, f"def f():\n    return 2\n\n\n{MAIN_GUARD}\n")
+
+    assert read_body(file, "f").own_lines == frozenset({2})
+    with_else = write(tmp_path, f"def f():\n    return 2\n\n\n{MAIN_GUARD}\nelse:\n    f = 4\n")
+    with pytest.raises(BodyError, match=rf"{with_else} binds f again at line 9, after its def"):
+        read_body(with_else, "f")
+
+
 def test_a_deep_expression_after_the_definition_is_read_to_its_end(tmp_path: Path) -> None:
     # 3000 terms nest 3000 levels deep, past Python's recursion limit
     terms = " + ".join(f"'s{n}'" for n in range(3000))
