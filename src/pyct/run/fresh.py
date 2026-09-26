@@ -145,12 +145,28 @@ def _command(request: int, journal: int) -> list[str]:
     importtime, frozen_modules, showrefcount and utf8. Other ``-X`` options,
     such as int_max_str_digits, and ``-u`` do not follow. Left out are the
     flags that would make the new interpreter ignore the run's hash seed:
-    ``-E``, and ``-I``, which stands in as ``-s``.
+    ``-E``, and ``-I``, which stands in as ``-s``; ``_environment`` leaves
+    out the other variables they ignore.
     """
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     given = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
     flags = ["-s" if flag == "-I" else flag for flag in given if flag != "-E"]
     return [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)]
+
+
+def _environment(hash_seed: str) -> dict[str, str]:
+    """The new interpreter's environment: pyct's own, with the run's hash seed.
+
+    When pyct's own interpreter ignores the ``PYTHON*`` variables, under
+    ``-E`` or ``-I``, they are left out, so the new interpreter runs with the
+    settings pyct runs with and reads only the hash seed.
+    """
+    kept = {
+        name: value
+        for name, value in os.environ.items()
+        if not (sys.flags.ignore_environment and name.startswith("PYTHON"))
+    }
+    return {**kept, "PYTHONHASHSEED": hash_seed}
 
 
 def _spawned(request: int, journal: int, hash_seed: str) -> int:
@@ -166,7 +182,7 @@ def _spawned(request: int, journal: int, hash_seed: str) -> int:
         return os.posix_spawn(
             sys.executable,
             _command(request, journal),
-            {**os.environ, "PYTHONHASHSEED": hash_seed},
+            _environment(hash_seed),
             file_actions=[
                 (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),
                 (os.POSIX_SPAWN_DUP2, 2, 1),
