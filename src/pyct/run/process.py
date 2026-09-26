@@ -74,20 +74,16 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
     the two and leaves the process running. It then goes on, as
     KeyboardInterrupt, once the process is ended and reaped.
     """
-    holding = contextlib.ExitStack()
-    holding.enter_context(ctrl_c_held())
+    child: _Child | None = None
     try:
-        child = _Child(start())
-    except BaseException:
-        holding.close()
-        raise
-    try:
-        # a Ctrl-C held until now goes on here, with the process in the guard's hands
-        holding.close()
+        # a Ctrl-C held here goes on as the block ends, with the process in the guard's hands
+        with ctrl_c_held():
+            child = _Child(start())
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
     finally:
-        child.end()
+        if child is not None:
+            child.end()
 
 
 @contextlib.contextmanager
