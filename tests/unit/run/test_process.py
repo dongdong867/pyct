@@ -389,8 +389,8 @@ def another_thread() -> Generator[None]:
         thread.join()
 
 
-def still_running(pid: int) -> bool:
-    """Whether ``pid`` still runs unreaped; one that does is killed and reaped here."""
+def left_unreaped(pid: int) -> bool:
+    """Whether ``pid`` was left unreaped, running or dead; one left so is killed and reaped here."""
     try:
         done, _ = os.waitpid(pid, os.WNOHANG)
     except ChildProcessError:
@@ -416,7 +416,7 @@ def test_a_ctrl_c_as_the_process_starts_ends_it_while_another_thread_runs() -> N
     with another_thread(), pytest.raises(KeyboardInterrupt):
         watched(start_then_interrupt, None)
 
-    assert not still_running(started[0])
+    assert not left_unreaped(started[0])
 
 
 def test_a_second_ctrl_c_as_pyct_ends_the_process_reaps_it_while_another_thread_runs(
@@ -437,4 +437,4 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_reaps_it_while_another_thread_
         _Child(pid).end()
 
     monkeypatch.undo()
-    assert not still_running(pid)
+    assert not left_unreaped(pid)
