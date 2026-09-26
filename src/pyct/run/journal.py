@@ -235,9 +235,10 @@ class Reading:
 def read(buffer: Journal) -> Reading:
     """Every fact the journal committed, in the order the call made them."""
     facts = _Facts()
+    problem = None
     with memoryview(buffer) as view:
-        problem = _noted(view)
         try:
+            problem = _noted(view)
             for at, kind, payload in _records(view):
                 facts.take(at, kind, payload)
         except _UnreadableError as error:

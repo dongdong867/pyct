@@ -269,3 +269,101 @@ def test_a_committed_mark_past_the_journal_is_unreadable() -> None:
     reading = read(buffer)
 
     assert reading.problem == "could not read the input's facts at byte 0"
+
+
+def committed_to(buffer: bytearray, mark: int) -> None:
+    """Move the committed mark, as a writer that died mid-record could have left it."""
+    buffer[0:8] = mark.to_bytes(8, "little")
+
+
+def test_a_fork_whose_expression_is_a_leaf_reads_back() -> None:
+    buffer = journal()
+
+    JournalWriter(buffer).fork(Branch(expression="flag", taken=True, site=SITE))
+
+    assert read(buffer).branches == (Branch(expression="flag", taken=True, site=SITE),)
+
+
+def test_a_downgrade_that_does_not_fit_is_not_grown_later() -> None:
+    buffer = journal(RECORDS)
+    writer = JournalWriter(buffer)
+
+    writer.downgrade("__abs__", 1)
+    writer.downgrade("__abs__", 2)
+
+    reading = read(buffer)
+    assert reading.downgrades == ()
+    assert reading.problem is not None
+    assert "full" in reading.problem
+
+
+def test_a_part_that_does_not_fit_leaves_its_fork_out() -> None:
+    buffer = journal(RECORDS + 8)
+
+    JournalWriter(buffer).fork(FORK)
+
+    reading = read(buffer)
+    assert reading.branches == ()
+    assert reading.problem is not None
+    assert "full" in reading.problem
+
+
+def test_the_first_reason_the_writer_stopped_is_the_one_kept() -> None:
+    buffer = journal(RECORDS)
+    writer = JournalWriter(buffer)
+
+    writer.line(2)
+    # a fork whose expression is a leaf of no kind it holds, which stops the writer again
+    writer.fork(Branch(expression=1.5, taken=True, site=SITE))  # type: ignore[arg-type]
+
+    reading = read(buffer)
+    assert reading.problem is not None
+    assert "full" in reading.problem
+
+
+def test_a_state_of_no_known_kind_is_unreadable() -> None:
+    buffer = journal()
+    buffer[8] = 7
+
+    assert read(buffer).problem == "could not read the input's facts at byte 8"
+
+
+def test_a_committed_mark_inside_a_record_head_is_unreadable() -> None:
+    buffer = journal()
+    JournalWriter(buffer).line(2)
+    committed_to(buffer, RECORDS + 4)
+
+    assert read(buffer).problem == f"could not read the input's facts at byte {RECORDS}"
+
+
+def test_a_record_longer_than_what_was_committed_is_unreadable() -> None:
+    buffer = journal()
+    JournalWriter(buffer).line(2)
+    buffer[RECORDS : RECORDS + 4] = (999).to_bytes(4, "little")
+
+    assert read(buffer).problem == f"could not read the input's facts at byte {RECORDS}"
+
+
+def test_a_part_that_is_not_a_list_is_unreadable() -> None:
+    buffer = journal()
+    JournalWriter(buffer).fork(FORK)
+    # the first part, ["+", "y", 1], becomes a number of the same length
+    at = buffer.index(b'["+", "y", 1]')
+    buffer[at : at + 13] = b"7            "
+
+    reading = read(buffer)
+
+    assert reading.branches == ()
+    assert reading.problem == f"could not read the input's facts at byte {RECORDS}"
+
+
+def test_an_ending_of_the_wrong_shape_is_unreadable() -> None:
+    buffer = journal()
+    JournalWriter(buffer).end(None)
+    at = buffer.index(b"null")
+    buffer[at : at + 4] = b"true"
+
+    reading = read(buffer)
+
+    assert not reading.ended
+    assert reading.problem == f"could not read the input's facts at byte {RECORDS}"
