@@ -124,7 +124,8 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
 
 
 def _line(text: str) -> None:
-    """One stdout line, written with its end in one call, so a Ctrl-C never splits it."""
+    """One stdout line: the text and its end go out in one write, so a Ctrl-C between two
+    writes cannot leave the line without its end."""
     sys.stdout.write(f"{text}\n")
     sys.stdout.flush()
 
