@@ -198,9 +198,10 @@ def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
 
     # written out, the last condition holds about 3 ** 1000 nodes; each cut part says how many
     # distinct nodes it holds, which is about ten for each pass that built it
-    counts = [count for expression in written for cut in _cuts(expression) for count in cut[1:]]
+    pairs = zip(written, forks, strict=True)
+    counts = [count for shown, fork in pairs for count, _ in _cut_from(shown, fork.expression)]
     assert counts
-    assert all(isinstance(count, int) and 2 < count < 10_000 for count in counts)
+    assert all(2 < count < 10_000 for count in counts)
     # the stdout line of an input whose one fork is the loop's last condition
     record = InputRecord(args={"s": "a" * 1000}, forks=(forks[-1],), covered_lines=frozenset({5}))
     coverage = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset({5, 7})})
