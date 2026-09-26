@@ -386,13 +386,18 @@ def test_the_second_ask_gets_what_the_first_left_of_the_limit(
 
 
 def test_a_second_ask_with_no_time_left_is_a_timeout_without_cvc5(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     fake_float_cvc5(tmp_path, finite="unsat\n", full="unsat\n")
     _clock(monkeypatch, 100.0, 105.0)
 
-    assert ask_float(tmp_path, monkeypatch, timeout=5.0) == Timeout()
+    with caplog.at_level(logging.DEBUG, logger="pyct.solver.cvc5"):
+        assert ask_float(tmp_path, monkeypatch, timeout=5.0) == Timeout()
+
     assert len(asked(tmp_path)) == 1
+    # every other timeout is logged where cvc5 is asked; this one asks nothing, so it says so
+    assert caplog.records[-1].levelno == logging.DEBUG
+    assert caplog.records[-1].getMessage() == "no time left to ask cvc5 again with more doubles"
 
 
 @pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")

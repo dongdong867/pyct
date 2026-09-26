@@ -71,6 +71,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         return answer
     left = timeout - (time.monotonic() - started)
     if left <= 0:
+        logger.debug("no time left to ask cvc5 again with more doubles")
         return Timeout()
     return _ask(program(prefix, leaves), left)
 
