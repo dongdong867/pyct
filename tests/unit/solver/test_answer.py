@@ -1,4 +1,5 @@
 import dataclasses
+import math
 
 import pytest
 
@@ -42,6 +43,42 @@ def test_a_string_value_may_hold_what_closes_the_line() -> None:
 
 def test_strings_and_numbers_are_read_from_one_answer() -> None:
     assert model_from(['((s ""))', "((x (- 6)))"]) == {"s": "", "x": -6}
+
+
+# a double as cvc5 prints a Float64 value: its sign, exponent and fraction bits
+FLOAT_VALUES: dict[str, tuple[str, float]] = {
+    "2.5": (f"(fp #b0 #b10000000000 #b01{'0' * 50})", 2.5),
+    "-0.0": (f"(fp #b1 #b{'0' * 11} #b{'0' * 52})", -0.0),
+    "inf": (f"(fp #b0 #b{'1' * 11} #b{'0' * 52})", math.inf),
+    "-inf": (f"(fp #b1 #b{'1' * 11} #b{'0' * 52})", -math.inf),
+}
+
+
+@pytest.mark.parametrize(("text", "value"), FLOAT_VALUES.values(), ids=list(FLOAT_VALUES))
+def test_a_float_value_is_read_back_as_the_double_it_spells(text: str, value: float) -> None:
+    model = model_from([f"((x {text}))"])
+
+    # repr tells -0.0 from 0.0, where `==` would not
+    assert repr(model["x"]) == repr(value)
+
+
+def test_a_nan_value_is_read_back_as_nan() -> None:
+    model = model_from([f"((x (fp #b0 #b{'1' * 11} #b1{'0' * 51})))"])
+
+    value = model["x"]
+    assert isinstance(value, float)
+    assert math.isnan(value)
+
+
+def test_floats_strings_and_numbers_are_read_from_one_answer() -> None:
+    lines = ['((s "a"))', f"((x (fp #b0 #b01111111111 #b{'0' * 52})))", "((n 3))"]
+
+    assert model_from(lines) == {"s": "a", "x": 1.0, "n": 3}
+
+
+def test_a_float_value_cvc5_would_not_print_names_its_line() -> None:
+    with pytest.raises(SolverAnswerError, match=r"\(\(x \(fp #b0 #b1 #b0\)\)\)"):
+        model_from(["((x (fp #b0 #b1 #b0)))"])
 
 
 def test_a_string_value_cvc5_would_not_print_names_its_line() -> None:

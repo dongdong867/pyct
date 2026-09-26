@@ -6,8 +6,9 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.cvc5 import Sat, Unsat, solve
-from tests.unit.solver.test_render import BOOL_TERMS, TYPED_LEAVES, _head, render
-from tests.unit.solver.test_render import _asserted as _assertion_in
+from tests.unit.solver.test_render import render
+from tests.unit.solver.test_render_types import BOOL_TERMS, TYPED_LEAVES, _head
+from tests.unit.solver.test_render_types import _asserted as _assertion_in
 
 SITE = Site(file="m.py", line=2, col=7)
 ABOVE: Expression = [">", "x", 0]

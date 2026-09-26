@@ -1,11 +1,12 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
 import ast
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
+from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
@@ -76,7 +77,9 @@ class Program:
         return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
 
 
-def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
+def program(
+    prefix: tuple[Branch, ...], leaves: Mapping[str, type], *, finite: bool = False
+) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
     What to declare, what to define, what to assert, what to ask. Only the
@@ -85,7 +88,8 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     does, and ``_symbol`` names its constant. Two pieces of one string side by
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
-    assertions (see `_Program`).
+    assertions (see `_Program`). ``finite`` holds each float leaf the prefix
+    names to a finite double, for the first of a float fork's two asks.
     """
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
@@ -97,12 +101,25 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
     lines = ["(set-logic ALL)"]
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    if finite:
+        held = [constant for name, constant in constants.items() if leaves[name] is float]
+        lines += [f"(assert {floats.finite(constant)})" for constant in held]
     lines += body.definitions
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     text = "\n".join(lines) + "\n"
     return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
+
+
+def names_a_float(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> bool:
+    """Whether a fork of the prefix names a float leaf, so its asks are finite first."""
+    if float not in leaves.values():
+        return False
+    seed = _Leaves(kinds=leaves, constants={})
+    prefix = joined(prefix, seed.holds)
+    order, _ = distinct(prefix, seed.holds)
+    return any(leaves[name] is float for name in _symbols(prefix, order, seed))
 
 
 def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:
@@ -238,10 +255,17 @@ class _Program:
         """The parts a form reads: an operand of a form, a piece, or an order on strings."""
         read: set[int] = set()
         for node in order:
-            head, *operands = node
-            if head in FORMS or head in POSITIONED or self._orders_strings(node):
-                read |= {id(part) for part in operands if isinstance(part, list)}
+            if self._form(node) is not None or node[0] in POSITIONED or self._orders_strings(node):
+                read |= {id(part) for part in node[1:] if isinstance(part, list)}
         return read
+
+    def _form(self, node: Node) -> Callable[..., str] | None:
+        """The form that writes an operation on the type it works on, or None for an operator."""
+        head, *operands = node
+        if not isinstance(head, str):
+            return None
+        kind = self._kind(head, operands)
+        return None if kind is None else FORMS.get((head, kind))
 
     def _orders_strings(self, node: Node) -> bool:
         head, *operands = node
@@ -271,7 +295,7 @@ class _Program:
             return positioned(self.term(term), *(_position(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
-        if (form := FORMS.get(head)) is not None:
+        if (form := self._form(node)) is not None:
             return form(*rendered)
         if head in STRING_ORDERS and kind is str:
             return _string_order(head, operands, rendered)
@@ -287,14 +311,19 @@ class _Program:
         return term
 
 
-def _leaf(leaf: str | int | bool | None) -> str:
-    """A number, a truth value or a string literal. A negative number is a subtraction."""
+def _leaf(leaf: str | int | float | bool | None) -> str:
+    """A number, a truth value or a string literal.
+
+    A negative int is a subtraction, and a float is its bit pattern, sign and all.
+    """
     if leaf is None:
         raise ValueError("pyct cannot render a missing bound outside a slice")
     if isinstance(leaf, bool):
         return "true" if leaf else "false"
     if isinstance(leaf, int):
         return f"(- {-leaf})" if leaf < 0 else str(leaf)
+    if isinstance(leaf, float):
+        return floats.literal(leaf)
     return encode(_value(leaf))
 
 

@@ -4,13 +4,14 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from pyct.solver.strings import decode
+from pyct.solver import floats, strings
 
-# one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))) or ((s "a""b\u{a}")). A name
-# may come in bars, ((|x| 5)), which SMT-LIB reads as the same name. A string value holds no
-# bare quote, only a doubled one, so its closing quote is the first lone one
+# one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))), ((s "a""b\u{a}")) or
+# ((f (fp #b0 #b10000000000 #b0100...))). A name may come in bars, ((|x| 5)), which SMT-LIB
+# reads as the same name. A string value holds no bare quote, only a doubled one, so its closing
+# quote is the first lone one. A double's value is its three fields, which `floats.decode` reads
 VALUE_LINE = re.compile(
-    r'\(\(\|?(?P<name>[^\s()|]+)\|? (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*")\)\)'
+    r'\(\(\|?(?P<name>[^\s()|]+)\|? (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*"|\(fp [^()]*\))\)\)'
 )
 
 
@@ -51,8 +52,8 @@ class SolverAnswerError(Exception):
     """cvc5 answered, but with a line pyct cannot read."""
 
 
-def model_from(lines: Iterable[str]) -> dict[str, int | str]:
-    """The values cvc5 printed, as a name and a number or a str each.
+def model_from(lines: Iterable[str]) -> dict[str, int | str | float]:
+    """The values cvc5 printed, as a name and an int, a str or a float each.
 
     A line pyct cannot read is an error rather than a skip: a model missing
     one of its leaves would quietly become the seed's value again.
@@ -60,18 +61,24 @@ def model_from(lines: Iterable[str]) -> dict[str, int | str]:
     return dict(_value(line) for line in lines)
 
 
-def _value(line: str) -> tuple[str, int | str]:
-    """One leaf's name and value. A value in quotes is a string, any other a number."""
+def _value(line: str) -> tuple[str, int | str | float]:
+    """One leaf's name and value."""
     matched = VALUE_LINE.fullmatch(line.strip())
     if matched is None:
         raise _unreadable(line)
-    value = matched["value"]
-    if not value.startswith('"'):
-        return matched["name"], _number(value)
     try:
-        return matched["name"], decode(value)
+        return matched["name"], _read(matched["value"])
     except ValueError as error:
         raise _unreadable(line) from error
+
+
+def _read(value: str) -> int | str | float:
+    """A value in quotes is a string, one in three fields a double, and any other an int."""
+    if value.startswith('"'):
+        return strings.decode(value)
+    if value.startswith("(fp "):
+        return floats.decode(value)
+    return _number(value)
 
 
 def _unreadable(line: str) -> SolverAnswerError:
