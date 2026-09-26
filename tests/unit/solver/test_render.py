@@ -157,7 +157,7 @@ def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
 
 
 def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
-    with pytest.raises(ValueError, match="float"):
+    with pytest.raises(ValueError, match="cannot declare x: nothing solves a float"):
         render((fork(["<", "x", 10], taken=True),), {"x": float})
 
 

@@ -158,9 +158,10 @@ def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
     prefix = joined(prefix)
     order, holders = distinct(prefix)
     mentioned = _mentioned(prefix, order, leaves)
-    program = _Program(leaves, order, holders)
     lines = ["(set-logic ALL)"]
+    # a leaf no sort declares is named before any term on it is written
     lines += [f"(declare-const {name} {_sort(name, leaves[name])})" for name in mentioned]
+    program = _Program(leaves, order, holders)
     lines += program.definitions
     lines += [program.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
