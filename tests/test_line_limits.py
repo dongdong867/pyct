@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.line_limits import MAX_BODY_LINES, MAX_FILE_LINES, check_file, main
+from tests.line_limits import MAX_BODY_LINES, MAX_FILE_LINES, check_file, function_bodies, main
 
 
 def statements(count: int, indent: str = "    ") -> str:
@@ -14,6 +14,20 @@ def statements(count: int, indent: str = "    ") -> str:
 def function_of(body_lines: int, docstring: str = "") -> str:
     """A function whose body after the docstring is ``body_lines`` lines long."""
     return f"def long_one():\n{docstring}{statements(body_lines)}"
+
+
+def lengths(text: str) -> dict[str, int]:
+    """Each function's name and the body lines the checker counts for it."""
+    return {function.name: length for function, length in function_bodies(text)}
+
+
+def lines_of(count: int, ending: str, last: str) -> bytes:
+    """``count`` lines of code, each ended by ``ending`` but the last, which ``last`` ends."""
+    return (("x = 1" + ending) * (count - 1) + "x = 1" + last).encode()
+
+
+# how each line ends, and how the last one does
+LINE_ENDS = {"lf": ("\n", "\n"), "crlf": ("\r\n", "\r\n"), "no final line end": ("\n", "")}
 
 
 def write(tmp_path: Path, text: str, name: str = "module.py") -> Path:
@@ -44,6 +58,27 @@ def test_the_docstring_is_not_part_of_the_body(tmp_path: Path) -> None:
     path = write(tmp_path, function_of(MAX_BODY_LINES, docstring))
 
     assert check_file(path) == []
+
+
+def test_a_body_that_is_only_a_docstring_has_no_lines() -> None:
+    text = 'def documented():\n    """One line.\n\n    And another.\n    """\n'
+
+    assert lengths(text) == {"documented": 0}
+
+
+def test_a_body_on_the_signatures_own_line_is_one_line() -> None:
+    assert lengths("def one(): return 1\n") == {"one": 1}
+
+
+def test_a_crlf_body_counts_each_line_once(tmp_path: Path) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(function_of(MAX_BODY_LINES + 1).replace("\n", "\r\n").encode())
+
+    (broken,) = check_file(path)
+
+    assert broken.detail == (
+        f"long_one has {MAX_BODY_LINES + 1} body lines, at most {MAX_BODY_LINES}"
+    )
 
 
 def test_a_signature_over_several_lines_is_not_part_of_the_body(tmp_path: Path) -> None:
@@ -109,14 +144,18 @@ def test_methods_async_functions_and_nested_functions_are_checked(tmp_path: Path
     assert [broken.line for broken in check_file(path)] == [2, 3]
 
 
-def test_a_file_at_the_cap_passes(tmp_path: Path) -> None:
-    path = write(tmp_path, "x = 1\n" * MAX_FILE_LINES)
+@pytest.mark.parametrize(("ending", "last"), LINE_ENDS.values(), ids=list(LINE_ENDS))
+def test_a_file_at_the_cap_passes(tmp_path: Path, ending: str, last: str) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(lines_of(MAX_FILE_LINES, ending, last))
 
     assert check_file(path) == []
 
 
-def test_a_file_one_line_over_the_cap_is_named(tmp_path: Path) -> None:
-    path = write(tmp_path, "x = 1\n" * (MAX_FILE_LINES + 1))
+@pytest.mark.parametrize(("ending", "last"), LINE_ENDS.values(), ids=list(LINE_ENDS))
+def test_a_file_one_line_over_the_cap_is_named(tmp_path: Path, ending: str, last: str) -> None:
+    path = tmp_path / "module.py"
+    path.write_bytes(lines_of(MAX_FILE_LINES + 1, ending, last))
 
     (broken,) = check_file(path)
 
