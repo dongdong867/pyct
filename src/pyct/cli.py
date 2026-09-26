@@ -25,6 +25,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.run.isolation import Isolation
 from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
@@ -85,7 +86,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             target,
             seed,
             limits=limits,
-            isolated=not command.in_process,
+            isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
             tell=Tell(report=_report, missed=_missed),
         )
     except UsageError as error:

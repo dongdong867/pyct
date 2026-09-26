@@ -17,12 +17,14 @@ The child writes each fact of its call into a journal in shared memory (see
 it ended (see ``process``).
 
 A copy of a process can hang on a lock another thread held at the copy.
-When the target's import left threads running (see ``Target.threads``),
-each input runs in a fresh interpreter instead (see ``fresh``). Threads
-that ran before the import, such as a test runner's watchdog, do not count.
-The fresh interpreter imports the target by name, so a target no module
-attribute names, such as a closure made from the imported module, runs in
-pyct's process instead. Either way pyct says so once.
+So just before each input, pyct counts the threads its process runs, as
+the system counts them, and forks only when the main thread is the only
+one. Whose thread another one is, the target's import, an earlier import
+of the same module, or the host program, pyct does not try to tell. From
+the first input that finds another thread on, the run starts a fresh
+interpreter per input instead (see ``fresh``). That interpreter imports
+the target by name, so a target no module attribute names, such as a
+closure, runs in pyct's process instead. Either way pyct says so once.
 
 ``--in-process`` runs every input in pyct's own process instead, exactly as
 before isolation: state carries over, the target writes to pyct's stdout,
@@ -38,7 +40,7 @@ import mmap
 import os
 import sys
 from collections.abc import Callable, Generator, Mapping
-from dataclasses import dataclass
+from enum import StrEnum
 
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
@@ -47,6 +49,7 @@ from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import Target
+from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
 
@@ -54,37 +57,80 @@ logger = logging.getLogger(__name__)
 type Call = Callable[[Mapping[str, object], float | None], ExecutionResult]
 
 
-@dataclass(frozen=True)
-class Isolation:
-    """How a run calls its target for each input, and whether each input gets its own process."""
+class Isolation(StrEnum):
+    """Where a run's inputs run.
 
-    call: Call
-    isolated: bool
+    ``auto`` forks each input from pyct's process while that process runs no
+    thread besides the main one, counted as the system counts them just
+    before the input starts. Once another thread runs, that input and every
+    later one start a fresh interpreter instead. ``fork``, ``fresh`` and
+    ``in-process`` hold one way for every input; the command line offers
+    auto and ``--in-process``.
+    """
+
+    AUTO = "auto"
+    FORK = "fork"
+    FRESH = "fresh"
+    IN_PROCESS = "in-process"
 
 
-def isolation(target: Target, isolated: bool) -> Isolation:
-    """Choose once, for the whole run, where its inputs run."""
-    if not isolated:
-        return _in_process(target)
-    if target.threads == 0:
+class Inputs:
+    """How one run calls its target for each input, and where each input ran.
+
+    ``ran`` names, in order, where each input ran. In ``auto`` the switch to
+    fresh interpreters is said once on stderr; so is the switch to pyct's
+    own process, for a target no module attribute names, which a fresh
+    interpreter could not import.
+    """
+
+    def __init__(self, target: Target, isolation: Isolation) -> None:
+        if isolation is Isolation.FRESH and not _named(target):
+            raise ValueError("a fresh interpreter imports the target by name, and none names it")
+        self.isolation = isolation
+        self.ran: list[Isolation] = []
+        self._target = target
+        self._switched: Isolation | None = None
         alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
-        return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
-    if not _named(target):
+        self._calls: dict[Isolation, Call] = {
+            Isolation.FORK: functools.partial(in_a_child, alone),
+            Isolation.FRESH: functools.partial(
+                in_a_fresh_interpreter, fresh_for(target.spec, target.file)
+            ),
+            Isolation.IN_PROCESS: functools.partial(
+                execute, ExecutionContext(fn=target.fn, file=target.file)
+            ),
+        }
+
+    @property
+    def isolated(self) -> bool:
+        """Whether every input ran in a process of its own."""
+        return self.isolation is not Isolation.IN_PROCESS and Isolation.IN_PROCESS not in self.ran
+
+    def __call__(self, args: Mapping[str, object], until: float | None) -> ExecutionResult:
+        where = self._where()
+        self.ran.append(where)
+        return self._calls[where](args, until)
+
+    def _where(self) -> Isolation:
+        """Where the next input runs."""
+        if self.isolation is not Isolation.AUTO:
+            return self.isolation
+        if self._switched is None and running() > 1:
+            self._switched = self._instead()
+        return self._switched or Isolation.FORK
+
+    def _instead(self) -> Isolation:
+        """Where the rest of the run goes once pyct's process runs other threads, said once."""
+        if _named(self._target):
+            logger.warning(
+                "each input runs in a fresh interpreter, because pyct's process runs other threads"
+            )
+            return Isolation.FRESH
         logger.warning(
-            "each input runs in pyct's process, because the target's import left threads"
-            " running and no module attribute names the target for a fresh interpreter to import"
+            "each input runs in pyct's process, because pyct's process runs other threads and"
+            " no module attribute names the target for a fresh interpreter to import"
         )
-        return _in_process(target)
-    logger.warning(
-        "each input runs in a fresh interpreter, because the target's import left threads running"
-    )
-    fresh = functools.partial(in_a_fresh_interpreter, fresh_for(target.spec, target.file))
-    return Isolation(call=fresh, isolated=True)
-
-
-def _in_process(target: Target) -> Isolation:
-    ctx = ExecutionContext(fn=target.fn, file=target.file)
-    return Isolation(call=functools.partial(execute, ctx), isolated=False)
+        return Isolation.IN_PROCESS
 
 
 def _named(target: Target) -> bool:

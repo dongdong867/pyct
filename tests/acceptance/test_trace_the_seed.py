@@ -14,6 +14,7 @@ import pytest
 from pyct.cli import main
 from pyct.core import values
 from pyct.core.branch import Site
+from pyct.run import isolation
 from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
@@ -274,6 +275,9 @@ def test_fails_on_a_pyct_bug(
     let_pyct_run_in_process(monkeypatch)
     # the target's `x < 10` reaches this through pyct's own frames, so pyct is below it
     monkeypatch.setattr(values, "caller_site", broken)
+    # the patch holds in a forked copy of this process, not in a fresh interpreter, which the
+    # test runner's own threads would otherwise send the input to
+    monkeypatch.setattr(isolation, "running", lambda: 1)
 
     code = main(["run", TARGET, '{"x": 3}'])
 

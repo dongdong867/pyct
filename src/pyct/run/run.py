@@ -28,7 +28,7 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
-from pyct.run.isolation import Call, isolation
+from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
@@ -126,31 +126,32 @@ def run(
     seed: Mapping[str, object],
     *,
     limits: Limits = _NO_LIMITS,
-    isolated: bool = True,
+    isolation: Isolation = Isolation.AUTO,
     tell: Tell = _TELL_NOTHING,
 ) -> RunResult:
     """Call the target with the seed, then with an input per fork left open.
 
-    Each input runs in a process of its own unless ``isolated`` is False,
-    which runs every input in the caller's process. Each input goes to
+    ``isolation`` says where each input runs: by default in a process of its
+    own, and ``Isolation.IN_PROCESS`` runs every input in the caller's
+    process (see ``Isolation``). Each input goes to
     ``tell.report`` as it finishes, with the coverage of that input alone, so
     an input that hangs never hides the lines of the ones before it. Each
     fork the solver could not flip goes to ``tell.missed`` the same way, so a
     reader sees it when its answer comes in, before the next input's trace.
     """
     scope = Scope.of_module(target.file)
-    chosen = isolation(target, isolated)
+    inputs = Inputs(target, isolation)
     # before the deadline starts: the probe is the run's setup, not its time
-    environment = _environment(chosen.isolated)
+    cvc5 = version(locate())
     bounds = Bounds.of(limits)
-    looped = _inputs(chosen.call, seed, bounds, _Told(scope=scope, tell=tell))
+    looped = _inputs(inputs, seed, bounds, _Told(scope=scope, tell=tell))
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
         records=looped.records,
         coverage=Coverage.of(scope, covered),
         stopped=looped.stop,
-        environment=environment,
+        environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,
     )
 
@@ -176,15 +177,16 @@ def _could_not_start(error: InputStartError) -> Stop:
     return Stop(StopKind.COULD_NOT_START, str(error))
 
 
-def _environment(isolated: bool) -> Environment:
-    """What the run ran in, gathered once, from the cvc5 the solver will use.
+def _environment(cvc5: str | None, isolated: bool) -> Environment:
+    """What the run ran in: the version the cvc5 the solver used gave, and where inputs ran.
 
     A cvc5 that will not say its version leaves the version out; the run is
-    the same run either way.
+    the same run either way. ``isolated`` is known only once the inputs ran,
+    since a run can move to pyct's own process part way.
     """
     return Environment(
         python=platform.python_version(),
-        cvc5=version(locate()),
+        cvc5=cvc5,
         platform=platform.platform(),
         isolated=isolated,
     )

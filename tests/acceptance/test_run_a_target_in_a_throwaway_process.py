@@ -13,7 +13,7 @@ import signal
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from pathlib import Path
 
 import pytest
@@ -100,6 +100,8 @@ def test_starts_each_input_fresh() -> None:
     assert inputs[1]["source"] == "solver"
     assert inputs[1]["mismatch_at"] is None
     assert environment_of(result.stdout)["isolated"] is True
+    # pyct's process ran no other thread, so each input forked
+    assert "fresh interpreter" not in result.stderr
 
 
 # run-a-target-in-a-throwaway-process-runs-in-process-on-request
@@ -309,7 +311,7 @@ def is_running(pid: int) -> bool:
 
 
 @contextlib.contextmanager
-def pyct_in_a_session(spec: str, pid_file: Path) -> Iterator[subprocess.Popen[str]]:
+def pyct_in_a_session(spec: str, pid_file: Path) -> Generator[subprocess.Popen[str]]:
     """``pyct run`` in a session of its own, so a SIGINT can reach its whole group.
 
     That is how a terminal sends Ctrl-C. Whatever is left of the run, and the
@@ -422,8 +424,9 @@ def test_runs_a_threaded_import_in_fresh_interpreters() -> None:
 
     assert result.returncode == 0, result.stderr
     said = [line for line in result.stderr.splitlines() if "fresh interpreter" in line]
-    assert len(said) == 1, result.stderr
-    assert "threads" in said[0]
+    assert said == [
+        "each input runs in a fresh interpreter, because pyct's process runs other threads"
+    ], result.stderr
     inputs = input_lines(result.stdout)
     assert any(line["source"] == "solver" and args_of(line)["x"] > 3 for line in inputs)
     assert all(not covered_in(line, THREADED_FILE) & marked(THREADED_FILE) for line in inputs)
