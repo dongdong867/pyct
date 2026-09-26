@@ -25,11 +25,12 @@ COVERAGE_STARTUP = ("COVERAGE_PROCESS_CONFIG", "COVERAGE_PROCESS_START")
 def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess[str]:
     """Spawn ``pyct run`` with the given argv. ``path`` replaces the child's ``PATH``.
 
-    A run given ``--budget`` arms pyct's deadline, and the deadline firing inside
-    coverage.py's tracer hangs the child, as ``tests/unit/deadline_fires.py`` says. So
-    that run leaves coverage.py out.
+    A run given ``--budget SECONDS`` or ``--budget=SECONDS`` arms pyct's deadline, and the
+    deadline firing inside coverage.py's tracer hangs the child, as
+    ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out.
     """
-    unset = {"PYTHONPATH", *(COVERAGE_STARTUP if "--budget" in argv else ())}
+    budget = any(arg == "--budget" or arg.startswith("--budget=") for arg in argv)
+    unset = {"PYTHONPATH", *(COVERAGE_STARTUP if budget else ())}
     env = {k: v for k, v in os.environ.items() if k not in unset}
     if path is not None:
         env["PATH"] = path

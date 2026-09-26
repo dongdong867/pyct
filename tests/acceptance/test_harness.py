@@ -30,15 +30,19 @@ def environment_for(monkeypatch: pytest.MonkeyPatch, *argv: str) -> dict[str, st
     return handed
 
 
-def test_a_run_with_a_budget_starts_no_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
-    env = environment_for(monkeypatch, "m::f", "{}", "--budget", "1")
+@pytest.mark.parametrize("budget", [("--budget", "1"), ("--budget=1",)], ids=["apart", "joined"])
+def test_a_run_with_a_budget_starts_no_coverage(
+    monkeypatch: pytest.MonkeyPatch, budget: tuple[str, ...]
+) -> None:
+    env = environment_for(monkeypatch, "m::f", "{}", *budget)
 
     assert "COVERAGE_PROCESS_CONFIG" not in env
     assert "COVERAGE_PROCESS_START" not in env
 
 
 def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> None:
-    env = environment_for(monkeypatch, "m::f", "{}")
+    # a flag that only starts like --budget sets no deadline
+    env = environment_for(monkeypatch, "m::f", "{}", "--budgetless")
 
     assert env["COVERAGE_PROCESS_CONFIG"] == "{}"
     assert env["COVERAGE_PROCESS_START"] == "pyproject.toml"
