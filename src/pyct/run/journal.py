@@ -40,11 +40,12 @@ the journal holds a readable prefix at every instant. Every word the
 reader trusts, the mark, the state and a count, changes in one aligned
 8-byte store through a word view of the journal, so a kill never finds it
 half written. ``struct.pack_into`` would not do: it clears its bytes
-before it writes them. JSON decodes to
-lists and scalars only, never to an object whose code runs, which matters
-because the writer ran the target's code in its own process; and it
-writes an int subclass by int's own repr, so no target code runs on the
-way out either.
+before it writes them.
+
+JSON decodes to lists and scalars only, never to an object whose code
+runs, which matters because the writer ran the target's code in its own
+process; and it writes an int subclass by int's own repr, so no target
+code runs on the way out either.
 
 The deadline's alarm can raise inside the writer, between any two lines,
 and the writer goes on after it. So a part carries the number it was
