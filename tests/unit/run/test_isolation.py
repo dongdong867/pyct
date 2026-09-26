@@ -374,17 +374,6 @@ def test_a_target_that_replaces_exit_cannot_send_its_process_back_to_the_caller(
     assert finished.returncode == 0, finished.stderr
 
 
-def test_a_freeze_the_caller_made_outlasts_an_input() -> None:
-    gc.freeze()
-    try:
-        in_child(returns)
-
-        # objects freed since still leave the frozen set, so the count only has to stay above 0
-        assert gc.get_freeze_count() > 0
-    finally:
-        gc.unfreeze()
-
-
 def test_text_a_caller_left_in_the_real_stdout_is_written_once(
     capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -401,3 +390,25 @@ def test_text_a_caller_left_in_the_real_stdout_is_written_once(
     out, err = capfd.readouterr()
     assert out.count("held") == 1
     assert "held" not in err
+
+
+def test_a_freeze_the_caller_made_outlasts_an_input() -> None:
+    before = gc.get_freeze_count()
+    gc.freeze()
+    try:
+        in_child(returns)
+
+        # an unfreeze would leave nothing frozen; objects freed since leave it one by one
+        assert gc.get_freeze_count() > before
+    finally:
+        gc.unfreeze()
+
+
+def test_the_input_s_process_freezes_what_it_started_with() -> None:
+    frozen = gc.get_freeze_count()
+
+    def frozen_there(x: int) -> None:
+        if gc.get_freeze_count() <= frozen:
+            raise AssertionError("nothing was frozen")
+
+    assert in_child(frozen_there).failure is None

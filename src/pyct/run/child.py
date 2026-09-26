@@ -15,6 +15,7 @@ branch the target took.
 from __future__ import annotations
 
 import contextlib
+import gc
 import os
 import signal
 import sys
@@ -37,9 +38,14 @@ _EXIT = os._exit
 def serve(writer: JournalWriter, call: Served) -> NoReturn:
     """Settle this process as the input's own, run the call, write how it ended, and exit.
 
+    Garbage collection is frozen first, so a collection here skips the
+    objects this process started with. In a forked child those are pyct's,
+    and collecting them would copy every page they sit on.
+
     A raise out of pyct's own code here is a pyct bug on the input's line,
     written as the ending when the journal still takes it.
     """
+    gc.freeze()
     try:
         writer.start()
         settle(writer)

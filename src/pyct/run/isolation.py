@@ -6,10 +6,11 @@ import left it, because pyct's process never calls the target, and whatever
 the input changes goes with the child. A fork per input costs about 1.6 ms
 end to end on the machine this was measured on, closures work because
 nothing is looked up by name, and nothing is pickled on the way in: the
-child already holds the callable, the arguments and the deadline. Garbage
-collection is frozen around the fork, so a collection in the child skips
+child already holds the callable, the arguments and the deadline. The
+child freezes garbage collection first thing, so a collection there skips
 pyct's objects instead of copying every page they sit on (1.15 ms against
-8.9 ms with a 190 MB heap).
+8.9 ms with a 190 MB heap). pyct's own process never freezes or unfreezes,
+so a freeze a ``run()`` caller made stays the caller's.
 
 The child writes each fact of its call into a journal in shared memory (see
 ``journal``), and pyct's process reads it once the child has ended, however
@@ -32,7 +33,6 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import gc
 import logging
 import mmap
 import os
@@ -130,28 +130,11 @@ def _forked(buffer: mmap.mmap, call: Served) -> int:
     this process's buffered text a second time.
     """
     flush_streams()
-    pid = _fork_frozen()
-    if pid == 0:
-        # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
-        serve(JournalWriter(buffer), call)  # pragma: no cover
-    return pid
-
-
-def _fork_frozen() -> int:
-    """Fork with garbage collection frozen, so a collection in the child skips pyct's objects.
-
-    A freeze the caller had made before is the caller's, so only a freeze
-    made here is undone, and only in this process: the child keeps it.
-    """
-    ours = gc.get_freeze_count() == 0
-    if ours:
-        gc.freeze()
     try:
         pid = os.fork()
     except OSError as error:
-        if ours:
-            gc.unfreeze()
         raise InputStartError(f"could not start a child process: {error}") from error
-    if ours and pid != 0:
-        gc.unfreeze()
+    if pid == 0:
+        # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
+        serve(JournalWriter(buffer), call)  # pragma: no cover
     return pid
