@@ -3,12 +3,13 @@
 import logging
 import math
 import subprocess
+import time
 from collections.abc import Mapping
 
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
-from pyct.solver.render import program
+from pyct.solver.render import Program, names_a_float, program
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,14 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     near its limit. A limit longer than Python can wait, about 24 days, is
     cut to what it can.
 
+    A prefix that names a float leaf is asked first with each such leaf held
+    finite, and asked again with every double allowed only when that ask is
+    ``Unsat``, so NaN or an infinity is the answer only where no finite
+    double takes the path; decision float-answer-finite-first. The second ask
+    gets what the first left of ``timeout``, so both stay inside the one
+    limit, and one with nothing left is a ``Timeout()`` without starting
+    cvc5. Any other first answer is the answer.
+
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
     records it already has and says the solver failed. The one exception is
@@ -53,9 +62,22 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    written = program(prefix, leaves)
-    text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
+    if not names_a_float(prefix, leaves):
+        return _ask(program(prefix, leaves), timeout)
+    started = time.monotonic()
+    answer = _ask(program(prefix, leaves, finite=True), timeout)
+    if not isinstance(answer, Unsat):
+        return answer
+    left = timeout - (time.monotonic() - started)
+    if left <= 0:
+        return Timeout()
+    return _ask(program(prefix, leaves), left)
+
+
+def _ask(written: Program, timeout: float) -> Answer:
+    """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds."""
+    text = written.text + WHY
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
     try:
