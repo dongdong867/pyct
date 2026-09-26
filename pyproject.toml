@@ -70,8 +70,9 @@ select = ["E", "F", "I", "B", "UP", "SIM", "C901", "PLR0913", "PLR0915"]
 [tool.ruff.lint.mccabe]
 max-complexity = 10
 
-# max-args counts every parameter but self, cls, *args, **kwargs and names starting with _,
-# in functions not marked @override or @overload. max-statements counts a docstring as one
+# max-args counts every parameter but self, cls, *args, **kwargs and dummy names such as _
+# and _name, in functions not marked @override or @overload. max-statements counts a
+# docstring as one
 [tool.ruff.lint.pylint]
 max-args = 5
 max-statements = 20
