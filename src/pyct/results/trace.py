@@ -152,24 +152,45 @@ def _infix(expression: Expression) -> str:
     """The condition the way a person writes it, whatever the operator is.
 
     Operator first is how the expression is stored, so one operand reads
-    ``op a`` and the rest read as ``a op b``, joined by the operator. A
-    named head with arguments reads as Python calls a method, ``a.name(b)``,
-    and an index as Python writes one, ``a[k]``, the key as the expression
-    stores it: a string key in its Python quotes.
+    ``op a`` and the rest read as ``a op b``, joined by the operator, but for
+    what Python writes around its operands (see `_around`).
     """
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
+    around = _around(expression)
+    if around is not None:
+        return around
     operator, *operands = expression
-    if _is_index(expression):
-        return _indexed(expression)
-    if _is_named_with_arguments(expression):
-        receiver, *arguments = operands
-        called = ", ".join(_infix(argument) for argument in arguments)
-        return f"{_operand(receiver)}.{operator}({called})"
     written = [_operand(operand) for operand in operands]
     if len(written) == 1:
         return f"{operator} {written[0]}"
     return f" {operator} ".join(written)
+
+
+# the builtins a fork line writes as Python calls them: `len(s)`
+_CALLED = ("len",)
+
+
+def _around(expression: list[Expression]) -> str | None:
+    """A condition Python writes around its operands, or None for one it writes between them.
+
+    An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out.
+    A builtin in `_CALLED` reads ``len(s)``, and a named head with arguments
+    reads as Python calls a method, ``a.name(b)``. Each binds tighter than
+    any operator, so none needs parentheses of its own.
+    """
+    head, *operands = expression
+    if head == "[]" or head == "[:]":
+        receiver, *positions = operands
+        written = ":".join("" if position is None else _infix(position) for position in positions)
+        return f"{_operand(receiver)}[{written}]"
+    if head in _CALLED:
+        return f"{head}({', '.join(_infix(operand) for operand in operands)})"
+    if _is_named_with_arguments(expression):
+        receiver, *arguments = operands
+        called = ", ".join(_infix(argument) for argument in arguments)
+        return f"{_operand(receiver)}.{head}({called})"
+    return None
 
 
 def _is_named_with_arguments(expression: list[Expression]) -> bool:
@@ -211,13 +232,10 @@ def _is_index(expression: list[Expression]) -> bool:
 def _operand(expression: Expression) -> str:
     """A condition inside a condition gets parentheses; a leaf stands alone.
 
-    So do a named head with arguments, which reads ``a.name(b)``, and an
-    index, which reads ``a[k]``: both bind tighter than any operator.
+    So does a condition Python writes around its operands, ``s[0]`` or
+    ``a.name(b)``.
     """
-    written = _infix(expression)
-    bare = (
-        not isinstance(expression, list)
-        or _is_named_with_arguments(expression)
-        or _is_index(expression)
-    )
-    return written if bare else f"({written})"
+    if not isinstance(expression, list):
+        return _infix(expression)
+    around = _around(expression)
+    return around if around is not None else f"({_infix(expression)})"

@@ -66,15 +66,19 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "keyword": (["in", "'a'", "s"], "'a' in s"),
     "builtin": (["abs", "x"], "abs x"),
     "unary-minus": (["-", "x"], "- x"),
-    "key": (["[]", "config", "'port'"], "config['port']"),
-    "key-of-a-key": (
-        ["<", ["[]", ["[]", "config", "'server'"], "'port'"], 1],
-        "config['server']['port'] < 1",
+    "index": (["[]", "s", 0], "s[0]"),
+    "negative-index": (["[]", "s", -1], "s[-1]"),
+    "slice": (["[:]", "s", 1, 3], "s[1:3]"),
+    "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
+    "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
+    "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
+    "piece-of-a-condition": (["[]", ["+", "s", "t"], 0], "(s + t)[0]"),
+    "method-on-a-piece": (
+        ["removeprefix", ["[:]", "s", 1, None], "'x'"],
+        "s[1:].removeprefix('x')",
     ),
-    "key-in-double-quotes": (["[]", "d", '"it\'s"'], 'd["it\'s"]'),
-    "index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
-    "method-on-an-item": (["find", ["[]", "items", 0], "'x'"], "items[0].find('x')"),
-    "index-of-a-condition": (["[]", ["+", "s", "t"], 0], "(s + t)[0]"),
+    "replace": (["replace", "s", "'a'", "'b'"], "s.replace('a', 'b')"),
 }
 
 
@@ -87,7 +91,8 @@ def test_render_trace_writes_the_condition_as_python_does(
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # a method call binds tighter than any operator, so it needs no parentheses of its own
+    # a method call, an index, a slice and len bind tighter than any operator, so none needs
+    # parentheses of its own
     assert lines[1] == f"fork m.py:5:7  {written}  taken"
 
 
