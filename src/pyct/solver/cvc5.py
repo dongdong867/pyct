@@ -18,6 +18,9 @@ ARGUMENTS = ("--produce-models", "--lang", "smt", "--quiet")
 # cvc5 stops itself at --tlimit; pyct stops it this much later when it does not
 GRACE_SECONDS = 1.0
 
+# the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
+LONGEST_WAIT_SECONDS = 2_147_483.0
+
 
 def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds cvc5 gets.
@@ -27,7 +30,8 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
 
     ``timeout`` is finite and above zero, and cvc5 is told it as its limit. A
     cvc5 still running ``GRACE_SECONDS`` past it is stopped by pyct, and that
-    is a ``Timeout()`` as well, so every solve ends near its limit.
+    is a ``Timeout()`` as well, so every solve ends near its limit. A limit
+    longer than Python can wait, about 24 days, is cut to what it can.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -37,6 +41,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     seed's values back as the solver's.
     """
     text = render(prefix, leaves)
+    timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
     try:
