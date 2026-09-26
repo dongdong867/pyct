@@ -16,7 +16,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
-from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
+from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Scope, no_gain
 from pyct.results.record import (
     Environment,
@@ -28,6 +28,7 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
+from pyct.run.isolation import Call, isolation
 from pyct.run.target import Target
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
@@ -44,27 +45,38 @@ type Missed = Callable[[Miss], None]
 
 @dataclass(frozen=True)
 class Tell:
-    """How the loop hands a fact to the caller the moment it happens.
+    """What a caller does with each fact of the run the moment it happens.
 
-    One object rather than a callback per kind of fact, so the loop keeps to
-    five parameters: a later kind of fact widens this instead of its
-    signature. A caller that passed no callback gets a Tell that hands
-    nothing out.
+    ``report`` takes each finished input with the lines that input alone
+    covered; ``missed`` takes each fork the solver gave no input for. One
+    object rather than a keyword per kind of fact, so ``run()`` and the loop
+    keep to five parameters: a later kind of fact widens this instead of
+    their signatures. A Tell with nothing set hands nothing out.
     """
 
-    scope: Scope
     report: Report | None = None
     missed: Missed | None = None
 
+
+_TELL_NOTHING = Tell()
+
+
+@dataclass(frozen=True)
+class _Told:
+    """The caller's Tell, with the scope each reported input's coverage is measured in."""
+
+    scope: Scope
+    tell: Tell
+
     def record(self, record: InputRecord) -> None:
         """Hand out a finished input, with the lines that one input covered."""
-        if self.report is not None:
-            self.report(record, Coverage.of(self.scope, record.covered_lines))
+        if self.tell.report is not None:
+            self.tell.report(record, Coverage.of(self.scope, record.covered_lines))
 
     def miss(self, miss: Miss) -> None:
         """Hand out a fork the solver gave no input for."""
-        if self.missed is not None:
-            self.missed(miss)
+        if self.tell.missed is not None:
+            self.tell.missed(miss)
 
 
 @dataclass(frozen=True)
@@ -113,28 +125,29 @@ def run(
     seed: Mapping[str, object],
     *,
     limits: Limits = _NO_LIMITS,
-    report: Report | None = None,
-    missed: Missed | None = None,
+    isolated: bool = True,
+    tell: Tell = _TELL_NOTHING,
 ) -> RunResult:
     """Call the target with the seed, then with an input per fork left open.
 
-    Each input goes to ``report`` as it finishes, with the coverage of that
-    input alone, so an input that hangs never hides the lines of the ones
-    before it. Each fork the solver could not flip goes to ``missed`` the
-    same way, so a reader sees it when its answer comes in, before the next
-    input's trace.
+    Each input runs in a process of its own unless ``isolated`` is False,
+    which runs every input in the caller's process. Each input goes to
+    ``tell.report`` as it finishes, with the coverage of that input alone, so
+    an input that hangs never hides the lines of the ones before it. Each
+    fork the solver could not flip goes to ``tell.missed`` the same way, so a
+    reader sees it when its answer comes in, before the next input's trace.
     """
     scope = Scope.of_module(target.file)
-    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    chosen = isolation(target, isolated)
     # before the deadline starts: the probe is the run's setup, not its time
-    environment = _environment()
+    environment = _environment(chosen.isolated)
     bounds = Bounds.of(limits)
-    tell = Tell(scope=scope, report=report, missed=missed)
-    seeded = _record_of(seed, execute(ctx, seed, bounds.until))
-    tell.record(seeded)
+    told = _Told(scope=scope, tell=tell)
+    seeded = _record_of(seed, chosen.call(seed, bounds.until))
+    told.record(seeded)
     tree = Tree()
     tree.add(seeded.forks)
-    looped = _loop(ctx, seeded, tree, bounds, tell)
+    looped = _loop(chosen.call, seeded, tree, bounds, told)
     records = (seeded, *looped.records)
     covered = frozenset[int]().union(*(record.covered_lines for record in records))
     return RunResult(
@@ -147,7 +160,7 @@ def run(
     )
 
 
-def _environment() -> Environment:
+def _environment(isolated: bool) -> Environment:
     """What the run ran in, gathered once, from the cvc5 the solver will use.
 
     A cvc5 that will not say its version leaves the version out; the run is
@@ -157,15 +170,16 @@ def _environment() -> Environment:
         python=platform.python_version(),
         cvc5=version(locate()),
         platform=platform.platform(),
+        isolated=isolated,
     )
 
 
 def _loop(
-    ctx: ExecutionContext,
+    call: Call,
     seeded: InputRecord,
     tree: Tree,
     bounds: Bounds,
-    tell: Tell,
+    told: _Told,
 ) -> Loop:
     """Pick a fork, run what the solver answers for it, until a pass says to stop.
 
@@ -180,23 +194,23 @@ def _loop(
     """
     records: list[InputRecord] = []
     misses: list[Miss] = []
-    covered = [seeded.covered_lines & tell.scope.lines]
+    covered = [seeded.covered_lines & told.scope.lines]
     while True:
-        attempt = _attempt(ctx, seeded.args, tree, bounds, covered)
+        attempt = _attempt(call, seeded.args, tree, bounds, covered)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop)
         if attempt.miss is not None:
             misses.append(attempt.miss)
-            tell.miss(attempt.miss)
+            told.miss(attempt.miss)
         if attempt.record is not None:
             records.append(attempt.record)
-            covered.append(attempt.record.covered_lines & tell.scope.lines)
+            covered.append(attempt.record.covered_lines & told.scope.lines)
             tree.add(attempt.record.forks)
-            tell.record(attempt.record)
+            told.record(attempt.record)
 
 
 def _attempt(
-    ctx: ExecutionContext,
+    call: Call,
     seed: Mapping[str, object],
     tree: Tree,
     bounds: Bounds,
@@ -232,7 +246,7 @@ def _attempt(
     if not isinstance(answer, Sat):
         return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
     args = apply(seed, answer.model)
-    return Attempt(record=_record_of(args, execute(ctx, args, bounds.until), wanted))
+    return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

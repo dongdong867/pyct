@@ -265,13 +265,14 @@ def test_render_summary_leaves_a_fully_covered_file_an_empty_list() -> None:
     assert json.loads(render_summary(result))["uncovered"] == {"m.py": []}
 
 
-def test_render_summary_names_the_python_the_cvc5_and_the_platform() -> None:
+def test_render_summary_names_the_python_the_cvc5_the_platform_and_the_isolation() -> None:
     payload = summarized(SEED)
 
     assert payload["environment"] == {
         "python": "3.12.0",
         "cvc5": "1.2.1",
         "platform": "Test-1.0-arm64",
+        "isolated": True,
     }
 
 
@@ -281,7 +282,9 @@ def test_render_summary_names_no_cvc5_when_the_probe_failed() -> None:
         records=(SEED,),
         coverage=COVERAGE,
         stopped=Stop(kind=StopKind.NO_FORK),
-        environment=Environment(python="3.12.0", cvc5=None, platform="Test-1.0-arm64"),
+        environment=Environment(
+            python="3.12.0", cvc5=None, platform="Test-1.0-arm64", isolated=True
+        ),
     )
 
     assert json.loads(render_summary(result))["environment"]["cvc5"] is None

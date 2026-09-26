@@ -116,12 +116,15 @@ class Environment:
     """What the run ran in, gathered once per run, in the run layer.
 
     ``cvc5`` is the version ``cvc5 --version`` reports, or ``None`` when the
-    probe failed. A failed probe never stops the run.
+    probe failed. A failed probe never stops the run. ``isolated`` says each
+    input ran in a process of its own, rather than in pyct's, so a tool
+    comparing two runs knows which kind each was.
     """
 
     python: str
     cvc5: str | None
     platform: str
+    isolated: bool
 
 
 @dataclass(frozen=True)

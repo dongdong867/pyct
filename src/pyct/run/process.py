@@ -1,0 +1,128 @@
+"""One input's process as pyct's own process sees it: started, waited for, and how it ended.
+
+pyct reads only what the system reports about the process, whether its
+call finished and wrote its ending, its exit code, and the signal that
+ended it, named as Python's ``signal`` module names it, together with the
+facts the process wrote to its journal. No rule here names a library or a
+target.
+
+At most one input's process exists at a time, and only inside one call of
+``watched``, which never returns or raises while that process is left
+unreaped: every way out kills it, if it still runs, and reaps it. pyct
+kills a process only before reaping it, so the pid is still its own.
+"""
+
+from __future__ import annotations
+
+import os
+import signal
+from collections.abc import Callable
+from dataclasses import dataclass
+
+from pyct.execution.execute import ExecutionResult
+from pyct.results.failure import Failure, FailureKind
+from pyct.run.journal import Reading
+
+
+class InputStartError(Exception):
+    """pyct could not start a process for an input. The message is the system's reason."""
+
+
+@dataclass(frozen=True)
+class Waited:
+    """How the input's process ended, as the system reported it, and whether pyct ended it.
+
+    ``signal`` is the number of the signal that ended it, and ``code`` its
+    exit code when it exited instead.
+    """
+
+    signal: int | None
+    code: int | None
+    killed: bool = False
+
+    @classmethod
+    def of(cls, status: int, *, killed: bool = False) -> Waited:
+        """Read a raw ``waitpid`` status. This is the one place that reads one."""
+        if os.WIFSIGNALED(status):
+            return cls(signal=os.WTERMSIG(status), code=None, killed=killed)
+        return cls(signal=None, code=os.WEXITSTATUS(status), killed=killed)
+
+
+def watched(start: Callable[[], int]) -> Waited:
+    """Start the input's process with ``start``, which returns its pid, and wait for it to end."""
+    child = _Child(start())
+    try:
+        return child.wait()
+    finally:
+        child.end()
+
+
+class _Child:
+    """One input's process, from its start until pyct has reaped it."""
+
+    def __init__(self, pid: int) -> None:
+        self.pid = pid
+        self.status: int | None = None
+        self.killed = False
+
+    def wait(self) -> Waited:
+        """Wait for the process to end, and read how it did."""
+        _, status = os.waitpid(self.pid, 0)
+        self.status = status
+        return Waited.of(status, killed=self.killed)
+
+    def end(self) -> None:
+        """Kill and reap the process unless pyct already reaped it. Every way out passes here.
+
+        The status is asked for without waiting first, so a process pyct
+        already reaped, whose status was lost on the way out, is never
+        killed: its pid may belong to another process by now.
+        """
+        if self.status is not None:
+            return
+        try:
+            pid, status = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid == 0:
+            os.kill(self.pid, signal.SIGKILL)
+            _, status = os.waitpid(self.pid, 0)
+        self.status = status
+
+
+def ending(reading: Reading, waited: Waited) -> ExecutionResult:
+    """What one input did, from what its process wrote and how it ended."""
+    return ExecutionResult(
+        lines=reading.lines,
+        branches=reading.branches,
+        downgrades=reading.downgrades,
+        failure=_failure(reading, waited),
+    )
+
+
+def _failure(reading: Reading, waited: Waited) -> Failure | None:
+    """How the input ended, by the first rule that holds.
+
+    Facts known to be incomplete are a pyct bug, since a pyct bug must reach
+    the exit code. A call that wrote its ending ended that way, as it would
+    have in pyct's own process, even when pyct's kill landed as the process
+    was exiting. Without one, the process was ended before its call was:
+    by pyct at the deadline, by a signal, or by an exit.
+    """
+    if reading.problem is not None:
+        return Failure(kind=FailureKind.PYCT_BUG, detail=reading.problem)
+    if reading.ended:
+        return reading.end
+    if waited.killed:
+        return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    if waited.signal is not None:
+        return Failure(kind=FailureKind.CRASHED, detail=f"killed by {_named(waited.signal)}")
+    return Failure(kind=FailureKind.SYSTEM_EXIT, detail=f"exited with code {waited.code}")
+
+
+def _named(number: int) -> str:
+    """A signal as Python's ``signal`` module names it, or by number when it names none."""
+    try:
+        return signal.Signals(number).name
+    except ValueError:
+        return f"signal {number}"

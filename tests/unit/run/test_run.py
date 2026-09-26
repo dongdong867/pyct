@@ -1,3 +1,4 @@
+import functools
 import platform
 import time
 from pathlib import Path
@@ -10,11 +11,11 @@ from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.branch import Branch, Site
-from pyct.execution.execute import ExecutionContext
+from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
-from pyct.run.run import Bounds, _attempt, run
+from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Answer, Timeout, Unknown
 from tests.unit.deadline_fires import DEADLINE_FIRES
@@ -94,9 +95,9 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     tree.add(run(target, seed).records[0].forks)
     # no cvc5 on the PATH: asking would raise rather than answer
     monkeypatch.setenv("PATH", str(tmp_path))
-    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
-    attempt = _attempt(ctx, seed, tree, Bounds(until=time.monotonic() - 1), ())
+    attempt = _attempt(call, seed, tree, Bounds(until=time.monotonic() - 1), ())
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)
@@ -227,7 +228,7 @@ def test_run_reports_each_input_as_it_finishes() -> None:
     def remember(record: InputRecord, coverage: Coverage) -> None:
         reported.append((record, coverage))
 
-    result = run(target, {"x": 3}, report=remember)
+    result = run(target, {"x": 3}, tell=Tell(report=remember))
 
     assert [record for record, _ in reported] == list(result.records)
     # the seed's coverage is the seed's own lines, not what the run has covered so far
@@ -242,8 +243,10 @@ def test_run_hands_out_a_miss_before_the_input_solved_next() -> None:
     result = run(
         target,
         {"x": 3},
-        report=lambda record, _: told.append(record),
-        missed=lambda miss: told.append(miss),
+        tell=Tell(
+            report=lambda record, _: told.append(record),
+            missed=lambda miss: told.append(miss),
+        ),
     )
 
     # the inner fork is unsat and the outer one sat, so the miss falls between the two inputs
@@ -344,8 +347,10 @@ def test_run_does_not_count_a_solver_miss_toward_the_plateau() -> None:
         target,
         {"x": 3},
         limits=Limits(plateau=Plateau(inputs=1)),
-        report=lambda *_: events.append("input"),
-        missed=lambda *_: events.append("miss"),
+        tell=Tell(
+            report=lambda *_: events.append("input"),
+            missed=lambda *_: events.append("miss"),
+        ),
     )
 
     # the miss sits inside the window and produced no input, so the window skips it
