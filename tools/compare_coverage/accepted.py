@@ -2,11 +2,14 @@
 
 ``--accepted FILE`` holds one JSON record per line, ``{set, target, seed, status,
 only_legacy, only_v2}``, sorted by set, target and seed, so a change to the file shows which
-gaps moved (decision parity-gate-accepted-differences-pass-until-they-change).
+gaps moved (decision parity-gate-accepted-differences-pass-until-they-change). A record of a
+failed row also holds ``failures``, each failed side's reason by side, and ``covered``, the
+lines the side that ran covered, none when both failed.
 
-- A record is found by its target and seed. A row that matches its record, the same status
-  and the same lines only each side covered, is ``accepted`` and passes whatever its status.
-  One that does not is ``changed``, says what changed, and fails; a closed gap is a change.
+- A record is found by its target and seed. A row that matches its record, the same status,
+  the same lines only each side covered and, for a failed row, the same reasons and the same
+  lines covered by the side that ran, is ``accepted`` and passes whatever its status. One
+  that does not is ``changed``, says what changed, and fails; a closed gap is a change.
 - ``--accept`` rewrites FILE after the last row: each row this run produced replaces its
   record, a ``same``, ``left out`` or ``not listed`` row leaves none, records for entries
   this run did not run stay, and a record whose entry the list no longer holds is dropped.
@@ -15,15 +18,17 @@ gaps moved (decision parity-gate-accepted-differences-pass-until-they-change).
 import json
 import os
 from collections.abc import Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from tools.compare_coverage.rows import Row, Status
+from tools.compare_coverage.rows import Row, SideView, Status
 
 type Key = tuple[str, str]
 
 # rows with these statuses pass without a record, so they never leave one
 PASSING = (Status.SAME, Status.LEFT_OUT)
+
+FAILED = (Status.V2_FAILED, Status.LEGACY_FAILED, Status.BOTH_FAILED)
 
 
 class RecordsError(Exception):
@@ -40,6 +45,8 @@ class Record:
     status: str
     only_legacy: tuple[int, ...]
     only_v2: tuple[int, ...]
+    failures: Mapping[str, str] = field(default_factory=dict)
+    covered: tuple[int, ...] = ()
 
     @property
     def key(self) -> Key:
@@ -98,6 +105,7 @@ def check_writable(path: Path) -> None:
 def _record(line: str, where: str) -> Record:
     try:
         raw = json.loads(line)
+        failed = Status(raw["status"]) in FAILED
         record = Record(
             set=raw["set"],
             target=raw["target"],
@@ -105,6 +113,9 @@ def _record(line: str, where: str) -> Record:
             status=Status(raw["status"]).value,
             only_legacy=tuple(raw["only_legacy"]),
             only_v2=tuple(raw["only_v2"]),
+            # a failed row's record needs both; any other record has neither
+            failures=dict(raw["failures"]) if failed else {},
+            covered=tuple(raw["covered"]) if failed else (),
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise RecordsError(f"--accepted: {where} is not a record: {error!r}") from error
@@ -114,8 +125,9 @@ def _record(line: str, where: str) -> Record:
 
 
 def _well_formed(record: Record) -> bool:
-    lines = [*record.only_legacy, *record.only_v2]
-    texts = isinstance(record.set, str) and isinstance(record.target, str)
+    lines = [*record.only_legacy, *record.only_v2, *record.covered]
+    reasons = [*record.failures, *record.failures.values()]
+    texts = all(isinstance(text, str) for text in [record.set, record.target, *reasons])
     return texts and isinstance(record.seed, dict) and all(type(n) is int for n in lines)
 
 
@@ -140,7 +152,47 @@ def _change(record: Record, row: Row) -> str | None:
         changes.append(f"only legacy was {was}, now {now}")
     if record.only_v2 != row.only_v2:
         changes.append(f"only v2 was {_lines(record.only_v2)}, now {_lines(row.only_v2)}")
-    return "; ".join(changes) or None
+    return "; ".join(changes + _failure_changes(record, row)) or None
+
+
+def _failure_changes(record: Record, row: Row) -> list[str]:
+    """How a failed row's reasons and the lines of the side that ran moved from the record's."""
+    failures, covered = _failures(row), _covered(row)
+    # the side that ran is the same one only while the status is
+    ran = _ran(row) if record.status == row.status.value else "the side that ran"
+    changes = [
+        f"{side} failure was {_text(record.failures.get(side))}, now {_text(failures.get(side))}"
+        for side in ("v2", "legacy")
+        if record.failures.get(side) != failures.get(side)
+    ]
+    if record.covered != covered:
+        changes.append(f"{ran} covered was {_lines(record.covered)}, now {_lines(covered)}")
+    return changes
+
+
+def _sides(row: Row) -> list[tuple[str, SideView]]:
+    return [(name, view) for name, view in (("v2", row.v2), ("legacy", row.legacy)) if view]
+
+
+def _failures(row: Row) -> dict[str, str]:
+    """Each failed side's reason, by side."""
+    return {name: view.failure for name, view in _sides(row) if view.failure is not None}
+
+
+def _ran(row: Row) -> str:
+    """The side that ran while the other failed, or a phrase for a row with no such side."""
+    ran = [name for name, view in _sides(row) if view.failure is None]
+    return ran[0] if len(ran) == 1 and _failures(row) else "the side that ran"
+
+
+def _covered(row: Row) -> tuple[int, ...]:
+    """The lines the side that ran covered, when exactly one side failed; else none."""
+    running = [view for _, view in _sides(row) if view.failure is None]
+    return running[0].covered if len(running) == 1 and _failures(row) else ()
+
+
+def _text(reason: str | None) -> str:
+    return "none" if reason is None else repr(reason)
 
 
 def _lines(lines: Sequence[int]) -> str:
@@ -175,22 +227,26 @@ def _record_of(row: Row, target: str, seed: Mapping[str, object]) -> Record:
         status=row.status.value,
         only_legacy=row.only_legacy,
         only_v2=row.only_v2,
+        failures=_failures(row),
+        covered=_covered(row),
     )
 
 
 def write_records(path: Path, records: Collection[Record]) -> None:
     """One record per line, its keys in the order the module docstring gives."""
-    lines = [
-        json.dumps(
-            {
-                "set": record.set,
-                "target": record.target,
-                "seed": record.seed,
-                "status": record.status,
-                "only_legacy": list(record.only_legacy),
-                "only_v2": list(record.only_v2),
-            }
-        )
-        for record in records
-    ]
+    lines = [json.dumps(_fields(record)) for record in records]
     path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def _fields(record: Record) -> dict[str, object]:
+    fields: dict[str, object] = {
+        "set": record.set,
+        "target": record.target,
+        "seed": record.seed,
+        "status": record.status,
+        "only_legacy": list(record.only_legacy),
+        "only_v2": list(record.only_v2),
+    }
+    if Status(record.status) in FAILED:
+        fields |= {"failures": dict(record.failures), "covered": list(record.covered)}
+    return fields

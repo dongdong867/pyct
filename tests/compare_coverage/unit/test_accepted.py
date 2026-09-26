@@ -18,7 +18,7 @@ from tools.compare_coverage.accepted import (
     rewritten,
     write_records,
 )
-from tools.compare_coverage.rows import Row, Status
+from tools.compare_coverage.rows import Row, SideView, Status
 
 DIFFERS = Row(
     set="v2",
@@ -40,6 +40,102 @@ LINE = {
     "only_legacy": [4],
     "only_v2": [],
 }
+
+
+V2_RAN = SideView(file="/t.py", covered=(2, 3, 4), stopped="done", inputs=2, failure=None)
+LEGACY_FAILED = SideView(file=None, covered=(), stopped=None, inputs=None, failure="error: boom")
+FAILED = Row(
+    set="v2",
+    status=Status.LEGACY_FAILED,
+    file="/t.py",
+    target="m::f",
+    seed={"x": 0},
+    v2=V2_RAN,
+    legacy=LEGACY_FAILED,
+)
+FAILED_RECORD = Record(
+    set="v2",
+    target="m::f",
+    seed={"x": 0},
+    status="legacy failed",
+    only_legacy=(),
+    only_v2=(),
+    failures={"legacy": "error: boom"},
+    covered=(2, 3, 4),
+)
+FAILED_LINE = {
+    **LINE,
+    "status": "legacy failed",
+    "only_legacy": [],
+    "failures": {"legacy": "error: boom"},
+    "covered": [2, 3, 4],
+}
+
+
+def test_a_failed_row_is_recorded_with_its_reasons_and_what_the_other_side_covered(
+    tmp_path: Path,
+) -> None:
+    file = tmp_path / "accepted.jsonl"
+    accepted = Accepted(path=file, records={}, accept=True, listed=frozenset())
+
+    records = rewritten(accepted, [FAILED])
+    write_records(file, records)
+
+    assert records == [FAILED_RECORD]
+    assert json.loads(file.read_text()) == FAILED_LINE
+    assert read_records(file, accept=False) == {FAILED_RECORD.key: FAILED_RECORD}
+
+
+def test_both_sides_failing_records_both_reasons_and_no_lines() -> None:
+    v2_failed = replace(V2_RAN, covered=(), failure="exit 2: refused")
+    both = replace(FAILED, status=Status.BOTH_FAILED, v2=v2_failed)
+    accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
+
+    (record,) = rewritten(accepted, [both])
+
+    assert record.failures == {"v2": "exit 2: refused", "legacy": "error: boom"}
+    assert record.covered == ()
+
+
+def test_a_failed_row_that_failed_the_same_way_is_accepted() -> None:
+    assert mark(FAILED, {FAILED_RECORD.key: FAILED_RECORD}).record == "accepted"
+
+
+def test_a_failed_row_whose_other_side_lost_a_line_is_changed() -> None:
+    lost = replace(FAILED, v2=replace(V2_RAN, covered=(2, 3)))
+
+    marked = mark(lost, {FAILED_RECORD.key: FAILED_RECORD})
+
+    assert marked.record == "changed"
+    assert marked.change == "v2 covered was 2, 3, 4, now 2, 3"
+
+
+def test_a_failed_row_with_another_reason_is_changed_naming_both() -> None:
+    other = replace(FAILED, legacy=replace(LEGACY_FAILED, failure="error: bang"))
+
+    marked = mark(other, {FAILED_RECORD.key: FAILED_RECORD})
+
+    assert marked.record == "changed"
+    assert marked.change == "legacy failure was 'error: boom', now 'error: bang'"
+
+
+def test_a_failed_row_that_now_runs_names_what_changed_without_naming_a_side() -> None:
+    same = Row(set="v2", status=Status.SAME, file="/t.py", target="m::f", seed={"x": 0})
+
+    marked = mark(same, {FAILED_RECORD.key: FAILED_RECORD})
+
+    assert marked.change == (
+        "status was legacy failed, now same; legacy failure was 'error: boom', now none; "
+        "the side that ran covered was 2, 3, 4, now none"
+    )
+
+
+def test_a_failed_record_without_its_reasons_or_lines_is_refused(tmp_path: Path) -> None:
+    file = tmp_path / "accepted.jsonl"
+    file.write_text(json.dumps({**LINE, "status": "v2 failed"}) + "\n")
+
+    with pytest.raises(RecordsError, match="line 1 is not a record"):
+        read_records(file, accept=False)
 
 
 def test_a_record_is_found_by_its_target_and_canonical_seed() -> None:
