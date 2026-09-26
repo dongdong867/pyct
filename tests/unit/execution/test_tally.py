@@ -4,8 +4,10 @@ import sys
 from pyct.core.branch import Branch, Downgrade, Site
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
-from tests.unit.interrupted import interrupted
+from tests.unit.interrupted import Interrupt, at_every_line
 
+# the file the tally's own code comes from, as its frames name it
+TALLY = str(sys.modules[Tally.__module__].__file__)
 SITE = Site(file="t.py", line=3, col=7)
 FORK = Branch(expression=["<", "x", 10], taken=True, site=SITE)
 
@@ -123,16 +125,12 @@ def test_a_line_seen_before_is_not_told_again() -> None:
 
 
 def test_an_alarm_between_a_downgrade_s_steps_leaves_the_tally_readable() -> None:
-    source = sys.modules[Tally.__module__].__file__
-    assert source is not None
-    at = 1
-    while True:
+    def trial(interrupt: Interrupt, at: int) -> None:
         tally = Tally()
-        landed = interrupted(functools.partial(tally.append, Downgrade(name="__abs__")), at, source)
+        interrupt(functools.partial(tally.append, Downgrade(name="__abs__")))
         tally.append(Downgrade(name="__neg__"))
 
         # the interrupted call may be lost, never the entries around it
         assert tally.counted()[-1] == DowngradeCount(name="__neg__", count=1), at
-        if not landed:
-            break
-        at += 1
+
+    at_every_line(TALLY, trial)
