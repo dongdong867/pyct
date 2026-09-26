@@ -93,15 +93,18 @@ def report(request: Mapping[str, Any], engine: Engine) -> dict[str, Any]:
 
 
 def _error(result: Any) -> str:
-    """Legacy's own words for a failed run: its error, else the last input's, else what it is.
+    """Legacy's own words for a failed run: its error, else the stopped input's, else what it is.
 
-    When legacy's watchdog stops a hung child, it returns the child's last checkpoint with no
-    error, and the stopped input, last among the inputs, carries the text.
+    When legacy's watchdog stops a hung input, it returns the child's last checkpoint with no
+    error and a timeout stop, and the stopped input, last among the inputs, carries the text.
+    Any other failure with no error is a partial result; an earlier input's error is then a
+    raise of the target's, which is not a failure, so it is not the reason.
     """
     if result.error is not None:
         return result.error
-    errors = [record.error for record in result.inputs_generated if record.error is not None]
-    return errors[-1] if errors else "legacy gave a partial result and no error"
+    inputs = result.inputs_generated
+    stopped = result.termination_reason == "timeout" and inputs and inputs[-1].error
+    return inputs[-1].error if stopped else "legacy gave a partial result and no error"
 
 
 def _target(spec: str, root: str) -> tuple[Any, str]:

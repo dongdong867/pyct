@@ -95,14 +95,29 @@ def test_an_engine_that_says_it_failed_is_a_failure_with_its_text(root: Path) ->
     assert line["failure"] == "error: cannot inspect target"
 
 
-def test_a_failure_without_text_names_the_last_inputs_error(root: Path) -> None:
-    # legacy's watchdog returns its last checkpoint with no error, and the stopped input last
-    inputs = (Record(error=None), Record(error="timeout: child exceeded wall-clock timeout"))
+def test_a_failure_without_text_names_the_input_the_watchdog_stopped(root: Path) -> None:
+    # legacy's watchdog stops a hung input, returns its last checkpoint with no error and a
+    # timeout stop, and records the stopped input last; an earlier input raised, as targets do
+    inputs = (
+        Record(error="ValueError: seed raises"),
+        Record(error=None),
+        Record(error="timeout: child exceeded wall-clock timeout"),
+    )
     answer = Answer(success=False, termination_reason="timeout", inputs_generated=inputs)
 
     line = report(a_request(root), fake_engine(answer, []))
 
     assert line["failure"] == "timeout: timeout: child exceeded wall-clock timeout"
+
+
+def test_a_checkpoint_without_text_does_not_name_an_earlier_raise(root: Path) -> None:
+    # a child that died between inputs leaves a checkpoint: no stopped input, no error
+    inputs = (Record(error="ValueError: seed raises"), Record(error=None))
+    answer = Answer(success=False, termination_reason="partial_checkpoint", inputs_generated=inputs)
+
+    line = report(a_request(root), fake_engine(answer, []))
+
+    assert line["failure"] == "partial_checkpoint: legacy gave a partial result and no error"
 
 
 def test_a_failure_with_no_text_anywhere_says_the_result_is_partial(root: Path) -> None:
