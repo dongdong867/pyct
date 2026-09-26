@@ -65,11 +65,13 @@ class StopKind(StrEnum):
     BUDGET = "budget spent"
     NO_GAIN = "no gain"
     SOLVER_FAILED = "solver failed"
+    # pyct could not start a process for an input; the detail is the system's reason
+    COULD_NOT_START = "could not start an input"
 
 
 @dataclass(frozen=True)
 class Stop:
-    """How the run ended: what it said when the solver failed, and the plateau it ran out of.
+    """How the run ended: what went wrong when something did, and the plateau it ran out of.
 
     ``reason`` is the words both the stderr line and the summary line carry,
     which is the kind's own for every stop but a no-gain one.
@@ -116,12 +118,15 @@ class Environment:
     """What the run ran in, gathered once per run, in the run layer.
 
     ``cvc5`` is the version ``cvc5 --version`` reports, or ``None`` when the
-    probe failed. A failed probe never stops the run.
+    probe failed. A failed probe never stops the run. ``isolated`` says each
+    input ran in a process of its own, rather than in pyct's, so a tool
+    comparing two runs knows which kind each was.
     """
 
     python: str
     cvc5: str | None
     platform: str
+    isolated: bool
 
 
 @dataclass(frozen=True)

@@ -20,6 +20,12 @@
 {"set": "v2", "target": "targets.ints.negative_floor::band", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ints.negative_modulo::band", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ints.true_division::halve", "seed": {"x": 4}, "status": "differs", "only_legacy": [4], "only_v2": []}
+{"set": "v2", "target": "targets.isolate.base_raises::stop", "seed": {"x": 0, "y": 0}, "status": "legacy failed", "only_legacy": [], "only_v2": [], "failures": {"legacy": "timeout: timeout: child closed pipe without sending result"}, "covered": [6, 7, 8, 9, 10]}
+{"set": "v2", "target": "targets.isolate.counter::count", "seed": {"x": 0}, "status": "differs", "only_legacy": [9], "only_v2": []}
+{"set": "v2", "target": "targets.isolate.exits::leave", "seed": {"x": 0}, "status": "legacy failed", "only_legacy": [], "only_v2": [], "failures": {"legacy": "timeout: timeout: child closed pipe without sending result"}, "covered": [5, 6, 7]}
+{"set": "v2", "target": "targets.isolate.process_state::disturb", "seed": {"x": 0}, "status": "differs", "only_legacy": [11, 13, 15], "only_v2": []}
+{"set": "v2", "target": "targets.isolate.terminates::stop", "seed": {"x": 0}, "status": "legacy failed", "only_legacy": [], "only_v2": [], "failures": {"legacy": "timeout: timeout: child closed pipe without sending result"}, "covered": [6, 8, 9]}
+{"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}, "status": "differs", "only_legacy": [21], "only_v2": []}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.find_from_position::check", "seed": {"s": "abcx"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.length_check::check", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [4], "only_v2": []}

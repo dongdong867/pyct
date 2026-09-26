@@ -28,8 +28,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── cli.py        entry point
 │   ├── sweep/        one module: entries, seeds, triage. `pyct sweep`
 │   ├── llm/          the only LLM code. Implements the five provider protocols
-│   ├── run/          run(target, seed, *, limits, report, missed) -> RunResult.
-│   │                 Composition root for one run. isolation.py runs `pyct run` in a subprocess
+│   ├── run/          run(target, seed, *, limits, isolation, tell) -> RunResult.
+│   │                 Composition root for one run. isolation.py runs each input in a throwaway process
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears

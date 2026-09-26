@@ -1,0 +1,264 @@
+"""One input in a fresh interpreter, for real: each test starts a new Python."""
+
+import os
+import random
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import pytest
+
+from pyct.execution.execute import ExecutionContext, execute
+from pyct.results.failure import Failure, FailureKind
+from pyct.run import fresh
+from pyct.run.fresh import _journal, _request, fresh_for, in_a_fresh_interpreter, main
+from pyct.run.journal import read
+from pyct.run.process import KILL_GRACE, InputStartError
+from pyct.run.target import load_target
+
+ONE_CHECK = "targets.flip.one_check::classify"
+TERMINATES = "targets.isolate.terminates::stop"
+SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
+BASE_RAISES = "targets.isolate.base_raises::stop"
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# one input of the target argv names, in a fresh interpreter, printing how it ended
+RUN_ONE_INPUT_FRESH = """
+import os, sys
+sys.path.insert(0, os.getcwd())
+from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
+from pyct.run.target import load_target
+
+target = load_target(sys.argv[1])
+print(in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None).failure)
+"""
+
+
+def test_a_fresh_interpreter_runs_the_call_as_pyct_s_process_would() -> None:
+    target = load_target(ONE_CHECK)
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+
+    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+    assert fresh == execute(ctx, {"x": 3})
+
+
+def test_a_fresh_interpreter_ends_the_way_its_call_did() -> None:
+    target = load_target(TERMINATES)
+
+    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 5}, None)
+
+    assert fresh.failure == Failure(kind=FailureKind.CRASHED, detail="killed by SIGTERM")
+    assert [branch.taken for branch in fresh.branches] == [True]
+
+
+def test_a_fresh_interpreter_is_alone_in_its_process() -> None:
+    target = load_target(BASE_RAISES)
+
+    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 5, "y": 0}, None)
+
+    assert fresh.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="KeyboardInterrupt")
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_fresh_interpreter_past_the_deadline_is_killed() -> None:
+    target = load_target(SWALLOWS_ALARM)
+    started = time.monotonic()
+
+    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 5}, started + 0.2)
+
+    assert fresh.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    assert time.monotonic() - started < 0.2 + KILL_GRACE + 0.5
+
+
+def test_a_fresh_interpreter_that_cannot_start_is_an_input_that_could_not_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target(ONE_CHECK)
+
+    def refuse(*args: object, **kwargs: object) -> int:
+        raise BlockingIOError(35, "Resource temporarily unavailable")
+
+    monkeypatch.setattr(os, "posix_spawn", refuse)
+
+    with pytest.raises(InputStartError, match="Resource temporarily unavailable"):
+        in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+
+def test_arguments_a_fresh_interpreter_cannot_be_handed_are_an_input_that_could_not_start() -> None:
+    target = load_target(ONE_CHECK)
+
+    with pytest.raises(InputStartError, match="could not hand the input"):
+        in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": lambda: 3}, None)
+
+
+def test_the_new_interpreter_s_side_runs_the_input_it_is_handed() -> None:
+    target = load_target(ONE_CHECK)
+
+    # fresh.main in a child forked here, as the new interpreter would run it
+    with (
+        _journal() as (journal, buffer),
+        _request(target.spec, target.file, {"x": 3}, None) as request,
+    ):
+        pid = os.fork()
+        if pid == 0:
+            main(request, journal)
+        os.waitpid(pid, 0)
+        reading = read(buffer)
+
+    assert reading.ended
+    assert reading.end is None
+    assert [branch.taken for branch in reading.branches] == [True]
+
+
+def test_a_journal_file_that_cannot_be_sized_is_an_input_that_could_not_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target(ONE_CHECK)
+
+    def refuse(fd: int, length: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "ftruncate", refuse)
+
+    with pytest.raises(InputStartError, match="No space left on device"):
+        in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+
+def test_a_fresh_interpreter_that_dies_before_the_call_is_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target(ONE_CHECK)
+    # a boot that fails before pyct's side of the new interpreter is up
+    monkeypatch.setattr(fresh, "_BOOT", "raise SystemExit(1)")
+
+    result = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+    assert result.failure == Failure(
+        kind=FailureKind.PYCT_BUG,
+        detail="the input's process ended before its call began: exited with code 1",
+    )
+
+
+def test_a_module_in_the_working_directory_does_not_break_the_boot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = load_target(ONE_CHECK)
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    # named like a module of the standard library that pyct's own import needs
+    (tmp_path / "token.py").write_text("SHADOWED = True\n")
+    monkeypatch.chdir(tmp_path)
+
+    fresh_result = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+    assert fresh_result == execute(ctx, {"x": 3})
+
+
+def test_a_fresh_interpreter_runs_with_pyct_s_own_interpreter_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target("targets.isolate.asserts::check")
+    # as if pyct ran under python -O
+    monkeypatch.setattr(subprocess, "_args_from_interpreter_flags", lambda: ["-O"])
+
+    fresh_result = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+    assert fresh_result.failure is None
+
+
+def test_every_fresh_interpreter_of_a_run_hashes_strings_the_same_way() -> None:
+    target = load_target("targets.isolate.hash_order::place")
+    fresh = fresh_for(target.spec, target.file)
+
+    forks = [in_a_fresh_interpreter(fresh, {"x": -1}, None).branches for _ in range(3)]
+
+    assert forks[0] == forks[1] == forks[2]
+
+
+def test_a_hash_seed_pyct_was_given_is_the_one_its_inputs_use(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PYTHONHASHSEED", "123")
+
+    assert fresh_for(ONE_CHECK, "one_check.py").hash_seed == "123"
+
+
+def test_a_run_picks_a_hash_seed_when_pyct_was_given_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PYTHONHASHSEED", "random")
+
+    seed = fresh_for(ONE_CHECK, "one_check.py").hash_seed
+
+    assert 0 < int(seed) < 2**32
+
+
+def test_picking_a_run_s_hash_seed_leaves_the_target_s_random_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    before = random.getstate()
+
+    fresh_for(ONE_CHECK, "one_check.py")
+
+    assert random.getstate() == before
+
+
+def test_an_empty_hash_seed_is_no_seed_and_the_run_picks_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Python reads an empty PYTHONHASHSEED as random
+    monkeypatch.setenv("PYTHONHASHSEED", "")
+
+    seed = fresh_for(ONE_CHECK, "one_check.py").hash_seed
+
+    assert 0 < int(seed) < 2**32
+
+
+@pytest.mark.parametrize(
+    ("flags", "kept", "left_out"),
+    [
+        pytest.param(["-E", "-O"], ["-O"], ["-E"], id="ignoring-the-environment"),
+        pytest.param(["-I"], ["-s", "-P"], ["-I"], id="isolated"),
+    ],
+)
+def test_a_fresh_interpreter_reads_the_hash_seed_whatever_pyct_s_flags(
+    monkeypatch: pytest.MonkeyPatch, flags: list[str], kept: list[str], left_out: list[str]
+) -> None:
+    monkeypatch.setattr(subprocess, "_args_from_interpreter_flags", lambda: flags)
+
+    command = fresh._command(3, 4)
+
+    assert all(flag in command for flag in kept), command
+    assert not any(flag in command for flag in left_out), command
+
+
+def fresh_under(flags: list[str], variable: str, value: str, spec: str) -> str:
+    """How one input of ``spec`` ended in a fresh interpreter of a pyct run under ``flags``."""
+    finished = subprocess.run(
+        [sys.executable, *flags, "-c", RUN_ONE_INPUT_FRESH, spec],
+        cwd=REPO_ROOT,
+        env={**os.environ, variable: value},
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+    assert finished.returncode == 0, finished.stderr
+    return finished.stdout
+
+
+@pytest.mark.parametrize("ignoring", ["-E", "-I"])
+def test_a_variable_pyct_ignores_does_not_reach_its_fresh_interpreters(ignoring: str) -> None:
+    # pyct runs its asserts, since it ignores PYTHONOPTIMIZE, so the new interpreter must too
+    ended = fresh_under([ignoring], "PYTHONOPTIMIZE", "1", "targets.isolate.asserts::check")
+
+    assert "TARGET_RAISED" in ended, ended
+
+
+def test_a_variable_pyct_reads_reaches_its_fresh_interpreters() -> None:
+    # only the environment carries this setting to the new interpreter; no flag of pyct's does
+    ended = fresh_under([], "PYTHONINTMAXSTRDIGITS", "640", "targets.isolate.long_digits::parse")
+
+    assert "Exceeds the limit (640 digits)" in ended, ended

@@ -1,7 +1,7 @@
 """The pyct command line.
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS]``
+[--solver-timeout SECONDS] [--in-process]``
 """
 
 from __future__ import annotations
@@ -25,14 +25,15 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
-from pyct.run.run import run
+from pyct.run.isolation import Isolation
+from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS]"
+    " [--solver-timeout SECONDS] [--in-process]"
 )
 
 
@@ -42,20 +43,25 @@ class UsageError(Exception):
 
 @dataclass(frozen=True)
 class RunCommand:
-    """What the command line asked for: the target spec, the seed, and the three limits."""
+    """What the command line asked for: the target spec, the seed, the three limits, and where.
+
+    ``in_process`` runs every input in pyct's own process rather than one of its own.
+    """
 
     spec: str
     seed_text: str | None
     budget_text: str | None = None
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
+    in_process: bool = False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
-    could not be loaded, or pyct itself broke during the run. 2: usage.
+    could not be loaded, pyct could not start a process for an input, or
+    pyct itself broke during the run. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, and each
     fork the solver could not flip, through ``_missed``, so a second input
@@ -74,8 +80,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     them.
     """
     try:
-        target, seed, limits = _checked(parse_command(sys.argv[1:] if argv is None else argv))
-        result = run(target, seed, limits=limits, report=_report, missed=_missed)
+        command = parse_command(sys.argv[1:] if argv is None else argv)
+        target, seed, limits = _checked(command)
+        result = run(
+            target,
+            seed,
+            limits=limits,
+            isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
+            tell=Tell(report=_report, missed=_missed),
+        )
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -83,7 +96,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
-    print(render_summary(result), flush=True)
+    _line(render_summary(result))
     return _exit_code(result)
 
 
@@ -108,7 +121,14 @@ def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]
 def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read."""
     print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
-    print(render(record, coverage), flush=True)
+    _line(render(record, coverage))
+
+
+def _line(text: str) -> None:
+    """One stdout line: the text and its end go out in one write, so a Ctrl-C between two
+    writes cannot leave the line without its end."""
+    sys.stdout.write(f"{text}\n")
+    sys.stdout.flush()
 
 
 def _missed(miss: Miss) -> None:
@@ -117,8 +137,9 @@ def _missed(miss: Miss) -> None:
 
 
 def _exit_code(result: RunResult) -> int:
-    """Every line is printed either way; a dead solver or a pyct bug still ends it badly."""
-    if result.stopped.kind is StopKind.SOLVER_FAILED:
+    """Every line is printed either way; a dead solver, an input that could not start, or a
+    pyct bug still ends it badly."""
+    if result.stopped.kind in (StopKind.SOLVER_FAILED, StopKind.COULD_NOT_START):
         return 1
     return 1 if any(_is_a_bug(record.failure) for record in result.records) else 0
 
@@ -138,6 +159,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("--budget", metavar="SECONDS")
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
+    run_parser.add_argument("--in-process", action="store_true")
     namespace = parser.parse_args(argv)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
@@ -148,6 +170,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
         budget_text=namespace.budget,
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
+        in_process=namespace.in_process,
     )
 
 

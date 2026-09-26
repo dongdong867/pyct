@@ -141,16 +141,21 @@ def miss(why: MissWhy) -> Miss:
     return Miss(site=Site(file="m.py", line=5, col=7), why=why)
 
 
-def test_an_environment_names_the_interpreter_the_solver_and_the_machine() -> None:
-    environment = Environment(python="3.12.0", cvc5="1.2.1", platform="Test-1.0-arm64")
+def test_an_environment_names_the_interpreter_the_solver_the_machine_and_the_isolation() -> None:
+    environment = Environment(
+        python="3.12.0", cvc5="1.2.1", platform="Test-1.0-arm64", isolated=False
+    )
 
     assert environment.python == "3.12.0"
     assert environment.cvc5 == "1.2.1"
     assert environment.platform == "Test-1.0-arm64"
+    assert environment.isolated is False
 
 
 def test_an_environment_names_no_cvc5_when_the_probe_failed() -> None:
-    assert Environment(python="3.12.0", cvc5=None, platform="Test-1.0-arm64").cvc5 is None
+    environment = Environment(python="3.12.0", cvc5=None, platform="Test-1.0-arm64", isolated=True)
+
+    assert environment.cvc5 is None
 
 
 def test_a_run_result_carries_the_environment_it_ran_in() -> None:

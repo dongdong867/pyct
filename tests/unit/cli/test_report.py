@@ -38,3 +38,26 @@ def test_report_flushes_the_line_when_stdout_is_a_pipe(monkeypatch: pytest.Monke
     _report(RECORD, COVERAGE)
 
     assert pipe.buffer.getvalue().decode() == render(RECORD, COVERAGE) + "\n"
+
+
+class Writes(io.StringIO):
+    """A stdout that keeps each write call apart."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.writes: list[str] = []
+
+    def write(self, text: str, /) -> int:
+        if text:
+            self.writes.append(text)
+        return super().write(text)
+
+
+def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a Ctrl-C between two writes would leave a line with no end for the next one to join
+    stdout = Writes()
+    monkeypatch.setattr(sys, "stdout", stdout)
+
+    _report(RECORD, COVERAGE)
+
+    assert stdout.writes == [render(RECORD, COVERAGE) + "\n"]

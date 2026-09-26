@@ -6,4 +6,4 @@ rather than writing the same literal into every construction.
 
 from pyct.results.record import Environment
 
-ENVIRONMENT = Environment(python="3.12.0", cvc5="1.2.1", platform="Test-1.0-arm64")
+ENVIRONMENT = Environment(python="3.12.0", cvc5="1.2.1", platform="Test-1.0-arm64", isolated=True)

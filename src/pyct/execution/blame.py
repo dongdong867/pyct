@@ -11,7 +11,7 @@ from pyct.core.values import raised_by_target
 from pyct.results.failure import Failure, FailureKind
 
 
-def blame(fn: Callable[..., object], error: Exception, *, called: bool) -> Failure:
+def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> Failure:
     """Say whose the raise was.
 
     An exception raised while the target runs is a **pyct bug** when any frame
@@ -41,7 +41,7 @@ def _is_pyct_frame(code: types.CodeType) -> bool:
 
 
 def _below_target(
-    fn: Callable[..., object], error: Exception, called: bool
+    fn: Callable[..., object], error: BaseException, called: bool
 ) -> tuple[types.TracebackType, ...]:
     """The traceback entries deeper than the target's own frame.
 

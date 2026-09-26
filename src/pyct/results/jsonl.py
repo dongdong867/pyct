@@ -75,6 +75,7 @@ def _environment(environment: Environment) -> dict[str, object]:
         "python": environment.python,
         "cvc5": environment.cvc5,
         "platform": environment.platform,
+        "isolated": environment.isolated,
     }
 
 
