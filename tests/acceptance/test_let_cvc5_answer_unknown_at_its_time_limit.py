@@ -25,19 +25,22 @@ INNER_COL = 11
 
 
 def recording_cvc5(tmp_path: Path) -> str:
-    """A cvc5 that runs the real one and writes down how each call ended. Returns the PATH.
+    """A cvc5 that runs the real one and writes down each call's start and end. Returns the PATH.
 
     A shell reads a call that a signal ended as 128 plus the signal's number,
-    so the status it writes down tells an answer from a signal.
+    so the status it writes down tells an answer from a signal. A call pyct
+    stops ends the script too, so that call has a start and no end.
     """
     real = shutil.which("cvc5")
     assert real is not None, "the real cvc5 is not on PATH"
+    calls = tmp_path / "calls"
     script = tmp_path / "cvc5"
     script.write_text(
         "#!/bin/sh\n"
+        f'echo "start $$ $1" >> "{calls}"\n'
         f'"{real}" "$@"\n'
         "status=$?\n"
-        f'echo "$status $1" >> "{tmp_path / "ended"}"\n'
+        f'echo "end $$ $status" >> "{calls}"\n'
         'exit "$status"\n'
     )
     script.chmod(0o755)
@@ -68,17 +71,21 @@ def unknown_cvc5(tmp_path: Path) -> str:
     return str(tmp_path)
 
 
-def statuses(tmp_path: Path) -> list[tuple[int, str]]:
-    """Each call the recording cvc5 saw, as its exit status and its first argument."""
-    lines = (tmp_path / "ended").read_text().splitlines()
-    return [(int(status), first) for status, first in (line.split(" ", 1) for line in lines)]
+def records(tmp_path: Path, kind: str) -> dict[str, str]:
+    """What the recording cvc5 wrote at each call's ``start`` or ``end``, by the call's process.
+
+    A start holds the call's first argument, and an end its exit status.
+    """
+    lines = (tmp_path / "calls").read_text().splitlines()
+    fields = [line.split(" ", 2) for line in lines]
+    return {process: value for said, process, value in fields if said == kind}
 
 
 def assert_no_signal(tmp_path: Path) -> None:
-    """Every cvc5 call exited 0, and at least one of them was a solve rather than the check."""
-    ended = statuses(tmp_path)
-    assert [status for status, _ in ended] == [0] * len(ended), ended
-    assert any(first != "--version" for _, first in ended), ended
+    """Every cvc5 call that started exited 0, and at least one was a solve, not the check."""
+    started = records(tmp_path, "start")
+    assert records(tmp_path, "end") == dict.fromkeys(started, "0"), started
+    assert any(first != "--version" for first in started.values()), started
 
 
 def misses_of(stdout: str) -> list[tuple[int, str]]:
