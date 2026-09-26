@@ -52,6 +52,26 @@ def test_a_solved_path_comes_back_with_its_model(
     assert ask(tmp_path, monkeypatch) == Sat({"x": 12})
 
 
+@pytest.mark.parametrize(
+    "out",
+    [
+        # the reply is missing, so the last line may be a value rather than the reply
+        "sat\n((x 12))\n((y 3))\n",
+        # a reason is no reply to a sat, which leaves no reason to ask about
+        "sat\n((x 12))\n(:reason-unknown timeout)\n",
+    ],
+)
+def test_a_sat_without_its_reply_to_why_is_an_error_rather_than_a_lost_value(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, out: str
+) -> None:
+    fake_cvc5(tmp_path, out=out)
+
+    answer = ask(tmp_path, monkeypatch)
+
+    assert isinstance(answer, Error), answer
+    assert answer.detail == out.strip()
+
+
 def test_a_path_nothing_reaches_comes_back_unsat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

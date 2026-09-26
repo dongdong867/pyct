@@ -79,14 +79,15 @@ def test_main_says_what_it_could_not_read_from_cvc5_without_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     let_pyct_run_in_process(monkeypatch)
-    # a cvc5 that finds the input but puts a line pyct cannot read inside the model
+    # a cvc5 that finds the input but puts a line pyct cannot read inside the model, which
+    # ends where cvc5 refuses to say why, as it does after any answer but unknown
     script = tmp_path / "cvc5"
     script.write_text(
         "#!/bin/sh\n"
         # PATH is the tmp directory while the test runs, so the script says where its tools are
         "PATH=/bin:/usr/bin\n"
         "cat > /dev/null\n"
-        "printf 'sat\\n(warning \"x\")\\n((x 10))\\n'\n"
+        'printf \'sat\\n(warning "x")\\n((x 10))\\n(error "no reason")\\n\'\n'
     )
     script.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))

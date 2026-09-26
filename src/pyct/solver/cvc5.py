@@ -22,6 +22,9 @@ WHY = "(get-info :reason-unknown)\n"
 # cvc5's reply to WHY when its time limit ended the check
 OUT_OF_TIME = "(:reason-unknown timeout)"
 
+# how cvc5's reply to WHY starts after an answer other than unknown, which has no reason
+NO_REASON = "(error "
+
 # cvc5 answers unknown at --tlimit-per; pyct stops it this much later when it does not
 GRACE_SECONDS = 1.0
 
@@ -90,11 +93,12 @@ def _answer(stdout: str, stderr: str) -> Answer:
     """What cvc5 said. The first word decides; anything unrecognized is kept whole.
 
     The last line is cvc5's reply to ``WHY``, so a model is the lines between
-    the answer and that reply.
+    the answer and that reply. A ``sat`` whose last line is not that reply is
+    an ``Error``: the line dropped as the reply might have been a value.
     """
     lines = stdout.strip().splitlines()
     head = lines[0] if lines else ""
-    if head == "sat":
+    if head == "sat" and lines[-1].startswith(NO_REASON):
         return Sat(model_from(lines[1:-1]))
     if head == "unsat":
         return Unsat()
