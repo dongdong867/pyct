@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pyct.core.bools import ConcolicBool, compare
-from pyct.core.branch import BranchSink, Downgrade, Expression
+from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
@@ -287,22 +287,29 @@ def _appended(self: ConcolicStr, other: object) -> object:
     return ConcolicStr(own(str.__add__, self, other), expression=expression, sink=self.sink)
 
 
+def _joined_after(self: ConcolicStr, other: str) -> str:
+    """str's own `other + s`: its concatenation with the operands the other way round."""
+    return str.__add__(other, self)
+
+
+# str has no `__radd__` of its own, so the downgrade is handed the concatenation it stands for
+_RADD_DOWNGRADE = downgraded(str, "__radd__", calling=_joined_after)
+
+
 def _prepended(self: ConcolicStr, other: object) -> object:
     """`other + s` with a str on the left that is not tracked, carrying `["+", other, s]`.
 
     Python asks a str subclass on the right before str's own concatenation,
     so `"x" + s` comes here. A non-str gets NotImplemented, and Python raises
-    its own TypeError. str has no `__radd__` of its own to downgrade to, so a
-    literal the solver cannot hold is joined by str's concatenation here and
-    named `__radd__`.
+    its own TypeError. A literal the solver cannot hold is str's own answer
+    and a `__radd__` downgrade.
     """
     if not isinstance(other, str):
         return NotImplemented
-    joined = own(str.__add__, other, self)
     if not _within_cvc5(other):
-        self.sink.append(Downgrade(name="__radd__"))
-        return joined
-    return ConcolicStr(joined, expression=["+", _operand(other), self.expression], sink=self.sink)
+        return _RADD_DOWNGRADE(self, other)
+    expression = ["+", _operand(other), self.expression]
+    return ConcolicStr(own(_joined_after, self, other), expression=expression, sink=self.sink)
 
 
 class ConcolicStr(str):
