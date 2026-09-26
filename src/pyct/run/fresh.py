@@ -21,6 +21,7 @@ import mmap
 import os
 import pickle
 import signal
+import subprocess
 import sys
 import tempfile
 from collections.abc import Generator, Mapping
@@ -102,6 +103,20 @@ def _request(
         yield handed.fileno()
 
 
+def _command(request: int, journal: int) -> list[str]:
+    """The new interpreter's command line: pyct's own interpreter flags, then the boot.
+
+    ``-P`` keeps the working directory off the import path while pyct boots,
+    so a module there named like one of the standard library's cannot stand
+    in for it. The target's import still sees pyct's own path, which the
+    request carries. The flags are pyct's, so ``-O`` and the rest hold for
+    the target the same way whether a run forks or starts interpreters.
+    """
+    # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
+    flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
+    return [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)]
+
+
 def _spawned(request: int, journal: int) -> int:
     """Start the new interpreter and return its pid.
 
@@ -113,7 +128,7 @@ def _spawned(request: int, journal: int) -> int:
     try:
         return os.posix_spawn(
             sys.executable,
-            [sys.executable, "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)],
+            _command(request, journal),
             os.environ,
             file_actions=[
                 (os.POSIX_SPAWN_OPEN, 0, os.devnull, os.O_RDONLY, 0),

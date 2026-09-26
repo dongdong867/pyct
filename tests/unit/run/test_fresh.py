@@ -1,7 +1,9 @@
 """One input in a fresh interpreter, for real: each test starts a new Python."""
 
 import os
+import subprocess
 import time
+from pathlib import Path
 
 import pytest
 
@@ -123,3 +125,29 @@ def test_a_fresh_interpreter_that_dies_before_the_call_is_a_pyct_bug(
         kind=FailureKind.PYCT_BUG,
         detail="the input's process ended before its call began: exited with code 1",
     )
+
+
+def test_a_module_in_the_working_directory_does_not_break_the_boot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    target = load_target(ONE_CHECK)
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    # named like a module of the standard library that pyct's own import needs
+    (tmp_path / "token.py").write_text("SHADOWED = True\n")
+    monkeypatch.chdir(tmp_path)
+
+    fresh_result = in_a_fresh_interpreter(target.spec, target.file, {"x": 3}, None)
+
+    assert fresh_result == execute(ctx, {"x": 3})
+
+
+def test_a_fresh_interpreter_runs_with_pyct_s_own_interpreter_flags(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target("targets.isolate.asserts::check")
+    # as if pyct ran under python -O
+    monkeypatch.setattr(subprocess, "_args_from_interpreter_flags", lambda: ["-O"])
+
+    fresh_result = in_a_fresh_interpreter(target.spec, target.file, {"x": 3}, None)
+
+    assert fresh_result.failure is None
