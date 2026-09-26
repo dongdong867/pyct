@@ -17,7 +17,7 @@ from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_s
 _TARGET_RAISE = "__pyct_target_raise__"
 
 
-def own[T](operation: Callable[..., T], *args: object) -> T:
+def own[T](operation: Callable[..., T], *args: object, **kwargs: object) -> T:
     """The base type's own answer, with a raise out of it marked as the target's.
 
     Every call pyct makes into the base type goes through here, taught
@@ -26,7 +26,7 @@ def own[T](operation: Callable[..., T], *args: object) -> T:
     and a keyboard interrupt land here too, and neither is the operation's.
     """
     try:
-        return operation(*args)
+        return operation(*args, **kwargs)
     except Exception as error:
         setattr(error, _TARGET_RAISE, True)
         raise
@@ -69,15 +69,17 @@ class _Sinked(Protocol):
 def downgraded(base: type, name: str) -> Callable[..., object]:
     """The base type's own operation, and a note in the sink that the condition was lost.
 
-    The note comes after the call, so an operation that raises records
-    nothing and the raise stays the target's. ``NotImplemented`` is not an
-    answer either: the other operand's reflected method gets its turn, and
-    only a real result is a lost condition.
+    The arguments reach the base type's operation as the target wrote them,
+    keywords too, so the operation takes and refuses what it would take and
+    refuse on a plain value. The note comes after the call, so an operation
+    that raises records nothing and the raise stays the target's.
+    ``NotImplemented`` is not an answer either: the other operand's reflected
+    method gets its turn, and only a real result is a lost condition.
     """
     operation = getattr(base, name)
 
-    def downgrade(self: _Sinked, *args: object) -> object:
-        result = own(operation, self, *args)
+    def downgrade(self: _Sinked, *args: object, **kwargs: object) -> object:
+        result = own(operation, self, *args, **kwargs)
         if result is not NotImplemented:
             self.sink.append(Downgrade(name=name))
         return result

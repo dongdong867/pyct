@@ -693,6 +693,16 @@ def test_a_raise_that_is_not_the_operations_carries_no_mark() -> None:
     assert not raised_by_target(raised.value)
 
 
+def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+    to_bytes = values.downgraded(int, "to_bytes")
+
+    # no int downgrade takes a keyword today; to_bytes does, so the factory is built on it here
+    assert to_bytes(x, length=2, byteorder="big") == b"\x00\x03"
+    assert sink == [Downgrade(name="to_bytes")]
+
+
 def test_an_operation_the_other_type_answers_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
