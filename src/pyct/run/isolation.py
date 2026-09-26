@@ -15,6 +15,13 @@ The child writes each fact of its call into a journal in shared memory (see
 ``journal``), and pyct's process reads it once the child has ended, however
 it ended (see ``process``).
 
+A copy of a process can hang on a lock another thread held at the copy.
+pyct's process runs no threads of its own, so a thread in it at the start
+of a run is one the target's import left running, and then each input runs
+in a fresh interpreter instead (see ``fresh``). That interpreter imports
+the target by name, so a target no module attribute names, a closure handed
+to ``run()``, runs in pyct's process instead. Either way pyct says so once.
+
 ``--in-process`` runs every input in pyct's own process instead, exactly as
 before isolation: state carries over, the target writes to pyct's stdout,
 and a crash ends pyct.
@@ -25,18 +32,23 @@ from __future__ import annotations
 import contextlib
 import functools
 import gc
+import logging
 import mmap
 import os
 import sys
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Generator, Mapping
 from dataclasses import dataclass
 
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, serve
+from pyct.run.fresh import in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import Target
+from pyct.run.threads import running
+
+logger = logging.getLogger(__name__)
 
 # one input in, what it did out: the arguments and the monotonic instant it must end by
 type Call = Callable[[Mapping[str, object], float | None], ExecutionResult]
@@ -53,10 +65,35 @@ class Isolation:
 def isolation(target: Target, isolated: bool) -> Isolation:
     """Choose once, for the whole run, where its inputs run."""
     if not isolated:
-        ctx = ExecutionContext(fn=target.fn, file=target.file)
-        return Isolation(call=functools.partial(execute, ctx), isolated=False)
-    alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
-    return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
+        return _in_process(target)
+    if running() == 1:
+        alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
+        return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
+    if not _named(target):
+        logger.warning(
+            "each input runs in pyct's process, because threads are running in it after the"
+            " target's import, and no module attribute names the target for a fresh"
+            " interpreter to import"
+        )
+        return _in_process(target)
+    logger.warning(
+        "each input runs in a fresh interpreter, because threads are running in pyct's"
+        " process after the target's import"
+    )
+    fresh = functools.partial(in_a_fresh_interpreter, target.spec, target.file)
+    return Isolation(call=fresh, isolated=True)
+
+
+def _in_process(target: Target) -> Isolation:
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    return Isolation(call=functools.partial(execute, ctx), isolated=False)
+
+
+def _named(target: Target) -> bool:
+    """Whether a fresh interpreter importing the target's module by name finds this callable."""
+    module_name, _, name = target.spec.partition("::")
+    module = sys.modules.get(module_name)
+    return module is not None and getattr(module, name, None) is target.fn
 
 
 def in_a_child(
@@ -73,7 +110,7 @@ def in_a_child(
 
 
 @contextlib.contextmanager
-def _journal() -> Iterator[mmap.mmap]:
+def _journal() -> Generator[mmap.mmap]:
     """An anonymous shared mapping the child inherits, freed once it is read."""
     try:
         buffer = mmap.mmap(-1, CAPACITY)

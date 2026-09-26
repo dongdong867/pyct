@@ -40,6 +40,8 @@ ABORTS = "targets.isolate.aborts::give_up"
 PRINTS = "targets.isolate.prints::speak"
 READS_STDIN = "targets.isolate.reads_stdin::ask"
 BASE_RAISES = "targets.isolate.base_raises::stop"
+THREADED = "targets.isolate.threaded::count"
+THREADED_FILE = ISOLATE / "threaded.py"
 C_HANG = "targets.isolate.c_hang::stall"
 C_HANG_FILE = ISOLATE / "c_hang.py"
 SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
@@ -412,3 +414,17 @@ def test_reports_a_base_exception_the_target_raises() -> None:
     assert failure_of(halted[0])["kind"] == "target_raised"
     assert str(failure_of(halted[0])["detail"]).endswith("Halt: halted")
     assert "stopped" in json.loads(result.stdout.splitlines()[-1])
+
+
+# run-a-target-in-a-throwaway-process-runs-a-threaded-import-in-fresh-interpreters
+def test_runs_a_threaded_import_in_fresh_interpreters() -> None:
+    result = run_pyct(THREADED, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    said = [line for line in result.stderr.splitlines() if "fresh interpreter" in line]
+    assert len(said) == 1, result.stderr
+    assert "threads" in said[0]
+    inputs = input_lines(result.stdout)
+    assert any(line["source"] == "solver" and args_of(line)["x"] > 3 for line in inputs)
+    assert all(not covered_in(line, THREADED_FILE) & marked(THREADED_FILE) for line in inputs)
+    assert environment_of(result.stdout)["isolated"] is True

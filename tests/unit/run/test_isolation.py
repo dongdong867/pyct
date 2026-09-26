@@ -1,19 +1,44 @@
 """One input in a child process, for real: each test forks, and each child takes milliseconds."""
 
 import faulthandler
+import inspect
+import logging
 import mmap
 import os
 import signal
+import subprocess
 import sys
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure, FailureKind
+from pyct.run import isolation as isolation_module
 from pyct.run.isolation import in_a_child, isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target, load_target
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# run() on a closure in a process running a thread, printing whether the run isolated
+RUN_A_CLOSURE_BESIDE_A_THREAD = """
+import inspect, threading, time
+from pyct.run.run import run
+from pyct.run.target import Target
+from targets.isolate.closure import make
+
+threading.Thread(target=lambda: time.sleep(60), daemon=True).start()
+count = make()
+target = Target(
+    spec="targets.isolate.closure::make",
+    fn=count,
+    file=count.__code__.co_filename,
+    signature=inspect.signature(count),
+)
+print(run(target, {"x": 0}).environment.isolated)
+"""
 
 
 def segfault(x: int) -> None:
@@ -203,3 +228,82 @@ def test_an_input_in_process_leaves_its_state_for_the_next() -> None:
     call({"x": 2}, None)
 
     assert calls == [1, 2]
+
+
+def threads_left_running(monkeypatch: pytest.MonkeyPatch) -> None:
+    """pyct's process runs a thread besides the main one, as a target's import can leave."""
+    monkeypatch.setattr(isolation_module, "running", lambda: 2)
+
+
+def test_a_run_with_threads_left_running_starts_a_fresh_interpreter_per_input(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    threads_left_running(monkeypatch)
+
+    with caplog.at_level(logging.WARNING):
+        chosen = isolation(one_check(), isolated=True)
+        result = chosen.call({"x": 3}, None)
+
+    assert chosen.isolated is True
+    assert result.branches
+    (said,) = caplog.messages
+    assert "fresh interpreter" in said
+    assert "threads" in said
+
+
+def test_a_target_no_name_finds_runs_in_process_when_threads_are_left_running(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    threads_left_running(monkeypatch)
+    calls: list[int] = []
+
+    def count(x: int) -> None:
+        calls.append(x)
+
+    closure = Target(
+        spec="targets.flip.one_check::classify",
+        fn=count,
+        file=__file__,
+        signature=inspect.signature(count),
+    )
+
+    with caplog.at_level(logging.WARNING):
+        chosen = isolation(closure, isolated=True)
+        chosen.call({"x": 1}, None)
+
+    assert chosen.isolated is False
+    assert calls == [1]
+    (said,) = caplog.messages
+    assert "pyct's process" in said
+    assert "threads" in said
+
+
+def test_a_run_in_process_says_nothing_about_threads(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    threads_left_running(monkeypatch)
+
+    with caplog.at_level(logging.WARNING):
+        chosen = isolation(one_check(), isolated=False)
+
+    assert chosen.isolated is False
+    assert caplog.messages == []
+
+
+def test_a_run_in_process_for_want_of_a_name_says_so_once_on_stderr() -> None:
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    finished = subprocess.run(
+        [sys.executable, "-c", RUN_A_CLOSURE_BESIDE_A_THREAD],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert finished.returncode == 0, finished.stderr
+    assert finished.stdout == "False\n"
+    said = [line for line in finished.stderr.splitlines() if "threads" in line]
+    assert len(said) == 1, finished.stderr
+    assert said[0].startswith("each input runs in pyct's process")
