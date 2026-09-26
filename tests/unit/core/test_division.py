@@ -201,6 +201,27 @@ def test_a_plain_bool_divisor_divides_by_1_or_0_in_divmod() -> None:
     assert sink == []
 
 
+# a divisor int does not take: the call, forward and reflected. Each is the other type's
+# business, and here both sides refuse it
+REFUSED_DIVISORS: dict[str, Callable[[int], object]] = {
+    "x // 'a'": lambda x: x // "a",  # pyrefly: ignore[unsupported-operation]
+    "[] % x": lambda x: [] % x,  # pyrefly: ignore[unsupported-operation]
+    "divmod(x, 'a')": lambda x: divmod(x, "a"),  # pyrefly: ignore[no-matching-overload]
+    "divmod('a', x)": lambda x: divmod("a", x),  # pyrefly: ignore[no-matching-overload]
+}
+
+
+@pytest.mark.parametrize("call", REFUSED_DIVISORS.values(), ids=list(REFUSED_DIVISORS))
+def test_a_divisor_int_does_not_take_is_left_to_python(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(7, expression="x", sink=sink)
+
+    # NotImplemented from both sides, so Python raises, and nothing forks before it does
+    with pytest.raises(TypeError):
+        call(x)
+    assert sink == []
+
+
 def test_a_division_by_zero_raises_with_the_fork_it_died_on_already_recorded() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(7, expression="x", sink=sink)
