@@ -4,9 +4,14 @@ The checker decides which lines belong to the target, not either side, so the tw
 never disagree about it (decision own-lines-from-the-compiled-code). The rule:
 
 - ``NAME`` is the last top-level ``def``, ``async def`` or ``class`` of that name in the file.
-  A top-level assignment or import after it that binds the name to another object is
-  refused: a call would then run that object, and both sides would cover none of this body.
-  ``NAME = wrap(NAME)`` is not refused, since it wraps the target as a decorator does.
+  Module-level code after it that binds or deletes the name is refused: a call would then
+  run another object, and both sides would cover none of this body. The check reads the
+  statements after the def and the blocks of their ``if``, ``for``, ``while``, ``with``,
+  ``try`` and ``match``: an assignment of any kind, a ``for``, ``with``, ``except`` or
+  ``match`` target, ``del``, an import, or a ``def`` or ``class`` of the name. It does not
+  read inside functions, classes, lambdas or comprehensions. ``NAME = wrap(NAME)`` wraps
+  the target as a decorator does and is kept. An ``import *`` after the def is refused,
+  since the file cannot show whether it binds the name.
 - Its own lines are the lines its compiled code runs, read from the line table of its code
   object and of the code nested in it, such as an inner function. A line inside a statement
   that spans several lines stands for the innermost statement that holds it, as Python's
@@ -29,6 +34,12 @@ from types import CodeType
 type Definition = ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef
 
 DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+
+# what binds names of its own rather than the module's
+SCOPES = (*DEFINITIONS, ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
+
+# what binds the name its ``name`` field holds
+BINDERS = (*DEFINITIONS, ast.ExceptHandler, ast.MatchAs, ast.MatchStar)
 
 
 class BodyError(Exception):
@@ -56,7 +67,7 @@ def read_body(file: Path, name: str) -> Body:
         raise BodyError(f"{file} has no top-level def or class named {name}")
     rebinding = _rebinding(tree, definition)
     if rebinding is not None:
-        raise BodyError(f"{file} binds {name} again at line {rebinding}, after its def")
+        raise BodyError(f"{file} {rebinding}")
     first_line = _first_lines(definition)
     code = _find(_codes(_compile(tree, file)), definition, file)
     lines = _lines_run(code, isinstance(definition, ast.ClassDef))
@@ -91,38 +102,48 @@ def _definition(tree: ast.Module, name: str) -> Definition | None:
     return found
 
 
-def _rebinding(tree: ast.Module, definition: Definition) -> int | None:
-    """The line of the first top-level assignment or import to bind the name after its def."""
-    after = tree.body[tree.body.index(definition) + 1 :]
-    for statement in after:
-        if _binds(statement, definition.name):
-            return statement.lineno
+def _rebinding(tree: ast.Module, definition: Definition) -> str | None:
+    """How the module binds the name again after its def, or ``None`` when it does not."""
+    name = definition.name
+    for statement in tree.body[tree.body.index(definition) + 1 :]:
+        for node in _module_level(statement, name):
+            if isinstance(node, ast.ImportFrom) and any(a.name == "*" for a in node.names):
+                return f"imports * at line {node.lineno}, after the def of {name}"
+            if _binds(node, name):
+                line = getattr(node, "lineno", statement.lineno)
+                return f"binds {name} again at line {line}, after its def"
     return None
 
 
-def _binds(statement: ast.stmt, name: str) -> bool:
-    """True when a top-level assignment or import binds ``name`` to another object.
+def _module_level(node: ast.AST, name: str) -> Iterator[ast.AST]:
+    """``node`` and what it holds that runs in the module's scope.
 
-    Setting an attribute of the name binds nothing, and ``name = wrap(name)`` wraps the object
-    the way a decorator does, so a call still reaches its body.
+    The insides of a function, class, lambda or comprehension bind their own names, so the
+    walk stops at them, as it does at the targets of a wrap and of an annotation alone.
     """
-    if isinstance(statement, ast.Import | ast.ImportFrom):
-        return name in {alias.asname or alias.name.split(".")[0] for alias in statement.names}
-    if isinstance(statement, ast.Assign):
-        return name in _stored(statement.targets) and not _wraps(statement, name)
-    if isinstance(statement, ast.AnnAssign) and statement.value is not None:
-        return name in _stored([statement.target])
-    return False
+    yield node
+    if isinstance(node, SCOPES):
+        return
+    if isinstance(node, ast.Assign) and _wraps(node, name):
+        children: list[ast.AST] = [node.value]
+    elif isinstance(node, ast.AnnAssign) and node.value is None:
+        children = [node.annotation]
+    else:
+        children = list(ast.iter_child_nodes(node))
+    for child in children:
+        yield from _module_level(child, name)
 
 
-def _stored(targets: list[ast.expr]) -> set[str]:
-    """The names an assignment to ``targets`` binds: names stored to, not read."""
-    return {
-        node.id
-        for target in targets
-        for node in ast.walk(target)
-        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
-    }
+def _binds(node: ast.AST, name: str) -> bool:
+    """True when ``node`` binds ``name`` or deletes it."""
+    if isinstance(node, ast.Name):
+        return node.id == name and isinstance(node.ctx, ast.Store | ast.Del)
+    if isinstance(node, ast.Import | ast.ImportFrom):
+        return name in {alias.asname or alias.name.split(".")[0] for alias in node.names}
+    if isinstance(node, ast.MatchMapping):
+        return node.rest == name
+    bound = getattr(node, "name", None)
+    return isinstance(node, BINDERS) and bound == name
 
 
 def _wraps(assign: ast.Assign, name: str) -> bool:

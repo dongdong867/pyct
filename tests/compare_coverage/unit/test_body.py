@@ -240,14 +240,62 @@ def test_a_name_bound_without_def_or_class_is_refused_naming_the_file(tmp_path: 
 
 
 @pytest.mark.parametrize(
-    "rebinding",
-    ["f = g", "f: object = g", "(f, h) = (g, g)", "import os as f", "from os import path as f"],
+    ("rebinding", "line"),
+    [
+        ("f = g", 9),
+        ("f: object = g", 9),
+        ("(f, h) = (g, g)", 9),
+        ("import os as f", 9),
+        ("from os import path as f", 9),
+        ("f += 1", 9),
+        ("del f", 9),
+        ("for f in range(2):\n    pass", 9),
+        ("with open('x') as f:\n    pass", 9),
+        ("if True:\n    f = 2", 10),
+        ("while False:\n    (f := 1)", 10),
+        ("try:\n    from os import path as f\nexcept ImportError:\n    pass", 10),
+        ("try:\n    pass\nexcept Exception as f:\n    pass", 11),
+        ("if True:\n    def f():\n        return 3", 10),
+        ("match 1:\n    case f:\n        pass", 10),
+    ],
 )
-def test_a_name_bound_again_after_its_definition_is_refused(tmp_path: Path, rebinding: str) -> None:
+def test_a_name_bound_again_after_its_definition_is_refused(
+    tmp_path: Path, rebinding: str, line: int
+) -> None:
     file = write(tmp_path, f"def g():\n    return 1\n\n\ndef f():\n    return 2\n\n\n{rebinding}\n")
 
-    with pytest.raises(BodyError, match=rf"{file} binds f again at line 9, after its def"):
+    with pytest.raises(BodyError, match=rf"{file} binds f again at line {line}, after its def"):
         read_body(file, "f")
+
+
+@pytest.mark.parametrize(
+    "star", ["from os import *", "try:\n    from os import *\nexcept Exception:\n    pass"]
+)
+def test_a_star_import_after_the_definition_is_refused(tmp_path: Path, star: str) -> None:
+    # whether it binds the name cannot be told from the file
+    file = write(tmp_path, f"def f():\n    return 2\n\n\n{star}\n")
+
+    with pytest.raises(BodyError, match=rf"{file} imports \* at line \d, after the def of f"):
+        read_body(file, "f")
+
+
+@pytest.mark.parametrize(
+    "local",
+    [
+        "g = [f for f in range(2)]",
+        "def g():\n    f = 1",
+        "class G:\n    f = 1",
+        "g = lambda f: f",
+        "f: int",
+        "if True:\n    f = wrap(f)",
+    ],
+)
+def test_a_name_bound_in_another_scope_or_only_annotated_keeps_the_definition(
+    tmp_path: Path, local: str
+) -> None:
+    source = f"def wrap(fn):\n    return fn\n\n\ndef f():\n    return 2\n\n\n{local}\n"
+
+    assert read_body(write(tmp_path, source), "f").own_lines == frozenset({6})
 
 
 @pytest.mark.parametrize("after", ["f.calls = 0", "f.calls: int = 0", "f = wrap(f)"])
