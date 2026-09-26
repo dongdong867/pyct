@@ -89,14 +89,16 @@ def _report(line: dict[str, object]) -> SideReport:
     )
 
 
-def probe(checkout: Path | None, environment: Mapping[str, str]) -> str:
+def probe(
+    checkout: Path | None, environment: Mapping[str, str], wait: float = PROBE_SECONDS
+) -> str:
     """Legacy's Python version, once DIR's own interpreter has imported DIR's legacy engine.
 
     The engine must be DIR's own, so the rows come from the commit the summary names.
     """
     if checkout is None:
         raise LegacyCheckoutError(f"--legacy is required: a checkout of main\n{RECIPE}")
-    answer = _probe_answer(checkout, environment)
+    answer = _probe_answer(checkout, environment, wait)
     if not answer.get("engine"):
         raise LegacyCheckoutError(
             f"--legacy {checkout}: its pyct has no run_concolic, so it is not a checkout of "
@@ -112,19 +114,23 @@ def probe(checkout: Path | None, environment: Mapping[str, str]) -> str:
     return str(answer.get("python"))
 
 
-def _probe_answer(checkout: Path, environment: Mapping[str, str]) -> dict[str, object]:
+def _probe_answer(checkout: Path, environment: Mapping[str, str], wait: float) -> dict[str, object]:
     """What DIR's own interpreter says after importing ``pyct``. Anything else is refused."""
     python = interpreter(checkout)
     if not python.exists():
         raise LegacyCheckoutError(f"--legacy {checkout}: no environment at {python}\n{RECIPE}")
     command = Command((str(python), "-P", "-c", PROBE), checkout, environment)
     try:
-        finished = run_command(command, PROBE_SECONDS)
+        finished = run_command(command, wait)
     except OSError as error:
         raise LegacyCheckoutError(
             f"--legacy {checkout}: cannot start {python}: {error.strerror}\n{RECIPE}"
         ) from error
     answer = result_line(finished.stdout, "engine") if finished.returncode == 0 else None
+    if finished.stopped_after is not None:
+        raise LegacyCheckoutError(
+            f"--legacy {checkout}: importing legacy's engine did not end in {wait:g} s\n{RECIPE}"
+        )
     if answer is None:
         said = last_line(finished.stderr)
         raise LegacyCheckoutError(

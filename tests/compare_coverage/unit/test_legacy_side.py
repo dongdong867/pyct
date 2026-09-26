@@ -95,6 +95,16 @@ def test_the_probe_refuses_an_interpreter_that_cannot_start(tmp_path: Path) -> N
         probe(tmp_path, ENVIRONMENT)
 
 
+def test_the_probe_says_when_the_import_does_not_answer(tmp_path: Path) -> None:
+    python = tmp_path / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("#!/bin/sh\nexec sleep 60\n")
+    python.chmod(0o755)
+
+    with pytest.raises(LegacyCheckoutError, match="importing legacy's engine did not end in 1 s"):
+        probe(tmp_path, ENVIRONMENT, wait=1)
+
+
 def test_the_probe_refuses_an_environment_without_legacys_engine(tmp_path: Path) -> None:
     python = tmp_path / ".venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
