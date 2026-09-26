@@ -1,12 +1,14 @@
-"""Acceptance tests for the follow-string-compares child of the follow-strings story.
+"""Acceptance tests for the follow-string-compares and follow-string-search children of the
+follow-strings story.
 
 Each test spawns ``python -P -m pyct`` through the harness, the way the follow-integers
-tests do: a compare is followed only if the fork it built reaches the solver and the
+tests do: an operation is followed only if the fork it built reaches the solver and the
 solver's answer runs, so only a real run through the command line proves it.
 """
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    first_line,
     input_lines,
     one_line,
     run_pyct,
@@ -33,6 +35,28 @@ PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
 ENCODE_CHECK = "targets.strs.encode_check::check"
 TEXT_CONVERSION = "targets.strs.text_conversion::show"
 LENGTH_CHECK = "targets.strs.length_check::check"
+FIND_FROM_POSITION = "targets.strs.find_from_position::check"
+FIND_BELOW = "targets.strs.find_below::check"
+IN_WHERE_IT_RUNS = "targets.strs.in_where_it_runs::look"
+IN_WHERE_IT_RUNS_FILE = str(REPO_ROOT / "targets" / "strs" / "in_where_it_runs.py")
+MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
+MISSING_SUBSTRING_FILE = str(REPO_ROOT / "targets" / "strs" / "missing_substring.py")
+SEARCH = "targets.strs.search::kind"
+# each fork the seed takes in ``kind``, in order: the line, the expression, and the side. index
+# and rindex add their `in` fork on the line of the compare they feed
+SEARCH_FORKS: list[tuple[int, list[object], bool]] = [
+    (2, ["in", "'@'", "s"], False),
+    (4, ["startswith", "s", "'http'"], False),
+    (6, ["endswith", "s", "'.py'"], False),
+    (8, ["==", ["find", "s", "':'"], 4], False),
+    (10, [">", ["rfind", "s", "'/'"], 0], False),
+    (12, ["==", ["count", "s", "'-'"], 2], False),
+    (14, ["in", "t", "s"], False),
+    (16, ["in", "'#'", "s"], True),
+    (16, [">", ["rindex", "s", "'#'"], 3], False),
+    (18, ["in", "'='", "s"], True),
+    (18, ["==", ["index", "s", "'='"], 0], False),
+]
 
 
 def text(line: dict[str, object], name: str) -> str:
@@ -41,6 +65,15 @@ def text(line: dict[str, object], name: str) -> str:
     assert isinstance(args, dict), line
     value = args[name]
     assert isinstance(value, str), line
+    return value
+
+
+def number(line: dict[str, object], name: str) -> int:
+    """One int argument off a printed line, narrowed so the comparison means something."""
+    args = line["args"]
+    assert isinstance(args, dict), line
+    value = args[name]
+    assert isinstance(value, int), line
     return value
 
 
@@ -151,6 +184,48 @@ def test_round_trips_a_literal_with_special_characters() -> None:
     assert [fork["taken"] for fork in forks_of(solved)] == [True]
 
 
+# follow-strings-follows-search
+def test_follows_search() -> None:
+    result = run_pyct(SEARCH, '{"s": "a=#", "t": "!"}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    assert [
+        (fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(inputs[0])
+    ] == SEARCH_FORKS
+    # every fork is flipped: some input takes each side of each, and every input the solver
+    # handed back took the side it was aimed at, so Python agrees with the solver on each
+    sides = {
+        (fork["line"], repr(fork["expression"]), fork["taken"])
+        for line in inputs
+        for fork in forks_of(line)
+    }
+    assert sides == {
+        (line, repr(expression), taken)
+        for line, expression, _ in SEARCH_FORKS
+        for taken in (True, False)
+    }
+    assert [line["mismatch_at"] for line in inputs[1:]] == [None] * (len(inputs) - 1)
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# follow-strings-tracks-an-int-made-from-a-string
+def test_tracks_an_int_made_from_a_string() -> None:
+    result = run_pyct(FIND_BELOW, '{"s": "abc", "n": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # find answers with a tracked int, so its compare with n is one fork on both parameters
+    expression = ["<", ["find", "s", "'x'"], "n"]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [(expression, True)]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(solved)] == [
+        (expression, False)
+    ]
+    assert solved["mismatch_at"] is None
+    # the solver may change s, n, or both; Python has to agree the input takes the other side
+    assert text(solved, "s").find("x") >= number(solved, "n")
+
+
 # follow-strings-downgrades-a-literal-the-solver-cannot-hold
 def test_downgrades_a_literal_the_solver_cannot_hold() -> None:
     result = run_pyct(PAST_THE_LAST_CHARACTER, '{"s": "x"}')
@@ -221,6 +296,62 @@ def test_counts_len_as_a_downgrade() -> None:
     seed = one_line(result.stdout)
     # Python makes what __len__ hands back a plain int before the target sees it
     assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["forks"] == []
+
+
+# follow-strings-finds-the-missing-substring
+def test_finds_the_missing_substring() -> None:
+    result = run_pyct(MISSING_SUBSTRING, '{"s": "axb"}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    # index records whether the substring is there before str's own index may raise
+    fork = {"file": MISSING_SUBSTRING_FILE, "line": 2, "col": 11, "expression": ["in", "'x'", "s"]}
+    assert forks_of(seed) == [{**fork, "taken": True}]
+    assert solved["aim"] == {"file": MISSING_SUBSTRING_FILE, "line": 2, "col": 11, "position": 0}
+    assert "x" not in text(solved, "s")
+    assert forks_of(solved) == [{**fork, "taken": False}]
+    # the detail is CPython's own sentence, so only the kind and the name are pyct's to pin
+    failure = solved["failure"]
+    assert isinstance(failure, dict), solved
+    assert failure["kind"] == "target_raised"
+    assert str(failure["detail"]).startswith("ValueError:")
+
+
+# follow-strings-records-in-where-it-runs
+def test_records_in_where_it_runs() -> None:
+    result = run_pyct(IN_WHERE_IT_RUNS, '{"s": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    # Python makes the answer of `in` a plain bool where the `in` runs, so the fork is on the
+    # `y =` line and `if y:` tests a plain bool; `not in` is the same fork with the side reversed
+    assert forks_of(seed) == [
+        {
+            "file": IN_WHERE_IT_RUNS_FILE,
+            "line": 2,
+            "col": 8,
+            "expression": ["in", "'a'", "s"],
+            "taken": False,
+        },
+        {
+            "file": IN_WHERE_IT_RUNS_FILE,
+            "line": 5,
+            "col": 7,
+            "expression": ["in", "'b'", "s"],
+            "taken": False,
+        },
+    ]
+
+
+# follow-strings-downgrades-a-search-from-a-position
+def test_downgrades_a_search_from_a_position() -> None:
+    result = run_pyct(FIND_FROM_POSITION, '{"s": "abcx"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = one_line(result.stdout)
+    # a start position is a form pyct does not encode, so str answers and the method is named
+    assert seed["downgrades"] == [{"name": "find", "count": 1}]
     assert seed["forks"] == []
 
 

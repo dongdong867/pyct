@@ -4,7 +4,7 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.render import render
-from pyct.solver.strings import above, below
+from pyct.solver.strings import above, below, last_index, occurrences
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -204,3 +204,56 @@ def test_an_order_on_ints_is_still_written_as_arithmetic() -> None:
     text = render((fork([">=", "x", "y"], taken=True),), {"x": int, "y": int})
 
     assert "(assert (>= x y))" in text.splitlines()
+
+
+# each search as the expression carries it, and the term the program carries for it
+SEARCHES: dict[str, tuple[Expression, str]] = {
+    "find": (["find", "s", "'x'"], '(str.indexof s "x" 0)'),
+    # index answers only on a path where its `in` fork held, so it is find there
+    "index": (["index", "s", "'x'"], '(str.indexof s "x" 0)'),
+    "rfind": (["rfind", "s", "'ab'"], last_index("s", '"ab"')),
+    # rindex answers only past its `in` fork too, so it is rfind there
+    "rindex": (["rindex", "s", "'ab'"], last_index("s", '"ab"')),
+    "count": (["count", "s", "'ab'"], occurrences("s", '"ab"')),
+    "count-tracked": (["count", "s", "t"], occurrences("s", "t")),
+}
+
+
+@pytest.mark.parametrize(("expression", "term"), SEARCHES.values(), ids=list(SEARCHES))
+def test_a_search_is_written_as_the_term_that_means_it(expression: Expression, term: str) -> None:
+    text = render((fork(["==", expression, 1], taken=True),), {"s": str, "t": str})
+
+    assert f"(assert (= {term} 1))" in text.splitlines()
+
+
+# each search that answers with a bool, and the term the program asserts for it
+SEARCH_TRUTHS: dict[str, tuple[Expression, str]] = {
+    # the expression keeps Python's order, needle first; cvc5's contains takes the string first
+    "in": (["in", "'x'", "s"], '(str.contains s "x")'),
+    "in-tracked": (["in", "t", "s"], "(str.contains s t)"),
+    "startswith": (["startswith", "s", "'ab'"], '(str.prefixof "ab" s)'),
+    "endswith": (["endswith", "s", "'ab'"], '(str.suffixof "ab" s)'),
+}
+
+
+@pytest.mark.parametrize(("expression", "term"), SEARCH_TRUTHS.values(), ids=list(SEARCH_TRUTHS))
+def test_a_search_that_answers_with_a_bool_is_asserted_as_its_term(
+    expression: Expression, term: str
+) -> None:
+    text = render((fork(expression, taken=False),), {"s": str, "t": str})
+
+    assert f"(assert (not {term}))" in text.splitlines()
+
+
+def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
+    text = render((fork(["<", ["find", "s", "'x'"], "n"], taken=False),), {"s": str, "n": int})
+
+    assert text.splitlines() == [
+        "(set-logic ALL)",
+        "(declare-const s String)",
+        "(declare-const n Int)",
+        '(assert (not (< (str.indexof s "x" 0) n)))',
+        "(check-sat)",
+        "(get-value (s))",
+        "(get-value (n))",
+    ]

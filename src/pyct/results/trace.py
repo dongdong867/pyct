@@ -1,6 +1,7 @@
 """The readable trace, the stderr half of what a run says: each input's lines, then how it ended."""
 
 import json
+import keyword
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -151,18 +152,46 @@ def _infix(expression: Expression) -> str:
     """The condition the way a person writes it, whatever the operator is.
 
     Operator first is how the expression is stored, so one operand reads
-    ``op a`` and the rest read as ``a op b``, joined by the operator.
+    ``op a`` and the rest read as ``a op b``, joined by the operator. A
+    named head with arguments reads as Python calls a method, ``a.name(b)``.
     """
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
     operator, *operands = expression
+    if _is_named_with_arguments(expression):
+        receiver, *arguments = operands
+        called = ", ".join(_infix(argument) for argument in arguments)
+        return f"{_operand(receiver)}.{operator}({called})"
     written = [_operand(operand) for operand in operands]
     if len(written) == 1:
         return f"{operator} {written[0]}"
     return f" {operator} ".join(written)
 
 
+def _is_named_with_arguments(expression: list[Expression]) -> bool:
+    """Whether a condition is a named head on a receiver and at least one argument.
+
+    A name is an identifier that is not a keyword, so ``in`` stays an
+    operator Python writes between its operands. A named head on one
+    operand, such as ``abs``, keeps the ``op a`` it always had.
+    """
+    head = expression[0]
+    return (
+        isinstance(head, str)
+        and head.isidentifier()
+        and not keyword.iskeyword(head)
+        and len(expression) > 2
+    )
+
+
 def _operand(expression: Expression) -> str:
-    """A condition inside a condition gets parentheses; a leaf stands on its own."""
+    """A condition inside a condition gets parentheses; a leaf stands alone.
+
+    So does a named head with arguments, which reads ``a.name(b)``.
+    """
     written = _infix(expression)
-    return f"({written})" if isinstance(expression, list) else written
+    return (
+        f"({written})"
+        if isinstance(expression, list) and not _is_named_with_arguments(expression)
+        else written
+    )

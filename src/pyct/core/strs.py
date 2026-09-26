@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pyct.core.bools import compare
+from pyct.core.bools import ConcolicBool, compare
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.ints import ConcolicInt
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
-# the `ConcolicStr` body below is the taught set: the compares and the truth test it writes stay
-# symbolic, and a copy is the value itself. The tuple here names what is left to str on
-# purpose, and the derivation at the bottom of the file downgrades every other method str
+# the `ConcolicStr` body below is the taught set: the compares, the truth test and the searches
+# it writes stay symbolic, and a copy is the value itself. The tuple here names what is left to
+# str on purpose, and the derivation at the bottom of the file downgrades every other method str
 # defines, plain methods and operators alike. str defines `__str__` and `__format__` itself,
 # so nothing inherited needs naming.
 
@@ -76,13 +77,79 @@ def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
     return compute
 
 
+def _needle(args: tuple[object, ...]) -> Expression | None:
+    """The symbolic form of what a taught search looks for, in the form pyct encodes.
+
+    That form is one str argument the solver reads as it is. Any other call
+    of the method is None.
+    """
+    if len(args) != 1 or not _within_cvc5(args[0]):
+        return None
+    return _operand(args[0])
+
+
+def _search(
+    name: str, answer: type[ConcolicBool] | type[ConcolicInt], *, raises: bool = False
+) -> Callable[..., object]:
+    """str's own answer to one search, carrying `[name, s, sub]`, as a tracked bool or int.
+
+    A search that ``raises`` on a missing substring records whether sub is
+    in s first (see `_found`). A call in a form pyct does not encode is
+    str's own answer and a downgrade named by the method
+    (``README.md › Rules › downgrades``).
+    """
+    operation = getattr(str, name)
+    downgrade = downgraded(str, name)
+
+    def compute(self: ConcolicStr, *args: object) -> object:
+        form = _needle(args)
+        if form is None:
+            return downgrade(self, *args)
+        if raises:
+            _found(self, form, args[0])
+        expression = [name, self.expression, form]
+        return answer(own(operation, self, *args), expression=expression, sink=self.sink)
+
+    return compute
+
+
+def _found(self: ConcolicStr, form: Expression, sub: object) -> None:
+    """The fork a search takes on its way to a raise: `["in", sub, s]`, taken when sub is there.
+
+    It goes in before str's own call, the way a division records its zero
+    fork (``README.md › Rules › forks``): a missing sub raises ValueError out
+    of that call, and the raising input's line already lists the fork,
+    taken false. On every path past it sub is in s.
+    """
+    forked(self.sink, ["in", form, self.expression], own(str.__contains__, self, sub))
+
+
+_CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
+
+
+def _contains(self: ConcolicStr, sub: object) -> object:
+    """str's own answer to `sub in s`, carrying `["in", sub, s]` in Python's operand order.
+
+    CPython tests the answer for truth where the `in` runs, so that is where
+    the fork is recorded, and `not in` records the same fork with its side
+    reversed (``README.md › Rules › forks``). A call in a form pyct does not
+    encode is str's own answer and a `__contains__` downgrade.
+    """
+    form = _needle((sub,))
+    if form is None:
+        return _CONTAINS_DOWNGRADE(self, sub)
+    expression = ["in", form, self.expression]
+    return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
     The operations taught below stay symbolic. Any other instance method str defines,
     except those left to it in `_KEPT`, is str's own and returns a plain value, with a
     downgrade in the sink naming what was lost: a method by its name, an operator by its
-    dunder (``README.md › Rules › downgrades``).
+    dunder (``README.md › Rules › downgrades``). A taught search called in a form pyct
+    does not encode is str's own and a downgrade the same way.
     """
 
     expression: Expression
@@ -102,6 +169,20 @@ class ConcolicStr(str):
     __hash__ = str.__hash__
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
+
+    # a position or a count is a tracked int, so `s.find("x") < n` is one fork on s and n, and
+    # `in`, `startswith` and `endswith` answer with a tracked bool for the reason the compares
+    # do. index and rindex record their `in` fork before they may raise. A search takes any
+    # arguments and hands a form it does not encode to str, so its signature is not str's;
+    # the override breaks str's on purpose
+    __contains__ = _contains  # pyrefly: ignore[bad-override]
+    startswith = _search("startswith", ConcolicBool)  # pyrefly: ignore[bad-override]
+    endswith = _search("endswith", ConcolicBool)  # pyrefly: ignore[bad-override]
+    find = _search("find", ConcolicInt)  # pyrefly: ignore[bad-override]
+    rfind = _search("rfind", ConcolicInt)  # pyrefly: ignore[bad-override]
+    count = _search("count", ConcolicInt)  # pyrefly: ignore[bad-override]
+    index = _search("index", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
+    rindex = _search("rindex", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

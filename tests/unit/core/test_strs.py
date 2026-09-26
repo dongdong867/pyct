@@ -221,7 +221,7 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "len(s)": (len, "__len__"),
     "str(s)": (str, "__str__"),
     "s[0]": (lambda s: s[0], "__getitem__"),
-    "'a' in s": (lambda s: "a" in s, "__contains__"),
+    "s.expandtabs()": (lambda s: s.expandtabs(), "expandtabs"),
     "s + 'x'": (lambda s: s + "x", "__add__"),
     "s * 2": (lambda s: s * 2, "__mul__"),
     "next(iter(s))": (lambda s: next(iter(s)), "__iter__"),
@@ -303,8 +303,8 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     sink: list[SinkItem] = []
     s = ConcolicStr("abc", expression="s", sink=sink)
 
-    with pytest.raises(ValueError, match="substring not found") as raised:
-        s.index("z")
+    with pytest.raises(LookupError, match="unknown encoding") as raised:
+        s.encode("no-such-codec")
 
     assert raised_by_target(raised.value)
     assert sink == []
@@ -329,7 +329,7 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     }
 
     # whatever str defines on the Python that runs this, the only methods left unwrapped are
-    # the six compares taught above and the four str keeps
+    # the six compares and the searches taught above and the four str keeps
     assert methods - _derived_downgrades() == {
         "__lt__",
         "__le__",
@@ -337,6 +337,14 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
         "__ge__",
         "__eq__",
         "__ne__",
+        "__contains__",
+        "startswith",
+        "endswith",
+        "find",
+        "index",
+        "rfind",
+        "rindex",
+        "count",
         "__hash__",
         "__repr__",
         "__getnewargs__",
@@ -347,14 +355,14 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
 
 def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None:
     # a call into str written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicStr's dunders are written in three files: its own, bools for the compare closures
-    # and values for the downgrade closures, so the scan covers all three. A compare in strs
-    # hands the call to a closure it holds, so what a function holds counts as what it calls
+    # ConcolicStr's methods, operators and plain names alike, are written in three files: its
+    # own, bools for the compare closures and values for the downgrade closures, so the scan
+    # covers all three. A compare or a search in strs hands the call to a closure it holds, so
+    # what a function holds counts as what it calls
     written_here = {
         name: member
         for name, member in vars(ConcolicStr).items()
-        if name.startswith("__")
-        and (code := getattr(member, "__code__", None)) is not None
+        if (code := getattr(member, "__code__", None)) is not None
         and code.co_filename in {strs.__file__, bools.__file__, values.__file__}
     }
 
@@ -362,10 +370,12 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
         name for name, member in written_here.items() if not _reaches_through_the_helper(member)
     }
 
-    # the scan read the taught compares, so an empty answer is not an empty scan
+    # the scan read the taught compares, the truth test and the searches, and a derived plain
+    # method, so an empty answer is not an empty scan
     assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"} <= (
         written_here.keys()
     )
+    assert {"find", "encode"} <= written_here.keys()
     # these hand the value itself back and never call str, so they have nothing to guard
     assert without_the_helper == {"__copy__", "__deepcopy__"}
 

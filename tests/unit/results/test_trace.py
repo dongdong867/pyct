@@ -1,6 +1,6 @@
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import (
@@ -56,6 +56,30 @@ def test_render_trace_wraps_a_nested_condition_in_parentheses() -> None:
     lines = render_trace(record, COVERAGE).splitlines()
 
     assert lines[1] == "fork m.py:5:7  (x + 1) < (y - 2)  taken"
+
+
+# a condition as the expression stores it, and the infix the fork line prints for it
+INFIX: dict[str, tuple[Expression, str]] = {
+    "method": (["startswith", "s", "'ab'"], "s.startswith('ab')"),
+    "method-inside-a-compare": (["<", ["find", "s", "'x'"], "n"], "s.find('x') < n"),
+    "method-on-a-condition": (["find", ["+", "s", "t"], "'x'"], "(s + t).find('x')"),
+    "keyword": (["in", "'a'", "s"], "'a' in s"),
+    "builtin": (["abs", "x"], "abs x"),
+    "unary-minus": (["-", "x"], "- x"),
+}
+
+
+@pytest.mark.parametrize(("expression", "written"), INFIX.values(), ids=list(INFIX))
+def test_render_trace_writes_the_condition_as_python_does(
+    expression: Expression, written: str
+) -> None:
+    fork = Branch(expression=expression, taken=True, site=Site(file="m.py", line=5, col=7))
+    record = InputRecord(args={"s": "a"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    # a method call binds tighter than any operator, so it needs no parentheses of its own
+    assert lines[1] == f"fork m.py:5:7  {written}  taken"
 
 
 def test_render_trace_reads_the_counts_from_the_coverage_maps() -> None:

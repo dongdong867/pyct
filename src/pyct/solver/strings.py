@@ -1,4 +1,4 @@
-"""Python strs in SMT-LIB: a literal both ways, and an order against a literal.
+"""Python strs in SMT-LIB: a literal both ways, an order against a literal, and the searches.
 
 A literal is wrapped in double quotes, and a double quote inside it is
 written twice. A printable ASCII character other than the backslash is
@@ -14,6 +14,14 @@ decides, and a string that runs out first is the smaller. cvc5's own
 ``str.<`` can run to any time limit on a few orders against one-letter
 literals that this form answers in milliseconds; decision
 string-order-against-a-literal-letter-by-letter.
+
+A search is written as the SMT-LIB term that gives Python's answer, empty
+substring included. Each takes its operands already written, in the order
+the expression holds them: the string and then the substring, but for
+``in``, whose needle comes first. SMT-LIB has no last index and no count,
+so ``rfind`` and ``count`` read the reversed strings, and each term also
+states a bound Python's answer always meets, which cvc5 does not work out
+from the rest; decision string-search-clamped-over-the-reversed-string.
 """
 
 import re
@@ -96,6 +104,90 @@ def _equal(term: str, literal: str, or_equal: bool) -> list[str]:
 def _any(parts: list[str]) -> str:
     """Any of the parts holds. One part is itself."""
     return parts[0] if len(parts) == 1 else f"(or {' '.join(parts)})"
+
+
+def contains(sub: str, term: str) -> str:
+    """``sub in s``, taking its operands in Python's order, the needle first.
+
+    cvc5's ``str.contains`` takes them the other way round. The empty
+    substring is in every string in both.
+    """
+    return f"(str.contains {term} {sub})"
+
+
+def first_index(term: str, sub: str) -> str:
+    """``s.find(sub)``: where sub first starts in s, or -1.
+
+    cvc5's ``str.indexof`` from 0 is Python's answer as it stands, the empty
+    substring found at 0 included.
+    """
+    return f"(str.indexof {term} {sub} 0)"
+
+
+def starts_with(term: str, prefix: str) -> str:
+    """``s.startswith(prefix)``: cvc5's ``str.prefixof``, which takes the prefix first."""
+    return f"(str.prefixof {prefix} {term})"
+
+
+def ends_with(term: str, suffix: str) -> str:
+    """``s.endswith(suffix)``: cvc5's ``str.suffixof``, which takes the suffix first."""
+    return f"(str.suffixof {suffix} {term})"
+
+
+def last_index(term: str, sub: str) -> str:
+    """``s.rfind(sub)``: where sub last starts in s, or -1.
+
+    It is where the reversed sub first starts in the reversed s, counted
+    back from the end, so the empty substring is found at ``len(s)``, as
+    Python finds it. The answer is held at or above the first index, where
+    it always is: without that bound cvc5 ran paths holding both to its time
+    limit.
+    """
+    first = first_index(term, sub)
+    reversed_first = f"(str.indexof {_reversed(term)} {_reversed(sub)} 0)"
+    back = f"(- (- {_length(term)} {_length(sub)}) {reversed_first})"
+    return f"(ite (str.contains {term} {sub}) (ite (< {back} {first}) {first} {back}) (- 1))"
+
+
+def occurrences(term: str, sub: str) -> str:
+    """``s.count(sub)``: how many times sub occurs in s without overlapping.
+
+    Every sub removed, what went divided by sub's length is the count. The
+    removal runs on the reversed strings, as `last_index` reads them: a
+    greedy count from either end finds as many, and cvc5 ran paths mixing a
+    count on the plain strings with a last index to its time limit. The
+    count is held at one or more where sub is in s and is 0 where it is not,
+    which cvc5 does not work out from the removal. The empty substring
+    occurs ``len(s) + 1`` times, as Python counts it.
+    """
+    removed = f'(str.replace_all {_reversed(term)} {_reversed(sub)} "")'
+    counted = f"(div (- {_length(term)} (str.len {removed})) {_length(sub)})"
+    return (
+        f'(ite (= {sub} "") (+ {_length(term)} 1)'
+        f" (ite (str.contains {term} {sub}) (ite (< {counted} 1) 1 {counted}) 0))"
+    )
+
+
+def _reversed(term: str) -> str:
+    """A string term reversed.
+
+    A literal is reversed here and written as the literal it becomes:
+    cvc5 answered some paths with that literal at once and ran them to its
+    time limit with the same literal under ``str.rev``.
+    """
+    if _is_literal(term):
+        return encode(decode(term)[::-1])
+    return f"(str.rev {term})"
+
+
+def _length(term: str) -> str:
+    """A string term's length. A literal's is counted here, as its reversal is."""
+    return str(len(decode(term))) if _is_literal(term) else f"(str.len {term})"
+
+
+def _is_literal(term: str) -> bool:
+    """Whether a written term is a literal: a name never opens with a quote, a term with `(`."""
+    return term.startswith('"')
 
 
 def decode(literal: str) -> str:

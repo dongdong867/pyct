@@ -4,7 +4,17 @@ import ast
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.strings import above, below, encode
+from pyct.solver.strings import (
+    above,
+    below,
+    contains,
+    encode,
+    ends_with,
+    first_index,
+    last_index,
+    occurrences,
+    starts_with,
+)
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
 SORTS: Mapping[type, str] = {int: "Int", str: "String"}
@@ -60,9 +70,23 @@ def _modulo(dividend: str, divisor: str) -> str:
     return f"(ite {_euclidean_agrees(dividend, divisor)} {remainder} (+ {remainder} {divisor}))"
 
 
-# an operation SMT-LIB has no operator for, written out as the form that means it. The
-# operands arrive rendered, so a form only joins text.
-FORMS: Mapping[str, Callable[[str, str], str]] = {"//": _floor_division, "%": _modulo}
+# an operation SMT-LIB has no operator for, or spells in another order, written out as the form
+# that means it. The operands arrive rendered, in the expression's order, so a form only joins
+# text.
+FORMS: Mapping[str, Callable[[str, str], str]] = {
+    "//": _floor_division,
+    "%": _modulo,
+    "in": contains,
+    "startswith": starts_with,
+    "endswith": ends_with,
+    "find": first_index,
+    "rfind": last_index,
+    "count": occurrences,
+    # index and rindex answer only past their `in` fork, where sub is in s and each is the
+    # find it mirrors
+    "index": first_index,
+    "rindex": last_index,
+}
 
 
 def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
