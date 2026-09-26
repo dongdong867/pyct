@@ -8,15 +8,17 @@ from enum import Enum
 from typing import Any, TypeGuard
 
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
 # what a walk makes of one value bind tracks, given the access that reaches it
-type AtLeaf = Callable[[int | str, Expression], object]
+type AtLeaf = Callable[[int | float | str, Expression], object]
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, its access and the sink.
+    """Give every int and str in the seed, at any depth, and every float argument, its access
+    and the sink.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
@@ -53,7 +55,7 @@ class Seed:
         """The seed copied, and its leaves noted, in one walk."""
         found: dict[str, type] = {}
 
-        def note(value: int | str, access: Expression) -> object:
+        def note(value: int | float | str, access: Expression) -> object:
             found[leaf_name(access)] = type(value)
             return value
 
@@ -120,8 +122,14 @@ def walked(seed: Mapping[str, object], at_leaf: AtLeaf) -> dict[str, object]:
     return _Walk(at_leaf).rebuilt(seed)
 
 
-def _binds(value: object) -> TypeGuard[int | str]:
-    """Whether bind tracks this value: the one rule the walk reads."""
+def _binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
+    """Whether bind tracks this value at this access: the one rule the walk reads.
+
+    A float is tracked as an argument's own value. One inside a dict or a
+    list passes through plain until run-with-nested-arguments follows it.
+    """
+    if isinstance(value, float):
+        return isinstance(access, str)
     return isinstance(value, int | str) and not isinstance(value, bool)
 
 
@@ -181,7 +189,7 @@ class _Walk:
         values queued. A value with no access is never tracked, and neither is
         anything under it.
         """
-        if access is not None and _binds(value):
+        if access is not None and _binds(value, access):
             return self._at_leaf(value, access)
         if type(value) in _ATOMIC:
             return value
@@ -286,7 +294,9 @@ def _key(key: object) -> Expression | _Unnamed:
     return _Unnamed.KEY
 
 
-def _tracked(value: int | str, access: Expression, sink: BranchSink) -> object:
+def _tracked(value: int | float | str, access: Expression, sink: BranchSink) -> object:
     if isinstance(value, str):
         return ConcolicStr(value, expression=access, sink=sink)
+    if isinstance(value, float):
+        return ConcolicFloat(value, expression=access, sink=sink)
     return ConcolicInt(value, expression=access, sink=sink)
