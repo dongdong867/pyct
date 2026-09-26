@@ -6,6 +6,7 @@ import time
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Answer, Sat
 from pyct.solver.cvc5 import solve
+from pyct.solver.joined import joined
 from pyct.solver.render import render
 from pyct.solver.strings import below, sliced
 from tests.unit.solver.agreement import (
@@ -103,13 +104,15 @@ def test_the_edit_loop_hands_the_solver_the_string_it_started_from() -> None:
 
 
 # pieces that do not make one piece: a gap, a bound counted from the end, two strings, two
-# pieces out of order, and a second piece that stops before it starts
+# pieces out of order, a second piece that stops before it starts, and a first piece that starts
+# past its stop
 UNJOINED: dict[str, Expression] = {
     "s[:1] + s[2:]": ["+", ["[:]", "s", None, 1], ["[:]", "s", 2, None]],
     "s[:-1] + s[-1]": ["+", ["[:]", "s", None, -1], ["[]", "s", -1]],
     "s[:1] + t[1:]": ["+", ["[:]", "s", None, 1], ["[:]", "t", 1, None]],
     "s[2:] + s[:2]": ["+", ["[:]", "s", 2, None], ["[:]", "s", None, 2]],
     "s[:3] + s[3:2]": ["+", ["[:]", "s", None, 3], ["[:]", "s", 3, 2]],
+    "s[3:1] + s[1:4]": ["+", ["[:]", "s", 3, 1], ["[:]", "s", 1, 4]],
 }
 
 
@@ -118,6 +121,51 @@ def test_pieces_that_make_no_one_piece_are_joined_as_they_stand() -> None:
         assert _asserted(["==", expression, "'abc'"], {"s": str, "t": str}).startswith(
             "(assert (= (str.++ "
         )
+
+
+# the bounds the grid below takes pieces of s at: missing, from the start, from the end, and a
+# bool, which Python takes as an int
+BOUNDS: tuple[int | None, ...] = (None, 0, 1, 2, 3, 5, -1, -2, True)
+
+# the strings each join in the grid is checked on, from empty to longer than any bound reaches
+GRID_STRINGS = ("", "a", "ab", "abc", "abcd", "abcdefg")
+
+
+def _pieces() -> list[Expression]:
+    """Every slice of s between two of the bounds, and every index of s at one."""
+    slices: list[Expression] = [["[:]", "s", start, stop] for start in BOUNDS for stop in BOUNDS]
+    return slices + [["[]", "s", index] for index in BOUNDS if index is not None]
+
+
+def _written(pair: Expression) -> Expression:
+    """Two pieces side by side as the program writes them: the one piece they make, if any."""
+    (written,) = joined((fork(["==", pair, "''"], taken=True),))
+    assert isinstance(written.expression, list)
+    return written.expression[1]
+
+
+def _value(expression: Expression, s: str) -> object:
+    """What Python makes of pieces of s, or None where an index is past the end and raises."""
+    try:
+        return python(expression, s, PYTHON_HEADS)
+    except IndexError:
+        return None
+
+
+def test_a_join_means_in_python_what_its_two_pieces_meant() -> None:
+    pairs: list[Expression] = [["+", left, right] for left in _pieces() for right in _pieces()]
+    joins = [(pair, whole) for pair in pairs if (whole := _written(pair)) is not pair]
+
+    # a raise stops the target before it joins the pieces, so only a join Python makes counts
+    wrong = [
+        (pair, whole, s)
+        for pair, whole in joins
+        for s in GRID_STRINGS
+        if (value := _value(pair, s)) is not None and _value(whole, s) != value
+    ]
+
+    assert len(joins) > 100
+    assert wrong == []
 
 
 def test_a_sum_of_two_operations_on_ints_is_added_as_it_stands() -> None:
