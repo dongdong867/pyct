@@ -1,12 +1,12 @@
 """The JSON lines other tools read from stdout: one per input, then one for the run."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import printed
+from pyct.results.printed import printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -18,11 +18,18 @@ from pyct.results.record import (
 )
 
 
-def render(record: InputRecord, coverage: Coverage) -> str:
-    """One line, no newline inside; line numbers sorted so the text is stable."""
+def render(
+    record: InputRecord, coverage: Coverage, printed: Sequence[Expression] | None = None
+) -> str:
+    """One line, no newline inside; line numbers sorted so the text is stable.
+
+    ``printed`` is each fork's expression as `printed_forks` cut it, for a
+    caller that cut them once for this line and the trace alike.
+    """
+    expressions = printed_forks(record.forks) if printed is None else printed
     payload = {
         "args": record.args,
-        "forks": [_fork(branch) for branch in record.forks],
+        "forks": [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)],
         "covered": _numbers(coverage.covered),
         "total": dict(coverage.total),
         "failure": _failure(record.failure),
@@ -114,12 +121,12 @@ def _failure(failure: Failure | None) -> dict[str, str] | None:
     return {"kind": failure.kind.value, "detail": failure.detail}
 
 
-def _fork(branch: Branch) -> dict[str, object]:
+def _fork(branch: Branch, expression: Expression) -> dict[str, object]:
     """One fork: where it is, which side the input took, and what it tested, cut to the cap."""
     return {
         "file": branch.site.file,
         "line": branch.site.line,
         "col": branch.site.col,
         "taken": branch.taken,
-        "expression": printed(branch.expression),
+        "expression": expression,
     }

@@ -2,11 +2,12 @@
 
 import json
 import keyword
+from collections.abc import Sequence
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import CUT, printed
+from pyct.results.printed import CUT, printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -18,10 +19,17 @@ from pyct.results.record import (
 )
 
 
-def render_trace(record: InputRecord, coverage: Coverage) -> str:
-    """One fact per line, each line ending in a newline: head, forks, coverage, end, losses."""
+def render_trace(
+    record: InputRecord, coverage: Coverage, printed: Sequence[Expression] | None = None
+) -> str:
+    """One fact per line, each line ending in a newline: head, forks, coverage, end, losses.
+
+    ``printed`` is each fork's expression as `printed_forks` cut it, for a
+    caller that cut them once for the trace and the stdout line alike.
+    """
+    expressions = printed_forks(record.forks) if printed is None else printed
     lines = _head(record)
-    lines += [_fork(branch) for branch in record.forks]
+    lines += [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)]
     lines += _coverage(coverage)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
@@ -130,10 +138,10 @@ def _downgrade(entry: DowngradeCount) -> str:
     return entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
 
 
-def _fork(branch: Branch) -> str:
+def _fork(branch: Branch, expression: Expression) -> str:
     """Where it forked, what it tested, cut to the cap as the stdout line cuts it, and the side."""
     side = "taken" if branch.taken else "not taken"
-    return f"fork {_site(branch.site)}  {_infix(printed(branch.expression))}  {side}"
+    return f"fork {_site(branch.site)}  {_infix(expression)}  {side}"
 
 
 def _site(site: Site) -> str:

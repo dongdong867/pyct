@@ -5,12 +5,14 @@ and so is every leaf. Past the limit, the top of the expression is kept and
 each part cut from it is written ``["...", N]``, N being how many nodes that
 part stands for. Only the printing is cut: the solver gets the whole
 condition. The stdout line and the stderr fork line both print what
-`printed` hands them (``README.md › Rules › the stdout line``).
+`printed_forks` hands them, cut once for the two (``README.md › Rules ›
+the stdout line``).
 """
 
 from collections import deque
+from collections.abc import Sequence
 
-from pyct.core.branch import Expression
+from pyct.core.branch import Branch, Expression
 
 # the most nodes a printed expression holds
 LIMIT = 1000
@@ -33,7 +35,28 @@ def printed(expression: Expression) -> Expression:
     two pieces of itself doubles the expression written out on every pass,
     and it is counted without being written out.
     """
-    sizes = _sizes(expression)
+    sizes: dict[int, int] = {}
+    _count(expression, sizes)
+    return _printed(expression, sizes)
+
+
+def printed_forks(forks: Sequence[Branch]) -> tuple[Expression, ...]:
+    """Each fork's expression as `printed` prints it, every list counted once for all the forks.
+
+    A loop's forks each hold its string as that pass left it, so each holds
+    the string of every fork before it. Counted fork by fork, a path would
+    cost its length times its size; counted once, it costs its size. The
+    forks keep their expressions, so each list keeps its identity while the
+    count is read.
+    """
+    sizes: dict[int, int] = {}
+    for fork in forks:
+        _count(fork.expression, sizes)
+    return tuple(_printed(fork.expression, sizes) for fork in forks)
+
+
+def _printed(expression: Expression, sizes: dict[int, int]) -> Expression:
+    """The expression whole within `LIMIT` nodes, else cut down to it, its lists counted."""
     if not isinstance(expression, list) or sizes[id(expression)] <= LIMIT:
         return expression
     return _cut(expression, sizes)
@@ -92,14 +115,14 @@ def _size(expression: Expression, sizes: dict[int, int]) -> int:
     return sizes[id(expression)] if isinstance(expression, list) else 1
 
 
-def _sizes(expression: Expression) -> dict[int, int]:
-    """How many nodes each list in the expression holds written out, keyed by its identity.
+def _count(expression: Expression, sizes: dict[int, int]) -> None:
+    """Add how many nodes each list in the expression holds written out, keyed by its identity.
 
-    Each list is counted once however many parts share it, and without
-    recursion, so neither a deep expression nor a shared one costs more
-    than one step per list.
+    Each list is counted once however many parts share it, a list already in
+    the sizes is not counted again, and nothing is counted by recursion, so
+    neither a deep expression nor a shared one costs more than one step per
+    list.
     """
-    sizes: dict[int, int] = {}
     stack: list[tuple[list[Expression], bool]] = (
         [(expression, False)] if isinstance(expression, list) else []
     )
@@ -110,4 +133,3 @@ def _sizes(expression: Expression) -> dict[int, int]:
         elif id(part) not in sizes:
             stack.append((part, True))
             stack.extend((operand, False) for operand in part[1:] if isinstance(operand, list))
-    return sizes

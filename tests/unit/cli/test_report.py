@@ -4,9 +4,11 @@ import sys
 import pytest
 
 from pyct.cli import _report
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
 from pyct.results.record import InputRecord
+from pyct.results.trace import render_trace
 
 COVERAGE = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset(range(1, 8))})
 RECORD = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
@@ -61,3 +63,26 @@ def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPa
     _report(RECORD, COVERAGE)
 
     assert stdout.writes == [render(RECORD, COVERAGE) + "\n"]
+
+
+def test_report_prints_each_line_as_it_prints_on_its_own(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # a loop's forks each hold the string of every pass before theirs, past the cap from the
+    # eighth pass on
+    term: Expression = "s"
+    forks: list[Branch] = []
+    for i in range(40):
+        forks.append(
+            Branch(expression=[">", ["len", term], i], taken=True, site=Site("m.py", 5, 7))
+        )
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    record = InputRecord(args={"s": "abc"}, forks=tuple(forks), covered_lines=frozenset({5}))
+
+    _report(record, COVERAGE)
+
+    # the forks are cut once for both lines, and each line is what it would be alone
+    captured = capsys.readouterr()
+    assert captured.out == render(record, COVERAGE) + "\n"
+    assert captured.err == render_trace(record, COVERAGE)
+    assert " nodes)" in captured.err

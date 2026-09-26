@@ -2,8 +2,8 @@
 
 import time
 
-from pyct.core.branch import Expression
-from pyct.results.printed import CUT, LIMIT, printed
+from pyct.core.branch import Branch, Expression, Site
+from pyct.results.printed import CUT, LIMIT, printed, printed_forks
 
 
 def _tree(nodes: int) -> Expression:
@@ -116,3 +116,19 @@ def test_a_shared_expression_is_counted_and_cut_without_writing_it_out() -> None
     assert _nodes(written) <= LIMIT
     assert _stands_for(written) == 1 + size + 1
     assert spent < 1.0
+
+
+def test_forks_that_share_their_parts_are_each_printed_as_it_prints_alone() -> None:
+    # each pass's fork holds the string every pass before it built
+    term: Expression = "s"
+    forks: list[Branch] = []
+    for i in range(40):
+        forks.append(
+            Branch(expression=[">", ["len", term], i], taken=True, site=Site("m.py", 5, 7))
+        )
+        term = ["+", ["[:]", term, None, i], ["[:]", term, i + 1, None]]
+
+    written = printed_forks(forks)
+
+    assert written == tuple(printed(fork.expression) for fork in forks)
+    assert any(_cuts(expression) for expression in written)
