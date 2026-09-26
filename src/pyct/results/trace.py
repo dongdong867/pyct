@@ -2,7 +2,7 @@
 
 import json
 import keyword
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -157,9 +157,35 @@ def _ended(failure: Failure | None) -> list[str]:
     return [f"ended {kind}: {failure.detail}", *_indented(failure.traceback)]
 
 
-# a part as the fork line writes it, and whether it stands alone as an operand: a leaf does,
-# and so does a part Python writes around its operands
-type _Text = tuple[str, bool]
+# a part as the fork line writes it, and how tightly it binds as an operand (see `_BINDING`)
+type _Text = tuple[str, int]
+
+# how tightly Python binds each operator it writes between two operands, loosest first, as its
+# grammar ranks them. An operand that binds tighter than the operator it sits under needs no
+# parentheses, so `x + 1 < y` reads as the target wrote it; one that binds as tightly gets them
+_BINDING: Mapping[str, int] = {
+    head: level
+    for level, heads in enumerate(
+        (
+            ("in", "not in", "is", "is not", "<", "<=", ">", ">=", "==", "!="),
+            ("|",),
+            ("^",),
+            ("&",),
+            ("<<", ">>"),
+            ("+", "-"),
+            ("*", "/", "//", "%"),
+            ("**",),
+        ),
+        start=1,
+    )
+    for head in heads
+}
+# a unary operation, and any operator the table does not rank, binds looser than all of them,
+# so it is wrapped wherever it is an operand
+_LOOSEST = 0
+_TIGHTEST = max(_BINDING.values())
+# a leaf, and a part Python writes around its operands, stand alone as an operand anywhere
+_ALONE = _TIGHTEST + 1
 
 
 def _infix(expression: Expression) -> str:
@@ -176,7 +202,7 @@ def _infix(expression: Expression) -> str:
     while stack:
         part, operands_written = stack.pop()
         if not isinstance(part, list):
-            written.append((part if isinstance(part, str) else repr(part), True))
+            written.append((part if isinstance(part, str) else repr(part), _ALONE))
         elif operands_written:
             first = len(written) - (len(part) - 1)
             written[first:] = [_text(part, written[first:])]
@@ -191,12 +217,14 @@ def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
     """One condition, written from its operands, each already written."""
     around = _around(expression, operands)
     if around is not None:
-        return around, True
+        return around, _ALONE
     operator = expression[0]
-    parts = [_operand(operand) for operand in operands]
-    if len(parts) == 1:
-        return f"{operator} {parts[0]}", False
-    return f" {operator} ".join(parts), False
+    ranked = _BINDING.get(operator) if isinstance(operator, str) else None
+    if len(operands) == 1 or ranked is None:
+        parts = [_operand(operand, _TIGHTEST) for operand in operands]
+        joined = f"{operator} {parts[0]}" if len(parts) == 1 else f" {operator} ".join(parts)
+        return joined, _LOOSEST
+    return f" {operator} ".join(_operand(operand, ranked) for operand in operands), ranked
 
 
 # the builtins a fork line writes as Python calls them: `len(s)`
@@ -222,11 +250,11 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
-        return f"{_operand(operands[0])}[{written}]"
+        return f"{_operand(operands[0], _TIGHTEST)}[{written}]"
     if head in _CALLED:
         return f"{head}({', '.join(texts)})"
     if _is_named_with_arguments(expression):
-        return f"{_operand(operands[0])}.{head}({', '.join(texts[1:])})"
+        return f"{_operand(operands[0], _TIGHTEST)}.{head}({', '.join(texts[1:])})"
     return None
 
 
@@ -246,11 +274,11 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
     )
 
 
-def _operand(written: _Text) -> str:
-    """A condition inside a condition gets parentheses; a leaf stands alone.
+def _operand(written: _Text, under: int) -> str:
+    """An operand, in parentheses unless it binds tighter than what it sits under.
 
-    So does a condition Python writes around its operands, ``s[0]`` or
-    ``a.name(b)``.
+    A leaf stands alone anywhere, and so does a condition Python writes
+    around its operands, ``s[0]`` or ``a.name(b)``.
     """
-    text, alone = written
-    return text if alone else f"({text})"
+    text, binding = written
+    return text if binding > under else f"({text})"

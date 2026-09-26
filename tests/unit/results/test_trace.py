@@ -48,7 +48,7 @@ def test_render_trace_writes_each_fork_in_order_with_the_side_taken() -> None:
     assert lines[1:3] == ["fork m.py:5:7  x < 10  taken", "fork m.py:9:3  y < 3  not taken"]
 
 
-def test_render_trace_wraps_a_nested_condition_in_parentheses() -> None:
+def test_render_trace_wraps_an_operand_only_where_python_needs_it() -> None:
     fork = Branch(
         expression=["<", ["+", "x", 1], ["-", "y", 2]],
         taken=True,
@@ -58,7 +58,8 @@ def test_render_trace_wraps_a_nested_condition_in_parentheses() -> None:
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    assert lines[1] == "fork m.py:5:7  (x + 1) < (y - 2)  taken"
+    # `+` and `-` bind tighter than `<`, so the line reads as the target wrote it
+    assert lines[1] == "fork m.py:5:7  x + 1 < y - 2  taken"
 
 
 # a condition as the expression stores it, and the infix the fork line prints for it
@@ -93,6 +94,18 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "cut-part": (["==", ["...", 5000], "'abc'"], "...(5000 nodes) == 'abc'"),
     "piece-of-a-cut-part": (["[]", ["...", 12], 0], "...(12 nodes)[0]"),
     "uncounted-cut-part": (["==", ["...", None], "'abc'"], "...(? nodes) == 'abc'"),
+    "bool-literal": ([">", ["+", "x", True], 5], "x + True > 5"),
+    "looser-operand": (["*", ["+", "x", 1], 2], "(x + 1) * 2"),
+    "operand-of-the-same-binding": (["-", ["-", "x", 1], 2], "(x - 1) - 2"),
+    "compare-of-compares": (["==", [">", "x", 0], [">", "y", 0]], "(x > 0) == (y > 0)"),
+    "count-of-compares": (
+        ["==", ["+", [">", "x", 0], [">", "y", 0]], 2],
+        "(x > 0) + (y > 0) == 2",
+    ),
+    "and-of-compares": (["&", [">", "x", 0], [">", "y", 0]], "(x > 0) & (y > 0)"),
+    "and-inside-a-compare": (["==", ["&", "a", "b"], True], "a & b == True"),
+    "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "(- x) + 1"),
+    "power-under-a-unary-minus": (["-", ["**", "x", 2]], "- (x ** 2)"),
 }
 
 

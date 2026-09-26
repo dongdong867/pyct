@@ -159,6 +159,25 @@ def test_combines_conditions() -> None:
     assert all(line["downgrades"] == [] for line in inputs)
 
 
+# follow-booleans-and-chained-compares-meets-a-bool-literal
+def test_meets_a_bool_literal() -> None:
+    result = run_pyct(BOOL_LITERAL, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # a bool is the int 1 or 0, and JSON writes it `true`
+    assert expressions(inputs[0]) == [[">", ["+", "x", True], 5], ["==", "x", True]]
+    assert '[">", ["+", "x", true], 5]' in result.stdout.splitlines()[0]
+    fork_lines = [line for line in result.stderr.splitlines() if line.startswith("fork ")]
+    assert fork_lines[:2] == [
+        f"fork {BOOL_LITERAL_FILE}:2:7  x + True > 5  not taken",
+        f"fork {BOOL_LITERAL_FILE}:4:7  x == True  not taken",
+    ]
+    values = [argument(line, "x") for line in inputs[1:]]
+    assert any(value > 4 for value in values), values
+    assert 1 in values
+
+
 # follow-booleans-and-chained-compares-follows-membership-in-a-tuple-or-list
 def test_follows_membership_in_a_tuple_or_list() -> None:
     result = run_pyct(MEMBERSHIP, '{"x": 0, "y": 0}')
