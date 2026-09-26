@@ -131,10 +131,18 @@ class _Child:
 
         The status is asked for without waiting first, so a process pyct
         already reaped, whose status was lost on the way out, is never
-        killed: its pid may belong to another process by now.
+        killed: its pid may belong to another process by now. A Ctrl-C is
+        held until the process is reaped, then goes on.
         """
         if self.status is not None:
             return
+        held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+        try:
+            self._kill_and_reap()
+        finally:
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
+
+    def _kill_and_reap(self) -> None:
         try:
             pid, status = os.waitpid(self.pid, os.WNOHANG)
         except ChildProcessError:

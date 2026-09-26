@@ -340,3 +340,23 @@ def test_ending_a_process_that_exited_reaps_it_without_a_kill(
     assert killed == []
     assert child.status is not None
     assert Waited.of(child.status) == Waited(signal=None, code=4)
+
+
+def test_a_second_ctrl_c_as_pyct_ends_the_process_still_reaps_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pid = sleeper(10)
+    real_kill = os.kill
+
+    def kill_then_interrupt(target: int, sig: int) -> None:
+        real_kill(target, sig)
+        # a second Ctrl-C, landing between the kill and the reap
+        signal.pthread_kill(threading.get_ident(), signal.SIGINT)
+
+    monkeypatch.setattr(os, "kill", kill_then_interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        _Child(pid).end()
+
+    with pytest.raises(ChildProcessError):
+        os.waitpid(pid, os.WNOHANG)
