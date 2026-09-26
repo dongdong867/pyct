@@ -235,14 +235,14 @@ def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
 
 
 def _piece(
-    name: str, operands: Callable[[tuple[object, ...]], list[Expression] | None], *, head: str = ""
+    name: str, operands: Callable[[tuple[object, ...]], list[Expression] | None]
 ) -> Callable[..., object]:
-    """str's own answer to one method that builds a str, as a tracked str.
+    """str's own answer to one method that builds a str, as a tracked str carrying
+    `[name, s, *operands]`.
 
-    It carries `[head, s, *operands]`, the head being the method's name
-    unless one is given. A call in a form pyct does not encode, a keyword
-    included, is str's own answer and a downgrade named by the method
-    (``README.md › Rules › downgrades``).
+    A call in a form pyct does not encode, a keyword included, is str's own
+    answer and a downgrade named by the method (``README.md › Rules ›
+    downgrades``).
     """
     operation = getattr(str, name)
     downgrade = downgraded(str, name)
@@ -251,10 +251,40 @@ def _piece(
         forms = None if kwargs else operands(args)
         if forms is None:
             return downgrade(self, *args, **kwargs)
-        expression = [head or name, self.expression, *forms]
+        expression = [name, self.expression, *forms]
         return ConcolicStr(own(operation, self, *args), expression=expression, sink=self.sink)
 
     return compute
+
+
+def _reflects_itself(other: object) -> bool:
+    """Whether other is a str of another type that defines `__radd__`, as markupsafe's Markup
+    does. str defines none, so any such str has its own."""
+    return (
+        isinstance(other, str)
+        and not isinstance(other, ConcolicStr)
+        and hasattr(type(other), "__radd__")
+    )
+
+
+_ADD_DOWNGRADE = downgraded(str, "__add__")
+
+
+def _appended(self: ConcolicStr, other: object) -> object:
+    """str's own `s + other`, a tracked str carrying `["+", s, other]`.
+
+    A str whose type has its own `__radd__` gets NotImplemented, so Python
+    asks that `__radd__` next, as it does with a plain str on the left. An
+    other in a form pyct does not encode is str's own answer and an
+    `__add__` downgrade, or str's own TypeError for a non-str.
+    """
+    if _reflects_itself(other):
+        return NotImplemented
+    form = _needle((other,))
+    if form is None:
+        return _ADD_DOWNGRADE(self, other)
+    expression = ["+", self.expression, form]
+    return ConcolicStr(own(str.__add__, self, other), expression=expression, sink=self.sink)
 
 
 def _prepended(self: ConcolicStr, other: object) -> object:
@@ -321,7 +351,7 @@ class ConcolicStr(str):
     # An index records whether s is long enough before it may raise. A piece hands a form it
     # does not encode to str, so its signature is not str's; the override breaks str's on purpose
     __getitem__ = _item  # pyrefly: ignore[bad-override]
-    __add__ = _piece("__add__", _one_str, head="+")  # pyrefly: ignore[bad-override]
+    __add__ = _appended  # pyrefly: ignore[bad-override]
     __radd__ = _prepended
     replace = _piece("replace", _replacement)  # pyrefly: ignore[bad-override]
     removeprefix = _piece("removeprefix", _one_str)  # pyrefly: ignore[bad-override]

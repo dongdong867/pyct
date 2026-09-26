@@ -20,6 +20,15 @@ class Label(str):
     """A str of the target's own, the way an enum member or a library's name type is one."""
 
 
+class Escaped(str):
+    """A str of a library's own that decides what a str joined on its left gives, the way
+    markupsafe's Markup escapes that str."""
+
+    def __radd__(self, other: object) -> object:
+        # str's own copy of the other side: str(other) would record a downgrade of its own
+        return ("joined by Escaped", str.__str__(other) if isinstance(other, str) else other)
+
+
 class Position:
     """An object Python indexes with through its ``__index__``."""
 
@@ -44,6 +53,7 @@ PIECES: dict[str, tuple[Callable[[str], object], Expression]] = {
     "s + 'x'": (lambda s: s + "x", ["+", "s", "'x'"]),
     "'x' + s": (lambda s: "x" + s, ["+", "'x'", "s"]),
     "Label('x') + s": (lambda s: Label("x") + s, ["+", "'x'", "s"]),
+    "s + Label('x')": (lambda s: s + Label("x"), ["+", "s", "'x'"]),
     "s + ''": (lambda s: s + "", ["+", "s", "''"]),
     "s.replace('b', 'x')": (lambda s: s.replace("b", "x"), ["replace", "s", "'b'", "'x'"]),
     "s.replace('b', '')": (lambda s: s.replace("b", ""), ["replace", "s", "'b'", "''"]),
@@ -251,6 +261,17 @@ def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
         _tracked(sink=sink).replace("b", "x", count=1)  # pyrefly: ignore[unexpected-keyword]
 
     assert raised_by_target(raised.value)
+    assert sink == []
+
+
+def test_a_str_on_the_right_with_its_own_reflected_plus_answers_as_it_would_for_str() -> None:
+    sink: list[SinkItem] = []
+
+    joined = _tracked(sink=sink) + Escaped("<b>")
+
+    # Python asks the right side's __radd__ before str joins a plain str to it, so the tracked
+    # str steps aside and that __radd__ answers, as it does for "abcb" + Escaped("<b>")
+    assert joined == "abcb" + Escaped("<b>")
     assert sink == []
 
 
