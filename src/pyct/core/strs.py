@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pyct.core.bools import ConcolicBool, compare
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
+from pyct.core.numbers import compare
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and

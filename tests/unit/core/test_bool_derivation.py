@@ -2,10 +2,10 @@ import sys
 
 import pytest
 
-from pyct.core import bools, values
+from pyct.core import bools, numbers, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.ints import ConcolicInt
-from tests.unit.core.test_strs import _reaches_through_the_helper
+from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
@@ -53,7 +53,7 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
     derived = _downgrades(ConcolicBool)
 
     assert set(UNTAUGHT_OPERATIONS) <= derived
-    assert derived.isdisjoint(bools.INT_KEPT + bools.INT_NOT_YET)
+    assert derived.isdisjoint(numbers.INT_KEPT + numbers.INT_NOT_YET)
 
 
 def test_a_bool_loses_what_an_int_loses_but_what_it_teaches_itself() -> None:
@@ -63,26 +63,13 @@ def test_a_bool_loses_what_an_int_loses_but_what_it_teaches_itself() -> None:
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
     # a call into int written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicBool's dunders are written in its own file and in values, for the downgrade closures
-    written_here = {
-        name: member
-        for name, member in vars(ConcolicBool).items()
-        if (code := getattr(member, "__code__", None)) is not None
-        and code.co_filename in {bools.__file__, values.__file__}
-    }
-    # an operation a bool runs as ConcolicInt's own reaches int where the int scan reads it
-    delegated = {
-        name
-        for name, member in written_here.items()
-        if member.__qualname__.startswith("_as_an_int.")
-    }
+    # ConcolicBool's dunders are written in three files: its own, numbers for the operations it
+    # shares with an int and values for the downgrade closures, so the scan covers all three
+    files = {bools.__file__, numbers.__file__, values.__file__}
 
-    assert delegated <= vars(ConcolicInt).keys() - _downgrades(ConcolicInt)
-    without_the_helper = {
-        name
-        for name, member in written_here.items()
-        if name not in delegated and not _reaches_through_the_helper(member)
-    }
-    # a copy hands the value itself back, `__repr__` reads the bool's own truth, which cannot
-    # raise, and `__round__` rounds the int the bool is, through ConcolicInt's own
-    assert without_the_helper == {"__copy__", "__deepcopy__", "__repr__", "__round__"}
+    assert {"__lt__", "__add__", "__and__", "__round__", "__format__", "__invert__"} <= (
+        written_in(ConcolicBool, files).keys()
+    )
+    # a copy hands the value itself back, and `__repr__` reads the bool's own truth, which
+    # cannot raise
+    assert without_the_helper(ConcolicBool, files) == {"__copy__", "__deepcopy__", "__repr__"}

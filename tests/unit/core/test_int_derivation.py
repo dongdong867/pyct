@@ -2,8 +2,9 @@ import sys
 
 import pytest
 
-from pyct.core import bools, ints, values
+from pyct.core import ints, numbers, values
 from pyct.core.ints import ConcolicInt
+from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicInt leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
@@ -55,31 +56,30 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
     assert set(UNTAUGHT_OPERATIONS) <= derived
     # a wrapped kept name would cost a dict key a downgrade, and a wrapped `__getattribute__`
     # recurses on the first attribute read; the stand-in tests show the class body is skipped
-    assert derived.isdisjoint(bools.INT_KEPT + bools.INT_NOT_YET)
+    assert derived.isdisjoint(numbers.INT_KEPT + numbers.INT_NOT_YET)
 
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
     # a call into int written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicInt's dunders are written in three files: its own, bools for the compare closures
-    # and values for the downgrade closures, so the scan covers all three
-    written_here = {
-        name: code
-        for name, member in vars(ConcolicInt).items()
-        if name.startswith("__")
-        and (code := getattr(member, "__code__", None)) is not None
-        and code.co_filename in {ints.__file__, bools.__file__, values.__file__}
-    }
-    # a downgrade closure reaches int through the helper itself, so handing it the call counts;
-    # what makes one is being built by downgraded, not what it is called
-    reaches_int = {"own"} | {
-        name
-        for name, value in vars(ints).items()
-        if getattr(value, "__qualname__", "").startswith("downgraded.")
-    }
-    without_the_helper = {
-        name for name, code in written_here.items() if not reaches_int & set(code.co_names)
-    }
+    # ConcolicInt's dunders are written in three files: its own, numbers for the operations it
+    # shares with a bool and values for the downgrade closures, so the scan covers all three.
+    # An operation hands the call to a closure it holds, so what a function holds counts
+    files = {ints.__file__, numbers.__file__, values.__file__}
 
+    # the scan read the compares, the arithmetic and a derived downgrade, so an empty answer
+    # is not an empty scan
+    assert {"__lt__", "__add__", "__divmod__", "__pow__", "__bool__", "__and__"} <= (
+        written_in(ConcolicInt, files).keys()
+    )
     # these hand the value itself back and never call int, so they have nothing to guard
     rounding = {"__trunc__", "__floor__", "__ceil__"}
-    assert without_the_helper == {"__pos__", "__index__", "__copy__", "__deepcopy__"} | rounding
+    assert (
+        without_the_helper(ConcolicInt, files)
+        == {
+            "__pos__",
+            "__index__",
+            "__copy__",
+            "__deepcopy__",
+        }
+        | rounding
+    )

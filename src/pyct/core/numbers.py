@@ -1,0 +1,268 @@
+"""What the tracked numbers share: which class tracks a result, how an operand reads, and
+the operations they teach.
+
+A result's own Python type picks its tracked class. pyct lets the base type
+compute the plain answer, and `tracked` wraps it in the class entered for
+that answer's type: `int.__add__` on two compares answers an int, so the sum
+is a tracked int, and `int.__lt__` answers a bool, so a compare is a tracked
+bool. pyct never restates Python's rule for which type an operation gives.
+
+Each number module defines its class and enters it at its bottom, with
+`enter`. So no number module imports another, and this module names none of
+their classes. `pyct.core` imports every number module, so the table is full
+before any value is built; a result whose type nothing entered raises
+`LookupError` rather than coming back plain.
+
+The registry is two functions: `enter(base, cls)` and `tracked(value,
+expression, sink)`. A number type needs nothing else from it.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any, Protocol, cast
+
+from pyct.core.branch import BranchSink, Expression
+from pyct.core.values import downgraded, own
+
+# what a tracked int, and a tracked bool with it, leaves to int on purpose. A bool is the int 1
+# or 0, so both keep the same names, and both derivations read them here. Each derivation
+# downgrades every other method int defines.
+
+# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
+# harder reason: the downgrade wrapper reads `self.sink`, which goes through `__getattribute__`
+# itself, so a wrapped one recurses on the first attribute read
+INT_KEPT = (
+    "__hash__",
+    "__repr__",
+    "__getnewargs__",
+    "__new__",
+    "__getattribute__",
+    "__sizeof__",
+)
+
+# int's plain methods record nothing yet. The ticket that wraps them is
+# `report-a-plain-int-method-as-a-downgrade`; until it lands, these stay int's own
+INT_NOT_YET = (
+    "as_integer_ratio",
+    "bit_count",
+    "bit_length",
+    "conjugate",
+    "is_integer",
+    "to_bytes",
+)
+
+# int inherits `__str__` from object, so reading what int itself defines never reaches it, and
+# `print(x)` still drops the condition
+INT_INHERITED = ("__str__",)
+
+
+class Number(Protocol):
+    """A tracked value: all an operation here needs of the type it is set on."""
+
+    expression: Expression
+    sink: BranchSink
+
+
+# the tracked class for each Python type a result can have, and the classes themselves
+_TRACKED: dict[type, type] = {}
+_CLASSES: set[type] = set()
+
+
+def enter(base: type, tracked_class: type) -> None:
+    """Make `tracked_class` the tracked form of every result whose type is exactly `base`.
+
+    Each number module calls this once, at its bottom, for the class it
+    defines. A second class for the same type would make the answer depend on
+    import order, so it raises.
+    """
+    if _TRACKED.get(base, tracked_class) is not tracked_class:
+        raise ValueError(f"{base.__name__} is already tracked by {_TRACKED[base].__name__}")
+    _TRACKED[base] = tracked_class
+    _CLASSES.add(tracked_class)
+
+
+def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
+    """A plain result as the tracked class its own type entered, carrying the expression.
+
+    A type nothing entered raises: a module pyct.core did not import, or a
+    type whose follow story has not shipped, fails here where it happens,
+    never as a quietly plain value.
+    """
+    tracked_class = _TRACKED.get(type(value))
+    if tracked_class is None:
+        raise LookupError(
+            f"no tracked type is entered for {type(value).__name__}; "
+            "pyct.core imports each number module so that each enters its class"
+        )
+    return tracked_class(value, expression=expression, sink=sink)
+
+
+def operand(other: object) -> Expression | None:
+    """How a number reads the other side of an operation, or None for one it does not take.
+
+    A tracked number reads as its expression. A plain int reads as itself,
+    and so does a plain bool, the int 1 or 0, as the literal True or False.
+    """
+    if type(other) in _CLASSES:
+        return cast(Number, other).expression
+    return other if isinstance(other, int) else None
+
+
+def zero_fork(divisor: object) -> None:
+    """The fork a tracked divisor takes on its way into a division, as `if` would test it.
+
+    Testing it for truth is what records it, so each type's `__bool__` and
+    `forked` stay the one place a fork is written: an int's is
+    `["!=", divisor, 0]`, a bool's is its own condition. A plain divisor has
+    nothing to flip and records nothing.
+    """
+    if type(divisor) in _CLASSES:
+        bool(divisor)
+
+
+def compare(
+    op: str, operation: Callable[..., bool], rule: Callable[[object], Expression | None]
+) -> Callable[[Number, object], Any]:
+    """The base type's own answer to one comparison, carrying the condition that produced it.
+
+    `rule` is the concolic type's rule for the other side: the symbolic form
+    of an operand the type takes, or None for one it does not. None answers
+    NotImplemented, so the other operand gets its turn. Every concolic type
+    answers a compare with a tracked bool.
+
+    Now that `==` answers with a tracked bool, `x in [1, 2, 3]` and a dict
+    lookup on a key that is equal without being the same one test that answer
+    for truth, so each records a fork at the target's line.
+    """
+
+    def compute(self: Number, other: object) -> Any:
+        form = rule(other)
+        if form is None:
+            return NotImplemented
+        answer = bool(own(operation, self, other))
+        return tracked(answer, [op, self.expression, form], self.sink)
+
+    return compute
+
+
+def _sides(self: Number, form: Expression, *, reflected: bool) -> list[Expression]:
+    """The two sides in Python's written order: a reflected method ran on the right one."""
+    return [form, self.expression] if reflected else [self.expression, form]
+
+
+def arithmetic(
+    op: str, operation: Callable[..., object], *, reflected: bool = False
+) -> Callable[[Number, object], Any]:
+    """The base type's own answer to one arithmetic operation, carrying the expression.
+
+    The expression keeps Python's written order: a reflected method is
+    called on the right operand, so `10 - x` is ["-", 10, "x"].
+    """
+
+    def compute(self: Number, other: object) -> Any:
+        form = operand(other)
+        if form is None:
+            return NotImplemented
+        expression = [op, *_sides(self, form, reflected=reflected)]
+        return tracked(own(operation, self, other), expression, self.sink)
+
+    return compute
+
+
+def division(
+    op: str, operation: Callable[..., object], *, reflected: bool = False
+) -> Callable[[Number, object], Any]:
+    """The base type's own answer to one division, with the zero fork recorded before the call.
+
+    The fork goes in first, where `downgraded` notes its loss after the
+    call; a division is the one operation whose fork is about whether the
+    call raises at all. `execute` keeps what the sink held when the raise
+    happened, so recording it first is what lets the crashing input's line
+    list the fork it died on. It also puts `divisor != 0` earlier in the
+    prefix of every solver query that divides by a symbolic divisor, where
+    SMT-LIB leaves division by zero uninterpreted.
+    """
+
+    def compute(self: Number, other: object) -> Any:
+        form = operand(other)
+        if form is None:
+            return NotImplemented
+        zero_fork(self if reflected else other)
+        expression = [op, *_sides(self, form, reflected=reflected)]
+        return tracked(own(operation, self, other), expression, self.sink)
+
+    return compute
+
+
+def divmod_of(
+    operation: Callable[..., tuple[object, object]], *, reflected: bool = False
+) -> Callable[[Number, object], Any]:
+    """The base type's own divmod: the quotient and the remainder, each carrying its expression.
+
+    One call divides once, so it records one zero fork, where `x // y` and
+    `x % y` written out would record two.
+    """
+
+    def compute(self: Number, other: object) -> Any:
+        form = operand(other)
+        if form is None:
+            return NotImplemented
+        zero_fork(self if reflected else other)
+        sides = _sides(self, form, reflected=reflected)
+        quotient, remainder = own(operation, self, other)
+        whole = tracked(quotient, ["//", *sides], self.sink)
+        return whole, tracked(remainder, ["%", *sides], self.sink)
+
+    return compute
+
+
+def unary(op: str, operation: Callable[[Any], object]) -> Callable[[Number], Any]:
+    """The base type's own answer to one unary operation, under the head it has."""
+
+    def compute(self: Number) -> Any:
+        return tracked(own(operation, self), [op, self.expression], self.sink)
+
+    return compute
+
+
+# cvc5 takes `^` with a constant exponent only, and refuses to parse one at this bound or
+# above. Parsing is all the bound promises: how long the solve takes is the budget's business,
+# as for any nonlinear fork, and a run with no budget can wait on a large power.
+_POWER_LIMIT = 67_108_864
+
+
+def power(operation: Callable[..., object]) -> Callable[..., Any]:
+    """A constant power keeps the condition; every other power is the base's own and a downgrade.
+
+    A plain int exponent from zero up to cvc5's bound is what `^` encodes,
+    and so is a plain bool, the int 1 or 0. A tracked or negative exponent,
+    a float, and a third argument all fall to the base type's own answer.
+    """
+    downgrade = downgraded(int, "__pow__", calling=operation)
+
+    def compute(self: Number, exponent: object, modulus: object = None) -> Any:
+        constant = type(exponent) is int or type(exponent) is bool
+        if modulus is None and constant and 0 <= cast(int, exponent) < _POWER_LIMIT:
+            expression = ["**", self.expression, cast(int, exponent)]
+            return tracked(own(operation, self, exponent), expression, self.sink)
+        return downgrade(self, exponent, modulus)
+
+    return compute
+
+
+def rounded(whole: Callable[[Any], object]) -> Callable[..., Any]:
+    """Rounding a whole number to zero or more digits is `whole` of it; to tens, a downgrade.
+
+    `whole` is what the type answers for the number it already is: an int
+    hands itself back, a bool the int 1 or 0.
+    """
+    downgrade = downgraded(int, "__round__")
+
+    def compute(self: Number, ndigits: object = None) -> Any:
+        if ndigits is None or (type(ndigits) is int and cast(int, ndigits) >= 0):
+            return whole(self)
+        return downgrade(self, ndigits)
+
+    return compute
