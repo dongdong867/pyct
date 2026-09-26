@@ -5,7 +5,7 @@ import pytest
 
 from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import render
+from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, render
 from pyct.solver.strings import (
     above,
     below,
@@ -334,6 +334,24 @@ def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
     )
 
     assert f"(assert (str.<= (str.++ t t) {character('s', 0)}))" in text.splitlines()
+
+
+def test_a_plus_on_two_pieces_joins_strings() -> None:
+    # `s.replace("a", "b") + s.removeprefix("x") == "bb"`: no name and no literal on the `+`
+    joined = ["+", ["replace", "s", "'a'", "'b'"], ["removeprefix", "s", "'x'"]]
+
+    text = render((fork(["==", joined, "'bb'"], taken=True),), {"s": str})
+
+    both = f"{replaced('s', '"a"', '"b"')} {without_prefix('s', '"x"')}"
+    assert f'(assert (= (str.++ {both}) "bb"))' in text.splitlines()
+
+
+def test_every_head_render_writes_says_what_type_its_value_is() -> None:
+    written = {head for head, _ in OPERATORS} | set(FORMS) | set(POSITIONED) | set(STRING_ORDERS)
+
+    # a head with no entry cannot say whether a `+` or an order above it is on strings, and a
+    # wrong guess is a program cvc5 refuses, which stops the run on `solver failed`
+    assert written - set(RESULTS) == set()
 
 
 def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:

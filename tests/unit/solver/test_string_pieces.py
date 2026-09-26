@@ -191,29 +191,36 @@ PYTHON_HEADS: dict[str, Callable[..., object]] = {
 }
 
 # the pieces a random path picks from
-PIECE_HEADS = ["[]", "[:]", "+", "replace", "removeprefix", "removesuffix"]
+PIECE_HEADS = ("[]", "[:]", "+", "replace", "removeprefix", "removesuffix")
 
 
 def _literal(rng: random.Random, longest: int) -> str:
     return repr("".join(rng.choices(PATH_LETTERS, k=rng.randint(0, longest))))
 
 
-def _piece_of(rng: random.Random) -> tuple[Expression, Expression | None]:
-    """One random piece of s, and the long-enough fork an index records before it, if any."""
-    head = rng.choice(PIECE_HEADS)
+def _piece_of(
+    rng: random.Random, receiver: Expression = "s", heads: tuple[str, ...] = PIECE_HEADS
+) -> tuple[Expression, Expression | None]:
+    """One random piece of the receiver, and the fork an index records before it, if any."""
+    head = rng.choice(heads)
     if head == "[]":
         index = rng.randint(-3, 2)
-        measured: Expression = ["len", "s"]
+        measured: Expression = ["len", receiver]
         fork: Expression = [">", measured, index] if index >= 0 else [">=", measured, -index]
-        return ["[]", "s", index], fork
+        return ["[]", receiver, index], fork
     if head == "[:]":
-        return ["[:]", "s", rng.choice([None, -2, 0, 1, 3]), rng.choice([None, -1, 2, 4])], None
+        bounds = [rng.choice([None, -2, 0, 1, 3]), rng.choice([None, -1, 2, 4])]
+        return ["[:]", receiver, *bounds], None
     if head == "+":
-        pair: list[Expression] = ["s", _literal(rng, 2)]
+        pair: list[Expression] = [receiver, _literal(rng, 2)]
         return ["+", *(pair if rng.random() < 0.5 else pair[::-1])], None
     if head == "replace":
-        return ["replace", "s", repr(rng.choice(PATH_LETTERS)), _literal(rng, 2)], None
-    return [head, "s", _literal(rng, 2)], None
+        return ["replace", receiver, repr(rng.choice(PATH_LETTERS)), _literal(rng, 2)], None
+    return [head, receiver, _literal(rng, 2)], None
+
+
+# the pieces that record no fork, so one can be taken of another piece or joined to one
+UNFORKED_HEADS = tuple(head for head in PIECE_HEADS if head != "[]")
 
 
 def _flipped_path(rng: random.Random) -> tuple[Branch, ...]:
@@ -224,8 +231,17 @@ def _flipped_path(rng: random.Random) -> tuple[Branch, ...]:
 
 
 def _compared(rng: random.Random) -> tuple[Expression, Expression | None]:
-    """A random piece compared with a literal, and the fork the piece records first, if any."""
+    """A random piece compared with a literal, and the fork the piece records first, if any.
+
+    A third of the time the piece is taken of another piece, and a fifth of
+    the time it is joined to a second piece of s, so a `+` has no name and no
+    literal on either side.
+    """
     term, long_enough = _piece_of(rng)
+    if rng.random() < 0.3:
+        term, _ = _piece_of(rng, term, UNFORKED_HEADS)
+    if rng.random() < 0.2:
+        term = ["+", term, _piece_of(rng, "s", UNFORKED_HEADS)[0]]
     return [rng.choice(["==", "!=", "<", ">="]), term, _literal(rng, 2)], long_enough
 
 

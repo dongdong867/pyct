@@ -31,29 +31,59 @@ SORTS: Mapping[type, str] = {int: "Int", str: "String"}
 # parameter name holds neither
 _QUOTES = ("'", '"')
 
-# Python's spelling of an operator, and SMT-LIB's. This is the one place the two meet, so
-# a head that is missing raises here and names the gap, rather than handing cvc5 a program
-# it cannot parse, which comes back as `solver failed`.
-OPERATORS: Mapping[str, str] = {
-    "<": "<",
-    "<=": "<=",
-    ">": ">",
-    ">=": ">=",
-    "==": "=",
-    "!=": "distinct",
-    "+": "+",
-    "-": "-",
-    "*": "*",
-    "abs": "abs",
-    "**": "^",
-    "len": "str.len",
+# the type of the value each head builds, as Python has it, so a head above it knows what its
+# operands are: `+` joins two strs and adds two ints. None is a head whose value has its
+# operands' type. Every head render writes has an entry, and a new type adds its own
+RESULTS: Mapping[str, type | None] = {
+    "<": bool,
+    "<=": bool,
+    ">": bool,
+    ">=": bool,
+    "==": bool,
+    "!=": bool,
+    "in": bool,
+    "startswith": bool,
+    "endswith": bool,
+    "+": None,
+    "-": None,
+    "*": None,
+    "**": None,
+    "abs": None,
+    "//": None,
+    "%": None,
+    "find": int,
+    "rfind": int,
+    "index": int,
+    "rindex": int,
+    "count": int,
+    "len": int,
+    "[]": str,
+    "[:]": str,
+    "replace": str,
+    "removeprefix": str,
+    "removesuffix": str,
 }
 
-# an operator SMT-LIB spells apart on strings: `+` joins two strings where it adds two ints
-STRING_OPERATORS: Mapping[str, str] = {"+": "str.++"}
-
-# the heads whose value is a string whatever their operands are: a piece of a string
-STRING_HEADS = frozenset({"[]", "[:]", "replace", "removeprefix", "removesuffix"})
+# Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one
+# place the two meet, so a head that is missing raises here and names the gap, rather than
+# handing cvc5 a program it cannot parse, which comes back as `solver failed`.
+OPERATORS: Mapping[tuple[str, type], str] = {
+    ("<", int): "<",
+    ("<=", int): "<=",
+    (">", int): ">",
+    (">=", int): ">=",
+    ("==", int): "=",
+    ("!=", int): "distinct",
+    ("+", int): "+",
+    ("-", int): "-",
+    ("*", int): "*",
+    ("abs", int): "abs",
+    ("**", int): "^",
+    ("==", str): "=",
+    ("!=", str): "distinct",
+    ("+", str): "str.++",
+    ("len", str): "str.len",
+}
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
 # whether its operands swap. `a > b` is written `b < a`, the same term the target would have
@@ -268,11 +298,10 @@ def _operation(head: Expression, operands: list[Expression], leaves: Mapping[str
     rendered = [_expression(part, leaves) for part in operands]
     if (form := FORMS.get(head)) is not None:
         return form(*rendered)
-    if head in STRING_ORDERS and _on_strings(operands, leaves):
+    kind = _operands_type(operands, leaves)
+    if head in STRING_ORDERS and kind is str:
         return _string_order(head, operands, rendered)
-    if head in STRING_OPERATORS and _on_strings(operands, leaves):
-        return f"({STRING_OPERATORS[head]} {' '.join(rendered)})"
-    return f"({_operator(head)} {' '.join(rendered)})"
+    return f"({_operator(head, kind)} {' '.join(rendered)})"
 
 
 def _position(part: Expression) -> int | None:
@@ -282,29 +311,30 @@ def _position(part: Expression) -> int | None:
     raise ValueError(f"pyct cannot render {part} as a position: core writes a plain int there")
 
 
-def _on_strings(operands: list[Expression], leaves: Mapping[str, type]) -> bool:
-    """Whether an operation's operands are strings.
+def _operands_type(operands: list[Expression], leaves: Mapping[str, type]) -> type | None:
+    """The type of an operation's operands, or None when none of them says.
 
-    Both operands of a compare or a `+` are of one sort, so one string
-    between them decides it.
+    Python's own operators take two operands of one type here, so the first
+    that says decides it.
     """
-    return any(_is_string(part, leaves) for part in operands)
+    return next((kind for part in operands if (kind := _type_of(part, leaves))), None)
 
 
-def _is_string(term: Expression, leaves: Mapping[str, type]) -> bool:
-    """Whether a term is a string.
+def _type_of(term: Expression, leaves: Mapping[str, type]) -> type | None:
+    """The type of a term's value, as Python has it, or None when nothing says.
 
-    A string literal, a name bound to a str, a piece of a string, and a `+`
-    on strings are.
+    A name has the type the seed bound, a literal its own, and an operation
+    the type `RESULTS` gives its head.
     """
+    if isinstance(term, list):
+        head, *operands = term
+        if not isinstance(head, str) or head not in RESULTS:
+            return None
+        result = RESULTS[head]
+        return result if result is not None else _operands_type(operands, leaves)
     if isinstance(term, str):
-        return _is_literal(term) or leaves.get(term) is str
-    if not isinstance(term, list) or not term:
-        return False
-    head, *operands = term
-    return isinstance(head, str) and (
-        head in STRING_HEADS or (head in STRING_OPERATORS and _on_strings(operands, leaves))
-    )
+        return str if _is_literal(term) else leaves.get(term)
+    return None if term is None else type(term)
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
@@ -342,9 +372,10 @@ def _value(literal: str) -> str:
     return value
 
 
-def _operator(head: str) -> str:
-    """How SMT-LIB spells the operator a condition leads with."""
-    operator = OPERATORS.get(head)
+def _operator(head: str, kind: type | None) -> str:
+    """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
+    operator = OPERATORS.get((head, kind)) if kind is not None else None
     if operator is None:
-        raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+        on = "anything" if kind is None else kind.__name__
+        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
     return operator
