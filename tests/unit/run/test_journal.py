@@ -1,6 +1,7 @@
 """The journal over a plain bytearray: no mapping and no process, only the bytes."""
 
 import enum
+import sys
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.failure import Failure, FailureKind
@@ -367,3 +368,33 @@ def test_an_ending_of_the_wrong_shape_is_unreadable() -> None:
 
     assert not reading.ended
     assert reading.problem == f"could not read the input's facts at byte {RECORDS}"
+
+
+def test_an_int_too_long_to_write_out_stops_the_journal_without_raising() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    writer.line(2)
+
+    writer.fork(Branch(expression=["<", "x", 10**5000], taken=True, site=SITE))
+
+    reading = read(buffer)
+    assert reading.lines == frozenset({2})
+    assert reading.branches == ()
+    assert reading.problem is not None
+    assert reading.problem.startswith("could not keep a fork the input took: ")
+
+
+def test_an_int_past_a_limit_the_target_lowered_stops_the_journal_without_raising() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    limit = sys.get_int_max_str_digits()
+    sys.set_int_max_str_digits(640)
+    try:
+        writer.fork(Branch(expression=["<", "x", 10**700], taken=True, site=SITE))
+    finally:
+        sys.set_int_max_str_digits(limit)
+
+    reading = read(buffer)
+    assert reading.branches == ()
+    assert reading.problem is not None
+    assert reading.problem.startswith("could not keep a fork the input took: ")

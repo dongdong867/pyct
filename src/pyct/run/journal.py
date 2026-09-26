@@ -113,13 +113,13 @@ class JournalWriter:
 
     def fork(self, branch: Branch) -> None:
         """Write a fork the call took, and every part of its expression not written yet."""
+        site = branch.site
         try:
             expression = self._written(branch.expression)
-        except _UnencodableError as error:
+            self._json(_FORK, [expression, branch.taken, site.file, site.line, site.col])
+        # ValueError: an int longer than Python writes out, under a limit the target may lower
+        except (_UnencodableError, ValueError) as error:
             self._stop(_UNENCODABLE, f"could not keep a fork the input took: {error}")
-            return
-        site = branch.site
-        self._json(_FORK, [expression, branch.taken, site.file, site.line, site.col])
 
     def line(self, number: int) -> None:
         """Write a line the call reached for the first time."""
