@@ -93,7 +93,8 @@ class Inputs:
         self._switched: Isolation | None = None
         alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
         self._calls: dict[Isolation, Call] = {
-            Isolation.FORK: functools.partial(in_a_child, alone),
+            # random's state as the run finds it after the target's import, taken once
+            Isolation.FORK: functools.partial(in_a_child, alone, random.getstate()),
             Isolation.FRESH: functools.partial(
                 in_a_fresh_interpreter, fresh_for(target.spec, target.file)
             ),
@@ -142,19 +143,21 @@ def _named(target: Target) -> bool:
 
 
 def in_a_child(
-    ctx: ExecutionContext, args: Mapping[str, object], until: float | None
+    ctx: ExecutionContext,
+    random_state: tuple[object, ...],
+    args: Mapping[str, object],
+    until: float | None,
 ) -> ExecutionResult:
     """Run one input in a child process forked from this one, and read what it did.
 
-    ``random`` reseeds itself in every forked child, so its state is taken
-    here, as the target's import left it, and put back in the child before
-    the call: each input draws what a fresh interpreter importing the target
-    would draw.
+    ``random`` reseeds itself in every forked child, so the child puts back
+    ``random_state``, the state the run took once after the target's import,
+    before the call. Whatever pyct's process draws between inputs, each
+    input draws what a fresh interpreter importing the target would draw.
     """
-    state = random.getstate()
 
     def call(watch: JournalWriter) -> Failure | None:
-        random.setstate(state)
+        random.setstate(random_state)
         return execute(ctx, args, until, watch=watch).failure
 
     with _journal() as buffer:

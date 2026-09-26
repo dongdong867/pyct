@@ -1,14 +1,16 @@
 """run() puts each input in a process of its own, and stops when it cannot start one."""
 
 import os
+import random
 
 import pytest
 
 from pyct.branches.tree import Tree
-from pyct.results.record import Stop, StopKind
+from pyct.results.coverage import Coverage
+from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
-from pyct.run.run import Bounds, _attempt, run
+from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
 
 REFUSED = "[Errno 35] Resource temporarily unavailable"
@@ -72,4 +74,20 @@ def test_an_input_in_process_needs_no_process_to_start(
     result = run(target, {"x": 3}, isolation=Isolation.IN_PROCESS)
 
     assert len(result.records) == 2
+    assert result.stopped.kind is StopKind.NO_FORK
+
+
+def test_a_caller_drawing_from_random_between_inputs_moves_no_forked_input_s_draw() -> None:
+    target = load_target("targets.isolate.seeded::draw")
+    left = random.getstate()
+
+    def draws(record: InputRecord, coverage: Coverage) -> None:
+        random.random()
+
+    result = run(target, {"x": 0}, isolation=Isolation.FORK, tell=Tell(report=draws))
+    random.setstate(left)
+
+    # the seed and the one input that flips its fork, each drawing as the import left random
+    first_forks = [record.forks[0].expression for record in result.records]
+    assert first_forks == [first_forks[0]] * 2
     assert result.stopped.kind is StopKind.NO_FORK

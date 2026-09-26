@@ -4,6 +4,7 @@ import gc
 import io
 import mmap
 import os
+import random
 import signal
 import subprocess
 import sys
@@ -28,7 +29,8 @@ def terminated(x: int) -> None:
 
 def in_child(fn: Callable[..., object], args: dict[str, object] | None = None) -> ExecutionResult:
     """``fn`` called once in a child process, traced in this file."""
-    return in_a_child(ExecutionContext(fn=fn, file=__file__), args or {"x": 5}, None)
+    ctx = ExecutionContext(fn=fn, file=__file__)
+    return in_a_child(ctx, random.getstate(), args or {"x": 5}, None)
 
 
 def returns(x: int) -> str:
@@ -40,7 +42,7 @@ def returns(x: int) -> str:
 def test_a_child_that_returns_reads_as_the_same_call_in_process() -> None:
     ctx = ExecutionContext(fn=returns, file=__file__)
 
-    isolated = in_a_child(ctx, {"x": 5}, None)
+    isolated = in_a_child(ctx, random.getstate(), {"x": 5}, None)
 
     assert isolated == execute(ctx, {"x": 5})
     assert isolated.failure is None
@@ -200,6 +202,7 @@ def test_a_python_hang_ends_by_its_own_alarm_before_pyct_kills_it() -> None:
 
     result = in_a_child(
         ExecutionContext(fn=spins_then_cleans_up, file=__file__, alone=True),
+        random.getstate(),
         {"x": 1},
         started + 0.2,
     )
@@ -212,7 +215,7 @@ def test_a_python_hang_ends_by_its_own_alarm_before_pyct_kills_it() -> None:
 
 # a caller whose target replaces os._exit, as a mock does; the caller says when it goes on
 RUN_A_TARGET_THAT_REPLACES_EXIT = """
-import os
+import os, random
 from pyct.execution.execute import ExecutionContext
 from pyct.run.isolation import in_a_child
 
@@ -221,7 +224,8 @@ def replaces_exit(x):
     return x
 
 try:
-    in_a_child(ExecutionContext(fn=replaces_exit, file="<string>", alone=True), {"x": 1}, None)
+    ctx = ExecutionContext(fn=replaces_exit, file="<string>", alone=True)
+    in_a_child(ctx, random.getstate(), {"x": 1}, None)
 finally:
     print("the caller went on")
 """
