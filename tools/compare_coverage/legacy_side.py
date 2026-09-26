@@ -38,7 +38,8 @@ PROBE = (
     "import importlib, json, platform\n"
     "engine = importlib.import_module('pyct')\n"
     "found = callable(getattr(engine, 'run_concolic', None))\n"
-    "print(json.dumps({'python': platform.python_version(), 'engine': found}))\n"
+    "file = getattr(engine, '__file__', None)\n"
+    "print(json.dumps({'python': platform.python_version(), 'engine': found, 'file': file}))\n"
 )
 
 
@@ -89,9 +90,30 @@ def _report(line: dict[str, object]) -> SideReport:
 
 
 def probe(checkout: Path | None, environment: Mapping[str, str]) -> str:
-    """Legacy's Python version, once DIR's own interpreter has imported legacy's engine."""
+    """Legacy's Python version, once DIR's own interpreter has imported DIR's legacy engine.
+
+    The engine must be DIR's own, so the rows come from the commit the summary names.
+    """
     if checkout is None:
         raise LegacyCheckoutError(f"--legacy is required: a checkout of main\n{RECIPE}")
+    answer = _probe_answer(checkout, environment)
+    if not answer.get("engine"):
+        raise LegacyCheckoutError(
+            f"--legacy {checkout}: its pyct has no run_concolic, so it is not a checkout of "
+            f"main\n{RECIPE}"
+        )
+    own = checkout / "src" / "pyct"
+    file = answer.get("file")
+    if not isinstance(file, str) or not Path(file).resolve().is_relative_to(own.resolve()):
+        raise LegacyCheckoutError(
+            f"--legacy {checkout}: its interpreter imports legacy's engine from {file}, "
+            f"not {own}\n{RECIPE}"
+        )
+    return str(answer.get("python"))
+
+
+def _probe_answer(checkout: Path, environment: Mapping[str, str]) -> dict[str, object]:
+    """What DIR's own interpreter says after importing ``pyct``. Anything else is refused."""
     python = interpreter(checkout)
     if not python.exists():
         raise LegacyCheckoutError(f"--legacy {checkout}: no environment at {python}\n{RECIPE}")
@@ -108,9 +130,4 @@ def probe(checkout: Path | None, environment: Mapping[str, str]) -> str:
         raise LegacyCheckoutError(
             f"--legacy {checkout}: legacy's engine cannot be imported: {said}\n{RECIPE}"
         )
-    if not answer.get("engine"):
-        raise LegacyCheckoutError(
-            f"--legacy {checkout}: its pyct has no run_concolic, so it is not a checkout of "
-            f"main\n{RECIPE}"
-        )
-    return str(answer.get("python"))
+    return answer

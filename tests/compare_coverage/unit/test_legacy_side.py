@@ -2,6 +2,7 @@
 
 import os
 import platform
+import shutil
 import sys
 from pathlib import Path
 
@@ -106,6 +107,22 @@ def test_the_probe_refuses_an_environment_without_legacys_engine(tmp_path: Path)
         LegacyCheckoutError, match="engine cannot be imported: ImportError: not here"
     ):
         probe(tmp_path, ENVIRONMENT)
+
+
+def test_the_probe_refuses_an_engine_from_another_checkout(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    # an environment copied from elsewhere keeps importing that other checkout's engine
+    other = tmp_path / "copied"
+    python = other / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    shutil.copy(stub_checkout.path / ".venv" / "bin" / "python", python)
+    engine = stub_checkout.path / "src" / "pyct" / "__init__.py"
+
+    with pytest.raises(
+        LegacyCheckoutError, match=rf"imports legacy's engine from {engine}, not {other}/src/pyct"
+    ):
+        probe(other, ENVIRONMENT)
 
 
 def test_the_probe_refuses_a_v2_checkout() -> None:
