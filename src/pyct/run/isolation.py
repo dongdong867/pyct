@@ -38,6 +38,7 @@ import functools
 import logging
 import mmap
 import os
+import random
 import sys
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
@@ -143,9 +144,17 @@ def _named(target: Target) -> bool:
 def in_a_child(
     ctx: ExecutionContext, args: Mapping[str, object], until: float | None
 ) -> ExecutionResult:
-    """Run one input in a child process forked from this one, and read what it did."""
+    """Run one input in a child process forked from this one, and read what it did.
+
+    ``random`` reseeds itself in every forked child, so its state is taken
+    here, as the target's import left it, and put back in the child before
+    the call: each input draws what a fresh interpreter importing the target
+    would draw.
+    """
+    state = random.getstate()
 
     def call(watch: JournalWriter) -> Failure | None:
+        random.setstate(state)
         return execute(ctx, args, until, watch=watch).failure
 
     with _journal() as buffer:

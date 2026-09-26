@@ -213,3 +213,13 @@ def test_setting_up_a_run_leaves_the_target_s_random_alone() -> None:
     Inputs(one_check(), Isolation.AUTO)
 
     assert random.getstate() == before
+
+
+@pytest.mark.parametrize("where", [Isolation.FORK, Isolation.FRESH])
+def test_every_input_draws_from_random_as_the_target_s_import_left_it(where: Isolation) -> None:
+    first_draw = random.Random(7).randrange(100)
+    inputs = Inputs(load_target("targets.isolate.seeded::draw"), where)
+
+    forks = [inputs({"x": x}, None).branches[0].expression for x in (0, 50, 99)]
+
+    assert forks == [[">", "x", first_draw]] * 3
