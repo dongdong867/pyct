@@ -2,9 +2,10 @@
 
 The lint command runs it as ``python -m tests.line_limits src/ tests/``. A file is read the way
 Python reads source, so a BOM or an encoding cookie is honored, and its lines are counted by
-their line ends. A function's body is every line after its signature, blank lines and comments
-included, less the lines of its docstring; a body on the signature's own line is one line. A
-nested function counts toward the function that holds it and is checked on its own as well.
+their line ends. A function's body runs from the line after its signature through its last
+statement, blank lines and comments between included, less the lines of its docstring; a body
+on the signature's own line is one line. A nested function counts toward the function that
+holds it and is checked on its own as well.
 """
 
 import ast

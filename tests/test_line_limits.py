@@ -70,6 +70,14 @@ def test_a_body_on_the_signatures_own_line_is_one_line() -> None:
     assert lengths("def one(): return 1\n") == {"one": 1}
 
 
+def test_a_body_ends_at_its_last_statement() -> None:
+    # Python's own end line for a function is its last statement's, so comments after it
+    # belong to no function
+    text = "def short():\n    return 1\n" + "    # a note after the return\n" * MAX_BODY_LINES
+
+    assert lengths(text) == {"short": 1}
+
+
 def test_a_crlf_body_counts_each_line_once(tmp_path: Path) -> None:
     path = tmp_path / "module.py"
     path.write_bytes(function_of(MAX_BODY_LINES + 1).replace("\n", "\r\n").encode())
