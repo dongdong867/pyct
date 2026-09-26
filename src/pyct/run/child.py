@@ -29,6 +29,10 @@ from pyct.run.journal import JournalWriter
 # one call of the target in this process, told to the journal; its failure, or None
 type Served = Callable[[JournalWriter], Failure | None]
 
+# how the input's process ends, taken when pyct is imported, before any target is: a target
+# that replaces os._exit, as a mock does, cannot make the process return into its caller
+_EXIT = os._exit
+
 
 def serve(writer: JournalWriter, call: Served) -> NoReturn:
     """Settle this process as the input's own, run the call, write how it ended, and exit.
@@ -44,7 +48,7 @@ def serve(writer: JournalWriter, call: Served) -> NoReturn:
         with contextlib.suppress(BaseException):
             writer.end(own_bug(error))
     _flush()
-    os._exit(0)
+    _EXIT(0)
 
 
 def settle(writer: JournalWriter) -> None:

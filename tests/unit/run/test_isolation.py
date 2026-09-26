@@ -334,3 +334,39 @@ def test_a_python_hang_ends_by_its_own_alarm_before_pyct_kills_it() -> None:
     assert result.failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
     assert cleaned_up in result.lines
     assert time.monotonic() - started < 0.2 + KILL_GRACE
+
+
+# a caller whose target replaces os._exit, as a mock does; the caller says when it goes on
+RUN_A_TARGET_THAT_REPLACES_EXIT = """
+import os
+from pyct.execution.execute import ExecutionContext
+from pyct.run.isolation import in_a_child
+
+def replaces_exit(x):
+    os._exit = lambda code: None
+    return x
+
+try:
+    in_a_child(ExecutionContext(fn=replaces_exit, file="<string>", alone=True), {"x": 1}, None)
+finally:
+    print("the caller went on")
+"""
+
+
+def test_a_target_that_replaces_exit_cannot_send_its_process_back_to_the_caller() -> None:
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    finished = subprocess.run(
+        [sys.executable, "-c", RUN_A_TARGET_THAT_REPLACES_EXIT],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    # only the caller's own process goes on; the input's process ended where pyct ended it.
+    # An input's process writes its stdout to stderr, so both streams are counted
+    said = (finished.stdout + finished.stderr).count("the caller went on")
+    assert said == 1, finished.stderr
+    assert finished.returncode == 0, finished.stderr

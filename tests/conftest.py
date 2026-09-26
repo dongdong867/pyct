@@ -1,8 +1,9 @@
 """Coverage for the input processes pyct forks inside the test process.
 
-pyct ends each input's child process with ``os._exit``, where coverage.py
-saves nothing by itself. In every child this process forks, this hook makes
-``os._exit`` stop coverage.py's measurement and save it first, so the lines
+pyct ends each input's child process with ``os._exit``, taken when
+``pyct.run.child`` is imported, and coverage.py saves nothing there by
+itself. In every child this process forks, this hook points that exit at
+one that stops coverage.py's measurement and saves it first, so the lines
 a child ran count toward the suite's coverage.
 
 A child whose deadline fires measures nothing. coverage.py's tracer takes
@@ -42,7 +43,7 @@ def _current() -> object | None:
 
 
 def _saving_exit(status: int) -> NoReturn:
-    """``os._exit`` that saves coverage.py's measurement first."""
+    """The input's process's exit, saving coverage.py's measurement first."""
     measuring = _current()
     if measuring is not None:
         with contextlib.suppress(Exception):
@@ -53,7 +54,9 @@ def _saving_exit(status: int) -> NoReturn:
 
 def _after_fork_in_child() -> None:
     if _measured:
-        os._exit = _saving_exit
+        child = sys.modules.get("pyct.run.child")
+        if child is not None:
+            child._EXIT = _saving_exit  # pyrefly: ignore[missing-attribute]
         return
     measuring = _current()
     if measuring is not None:
