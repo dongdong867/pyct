@@ -18,6 +18,8 @@ from tools.compare_coverage.accepted import (
     rewritten,
     write_records,
 )
+from tools.compare_coverage.entries import Origin
+from tools.compare_coverage.reasons import stable_reason
 from tools.compare_coverage.rows import Row, SideView, Status
 from tools.compare_coverage.sides import Limits
 
@@ -42,6 +44,7 @@ LINE = {
     "only_v2": [],
 }
 LIMITS = Limits(budget=5.0, plateau=5, solver_timeout=10.0)
+ROOTS = {Origin.V2: Path("/work/v2"), Origin.LEGACY: Path("/work/legacy")}
 HEADER = json.dumps({"budget": 5.0, "plateau": 5, "solver_timeout": 10.0})
 
 
@@ -88,7 +91,7 @@ def test_a_failed_row_is_recorded_with_its_reasons_and_what_the_other_side_cover
     file = tmp_path / "accepted.jsonl"
     accepted = Accepted(path=file, records={}, accept=True, listed=frozenset())
 
-    records = rewritten(accepted, [FAILED])
+    records = rewritten(accepted, [FAILED], ROOTS)
     write_records(file, LIMITS, records)
 
     assert records == [FAILED_RECORD]
@@ -101,20 +104,49 @@ def test_both_sides_failing_records_both_reasons_and_no_lines() -> None:
     both = replace(FAILED, status=Status.BOTH_FAILED, v2=v2_failed)
     accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
 
-    (record,) = rewritten(accepted, [both])
+    (record,) = rewritten(accepted, [both], ROOTS)
 
     assert record.failures == {"v2": "exit 2: refused", "legacy": "error: boom"}
     assert record.covered == ()
 
 
+def test_a_reason_is_recorded_without_what_changes_between_runs() -> None:
+    reason = (
+        "exit 1: TypeError: Cannot isolate target <function deco.<locals>.wrapper at 0x108b01b2f>"
+        " — loaded /usr/lib/python3.12/shutil.py, the entry names /work/v2/targets/t.py"
+        " in /work/legacy/tests/x.py, not /work/legacy, 3/4 of /work/v2x/y.py"
+    )
+
+    assert stable_reason(reason, ROOTS) == (
+        "exit 1: TypeError: Cannot isolate target <function deco.<locals>.wrapper at <address>>"
+        " — loaded <elsewhere>/shutil.py, the entry names <v2>/targets/t.py"
+        " in <legacy>/tests/x.py, not <legacy>, 3/4 of <elsewhere>/y.py"
+    )
+
+
+def test_a_failed_row_matches_a_record_made_at_another_address_and_place() -> None:
+    elsewhere = {Origin.V2: Path("/other/v2"), Origin.LEGACY: Path("/other/legacy")}
+    at = replace(LEGACY_FAILED, failure="error: <object at 0xabc> in /work/legacy/src/a.py")
+    accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
+    (record,) = rewritten(accepted, [replace(FAILED, legacy=at)], ROOTS)
+    moved = replace(LEGACY_FAILED, failure="error: <object at 0xdef> in /other/legacy/src/a.py")
+
+    marked = mark(replace(FAILED, legacy=moved), {record.key: record}, elsewhere)
+
+    assert record.failures == {"legacy": "error: <object at <address>> in <legacy>/src/a.py"}
+    assert (marked.record, marked.change) == ("accepted", None)
+    # the row itself keeps the text as the side gave it
+    assert marked.legacy == moved
+
+
 def test_a_failed_row_that_failed_the_same_way_is_accepted() -> None:
-    assert mark(FAILED, {FAILED_RECORD.key: FAILED_RECORD}).record == "accepted"
+    assert mark(FAILED, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS).record == "accepted"
 
 
 def test_a_failed_row_whose_other_side_lost_a_line_is_changed() -> None:
     lost = replace(FAILED, v2=replace(V2_RAN, covered=(2, 3)))
 
-    marked = mark(lost, {FAILED_RECORD.key: FAILED_RECORD})
+    marked = mark(lost, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS)
 
     assert marked.record == "changed"
     assert marked.change == "v2 covered was 2, 3, 4, now 2, 3"
@@ -123,7 +155,7 @@ def test_a_failed_row_whose_other_side_lost_a_line_is_changed() -> None:
 def test_a_failed_row_with_another_reason_is_changed_naming_both() -> None:
     other = replace(FAILED, legacy=replace(LEGACY_FAILED, failure="error: bang"))
 
-    marked = mark(other, {FAILED_RECORD.key: FAILED_RECORD})
+    marked = mark(other, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS)
 
     assert marked.record == "changed"
     assert marked.change == "legacy failure was 'error: boom', now 'error: bang'"
@@ -132,7 +164,7 @@ def test_a_failed_row_with_another_reason_is_changed_naming_both() -> None:
 def test_a_failed_row_that_now_runs_names_what_changed_without_naming_a_side() -> None:
     same = Row(set="v2", status=Status.SAME, file="/t.py", target="m::f", seed={"x": 0})
 
-    marked = mark(same, {FAILED_RECORD.key: FAILED_RECORD})
+    marked = mark(same, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS)
 
     assert marked.change == (
         "status was legacy failed, now same; legacy failure was 'error: boom', now none; "
@@ -247,7 +279,7 @@ def test_two_records_for_one_target_and_seed_are_refused_naming_both(tmp_path: P
 
 
 def test_a_row_that_matches_its_record_is_accepted_and_passes() -> None:
-    marked = mark(DIFFERS, {RECORD.key: RECORD})
+    marked = mark(DIFFERS, {RECORD.key: RECORD}, ROOTS)
 
     assert (marked.record, marked.change) == ("accepted", None)
     assert passes(marked)
@@ -256,7 +288,7 @@ def test_a_row_that_matches_its_record_is_accepted_and_passes() -> None:
 def test_a_row_that_moved_is_changed_names_what_moved_and_fails() -> None:
     now = replace(DIFFERS, only_legacy=(4, 9), only_v2=(3,))
 
-    marked = mark(now, {RECORD.key: RECORD})
+    marked = mark(now, {RECORD.key: RECORD}, ROOTS)
 
     assert marked.record == "changed"
     assert marked.change == "only legacy was 4, now 4, 9; only v2 was none, now 3"
@@ -266,18 +298,18 @@ def test_a_row_that_moved_is_changed_names_what_moved_and_fails() -> None:
 def test_a_closed_gap_is_a_change() -> None:
     closed = replace(DIFFERS, status=Status.SAME, only_legacy=())
 
-    marked = mark(closed, {RECORD.key: RECORD})
+    marked = mark(closed, {RECORD.key: RECORD}, ROOTS)
 
     assert marked.change == "status was differs, now same; only legacy was 4, now none"
     assert not passes(marked)
 
 
 def test_a_row_without_a_record_passes_only_as_same_or_left_out() -> None:
-    assert mark(DIFFERS, {}) == DIFFERS
+    assert mark(DIFFERS, {}, ROOTS) == DIFFERS
     assert not passes(DIFFERS)
     assert passes(replace(DIFFERS, status=Status.SAME))
     left = Row(set="v2", status=Status.LEFT_OUT, file="/t.py", left_out="why")
-    assert mark(left, {RECORD.key: RECORD}) == left
+    assert mark(left, {RECORD.key: RECORD}, ROOTS) == left
     assert passes(left)
     assert not passes(Row(set="v2", status=Status.NOT_LISTED, file="/u.py"))
 
@@ -300,7 +332,7 @@ def test_a_rewrite_replaces_run_rows_keeps_the_rest_and_drops_the_gone() -> None
         replace(DIFFERS, set="fixtures", target="b::new", status=Status.V2_FAILED, only_legacy=()),
     ]
 
-    records = rewritten(accepted, rows)
+    records = rewritten(accepted, rows, ROOTS)
 
     assert records == [
         replace(RECORD, set="fixtures", target="b::new", status="v2 failed", only_legacy=()),

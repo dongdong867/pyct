@@ -11,6 +11,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from tests.compare_coverage.acceptance.checker import (
     DEFAULT_LIMITS,
     IMPLIED_CHECK,
@@ -27,6 +29,7 @@ from tests.compare_coverage.acceptance.checker import (
     rows,
     run_checker,
     table_rows,
+    v2_side,
     write_records,
 )
 from tests.compare_coverage.conftest import StubCheckout
@@ -225,3 +228,45 @@ def test_refuses_a_file_made_with_other_limits(stub_checkout: StubCheckout, tmp_
 
     assert one_row(result.stdout, result.stderr)["record"] == "accepted"
     assert result.returncode == 0, result.stderr
+
+
+CLOSURE_DECORATED = """\
+def deco(fn):
+    def wrapper(x: int) -> int:
+        return fn(x)
+    return wrapper
+
+
+@deco
+def wrapped(x: int) -> int:
+    if x > 0:
+        return 1
+    return 0
+"""
+
+
+@pytest.mark.legacy
+@pytest.mark.timeout(180)
+def test_accepts_a_failure_whose_text_names_an_address(
+    legacy_checkout: Path, tmp_path: Path
+) -> None:
+    # legacy cannot isolate a closure, and its error names the closure's memory address
+    root = tmp_path / "root"
+    root.mkdir()
+    (root / "closure_deco.py").write_text(CLOSURE_DECORATED)
+    entry = Entry(set="v2", module="closure_deco", name="wrapped", seed={"x": 0})
+    roots = {Origin.V2: root, Origin.LEGACY: legacy_checkout}
+    sides = Sides(v2=v2_side(), legacy=legacy_side(legacy_checkout))
+    file = tmp_path / "accepted.jsonl"
+    listed = frozenset({key_of("closure_deco::wrapped", {"x": 0})})
+
+    for accept in (True, False):
+        run = a_run([entry], roots)
+        records = read_file(file, accept, run.limits)
+        accepted = Accepted(path=file, records=records, accept=accept, listed=listed)
+        code, (row,), _ = compare_on(replace(run, accepted=accepted), sides)
+
+    assert (row["status"], row["record"], code) == ("legacy failed", "accepted", 0), row
+    (record,) = read_records(file)
+    assert "Cannot isolate target" in record["failures"]["legacy"]
+    assert " at <address>>" in record["failures"]["legacy"]

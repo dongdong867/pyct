@@ -5,7 +5,9 @@ solver_timeout}``, then holds one JSON record per line, ``{set, target, seed, st
 only_legacy, only_v2}``, sorted by set, target and seed, so a change to the file shows which
 gaps moved (decision parity-gate-accepted-differences-pass-until-they-change). A record of a
 failed row also holds ``failures``, each failed side's reason by side, and ``covered``, the
-lines the side that ran covered, none when both failed.
+lines the side that ran covered, none when both failed. A reason is kept and compared in the
+stable form ``reasons.py`` gives: memory addresses masked, paths written from the checkout
+they are in, and the exception type and message as they were. A row keeps the text as given.
 
 - A record is found by its target and seed. A row that matches its record, the same status,
   the same lines only each side covered and, for a failed row, the same reasons and the same
@@ -25,8 +27,12 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from tools.compare_coverage.entries import Origin
+from tools.compare_coverage.reasons import stable_reason
 from tools.compare_coverage.rows import Row, SideView, Status
 from tools.compare_coverage.sides import Limits
+
+type Roots = Mapping[Origin, Path]
 
 type Key = tuple[str, str]
 
@@ -174,18 +180,21 @@ def _well_formed(record: Record) -> bool:
     return texts and isinstance(record.seed, dict) and all(type(n) is int for n in lines)
 
 
-def mark(row: Row, records: Mapping[Key, Record]) -> Row:
-    """The row marked ``accepted`` or ``changed`` against its record, or as it was without one."""
+def mark(row: Row, records: Mapping[Key, Record], roots: Roots) -> Row:
+    """The row marked ``accepted`` or ``changed`` against its record, or as it was without one.
+
+    ``roots`` are the checkouts this run's paths are under, for the row's stable reasons.
+    """
     if row.target is None or row.seed is None:
         return row
     record = records.get(key_of(row.target, row.seed))
     if record is None:
         return row
-    change = _change(record, row)
+    change = _change(record, row, roots)
     return replace(row, record="accepted" if change is None else "changed", change=change)
 
 
-def _change(record: Record, row: Row) -> str | None:
+def _change(record: Record, row: Row, roots: Roots) -> str | None:
     """What differs between the record and the row, or ``None`` when they match."""
     changes = []
     if record.status != row.status.value:
@@ -195,12 +204,12 @@ def _change(record: Record, row: Row) -> str | None:
         changes.append(f"only legacy was {was}, now {now}")
     if record.only_v2 != row.only_v2:
         changes.append(f"only v2 was {_lines(record.only_v2)}, now {_lines(row.only_v2)}")
-    return "; ".join(changes + _failure_changes(record, row)) or None
+    return "; ".join(changes + _failure_changes(record, row, roots)) or None
 
 
-def _failure_changes(record: Record, row: Row) -> list[str]:
+def _failure_changes(record: Record, row: Row, roots: Roots) -> list[str]:
     """How a failed row's reasons and the lines of the side that ran moved from the record's."""
-    failures, covered = _failures(row), _covered(row)
+    failures, covered = _failures(row, roots), _covered(row)
     # the side that ran is the same one only while the status is
     ran = _ran(row) if record.status == row.status.value else "the side that ran"
     changes = [
@@ -217,21 +226,29 @@ def _sides(row: Row) -> list[tuple[str, SideView]]:
     return [(name, view) for name, view in (("v2", row.v2), ("legacy", row.legacy)) if view]
 
 
-def _failures(row: Row) -> dict[str, str]:
-    """Each failed side's reason, by side."""
-    return {name: view.failure for name, view in _sides(row) if view.failure is not None}
+def _failures(row: Row, roots: Roots) -> dict[str, str]:
+    """Each failed side's reason, by side, in its stable form."""
+    return {
+        name: stable_reason(view.failure, roots)
+        for name, view in _sides(row)
+        if view.failure is not None
+    }
+
+
+def _failed(row: Row) -> bool:
+    return any(view.failure is not None for _, view in _sides(row))
 
 
 def _ran(row: Row) -> str:
     """The side that ran while the other failed, or a phrase for a row with no such side."""
     ran = [name for name, view in _sides(row) if view.failure is None]
-    return ran[0] if len(ran) == 1 and _failures(row) else "the side that ran"
+    return ran[0] if len(ran) == 1 and _failed(row) else "the side that ran"
 
 
 def _covered(row: Row) -> tuple[int, ...]:
     """The lines the side that ran covered, when exactly one side failed; else none."""
     running = [view for _, view in _sides(row) if view.failure is None]
-    return running[0].covered if len(running) == 1 and _failures(row) else ()
+    return running[0].covered if len(running) == 1 and _failed(row) else ()
 
 
 def _text(reason: str | None) -> str:
@@ -249,7 +266,7 @@ def passes(row: Row) -> bool:
     return row.status in PASSING
 
 
-def rewritten(accepted: Accepted, rows: Iterable[Row]) -> list[Record]:
+def rewritten(accepted: Accepted, rows: Iterable[Row], roots: Roots) -> list[Record]:
     """The records ``--accept`` writes, sorted by set, target and seed."""
     records = {key: record for key, record in accepted.records.items() if key in accepted.listed}
     for row in rows:
@@ -258,11 +275,11 @@ def rewritten(accepted: Accepted, rows: Iterable[Row]) -> list[Record]:
         key = key_of(row.target, row.seed)
         records.pop(key, None)
         if row.status not in PASSING:
-            records[key] = _record_of(row, row.target, row.seed)
+            records[key] = _record_of(row, row.target, row.seed, roots)
     return sorted(records.values(), key=lambda record: (record.set, *record.key))
 
 
-def _record_of(row: Row, target: str, seed: Mapping[str, object]) -> Record:
+def _record_of(row: Row, target: str, seed: Mapping[str, object], roots: Roots) -> Record:
     return Record(
         set=row.set,
         target=target,
@@ -270,7 +287,7 @@ def _record_of(row: Row, target: str, seed: Mapping[str, object]) -> Record:
         status=row.status.value,
         only_legacy=row.only_legacy,
         only_v2=row.only_v2,
-        failures=_failures(row),
+        failures=_failures(row, roots),
         covered=_covered(row),
     )
 
