@@ -15,7 +15,7 @@ import os
 import shutil
 import subprocess
 import sys
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -60,24 +60,31 @@ def stub_checkout(tmp_path: Path) -> StubCheckout:
 
 
 @pytest.fixture(scope="session")
-def legacy_checkout(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Path]:
+def legacy_checkout(tmp_path_factory: pytest.TempPathFactory) -> Path:
     given = os.environ.get("PYCT_LEGACY_CHECKOUT")
     if given:
-        yield Path(given)
-        return
+        return Path(given)
     checkout = tmp_path_factory.mktemp("legacy")
+    # the checkout's own environment, not this one: uv would warn and ignore it anyway
+    build_legacy_checkout(checkout, {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"})
+    return checkout
+
+
+def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> None:
+    """Extract main into ``checkout`` and install its environment. A failure says what uv said."""
     archive = subprocess.run(
         ["git", "archive", "main"], cwd=REPO_ROOT, capture_output=True, check=True
     )
     subprocess.run(["tar", "-x", "-C", str(checkout)], input=archive.stdout, check=True)
-    # the checkout's own environment, not this one: uv would warn and ignore it anyway
-    environment = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    subprocess.run(
-        ["uv", "sync", "--frozen", "--no-dev"],
-        cwd=checkout,
-        env=environment,
-        capture_output=True,
-        check=True,
-        timeout=BUILD_SECONDS,
-    )
-    yield checkout
+    try:
+        subprocess.run(
+            ["uv", "sync", "--frozen", "--no-dev"],
+            cwd=checkout,
+            env=dict(environment),
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=BUILD_SECONDS,
+        )
+    except subprocess.CalledProcessError as error:
+        pytest.fail(f"uv sync could not build a legacy checkout in {checkout}:\n{error.stderr}")
