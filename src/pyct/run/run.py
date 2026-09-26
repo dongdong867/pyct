@@ -178,7 +178,7 @@ def _could_not_start(error: InputStartError) -> Stop:
 
 
 def _environment(cvc5: str | None, isolated: bool) -> Environment:
-    """What the run ran in: the version the cvc5 the solver used gave, and where inputs ran.
+    """What the run ran in: the version the solver's cvc5 reported, and where inputs ran.
 
     A cvc5 that will not say its version leaves the version out; the run is
     the same run either way. ``isolated`` is known only once the inputs ran,
