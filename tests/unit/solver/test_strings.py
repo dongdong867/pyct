@@ -77,7 +77,7 @@ def test_a_literal_cvc5_would_not_print_is_an_error(literal: str) -> None:
 def test_the_real_cvc5_hands_back_the_str_it_was_given(value: str) -> None:
     equal = Branch(expression=["==", "s", repr(value)], taken=True, site=SITE)
 
-    assert solve((equal,), {"s": str}, None) == Sat({"s": value})
+    assert solve((equal,), {"s": str}, 10.0) == Sat({"s": value})
 
 
 def test_an_order_against_a_literal_is_written_letter_by_letter() -> None:

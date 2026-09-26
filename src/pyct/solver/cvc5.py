@@ -15,12 +15,23 @@ logger = logging.getLogger(__name__)
 # read one SMT-LIB program from stdin, print a model with the answer, say nothing else
 ARGUMENTS = ("--produce-models", "--lang", "smt", "--quiet")
 
+# cvc5 stops itself at --tlimit; pyct stops it this much later when it does not
+GRACE_SECONDS = 1.0
 
-def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float | None) -> Answer:
+# the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
+LONGEST_WAIT_SECONDS = 2_147_483.0
+
+
+def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds cvc5 gets.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
+
+    ``timeout`` is finite and above zero, and cvc5 is told it as its limit. A
+    cvc5 still running ``GRACE_SECONDS`` past it is stopped by pyct, and that
+    is a ``Timeout()`` as well, so every solve ends near its limit. A limit
+    longer than Python can wait, about 24 days, is cut to what it can.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -30,9 +41,21 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     seed's values back as the solver's.
     """
     text = render(prefix, leaves)
+    timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
-    finished = subprocess.run(argv, input=text, capture_output=True, text=True, check=False)
+    try:
+        finished = subprocess.run(
+            argv,
+            input=text,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout + GRACE_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        logger.warning("pyct stopped cvc5, which ran past its time limit")
+        return Timeout()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
@@ -41,12 +64,13 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     return answer
 
 
-def _argv(timeout: float | None) -> list[str]:
-    """The command. cvc5 counts its limit in milliseconds, and rounds up is the honest way."""
-    argv = [str(locate()), *ARGUMENTS]
-    if timeout is not None:
-        argv.append(f"--tlimit={math.ceil(timeout * 1000)}")
-    return argv
+def _argv(timeout: float) -> list[str]:
+    """The command. cvc5 counts its limit in milliseconds, and rounds up is the honest way.
+
+    Rounding up also keeps any limit above zero at 1 or more, since cvc5
+    reads ``--tlimit=0`` as no limit.
+    """
+    return [str(locate()), *ARGUMENTS, f"--tlimit={math.ceil(timeout * 1000)}"]
 
 
 def _answer(stdout: str, stderr: str) -> Answer:
