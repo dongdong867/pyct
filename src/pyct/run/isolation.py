@@ -132,14 +132,28 @@ def _forked(buffer: mmap.mmap, call: Served) -> int:
     for stream in (sys.stdout, sys.stderr):
         with contextlib.suppress(Exception):
             stream.flush()
-    gc.freeze()
-    try:
-        pid = os.fork()
-    except OSError as error:
-        gc.unfreeze()
-        raise InputStartError(f"could not start a child process: {error}") from error
+    pid = _fork_frozen()
     if pid == 0:
         # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
         serve(JournalWriter(buffer), call)  # pragma: no cover
-    gc.unfreeze()
+    return pid
+
+
+def _fork_frozen() -> int:
+    """Fork with garbage collection frozen, so a collection in the child skips pyct's objects.
+
+    A freeze the caller had made before is the caller's, so only a freeze
+    made here is undone, and only in this process: the child keeps it.
+    """
+    ours = gc.get_freeze_count() == 0
+    if ours:
+        gc.freeze()
+    try:
+        pid = os.fork()
+    except OSError as error:
+        if ours:
+            gc.unfreeze()
+        raise InputStartError(f"could not start a child process: {error}") from error
+    if ours and pid != 0:
+        gc.unfreeze()
     return pid
