@@ -63,6 +63,15 @@ def test_a_silent_exit_is_no_summary_line(stub_checkout: StubCheckout) -> None:
     assert side.run(request()).failure == "no summary line"
 
 
+def test_a_non_zero_exit_names_the_code_and_what_it_said_last(
+    stub_checkout: StubCheckout,
+) -> None:
+    stub_checkout.script({ONE_CHECK: {"exit": 3, "say": "boom"}})
+    side = LegacySide(checkout=stub_checkout.path, environment=ENVIRONMENT)
+
+    assert side.run(request()).failure == "exit 3: boom"
+
+
 def test_a_side_past_its_wait_is_stopped(stub_checkout: StubCheckout) -> None:
     stub_checkout.script({ONE_CHECK: {"sleep": 30}})
     side = LegacySide(checkout=stub_checkout.path, environment=ENVIRONMENT)
