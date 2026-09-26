@@ -23,7 +23,6 @@ import functools
 import mmap
 import os
 import pickle
-import random
 import signal
 import subprocess
 import sys
@@ -65,7 +64,9 @@ class Fresh:
 def fresh_for(spec: str, file: str) -> Fresh:
     """The run's fresh interpreters, hashing with the seed pyct was given, or one picked now."""
     given = os.environ.get("PYTHONHASHSEED", "random")
-    seed = str(random.randint(1, _MOST_SEED)) if given == "random" else given
+    # from the system, never from random's own generator, which is the target's
+    drawn = int.from_bytes(os.urandom(4), "little") % _MOST_SEED + 1
+    seed = str(drawn) if given == "random" else given
     return Fresh(spec=spec, file=file, hash_seed=seed)
 
 

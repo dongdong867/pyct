@@ -1,6 +1,7 @@
 """One input in a fresh interpreter, for real: each test starts a new Python."""
 
 import os
+import random
 import subprocess
 import time
 from pathlib import Path
@@ -178,3 +179,14 @@ def test_a_run_picks_a_hash_seed_when_pyct_was_given_none(
     seed = fresh_for(ONE_CHECK, "one_check.py").hash_seed
 
     assert 0 < int(seed) < 2**32
+
+
+def test_picking_a_run_s_hash_seed_leaves_the_target_s_random_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("PYTHONHASHSEED", raising=False)
+    before = random.getstate()
+
+    fresh_for(ONE_CHECK, "one_check.py")
+
+    assert random.getstate() == before

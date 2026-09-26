@@ -4,6 +4,7 @@ import dataclasses
 import inspect
 import logging
 import os
+import random
 import subprocess
 import sys
 import threading
@@ -204,3 +205,11 @@ def test_a_run_in_process_for_want_of_a_name_says_so_once_on_stderr() -> None:
     said = [line for line in finished.stderr.splitlines() if "threads" in line]
     assert len(said) == 1, finished.stderr
     assert said[0].startswith("each input runs in pyct's process")
+
+
+def test_setting_up_a_run_leaves_the_target_s_random_alone() -> None:
+    before = random.getstate()
+
+    Inputs(one_check(), Isolation.AUTO)
+
+    assert random.getstate() == before
