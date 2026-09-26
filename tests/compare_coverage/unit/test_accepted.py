@@ -139,6 +139,39 @@ def test_a_failed_row_matches_a_record_made_at_another_address_and_place() -> No
     assert marked.legacy == moved
 
 
+def checkouts(v2: str, legacy: str) -> dict[Origin, Path]:
+    return {Origin.V2: Path(v2), Origin.LEGACY: Path(legacy)}
+
+
+def failed_in(roots: dict[Origin, Path]) -> Row:
+    """FAILED, with a reason that names both checkouts and a file in each."""
+    v2, legacy = roots[Origin.V2], roots[Origin.LEGACY]
+    failure = f"error: in {legacy}/src/a.py: {v2}/targets/t.py, from {legacy}"
+    return replace(FAILED, legacy=replace(LEGACY_FAILED, failure=failure))
+
+
+@pytest.mark.parametrize(
+    ("made", "moved"),
+    [
+        # legacy inside the v2 checkout, as a worktree in the repository is
+        (checkouts("/work/pyct", "/work/pyct/legacy"), checkouts("/b/v2", "/b/v2/.trees/main")),
+        # a folder name with a space, and a v2 root that begins the legacy root's text
+        (checkouts("/a/My Drive/pyct", "/a/My Drive/pyct old"), checkouts("/b/v2", "/b/v2 (1)")),
+    ],
+)
+def test_a_failed_row_matches_its_record_from_nested_or_spaced_checkouts(
+    made: dict[Origin, Path], moved: dict[Origin, Path]
+) -> None:
+    accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
+    (record,) = rewritten(accepted, [failed_in(made)], made)
+
+    marked = mark(failed_in(moved), {record.key: record}, moved)
+
+    stable = "error: in <legacy>/src/a.py: <v2>/targets/t.py, from <legacy>"
+    assert record.failures == {"legacy": stable}
+    assert (marked.record, marked.change) == ("accepted", None)
+
+
 def test_a_failed_row_that_failed_the_same_way_is_accepted() -> None:
     assert mark(FAILED, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS).record == "accepted"
 
