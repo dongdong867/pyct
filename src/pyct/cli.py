@@ -175,16 +175,7 @@ def parse_budget(budget_text: str | None) -> Budget:
     """The budget is a positive number of seconds. No flag is no deadline."""
     if budget_text is None:
         return Budget()
-    try:
-        seconds = float(budget_text)
-    except ValueError as error:
-        raise UsageError(f"budget must be a number of seconds, got {budget_text!r}") from error
-    # nan fails isfinite; inf passes > 0 and would overflow the timer
-    if not (math.isfinite(seconds) and seconds > 0):
-        raise UsageError(
-            f"budget must be a finite number of seconds above zero, got {budget_text!r}"
-        )
-    return Budget(seconds=seconds)
+    return Budget(seconds=_positive_seconds(budget_text, "budget"))
 
 
 def parse_plateau(plateau_text: str | None) -> Plateau:
@@ -214,19 +205,22 @@ def parse_solver_timeout(solver_timeout_text: str | None) -> SolverTimeout:
     """
     if solver_timeout_text is None:
         return SolverTimeout()
+    return SolverTimeout(seconds=_positive_seconds(solver_timeout_text, "solver timeout"))
+
+
+def _positive_seconds(text: str, flag: str) -> float:
+    """``text`` as a finite number of seconds above zero. ``flag`` names it in a refusal.
+
+    The budget and the solver timeout share this one rule. ``inf`` passes
+    ``> 0``, so ``isfinite`` is what refuses it along with ``nan``.
+    """
     try:
-        seconds = float(solver_timeout_text)
+        seconds = float(text)
     except ValueError as error:
-        raise UsageError(
-            f"solver timeout must be a number of seconds, got {solver_timeout_text!r}"
-        ) from error
-    # nan fails isfinite; inf passes > 0 and would be no limit at all
+        raise UsageError(f"{flag} must be a number of seconds, got {text!r}") from error
     if not (math.isfinite(seconds) and seconds > 0):
-        raise UsageError(
-            "solver timeout must be a finite number of seconds above zero,"
-            f" got {solver_timeout_text!r}"
-        )
-    return SolverTimeout(seconds=seconds)
+        raise UsageError(f"{flag} must be a finite number of seconds above zero, got {text!r}")
+    return seconds
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
