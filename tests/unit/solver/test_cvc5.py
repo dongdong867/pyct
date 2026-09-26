@@ -108,6 +108,17 @@ def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
     assert "--tlimit=1500" in (tmp_path / "argv").read_text()
 
 
+def test_a_limit_under_a_millisecond_reaches_the_solver_as_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, out="unsat\n")
+
+    # a nearly spent budget gives a limit like this; cvc5 reads --tlimit=0 as no limit
+    ask(tmp_path, monkeypatch, timeout=0.0001)
+
+    assert "--tlimit=1" in (tmp_path / "argv").read_text().split()
+
+
 def test_a_limit_longer_than_python_can_wait_still_gets_an_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
