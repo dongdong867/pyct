@@ -74,10 +74,11 @@ def compare(run: Run, sides: Sides, streams: Streams) -> int:
     limits = {"v2": sides.v2.given(run.limits), "legacy": sides.legacy.given(run.limits)}
     print(summary_line(rows, limits, run.facts), file=streams.out, flush=True)
     print(totals_line(rows), file=streams.err, flush=True)
-    accepting = run.accepted is not None and run.accepted.accept
-    if run.accepted is not None and accepting:
-        write_records(run.accepted.path, rewritten(run.accepted, rows))
-    return exit_code(rows, accepting)
+    # the file --accept rewrites, or None when this run only reads records or has none
+    rewriting = run.accepted if run.accepted is not None and run.accepted.accept else None
+    if rewriting is not None:
+        write_records(rewriting.path, rewritten(rewriting, rows))
+    return exit_code(rows, accepting=rewriting is not None)
 
 
 def exit_code(rows: list[Row], accepting: bool) -> int:
