@@ -40,7 +40,7 @@ testpaths = ["tests"]
 timeout = 60
 timeout_method = "thread"
 # that thread runs through every test, so each fork a test makes warns that the process
-# runs threads; pyct forks only when the target's import left none
+# runs threads; pyct forks only while its process runs one thread, or when a test asks it to
 filterwarnings = ['ignore:This process \(pid=\d+\) is multi-threaded:DeprecationWarning']
 markers = [
   "legacy: runs legacy's engine from a checkout of main, built once per session; -m 'not legacy' skips it",

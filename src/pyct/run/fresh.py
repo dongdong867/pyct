@@ -1,7 +1,8 @@
-"""One input in a fresh interpreter, for a run whose target's import left threads running.
+"""One input in a fresh interpreter, for a run whose process runs other threads.
 
 A copy of a process that runs threads can hang on a lock one of them held
-at the copy, so such a run copies nothing: each input starts a new Python,
+at the copy, so from the first input that finds pyct's process running
+another thread, the run forks no more: each input starts a new Python,
 which imports the target by name and runs the one call. It costs about
 11 ms before the target's own import, which takes seconds for a large
 library, so it is the way only when forking is unsafe.
