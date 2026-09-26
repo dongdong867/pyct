@@ -2,8 +2,9 @@
 
 The `ConcolicFloat` body below is the taught set: the compares, the truth
 test, `+ - * /`, the unary operations and `is_integer` stay symbolic, and a
-copy is the value itself. The tuples here name what is left to float on
-purpose, and the derivation at the bottom of the file downgrades every other
+copy is the value itself. `_KEPT` names what is left to float on purpose.
+`_INHERITED` names what float inherits rather than defines, which the
+derivation at the bottom of the file downgrades along with every other
 method float defines.
 
 An operand pyct does not encode, an int or a bool, is float's own answer and
