@@ -185,7 +185,10 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
 
 
 def _operand(expression: Expression) -> str:
-    """A condition inside a condition gets parentheses; a leaf and a method call stand alone."""
+    """A condition inside a condition gets parentheses; a leaf stands alone.
+
+    So does a named head with arguments, which reads ``a.name(b)``.
+    """
     written = _infix(expression)
     return (
         f"({written})"
