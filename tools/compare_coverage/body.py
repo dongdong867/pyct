@@ -9,9 +9,10 @@ never disagree about it (decision own-lines-from-the-compiled-code). The rule:
   statements after the def and the blocks of their ``if``, ``for``, ``while``, ``with``,
   ``try`` and ``match``: an assignment of any kind, a ``for``, ``with``, ``except`` or
   ``match`` target, ``del``, an import, or a ``def`` or ``class`` of the name. It does not
-  read inside functions, classes, lambdas or comprehensions. ``NAME = wrap(NAME)`` wraps
-  the target as a decorator does and is kept. An ``import *`` after the def is refused,
-  since the file cannot show whether it binds the name.
+  read inside functions, classes, lambdas or comprehensions. ``NAME = wrap(NAME)``, a call
+  of another function that takes ``NAME`` as an argument, wraps the target as a decorator
+  does and is kept. An ``import *`` after the def is refused, since the file cannot show
+  whether it binds the name.
 - Its own lines are the lines its compiled code runs, read from the line table of its code
   object and of the code nested in it, such as an inner function. A line inside a statement
   that spans several lines stands for the innermost statement that holds it, as Python's
@@ -146,13 +147,16 @@ def _binds(node: ast.AST, name: str) -> bool:
 
 
 def _wraps(assign: ast.Assign, name: str) -> bool:
-    """True for ``name = <value that reads name>``, such as ``f = wrap(f)``."""
+    """True for ``name = wrap(name)``: a call of another function that takes ``name`` itself."""
+    call = assign.value
     alone = all(isinstance(target, ast.Name) for target in assign.targets)
-    reads = any(
-        isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load)
-        for node in ast.walk(assign.value)
-    )
-    return alone and reads
+    if not alone or not isinstance(call, ast.Call) or _is_name(call.func, name):
+        return False
+    return any(_is_name(value, name) for value in [*call.args, *(k.value for k in call.keywords)])
+
+
+def _is_name(node: ast.AST, name: str) -> bool:
+    return isinstance(node, ast.Name) and node.id == name
 
 
 def _codes(code: CodeType) -> dict[tuple[str, int], CodeType]:

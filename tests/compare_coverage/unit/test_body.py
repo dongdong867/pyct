@@ -276,6 +276,9 @@ def test_a_name_bound_without_def_or_class_is_refused_naming_the_file(tmp_path: 
         ("import os as f", 9),
         ("from os import path as f", 9),
         ("f += 1", 9),
+        ("f = f()", 9),
+        ("f = (f, OSError)", 9),
+        ("f = f(f)", 9),
         ("del f", 9),
         ("for f in range(2):\n    pass", 9),
         ("with open('x') as f:\n    pass", 9),
@@ -327,7 +330,9 @@ def test_a_name_bound_in_another_scope_or_only_annotated_keeps_the_definition(
     assert read_body(write(tmp_path, source), "f").own_lines == frozenset({6})
 
 
-@pytest.mark.parametrize("after", ["f.calls = 0", "f.calls: int = 0", "f = wrap(f)"])
+@pytest.mark.parametrize(
+    "after", ["f.calls = 0", "f.calls: int = 0", "f = wrap(f)", "f = wrap(fn=f)"]
+)
 def test_setting_an_attribute_or_wrapping_the_name_keeps_the_definition(
     tmp_path: Path, after: str
 ) -> None:
