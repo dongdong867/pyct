@@ -1,8 +1,8 @@
 """Turn a seed dict into the arguments the target is called with."""
 
 import json
-from collections.abc import Callable, Mapping
-from typing import TypeGuard
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, TypeGuard
 
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
@@ -58,7 +58,7 @@ def walked(seed: Mapping[str, object], at_leaf: AtLeaf) -> dict[str, object]:
     bind, leaves and the model all read this one walk, so they cannot
     disagree about which values are tracked or what each is named.
     """
-    return {name: _rebuilt(value, name, at_leaf) for name, value in seed.items()}
+    return _Walk(at_leaf).rebuilt(seed)
 
 
 def _binds(value: object) -> TypeGuard[int | str]:
@@ -66,26 +66,76 @@ def _binds(value: object) -> TypeGuard[int | str]:
     return isinstance(value, int | str) and not isinstance(value, bool)
 
 
-def _rebuilt(value: object, access: Expression, at_leaf: AtLeaf) -> object:
-    """One value of the seed, with every tracked value under it handed to ``at_leaf``.
+# one value still to place: the value, its access, and the container and slot its copy goes in.
+# The slot is an index for a list and any key for a dict, the seed's own
+type _Pending = tuple[object, Expression, dict[Any, object] | list[object], Any]
 
-    A dict and a list, and not their subclasses, are walked and rebuilt as
-    the same type; a dict's value is walked when its key can be written as a
-    literal (see ``_key``).
+
+class _Walk:
+    """One walk of a seed, in seed order, depth first, and never recursive.
+
+    A list of what is left to place stands in for Python's call stack, so a
+    seed nested past Python's recursion limit is walked like any other. Each
+    dict and list the walk rebuilds is remembered by the identity of the
+    seed's own, so one reached again, by a second path or from inside
+    itself, is the same copy and is not walked twice: its values are named
+    by the first path in seed order.
     """
-    if _binds(value):
-        return at_leaf(value, access)
-    if isinstance(value, list) and type(value) is list:
-        return [_rebuilt(item, ["[]", access, index], at_leaf) for index, item in enumerate(value)]
-    if isinstance(value, dict) and type(value) is dict:
-        return {key: _item(key, item, access, at_leaf) for key, item in value.items()}
-    return value
 
+    def __init__(self, at_leaf: AtLeaf) -> None:
+        self._at_leaf = at_leaf
+        # the seed's container, kept alive beside its copy so its identity is not reused
+        self._copies: dict[int, tuple[object, object]] = {}
+        self._pending: list[_Pending] = []
 
-def _item(key: object, item: object, container: Expression, at_leaf: AtLeaf) -> object:
-    """A dict's value, walked when its key is one an access can name."""
-    literal = _key(key)
-    return item if literal is None else _rebuilt(item, ["[]", container, literal], at_leaf)
+    def rebuilt(self, seed: Mapping[str, object]) -> dict[str, object]:
+        """The seed as the walk rebuilds it, one parameter per key."""
+        rebuilt: dict[str, object] = dict.fromkeys(seed)
+        self._later((value, name, rebuilt, name) for name, value in seed.items())
+        while self._pending:
+            value, access, into, slot = self._pending.pop()
+            into[slot] = self._placed(value, access)
+        return rebuilt
+
+    def _later(self, values: Iterable[_Pending]) -> None:
+        """Queue values to place in the order given: the stack pops the last one first."""
+        self._pending.extend(reversed(list(values)))
+
+    def _placed(self, value: object, access: Expression) -> object:
+        """What goes where ``value`` was: its tracked form, its copy, or the value itself.
+
+        A dict and a list, and not their subclasses, are copied, and their
+        values queued; a dict's value is walked when its key can be written as
+        a literal (see ``_key``).
+        """
+        if _binds(value):
+            return self._at_leaf(value, access)
+        if type(value) is not list and type(value) is not dict:
+            return value
+        known = self._copies.get(id(value))
+        if known is not None:
+            return known[1]
+        if isinstance(value, list):
+            items: list[object] = [None] * len(value)
+            self._copies[id(value)] = (value, items)
+            self._later((item, ["[]", access, i], items, i) for i, item in enumerate(value))
+            return items
+        return self._copied_dict(value, access)
+
+    def _copied_dict(self, value: dict[object, object], access: Expression) -> object:
+        """A dict's copy, keys in the seed's order, with each value queued to place."""
+        entries: dict[object, object] = dict.fromkeys(value)
+        self._copies[id(value)] = (value, entries)
+        walked = [(key, _key(key)) for key, item in value.items()]
+        for key, literal in walked:
+            if literal is None:
+                entries[key] = value[key]
+        self._later(
+            (value[key], ["[]", access, literal], entries, key)
+            for key, literal in walked
+            if literal is not None
+        )
+        return entries
 
 
 def _key(key: object) -> Expression | None:

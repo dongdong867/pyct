@@ -118,6 +118,8 @@ def _request(
     """The input, pickled into an unlinked file: the import path first, then the call.
 
     The path comes first, so the arguments unpickle where their own modules import.
+    pickle recurses once per level of the arguments, so a seed nested past
+    what it reaches cannot be handed over either.
     """
     with contextlib.ExitStack() as stack:
         try:
@@ -125,7 +127,7 @@ def _request(
             pickle.dump(list(sys.path), handed)
             pickle.dump((spec, file, dict(args), until), handed)
             handed.flush()
-        except (OSError, pickle.PicklingError, TypeError, AttributeError) as error:
+        except (OSError, pickle.PicklingError, TypeError, AttributeError, RecursionError) as error:
             raise InputStartError(
                 f"could not hand the input to a fresh interpreter: {error}"
             ) from error

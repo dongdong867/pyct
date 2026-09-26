@@ -46,3 +46,16 @@ def test_the_model_writes_a_value_inside_at_its_access() -> None:
 def test_a_model_about_an_access_the_seed_does_not_have_is_an_error() -> None:
     with pytest.raises(ValueError, match="items"):
         apply({"items": [1]}, {json.dumps(["[]", "items", 1]): 5})
+
+
+def test_the_model_keeps_a_list_that_holds_itself_one_list() -> None:
+    xs: list[object] = [0]
+    xs.append(xs)
+
+    args = apply({"xs": xs}, {json.dumps(["[]", "xs", 0]): 7})
+
+    copy = args["xs"]
+    assert isinstance(copy, list)
+    assert copy[0] == 7
+    assert copy[1] is copy
+    assert xs[0] == 0

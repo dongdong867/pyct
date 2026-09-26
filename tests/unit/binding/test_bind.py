@@ -1,4 +1,5 @@
 import json
+import sys
 from collections import OrderedDict
 
 from pyct.binding.bind import bind, leaf_name, leaves
@@ -171,3 +172,45 @@ def test_leaves_names_each_value_inside_by_its_access_in_seed_order() -> None:
 def test_leaf_name_is_a_parameters_own_name_or_its_access_as_json() -> None:
     assert leaf_name("x") == "x"
     assert leaf_name(["[]", "items", 0]) == '["[]", "items", 0]'
+
+
+def test_a_list_that_holds_itself_is_walked_once() -> None:
+    xs: list[object] = [0]
+    xs.append(xs)
+
+    args = bind({"xs": xs}, [])
+
+    copy = args["xs"]
+    assert isinstance(copy, list) and copy is not xs
+    assert copy[1] is copy
+    assert isinstance(copy[0], ConcolicInt)
+    assert leaves({"xs": xs}) == {json.dumps(["[]", "xs", 0]): int}
+
+
+def test_a_container_reached_twice_is_one_copy_named_by_its_first_path() -> None:
+    shared = [0]
+
+    args = bind({"a": shared, "b": shared}, [])
+
+    assert args["a"] is args["b"]
+    assert leaves({"a": shared, "b": shared}) == {json.dumps(["[]", "a", 0]): int}
+
+
+def test_a_seed_nested_past_the_recursion_limit_is_walked() -> None:
+    depth = 3 * sys.getrecursionlimit()
+    seed: dict[str, object] = {"k": 7}
+    for _ in range(depth):
+        seed = {"k": seed}
+
+    args = bind({"d": seed}, [])
+
+    node: object = args["d"]
+    for _ in range(depth + 1):
+        assert isinstance(node, dict)
+        node = node["k"]
+    assert isinstance(node, ConcolicInt)
+    expression = node.expression
+    for _ in range(depth + 1):
+        assert isinstance(expression, list)
+        expression = expression[1]
+    assert expression == "d"

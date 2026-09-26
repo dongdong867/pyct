@@ -161,8 +161,7 @@ def _infix(expression: Expression) -> str:
         return expression if isinstance(expression, str) else repr(expression)
     operator, *operands = expression
     if _is_index(expression):
-        container, key = operands
-        return f"{_operand(container)}[{_infix(key)}]"
+        return _indexed(expression)
     if _is_named_with_arguments(expression):
         receiver, *arguments = operands
         called = ", ".join(_infix(argument) for argument in arguments)
@@ -187,6 +186,21 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
         and not keyword.iskeyword(head)
         and len(expression) > 2
     )
+
+
+def _indexed(expression: list[Expression]) -> str:
+    """A chain of indexes as Python writes it, ``a[k][0]``, read down the chain in a loop.
+
+    An access to a value inside an argument is one index per step, as deep
+    as the seed goes, so the chain is not read one call per step.
+    """
+    keys: list[Expression] = []
+    container: Expression = expression
+    while isinstance(container, list) and _is_index(container):
+        keys.append(container[2])
+        container = container[1]
+    written = "".join(f"[{_infix(key)}]" for key in reversed(keys))
+    return f"{_operand(container)}{written}"
 
 
 def _is_index(expression: list[Expression]) -> bool:

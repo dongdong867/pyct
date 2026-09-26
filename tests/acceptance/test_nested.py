@@ -23,6 +23,10 @@ KEY_LIKE_INDEX_FILE = str(REPO_ROOT / "targets" / "nested" / "key_like_index.py"
 STRING_IN_LIST = "targets.nested.string_in_list::check"
 OWN_ARGUMENTS = "targets.nested.own_arguments::touch"
 MISSING_KEY = "targets.nested.missing_key::check"
+DEEP = "targets.nested.deep::check"
+# deeper than Python's default recursion limit of 1000 frames, so no step of the run may recurse
+# once per level
+DEPTH = 2000
 ITEMS = "targets.annotations.items::echo_items"
 ITEMS_AS_TEXT = "targets.annotations.items_as_text::echo_items"
 KINDS = "targets.annotations.kinds::echo_kinds"
@@ -291,3 +295,22 @@ def test_reports_a_missing_key_as_the_targets_raise() -> None:
     assert isinstance(failure, dict) and failure["kind"] == "target_raised", seed
     assert str(failure["detail"]).startswith("KeyError"), seed
     assert seed["forks"] == []
+
+
+# run-with-nested-arguments: a value inside an argument, nested as deep as the seed goes
+def test_follows_a_value_nested_past_the_recursion_limit() -> None:
+    seed: dict[str, object] = {"a": 0}
+    for _ in range(DEPTH - 1):
+        seed = {"a": seed}
+
+    result = run_pyct(DEEP, json.dumps({"config": seed}))
+
+    assert result.returncode == 0, result.stderr[-2000:]
+    lines = input_lines(result.stdout)
+    assert [line["failure"] for line in lines] == [None, None]
+    node = args_of(lines[1])["config"]
+    for _ in range(DEPTH):
+        assert isinstance(node, dict)
+        node = node["a"]
+    assert isinstance(node, int) and node > 5
+    assert "config" + "['a']" * DEPTH + " > 5" in result.stderr
