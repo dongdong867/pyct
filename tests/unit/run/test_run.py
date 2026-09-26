@@ -17,6 +17,7 @@ from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, S
 from pyct.run.run import Bounds, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Answer, Timeout, Unknown
+from tests.unit.deadline_fires import DEADLINE_FIRES
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
@@ -71,6 +72,7 @@ def test_run_records_how_the_seed_ended() -> None:
     assert result.records[0].covered_lines == frozenset({2, 3})
 
 
+@DEADLINE_FIRES
 def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
     target = load_target("targets.trace.never_returns::spin")
 
@@ -302,6 +304,7 @@ def test_run_gathers_a_miss_from_every_fork_it_aimed_at(monkeypatch: pytest.Monk
     assert result.stopped.kind is StopKind.NO_FORK
 
 
+@DEADLINE_FIRES
 def test_run_stops_on_the_budget_when_the_seed_forked_and_then_spent_it() -> None:
     target = load_target("targets.flip.spins_after_a_check::spin")
 

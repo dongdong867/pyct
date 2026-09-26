@@ -18,6 +18,7 @@ dev = [
   "pyrefly>=0.33",
   "pytest>=8.0",
   "pytest-cov>=7.1",
+  "pytest-timeout>=2.3",
   "ruff>=0.12",
 ]
 
@@ -33,6 +34,10 @@ search-path = ["src", "."]
 [tool.pytest.ini_options]
 addopts = "-v --tb=short"
 testpaths = ["tests"]
+# a test still running after 60 seconds ends the run with every thread's stack, so a hang
+# fails instead of stalling. The thread method, because pyct's deadline owns SIGALRM
+timeout = 60
+timeout_method = "thread"
 
 # Measured when pytest runs with --cov. The acceptance tests start pyct in a
 # subprocess, and patch = subprocess measures the code it runs there too.
