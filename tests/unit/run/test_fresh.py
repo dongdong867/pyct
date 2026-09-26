@@ -23,14 +23,14 @@ SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
 BASE_RAISES = "targets.isolate.base_raises::stop"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# one input of an assert that fails, in a fresh interpreter, printing how it ended
-RUN_A_FAILING_ASSERT_FRESH = """
+# one input of the target argv names, in a fresh interpreter, printing how it ended
+RUN_ONE_INPUT_FRESH = """
 import os, sys
 sys.path.insert(0, os.getcwd())
 from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.target import load_target
 
-target = load_target("targets.isolate.asserts::check")
+target = load_target(sys.argv[1])
 print(in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None).failure)
 """
 
@@ -234,20 +234,31 @@ def test_a_fresh_interpreter_reads_the_hash_seed_whatever_pyct_s_flags(
     assert not any(flag in command for flag in left_out), command
 
 
-@pytest.mark.parametrize("ignoring", ["-E", "-I"])
-def test_a_variable_pyct_ignores_does_not_reach_its_fresh_interpreters(ignoring: str) -> None:
-    # pyct runs its asserts, since it ignores PYTHONOPTIMIZE, so the new interpreter must too
-    env = {**os.environ, "PYTHONOPTIMIZE": "1"}
-
+def fresh_under(flags: list[str], variable: str, value: str, spec: str) -> str:
+    """How one input of ``spec`` ended in a fresh interpreter of a pyct run under ``flags``."""
     finished = subprocess.run(
-        [sys.executable, ignoring, "-c", RUN_A_FAILING_ASSERT_FRESH],
+        [sys.executable, *flags, "-c", RUN_ONE_INPUT_FRESH, spec],
         cwd=REPO_ROOT,
-        env=env,
+        env={**os.environ, variable: value},
         capture_output=True,
         text=True,
         check=False,
         timeout=30,
     )
-
     assert finished.returncode == 0, finished.stderr
-    assert "TARGET_RAISED" in finished.stdout, finished.stdout
+    return finished.stdout
+
+
+@pytest.mark.parametrize("ignoring", ["-E", "-I"])
+def test_a_variable_pyct_ignores_does_not_reach_its_fresh_interpreters(ignoring: str) -> None:
+    # pyct runs its asserts, since it ignores PYTHONOPTIMIZE, so the new interpreter must too
+    ended = fresh_under([ignoring], "PYTHONOPTIMIZE", "1", "targets.isolate.asserts::check")
+
+    assert "TARGET_RAISED" in ended, ended
+
+
+def test_a_variable_pyct_reads_reaches_its_fresh_interpreters() -> None:
+    # only the environment carries this setting to the new interpreter; no flag of pyct's does
+    ended = fresh_under([], "PYTHONINTMAXSTRDIGITS", "640", "targets.isolate.long_digits::parse")
+
+    assert "Exceeds the limit (640 digits)" in ended, ended
