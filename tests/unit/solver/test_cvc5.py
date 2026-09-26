@@ -127,7 +127,7 @@ def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(
     # about 115 days, past the 2**31 - 1 milliseconds Python's poll can wait
     assert ask(tmp_path, monkeypatch, timeout=1e7) == Unsat()
 
-    # cut to that wait less the grace second, and no shorter
+    # cut to that wait in whole seconds, less the grace second, and no shorter
     assert "--tlimit=2147482000" in (tmp_path / "argv").read_text().split()
 
 
