@@ -5,6 +5,8 @@ through ``compare()``, as pyct's own tests go through ``run()``, because they ne
 the committed list does not hold, a side aimed at a fake, or a one-second grace.
 """
 
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -120,6 +122,19 @@ def test_stops_a_side_that_runs_too_long(stub_checkout: StubCheckout) -> None:
     assert code == 1
 
 
+def test_v2s_pyct_loads_shutil_before_any_target() -> None:
+    # the next test's one-side case rests on this: if it fails, that test needs a module
+    # pyct loads at startup and the adapter does not
+    loaded = subprocess.run(
+        [sys.executable, "-P", "-c", "import sys, pyct.cli; print('shutil' in sys.modules)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    assert loaded.stdout.strip() == "True"
+
+
 def test_fails_a_side_that_loads_another_file(stub_checkout: StubCheckout, tmp_path: Path) -> None:
     """compare-coverage-against-legacy-fails-a-side-that-loads-another-file"""
     # v2's pyct has loaded the standard library's shutil before any target, so its side
@@ -136,8 +151,8 @@ def test_fails_a_side_that_loads_another_file(stub_checkout: StubCheckout, tmp_p
 
     named = str(tmp_path / "shutil.py")
     assert shadowed["status"] == "v2 failed"
-    assert shadowed["v2"]["file"] != named
-    assert shadowed["v2"]["failure"] == f"loaded {shadowed['v2']['file']}, the entry names {named}"
+    assert shadowed["v2"]["file"] == shutil.__file__
+    assert shadowed["v2"]["failure"] == f"loaded {shutil.__file__}, the entry names {named}"
     assert shadowed["legacy"]["failure"] is None
     no_def = f"{tmp_path / 'alias.py'} has no top-level def or class named named"
     assert alias["status"] == "both failed"
