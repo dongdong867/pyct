@@ -214,3 +214,19 @@ def test_a_seed_nested_past_the_recursion_limit_is_walked() -> None:
         assert isinstance(expression, list)
         expression = expression[1]
     assert expression == "d"
+
+
+def test_a_list_under_a_float_key_is_a_copy_of_its_own_with_plain_values() -> None:
+    seed: dict[str, object] = {"table": {1.5: [0], None: {"k": [1]}}}
+
+    args = bind(seed, [])
+
+    table = args["table"]
+    assert isinstance(table, dict)
+    under_float, under_none = table[1.5], table[None]
+    assert under_float == [0] and type(under_float[0]) is int
+    under_float.append(99)
+    under_none["k"].append(99)
+    assert seed == {"table": {1.5: [0], None: {"k": [1]}}}
+    # a key no access can name leaves every value under it out of the leaves
+    assert leaves(seed) == {}

@@ -30,6 +30,17 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
     assert solved[1] is solved
 
 
+def test_run_never_changes_the_callers_seed_under_a_float_key() -> None:
+    seed: dict[str, object] = {"items": [0], "table": {1.5: [0]}}
+    target = load_target("targets.nested.float_key::touch")
+
+    result = run(target, seed, isolation=Isolation.IN_PROCESS)
+
+    assert [record.failure for record in result.records] == [None, None]
+    assert [record.args["table"] for record in result.records] == [{1.5: [0]}, {1.5: [0]}]
+    assert seed == {"items": [0], "table": {1.5: [0]}}
+
+
 def test_run_stops_cleanly_on_a_seed_too_deep_to_hand_to_a_fresh_interpreter() -> None:
     # pickle recurses once per level, so a seed this deep cannot cross to a new interpreter,
     # while a child process of pyct's own inherits it as it is

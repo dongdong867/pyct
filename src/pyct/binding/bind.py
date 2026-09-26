@@ -18,11 +18,15 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
     <key>]`` per step, so ``config["server"]["port"]`` is
-    ``["[]", ["[]", "config", "'server'"], "'port'"]``. Every dict and list is
-    rebuilt, so the target gets a copy of its own: a change it makes reaches
-    neither the seed nor a later input. A bool is an int to Python but not a
-    number to bind: it has no ``<`` worth tracking. Every other value passes
-    through as it came.
+    ``["[]", ["[]", "config", "'server'"], "'port'"]``. A bool is an int to
+    Python but not a number to bind: it has no ``<`` worth tracking.
+
+    Every dict and list the walk reaches is rebuilt, whatever key it sits
+    under, so the target gets a copy of its own: a change it makes to one
+    reaches neither the seed nor a later input. A value under a key no access
+    can name, a float key say, is copied the same way and tracked nowhere.
+    Every other value, a subclass of dict or list too, passes through as it
+    came.
     """
     return walked(seed, lambda value, access: _tracked(value, access, sink))
 
@@ -67,8 +71,9 @@ def _binds(value: object) -> TypeGuard[int | str]:
 
 
 # one value still to place: the value, its access, and the container and slot its copy goes in.
-# The slot is an index for a list and any key for a dict, the seed's own
-type _Pending = tuple[object, Expression, dict[Any, object] | list[object], Any]
+# The access is None under a key no access can name. The slot is an index for a list and any key
+# for a dict, the seed's own
+type _Pending = tuple[object, Expression | None, dict[Any, object] | list[object], Any]
 
 
 class _Walk:
@@ -101,14 +106,14 @@ class _Walk:
         """Queue values to place in the order given: the stack pops the last one first."""
         self._pending.extend(reversed(list(values)))
 
-    def _placed(self, value: object, access: Expression) -> object:
+    def _placed(self, value: object, access: Expression | None) -> object:
         """What goes where ``value`` was: its tracked form, its copy, or the value itself.
 
         A dict and a list, and not their subclasses, are copied, and their
-        values queued; a dict's value is walked when its key can be written as
-        a literal (see ``_key``).
+        values queued. A value with no access is never tracked, and neither is
+        anything under it.
         """
-        if _binds(value):
+        if access is not None and _binds(value):
             return self._at_leaf(value, access)
         if type(value) is not list and type(value) is not dict:
             return value
@@ -118,30 +123,31 @@ class _Walk:
         if isinstance(value, list):
             items: list[object] = [None] * len(value)
             self._copies[id(value)] = (value, items)
-            self._later((item, ["[]", access, i], items, i) for i, item in enumerate(value))
+            self._later((item, _step(access, i), items, i) for i, item in enumerate(value))
             return items
         return self._copied_dict(value, access)
 
-    def _copied_dict(self, value: dict[object, object], access: Expression) -> object:
-        """A dict's copy, keys in the seed's order, with each value queued to place."""
+    def _copied_dict(self, value: dict[object, object], access: Expression | None) -> object:
+        """A dict's copy, keys in the seed's order, with each value queued to place.
+
+        A value is named by its key when the key can be written as a literal
+        (see ``_key``), and by nothing otherwise.
+        """
         entries: dict[object, object] = dict.fromkeys(value)
         self._copies[id(value)] = (value, entries)
-        walked = [(key, _key(key)) for key, item in value.items()]
-        for key, literal in walked:
-            if literal is None:
-                entries[key] = value[key]
-        self._later(
-            (value[key], ["[]", access, literal], entries, key)
-            for key, literal in walked
-            if literal is not None
-        )
+        self._later((item, _step(access, _key(key)), entries, key) for key, item in value.items())
         return entries
+
+
+def _step(container: Expression | None, key: Expression | None) -> Expression | None:
+    """The access one step further in, ``["[]", container, key]``, or None when either is."""
+    return None if container is None or key is None else ["[]", container, key]
 
 
 def _key(key: object) -> Expression | None:
     """A key as an access writes it: a str in its Python quotes, an int as itself.
 
-    Any other key is None, and the value under it passes through as it came.
+    Any other key is None: no access names the value under it.
     """
     if isinstance(key, str):
         # str's own repr: a key of the target's own str subclass may print itself another way
