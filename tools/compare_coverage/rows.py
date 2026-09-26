@@ -13,7 +13,7 @@ of the library sits in, and the own lines are read from the first side with the 
 """
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 
@@ -140,6 +140,17 @@ def compared_row(entry: Entry, files: Files, body: Body, reports: Reports) -> Ro
         v2=v2,
         legacy=legacy,
         library=None if entry.library is None else str(entry.library),
+    )
+
+
+def without_body(reports: Reports, reason: str) -> Reports:
+    """Both reports failed with ``reason``: the file the own lines come from has no body.
+
+    A side whose library is not the pinned one still fails on that first, and each keeps
+    the version it named.
+    """
+    return Reports(
+        v2=replace(reports.v2, failure=reason), legacy=replace(reports.legacy, failure=reason)
     )
 
 

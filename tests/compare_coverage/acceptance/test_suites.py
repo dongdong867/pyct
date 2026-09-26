@@ -11,6 +11,7 @@ import platform
 import subprocess
 from collections import Counter
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -175,18 +176,27 @@ def test_a_library_neither_side_has_fails_both_and_reads_no_file(
     assert code == 1
 
 
-def test_a_library_file_with_no_def_of_the_name_fails_both_sides(tmp_path: Path) -> None:
-    entry = Entry(
-        set="realworld",
-        module="werkzeug.http",
-        name="no_such_name",
-        seed={},
-        library=Library("werkzeug", "3.1.3"),
-    )
-    echo = Sides(v2=EchoSide(), legacy=EchoSide())
+class OtherVersionSide(EchoSide):
+    """An echoing side whose copy of every library is at 0.1."""
+
+    def run(self, request: SideRequest) -> SideReport:
+        report = super().run(request)
+        assert report.library is not None
+        return replace(report, library=replace(report.library, version="0.1"))
+
+
+def test_a_library_file_with_no_def_of_the_name_names_each_version_and_the_reason(
+    tmp_path: Path,
+) -> None:
+    entry = library_entry("werkzeug.http::no_such_name", {}, Library("werkzeug", "3.1.3"))
+    echo = Sides(v2=EchoSide(), legacy=OtherVersionSide())
 
     code, (row,), _ = compare_on(a_run([entry], roots(tmp_path)), echo)
 
     assert row["status"] == "both failed"
+    assert row["library"] == "werkzeug==3.1.3"
+    assert (row["v2"]["library"], row["legacy"]["library"]) == ("3.1.3", "0.1")
     assert row["v2"]["failure"].endswith("has no top-level def or class named no_such_name")
+    # the library explains the other side first
+    assert row["legacy"]["failure"] == "the entry pins werkzeug 3.1.3; this side has 0.1"
     assert code == 1

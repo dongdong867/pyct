@@ -30,11 +30,15 @@ from tools.compare_coverage.rows import (
     left_out_row,
     unlisted_row,
     unreadable_row,
+    without_body,
 )
 from tools.compare_coverage.sides import Limits, Side, SideRequest
 
 # how long past its budget a side may run before it is stopped
 GRACE_SECONDS = 60.0
+
+# the body of an entry whose file no side could name or whose file has no def of the name
+NO_BODY = Body(own_lines=frozenset(), first_line={})
 
 __all__ = ["GRACE_SECONDS", "Facts", "Run", "Sides", "Streams", "compare"]
 
@@ -128,11 +132,11 @@ def _installed_row(entry: Entry, library: Library, run: Run, sides: Sides) -> Ro
         reports = _reports(request, sides)
     files = installed_files(entry.module, library, reports)
     if files.body is None:
-        return compared_row(entry, files, Body(own_lines=frozenset(), first_line={}), reports)
+        return compared_row(entry, files, NO_BODY, reports)
     try:
         body = read_body(files.body, entry.name)
     except BodyError as error:
-        return unreadable_row(entry, files.body, str(error))
+        return compared_row(entry, files, NO_BODY, without_body(reports, str(error)))
     return compared_row(entry, files, body, reports)
 
 
