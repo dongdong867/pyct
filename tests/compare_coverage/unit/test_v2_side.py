@@ -72,7 +72,7 @@ def test_the_limits_are_passed_to_pyct_run_as_its_flags(tmp_path: Path) -> None:
     ]
 
 
-def test_the_limits_are_given_as_pyct_runs_flags(tmp_path: Path) -> None:
+def test_the_summary_records_the_limits_v2_was_given(tmp_path: Path) -> None:
     side = fake_side(tmp_path, summary())
 
     assert side.given(Limits(5.0, 3, 2.5)) == {"budget": 5.0, "plateau": 3, "solver_timeout": 2.5}
