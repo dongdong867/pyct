@@ -116,22 +116,27 @@ def _rebinding(tree: ast.Module, definition: Definition) -> str | None:
 
 
 def _module_level(node: ast.AST, name: str) -> Iterator[ast.AST]:
-    """``node`` and what it holds that runs in the module's scope.
+    """``node`` and what it holds that runs in the module's scope, each before what it holds.
 
     The insides of a function, class, lambda or comprehension bind their own names, so the
-    walk stops at them, as it does at the targets of a wrap and of an annotation alone.
+    walk stops at them, as it does at the targets of a wrap and of an annotation alone. It
+    keeps its own stack, so it reads an expression of any depth.
     """
-    yield node
-    if isinstance(node, SCOPES):
-        return
+    stack = [node]
+    while stack:
+        node = stack.pop()
+        yield node
+        if not isinstance(node, SCOPES):
+            stack.extend(reversed(_children(node, name)))
+
+
+def _children(node: ast.AST, name: str) -> list[ast.AST]:
+    """What the walk reads in ``node``: a wrap's value, an annotation alone, else all it holds."""
     if isinstance(node, ast.Assign) and _wraps(node, name):
-        children: list[ast.AST] = [node.value]
-    elif isinstance(node, ast.AnnAssign) and node.value is None:
-        children = [node.annotation]
-    else:
-        children = list(ast.iter_child_nodes(node))
-    for child in children:
-        yield from _module_level(child, name)
+        return [node.value]
+    if isinstance(node, ast.AnnAssign) and node.value is None:
+        return [node.annotation]
+    return list(ast.iter_child_nodes(node))
 
 
 def _binds(node: ast.AST, name: str) -> bool:

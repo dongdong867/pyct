@@ -342,6 +342,15 @@ def test_setting_an_attribute_or_wrapping_the_name_keeps_the_definition(
     assert read_body(write(tmp_path, source), "f").own_lines == frozenset({6})
 
 
+def test_a_deep_expression_after_the_definition_is_read_to_its_end(tmp_path: Path) -> None:
+    # 3000 terms nest 3000 levels deep, past Python's recursion limit
+    terms = " + ".join(f"'s{n}'" for n in range(3000))
+    file = write(tmp_path, f"def f():\n    return 2\n\n\nTABLE = {terms} + (f := 1)\n")
+
+    with pytest.raises(BodyError, match=rf"{file} binds f again at line 5, after its def"):
+        read_body(file, "f")
+
+
 def test_a_name_bound_before_its_definition_is_its_definition(tmp_path: Path) -> None:
     file = write(tmp_path, "from os import path as f\nf = 1\n\n\ndef f():\n    return 2\n")
 
