@@ -7,9 +7,6 @@ import os
 import random
 import subprocess
 import sys
-import threading
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -17,6 +14,7 @@ import pytest
 from pyct.run import isolation
 from pyct.run.isolation import Inputs, Isolation
 from pyct.run.target import Target, load_target
+from tests.unit.another_thread import another_thread
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -45,19 +43,6 @@ print(run(target, {"x": 0}).environment.isolated)
 
 def one_check() -> Target:
     return load_target("targets.flip.one_check::classify")
-
-
-@contextmanager
-def another_thread() -> Generator[None]:
-    """A thread of the test's own, running beside the main one until the block ends."""
-    stop = threading.Event()
-    thread = threading.Thread(target=stop.wait, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        thread.join()
 
 
 def counting(monkeypatch: pytest.MonkeyPatch, *counts: int) -> None:

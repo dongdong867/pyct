@@ -16,6 +16,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import Reading
 from pyct.run.process import KILL_GRACE, Waited, _Child, ending, watched
+from tests.unit.another_thread import another_thread
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="t.py", line=2, col=7))
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: x")
@@ -374,19 +375,6 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_still_reaps_it(
 
     with pytest.raises(ChildProcessError):
         os.waitpid(pid, os.WNOHANG)
-
-
-@contextlib.contextmanager
-def another_thread() -> Generator[None]:
-    """A thread beside the main one, which takes a SIGINT aimed at the whole process."""
-    stop = threading.Event()
-    thread = threading.Thread(target=stop.wait, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        thread.join()
 
 
 def left_unreaped(pid: int) -> bool:
