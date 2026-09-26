@@ -147,7 +147,8 @@ def parse_flags(argv: Sequence[str]) -> Flags:
         solver_timeout=_seconds(given.solver_timeout, "--solver-timeout"),
     )
     return Flags(
-        legacy=given.legacy,
+        # a side starts in the entry's root, so a relative path would name another folder there
+        legacy=None if given.legacy is None else given.legacy.resolve(),
         sets=tuple(given.sets),
         targets=tuple(given.targets),
         limits=limits,

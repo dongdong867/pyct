@@ -5,11 +5,18 @@ cvc5 exits 1, as ``pyct run`` does.
 """
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
-from tests.compare_coverage.acceptance.checker import ONE_CHECK, REPO_ROOT, run_checker
+from tests.compare_coverage.acceptance.checker import (
+    ONE_CHECK,
+    ONE_CHECK_FILE,
+    REPO_ROOT,
+    one_row,
+    run_checker,
+)
 from tests.compare_coverage.conftest import StubCheckout
 
 
@@ -31,6 +38,18 @@ def test_refuses_a_bad_legacy_checkout(tmp_path: Path, legacy: str | None, says:
     assert "git worktree add DIR main && uv sync --project DIR --frozen" in result.stderr
     assert result.stdout == ""
     assert result.returncode == 2
+
+
+def test_a_relative_legacy_checkout_is_found_from_the_working_directory(
+    stub_checkout: StubCheckout,
+) -> None:
+    relative = os.path.relpath(stub_checkout.path, REPO_ROOT)
+
+    result = run_checker("--legacy", relative, "--target", ONE_CHECK)
+
+    assert result.returncode in (0, 1), result.stderr
+    assert one_row(result.stdout)["file"] == ONE_CHECK_FILE
+    assert stub_checkout.calls()
 
 
 @pytest.mark.parametrize(

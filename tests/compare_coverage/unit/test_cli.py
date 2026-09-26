@@ -24,6 +24,10 @@ def test_no_flags_but_legacy_give_pyct_runs_default_limits() -> None:
     )
 
 
+def test_a_relative_legacy_checkout_is_taken_from_the_working_directory() -> None:
+    assert parse_flags(["--legacy", "a/../legacy"]).legacy == Path.cwd() / "legacy"
+
+
 def test_sets_and_targets_repeat() -> None:
     flags = parse_flags(["--set", "a", "--target", "m::f", "--set", "b", "--target", "m::g"])
 

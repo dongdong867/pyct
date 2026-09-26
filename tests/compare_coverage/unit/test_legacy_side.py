@@ -85,6 +85,15 @@ def test_the_probe_refuses_a_folder_with_no_environment(tmp_path: Path) -> None:
         probe(tmp_path, ENVIRONMENT)
 
 
+def test_the_probe_refuses_an_interpreter_that_cannot_start(tmp_path: Path) -> None:
+    python = tmp_path / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("not a program")
+
+    with pytest.raises(LegacyCheckoutError, match=rf"cannot start {python}: Permission denied"):
+        probe(tmp_path, ENVIRONMENT)
+
+
 def test_the_probe_refuses_an_environment_without_legacys_engine(tmp_path: Path) -> None:
     python = tmp_path / ".venv" / "bin" / "python"
     python.parent.mkdir(parents=True)

@@ -96,7 +96,12 @@ def probe(checkout: Path | None, environment: Mapping[str, str]) -> str:
     if not python.exists():
         raise LegacyCheckoutError(f"--legacy {checkout}: no environment at {python}\n{RECIPE}")
     command = Command((str(python), "-P", "-c", PROBE), checkout, environment)
-    finished = run_command(command, PROBE_SECONDS)
+    try:
+        finished = run_command(command, PROBE_SECONDS)
+    except OSError as error:
+        raise LegacyCheckoutError(
+            f"--legacy {checkout}: cannot start {python}: {error.strerror}\n{RECIPE}"
+        ) from error
     answer = result_line(finished.stdout, "engine") if finished.returncode == 0 else None
     if answer is None:
         said = last_line(finished.stderr)
