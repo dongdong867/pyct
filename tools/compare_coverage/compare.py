@@ -4,22 +4,29 @@ Entries run in list order, one at a time, and within a row the v2 side runs befo
 legacy side, never beside it. Sides that run one after the other get the same machine, so a
 budget means the same on both. Each row prints as soon as it finishes. A side's trouble is
 its row's failure, never an error of the run, so every entry gets its row.
+
+An entry in an installed library runs from an empty folder of its own, so no file of either
+checkout can stand in for the library's. Its file is known only once each side says where its
+copy of the library is, so its own lines are read after both sides ran.
 """
 
+import tempfile
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
 from tools.compare_coverage.accepted import Accepted, mark, passes, rewritten, write_records
-from tools.compare_coverage.body import BodyError, read_body
-from tools.compare_coverage.entries import Entry, Origin, SetSpec, Unlisted, entry_file
+from tools.compare_coverage.body import Body, BodyError, read_body
+from tools.compare_coverage.entries import Entry, Library, Origin, SetSpec, Unlisted, entry_file
 from tools.compare_coverage.output import Facts, row_line, summary_line, table_line, totals_line
 from tools.compare_coverage.rows import (
+    Files,
     Reports,
     Row,
     Status,
     compared_row,
+    installed_files,
     left_out_row,
     unlisted_row,
     unreadable_row,
@@ -97,6 +104,8 @@ def _rows(run: Run, sides: Sides) -> Iterator[Row]:
 
 def _row(entry: Entry, run: Run, sides: Sides) -> Row:
     """The entry's row: left out, unreadable, or compared after both sides ran it."""
+    if entry.library is not None:
+        return _installed_row(entry, entry.library, run, sides)
     root = run.roots[run.sets[entry.set].origin]
     file = entry_file(entry.module, root)
     if entry.name is None or entry.target is None:
@@ -105,7 +114,31 @@ def _row(entry: Entry, run: Run, sides: Sides) -> Row:
         body = read_body(file, entry.name)
     except BodyError as error:
         return unreadable_row(entry, file, str(error))
-    wait = run.limits.budget + run.grace
-    request = SideRequest(entry.target, entry.seed, root, run.limits, wait)
-    reports = Reports(v2=sides.v2.run(request), legacy=sides.legacy.run(request))
-    return compared_row(entry, file, body, reports)
+    reports = _reports(SideRequest(entry.target, entry.seed, root, run.limits, _wait(run)), sides)
+    return compared_row(entry, Files.one(file), body, reports)
+
+
+def _installed_row(entry: Entry, library: Library, run: Run, sides: Sides) -> Row:
+    """The row of an entry in an installed library, read from the side that has it pinned."""
+    assert entry.name is not None and entry.target is not None  # parse_list: none is left out
+    with tempfile.TemporaryDirectory() as empty:
+        request = SideRequest(
+            entry.target, entry.seed, Path(empty), run.limits, _wait(run), library.name
+        )
+        reports = _reports(request, sides)
+    files = installed_files(entry.module, library, reports)
+    if files.body is None:
+        return compared_row(entry, files, Body(own_lines=frozenset(), first_line={}), reports)
+    try:
+        body = read_body(files.body, entry.name)
+    except BodyError as error:
+        return unreadable_row(entry, files.body, str(error))
+    return compared_row(entry, files, body, reports)
+
+
+def _wait(run: Run) -> float:
+    return run.limits.budget + run.grace
+
+
+def _reports(request: SideRequest, sides: Sides) -> Reports:
+    return Reports(v2=sides.v2.run(request), legacy=sides.legacy.run(request))

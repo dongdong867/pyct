@@ -11,7 +11,7 @@ import pytest
 from tests.compare_coverage.conftest import REPO_ROOT, StubCheckout
 from tools.compare_coverage.legacy_side import LegacyCheckoutError, LegacySide, probe
 from tools.compare_coverage.process import side_environment
-from tools.compare_coverage.sides import Limits, SideReport, SideRequest
+from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest
 
 ONE_CHECK = "targets.flip.one_check::classify"
 ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
@@ -32,6 +32,22 @@ def test_the_side_reports_what_legacys_engine_answered(stub_checkout: StubChecko
     assert report == SideReport(
         file=ONE_CHECK_FILE, covered=frozenset({2, 4}), stopped="timeout", inputs=7
     )
+
+
+def test_the_side_says_which_version_of_the_requested_library_legacy_has(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    folder = stub_checkout.install(
+        "fakelib", "1.0", {"fakelib/__init__.py": "def f(x):\n    return x\n"}
+    )
+    side = LegacySide(checkout=stub_checkout.path, environment=ENVIRONMENT)
+    limits = Limits(budget=5.0)
+
+    report = side.run(SideRequest("fakelib::f", {"x": 0}, tmp_path, limits, 60, "fakelib"))
+
+    assert report.library == Installed(version="1.0", root=str(folder))
+    assert report.file == str(folder / "fakelib" / "__init__.py")
+    assert side.run(request()).library is None
 
 
 def test_the_solver_timeout_is_rounded_up_to_whole_seconds(stub_checkout: StubCheckout) -> None:

@@ -1,21 +1,25 @@
 """A row from an entry, its body and the two reports: status first from failures, then lines."""
 
+from dataclasses import replace
 from pathlib import Path
 
 from tools.compare_coverage.body import Body
-from tools.compare_coverage.entries import Entry, Unlisted
+from tools.compare_coverage.entries import Entry, Library, Unlisted
 from tools.compare_coverage.rows import (
+    Files,
     Reports,
     SideView,
     Status,
     compared_row,
+    installed_files,
     left_out_row,
     unlisted_row,
     unreadable_row,
 )
-from tools.compare_coverage.sides import SideReport
+from tools.compare_coverage.sides import Installed, SideReport
 
 FILE = Path("/checkout/targets/t.py")
+ONE = Files.one(FILE)
 ENTRY = Entry(set="v2", module="targets.t", name="f", seed={"x": 0})
 # own lines 2, 3 and 5; line 4 is inside the statement on line 3
 BODY = Body(own_lines=frozenset({2, 3, 5}), first_line={2: 2, 3: 3, 4: 3, 5: 5})
@@ -29,7 +33,7 @@ def report(*lines: int, failure: str | None = None, file: Path = FILE) -> SideRe
 
 def test_both_sides_on_the_same_own_lines_are_same() -> None:
     # line 4 stands for 3, and line 1 is outside the body
-    row = compared_row(ENTRY, FILE, BODY, Reports(v2=report(1, 2, 4), legacy=report(2, 3)))
+    row = compared_row(ENTRY, ONE, BODY, Reports(v2=report(1, 2, 4), legacy=report(2, 3)))
 
     assert row.status is Status.SAME
     assert row.own_lines == (2, 3, 5)
@@ -41,7 +45,7 @@ def test_both_sides_on_the_same_own_lines_are_same() -> None:
 
 
 def test_lines_only_one_side_covered_make_a_difference() -> None:
-    row = compared_row(ENTRY, FILE, BODY, Reports(v2=report(2, 5), legacy=report(2, 3)))
+    row = compared_row(ENTRY, ONE, BODY, Reports(v2=report(2, 5), legacy=report(2, 3)))
 
     assert row.status is Status.DIFFERS
     assert row.only_legacy == (3,)
@@ -51,7 +55,7 @@ def test_lines_only_one_side_covered_make_a_difference() -> None:
 def test_a_failed_side_is_shown_but_not_compared() -> None:
     reports = Reports(v2=report(2, failure="exit 1: boom"), legacy=report(2, 3))
 
-    row = compared_row(ENTRY, FILE, BODY, reports)
+    row = compared_row(ENTRY, ONE, BODY, reports)
 
     assert row.status is Status.V2_FAILED
     assert row.v2 is not None
@@ -62,8 +66,8 @@ def test_a_failed_side_is_shown_but_not_compared() -> None:
 def test_each_side_can_fail_alone_or_both_together() -> None:
     failed = report(failure="no summary line")
 
-    legacy = compared_row(ENTRY, FILE, BODY, Reports(v2=report(2), legacy=failed))
-    both = compared_row(ENTRY, FILE, BODY, Reports(v2=failed, legacy=failed))
+    legacy = compared_row(ENTRY, ONE, BODY, Reports(v2=report(2), legacy=failed))
+    both = compared_row(ENTRY, ONE, BODY, Reports(v2=failed, legacy=failed))
 
     assert legacy.status is Status.LEGACY_FAILED
     assert both.status is Status.BOTH_FAILED
@@ -73,7 +77,7 @@ def test_a_side_that_loaded_another_file_fails_naming_both_and_shows_no_lines() 
     elsewhere = Path("/usr/lib/python/t.py")
 
     row = compared_row(
-        ENTRY, FILE, BODY, Reports(v2=report(2, 3, file=elsewhere), legacy=report(2, 3))
+        ENTRY, ONE, BODY, Reports(v2=report(2, 3, file=elsewhere), legacy=report(2, 3))
     )
 
     assert row.status is Status.V2_FAILED
@@ -85,7 +89,7 @@ def test_a_side_that_loaded_another_file_fails_naming_both_and_shows_no_lines() 
 def test_a_side_with_its_own_failure_keeps_that_failure(tmp_path: Path) -> None:
     reports = Reports(v2=SideReport(failure="exit 2: refused"), legacy=report(2))
 
-    row = compared_row(ENTRY, FILE, BODY, reports)
+    row = compared_row(ENTRY, ONE, BODY, reports)
 
     assert row.v2 == SideView(
         file=None, covered=(), stopped=None, inputs=None, failure="exit 2: refused"
@@ -95,7 +99,7 @@ def test_a_side_with_its_own_failure_keeps_that_failure(tmp_path: Path) -> None:
 def test_a_report_that_names_no_file_fails_its_side() -> None:
     nameless = SideReport(stopped="done", inputs=1)
 
-    row = compared_row(ENTRY, FILE, BODY, Reports(v2=nameless, legacy=nameless))
+    row = compared_row(ENTRY, ONE, BODY, Reports(v2=nameless, legacy=nameless))
 
     assert row.status is Status.BOTH_FAILED
     assert row.v2 is not None
@@ -120,3 +124,70 @@ def test_a_left_out_entry_and_an_unlisted_file_have_rows_of_their_own() -> None:
         "fixtures",
         str(FILE),
     )
+
+
+WERKZEUG = Library(name="werkzeug", version="3.1.3")
+LIBRARY_ENTRY = Entry(set="realworld", module="w.http", name="f", seed={}, library=WERKZEUG)
+
+
+def in_folder(folder: str, *lines: int, version: str | None = "3.1.3") -> SideReport:
+    """A side that loaded ``w/http.py`` under ``folder``, its copy of werkzeug at ``version``."""
+    library = Installed(version=version, root=folder if version else None)
+    return SideReport(
+        file=f"{folder}/w/http.py", covered=frozenset(lines), stopped="done", library=library
+    )
+
+
+def test_each_side_loads_the_module_under_its_own_copy_of_the_library() -> None:
+    reports = Reports(v2=in_folder("/v2", 2, 3), legacy=in_folder("/legacy", 2, 3))
+
+    files = installed_files("w.http", WERKZEUG, reports)
+    row = compared_row(LIBRARY_ENTRY, files, BODY, reports)
+
+    assert files == Files(
+        body=Path("/v2/w/http.py"), v2=Path("/v2/w/http.py"), legacy=Path("/legacy/w/http.py")
+    )
+    assert row.status is Status.SAME
+    assert (row.file, row.library) == ("/v2/w/http.py", "werkzeug==3.1.3")
+    assert row.v2 is not None and row.legacy is not None
+    assert (row.v2.library, row.legacy.library) == ("3.1.3", "3.1.3")
+
+
+def test_a_side_with_another_version_fails_first_and_shows_no_lines() -> None:
+    # its own failure and its file do not matter: the library explains them
+    other = replace(in_folder("/v2", 2, 3, version="3.0.0"), failure="exit 2: no module")
+    reports = Reports(v2=other, legacy=in_folder("/legacy", 2, 3))
+
+    files = installed_files("w.http", WERKZEUG, reports)
+    row = compared_row(LIBRARY_ENTRY, files, BODY, reports)
+
+    assert files == Files(body=Path("/legacy/w/http.py"), v2=None, legacy=files.legacy)
+    assert row.status is Status.V2_FAILED
+    assert row.v2 == SideView(
+        file="/v2/w/http.py",
+        covered=(),
+        stopped="done",
+        inputs=None,
+        failure="the entry pins werkzeug 3.1.3; this side has 3.0.0",
+        library="3.0.0",
+    )
+
+
+def test_a_side_without_the_library_or_without_saying_fails_naming_none() -> None:
+    missing = in_folder("/legacy", 2, version=None)
+    silent = SideReport(failure="no summary line")
+
+    for report in (missing, silent):
+        reports = Reports(v2=in_folder("/v2", 2), legacy=report)
+        row = compared_row(
+            LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports
+        )
+
+        assert row.legacy is not None
+        assert row.legacy.failure == "the entry pins werkzeug 3.1.3; this side has none"
+
+
+def test_a_library_neither_side_has_reads_no_file() -> None:
+    reports = Reports(v2=SideReport(), legacy=SideReport())
+
+    assert installed_files("w.http", WERKZEUG, reports) == Files(body=None, v2=None, legacy=None)

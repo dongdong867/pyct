@@ -8,6 +8,7 @@ import pytest
 from tools.compare_coverage.entries import (
     LIST_FILE,
     Entry,
+    Library,
     ListError,
     Origin,
     SelectionError,
@@ -22,7 +23,11 @@ from tools.compare_coverage.entries import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-SETS = {"one": {"origin": "v2", "scan": "targets"}, "two": {"origin": "legacy"}}
+SETS = {
+    "one": {"origin": "v2", "scan": "targets"},
+    "two": {"origin": "legacy"},
+    "lib": {"origin": "installed"},
+}
 
 
 def a_list(*entries: dict[str, object]) -> TargetList:
@@ -42,6 +47,9 @@ def test_the_committed_list_names_its_sets_and_where_they_live() -> None:
     assert target_list.sets == {
         "v2": SetSpec("v2", Origin.V2, "targets"),
         "fixtures": SetSpec("fixtures", Origin.LEGACY, "tests/acceptance/fixtures"),
+        "examples": SetSpec("examples", Origin.LEGACY, "examples"),
+        "realworld": SetSpec("realworld", Origin.INSTALLED),
+        "library": SetSpec("library", Origin.INSTALLED),
     }
 
 
@@ -59,6 +67,55 @@ def test_a_left_out_entry_names_its_module_and_reason() -> None:
     (entry,) = target_list.entries
     assert entry == Entry(set="two", module="pkg.mod", left_out="fails to import")
     assert entry.target is None
+
+
+def test_an_installed_entry_names_its_library_and_pinned_version() -> None:
+    target_list = a_list(
+        {"set": "lib", "target": "werkzeug.http::parse_cookie", "seed": {}, "library": "w==3.1"}
+    )
+
+    (entry,) = target_list.entries
+    assert entry.library == Library(name="w", version="3.1")
+    assert str(entry.library) == "w==3.1"
+
+
+@pytest.mark.parametrize(
+    ("version", "matches"),
+    [("3.12", True), ("3.12.14", True), ("3.120", False), ("3.1", False), ("3", False)],
+)
+def test_a_pin_matches_its_version_and_every_release_of_it(version: str, matches: bool) -> None:
+    assert Library(name="python", version="3.12").matches(version) is matches
+
+
+def lib_entry(**fields: object) -> dict[str, object]:
+    return {"set": "lib", "target": "m::f", "seed": {}, **fields}
+
+
+@pytest.mark.parametrize(
+    ("document", "message"),
+    [
+        (
+            {"sets": {"s": {"origin": "installed", "scan": "lib"}}, "entries": []},
+            "set s: an installed set has no folder to scan",
+        ),
+        ({"sets": SETS, "entries": [lib_entry()]}, "entry 1: library must be NAME==VERSION"),
+        ({"sets": SETS, "entries": [lib_entry(library=3)]}, "library must be NAME==VERSION"),
+        ({"sets": SETS, "entries": [lib_entry(library="w")]}, "library must be NAME==VERSION"),
+        ({"sets": SETS, "entries": [lib_entry(library="==1")]}, "library must be NAME==VERSION"),
+        ({"sets": SETS, "entries": [lib_entry(library="w==")]}, "library must be NAME==VERSION"),
+        (
+            {"sets": SETS, "entries": [lib_entry(set="one", library="w==1")]},
+            "entry 1: only an entry of an installed set names a library",
+        ),
+        (
+            {"sets": SETS, "entries": [{"set": "lib", "module": "m", "left_out": "why"}]},
+            "entry 1: an installed set scans no folder, so it leaves no file out",
+        ),
+    ],
+)
+def test_a_malformed_library_entry_is_refused(document: object, message: str) -> None:
+    with pytest.raises(ListError, match=message):
+        parse_list(document)
 
 
 @pytest.mark.parametrize(
@@ -116,7 +173,7 @@ def test_no_flag_selects_every_entry_and_scans_every_set() -> None:
     )
 
     assert target_list.select([], []) == target_list.entries
-    assert target_list.scanned([], []) == ("one", "two")
+    assert target_list.scanned([], []) == ("one", "two", "lib")
 
 
 def test_sets_and_targets_select_their_union_in_list_order() -> None:

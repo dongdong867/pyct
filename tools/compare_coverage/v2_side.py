@@ -3,19 +3,22 @@
 It runs exactly what a person runs, ``pyct run MODULE::NAME --args SEED`` with the three
 limit flags, and reads the summary line ``pyct run`` prints today: the only stdout line with
 a ``stopped`` key. That line's ``environment`` must name the checker's own Python and
-platform, or the side did not run in this checkout's environment and fails.
+platform, or the side did not run in this checkout's environment and fails. That environment
+is the checker's own, so an installed entry's library is read in the checker's process.
 """
 
 import json
 import platform
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
+from tools.compare_coverage.legacy_adapter import installed
 from tools.compare_coverage.process import Command, run_command
 from tools.compare_coverage.sides import (
     Limits,
     SideReport,
     SideRequest,
+    installed_of,
     lines_of,
     optional_count,
     optional_text,
@@ -59,7 +62,11 @@ class V2Side:
             *("--solver-timeout", repr(limits.solver_timeout)),
         )
         finished = run_command(Command(argv, request.root, self.environment), request.wait)
-        return read_report(finished, "stopped", self._report)
+        report = read_report(finished, "stopped", self._report)
+        if request.library is None:
+            return report
+        # pyct run runs in the checker's own environment, so the checker reads it here
+        return replace(report, library=installed_of(installed(request.library)))
 
     def _report(self, summary: dict[str, object]) -> SideReport:
         covered = summary["covered"]

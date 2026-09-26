@@ -6,8 +6,9 @@ adapter and the real v2 side run against it, so a difference or a legacy failure
 needs is exact, and does not move when a follow story closes a gap.
 
 ``legacy_checkout`` is a real checkout of ``main`` with its own environment, made once per
-session: ``git archive main`` into pytest's temporary folder, then ``uv sync``. When
-``PYCT_LEGACY_CHECKOUT`` names a checkout, that one is used instead.
+session: ``git archive main`` into pytest's temporary folder, then ``uv sync`` with the
+``realworld`` and ``library`` extras. When ``PYCT_LEGACY_CHECKOUT`` names a checkout, that one
+is used instead.
 """
 
 import json
@@ -42,6 +43,20 @@ class StubCheckout:
     def calls(self) -> list[dict[str, Any]]:
         calls = self.path / "calls.jsonl"
         return [json.loads(line) for line in calls.read_text().splitlines()]
+
+    def install(self, name: str, version: str, files: Mapping[str, str]) -> Path:
+        """A library only this checkout's environment has, found before any other of the name.
+
+        Gives the folder the library's modules sit in.
+        """
+        folder = self.path / "src"
+        metadata = folder / f"{name}-{version}.dist-info" / "METADATA"
+        metadata.parent.mkdir()
+        metadata.write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        for path, text in files.items():
+            (folder / path).parent.mkdir(parents=True, exist_ok=True)
+            (folder / path).write_text(text)
+        return folder
 
 
 @pytest.fixture
@@ -78,7 +93,7 @@ def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> Non
     subprocess.run(["tar", "-x", "-C", str(checkout)], input=archive.stdout, check=True)
     try:
         subprocess.run(
-            ["uv", "sync", "--frozen", "--no-dev"],
+            ["uv", "sync", "--frozen", "--no-dev", "--extra", "realworld", "--extra", "library"],
             cwd=checkout,
             env=dict(environment),
             capture_output=True,

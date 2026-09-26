@@ -2,8 +2,8 @@
 
 The checker starts it as ``DIR/.venv/bin/python -P legacy_adapter.py REQUEST`` in the entry's
 root. REQUEST is ``{"target", "seed", "root", "limits": {"budget", "plateau",
-"solver_timeout"}}``; the one line back is ``{"file", "covered", "stopped", "inputs",
-"failure"}``. Only JSON crosses between the two environments (decision
+"solver_timeout"}, "library"}``; the one line back is ``{"file", "covered", "stopped",
+"inputs", "failure", "library"}``. Only JSON crosses between the two environments (decision
 legacy-oracle-through-one-adapter). This is the only code that knows legacy, and it is new
 code against main's public API; it copies none of legacy's.
 
@@ -22,13 +22,18 @@ code against main's public API; it copies none of legacy's.
   what lets that child import this file.
 - Stdout points at stderr while legacy runs, so nothing legacy, the target or cvc5 prints can
   reach it. The one line is written once it is put back.
+- For an installed entry, REQUEST names the library, and the line says which version legacy's
+  environment has and the folder its modules sit in, read before the target is imported.
+  ``installed`` knows nothing of legacy, so the v2 side reads its own environment with it too.
 """
 
 import contextlib
 import importlib
 import json
 import os
+import platform
 import sys
+import sysconfig
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -76,11 +81,14 @@ def main(argv: list[str], load: Callable[[], Engine] = load_engine) -> int:
 
 def report(request: Mapping[str, Any], engine: Engine) -> dict[str, Any]:
     """Legacy's run of the request, as the one line the checker reads."""
+    name = request.get("library")
+    library = None if name is None else installed(name)
     try:
         target, file = _target(request["target"], request["root"])
     except Exception as error:
         failure = f"cannot import {request['target']}: {error!r}"
-        return {"file": None, "covered": [], "stopped": None, "inputs": None, "failure": failure}
+        nothing = {"file": None, "covered": [], "stopped": None, "inputs": None}
+        return {**nothing, "failure": failure, "library": library}
     config = _config(engine, request["limits"], file)
     result = engine.run_concolic(target, dict(request["seed"]), config=config, plugins=None)
     return {
@@ -89,7 +97,27 @@ def report(request: Mapping[str, Any], engine: Engine) -> dict[str, Any]:
         "stopped": result.termination_reason,
         "inputs": result.iterations,
         "failure": None if result.success else f"{result.termination_reason}: {_error(result)}",
+        "library": library,
     }
+
+
+def installed(name: str) -> dict[str, str | None]:
+    """The version of the distribution ``name`` in this environment and the folder its modules
+    sit in, or ``None`` for both when it is not installed.
+
+    ``python`` is the standard library: Python's version, and the folder of its modules.
+    """
+    if name == "python":
+        return {"version": platform.python_version(), "root": sysconfig.get_path("stdlib")}
+    # imported here, for an installed entry alone: it loads shutil and zipfile, and a module
+    # already loaded is the one a target module of that name in a checkout would get
+    import importlib.metadata
+
+    try:
+        found = importlib.metadata.distribution(name)
+    except importlib.metadata.PackageNotFoundError:
+        return {"version": None, "root": None}
+    return {"version": found.version, "root": str(found.locate_file(""))}
 
 
 def _error(result: Any) -> str:

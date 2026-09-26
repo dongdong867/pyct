@@ -3,10 +3,12 @@
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
+from tools.compare_coverage.legacy_adapter import installed
 from tools.compare_coverage.process import side_environment
-from tools.compare_coverage.sides import Limits, SideReport, SideRequest
+from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest
 from tools.compare_coverage.v2_side import Stamp, V2Side
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -106,3 +108,17 @@ def test_a_summary_line_that_names_two_files_is_unreadable(tmp_path: Path) -> No
 
     assert report.failure is not None
     assert "covered must name the one file" in report.failure
+
+
+def test_the_side_reads_the_requested_library_in_the_checkers_own_environment(
+    tmp_path: Path,
+) -> None:
+    side = fake_side(tmp_path, summary())
+    asked = replace(request(), library="werkzeug")
+
+    report = side.run(asked)
+
+    werkzeug = installed("werkzeug")
+    assert report.library == Installed(version=werkzeug["version"], root=werkzeug["root"])
+    assert werkzeug["version"] == "3.1.3"
+    assert side.run(request()).library is None

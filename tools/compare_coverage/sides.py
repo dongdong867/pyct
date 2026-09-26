@@ -29,24 +29,42 @@ class Limits:
 
 @dataclass(frozen=True)
 class SideRequest:
-    """One entry for one side: what to run, from which root, under which limits, how long."""
+    """One entry for one side: what to run, from which root, under which limits, how long.
+
+    ``library`` names the distribution an installed entry's module comes from, ``python``
+    for the standard library, so the side can say which version it has.
+    """
 
     target: str
     seed: Mapping[str, object]
     root: Path
     limits: Limits
     wait: float
+    library: str | None = None
+
+
+@dataclass(frozen=True)
+class Installed:
+    """A library as one side's environment has it: its version and the folder its modules
+    sit in, or ``None`` for both when it is not installed."""
+
+    version: str | None = None
+    root: str | None = None
 
 
 @dataclass(frozen=True)
 class SideReport:
-    """What a side said: the file it loaded, its raw lines there, how it stopped, and failure."""
+    """What a side said: the file it loaded, its raw lines there, how it stopped, and failure.
+
+    ``library`` is the requested library as the side has it, for an installed entry.
+    """
 
     file: str | None = None
     covered: frozenset[int] = frozenset()
     stopped: str | None = None
     inputs: int | None = None
     failure: str | None = None
+    library: Installed | None = None
 
 
 class Side(Protocol):
@@ -112,6 +130,15 @@ def optional_text(value: object) -> str | None:
     if value is not None and not isinstance(value, str):
         raise ValueError(f"expected text, got {value!r}")
     return value
+
+
+def installed_of(value: object) -> Installed | None:
+    """A report's library, ``{"version", "root"}`` or ``null``, as the side sent it."""
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(f"library must be an object with version and root, got {value!r}")
+    return Installed(version=optional_text(value["version"]), root=optional_text(value["root"]))
 
 
 def optional_count(value: object) -> int | None:

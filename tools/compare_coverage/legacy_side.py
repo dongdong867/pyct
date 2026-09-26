@@ -16,6 +16,7 @@ from tools.compare_coverage.sides import (
     Limits,
     SideReport,
     SideRequest,
+    installed_of,
     last_line,
     lines_of,
     optional_count,
@@ -27,8 +28,8 @@ from tools.compare_coverage.sides import (
 ADAPTER = Path(__file__).with_name("legacy_adapter.py")
 
 RECIPE = (
-    "make one with: git worktree add DIR main && uv sync --project DIR --frozen, "
-    "then pass --legacy DIR"
+    "make one with: git worktree add DIR main && "
+    "uv sync --project DIR --frozen --extra realworld --extra library, then pass --legacy DIR"
 )
 
 # importing legacy's engine takes a second or two; anything slower is not answering
@@ -73,6 +74,7 @@ class LegacySide:
             "seed": request.seed,
             "root": str(request.root),
             "limits": self.given(request.limits),
+            "library": request.library,
         }
         argv = (str(interpreter(self.checkout)), "-P", str(ADAPTER), json.dumps(payload))
         finished = run_command(Command(argv, request.root, self.environment), request.wait)
@@ -86,6 +88,7 @@ def _report(line: dict[str, object]) -> SideReport:
         stopped=optional_text(line["stopped"]),
         inputs=optional_count(line["inputs"]),
         failure=optional_text(line["failure"]),
+        library=installed_of(line["library"]),
     )
 
 

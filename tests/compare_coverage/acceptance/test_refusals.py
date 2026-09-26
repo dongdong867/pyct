@@ -36,7 +36,8 @@ def test_refuses_a_bad_legacy_checkout(tmp_path: Path, legacy: str | None, says:
     result = run_checker(*given.get(legacy or "", []), "--target", ONE_CHECK)
 
     assert says in result.stderr
-    assert "git worktree add DIR main && uv sync --project DIR --frozen" in result.stderr
+    recipe = "uv sync --project DIR --frozen --extra realworld --extra library"
+    assert f"git worktree add DIR main && {recipe}" in result.stderr
     assert result.stdout == ""
     assert result.returncode == 2
 

@@ -6,7 +6,9 @@ import pytest
 
 from tools.compare_coverage.process import Finished
 from tools.compare_coverage.sides import (
+    Installed,
     SideReport,
+    installed_of,
     last_line,
     lines_of,
     optional_count,
@@ -86,3 +88,15 @@ def test_optional_fields_take_their_type_or_none() -> None:
         optional_text(3)
     with pytest.raises(ValueError, match="count"):
         optional_count(True)
+
+
+def test_a_library_is_read_as_its_version_and_folder_or_nothing() -> None:
+    assert installed_of({"version": "1.0", "root": "/lib"}) == Installed("1.0", "/lib")
+    assert installed_of({"version": None, "root": None}) == Installed()
+    assert installed_of(None) is None
+
+
+@pytest.mark.parametrize("value", [["1.0"], {"version": 1, "root": "/lib"}, {"root": "/lib"}])
+def test_a_library_that_is_not_a_version_and_folder_is_unreadable(value: object) -> None:
+    with pytest.raises((KeyError, ValueError)):
+        installed_of(value)
