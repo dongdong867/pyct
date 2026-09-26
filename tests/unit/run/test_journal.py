@@ -398,3 +398,12 @@ def test_an_int_past_a_limit_the_target_lowered_stops_the_journal_without_raisin
     assert reading.branches == ()
     assert reading.problem is not None
     assert reading.problem.startswith("could not keep a fork the input took: ")
+
+
+def test_a_call_that_began_says_so() -> None:
+    buffer = journal()
+
+    JournalWriter(buffer).start()
+
+    assert read(buffer).started
+    assert not read(journal()).started

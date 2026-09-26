@@ -15,6 +15,9 @@ length above bit 16; then a 1 KiB note saying why the writer stopped.
 Then records, each an 8-byte little-endian head (u32 payload length, u8
 kind) and its payload, padded to 8 bytes:
 
+- start: no payload, written when pyct's side of the input's process is up,
+  before the call begins. A journal without one belongs to a process that
+  died before pyct's own code there ran.
 - line: an i64, the first time the call reaches that line.
 - part: one list of an expression, as JSON ``[n, head, ...]``: its number,
   then its items. A leaf is a JSON scalar and a list inside it is ``[n]``,
@@ -84,7 +87,7 @@ RECORDS = _NOTE_AT + _NOTE_SIZE
 _HEAD = struct.Struct("<IB3x")
 _NUMBER = struct.Struct("<q")
 
-_LINE, _PART, _FORK, _DOWNGRADE, _END = 1, 2, 3, 4, 5
+_LINE, _PART, _FORK, _DOWNGRADE, _END, _START = 1, 2, 3, 4, 5, 6
 _OPEN, _FULL, _UNENCODABLE = 0, 1, 2
 
 
@@ -120,6 +123,10 @@ class JournalWriter:
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:
             self._stop(_UNENCODABLE, f"could not keep a fork the input took: {error}")
+
+    def start(self) -> None:
+        """Write that pyct's side of the input's process is up and the call is about to begin."""
+        self._record(_START, b"")
 
     def line(self, number: int) -> None:
         """Write a line the call reached for the first time."""
@@ -239,14 +246,16 @@ class _UnreadableError(Exception):
 class Reading:
     """What one input's journal held: its facts, its own ending, and why it may be incomplete.
 
-    ``ended`` says the call finished and wrote ``end``, which is its failure
-    or None. ``problem`` says the facts are known to be incomplete: the
-    writer stopped, or a record could not be read.
+    ``started`` says pyct's side of the input's process came up. ``ended``
+    says the call finished and wrote ``end``, which is its failure or None.
+    ``problem`` says the facts are known to be incomplete: the writer
+    stopped, or a record could not be read.
     """
 
     lines: frozenset[int]
     branches: tuple[Branch, ...]
     downgrades: tuple[DowngradeCount, ...]
+    started: bool = False
     ended: bool = False
     end: Failure | None = None
     problem: str | None = None
@@ -304,6 +313,7 @@ class _Facts:
     branches: list[Branch] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
+    started: bool = False
     ended: bool = False
     end: Failure | None = None
 
@@ -315,7 +325,9 @@ class _Facts:
             raise _UnreadableError(at) from error
 
     def _take(self, kind: int, payload: bytes) -> None:
-        if kind == _LINE:
+        if kind == _START:
+            self.started = True
+        elif kind == _LINE:
             self.lines.add(_NUMBER.unpack(payload)[0])
         elif kind == _PART:
             number, items = _numbered(json.loads(payload))
@@ -365,6 +377,7 @@ class _Facts:
             lines=frozenset(self.lines),
             branches=tuple(self.branches),
             downgrades=tuple(self.downgrades),
+            started=self.started,
             ended=self.ended,
             end=self.end,
             problem=problem,

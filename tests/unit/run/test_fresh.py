@@ -7,6 +7,7 @@ import pytest
 
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
+from pyct.run import fresh
 from pyct.run.fresh import _journal, _request, in_a_fresh_interpreter, main
 from pyct.run.journal import read
 from pyct.run.process import KILL_GRACE, InputStartError
@@ -107,3 +108,18 @@ def test_a_journal_file_that_cannot_be_sized_is_an_input_that_could_not_start(
 
     with pytest.raises(InputStartError, match="No space left on device"):
         in_a_fresh_interpreter(target.spec, target.file, {"x": 3}, None)
+
+
+def test_a_fresh_interpreter_that_dies_before_the_call_is_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target(ONE_CHECK)
+    # a boot that fails before pyct's side of the new interpreter is up
+    monkeypatch.setattr(fresh, "_BOOT", "raise SystemExit(1)")
+
+    result = in_a_fresh_interpreter(target.spec, target.file, {"x": 3}, None)
+
+    assert result.failure == Failure(
+        kind=FailureKind.PYCT_BUG,
+        detail="the input's process ended before its call began: exited with code 1",
+    )

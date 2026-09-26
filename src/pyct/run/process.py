@@ -161,8 +161,9 @@ def _failure(reading: Reading, waited: Waited) -> Failure | None:
     Facts known to be incomplete are a pyct bug, since a pyct bug must reach
     the exit code. A call that wrote its ending ended that way, as it would
     have in pyct's own process, even when pyct's kill landed as the process
-    was exiting. Without one, the process was ended before its call was:
-    by pyct at the deadline, by a signal, or by an exit.
+    was exiting. Without one, the process was ended before its call was: by
+    pyct at the deadline; before pyct's side of it came up, which is pyct's
+    failure; or by a signal or an exit.
     """
     if reading.problem is not None:
         return Failure(kind=FailureKind.PYCT_BUG, detail=reading.problem)
@@ -170,9 +171,19 @@ def _failure(reading: Reading, waited: Waited) -> Failure | None:
         return reading.end
     if waited.killed:
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
+    if not reading.started:
+        detail = f"the input's process ended before its call began: {_how(waited)}"
+        return Failure(kind=FailureKind.PYCT_BUG, detail=detail)
     if waited.signal is not None:
-        return Failure(kind=FailureKind.CRASHED, detail=f"killed by {_named(waited.signal)}")
-    return Failure(kind=FailureKind.SYSTEM_EXIT, detail=f"exited with code {waited.code}")
+        return Failure(kind=FailureKind.CRASHED, detail=_how(waited))
+    return Failure(kind=FailureKind.SYSTEM_EXIT, detail=_how(waited))
+
+
+def _how(waited: Waited) -> str:
+    """How the process ended, in the words a line gives."""
+    if waited.signal is not None:
+        return f"killed by {_named(waited.signal)}"
+    return f"exited with code {waited.code}"
 
 
 def _named(number: int) -> str:

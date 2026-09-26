@@ -37,6 +37,7 @@ def serve(writer: JournalWriter, call: Served) -> NoReturn:
     written as the ending when the journal still takes it.
     """
     try:
+        writer.start()
         settle(writer)
         writer.end(call(writer))
     except BaseException as error:

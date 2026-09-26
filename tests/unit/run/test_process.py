@@ -1,5 +1,6 @@
 """How pyct reads the end of an input's process: the rules, the raw status, the reaping."""
 
+import dataclasses
 import os
 import signal
 import time
@@ -18,11 +19,13 @@ FACTS = Reading(
     lines=frozenset({2, 3}),
     branches=(FORK,),
     downgrades=(DowngradeCount(name="__abs__", count=2),),
+    started=True,
 )
 NOT_ENDED = FACTS
-ENDED = Reading(FACTS.lines, FACTS.branches, FACTS.downgrades, ended=True, end=RAISED)
-RETURNED = Reading(FACTS.lines, FACTS.branches, FACTS.downgrades, ended=True, end=None)
-INCOMPLETE = Reading(FACTS.lines, FACTS.branches, FACTS.downgrades, problem="the journal is full")
+ENDED = dataclasses.replace(FACTS, ended=True, end=RAISED)
+RETURNED = dataclasses.replace(FACTS, ended=True, end=None)
+INCOMPLETE = dataclasses.replace(FACTS, problem="the journal is full")
+NOT_STARTED = dataclasses.replace(FACTS, started=False)
 EXITED = Waited(signal=None, code=0)
 SEGFAULTED = Waited(signal=signal.SIGSEGV, code=None)
 KILLED = Waited(signal=signal.SIGKILL, code=None, killed=True)
@@ -62,6 +65,30 @@ KILLED = Waited(signal=signal.SIGKILL, code=None, killed=True)
             Waited(signal=None, code=3),
             Failure(kind=FailureKind.SYSTEM_EXIT, detail="exited with code 3"),
             id="exited",
+        ),
+        pytest.param(
+            NOT_STARTED,
+            Waited(signal=None, code=1),
+            Failure(
+                kind=FailureKind.PYCT_BUG,
+                detail="the input's process ended before its call began: exited with code 1",
+            ),
+            id="exited-before-the-call-began",
+        ),
+        pytest.param(
+            NOT_STARTED,
+            SEGFAULTED,
+            Failure(
+                kind=FailureKind.PYCT_BUG,
+                detail="the input's process ended before its call began: killed by SIGSEGV",
+            ),
+            id="killed-before-the-call-began",
+        ),
+        pytest.param(
+            NOT_STARTED,
+            KILLED,
+            Failure(kind=FailureKind.TIMEOUT, detail="deadline passed"),
+            id="killed-by-pyct-before-the-call-began",
         ),
     ],
 )
