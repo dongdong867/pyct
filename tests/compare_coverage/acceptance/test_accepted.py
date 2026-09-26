@@ -102,10 +102,10 @@ def test_fails_a_changed_row(stub_checkout: StubCheckout, tmp_path: Path) -> Non
     )
 
     row = one_row(result.stdout)
+    change = "status was differs, now same; only legacy was 4, now none"
     assert row["record"] == "changed"
-    assert "4" in row["change"]
+    assert row["change"] == change
     (line,) = table_rows(result.stderr, ONE_CHECK)
-    assert "changed" in line
-    assert "4" in line.split("changed", 1)[1]
+    assert line.endswith(f"same, changed  changed: {change}")
     assert read_records(accepted) == [ONE_CHECK_GAP]
     assert result.returncode == 1
