@@ -161,14 +161,27 @@ def test_a_failed_row_with_another_reason_is_changed_naming_both() -> None:
     assert marked.change == "legacy failure was 'error: boom', now 'error: bang'"
 
 
-def test_a_failed_row_that_now_runs_names_what_changed_without_naming_a_side() -> None:
+def test_a_failed_row_that_now_runs_names_its_status_and_reason_not_its_lines() -> None:
+    # both sides ran, so no one side's lines were lost
     same = Row(set="v2", status=Status.SAME, file="/t.py", target="m::f", seed={"x": 0})
 
     marked = mark(same, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS)
 
     assert marked.change == (
-        "status was legacy failed, now same; legacy failure was 'error: boom', now none; "
-        "the side that ran covered was 2, 3, 4, now none"
+        "status was legacy failed, now same; legacy failure was 'error: boom', now none"
+    )
+
+
+def test_a_failure_that_moved_to_the_other_side_names_the_lines_without_a_side() -> None:
+    v2_failed = replace(V2_RAN, covered=(), failure="exit 2: refused")
+    legacy_ran = replace(LEGACY_FAILED, covered=(2,), failure=None)
+    moved = replace(FAILED, status=Status.V2_FAILED, v2=v2_failed, legacy=legacy_ran)
+
+    marked = mark(moved, {FAILED_RECORD.key: FAILED_RECORD}, ROOTS)
+
+    assert marked.change == (
+        "status was legacy failed, now v2 failed; v2 failure was none, now 'exit 2: refused'; "
+        "legacy failure was 'error: boom', now none; the side that ran covered was 2, 3, 4, now 2"
     )
 
 

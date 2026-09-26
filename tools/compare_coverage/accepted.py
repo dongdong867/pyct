@@ -217,7 +217,9 @@ def _failure_changes(record: Record, row: Row, roots: Roots) -> list[str]:
         for side in ("v2", "legacy")
         if record.failures.get(side) != failures.get(side)
     ]
-    if record.covered != covered:
+    # the side that ran exists only while the record and the row both failed
+    failed = Status(record.status) in FAILED and row.status in FAILED
+    if failed and record.covered != covered:
         changes.append(f"{ran} covered was {_lines(record.covered)}, now {_lines(covered)}")
     return changes
 
