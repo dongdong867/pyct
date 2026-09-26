@@ -257,14 +257,16 @@ def _piece(
     return compute
 
 
-def _reflects_itself(other: object) -> bool:
-    """Whether other is a str of another type that defines `__radd__`, as markupsafe's Markup
-    does. str defines none, so any such str has its own."""
-    return (
-        isinstance(other, str)
-        and not isinstance(other, ConcolicStr)
-        and hasattr(type(other), "__radd__")
-    )
+def _reflected(self: ConcolicStr, other: object) -> object:
+    """What the right side's own `__radd__` answers to `s + other`, or NotImplemented.
+
+    With a plain str on the left, Python asks the right side's `__radd__`
+    before str joins the two, and str has none of its own, so any type that
+    has one is the target's or a library's: markupsafe's Markup answers, and
+    numpy.str_ and int decline. A tracked str on the right joins as a str.
+    """
+    radd = None if isinstance(other, ConcolicStr) else getattr(type(other), "__radd__", None)
+    return NotImplemented if radd is None else own(radd, other, self)
 
 
 _ADD_DOWNGRADE = downgraded(str, "__add__")
@@ -273,13 +275,13 @@ _ADD_DOWNGRADE = downgraded(str, "__add__")
 def _appended(self: ConcolicStr, other: object) -> object:
     """str's own `s + other`, a tracked str carrying `["+", s, other]`.
 
-    A str whose type has its own `__radd__` gets NotImplemented, so Python
-    asks that `__radd__` next, as it does with a plain str on the left. An
-    other in a form pyct does not encode is str's own answer and an
-    `__add__` downgrade, or str's own TypeError for a non-str.
+    The right side's own `__radd__` answers first, as it does with a plain
+    str on the left (see `_reflected`). Past one that declines, an other in
+    a form pyct does not encode is str's own answer and an `__add__`
+    downgrade, or str's own TypeError for a non-str.
     """
-    if _reflects_itself(other):
-        return NotImplemented
+    if (answer := _reflected(self, other)) is not NotImplemented:
+        return answer
     form = _needle((other,))
     if form is None:
         return _ADD_DOWNGRADE(self, other)

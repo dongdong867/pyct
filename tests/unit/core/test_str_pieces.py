@@ -29,6 +29,21 @@ class Escaped(str):
         return ("joined by Escaped", str.__str__(other) if isinstance(other, str) else other)
 
 
+class Declining(str):
+    """A str of a library's own whose `__radd__` declines a str, the way numpy.str_'s does,
+    so str's own concatenation answers."""
+
+    def __radd__(self, other: object) -> object:
+        return NotImplemented
+
+
+class Column:
+    """A value of a library's own that decides what a str joined on its left gives."""
+
+    def __radd__(self, other: object) -> object:
+        return ("joined by Column", str.__str__(other) if isinstance(other, str) else other)
+
+
 class Position:
     """An object Python indexes with through its ``__index__``."""
 
@@ -264,14 +279,36 @@ def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
     assert sink == []
 
 
-def test_a_str_on_the_right_with_its_own_reflected_plus_answers_as_it_would_for_str() -> None:
+# a right side with its own __radd__ that answers: the call, and the same call on a plain str
+ANSWERED_BY_THE_RIGHT: dict[str, Callable[[str], object]] = {
+    "s + Escaped('<b>')": lambda s: s + Escaped("<b>"),
+    "s + Column()": lambda s: s + Column(),  # pyrefly: ignore[unsupported-operation]
+}
+
+
+@pytest.mark.parametrize("call", ANSWERED_BY_THE_RIGHT.values(), ids=list(ANSWERED_BY_THE_RIGHT))
+def test_a_right_side_with_its_own_reflected_plus_answers_as_it_would_for_str(
+    call: Callable[[str], object],
+) -> None:
     sink: list[SinkItem] = []
 
-    joined = _tracked(sink=sink) + Escaped("<b>")
+    joined = call(_tracked(sink=sink))
 
-    # Python asks the right side's __radd__ before str joins a plain str to it, so the tracked
-    # str steps aside and that __radd__ answers, as it does for "abcb" + Escaped("<b>")
-    assert joined == "abcb" + Escaped("<b>")
+    # Python asks the right side's __radd__ before str joins a plain str to it, so that
+    # __radd__ answers here too, as it does for "abcb" on the left
+    assert joined == call("abcb")
+    assert sink == []
+
+
+def test_a_right_side_whose_reflected_plus_declines_is_joined_by_str() -> None:
+    sink: list[SinkItem] = []
+
+    joined = _tracked(sink=sink) + Declining("x")
+
+    # the __radd__ hands the join back, so str's own concatenation answers, followed
+    assert isinstance(joined, ConcolicStr)
+    assert str.__eq__(joined, "abcb" + Declining("x")) is True
+    assert joined.expression == ["+", "s", "'x'"]
     assert sink == []
 
 
