@@ -344,3 +344,33 @@ def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
 def test_a_missing_bound_outside_a_slice_is_an_error() -> None:
     with pytest.raises(ValueError, match="missing bound"):
         render((fork(["==", "s", None], taken=True),), {"s": str})
+
+
+# a piece a loop takes of its own string on every pass, `s = s[1:]` and the like
+NESTINGS: dict[str, Callable[[Expression], Expression]] = {
+    "s = s[1:]": lambda term: ["[:]", term, 1, None],
+    "s = s[-3:-1]": lambda term: ["[:]", term, -3, -1],
+    "s = s[-1]": lambda term: ["[]", term, -1],
+    "s = s.removeprefix(' ')": lambda term: ["removeprefix", term, "' '"],
+    "s = s.removesuffix(t)": lambda term: ["removesuffix", term, "t"],
+}
+
+
+def _nested(nest: Callable[[Expression], Expression], depth: int) -> str:
+    """One fork on a piece nested ``depth`` passes deep, as the program writes it."""
+    term: Expression = "s"
+    for _ in range(depth):
+        term = nest(term)
+    return render((fork(["!=", term, "''"], taken=True),), {"s": str, "t": str})
+
+
+@pytest.mark.parametrize("nest", NESTINGS.values(), ids=list(NESTINGS))
+def test_a_piece_nested_thirty_deep_grows_the_program_by_one_level_at_a_time(
+    nest: Callable[[Expression], Expression],
+) -> None:
+    sizes = [len(_nested(nest, depth)) for depth in (28, 29, 30)]
+
+    # each form names its string once, so a pass adds the same text whatever lies below it,
+    # where writing the string out at every use doubles the text or more with each pass
+    assert sizes[2] - sizes[1] == sizes[1] - sizes[0]
+    assert sizes[2] < 30 * 200

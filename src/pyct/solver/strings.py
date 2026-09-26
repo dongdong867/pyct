@@ -27,10 +27,13 @@ from the rest; decision string-search-clamped-over-the-reversed-string.
 A piece is written as the SMT-LIB term for the str Python builds: an index
 or a slice, a replace, and a removed prefix or suffix. A position arrives
 as the int it is, or None for a slice's missing bound, and the clamping
-Python does is written inside the term.
+Python does is written inside the term. A piece that reads its string more
+than once binds it by ``let`` and writes it once, so a piece of a piece
+grows the program by one level, not by a multiple of it.
 """
 
 import re
+from collections.abc import Callable
 
 from pyct.core.strs import LAST_CHARACTER
 
@@ -174,13 +177,36 @@ def occurrences(term: str, sub: str) -> str:
     )
 
 
+# the names a piece binds its operands to, so it writes each once however often it reads it.
+# `!` is in no Python name, so a bound name never meets a parameter
+_BOUND = ("s!", "a!")
+
+
+def _once(form: Callable[..., str], *terms: str) -> str:
+    """A form that reads an operand more than once, each compound operand written once.
+
+    A name or a literal is written where it is read. A compound term is
+    bound by ``let`` to a name in `_BOUND`, and the form reads the name.
+    Written out at every read, a piece of a piece of s doubles its text or
+    more with each level, and a loop that cuts s down pass by pass nests one
+    level per pass. The bindings are made side by side, so each term is read
+    where the form stands, and a piece nested in one binds its own names
+    inside it.
+    """
+    named = list(zip(_BOUND[: len(terms)], terms, strict=True))
+    read = [name if term.startswith("(") else term for name, term in named]
+    bindings = [f"({name} {term})" for name, term in named if term.startswith("(")]
+    written = form(*read)
+    return f"(let ({' '.join(bindings)}) {written})" if bindings else written
+
+
 def character(term: str, index: int) -> str:
     """``s[i]``: the character at i, a negative i counted back from the end.
 
     It answers only past the fork that says s is long enough for i, so i is
     in range wherever the term is read.
     """
-    return f"(str.at {term} {_counted(term, index)})"
+    return _once(lambda s: f"(str.at {s} {_counted(s, index)})", term)
 
 
 def sliced(term: str, start: int | None, stop: int | None) -> str:
@@ -192,6 +218,11 @@ def sliced(term: str, start: int | None, stop: int | None) -> str:
     the end or a length of zero or less, and stops at the end of the string,
     which is Python's clamping for the rest.
     """
+    return _once(lambda s: _substring(s, start, stop), term)
+
+
+def _substring(term: str, start: int | None, stop: int | None) -> str:
+    """`sliced` written on a term it may read more than once."""
     if start is None:
         low = "0"
     elif start >= 0:
@@ -219,12 +250,22 @@ def replaced(term: str, old: str, new: str) -> str:
 
 def without_prefix(term: str, prefix: str) -> str:
     """``s.removeprefix(prefix)``: s past the prefix when s starts with it, else s itself."""
+    return _once(_past_prefix, term, prefix)
+
+
+def _past_prefix(term: str, prefix: str) -> str:
+    """`without_prefix` written on terms it may read more than once."""
     rest = f"(str.substr {term} {_length(prefix)} (- {_length(term)} {_length(prefix)}))"
     return f"(ite (str.prefixof {prefix} {term}) {rest} {term})"
 
 
 def without_suffix(term: str, suffix: str) -> str:
     """``s.removesuffix(suffix)``: s up to the suffix when s ends with it, else s itself."""
+    return _once(_before_suffix, term, suffix)
+
+
+def _before_suffix(term: str, suffix: str) -> str:
+    """`without_suffix` written on terms it may read more than once."""
     rest = f"(str.substr {term} 0 (- {_length(term)} {_length(suffix)}))"
     return f"(ite (str.suffixof {suffix} {term}) {rest} {term})"
 

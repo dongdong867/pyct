@@ -4,6 +4,8 @@ import operator
 import random
 from collections.abc import Callable
 
+import pytest
+
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
@@ -249,3 +251,33 @@ def test_cvc5_agrees_with_python_on_every_piece_path_it_answers() -> None:
         if disagrees(path, answer, PYTHON_HEADS, [*PATH_LETTERS, "z"], 5)
     ]
     assert wrong == []
+
+
+def _walk(step: int, index: int) -> list[tuple[Expression, Expression | None]]:
+    """Thirty passes of a loop that tests one end of s and cuts it off, `s = s[1:]` or `s[:-1]`.
+
+    Each pass tests s for truth, then the character at ``index``, after the
+    fork the index records first.
+    """
+    term: Expression = "s"
+    conditions: list[tuple[Expression, Expression | None]] = []
+    for _ in range(30):
+        measured: Expression = ["len", term]
+        long_enough: Expression = [">", measured, index] if index >= 0 else [">=", measured, 1]
+        conditions.append((["!=", term, "''"], None))
+        conditions.append((["==", ["[]", term, index], "'x'"], long_enough))
+        term = ["[:]", term, 1, None] if step > 0 else ["[:]", term, None, -1]
+    return conditions
+
+
+@needs_cvc5
+@pytest.mark.parametrize(("step", "index"), [(1, 0), (-1, -1)], ids=["s = s[1:]", "s = s[:-1]"])
+def test_cvc5_agrees_with_python_on_a_walk_thirty_pieces_deep(step: int, index: int) -> None:
+    # thirty letters, none of them x, and the last pass's compare flipped: the answer needs an
+    # x thirty pieces down
+    path = flipped_path("ab" * 15, _walk(step, index), PYTHON_HEADS)
+
+    answer = solve(path, {"s": str}, 10.0)
+
+    assert isinstance(answer, Sat), answer
+    assert not disagrees(path, answer, PYTHON_HEADS, [], 0)
