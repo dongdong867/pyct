@@ -117,16 +117,24 @@ def compared_row(entry: Entry, file: Path, body: Body, reports: Reports) -> Row:
 
 def _view(report: SideReport, file: Path, body: Body) -> SideView:
     """The side as the row shows it. Lines of a file other than the entry's are not its lines."""
-    loaded_elsewhere = report.file is not None and Path(report.file).resolve() != file.resolve()
-    elsewhere = f"loaded {report.file}, the entry names {file}" if loaded_elsewhere else None
-    in_file = report.file is not None and not loaded_elsewhere
     return SideView(
         file=report.file,
-        covered=tuple(sorted(body.cut(report.covered))) if in_file else (),
+        covered=tuple(sorted(body.cut(report.covered))) if _in(report, file) else (),
         stopped=report.stopped,
         inputs=report.inputs,
-        failure=report.failure or elsewhere,
+        failure=report.failure or _file_failure(report, file),
     )
+
+
+def _in(report: SideReport, file: Path) -> bool:
+    return report.file is not None and Path(report.file).resolve() == file.resolve()
+
+
+def _file_failure(report: SideReport, file: Path) -> str | None:
+    """Why the report's lines are not the entry's file's lines, or ``None`` when they are."""
+    if report.file is None:
+        return "the report names no file"
+    return None if _in(report, file) else f"loaded {report.file}, the entry names {file}"
 
 
 def _status(v2: SideView, legacy: SideView) -> Status:

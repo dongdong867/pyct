@@ -92,6 +92,16 @@ def test_a_side_with_its_own_failure_keeps_that_failure(tmp_path: Path) -> None:
     )
 
 
+def test_a_report_that_names_no_file_fails_its_side() -> None:
+    nameless = SideReport(stopped="done", inputs=1)
+
+    row = compared_row(ENTRY, FILE, BODY, Reports(v2=nameless, legacy=nameless))
+
+    assert row.status is Status.BOTH_FAILED
+    assert row.v2 is not None
+    assert row.v2.failure == "the report names no file"
+
+
 def test_an_unreadable_body_fails_both_sides_with_the_reason() -> None:
     row = unreadable_row(ENTRY, FILE, "no def")
 
