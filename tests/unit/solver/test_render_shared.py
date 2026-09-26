@@ -132,6 +132,29 @@ def test_a_fork_on_a_bare_truth_value_holds_no_part() -> None:
     assert text.splitlines() == ["(set-logic ALL)", "(assert (not true))", "(check-sat)"]
 
 
+def test_a_sum_built_over_five_thousand_passes_is_written_out() -> None:
+    term: Expression = "x"
+    for _ in range(5000):
+        term = ["+", term, 1]
+
+    # nested far past Python's recursion limit, and held once, so written out where it stands
+    assert _asserted(["==", term, 5], {"x": int}) == (
+        f"(assert (= {'(+ ' * 5000}x{' 1)' * 5000} 5))"
+    )
+
+
+def test_a_string_built_over_five_thousand_passes_is_defined_once() -> None:
+    term: Expression = "s"
+    for _ in range(5000):
+        term = ["+", term, "' '"]
+
+    text = render((fork(["startswith", term, "'ok'"], taken=True),), {"s": str}).splitlines()
+
+    # a form reads the string, so it is defined, written out once down to s
+    opened, closed = "(str.++ ", ' " ")'
+    assert f"(define-fun e!0 () String {opened * 5000}s{closed * 5000})" in text
+
+
 def _marked_loop(passes: int) -> tuple[Branch, ...]:
     """`s = s[:i] + "x" + s[i+1:]` for each i, then `s != ''`: two pieces with a mark between.
 

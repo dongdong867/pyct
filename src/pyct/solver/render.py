@@ -206,14 +206,19 @@ class _Program:
     ) -> None:
         self.leaves = leaves
         self.types: dict[int, type | None] = {}
-        self.names: dict[int, str] = {}
+        # each part's term, its defined name or the part written out, kept until every place
+        # that holds the part has read it: a chain held once keeps the text of its top alone
+        self.terms: dict[int, str] = {}
+        self.unread = dict(holders)
         self.definitions: list[str] = []
         for node in order:
             self.types[id(node)] = self._result(node)
         read = self._read_by_forms(order)
+        # each part comes after the parts it holds (see `distinct`), so their terms are written
+        # before it, and no part waits on Python's stack for its operands
         for node in order:
-            if holders[id(node)] > 1 or id(node) in read:
-                self._define(node)
+            define = holders[id(node)] > 1 or id(node) in read
+            self.terms[id(node)] = self._written(node, define=define)
 
     def assertion(self, fork: Branch) -> str:
         """The condition as the run met it: the side it took decides the negation."""
@@ -221,11 +226,15 @@ class _Program:
         return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
     def term(self, expression: Expression) -> str:
-        """One condition or a part of one: a defined part by its name, any other written out."""
+        """One condition or a part of one: a defined part by its name, any other written out.
+
+        Each place that holds a part reads its term once, and the last read lets it go.
+        """
         if not isinstance(expression, list):
             return _leaf(expression)
-        name = self.names.get(id(expression))
-        return name if name is not None else self._operation(expression)
+        key = id(expression)
+        self.unread[key] -= 1
+        return self.terms[key] if self.unread[key] else self.terms.pop(key)
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
@@ -268,15 +277,19 @@ class _Program:
         head, *operands = node
         return head in STRING_ORDERS and self._operands_type(operands) is str
 
-    def _define(self, node: Node) -> None:
-        """Name a part and define it once, its own parts already named or written out."""
+    def _written(self, node: Node, *, define: bool) -> str:
+        """A part's term, its own parts already written: its name if it is defined, else itself.
+
+        A part to define is defined once, by name, when it has a sort to define it by.
+        """
+        operation = self._operation(node)
         kind = self.types[id(node)]
-        sort = None if kind is None else _DEFINED_SORTS.get(kind)
+        sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
-            return
-        name = f"e!{len(self.names)}"
-        self.definitions.append(f"(define-fun {name} () {sort} {self._operation(node)})")
-        self.names[id(node)] = name
+            return operation
+        name = f"e!{len(self.definitions)}"
+        self.definitions.append(f"(define-fun {name} () {sort} {operation})")
+        return name
 
     def _operation(self, node: Node) -> str:
         """An operation on its operands, as the form, the order or the operator that means it."""

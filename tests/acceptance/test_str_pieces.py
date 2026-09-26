@@ -42,6 +42,7 @@ INDEX_PAST_THE_END_FILE = str(REPO_ROOT / "targets" / "strs" / "index_past_the_e
 TRACKED_INDEX = "targets.strs.tracked_index::pick"
 REBUILT = "targets.strs.rebuilt::rebuild"
 REBUILT_FILE = str(REPO_ROOT / "targets" / "strs" / "rebuilt.py")
+PADDED = "targets.strs.padded::pad"
 
 
 def sides_of(lines: list[dict[str, object]]) -> set[tuple[object, str, object]]:
@@ -151,10 +152,18 @@ def test_downgrades_a_tracked_index() -> None:
 
 
 def printed_nodes(expression: object) -> int:
-    """Nodes of an expression as a line prints it: a list and each of its operands."""
-    if not isinstance(expression, list):
-        return 1
-    return 1 + sum(printed_nodes(part) for part in expression[1:])
+    """Nodes of an expression as a line prints it: a list and each of its operands.
+
+    Counted on a stack of its own, since a printed expression may nest deeper than Python
+    recurses.
+    """
+    nodes, stack = 0, [expression]
+    while stack:
+        part = stack.pop()
+        nodes += 1
+        if isinstance(part, list):
+            stack.extend(part[1:])
+    return nodes
 
 
 def cut_counts(expression: object) -> list[int]:
@@ -188,3 +197,19 @@ def test_cuts_a_long_expression() -> None:
     reaching = [line for line in inputs[1:] if line["aim"] == aim and line["mismatch_at"] is None]
     assert reaching, [line["aim"] for line in inputs[1:]]
     assert text(reaching[0], "s") == "abcdefghijklmnopqr"
+
+
+# follow-strings-cuts-a-long-expression
+def test_cuts_a_string_built_over_five_thousand_passes() -> None:
+    result = run_pyct(PADDED, '{"s": "a"}')
+
+    # the string nests five thousand operations deep, far past Python's recursion limit, and
+    # the line, the fork line and the solver each walk it
+    assert result.returncode == 0, result.stderr
+    seed, solved = input_lines(result.stdout)
+    assert all(printed_nodes(fork["expression"]) <= 1000 for fork in forks_of(seed))
+    assert " nodes).startswith('ok')" not in result.stderr
+    assert " + ' ').startswith('ok')  not taken" in result.stderr
+    assert text(solved, "s").startswith("ok")
+    assert solved["mismatch_at"] is None
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"

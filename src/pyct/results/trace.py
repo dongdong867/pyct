@@ -149,30 +149,53 @@ def _ended(failure: Failure | None) -> list[str]:
     return [f"ended {kind}: {failure.detail}", *_indented(failure.traceback)]
 
 
+# a part as the fork line writes it, and whether it stands alone as an operand: a leaf does,
+# and so does a part Python writes around its operands
+type _Text = tuple[str, bool]
+
+
 def _infix(expression: Expression) -> str:
     """The condition the way a person writes it, whatever the operator is.
 
     Operator first is how the expression is stored, so one operand reads
     ``op a`` and the rest read as ``a op b``, joined by the operator, but for
-    what Python writes around its operands (see `_around`).
+    what Python writes around its operands (see `_around`). Each part is
+    written after its operands, on a stack of its own rather than Python's,
+    so a condition nested past Python's recursion limit is written too.
     """
-    if not isinstance(expression, list):
-        return expression if isinstance(expression, str) else repr(expression)
-    around = _around(expression)
+    written: list[_Text] = []
+    stack: list[tuple[Expression, bool]] = [(expression, False)]
+    while stack:
+        part, operands_written = stack.pop()
+        if not isinstance(part, list):
+            written.append((part if isinstance(part, str) else repr(part), True))
+        elif operands_written:
+            first = len(written) - (len(part) - 1)
+            written[first:] = [_text(part, written[first:])]
+        else:
+            stack.append((part, True))
+            # the leftmost operand on top, so the operands are written in their order
+            stack.extend((operand, False) for operand in reversed(part[1:]))
+    return written[0][0]
+
+
+def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
+    """One condition, written from its operands, each already written."""
+    around = _around(expression, operands)
     if around is not None:
-        return around
-    operator, *operands = expression
-    written = [_operand(operand) for operand in operands]
-    if len(written) == 1:
-        return f"{operator} {written[0]}"
-    return f" {operator} ".join(written)
+        return around, True
+    operator = expression[0]
+    parts = [_operand(operand) for operand in operands]
+    if len(parts) == 1:
+        return f"{operator} {parts[0]}", False
+    return f" {operator} ".join(parts), False
 
 
 # the builtins a fork line writes as Python calls them: `len(s)`
 _CALLED = ("len",)
 
 
-def _around(expression: list[Expression]) -> str | None:
+def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     """A condition Python writes around its operands, or None for one it writes between them.
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out.
@@ -181,19 +204,18 @@ def _around(expression: list[Expression]) -> str | None:
     expression reads ``...(N nodes)``. Each binds tighter than any operator,
     so none needs parentheses of its own.
     """
-    head, *operands = expression
+    head = expression[0]
+    texts = [text for text, _ in operands]
     if head == CUT:
-        return f"...({_infix(operands[0])} nodes)"
+        return f"...({texts[0]} nodes)"
     if head == "[]" or head == "[:]":
-        receiver, *positions = operands
-        written = ":".join("" if position is None else _infix(position) for position in positions)
-        return f"{_operand(receiver)}[{written}]"
+        bounds = zip(expression[2:], texts[1:], strict=True)
+        written = ":".join("" if position is None else text for position, text in bounds)
+        return f"{_operand(operands[0])}[{written}]"
     if head in _CALLED:
-        return f"{head}({', '.join(_infix(operand) for operand in operands)})"
+        return f"{head}({', '.join(texts)})"
     if _is_named_with_arguments(expression):
-        receiver, *arguments = operands
-        called = ", ".join(_infix(argument) for argument in arguments)
-        return f"{_operand(receiver)}.{head}({called})"
+        return f"{_operand(operands[0])}.{head}({', '.join(texts[1:])})"
     return None
 
 
@@ -213,33 +235,11 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
     )
 
 
-def _indexed(expression: list[Expression]) -> str:
-    """A chain of indexes as Python writes it, ``a[k][0]``, read down the chain in a loop.
-
-    An access to a value inside an argument is one index per step, as deep
-    as the seed goes, so the chain is not read one call per step.
-    """
-    keys: list[Expression] = []
-    container: Expression = expression
-    while isinstance(container, list) and _is_index(container):
-        keys.append(container[2])
-        container = container[1]
-    written = "".join(f"[{_infix(key)}]" for key in reversed(keys))
-    return f"{_operand(container)}{written}"
-
-
-def _is_index(expression: list[Expression]) -> bool:
-    """Whether a condition is an index or a key taken from a container: ``["[]", a, k]``."""
-    return expression[0] == "[]" and len(expression) == 3
-
-
-def _operand(expression: Expression) -> str:
+def _operand(written: _Text) -> str:
     """A condition inside a condition gets parentheses; a leaf stands alone.
 
     So does a condition Python writes around its operands, ``s[0]`` or
     ``a.name(b)``.
     """
-    if not isinstance(expression, list):
-        return _infix(expression)
-    around = _around(expression)
-    return around if around is not None else f"({_infix(expression)})"
+    text, alone = written
+    return text if alone else f"({text})"
