@@ -10,8 +10,12 @@ from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.strings import (
+    above,
+    below,
     character,
     encode,
+    last_index,
+    occurrences,
     replaced,
     sliced,
     without_prefix,
@@ -55,6 +59,26 @@ def test_a_removed_prefix_or_suffix_reads_a_literal_length_as_a_number() -> None
     assert without_suffix("s", '"ab"') == (
         '(ite (str.suffixof "ab" s) (str.substr s 0 (- (str.len s) 2)) s)'
     )
+
+
+# `s[1:][1:]`, a piece of a piece, as the program writes it
+TWICE_CUT = sliced(sliced("s", 1, None), 1, None)
+
+# each search and order that reads its string more than once, written on a piece
+READ_MORE_THAN_ONCE: dict[str, str] = {
+    "rfind": last_index(TWICE_CUT, '"x"'),
+    "count": occurrences(TWICE_CUT, '"x"'),
+    "<": below(TWICE_CUT, "abcd", or_equal=False),
+    ">=": above(TWICE_CUT, "abcd", or_equal=True),
+    "rfind-a-piece": last_index("t", TWICE_CUT),
+    "count-a-piece": occurrences("t", TWICE_CUT),
+}
+
+
+@pytest.mark.parametrize("written", READ_MORE_THAN_ONCE.values(), ids=list(READ_MORE_THAN_ONCE))
+def test_a_search_or_an_order_writes_a_piece_once(written: str) -> None:
+    # the form reads the piece several times, and a let names it once for all of them
+    assert written.count(TWICE_CUT) == 1
 
 
 def _value(rng: random.Random, longest: int) -> str:

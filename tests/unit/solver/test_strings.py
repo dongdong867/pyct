@@ -117,7 +117,8 @@ def test_the_tracked_side_is_written_as_the_term_it_is_given() -> None:
 
     written = below(term, "x", or_equal=False)
 
-    assert written == f"(< (str.to_code (str.at {term} 0)) 120)"
+    # a compound term is named once, however many letters the order reads it for
+    assert written == f"(let ((s! {term})) (< (str.to_code (str.at s! 0)) 120))"
 
 
 def test_a_literal_character_is_written_by_its_code_point() -> None:

@@ -27,9 +27,11 @@ from the rest; decision string-search-clamped-over-the-reversed-string.
 A piece is written as the SMT-LIB term for the str Python builds: an index
 or a slice, a replace, and a removed prefix or suffix. A position arrives
 as the int it is, or None for a slice's missing bound, and the clamping
-Python does is written inside the term. A piece that reads its string more
-than once binds it by ``let`` and writes it once, so a piece of a piece
-grows the program by one level, not by a multiple of it.
+Python does is written inside the term.
+
+A form that reads a compound operand more than once, a piece, ``rfind``,
+``count`` or an order, binds it by ``let`` and writes it once, so a piece
+of a piece grows the program by one level, not by a multiple of it.
 """
 
 import re
@@ -76,10 +78,15 @@ def below(term: str, literal: str, *, or_equal: bool) -> str:
     ``term`` is any String term as SMT-LIB writes it, and ``literal`` the
     Python value. A term that runs out before the literal needs no step of
     its own: ``str.at`` past the end is the empty string, whose code is -1,
-    below every character.
+    below every character. A compound term is written once (see `_once`).
     """
     if not literal:
         return f'(= {term} "")' if or_equal else "false"
+    return _once(lambda read: _below(read, literal, or_equal), term)
+
+
+def _below(term: str, literal: str, or_equal: bool) -> str:
+    """`below` written on a term it may read more than once."""
     steps = [_differs(term, literal, at, "<") for at in range(len(literal))]
     return _any(_equal(term, literal, or_equal) + steps)
 
@@ -88,10 +95,15 @@ def above(term: str, literal: str, *, or_equal: bool) -> str:
     """``literal < term``, or ``literal <= term`` with ``or_equal``, written letter by letter.
 
     The literal running out first is the last step: the term holds all of
-    it and goes on.
+    it and goes on. A compound term is written once (see `_once`).
     """
     if not literal:
         return "true" if or_equal else f'(distinct {term} "")'
+    return _once(lambda read: _above(read, literal, or_equal), term)
+
+
+def _above(term: str, literal: str, or_equal: bool) -> str:
+    """`above` written on a term it may read more than once."""
     steps = [_differs(term, literal, at, ">") for at in range(len(literal))]
     longer = f"(and (str.prefixof {encode(literal)} {term}) (> (str.len {term}) {len(literal)}))"
     return _any(_equal(term, literal, or_equal) + steps + [longer])
@@ -150,8 +162,13 @@ def last_index(term: str, sub: str) -> str:
     back from the end, so the empty substring is found at ``len(s)``, as
     Python finds it. The answer is held at or above the first index, where
     it always is: without that bound cvc5 ran paths holding both to its time
-    limit.
+    limit. A compound operand is written once (see `_once`).
     """
+    return _once(_last_index, term, sub)
+
+
+def _last_index(term: str, sub: str) -> str:
+    """`last_index` written on terms it may read more than once."""
     first = first_index(term, sub)
     reversed_first = f"(str.indexof {_reversed(term)} {_reversed(sub)} 0)"
     back = f"(- (- {_length(term)} {_length(sub)}) {reversed_first})"
@@ -167,8 +184,14 @@ def occurrences(term: str, sub: str) -> str:
     count on the plain strings with a last index to its time limit. The
     count is held at one or more where sub is in s and is 0 where it is not,
     which cvc5 does not work out from the removal. The empty substring
-    occurs ``len(s) + 1`` times, as Python counts it.
+    occurs ``len(s) + 1`` times, as Python counts it. A compound operand is
+    written once (see `_once`).
     """
+    return _once(_occurrences, term, sub)
+
+
+def _occurrences(term: str, sub: str) -> str:
+    """`occurrences` written on terms it may read more than once."""
     removed = f'(str.replace_all {_reversed(term)} {_reversed(sub)} "")'
     counted = f"(div (- {_length(term)} (str.len {removed})) {_length(sub)})"
     return (
