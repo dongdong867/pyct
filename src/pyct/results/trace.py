@@ -158,7 +158,7 @@ def _infix(expression: Expression) -> str:
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
     operator, *operands = expression
-    if _is_call(expression):
+    if _is_named_with_arguments(expression):
         receiver, *arguments = operands
         called = ", ".join(_infix(argument) for argument in arguments)
         return f"{_operand(receiver)}.{operator}({called})"
@@ -168,12 +168,12 @@ def _infix(expression: Expression) -> str:
     return f" {operator} ".join(written)
 
 
-def _is_call(expression: list[Expression]) -> bool:
-    """Whether a condition is a method call: a head that is a name, not a keyword, on operands.
+def _is_named_with_arguments(expression: list[Expression]) -> bool:
+    """Whether a condition is a named head on a receiver and at least one argument.
 
-    A keyword such as ``in`` is an operator Python writes between its
-    operands, and a head with one operand, such as ``abs``, keeps the
-    ``op a`` it always had.
+    A name is an identifier that is not a keyword, so ``in`` stays an
+    operator Python writes between its operands. A named head on one
+    operand, such as ``abs``, keeps the ``op a`` it always had.
     """
     head = expression[0]
     return (
@@ -187,4 +187,8 @@ def _is_call(expression: list[Expression]) -> bool:
 def _operand(expression: Expression) -> str:
     """A condition inside a condition gets parentheses; a leaf and a method call stand alone."""
     written = _infix(expression)
-    return f"({written})" if isinstance(expression, list) and not _is_call(expression) else written
+    return (
+        f"({written})"
+        if isinstance(expression, list) and not _is_named_with_arguments(expression)
+        else written
+    )
