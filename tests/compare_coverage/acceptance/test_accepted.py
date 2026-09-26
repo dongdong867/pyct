@@ -57,7 +57,7 @@ def test_accepts_the_new_state(stub_checkout: StubCheckout, tmp_path: Path) -> N
 
     result = run_checker(*legacy, "--target", ONE_CHECK, "--accepted", str(accepted), "--accept")
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["status"] == "same"
     assert row["record"] == "changed"
     assert read_records(accepted) == [IMPLIED_GAP, TWO_ARGS_GAP]
@@ -65,7 +65,7 @@ def test_accepts_the_new_state(stub_checkout: StubCheckout, tmp_path: Path) -> N
 
     again = run_checker(*legacy, "--target", ONE_CHECK, "--accepted", str(accepted))
 
-    assert one_row(again.stdout)["record"] is None
+    assert one_row(again.stdout, again.stderr)["record"] is None
     assert again.returncode == 0, again.stderr
 
 
@@ -82,7 +82,7 @@ def test_passes_a_recorded_difference(stub_checkout: StubCheckout, tmp_path: Pat
         *("--target", IMPLIED_CHECK, "--target", ONE_CHECK),
     )
 
-    implied, one_check = rows(result.stdout)
+    implied, one_check = rows(result.stdout, result.stderr)
     assert implied["status"] == "differs"
     assert implied["record"] == "accepted"
     assert one_check["status"] == "same"
@@ -101,7 +101,7 @@ def test_fails_a_changed_row(stub_checkout: StubCheckout, tmp_path: Path) -> Non
         "--legacy", str(stub_checkout.path), "--target", ONE_CHECK, "--accepted", str(accepted)
     )
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     change = "status was differs, now same; only legacy was 4, now none"
     assert row["record"] == "changed"
     assert row["change"] == change

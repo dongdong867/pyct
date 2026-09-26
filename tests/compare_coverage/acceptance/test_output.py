@@ -27,7 +27,7 @@ def test_flags_a_difference(stub_checkout: StubCheckout) -> None:
 
     result = run_checker("--legacy", str(stub_checkout.path), "--target", IMPLIED_CHECK)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["status"] == "differs"
     assert row["only_legacy"] == [5]
     assert row["only_v2"] == []
@@ -42,12 +42,12 @@ def test_runs_both_sides_under_the_same_limits(stub_checkout: StubCheckout) -> N
     default = run_checker("--legacy", str(stub_checkout.path), "--target", ONE_CHECK)
 
     same = {"budget": 30.0, "plateau": 5, "solver_timeout": 10}
-    assert summary(default.stdout)["limits"] == {"v2": same, "legacy": same}
+    assert summary(default.stdout, default.stderr)["limits"] == {"v2": same, "legacy": same}
 
     flags = ("--budget", "5", "--plateau", "3", "--solver-timeout", "2.5")
     given = run_checker("--legacy", str(stub_checkout.path), "--target", ONE_CHECK, *flags)
 
-    assert summary(given.stdout)["limits"] == {
+    assert summary(given.stdout, given.stderr)["limits"] == {
         "v2": {"budget": 5.0, "plateau": 3, "solver_timeout": 2.5},
         "legacy": {"budget": 5.0, "plateau": 3, "solver_timeout": 3},
     }
@@ -71,8 +71,9 @@ def test_keeps_data_on_stdout(stub_checkout: StubCheckout) -> None:
 
     # every stdout line is JSON: the rows in list order, then the summary line
     lines = [json.loads(line) for line in result.stdout.splitlines()]
-    assert [line["target"] for line in rows(result.stdout)] == [IMPLIED_CHECK, ONE_CHECK]
-    closing = summary(result.stdout)
+    targets = [line["target"] for line in rows(result.stdout, result.stderr)]
+    assert targets == [IMPLIED_CHECK, ONE_CHECK]
+    closing = summary(result.stdout, result.stderr)
     assert "target" not in closing
     assert closing["statuses"]["same"] == 1
     assert closing["statuses"]["differs"] == 1

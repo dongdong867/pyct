@@ -28,13 +28,13 @@ def test_reports_a_matching_target(legacy_checkout: Path) -> None:
     """compare-coverage-against-legacy-reports-a-matching-target"""
     result = run_checker("--legacy", str(legacy_checkout), "--target", ONE_CHECK)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["status"] == "same"
     assert row["seed"] == {"x": 0}
     assert row["file"] == ONE_CHECK_FILE
     assert row["v2"]["covered"] == [2, 3, 4]
     assert row["legacy"]["covered"] == [2, 3, 4]
-    assert "statuses" in summary(result.stdout)
+    assert "statuses" in summary(result.stdout, result.stderr)
     (line,) = table_rows(result.stderr, ONE_CHECK)
     assert "same" in line
     assert result.returncode == 0, result.stderr
@@ -46,7 +46,7 @@ def test_lifts_the_legacy_input_cap(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["legacy"]["inputs"] > 50, row
     assert row["legacy"]["stopped"] != "max_iterations", row
     assert row["legacy"]["failure"] is None, row
@@ -58,7 +58,7 @@ def test_compares_only_the_target_body(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     helper_lines = {5, 6, 7}
     assert row["own_lines"] == [11, 12, 13, 14]
     assert not helper_lines & set(row["v2"]["covered"])
@@ -73,7 +73,7 @@ def test_counts_a_long_statement_once(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     # the statement spans lines 5 to 7; v2 reports all three, legacy only the first
     for side in ("v2", "legacy"):
         assert 5 in row[side]["covered"], row
@@ -87,7 +87,7 @@ def test_reads_under_the_decorator(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["file"] == str(COMPARE / "decorated.py")
     # the body of the wrapped function; the decorator line and the def line are not in it
     assert row["own_lines"] == [8, 9, 10]
@@ -101,7 +101,7 @@ def test_shows_how_each_side_stopped(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target, "--budget", "2")
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     # each side in its own words: legacy's seed times out, and a loop with no fork leaves it
     # nothing to flip, which it calls exhausted
     assert row["v2"]["stopped"] == "budget spent"
@@ -122,7 +122,7 @@ def test_compares_a_target_that_raises(legacy_checkout: Path) -> None:
 
     result = run_checker("--legacy", str(legacy_checkout), "--target", target)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["status"] in ("same", "differs")
     # line 2 runs before the raise on line 3
     assert {2, 3} <= set(row["v2"]["covered"])

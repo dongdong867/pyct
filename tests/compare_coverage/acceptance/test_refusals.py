@@ -48,7 +48,7 @@ def test_a_relative_legacy_checkout_is_found_from_the_working_directory(
     result = run_checker("--legacy", relative, "--target", ONE_CHECK)
 
     assert result.returncode in (0, 1), result.stderr
-    assert one_row(result.stdout)["file"] == ONE_CHECK_FILE
+    assert one_row(result.stdout, result.stderr)["file"] == ONE_CHECK_FILE
     assert stub_checkout.calls()
 
 

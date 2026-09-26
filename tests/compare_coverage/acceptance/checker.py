@@ -60,22 +60,25 @@ def run_checker(
     return subprocess.CompletedProcess(argv, checker.returncode, stdout, stderr)
 
 
-def rows(stdout: str) -> list[dict[str, Any]]:
-    """Every row line; the summary line that closes stdout is left out, and must be there."""
+def rows(stdout: str, stderr: str = "") -> list[dict[str, Any]]:
+    """Every row line; the summary line that closes stdout is left out, and must be there.
+
+    ``stderr`` goes into a failed assertion, so a refusal or a crash shows what it said.
+    """
     lines = [json.loads(line) for line in stdout.splitlines()]
-    assert lines and "statuses" in lines[-1], stdout
+    assert lines and "statuses" in lines[-1], f"stdout:\n{stdout}\nstderr:\n{stderr}"
     return lines[:-1]
 
 
-def one_row(stdout: str) -> dict[str, Any]:
-    found = rows(stdout)
-    assert len(found) == 1, stdout
+def one_row(stdout: str, stderr: str = "") -> dict[str, Any]:
+    found = rows(stdout, stderr)
+    assert len(found) == 1, f"stdout:\n{stdout}\nstderr:\n{stderr}"
     return found[0]
 
 
-def summary(stdout: str) -> dict[str, Any]:
+def summary(stdout: str, stderr: str = "") -> dict[str, Any]:
     lines = stdout.splitlines()
-    assert lines, stdout
+    assert lines, f"stdout:\n{stdout}\nstderr:\n{stderr}"
     return json.loads(lines[-1])
 
 
@@ -117,4 +120,4 @@ def compare_on(run: Run, sides: Sides) -> tuple[int, list[dict[str, Any]], str]:
     """Run ``compare`` and give its exit code, its rows and its stderr."""
     out, err = io.StringIO(), io.StringIO()
     code = compare(run, sides, Streams(out=out, err=err))
-    return code, rows(out.getvalue()), err.getvalue()
+    return code, rows(out.getvalue(), err.getvalue()), err.getvalue()

@@ -73,7 +73,7 @@ def test_fails_a_target_legacy_cannot_run(stub_checkout: StubCheckout) -> None:
 
     result = run_checker("--legacy", str(stub_checkout.path), "--target", ONE_CHECK)
 
-    row = one_row(result.stdout)
+    row = one_row(result.stdout, result.stderr)
     assert row["status"] == "legacy failed"
     assert row["legacy"]["failure"] == "error: cannot inspect target: boom"
     assert "cannot inspect target: boom" in result.stderr
