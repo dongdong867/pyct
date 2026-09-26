@@ -74,25 +74,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     them.
     """
     try:
-        command = parse_command(sys.argv[1:] if argv is None else argv)
-        check_spec(command.spec)
-        seed = None if command.seed_text is None else parse_seed(command.seed_text)
-        budget = parse_budget(command.budget_text)
-        plateau = parse_plateau(command.plateau_text)
-        solver_timeout = parse_solver_timeout(command.solver_timeout_text)
-        target = load_target(command.spec)
-        if seed is None:
-            raise UsageError(missing_args_message(target.signature))
-        check_seed_fits(target.signature, seed)
-        check_seed_types(target, seed)
-        locate()
-        result = run(
-            target,
-            seed,
-            limits=Limits(budget=budget, plateau=plateau, solver_timeout=solver_timeout),
-            report=_report,
-            missed=_missed,
-        )
+        target, seed, limits = _checked(parse_command(sys.argv[1:] if argv is None else argv))
+        result = run(target, seed, limits=limits, report=_report, missed=_missed)
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -102,6 +85,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(render_stop(result), end="", file=sys.stderr, flush=True)
     print(render_summary(result), flush=True)
     return _exit_code(result)
+
+
+def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]:
+    """Every check before the run, in the order ``main`` gives. Each raises what main reports."""
+    check_spec(command.spec)
+    seed = None if command.seed_text is None else parse_seed(command.seed_text)
+    limits = Limits(
+        budget=parse_budget(command.budget_text),
+        plateau=parse_plateau(command.plateau_text),
+        solver_timeout=parse_solver_timeout(command.solver_timeout_text),
+    )
+    target = load_target(command.spec)
+    if seed is None:
+        raise UsageError(missing_args_message(target.signature))
+    check_seed_fits(target.signature, seed)
+    check_seed_types(target, seed)
+    locate()
+    return target, seed, limits
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
