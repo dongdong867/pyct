@@ -156,7 +156,13 @@ def _environment(hash_seed: str) -> dict[str, str]:
 
     When pyct's own interpreter ignores the ``PYTHON*`` variables, under
     ``-E`` or ``-I``, they are left out, so the new interpreter runs with the
-    settings pyct runs with and reads only the hash seed.
+    settings pyct runs with and reads only the hash seed. The cost: a target
+    in the new interpreter then finds no ``PYTHON*`` variable in
+    ``os.environ`` but the hash seed, where a forked input finds pyct's own,
+    and so does a Python the target starts. Putting them back once the new
+    interpreter is up would not remove the difference: a Python that
+    ``multiprocessing`` starts for the target would then read them, since
+    the new interpreter has no ``-E`` to pass on.
     """
     kept = {
         name: value
