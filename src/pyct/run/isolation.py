@@ -153,7 +153,8 @@ def in_a_child(
     ``random`` reseeds itself in every forked child, so the child puts back
     ``random_state``, the state the run took once after the target's import,
     before the call. Whatever pyct's process draws between inputs, each
-    input draws what a fresh interpreter importing the target would draw.
+    input starts from the state the import left, so a target that seeds
+    ``random`` at import draws the same in every input.
     """
 
     def call(watch: JournalWriter) -> Failure | None:
