@@ -102,7 +102,7 @@ def _search(
     operation = getattr(str, name)
     downgrade = downgraded(str, name)
 
-    def compute(self: ConcolicStr, *args: object, **kwargs: object) -> object:
+    def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
         form = None if kwargs else _needle(args)
         if form is None:
             return downgrade(self, *args, **kwargs)

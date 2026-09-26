@@ -335,12 +335,24 @@ def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
     assert sink == [Downgrade(name=name)]
 
 
+def test_a_keyword_named_like_pycts_own_parameters_reaches_strs_own_method() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("{self}-{operation}", expression="s", sink=sink)
+
+    # self and operation are the names pyct's wrappers give the receiver and the method; a
+    # target keyword of either name still reaches str's own format as the target wrote it
+    assert s.format(self=1, operation=2) == "1-2"  # pyrefly: ignore[no-matching-overload]
+    assert sink == [Downgrade(name="format")]
+
+
 # a keyword str's own method refuses: one encode names nowhere, and one to a taught search,
-# whose str method takes none; index is the search that forks before it may raise
+# whose str method takes none; index is the search that forks before it may raise, and self
+# is the name pyct's search gives its receiver
 REFUSED_KEYWORDS: dict[str, Callable[[str], object]] = {
     "s.encode(bogus=1)": lambda s: s.encode(bogus=1),  # pyrefly: ignore[unexpected-keyword]
     's.find("x", start=1)': lambda s: s.find("x", start=1),  # pyrefly: ignore[unexpected-keyword]
     's.index("x", start=1)': lambda s: s.index("x", start=1),  # pyrefly: ignore[unexpected-keyword]
+    's.find("x", self=1)': lambda s: s.find("x", self=1),  # pyrefly: ignore[unexpected-keyword]
 }
 
 

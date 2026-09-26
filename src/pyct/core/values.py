@@ -17,7 +17,7 @@ from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_s
 _TARGET_RAISE = "__pyct_target_raise__"
 
 
-def own[T](operation: Callable[..., T], *args: object, **kwargs: object) -> T:
+def own[T](operation: Callable[..., T], /, *args: object, **kwargs: object) -> T:
     """The base type's own answer, with a raise out of it marked as the target's.
 
     Every call pyct makes into the base type goes through here, taught
@@ -78,7 +78,7 @@ def downgraded(base: type, name: str) -> Callable[..., object]:
     """
     operation = getattr(base, name)
 
-    def downgrade(self: _Sinked, *args: object, **kwargs: object) -> object:
+    def downgrade(self: _Sinked, /, *args: object, **kwargs: object) -> object:
         result = own(operation, self, *args, **kwargs)
         if result is not NotImplemented:
             self.sink.append(Downgrade(name=name))

@@ -703,6 +703,22 @@ def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
     assert sink == [Downgrade(name="to_bytes")]
 
 
+def test_a_keyword_named_like_the_downgrades_own_parameter_is_ints_own_raise() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    with pytest.raises(TypeError) as plain:
+        (3).__format__(operation="d")  # pyrefly: ignore[bad-argument-count, unexpected-keyword]
+    with pytest.raises(TypeError) as raised:
+        x.__format__(operation="d")  # pyrefly: ignore[bad-argument-count, unexpected-keyword]
+
+    # operation is the name pyct gives the base type's method; int refuses the keyword itself,
+    # in its own words, the way it does on a plain value
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
 def test_an_operation_the_other_type_answers_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
