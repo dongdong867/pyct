@@ -153,7 +153,7 @@ def _infix(expression: Expression) -> str:
 
     Operator first is how the expression is stored, so one operand reads
     ``op a`` and the rest read as ``a op b``, joined by the operator. A
-    method reads as Python calls it, ``a.method(b)``.
+    named head with arguments reads as Python calls a method, ``a.name(b)``.
     """
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
