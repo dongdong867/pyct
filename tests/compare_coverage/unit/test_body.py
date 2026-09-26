@@ -1,9 +1,11 @@
 """A target's own lines, read from the file by Python's parser."""
 
+import ast
 from pathlib import Path
 
 import pytest
 
+from tools.compare_coverage import body as body_module
 from tools.compare_coverage.body import BodyError, read_body
 
 SOURCE = '''"""A module."""
@@ -183,6 +185,38 @@ def test_a_decorated_function_leaves_out_its_decorators(tmp_path: Path) -> None:
 
     assert body.own_lines == frozenset({42})
     assert body.cut([39, 40, 41, 42]) == frozenset({42})
+
+
+GENERIC = """\
+def generic[T](x: T) -> T:
+    y = x
+    return y
+
+
+class Box[T]:
+    size = 1
+
+    def get[U](self, u: U) -> U:
+        return u
+"""
+
+
+def test_a_generic_function_and_class_are_read_through_their_type_parameters(
+    tmp_path: Path,
+) -> None:
+    file = write(tmp_path, GENERIC)
+
+    assert read_body(file, "generic").own_lines == frozenset({2, 3})
+    assert read_body(file, "Box").own_lines == frozenset({10})
+
+
+def test_a_definition_with_no_compiled_code_is_refused_naming_the_file(tmp_path: Path) -> None:
+    file = write(tmp_path, "def f():\n    return 1\n")
+    (definition,) = ast.parse(file.read_text()).body
+    assert isinstance(definition, ast.FunctionDef)
+
+    with pytest.raises(BodyError, match=rf"{file} compiles no code for f at line 1"):
+        body_module._find({}, definition, file)
 
 
 def test_a_module_that_does_not_compile_is_refused_naming_it(tmp_path: Path) -> None:

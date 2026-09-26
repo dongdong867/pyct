@@ -57,7 +57,7 @@ def read_body(file: Path, name: str) -> Body:
     if rebinding is not None:
         raise BodyError(f"{file} binds {name} again at line {rebinding}, after its def")
     first_line = _first_lines(definition)
-    code = _code_of(_compile(tree, file), definition)
+    code = _find(_codes(_compile(tree, file)), definition, file)
     lines = _lines_run(code, isinstance(definition, ast.ClassDef))
     own_lines = frozenset(first_line[line] for line in lines if line in first_line)
     return Body(own_lines=own_lines, first_line=first_line)
@@ -114,10 +114,28 @@ def _bound(statement: ast.stmt) -> set[str]:
     }
 
 
-def _code_of(module: CodeType, definition: Definition) -> CodeType:
-    """The code object the module compiles for ``definition``: its name, at its first line."""
-    codes = {(code.co_name, code.co_firstlineno): code for code in _nested(module)}
-    return codes[definition.name, _start(definition)]
+def _codes(code: CodeType) -> dict[tuple[str, int], CodeType]:
+    """Every code object nested in ``code``, at any depth, by its name and its first line.
+
+    A generic ``def f[T]`` or ``class C[T]`` compiles inside a scope for its type
+    parameters, so its code sits one level below the module's own.
+    """
+    codes: dict[tuple[str, int], CodeType] = {}
+    for nested in _nested(code):
+        codes[nested.co_name, nested.co_firstlineno] = nested
+        codes |= _codes(nested)
+    return codes
+
+
+def _find(
+    codes: Mapping[tuple[str, int], CodeType], definition: Definition, file: Path
+) -> CodeType:
+    """The code object compiled for ``definition``: its name, at its first line."""
+    code = codes.get((definition.name, _start(definition)))
+    if code is None:
+        line = _start(definition)
+        raise BodyError(f"{file} compiles no code for {definition.name} at line {line}")
+    return code
 
 
 def _lines_run(code: CodeType, is_class: bool) -> set[int]:
