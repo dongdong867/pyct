@@ -65,20 +65,20 @@ def _join(left: Expression, right: Expression) -> Expression | None:
 
 def _span(part: Expression) -> _Span | None:
     """A piece of a string with no negative bound, as its string and its bounds, or None."""
-    if not isinstance(part, list) or len(part) < 3 or not all(map(_ahead, part[2:])):
-        return None
-    if part[0] == "[]" and len(part) == 3 and isinstance(part[2], int):
-        return part[1], part[2], part[2] + 1
-    if part[0] == "[:]" and len(part) == 4:
-        start, stop = part[2], part[3]
-        if (start is None or isinstance(start, int)) and (stop is None or isinstance(stop, int)):
-            return part[1], start, stop
+    match part:
+        case ["[]", term, int() as index] if _ahead(index):
+            return term, index, index + 1
+        case ["[:]", term, None | int() as start, None | int() as stop] if _ahead(start, stop):
+            return term, start, stop
     return None
 
 
-def _ahead(bound: Expression) -> bool:
-    """Whether a bound counts from the start: a plain int of zero or more, or a missing one."""
-    return bound is None or (isinstance(bound, int) and not isinstance(bound, bool) and bound >= 0)
+def _ahead(*bounds: Expression) -> bool:
+    """Whether each bound counts from the start: a plain int of zero or more, or a missing one."""
+    return all(
+        bound is None or (isinstance(bound, int) and not isinstance(bound, bool) and bound >= 0)
+        for bound in bounds
+    )
 
 
 def _same(one: Expression, other: Expression) -> bool:
