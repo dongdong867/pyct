@@ -3,8 +3,9 @@
 The checker decides which lines belong to the target, not either side, so the two sides can
 never disagree about it (decision own-lines-from-pythons-parser). The rule:
 
-- ``NAME`` is the last top-level ``def``, ``async def`` or ``class`` of that name in the file,
-  the one a module import leaves bound to the name.
+- ``NAME`` is the last top-level ``def``, ``async def`` or ``class`` of that name in the file.
+  A top-level assignment or import after it that binds the name again is refused: a call
+  would then run another object, and both sides would cover none of this body.
 - Its own lines are the first line of every statement in its body, at every depth. A class
   body holds its methods.
 - The ``def`` or ``class`` line, its decorators and its signature are not own lines: neither
@@ -52,6 +53,9 @@ def read_body(file: Path, name: str) -> Body:
     definition = _definition(tree, name)
     if definition is None:
         raise BodyError(f"{file} has no top-level def or class named {name}")
+    rebinding = _rebinding(tree, definition)
+    if rebinding is not None:
+        raise BodyError(f"{file} binds {name} again at line {rebinding}, after its def")
     return _body_of(definition)
 
 
@@ -62,6 +66,30 @@ def _definition(tree: ast.Module, name: str) -> Definition | None:
         if isinstance(node, DEFINITIONS) and node.name == name:
             found = node
     return found
+
+
+def _rebinding(tree: ast.Module, definition: Definition) -> int | None:
+    """The line of the first top-level assignment or import to bind the name after its def."""
+    after = tree.body[tree.body.index(definition) + 1 :]
+    for statement in after:
+        if definition.name in _bound(statement):
+            return statement.lineno
+    return None
+
+
+def _bound(statement: ast.stmt) -> set[str]:
+    """The names a top-level assignment or import binds."""
+    if isinstance(statement, ast.Import | ast.ImportFrom):
+        return {alias.asname or alias.name.split(".")[0] for alias in statement.names}
+    if isinstance(statement, ast.Assign):
+        targets = statement.targets
+    elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
+        targets = [statement.target]
+    else:
+        return set()
+    return {
+        node.id for target in targets for node in ast.walk(target) if isinstance(node, ast.Name)
+    }
 
 
 def _body_of(definition: Definition) -> Body:

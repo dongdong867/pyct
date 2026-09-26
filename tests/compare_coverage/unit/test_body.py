@@ -120,6 +120,23 @@ def test_a_name_bound_without_def_or_class_is_refused_naming_the_file(tmp_path: 
         read_body(file, "f")
 
 
+@pytest.mark.parametrize(
+    "rebinding",
+    ["f = g", "f: object = g", "(f, h) = (g, g)", "import os as f", "from os import path as f"],
+)
+def test_a_name_bound_again_after_its_definition_is_refused(tmp_path: Path, rebinding: str) -> None:
+    file = write(tmp_path, f"def g():\n    return 1\n\n\ndef f():\n    return 2\n\n\n{rebinding}\n")
+
+    with pytest.raises(BodyError, match=rf"{file} binds f again at line 9, after its def"):
+        read_body(file, "f")
+
+
+def test_a_name_bound_before_its_definition_is_its_definition(tmp_path: Path) -> None:
+    file = write(tmp_path, "from os import path as f\nf = 1\n\n\ndef f():\n    return 2\n")
+
+    assert read_body(file, "f").own_lines == frozenset({6})
+
+
 def test_a_nested_definition_is_not_top_level(tmp_path: Path) -> None:
     file = write(tmp_path, "def g():\n    def f():\n        return 1\n    return f\n")
 
