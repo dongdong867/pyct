@@ -2,7 +2,7 @@ import json
 import sys
 from collections import OrderedDict
 
-from pyct.binding.bind import bind, leaf_name, leaves
+from pyct.binding.bind import access_name, bind, leaf_name, leaves
 from pyct.core.branch import SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -230,3 +230,10 @@ def test_a_list_under_a_float_key_is_a_copy_of_its_own_with_plain_values() -> No
     assert seed == {"table": {1.5: [0], None: {"k": [1]}}}
     # a key no access can name leaves every value under it out of the leaves
     assert leaves(seed) == {}
+
+
+def test_access_name_reads_only_a_step_the_walk_takes() -> None:
+    assert access_name(["[]", "items", 0]) == json.dumps(["[]", "items", 0])
+    assert access_name(["+", "x", 1]) is None
+    assert access_name("x") is None
+    assert access_name([]) is None

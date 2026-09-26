@@ -4,7 +4,7 @@ import ast
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from pyct.binding.bind import leaf_name
+from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver.strings import (
     above,
@@ -102,14 +102,14 @@ class _Leaves:
         """The name of the leaf a part of a condition is, or None for a literal or an operation.
 
         A parameter is its bare name. A value inside one is its access, which
-        reads as indexing does: only an access to one of the seed's own leaves
-        is a value, and any other is an operation on a tracked value.
+        reads as an operation does: only an access to one of the seed's own
+        leaves is a value, and any other is an operation on a tracked value.
+        Which steps an access takes is binding's to say (``access_name``).
         """
         if isinstance(part, str):
             return None if _is_literal(part) else part
-        if isinstance(part, list) and part[:1] == ["[]"] and leaf_name(part) in self.kinds:
-            return leaf_name(part)
-        return None
+        name = access_name(part)
+        return name if name in self.kinds else None
 
     def kind(self, part: Expression) -> type | None:
         """The type of the leaf a part is, or None for anything else."""

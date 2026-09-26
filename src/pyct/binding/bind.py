@@ -65,6 +65,22 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     return found
 
 
+# the head of each step an access takes to a value inside an argument: `["[]", container, key]`
+_STEPS = frozenset({"[]"})
+
+
+def access_name(part: Expression) -> str | None:
+    """The leaf name of a part of a condition that reads as an access, or None for any other.
+
+    Only a list headed by one of the steps the walk takes can be an access,
+    so an operation is never written out to be compared. Whether the seed
+    holds that access is the caller's to ask.
+    """
+    if isinstance(part, list) and part and isinstance(part[0], str) and part[0] in _STEPS:
+        return leaf_name(part)
+    return None
+
+
 def leaf_name(access: Expression) -> str:
     """The name a tracked value goes by in a model: its parameter's, or its access as JSON.
 
