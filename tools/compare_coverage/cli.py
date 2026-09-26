@@ -16,7 +16,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
-from tools.compare_coverage.accepted import Accepted, RecordsError, key_of, read_records
+from tools.compare_coverage.accepted import (
+    Accepted,
+    RecordsError,
+    check_writable,
+    key_of,
+    read_records,
+)
 from tools.compare_coverage.compare import Facts, Run, Sides, Streams, compare
 from tools.compare_coverage.entries import (
     LIST_FILE,
@@ -125,6 +131,8 @@ def _accepted(flags: Flags, target_list: TargetList) -> Accepted | None:
     listed = frozenset(
         key_of(entry.target, entry.seed) for entry in target_list.entries if entry.target
     )
+    if flags.accept:
+        check_writable(flags.accepted)
     records = read_records(flags.accepted, flags.accept)
     return Accepted(path=flags.accepted, records=records, accept=flags.accept, listed=listed)
 

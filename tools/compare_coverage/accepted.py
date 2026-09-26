@@ -13,6 +13,7 @@ gaps moved (decision parity-gate-accepted-differences-pass-until-they-change).
 """
 
 import json
+import os
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -72,6 +73,16 @@ def read_records(path: Path, accept: bool) -> dict[Key, Record]:
         raise RecordsError(f"--accepted: cannot read {path}: {error.strerror}") from error
     records = [_record(line, f"{path} line {n}") for n, line in enumerate(text.splitlines(), 1)]
     return {record.key: record for record in records}
+
+
+def check_writable(path: Path) -> None:
+    """Refuse a file ``--accept`` could not write, before any target runs rather than after."""
+    folder = path.parent
+    if not folder.is_dir():
+        raise RecordsError(f"--accepted: cannot write {path}: no folder {folder}")
+    target = path if path.exists() else folder
+    if not os.access(target, os.W_OK):
+        raise RecordsError(f"--accepted: cannot write {path}: permission denied")
 
 
 def _record(line: str, where: str) -> Record:

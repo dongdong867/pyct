@@ -62,8 +62,12 @@ def test_a_relative_legacy_checkout_is_found_from_the_working_directory(
         (["--solver-timeout", "inf"], "--solver-timeout must be a finite number of seconds"),
         (["--accept"], "--accept needs --accepted FILE"),
         (["--bogus"], "unrecognized arguments: --bogus"),
-        (["--accepted", "missing.jsonl"], "--accepted: cannot read missing.jsonl"),
-        (["--accepted", "not-a-record.jsonl"], "--accepted: not-a-record.jsonl line 2"),
+        (["--accepted", "TMP/missing.jsonl"], "--accepted: cannot read TMP/missing.jsonl"),
+        (["--accepted", "TMP/not-a-record.jsonl"], "--accepted: TMP/not-a-record.jsonl line 2"),
+        (
+            ["--accepted", "TMP/no-folder/accepted.jsonl", "--accept"],
+            "--accepted: cannot write TMP/no-folder/accepted.jsonl: no folder TMP/no-folder",
+        ),
     ],
 )
 def test_refuses_a_bad_flag(
@@ -75,9 +79,8 @@ def test_refuses_a_bad_flag(
         | {"only_legacy": [], "only_v2": []}
     )
     (tmp_path / "not-a-record.jsonl").write_text(f"{record}\n[1, 2]\n")
-    flags = [str(tmp_path / flag) if flag.endswith(".jsonl") else flag for flag in flags]
-    says = says.replace("missing.jsonl", str(tmp_path / "missing.jsonl"))
-    says = says.replace("not-a-record.jsonl", str(tmp_path / "not-a-record.jsonl"))
+    flags = [flag.replace("TMP/", f"{tmp_path}/") for flag in flags]
+    says = says.replace("TMP/", f"{tmp_path}/")
 
     result = run_checker("--legacy", str(stub_checkout.path), *flags)
 

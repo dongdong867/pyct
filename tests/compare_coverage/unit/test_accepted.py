@@ -10,6 +10,7 @@ from tools.compare_coverage.accepted import (
     Accepted,
     Record,
     RecordsError,
+    check_writable,
     key_of,
     mark,
     passes,
@@ -59,6 +60,25 @@ def test_a_missing_file_holds_no_records_only_when_accepting(tmp_path: Path) -> 
     assert read_records(missing, accept=True) == {}
     with pytest.raises(RecordsError, match=rf"--accepted: cannot read {missing}: no such file"):
         read_records(missing, accept=False)
+
+
+def test_a_file_accept_writes_needs_a_folder_it_can_write(tmp_path: Path) -> None:
+    missing = tmp_path / "no-folder" / "accepted.jsonl"
+    locked = tmp_path / "locked"
+    locked.mkdir()
+    locked.chmod(0o500)
+    read_only = tmp_path / "read-only.jsonl"
+    read_only.write_text("")
+    read_only.chmod(0o400)
+
+    check_writable(tmp_path / "accepted.jsonl")
+    with pytest.raises(RecordsError, match=rf"cannot write {missing}: no folder {missing.parent}"):
+        check_writable(missing)
+    with pytest.raises(RecordsError, match=rf"cannot write {locked}/a.jsonl: permission denied"):
+        check_writable(locked / "a.jsonl")
+    with pytest.raises(RecordsError, match=rf"cannot write {read_only}: permission denied"):
+        check_writable(read_only)
+    locked.chmod(0o700)
 
 
 def test_a_file_that_cannot_be_read_is_refused(tmp_path: Path) -> None:
