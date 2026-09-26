@@ -11,7 +11,7 @@ keyed by ``MODULE::NAME``:
 - ``sleep``: seconds to sleep first, for a side that runs too long
 - ``exit``: end the process at once with this code, after printing ``say`` to stderr
 
-Each call's config is appended to ``calls.jsonl`` in the checkout, for the limits tests.
+Each call's config and process id are appended to ``calls.jsonl`` in the checkout.
 """
 
 import dataclasses
@@ -88,7 +88,7 @@ def _script(target: str) -> dict[str, Any]:
 def _record(config: ExecutionConfig, plugins: list[Any] | None) -> None:
     fields = {**dataclasses.asdict(config), "scope": sorted(config.scope.files)}
     with open(CHECKOUT / "calls.jsonl", "a") as calls:
-        calls.write(json.dumps({"config": fields, "plugins": plugins}) + "\n")
+        calls.write(json.dumps({"config": fields, "plugins": plugins, "pid": os.getpid()}) + "\n")
 
 
 def _run_once(

@@ -8,10 +8,12 @@ measured test run measures the checker too; the checker keeps them out of each s
 import io
 import json
 import os
+import signal
 import subprocess
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
+from subprocess import PIPE
 from typing import Any
 
 from tools.compare_coverage.compare import Facts, Run, Sides, Streams, compare
@@ -33,19 +35,29 @@ TWO_ARGS = "targets.flip.two_args::pick"
 def run_checker(
     *argv: str, path: str | None = None, timeout: float = 55
 ) -> subprocess.CompletedProcess[str]:
-    """Spawn the checker with ``argv``. ``path`` replaces its ``PATH``."""
+    """Spawn the checker with ``argv``. ``path`` replaces its ``PATH``.
+
+    Each side leads a session of its own, so killing a checker past ``timeout`` would leave
+    its running side behind. It gets Ctrl-C instead, which stops the side's whole group, and
+    is killed only if it has not ended ten seconds later. The timeout then fails the test.
+    """
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
     if path is not None:
         env["PATH"] = path
-    return subprocess.run(
-        [sys.executable, "-m", "tools.compare_coverage", *argv],
-        cwd=REPO_ROOT,
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout,
-    )
+    argv = (sys.executable, "-m", "tools.compare_coverage", *argv)
+    with subprocess.Popen(
+        argv, cwd=REPO_ROOT, env=env, stdout=PIPE, stderr=PIPE, text=True
+    ) as checker:
+        try:
+            stdout, stderr = checker.communicate(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            checker.send_signal(signal.SIGINT)
+            try:
+                checker.communicate(timeout=10)
+            finally:
+                checker.kill()
+            raise
+    return subprocess.CompletedProcess(argv, checker.returncode, stdout, stderr)
 
 
 def rows(stdout: str) -> list[dict[str, Any]]:
