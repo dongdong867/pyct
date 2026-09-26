@@ -13,24 +13,29 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 HERE = Stamp.here()
 
-# stands in for pyct: prints its argv to stderr and the summary line it is given in FAKE_SUMMARY
+# stands in for pyct: writes its argv to FAKE_ARGV and prints the summary line in FAKE_SUMMARY
 FAKE_PYCT = """\
-import os, sys
-print(" ".join(sys.argv[1:]), file=sys.stderr)
+import json, os, sys
+with open(os.environ["FAKE_ARGV"], "w") as argv:
+    json.dump(sys.argv[1:], argv)
 print(os.environ["FAKE_SUMMARY"])
 """
 
 
-def request(budget: float = 30.0) -> SideRequest:
+def request(limits: Limits | None = None) -> SideRequest:
     target = "targets.flip.one_check::classify"
-    limits = Limits(budget=budget)
+    limits = limits or Limits(budget=30.0)
     return SideRequest(target=target, seed={"x": 0}, root=REPO_ROOT, limits=limits, wait=60)
 
 
 def fake_side(tmp_path: Path, summary: dict[str, object]) -> V2Side:
     script = tmp_path / "fake_pyct.py"
     script.write_text(FAKE_PYCT)
-    environment = {**side_environment(os.environ), "FAKE_SUMMARY": json.dumps(summary)}
+    environment = {
+        **side_environment(os.environ),
+        "FAKE_SUMMARY": json.dumps(summary),
+        "FAKE_ARGV": str(tmp_path / "argv.json"),
+    }
     return V2Side(program=(sys.executable, str(script)), environment=environment, stamp=HERE)
 
 
@@ -48,11 +53,23 @@ def test_the_side_runs_pyct_run_and_reads_its_summary_line() -> None:
     program = (sys.executable, "-P", "-m", "pyct")
     side = V2Side(program=program, environment=side_environment(os.environ), stamp=HERE)
 
-    report = side.run(request(budget=10.0))
+    report = side.run(request(Limits(budget=10.0)))
 
     assert report == SideReport(
         file=ONE_CHECK, covered=frozenset({2, 3, 4}), stopped="no fork to flip", inputs=2
     )
+
+
+def test_the_limits_are_passed_to_pyct_run_as_its_flags(tmp_path: Path) -> None:
+    side = fake_side(tmp_path, summary())
+
+    side.run(request(Limits(budget=5.0, plateau=3, solver_timeout=2.5)))
+
+    argv = json.loads((tmp_path / "argv.json").read_text())
+    assert argv == [
+        *("run", "targets.flip.one_check::classify", "--args", '{"x": 0}'),
+        *("--budget", "5.0", "--plateau", "3", "--solver-timeout", "2.5"),
+    ]
 
 
 def test_the_limits_are_given_as_pyct_runs_flags(tmp_path: Path) -> None:
