@@ -192,3 +192,72 @@ def test_a_ctrl_c_while_pyct_waits_ends_the_process_and_goes_on() -> None:
 
     with pytest.raises(ChildProcessError):
         os.waitpid(started[0], os.WNOHANG)
+
+
+def exited() -> int:
+    """A child that has exited and is not reaped yet: a zombie whose status waits for pyct."""
+    pid = os.fork()
+    if pid == 0:
+        os._exit(4)
+    # long enough for the exit; waiting any other way would reap it
+    time.sleep(0.1)
+    return pid
+
+
+def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept() -> None:
+    child = _Child(exited())
+
+    # the timer fires after the process ended and before the wait reaped it
+    child.kill_if_running()
+    waited = child.wait()
+
+    assert waited == Waited(signal=None, code=4, killed=False)
+
+
+def test_the_kill_timer_leaves_a_process_it_already_read_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _Child(exited())
+    child.kill_if_running()
+    killed: list[int] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+
+    child.kill_if_running()
+
+    assert killed == []
+
+
+def test_the_kill_timer_leaves_a_process_the_wait_reaped_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    pid = exited()
+    os.waitpid(pid, 0)
+    killed: list[int] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+
+    # the wait reaped it, and the timer fired before the status was kept
+    _Child(pid).kill_if_running()
+
+    assert killed == []
+
+
+def test_a_wait_on_a_process_no_one_kept_the_status_of_raises() -> None:
+    pid = exited()
+    os.waitpid(pid, 0)
+
+    with pytest.raises(ChildProcessError):
+        _Child(pid).wait()
+
+
+def test_ending_a_process_that_exited_reaps_it_without_a_kill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    child = _Child(exited())
+    killed: list[int] = []
+    monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
+
+    child.end()
+
+    assert killed == []
+    assert child.status is not None
+    assert Waited.of(child.status) == Waited(signal=None, code=4)

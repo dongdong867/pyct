@@ -7,7 +7,8 @@ import pytest
 
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
-from pyct.run.fresh import in_a_fresh_interpreter
+from pyct.run.fresh import _journal, _request, in_a_fresh_interpreter, main
+from pyct.run.journal import read
 from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import load_target
 
@@ -73,3 +74,36 @@ def test_arguments_a_fresh_interpreter_cannot_be_handed_are_an_input_that_could_
 
     with pytest.raises(InputStartError, match="could not hand the input"):
         in_a_fresh_interpreter(target.spec, target.file, {"x": lambda: 3}, None)
+
+
+def test_the_new_interpreter_s_side_runs_the_input_it_is_handed() -> None:
+    target = load_target(ONE_CHECK)
+
+    # fresh.main in a child forked here, as the new interpreter would run it
+    with (
+        _journal() as (journal, buffer),
+        _request(target.spec, target.file, {"x": 3}, None) as request,
+    ):
+        pid = os.fork()
+        if pid == 0:
+            main(request, journal)
+        os.waitpid(pid, 0)
+        reading = read(buffer)
+
+    assert reading.ended
+    assert reading.end is None
+    assert [branch.taken for branch in reading.branches] == [True]
+
+
+def test_a_journal_file_that_cannot_be_sized_is_an_input_that_could_not_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = load_target(ONE_CHECK)
+
+    def refuse(fd: int, length: int) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "ftruncate", refuse)
+
+    with pytest.raises(InputStartError, match="No space left on device"):
+        in_a_fresh_interpreter(target.spec, target.file, {"x": 3}, None)

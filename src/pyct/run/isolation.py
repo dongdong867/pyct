@@ -136,6 +136,7 @@ def _forked(writer: JournalWriter, call: Served) -> int:
         gc.unfreeze()
         raise InputStartError(f"could not start a child process: {error}") from error
     if pid == 0:
-        serve(writer, call)
+        # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
+        serve(writer, call)  # pragma: no cover
     gc.unfreeze()
     return pid

@@ -106,3 +106,13 @@ def test_a_sealed_tally_tells_the_watch_nothing() -> None:
     tally.append(Downgrade(name="__str__"))
 
     assert heard.told == []
+
+
+def test_a_line_seen_before_is_not_told_again() -> None:
+    heard = Heard()
+    tally = Tally(heard)
+
+    tally.line(4)
+    tally.line(4)
+
+    assert heard.told == [("line", 4)]
