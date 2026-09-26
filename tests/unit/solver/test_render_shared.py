@@ -134,7 +134,8 @@ GRID_STRINGS = ("", "a", "ab", "abc", "abcd", "abcdefg")
 def _pieces() -> list[Expression]:
     """Every slice of s between two of the bounds, and every index of s at one."""
     slices: list[Expression] = [["[:]", "s", start, stop] for start in BOUNDS for stop in BOUNDS]
-    return slices + [["[]", "s", index] for index in BOUNDS if index is not None]
+    indexes: list[Expression] = [["[]", "s", index] for index in BOUNDS if index is not None]
+    return slices + indexes
 
 
 def _written(pair: Expression) -> Expression:
