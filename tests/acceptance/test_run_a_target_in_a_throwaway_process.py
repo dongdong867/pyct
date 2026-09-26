@@ -10,6 +10,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
@@ -26,6 +27,12 @@ EXITS = "targets.isolate.exits::leave"
 ABORTS = "targets.isolate.aborts::give_up"
 PRINTS = "targets.isolate.prints::speak"
 READS_STDIN = "targets.isolate.reads_stdin::ask"
+C_HANG = "targets.isolate.c_hang::stall"
+C_HANG_FILE = ISOLATE / "c_hang.py"
+SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
+# the budget these tests give, and how long after its start a run with it must have ended
+BUDGET = "1"
+ENDED_WITHIN = 4.0
 
 # run() on a closure no module attribute names, printing what each record covered
 RUN_A_CLOSURE = """
@@ -231,3 +238,33 @@ def test_gives_the_target_an_empty_stdin() -> None:
     assert isinstance(failure, dict), seed
     assert failure["kind"] == "target_raised"
     assert str(failure["detail"]).startswith("EOFError"), failure
+
+
+# run-a-target-in-a-throwaway-process-ends-a-hang-in-c-at-the-deadline
+def test_ends_a_hang_in_c_at_the_deadline() -> None:
+    started = time.monotonic()
+    result = run_pyct(C_HANG, '{"x": 0}', "--budget", BUDGET)
+    took = time.monotonic() - started
+
+    assert result.returncode == 0, result.stderr
+    solver = solver_line(result.stdout)
+    assert solver["failure"] == {"kind": "timeout", "detail": "deadline passed"}
+    reached = {line_with(C_HANG_FILE, "if x > 3"), line_with(C_HANG_FILE, "hangs in C")}
+    assert reached <= covered_in(solver, C_HANG_FILE)
+    assert summary_line(result.stdout)["stopped"] == "budget spent"
+    assert took < ENDED_WITHIN, took
+
+
+# run-a-target-in-a-throwaway-process-ends-a-target-that-swallows-the-alarm
+def test_ends_a_target_that_swallows_the_alarm() -> None:
+    started = time.monotonic()
+    result = run_pyct(SWALLOWS_ALARM, '{"x": 0}', "--budget", BUDGET)
+    took = time.monotonic() - started
+
+    assert result.returncode == 0, result.stderr
+    assert solver_line(result.stdout)["failure"] == {
+        "kind": "timeout",
+        "detail": "deadline passed",
+    }
+    assert summary_line(result.stdout)["stopped"] == "budget spent"
+    assert took < ENDED_WITHIN, took

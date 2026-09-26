@@ -10,6 +10,15 @@ At most one input's process exists at a time, and only inside one call of
 ``watched``, which never returns or raises while that process is left
 unreaped: every way out kills it, if it still runs, and reaps it. pyct
 kills a process only before reaping it, so the pid is still its own.
+
+With a deadline, the process's own SIGALRM ends a Python hang at the
+deadline, finally blocks included, so its line is the same as in pyct's
+process. A call inside C, or a target that catches the alarm, never ends
+that way, so pyct kills the process ``KILL_GRACE`` after the deadline.
+pyct blocks in ``waitpid``; its own SIGALRM handler kills and does not
+raise, so Python retries the wait, which then returns the killed
+process's status. A handler that raised could land after the wait had
+already reaped the process and lose its status.
 """
 
 from __future__ import annotations
@@ -19,9 +28,14 @@ import signal
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from pyct.execution.deadline import alarm
 from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import Reading
+
+# how long past the deadline an input's process may run before pyct kills it: long enough for
+# the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
+KILL_GRACE = 0.5
 
 
 class InputStartError(Exception):
@@ -48,11 +62,16 @@ class Waited:
         return cls(signal=None, code=os.WEXITSTATUS(status), killed=killed)
 
 
-def watched(start: Callable[[], int]) -> Waited:
-    """Start the input's process with ``start``, which returns its pid, and wait for it to end."""
+def watched(start: Callable[[], int], until: float | None) -> Waited:
+    """Start the input's process with ``start``, which returns its pid, and wait for it to end.
+
+    ``until`` is the input's deadline, a monotonic instant; the process is
+    killed ``KILL_GRACE`` after it. ``None`` waits as long as it runs.
+    """
     child = _Child(start())
     try:
-        return child.wait()
+        with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
+            return child.wait()
     finally:
         child.end()
 
@@ -67,9 +86,34 @@ class _Child:
 
     def wait(self) -> Waited:
         """Wait for the process to end, and read how it did."""
-        _, status = os.waitpid(self.pid, 0)
+        try:
+            _, status = os.waitpid(self.pid, 0)
+        except ChildProcessError:
+            # the kill timer found the process ended and reaped it first
+            if self.status is None:
+                raise
+            status = self.status
         self.status = status
         return Waited.of(status, killed=self.killed)
+
+    def kill_if_running(self, *_: object) -> None:
+        """Kill the process unless it has ended. The kill timer's handler: it never raises.
+
+        The status is asked for without waiting first. A process that ended
+        is reaped here and its status kept for ``wait``; one ``wait`` already
+        reaped is left alone.
+        """
+        if self.status is not None:
+            return
+        try:
+            pid, status = os.waitpid(self.pid, os.WNOHANG)
+        except ChildProcessError:
+            return
+        if pid != 0:
+            self.status = status
+            return
+        os.kill(self.pid, signal.SIGKILL)
+        self.killed = True
 
     def end(self) -> None:
         """Kill and reap the process unless pyct already reaped it. Every way out passes here.

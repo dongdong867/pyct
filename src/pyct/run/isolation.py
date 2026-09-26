@@ -67,7 +67,7 @@ def in_a_child(
         return execute(ctx, args, until, watch=watch).failure
 
     with _journal() as buffer:
-        waited = watched(functools.partial(_forked, JournalWriter(buffer), call))
+        waited = watched(functools.partial(_forked, JournalWriter(buffer), call), until)
         return ending(read(buffer), waited)
 
 

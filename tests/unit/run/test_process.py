@@ -10,7 +10,7 @@ from pyct.core.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import Reading
-from pyct.run.process import Waited, _Child, ending
+from pyct.run.process import KILL_GRACE, Waited, _Child, ending, watched
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="t.py", line=2, col=7))
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: x")
@@ -121,3 +121,36 @@ def test_ending_a_process_already_reaped_leaves_its_pid_alone(
     child.end()
 
     assert killed == []
+
+
+def sleeper(seconds: float) -> int:
+    """A child that sleeps, then exits 0: the pid, for ``watched`` to wait on."""
+    pid = os.fork()
+    if pid == 0:
+        time.sleep(seconds)
+        os._exit(0)
+    return pid
+
+
+def test_a_process_past_the_deadline_is_killed_after_the_grace() -> None:
+    started = time.monotonic()
+
+    waited = watched(lambda: sleeper(10), started + 0.1)
+
+    took = time.monotonic() - started
+    assert waited == Waited(signal=signal.SIGKILL, code=None, killed=True)
+    assert 0.1 + KILL_GRACE <= took < 0.1 + KILL_GRACE + 0.5
+
+
+def test_a_process_that_ends_before_the_deadline_is_left_to_end() -> None:
+    waited = watched(lambda: sleeper(0), time.monotonic() + 5)
+
+    assert waited == Waited(signal=None, code=0, killed=False)
+    # the kill timer is gone with the process
+    assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
+
+
+def test_with_no_deadline_pyct_waits_as_long_as_the_process_runs() -> None:
+    waited = watched(lambda: sleeper(0.2), None)
+
+    assert waited == Waited(signal=None, code=0, killed=False)
