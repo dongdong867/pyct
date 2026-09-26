@@ -238,15 +238,19 @@ def test_what_str_refuses_raises_as_the_targets_and_records_nothing(
 
 
 @pytest.mark.skipif(sys.version_info >= (3, 13), reason="replace takes a keyword count from 3.13")
+@pytest.mark.xfail(
+    strict=True,
+    reason="PR #46, pass-keywords-through-a-downgrade: the downgrade refuses a keyword itself",
+)
 def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
     sink: list[SinkItem] = []
 
-    # a keyword is a form pyct does not encode, and str's replace refuses it on the 3.12 floor
-    with pytest.raises(TypeError, match="keyword"):
+    # a keyword is a form pyct does not encode, and str's replace refuses it on the 3.12 floor,
+    # in its own words and as the target's raise
+    with pytest.raises(TypeError, match="takes no keyword arguments") as raised:
         _tracked(sink=sink).replace("b", "x", count=1)  # pyrefly: ignore[unexpected-keyword]
 
-    with pytest.raises(TypeError, match="keyword"):
-        "abcb".replace("b", "x", count=1)  # pyrefly: ignore[unexpected-keyword]
+    assert raised_by_target(raised.value)
     assert sink == []
 
 
