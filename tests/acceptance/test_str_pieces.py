@@ -40,6 +40,7 @@ LONG_OR_EMPTY = "targets.strs.long_or_empty::measure"
 INDEX_PAST_THE_END = "targets.strs.index_past_the_end::fourth"
 INDEX_PAST_THE_END_FILE = str(REPO_ROOT / "targets" / "strs" / "index_past_the_end.py")
 TRACKED_INDEX = "targets.strs.tracked_index::pick"
+REBUILT = "targets.strs.rebuilt::rebuild"
 
 
 def sides_of(lines: list[dict[str, object]]) -> set[tuple[object, str, object]]:
@@ -146,3 +147,35 @@ def test_downgrades_a_tracked_index() -> None:
     # operator is named by its dunder
     assert seed["downgrades"] == [{"name": "__getitem__", "count": 1}]
     assert seed["forks"] == []
+
+
+def printed_nodes(expression: object) -> int:
+    """Nodes of an expression as a line prints it: a list and each of its operands."""
+    if not isinstance(expression, list):
+        return 1
+    return 1 + sum(printed_nodes(part) for part in expression[1:])
+
+
+def cut_counts(expression: object) -> list[int]:
+    """The N of every cut part `["...", N]` in a printed expression, left to right."""
+    if not isinstance(expression, list):
+        return []
+    if expression[0] == "...":
+        return [expression[1]]
+    return [count for part in expression[1:] for count in cut_counts(part)]
+
+
+# follow-strings-cuts-a-long-expression
+def test_cuts_a_long_expression() -> None:
+    result = run_pyct(REBUILT, '{"s": "aaaaaaaaaaaaaaaaaa"}')
+
+    assert result.returncode == 0, result.stderr
+    forks = [fork for line in input_lines(result.stdout) for fork in forks_of(line)]
+    # each pass holds the last one twice, so written out the expression doubles every pass
+    assert all(printed_nodes(fork["expression"]) <= 1000 for fork in forks)
+    cut = forks_of(first_line(result.stdout))[-1]
+    counts = cut_counts(cut["expression"])
+    assert counts and all(isinstance(count, int) and count > 2 for count in counts)
+    fork_line = next(line for line in result.stderr.splitlines() if line.startswith("fork "))
+    assert fork_line.count(" nodes)") == len(counts)
+    assert all(f"...({count} nodes)" in fork_line for count in counts)

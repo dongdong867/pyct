@@ -79,6 +79,8 @@ INFIX: dict[str, tuple[Expression, str]] = {
         "s[1:].removeprefix('x')",
     ),
     "replace": (["replace", "s", "'a'", "'b'"], "s.replace('a', 'b')"),
+    "cut-part": (["==", ["...", 5000], "'abc'"], "...(5000 nodes) == 'abc'"),
+    "piece-of-a-cut-part": (["[]", ["...", 12], 0], "...(12 nodes)[0]"),
 }
 
 
@@ -326,3 +328,19 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
+
+
+def test_render_trace_writes_an_expression_past_the_cap_cut() -> None:
+    term: Expression = "s"
+    for _ in range(40):
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    # the fork line holds what the stdout line holds, each cut part as the nodes it stands for
+    assert lines[1].startswith("fork m.py:5:7  (")
+    assert lines[1].endswith(" == 'abc'  not taken")
+    assert " nodes)" in lines[1]
+    assert len(lines[1]) < 20_000

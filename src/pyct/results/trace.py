@@ -6,6 +6,7 @@ import keyword
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
+from pyct.results.printed import CUT, printed
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -130,9 +131,9 @@ def _downgrade(entry: DowngradeCount) -> str:
 
 
 def _fork(branch: Branch) -> str:
-    """Where it forked, what it tested, and which side it took."""
+    """Where it forked, what it tested, cut to the cap as the stdout line cuts it, and the side."""
     side = "taken" if branch.taken else "not taken"
-    return f"fork {_site(branch.site)}  {_infix(branch.expression)}  {side}"
+    return f"fork {_site(branch.site)}  {_infix(printed(branch.expression))}  {side}"
 
 
 def _site(site: Site) -> str:
@@ -176,10 +177,13 @@ def _around(expression: list[Expression]) -> str | None:
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out.
     A builtin in `_CALLED` reads ``len(s)``, and a named head with arguments
-    reads as Python calls a method, ``a.name(b)``. Each binds tighter than
-    any operator, so none needs parentheses of its own.
+    reads as Python calls a method, ``a.name(b)``. A part cut from a long
+    expression reads ``...(N nodes)``. Each binds tighter than any operator,
+    so none needs parentheses of its own.
     """
     head, *operands = expression
+    if head == CUT:
+        return f"...({_infix(operands[0])} nodes)"
     if head == "[]" or head == "[:]":
         receiver, *positions = operands
         written = ":".join("" if position is None else _infix(position) for position in positions)

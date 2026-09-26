@@ -1,9 +1,10 @@
 import json
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
+from pyct.results.printed import printed
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -288,3 +289,23 @@ def test_render_summary_names_no_cvc5_when_the_probe_failed() -> None:
     )
 
     assert json.loads(render_summary(result))["environment"]["cvc5"] is None
+
+
+def _rebuilt(passes: int) -> Expression:
+    """`s = s[:1] + s[2:]` run ``passes`` times: written out, it doubles with each pass."""
+    term: Expression = "s"
+    for _ in range(passes):
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    return ["==", term, "'abc'"]
+
+
+def test_render_writes_an_expression_past_the_cap_cut() -> None:
+    fork = Branch(expression=_rebuilt(40), taken=False, site=Site(file="m.py", line=5, col=7))
+    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    payload = json.loads(render(record, COVERAGE))
+
+    # the line holds what printed hands it: the top of the expression, with parts cut from it
+    expression = payload["forks"][0]["expression"]
+    assert expression == printed(fork.expression)
+    assert '["...", ' in json.dumps(expression)

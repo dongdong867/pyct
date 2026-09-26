@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pyct.core.branch import Branch
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
+from pyct.results.printed import printed
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -114,11 +115,11 @@ def _failure(failure: Failure | None) -> dict[str, str] | None:
 
 
 def _fork(branch: Branch) -> dict[str, object]:
-    """One fork: where it is, which side the input took, and what it tested."""
+    """One fork: where it is, which side the input took, and what it tested, cut to the cap."""
     return {
         "file": branch.site.file,
         "line": branch.site.line,
         "col": branch.site.col,
         "taken": branch.taken,
-        "expression": branch.expression,
+        "expression": printed(branch.expression),
     }
