@@ -1,8 +1,14 @@
 def shape(s: str) -> str:
-    if s[0] == "a":
-        return "first"
-    if s[-1] == "z":
-        return "last"
+    try:
+        if s[0] == "a":
+            return "first"
+    except IndexError:
+        pass
+    try:
+        if s[-1] == "z":
+            return "last"
+    except IndexError:
+        pass
     if s[1:3] == "bc":
         return "middle"
     if s[2:] == "cd":

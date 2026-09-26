@@ -16,17 +16,17 @@ from tests.acceptance.harness import (
 from tests.acceptance.test_strs import forks_of, text
 
 INDEX_AND_SLICE = "targets.strs.index_and_slice::shape"
-INDEX_AND_SLICE_FILE = str(REPO_ROOT / "targets" / "strs" / "index_and_slice.py")
 # each fork the seed takes in ``shape``, in order: the line, the expression, and the side. An
-# index adds its long-enough fork on the line of the compare it feeds; a slice adds none
+# index adds its long-enough fork on the line of the compare it feeds; a slice adds none. The
+# target catches each index's IndexError, so an empty s goes on to every later fork
 INDEX_AND_SLICE_FORKS: list[tuple[int, list[object], bool]] = [
-    (2, [">", ["len", "s"], 0], True),
-    (2, ["==", ["[]", "s", 0], "'a'"], False),
-    (4, [">=", ["len", "s"], 1], True),
-    (4, ["==", ["[]", "s", -1], "'z'"], False),
-    (6, ["==", ["[:]", "s", 1, 3], "'bc'"], False),
-    (8, ["==", ["[:]", "s", 2, None], "'cd'"], False),
-    (10, ["==", ["[:]", "s", None, -1], "'xy'"], False),
+    (3, [">", ["len", "s"], 0], True),
+    (3, ["==", ["[]", "s", 0], "'a'"], False),
+    (8, [">=", ["len", "s"], 1], True),
+    (8, ["==", ["[]", "s", -1], "'z'"], False),
+    (12, ["==", ["[:]", "s", 1, 3], "'bc'"], False),
+    (14, ["==", ["[:]", "s", 2, None], "'cd'"], False),
+    (16, ["==", ["[:]", "s", None, -1], "'xy'"], False),
 ]
 PIECES = "targets.strs.pieces::combine"
 # each fork the seed takes in ``combine``, in order: the line and the expression
@@ -68,21 +68,15 @@ def test_follows_index_and_slice() -> None:
         (fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(inputs[0])
     ] == INDEX_AND_SLICE_FORKS
     # every fork is flipped: some input takes each side of each, and every input the solver
-    # handed back took the side it was aimed at. The one side no input can take is `s[-1]`'s
-    # empty string, which `s[0]` has already raised on, so the solver answers it unsat
-    unreachable = (4, repr([">=", ["len", "s"], 1]), False)
+    # handed back took the side it was aimed at
     assert sides_of(inputs) == {
         (line, repr(expression), taken)
         for line, expression, _ in INDEX_AND_SLICE_FORKS
         for taken in (True, False)
-    } - {unreachable}
+    }
     assert [line["mismatch_at"] for line in inputs[1:]] == [None] * (len(inputs) - 1)
-    summary = summary_line(result.stdout)
-    assert summary["misses"] == [
-        {"file": INDEX_AND_SLICE_FILE, "line": 4, "col": 7, "why": "unsat"}
-    ]
     assert answered_every_fork(result.stdout)
-    assert summary["stopped"] == "no fork to flip"
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
 # follow-strings-follows-pieces
