@@ -7,6 +7,7 @@ answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    first_line,
     input_lines,
     one_line,
     run_pyct,
@@ -122,6 +123,42 @@ def test_keeps_a_stored_condition() -> None:
     assert [fork["taken"] for fork in forks_of(solved)] == [True]
 
 
+# follow-booleans-and-chained-compares-counts-conditions
+def test_counts_conditions() -> None:
+    result = run_pyct(COUNTS, '{"x": 0, "y": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    first, second = expressions(inputs[0])
+    # a compare's answer is 1 or 0 as a number, as in Python
+    assert first == ["==", ["+", [">", "x", 0], [">", "y", 0]], 2]
+    assert [">", "x", 5] in _parts(second)
+    assert [">", "y", 5] in _parts(second)
+    assert sides(inputs, first) == {True, False}
+    assert sides(inputs, second) == {True, False}
+    assert all(line["downgrades"] == [] for line in inputs)
+
+
+def _parts(expression: object) -> list[object]:
+    """An expression and every part nested in it."""
+    if not isinstance(expression, list):
+        return [expression]
+    return [expression, *(part for operand in expression[1:] for part in _parts(operand))]
+
+
+# follow-booleans-and-chained-compares-combines-conditions
+def test_combines_conditions() -> None:
+    result = run_pyct(COMBINES, '{"x": 1, "y": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    combined = [[operator, [">", "x", 0], [">", "y", 0]] for operator in ("&", "|", "^", "==")]
+    assert expressions(inputs[0]) == combined
+    for expression in combined:
+        assert sides(inputs, expression) == {True, False}, expression
+    assert all(line["downgrades"] == [] for line in inputs)
+
+
 # follow-booleans-and-chained-compares-follows-membership-in-a-tuple-or-list
 def test_follows_membership_in_a_tuple_or_list() -> None:
     result = run_pyct(MEMBERSHIP, '{"x": 0, "y": 0}')
@@ -165,6 +202,18 @@ def test_leaves_an_untested_condition_alone() -> None:
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
+# follow-booleans-and-chained-compares-downgrades-an-untaught-bool-operation
+def test_downgrades_an_untaught_bool_operation() -> None:
+    result = run_pyct(UNTAUGHT, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    names = ["__invert__", "__lshift__", "__and__", "__int__", "__str__", "__format__"]
+    assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
+    # `str(b)` and the f-string read `True`, so the `if b:` inside them runs and records the fork
+    assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [(8, [">", "x", 0])]
+
+
 # follow-booleans-and-chained-compares-finds-the-failing-assert
 def test_finds_the_failing_assert() -> None:
     result = run_pyct(FAILING_ASSERT, '{"x": 5}')
@@ -181,6 +230,25 @@ def test_finds_the_failing_assert() -> None:
     failure = failure_of(solved)
     assert failure["kind"] == "target_raised"
     assert "AssertionError" in str(failure["detail"])
+
+
+# follow-booleans-and-chained-compares-finds-the-false-divisor
+def test_finds_the_false_divisor() -> None:
+    result = run_pyct(FALSE_DIVISOR, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    seed, solved = input_lines(result.stdout)[:2]
+    # the zero fork is the bool's own condition, as `if` would test it
+    assert [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [
+        (2, [">", "x", 0], True)
+    ]
+    assert argument(solved, "x") <= 0
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(solved)] == [
+        ([">", "x", 0], False)
+    ]
+    failure = failure_of(solved)
+    assert failure["kind"] == "target_raised"
+    assert "ZeroDivisionError" in str(failure["detail"])
 
 
 # follow-booleans-and-chained-compares-reports-a-compare-with-a-string

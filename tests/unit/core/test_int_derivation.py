@@ -55,7 +55,7 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
     assert set(UNTAUGHT_OPERATIONS) <= derived
     # a wrapped kept name would cost a dict key a downgrade, and a wrapped `__getattribute__`
     # recurses on the first attribute read; the stand-in tests show the class body is skipped
-    assert derived.isdisjoint(ints._KEPT + ints._NOT_YET)
+    assert derived.isdisjoint(bools.INT_KEPT + bools.INT_NOT_YET)
 
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:

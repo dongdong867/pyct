@@ -67,16 +67,21 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
     assert sink == []
 
 
-def test_a_taught_compare_against_a_truth_value_is_pythons_own() -> None:
+def test_a_compare_against_a_truth_value_reads_it_as_the_int_1_or_0() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
     y = ConcolicInt(3, expression="y", sink=sink)
 
-    # a bool and a compare's value stand for a truth value, not a number, so `>=` against
-    # either is int's own: a plain bool, and no leaf that drops the compare behind it
-    assert (x >= True) is True
-    assert (x >= (y < 5)) is True
+    # a bool is the int 1 or 0, as Python has it: a plain one is a literal, and a compare's
+    # value is the condition it stands for
+    literal = x >= True
+    condition = x >= (y < 5)
 
+    assert (literal.expression, condition.expression) == (
+        [">=", "x", True],
+        [">=", "x", ["<", "y", 5]],
+    )
+    assert int.__bool__(literal) is int.__bool__(condition) is True
     assert sink == []
 
 
@@ -87,7 +92,7 @@ def test_less_than_builds_the_expression_and_records_nothing() -> None:
     result = x < 10
 
     assert result.expression == ["<", "x", 10]
-    assert result == True  # noqa: E712 - the value, not the truth test
+    assert int.__bool__(result) is True
     assert sink == []
 
 
@@ -110,11 +115,14 @@ def test_less_than_a_non_int_is_pythons_own_compare() -> None:
     assert sink == []
 
 
-def test_less_than_a_bool_is_pythons_own_compare() -> None:
+def test_less_than_a_bool_is_a_compare_on_the_literal() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    assert (x < True) is False
+    result = x < True
+
+    assert result.expression == ["<", "x", True]
+    assert int.__bool__(result) is False
     assert sink == []
 
 
@@ -128,14 +136,16 @@ def test_equal_to_a_non_int_is_pythons_own_answer() -> None:
     assert sink == []
 
 
-def test_less_than_a_compares_value_is_pythons_own_compare() -> None:
+def test_less_than_a_compares_value_is_a_compare_on_its_condition() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(0, expression="x", sink=sink)
     y = ConcolicInt(3, expression="y", sink=sink)
 
-    # a compare's value stands for a truth value, not a number, so `<` against it is
-    # int's own: a plain bool, not a leaf that drops y's compare for its concrete 1
-    assert (x < (y < 5)) is True
+    # a compare's value is the int 1 or 0, so `<` against it keeps y's compare behind it
+    result = x < (y < 5)
+
+    assert result.expression == ["<", "x", ["<", "y", 5]]
+    assert int.__bool__(result) is True
     assert sink == []
 
 
@@ -149,8 +159,10 @@ def test_a_compare_adds_up_like_a_bool() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    assert sum([x < 10, x < 100]) == 2
+    total = sum([x < 10, x < 100])
 
+    assert isinstance(total, ConcolicInt)
+    assert int.__int__(total) == 2
     # sum adds, it never tests for truth
     assert sink == []
 
@@ -159,10 +171,16 @@ def test_a_compare_equals_the_bool_it_stands_for() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    assert (x < 10) == True  # noqa: E712 - comparing to True is what the target may do
-    assert (x < 100) == True  # noqa: E712 - same
+    # comparing to True is what the target may do; the answer is a compare on the condition
+    same = (x < 10) == True  # noqa: E712
+    other = (x < 100) != True  # noqa: E712
 
-    # `==` against an int never tests for truth
+    assert (same.expression, other.expression) == (
+        ["==", ["<", "x", 10], True],
+        ["!=", ["<", "x", 100], True],
+    )
+    assert (int.__bool__(same), int.__bool__(other)) == (True, False)
+    # `==` against a bool never tests for truth
     assert sink == []
 
 
@@ -219,22 +237,6 @@ def test_two_truth_tests_reach_the_sink_in_the_order_they_ran() -> None:
         Branch(expression=["<", "x", 10], taken=True, site=Site(file="<probe>", line=3, col=7)),
         Branch(expression=["<", "x", 100], taken=True, site=Site(file="<probe>", line=5, col=7)),
     ]
-
-
-def test_an_operation_on_a_compares_value_records_no_downgrade() -> None:
-    sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-    b = x < 10
-
-    # a ConcolicBool teaches the truth test and nothing else, and wraps nothing in a downgrade
-    assert b + 1 == 2
-    assert (b & 1) == 1
-    assert (b >> 1) == 0
-    assert str(b) == "True"
-    assert float(b) == 1.0
-    assert b / 2 == 0.5
-
-    assert [item for item in sink if isinstance(item, Downgrade)] == []
 
 
 def test_equality_forks_where_it_is_tested_for_truth() -> None:

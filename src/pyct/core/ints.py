@@ -4,54 +4,26 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pyct.core.bools import ConcolicBool, compare
+from pyct.core.bools import INT_INHERITED, INT_KEPT, INT_NOT_YET, ConcolicBool, compare
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
 # arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
-# itself. The three tuples here name what is left to int on purpose, and the derivation at the
+# itself. The tuples bools holds name what is left to int on purpose, and the derivation at the
 # bottom of the file downgrades every other method int defines.
-
-# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
-# plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
-# harder reason: the downgrade wrapper reads `self.sink`, which goes through `__getattribute__`
-# itself, so a wrapped one recurses on the first attribute read
-_KEPT = (
-    "__hash__",
-    "__repr__",
-    "__getnewargs__",
-    "__new__",
-    "__getattribute__",
-    "__sizeof__",
-)
-
-# int's plain methods record nothing yet. The ticket that wraps them is
-# `report-a-plain-int-method-as-a-downgrade`; until it lands, these stay int's own
-_NOT_YET = (
-    "as_integer_ratio",
-    "bit_count",
-    "bit_length",
-    "conjugate",
-    "is_integer",
-    "to_bytes",
-)
-
-# int inherits `__str__` from object, so reading what int itself defines never reaches it, and
-# `print(x)` still drops the condition
-_INHERITED = ("__str__",)
 
 
 def _operand(other: object) -> Expression | None:
     """The symbolic form of an operand int takes, or None for one it does not.
 
-    The form is the operand's expression if it has one, else the operand itself.
+    The form is the operand's expression if it has one, else the operand
+    itself. A bool is the int 1 or 0, as Python has it: a plain one is the
+    literal True or False, and a compare's answer is its condition.
     """
-    # a bool is an int, but `x < True` is not a compare the solver has a leaf for;
-    # a compare's value is a bool the same way
-    if not isinstance(other, int) or isinstance(other, bool | ConcolicBool):
-        return None
-    return other.expression if isinstance(other, ConcolicInt) else other
+    if isinstance(other, ConcolicInt | ConcolicBool):
+        return other.expression
+    return other if isinstance(other, int) else None
 
 
 def _operands(self: ConcolicInt, form: Expression, *, reflected: bool) -> list[Expression]:
@@ -65,10 +37,7 @@ def _arithmetic(
     """int's own answer to one arithmetic operation, carrying the expression that built it.
 
     The expression keeps Python's written order: a reflected method is
-    called on the right operand, so `10 - x` is ["-", 10, "x"]. A bool on
-    the other side is not an operand the solver has a leaf for, and gets
-    NotImplemented the way the compares give it, so Python answers with
-    int's own plain value; follow-booleans owns it.
+    called on the right operand, so `10 - x` is ["-", 10, "x"].
     """
 
     def compute(self: ConcolicInt, other: int) -> ConcolicInt:
@@ -82,13 +51,14 @@ def _arithmetic(
 
 
 def _zero_fork(divisor: int) -> None:
-    """The fork a symbolic divisor takes on its way into a division: `["!=", divisor, 0]`.
+    """The fork a symbolic divisor takes on its way into a division, as `if` would test it.
 
-    Testing it for truth is what records it, so `ConcolicInt.__bool__` and
-    `forked` stay the one place a fork is written. A plain int divisor has
+    An int's is `["!=", divisor, 0]`; a bool's is its own condition. Testing
+    it for truth is what records it, so each type's `__bool__` and `forked`
+    stay the one place a fork is written. A plain int or bool divisor has
     nothing to flip and records nothing.
     """
-    if isinstance(divisor, ConcolicInt):
+    if isinstance(divisor, ConcolicInt | ConcolicBool):
         bool(divisor)
 
 
@@ -161,11 +131,12 @@ _POWER_DOWNGRADE = downgraded(int, "__pow__")
 def _power(self: ConcolicInt, exponent: object, modulus: object = None) -> object:
     """A constant power keeps the condition; every other power is int's own and a downgrade.
 
-    A plain int exponent from zero up to cvc5's bound is what `^` encodes. A
-    concolic, negative or bool exponent, a float, and a third argument all
-    fall to int's own answer.
+    A plain int exponent from zero up to cvc5's bound is what `^` encodes,
+    and so is a plain bool, the int 1 or 0. A concolic or negative exponent,
+    a float, and a third argument all fall to int's own answer.
     """
-    if modulus is None and type(exponent) is int and 0 <= exponent < _POWER_LIMIT:
+    plain = type(exponent) is int or type(exponent) is bool
+    if modulus is None and plain and 0 <= exponent < _POWER_LIMIT:
         return ConcolicInt(
             own(int.__pow__, self, exponent),
             expression=["**", self.expression, exponent],
@@ -255,4 +226,4 @@ class ConcolicInt(int):
 
 # the class body above is everything ConcolicInt teaches. The rest of int, and the `__str__`
 # int inherits, differ only in the name they call and record, so the derivation writes them
-downgrade_the_rest(ConcolicInt, int, kept=_KEPT + _NOT_YET, inherited=_INHERITED)
+downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT + INT_NOT_YET, inherited=INT_INHERITED)

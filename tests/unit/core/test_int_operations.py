@@ -35,6 +35,7 @@ TAUGHT_ARITHMETIC: dict[str, tuple[Callable[[int], object], list[object]]] = {
     "abs(x)": (abs, ["abs", "x"]),
     "x ** 2": (lambda x: x**2, ["**", "x", 2]),
     "x ** 0": (lambda x: x**0, ["**", "x", 0]),
+    "x ** True": (lambda x: x**True, ["**", "x", True]),
 }
 
 # an operation that changes nothing about an int: each hands the value itself back
@@ -68,7 +69,6 @@ COPIES: dict[str, Callable[[int], object]] = {
 # a power the solver cannot take: each is int's own answer and a `__pow__` downgrade
 DOWNGRADED_POWERS: dict[str, Callable[[int], object]] = {
     "negative exponent": lambda x: x**-1,
-    "bool exponent": lambda x: x**True,
     "with a modulus": lambda x: pow(x, 2, 5),
     "past cvc5's bound": lambda x: x**67_108_864,
 }
@@ -159,16 +159,16 @@ def test_arithmetic_nests_the_way_it_was_written() -> None:
     assert result.expression == ["-", ["*", ["+", "x", 1], 2], 3]
 
 
-def test_a_bool_operand_is_pythons_own_arithmetic() -> None:
+def test_a_bool_operand_is_the_int_1_or_0() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # a bool is an int, but `x + True` is not an operation the solver has a leaf for;
-    # the same rule as the compares, so the value is plain and nothing is recorded
+    # a bool is the int 1 or 0, as Python has it, so `x + True` is a node on the literal
     result = x + True
 
-    assert result == 4
-    assert not isinstance(result, ConcolicInt)
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == ["+", "x", True]
+    assert int.__int__(result) == 4
     assert sink == []
 
 

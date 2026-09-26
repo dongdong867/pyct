@@ -29,10 +29,10 @@ SYMBOLIC_DIVISORS: dict[str, tuple[Callable[[int, int], object], list[object]]] 
 # target sees is int's own answer, on every combination of signs
 SIGNED_PAIRS = [(7, 2), (7, -2), (-7, 2), (-7, -2), (9, -2), (8, -2), (2, -3)]
 
-# a bool divisor is not an operand the solver has a leaf for, the way it is not for `+`
-BOOL_DIVISORS: dict[str, Callable[[int], object]] = {
-    "x // True": lambda x: x // True,
-    "x % True": lambda x: x % True,
+# a plain bool divisor is the int 1 or 0: the call, and the node it builds on the literal
+BOOL_DIVISORS: dict[str, tuple[Callable[[int], object], list[object]]] = {
+    "x // True": (lambda x: x // True, ["//", "x", True]),
+    "x % True": (lambda x: x % True, ["%", "x", True]),
 }
 
 # probes whose text is fixed here, so the line and column of the zero fork are exact
@@ -71,7 +71,7 @@ def test_a_division_by_a_constant_builds_its_node_and_forks_nothing(
 
     assert isinstance(result, ConcolicInt)
     # operator.index reads the plain value: `==` on the result would fork into the sink
-    assert operator.index(result) == call(7)
+    assert int.__int__(result) == call(7)
     assert result.expression == expression
     # a constant divisor has no side to flip, so the division records nothing at all
     assert sink == []
@@ -173,28 +173,31 @@ def test_a_division_hands_back_pythons_own_value(a: int, b: int) -> None:
     assert operator.index(a % y) == a % b
 
 
-@pytest.mark.parametrize("call", BOOL_DIVISORS.values(), ids=list(BOOL_DIVISORS))
-def test_a_bool_divisor_is_pythons_own_division(call: Callable[[int], object]) -> None:
+@pytest.mark.parametrize(("call", "node"), BOOL_DIVISORS.values(), ids=list(BOOL_DIVISORS))
+def test_a_plain_bool_divisor_divides_by_1_or_0(
+    call: Callable[[int], object], node: list[object]
+) -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(7, expression="x", sink=sink)
 
     result = call(x)
 
-    # the same rule as the arithmetic: the value is plain, and nothing is recorded
-    assert result == call(7)
-    assert not isinstance(result, ConcolicInt)
+    # a plain divisor has nothing to flip, so no zero fork is recorded
+    assert isinstance(result, ConcolicInt)
+    assert result.expression == node
+    assert int.__int__(result) == call(7)
     assert sink == []
 
 
-def test_a_bool_divisor_is_pythons_own_divmod() -> None:
+def test_a_plain_bool_divisor_divides_by_1_or_0_in_divmod() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(7, expression="x", sink=sink)
 
     quotient, remainder = divmod(x, True)
 
-    assert (quotient, remainder) == (7, 0)
-    assert not isinstance(quotient, ConcolicInt)
-    assert not isinstance(remainder, ConcolicInt)
+    assert quotient.expression == ["//", "x", True]
+    assert remainder.expression == ["%", "x", True]
+    assert (int.__int__(quotient), int.__int__(remainder)) == (7, 0)
     assert sink == []
 
 
