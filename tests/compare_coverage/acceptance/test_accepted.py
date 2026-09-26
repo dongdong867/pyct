@@ -51,7 +51,8 @@ def test_accepts_the_new_state(stub_checkout: StubCheckout, tmp_path: Path) -> N
     """compare-coverage-against-legacy-accepts-the-new-state"""
     stub_checkout.script({ONE_CHECK: {"lines": [2, 3, 4]}})
     accepted = tmp_path / "accepted.jsonl"
-    write_records(accepted, TWO_ARGS_GAP, ONE_CHECK_GAP)
+    # out of order, so the rewrite has to sort what it keeps
+    write_records(accepted, TWO_ARGS_GAP, ONE_CHECK_GAP, IMPLIED_GAP)
     legacy = ("--legacy", str(stub_checkout.path))
 
     result = run_checker(*legacy, "--target", ONE_CHECK, "--accepted", str(accepted), "--accept")
@@ -59,7 +60,7 @@ def test_accepts_the_new_state(stub_checkout: StubCheckout, tmp_path: Path) -> N
     row = one_row(result.stdout)
     assert row["status"] == "same"
     assert row["record"] == "changed"
-    assert read_records(accepted) == [TWO_ARGS_GAP]
+    assert read_records(accepted) == [IMPLIED_GAP, TWO_ARGS_GAP]
     assert result.returncode == 0, result.stderr
 
     again = run_checker(*legacy, "--target", ONE_CHECK, "--accepted", str(accepted))
