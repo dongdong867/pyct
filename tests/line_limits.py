@@ -103,7 +103,7 @@ def _body_lines(function: Function, header_end: int) -> int:
     if ast.get_docstring(function, clean=False) is not None:
         docstring = function.body[0]
         assert docstring.end_lineno is not None
-        lines -= docstring.end_lineno - max(docstring.lineno, first) + 1
+        lines -= docstring.end_lineno - docstring.lineno + 1
     return lines
 
 
