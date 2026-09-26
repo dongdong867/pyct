@@ -40,11 +40,12 @@ timeout = 60
 timeout_method = "thread"
 
 # Measured when pytest runs with --cov. The acceptance tests start pyct in a
-# subprocess, and patch = subprocess measures the code it runs there too.
+# subprocess, and patch = subprocess measures the code it runs there too. fork
+# measures a forked child, and _exit saves its data when it ends with os._exit.
 [tool.coverage.run]
 branch = true
 source = ["pyct"]
-patch = ["subprocess"]
+patch = ["subprocess", "fork", "_exit"]
 
 # fail_under is the branch coverage the suite reached when this floor was set,
 # rounded down. Raise it when coverage rises; a drop below it fails the run.
