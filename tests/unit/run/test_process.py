@@ -1,10 +1,14 @@
 """How pyct reads the end of an input's process: the rules, the raw status, the reaping."""
 
+import contextlib
 import dataclasses
+import functools
 import os
 import select
 import signal
+import threading
 import time
+from collections.abc import Callable, Generator
 
 import pytest
 
@@ -190,8 +194,9 @@ def test_a_ctrl_c_as_the_process_starts_still_ends_it() -> None:
     def start_then_interrupt() -> int:
         pid = sleeper(10)
         started.append(pid)
-        # a Ctrl-C landing after the process exists, before pyct holds its pid
-        os.kill(os.getpid(), signal.SIGINT)
+        # a Ctrl-C landing after the process exists, before pyct holds its pid. Aimed at this
+        # thread, the one pyct waits in, as the only thread of a process pyct forks from
+        signal.pthread_kill(threading.get_ident(), signal.SIGINT)
         return pid
 
     with pytest.raises(KeyboardInterrupt):
@@ -202,20 +207,46 @@ def test_a_ctrl_c_as_the_process_starts_still_ends_it() -> None:
         os.waitpid(started[0], os.WNOHANG)
 
 
+def says_it_runs(running: int, started: list[int]) -> int:
+    """A child that writes to ``running`` once it runs, then sleeps; its pid goes in ``started``."""
+    pid = os.fork()
+    if pid == 0:
+        os.write(running, b"!")
+        time.sleep(10)
+        os._exit(0)
+    started.append(pid)
+    return pid
+
+
+def interrupt_once_it_runs(ready: int, waiting: int) -> None:
+    """SIGINT the thread ``waiting`` once the child says on ``ready`` that it runs."""
+    os.read(ready, 1)
+    signal.pthread_kill(waiting, signal.SIGINT)
+
+
+@contextlib.contextmanager
+def interrupted_once_running(started: list[int]) -> Generator[Callable[[], int]]:
+    """A start for ``watched`` whose process, once it runs, gets pyct's waiting thread a SIGINT.
+
+    Only pyct's process is interrupted, in the thread that waits, as by a
+    kill aimed at pyct alone.
+    """
+    ready, running = os.pipe()
+    waiting = threading.get_ident()
+    interrupter = threading.Thread(target=interrupt_once_it_runs, args=(ready, waiting))
+    interrupter.start()
+    try:
+        yield functools.partial(says_it_runs, running, started)
+    finally:
+        interrupter.join()
+        os.close(ready)
+        os.close(running)
+
+
 def test_a_ctrl_c_while_pyct_waits_ends_the_process_and_goes_on() -> None:
     started: list[int] = []
 
-    def start() -> int:
-        pid = os.fork()
-        if pid == 0:
-            # only pyct's process is interrupted, as by a kill aimed at it alone
-            os.kill(os.getppid(), signal.SIGINT)
-            time.sleep(10)
-            os._exit(0)
-        started.append(pid)
-        return pid
-
-    with pytest.raises(KeyboardInterrupt):
+    with interrupted_once_running(started) as start, pytest.raises(KeyboardInterrupt):
         watched(start, None)
 
     with pytest.raises(ChildProcessError):
