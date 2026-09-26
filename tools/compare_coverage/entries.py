@@ -146,7 +146,7 @@ def _set_spec(name: str, spec: object) -> SetSpec:
 
 
 def _entry(where: str, raw: object, sets: Mapping[str, SetSpec]) -> Entry:
-    if not isinstance(raw, dict) or raw.get("set") not in sets:
+    if not isinstance(raw, dict) or not isinstance(raw.get("set"), str) or raw["set"] not in sets:
         raise ListError(f"{where}: set must name a set of the list")
     if "left_out" in raw:
         return _left_out(where, raw)

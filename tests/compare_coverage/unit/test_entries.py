@@ -71,6 +71,7 @@ def test_a_left_out_entry_names_its_module_and_reason() -> None:
         ({"sets": {"s": {"origin": "v2", "scan": 3}}, "entries": []}, "set s: scan must be"),
         ({"sets": SETS, "entries": [{"set": "three"}]}, "entry 1: set must name"),
         ({"sets": SETS, "entries": [7]}, "entry 1: set must name"),
+        ({"sets": SETS, "entries": [{"set": ["one"]}]}, "entry 1: set must name"),
         ({"sets": SETS, "entries": [{"set": "one", "target": "mod", "seed": {}}]}, "MODULE::NAME"),
         (
             {"sets": SETS, "entries": [{"set": "one", "target": "a b::f", "seed": {}}]},
