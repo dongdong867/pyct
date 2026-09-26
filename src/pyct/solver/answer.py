@@ -6,9 +6,12 @@ from dataclasses import dataclass
 
 from pyct.solver.strings import decode
 
-# one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))) or ((s "a""b\u{a}")). A string
-# value holds no bare quote, only a doubled one, so its closing quote is the first lone one
-VALUE_LINE = re.compile(r'\(\((?P<name>[^\s()]+) (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*")\)\)')
+# one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))) or ((s "a""b\u{a}")). A name
+# may come in bars, ((|x| 5)), which SMT-LIB reads as the same name. A string value holds no
+# bare quote, only a doubled one, so its closing quote is the first lone one
+VALUE_LINE = re.compile(
+    r'\(\(\|?(?P<name>[^\s()|]+)\|? (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*")\)\)'
+)
 
 
 @dataclass(frozen=True)

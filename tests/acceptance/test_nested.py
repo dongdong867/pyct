@@ -24,6 +24,8 @@ STRING_IN_LIST = "targets.nested.string_in_list::check"
 OWN_ARGUMENTS = "targets.nested.own_arguments::touch"
 MISSING_KEY = "targets.nested.missing_key::check"
 DEEP = "targets.nested.deep::check"
+RESERVED = "targets.names.solver_words::reserved"
+ACCENTED = "targets.names.solver_words::accented"
 # deeper than Python's default recursion limit of 1000 frames, so no step of the run may recurse
 # once per level
 DEPTH = 2000
@@ -314,3 +316,19 @@ def test_follows_a_value_nested_past_the_recursion_limit() -> None:
         node = node["a"]
     assert isinstance(node, int) and node > 5
     assert "config" + "['a']" * DEPTH + " > 5" in result.stderr
+
+
+# a parameter named as one of the solver's own words, or past ASCII, is a leaf like any other
+def test_flips_a_fork_on_a_parameter_named_as_a_solver_word() -> None:
+    result = run_pyct(RESERVED, '{"div": 0}')
+
+    assert result.returncode == 0, result.stderr
+    answers = [args_of(line)["div"] for line in solved(input_lines(result.stdout))]
+    assert len(answers) == 1 and isinstance(answers[0], int) and answers[0] > 3, answers
+
+
+def test_flips_a_fork_on_a_parameter_named_past_ascii() -> None:
+    result = run_pyct(ACCENTED, '{"café": "x"}')
+
+    assert result.returncode == 0, result.stderr
+    assert [args_of(line)["café"] for line in solved(input_lines(result.stdout))] == ["é"]

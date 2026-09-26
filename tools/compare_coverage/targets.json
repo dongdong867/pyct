@@ -82,6 +82,8 @@
     {"set": "v2", "target": "targets.isolate.terminates::stop", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.isolate.threaded_closure", "left_out": "a factory: the target is the closure it returns, which no module attribute names"},
+    {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"café": "x"}},
+    {"set": "v2", "target": "targets.names.solver_words::reserved", "seed": {"div": 0}},
     {"set": "v2", "target": "targets.nested.deep::check", "seed": {"config": {"a": {"a": 0}}}},
     {"set": "v2", "target": "targets.nested.dict_values::check", "seed": {"config": {"server": {"port": 100, "host": "x", "workers": 2}}}},
     {"set": "v2", "module": "targets.nested.float_key", "left_out": "the seed has a float key, which JSON cannot hold"},

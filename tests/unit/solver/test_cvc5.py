@@ -48,7 +48,7 @@ def ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: float = 10.0) 
 def test_a_solved_path_comes_back_with_its_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, out=f"sat\n((x 12))\n{NOT_UNKNOWN}")
+    fake_cvc5(tmp_path, out=f"sat\n((arg.x 12))\n{NOT_UNKNOWN}")
 
     assert ask(tmp_path, monkeypatch) == Sat({"x": 12})
 
@@ -235,3 +235,15 @@ def test_the_real_cvc5_answers_about_a_value_inside_by_its_access() -> None:
     assert list(answer.model) == [name]
     value = answer.model[name]
     assert isinstance(value, int) and value < 1
+
+
+@pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
+def test_the_real_cvc5_answers_about_parameters_named_as_its_own_words_or_past_ascii() -> None:
+    path = (fork([">", "div", 3], taken=True), fork(["==", "café", "'é'"], taken=True))
+
+    answer = solve(path, {"div": int, "café": str}, 10.0)
+
+    assert isinstance(answer, Sat)
+    assert answer.model["café"] == "é"
+    value = answer.model["div"]
+    assert isinstance(value, int) and value > 3

@@ -119,7 +119,11 @@ class _Leaves:
 
 @dataclass(frozen=True)
 class Program:
-    """The SMT-LIB program for one path, and the leaf each constant it declares stands for."""
+    """The SMT-LIB program for one path, and the leaf each constant it declares stands for.
+
+    ``leaves`` is keyed by each constant's symbol without its bars, which is
+    how a model names it back.
+    """
 
     text: str
     leaves: Mapping[str, str]
@@ -139,12 +143,10 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
 
     Only the leaves the prefix mentions are declared, so the answer names
     nothing the path did not depend on. ``leaves`` names each leaf as
-    ``pyct.binding`` does. A parameter's constant is its own name. A value
-    inside one is ``leaf.<n>``, n its position among the seed's leaves: its
-    access is no symbol SMT-LIB reads, and a key may hold ``|`` or a
-    backslash, which not even a quoted symbol can.
+    ``pyct.binding`` does, and ``_symbol`` names its constant.
     """
-    constants = _constants(prefix, leaves)
+    symbols = _symbols(prefix, leaves)
+    constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
     known = _Leaves(kinds=leaves, constants=constants)
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     lines = ["(set-logic ALL)"]
@@ -153,11 +155,11 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     text = "\n".join(lines) + "\n"
-    return Program(text=text, leaves={constant: name for name, constant in constants.items()})
+    return Program(text=text, leaves={symbol: name for name, symbol in symbols.items()})
 
 
-def _constants(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
-    """The constant of each leaf the prefix names, in the order the seed bound them."""
+def _symbols(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
+    """The symbol of each leaf the prefix names, in the order the seed bound them."""
     known = _Leaves(kinds=leaves, constants={})
     named: set[str] = set()
     for fork in prefix:
@@ -165,11 +167,28 @@ def _constants(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[s
     unknown = sorted(named - set(leaves))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {
-        name: name if name.isidentifier() else f"leaf.{index}"
-        for index, name in enumerate(leaves)
-        if name in named
-    }
+    return {name: _symbol(name, index) for index, name in enumerate(leaves) if name in named}
+
+
+def _symbol(name: str, index: int) -> str:
+    """A leaf's symbol, written inside bars: ``arg.<name>`` for a parameter, else ``leaf.<n>``.
+
+    The prefix keeps every symbol apart from the solver's own words, which
+    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
+    bars or not. A parameter's name is an identifier; each character past
+    ASCII is written as its UTF-8 bytes, ``%C3%A9`` for ``é``, so the program
+    stays ASCII. Any other leaf is ``leaf.<n>``, n its position among the
+    seed's leaves: a value inside an argument is named by its access, which
+    holds brackets, quotes, and any character a key holds, ``|`` and the
+    backslash among them, which not even a quoted symbol can.
+    """
+    if not name.isidentifier():
+        return f"leaf.{index}"
+    written = "".join(
+        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
+        for character in name
+    )
+    return f"arg.{written}"
 
 
 def _names(expression: Expression, leaves: _Leaves) -> set[str]:

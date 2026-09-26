@@ -63,3 +63,11 @@ def test_sat_holds_the_model_and_error_holds_the_detail() -> None:
 def test_an_answer_cannot_be_changed(answer: object) -> None:
     with pytest.raises(dataclasses.FrozenInstanceError):
         answer.whatever = 1  # type: ignore[misc]
+
+
+def test_a_quoted_name_is_read_without_its_bars() -> None:
+    # |x| and x are one symbol to SMT-LIB, and cvc5 writes the bars only where a name needs them
+    assert model_from(["((|arg.caf%C3%A9| 5))", "((leaf.0 (- 6)))"]) == {
+        "arg.caf%C3%A9": 5,
+        "leaf.0": -6,
+    }
