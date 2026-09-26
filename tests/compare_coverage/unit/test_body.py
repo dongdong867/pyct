@@ -285,6 +285,7 @@ def test_a_name_bound_without_def_or_class_is_refused_naming_the_file(tmp_path: 
         ("try:\n    pass\nexcept Exception as f:\n    pass", 11),
         ("if True:\n    def f():\n        return 3", 10),
         ("match 1:\n    case f:\n        pass", 10),
+        ("match {}:\n    case {**f}:\n        pass", 10),
     ],
 )
 def test_a_name_bound_again_after_its_definition_is_refused(
