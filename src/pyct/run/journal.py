@@ -8,11 +8,12 @@ rather than a pipe, because a write costs a store and not a system call
 one fact millions of times, and pyct's process only waits instead of
 reading as it goes.
 
-The layout, all little-endian. A header: the committed mark (u64, where
-the complete records end), the state (u8: open, full, or unencodable)
-with its note's length (u16), and a 1 KiB note saying why the writer
-stopped. Then records, each an 8-byte head (u32 payload length, u8 kind)
-and its payload, padded to 8 bytes:
+The layout. A header of two words, each a native u64 since both
+processes run on one machine: the committed mark, where the complete
+records end, and the state, open, full, or unencodable, with its note's
+length above bit 16; then a 1 KiB note saying why the writer stopped.
+Then records, each an 8-byte little-endian head (u32 payload length, u8
+kind) and its payload, padded to 8 bytes:
 
 - line: an i64, the first time the call reaches that line.
 - part: one list of an expression, as JSON. A leaf is a JSON scalar and a
@@ -23,13 +24,17 @@ and its payload, padded to 8 bytes:
   in all of them.
 - fork: JSON ``[expression, taken, file, line, col]``, the expression a
   leaf or ``[n]``.
-- downgrade: a u64 count, then the name. A repeat of the last entry
-  rewrites its count in place, one aligned 8-byte store.
+- downgrade: a native u64 count, then the name. A repeat of the last
+  entry rewrites its count in place.
 - end: JSON ``null`` for a call that returned, else ``[kind, detail,
   traceback]``.
 
 A record's bytes go first and the committed mark moves past them after, so
-the journal holds a readable prefix at every instant. JSON decodes to
+the journal holds a readable prefix at every instant. Every word the
+reader trusts, the mark, the state and a count, changes in one aligned
+8-byte store through a word view of the journal, so a kill never finds it
+half written. ``struct.pack_into`` would not do: it clears its bytes
+before it writes them. JSON decodes to
 lists and scalars only, never to an object whose code runs, which matters
 because the writer ran the target's code in its own process; and it
 writes an int subclass by int's own repr, so no target code runs on the
@@ -60,9 +65,9 @@ CAPACITY = 256 * 1024 * 1024
 
 type Journal = mmap.mmap | bytearray
 
-_COMMITTED = struct.Struct("<Q")
-_STATE = struct.Struct("<BxH")
-_STATE_AT = 8
+# the header's words, by index into the journal's native u64 view
+_COMMITTED, _STATE = 0, 1
+_WORD = struct.Struct("=Q")
 _NOTE_AT = 16
 _NOTE_SIZE = 1024
 # where the first record starts, after the header
@@ -70,7 +75,6 @@ RECORDS = _NOTE_AT + _NOTE_SIZE
 
 _HEAD = struct.Struct("<IB3x")
 _NUMBER = struct.Struct("<q")
-_COUNT = struct.Struct("<Q")
 
 _LINE, _PART, _FORK, _DOWNGRADE, _END = 1, 2, 3, 4, 5
 _OPEN, _FULL, _UNENCODABLE = 0, 1, 2
@@ -89,6 +93,7 @@ class JournalWriter:
 
     def __init__(self, buffer: Journal) -> None:
         self._buffer = buffer
+        self._words = memoryview(buffer)[: len(buffer) // _WORD.size * _WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
         self._count_at: int | None = None
@@ -113,10 +118,10 @@ class JournalWriter:
         """Write a new downgrade entry at a count of 1, or grow the last one in place."""
         if count > 1 and self._count_at is not None:
             if self._open:
-                _COUNT.pack_into(self._buffer, self._count_at, count)
+                self._words[self._count_at // _WORD.size] = count
             return
         at = self._at
-        if self._record(_DOWNGRADE, _COUNT.pack(count) + name.encode()):
+        if self._record(_DOWNGRADE, _WORD.pack(count) + name.encode()):
             self._count_at = at + _HEAD.size
 
     def end(self, failure: Failure | None) -> None:
@@ -178,7 +183,7 @@ class JournalWriter:
         _HEAD.pack_into(self._buffer, at, len(payload), kind)
         self._buffer[at + _HEAD.size : at + _HEAD.size + len(payload)] = payload
         self._at = after
-        _COMMITTED.pack_into(self._buffer, 0, after)
+        self._words[_COMMITTED] = after
         return True
 
     def _stop(self, state: int, note: str) -> None:
@@ -187,7 +192,7 @@ class JournalWriter:
             return
         noted = note.encode("utf-8", "replace")[:_NOTE_SIZE]
         self._buffer[_NOTE_AT : _NOTE_AT + len(noted)] = noted
-        _STATE.pack_into(self._buffer, _STATE_AT, state, len(noted))
+        self._words[_STATE] = state | len(noted) << 16
         self._open = False
 
 
@@ -248,17 +253,18 @@ def read(buffer: Journal) -> Reading:
 
 def _noted(view: memoryview) -> str | None:
     """Why the writer stopped, or None while it was still writing."""
-    state, length = _STATE.unpack_from(view, _STATE_AT)
+    (word,) = _WORD.unpack_from(view, _STATE * _WORD.size)
+    state, length = word & 0xFFFF, word >> 16
     if state == _OPEN:
         return None
     if state not in (_FULL, _UNENCODABLE):
-        raise _UnreadableError(_STATE_AT)
+        raise _UnreadableError(_STATE * _WORD.size)
     return bytes(view[_NOTE_AT : _NOTE_AT + min(length, _NOTE_SIZE)]).decode("utf-8", "replace")
 
 
 def _records(view: memoryview) -> Iterator[tuple[int, int, bytes]]:
     """Each committed record: where it starts, its kind, and its payload."""
-    (committed,) = _COMMITTED.unpack_from(view, 0)
+    (committed,) = _WORD.unpack_from(view, _COMMITTED * _WORD.size)
     if committed == 0:
         return
     if not RECORDS <= committed <= len(view):
@@ -301,8 +307,8 @@ class _Facts:
         elif kind == _FORK:
             self.branches.append(self._fork(json.loads(payload)))
         elif kind == _DOWNGRADE:
-            (count,) = _COUNT.unpack_from(payload)
-            self.downgrades.append(DowngradeCount(payload[_COUNT.size :].decode(), count))
+            (count,) = _WORD.unpack_from(payload)
+            self.downgrades.append(DowngradeCount(payload[_WORD.size :].decode(), count))
         elif kind == _END:
             self.ended, self.end = True, _ending(json.loads(payload))
         else:

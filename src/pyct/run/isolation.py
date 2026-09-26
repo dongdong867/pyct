@@ -103,7 +103,7 @@ def in_a_child(
         return execute(ctx, args, until, watch=watch).failure
 
     with _journal() as buffer:
-        waited = watched(functools.partial(_forked, JournalWriter(buffer), call), until)
+        waited = watched(functools.partial(_forked, buffer, call), until)
         return ending(read(buffer), waited)
 
 
@@ -120,8 +120,11 @@ def _journal() -> Generator[mmap.mmap]:
         buffer.close()
 
 
-def _forked(writer: JournalWriter, call: Served) -> int:
+def _forked(buffer: mmap.mmap, call: Served) -> int:
     """Fork the input's process and return its pid. The child serves the call and exits.
+
+    Only the child writes the journal, so only the child holds a view of it,
+    and this process can unmap it once it is read.
 
     pyct's streams are flushed first, so the child cannot print pyct's
     buffered text a second time.
@@ -137,6 +140,6 @@ def _forked(writer: JournalWriter, call: Served) -> int:
         raise InputStartError(f"could not start a child process: {error}") from error
     if pid == 0:
         # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
-        serve(writer, call)  # pragma: no cover
+        serve(JournalWriter(buffer), call)  # pragma: no cover
     gc.unfreeze()
     return pid
