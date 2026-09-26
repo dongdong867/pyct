@@ -204,7 +204,7 @@ FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str, int], object], str]] = {
     "s[:n]": (lambda s, n: s[:n], "__getitem__"),
     "s[::-1]": (lambda s, n: s[::-1], "__getitem__"),
     "s[0:3:1]": (lambda s, n: s[0:3:1], "__getitem__"),
-    "s[Position()]": (lambda s, n: s[Position()], "__getitem__"),  # pyrefly: ignore[bad-index]
+    "s[Position()]": (lambda s, n: s[Position()], "__getitem__"),
     "s[n == 1]": (lambda s, n: s[n == 1], "__getitem__"),
     "s.replace('b', 'x', 1)": (lambda s, n: s.replace("b", "x", 1), "replace"),
     "s.replace('', 'x')": (lambda s, n: s.replace("", "x"), "replace"),
@@ -276,7 +276,7 @@ def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
     with pytest.raises(TypeError) as plain:
         "abcb".replace("b", "x", count=1)  # pyrefly: ignore[no-matching-overload]
     with pytest.raises(TypeError) as raised:
-        _tracked(sink=sink).replace("b", "x", count=1)  # pyrefly: ignore[unexpected-keyword]
+        _tracked(sink=sink).replace("b", "x", count=1)
 
     assert str(raised.value) == str(plain.value)
     assert raised_by_target(raised.value)
@@ -286,7 +286,7 @@ def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
 # a right side with its own __radd__ that answers: the call, and the same call on a plain str
 ANSWERED_BY_THE_RIGHT: dict[str, Callable[[str], object]] = {
     "s + Escaped('<b>')": lambda s: s + Escaped("<b>"),
-    "s + Column()": lambda s: s + Column(),  # pyrefly: ignore[unsupported-operation]
+    "s + Column()": lambda s: s + Column(),
 }
 
 
@@ -323,7 +323,7 @@ def test_a_number_on_the_left_of_plus_is_refused_by_python_and_records_nothing()
     with pytest.raises(TypeError) as plain:
         operator.add(1, "abcb")  # pyrefly: ignore[no-matching-overload]
     with pytest.raises(TypeError) as raised:
-        1 + _tracked(sink=sink)  # pyrefly: ignore[unsupported-operation]
+        1 + _tracked(sink=sink)
 
     # Python's own sentence, naming the tracked str's type where plain Python names str
     assert str(raised.value) == str(plain.value).replace("'str'", "'ConcolicStr'")
