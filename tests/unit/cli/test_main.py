@@ -1,7 +1,9 @@
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
+from pyct import cli
 from pyct.cli import main
 from tests.acceptance.harness import (
     input_lines,
@@ -12,6 +14,36 @@ from tests.acceptance.harness import (
 
 TARGET = "targets.flip.one_check::classify"
 BROKEN = "targets.trace.broken_import::f"
+
+# what main calls before the run, and then the run, in the order main's docstring gives
+CHECKS = (
+    "check_spec",
+    "parse_seed",
+    "parse_budget",
+    "parse_plateau",
+    "parse_solver_timeout",
+    "load_target",
+    "check_seed_fits",
+    "check_seed_types",
+    "locate",
+    "run",
+)
+
+
+def record_calls(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Wrap each of ``CHECKS`` in ``pyct.cli`` so every call is noted, then made as before."""
+    called: list[str] = []
+
+    def recording(name: str, real: Callable[..., object]) -> Callable[..., object]:
+        def wrapper(*args: object, **kwargs: object) -> object:
+            called.append(name)
+            return real(*args, **kwargs)
+
+        return wrapper
+
+    for name in CHECKS:
+        monkeypatch.setattr(cli, name, recording(name, getattr(cli, name)))
+    return called
 
 
 def test_main_fails_when_cvc5_is_not_on_the_path(
@@ -111,3 +143,35 @@ def test_main_closes_stdout_with_the_summary_line(
     assert summary["stopped"] == "no fork to flip"
     assert summary["inputs"] == 1
     assert len(input_lines(captured.out)) == 1
+
+
+def test_main_runs_its_checks_in_the_order_its_docstring_gives(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    called = record_calls(monkeypatch)
+
+    code = main(["run", "targets.flip.no_check::echo", '{"x": 3}'])
+
+    assert code == 0
+    assert called == list(CHECKS)
+
+
+def test_main_asks_for_a_missing_seed_after_the_import_and_before_the_seed_checks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    called = record_calls(monkeypatch)
+
+    code = main(["run", "targets.flip.no_check::echo"])
+
+    assert code == 2
+    # no seed text means no seed to parse; the target is loaded to say what it takes
+    assert called == [
+        "check_spec",
+        "parse_budget",
+        "parse_plateau",
+        "parse_solver_timeout",
+        "load_target",
+    ]
+    assert capsys.readouterr().out == ""

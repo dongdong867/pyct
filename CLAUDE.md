@@ -9,8 +9,8 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v` — healthy: every test passes, and no fewer pass than on the base branch. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
-- lint: `uv run ruff check src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Contracts: 1 kept, 0 broken.` Style, types, import layers
+- test: `uv run pytest tests/ -v --cov` — healthy: every test passes, no fewer pass than on the base branch, and it prints `Required test coverage of … reached`: branch coverage of `pyct`, subprocesses included, is at or above `fail_under` in pyproject.toml. Drop `--cov` for a quick run. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
+- lint: `uv run ruff check src/ tests/ && uv run python -m tests.line_limits src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 1 kept, 0 broken.` Style, sizes, types, import layers
 - format: `uv run ruff format src/ tests/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
 
@@ -40,7 +40,9 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   └── utils/
 ├── tests/
 │   ├── acceptance/   one test per acceptance criterion, through the CLI or run()
-│   └── unit/         mirrors src/pyct/, one directory per layer
+│   ├── unit/         mirrors src/pyct/, one directory per layer
+│   ├── line_limits.py  the size rules ruff has no rule for, run by lint. Tested beside it
+│   └── test_timeout.py  the per-test timeout ends a test stuck on coverage's lock
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
     ├── ints/         a follow story's fixtures, under the type it follows
     └── strs/         the same for strings. floats/ later
@@ -63,7 +65,8 @@ engine state.
 - Type hints on every public signature and dataclass field. `X | None`.
 - `@dataclass(frozen=True)` for config and value objects. No static-only classes. No mutable defaults.
 - Explicit imports, grouped stdlib, third-party, local.
-- Functions about 20 lines. Five parameters at most. Files under 500 lines.
+- Functions about 20 lines. Five parameters at most, not counting `self` or `cls`. Files under 500 lines.
+- Lint fails a function with more than five parameters, more than 20 statements, complexity over 10 or more than 30 body lines, and a file of 500 lines or more. Ruff counts every parameter but `self`, `cls`, `*args`, `**kwargs` and dummy names such as `_` and `_name`, in functions not marked `@override` or `@overload`, and counts a docstring as a statement. `tests/line_limits.py` counts body lines from the line after the signature through the last statement, blank lines and comments between included, less the docstring.
 - Logging with lazy `%` formatting. DEBUG internals, INFO milestones, WARNING recoverable, ERROR failures.
 - A name or comment says what the code handles. It never lists what the code misses; such a list is never complete. When a review finds a claim that outruns its check, narrow the claim, or widen the check when the missed case is one the code will realistically meet.
 - A test compares an error message from Python itself to what plain Python says in the same run. CPython rewords its errors between versions, and the project supports every version from 3.12.

@@ -34,10 +34,8 @@ RAISES_AFTER_A_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "raises_after_a
 RAISES_ON_THE_OTHER_SIDE = "targets.flip.raises_on_the_other_side::guard"
 UNTAUGHT_GUARD = "targets.flip.untaught_guard::route"
 UNTAUGHT_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "untaught_guard.py")
-CUT_SHORT_ON_THE_OTHER_SIDE = "targets.flip.cut_short_on_the_other_side::cut"
-CUT_SHORT_ON_THE_OTHER_SIDE_FILE = str(
-    REPO_ROOT / "targets" / "flip" / "cut_short_on_the_other_side.py"
-)
+CUT_SHORT = "targets.flip.cut_short_on_the_other_side::cut"
+CUT_SHORT_FILE = str(REPO_ROOT / "targets" / "flip" / "cut_short_on_the_other_side.py")
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -273,18 +271,13 @@ def test_reports_going_off_course() -> None:
 
 # .ddlc/features/run/README.md › Rules › the stderr trace: ``no fork there``
 def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
-    result = run_pyct(CUT_SHORT_ON_THE_OTHER_SIDE, '{"x": 1}')
+    result = run_pyct(CUT_SHORT, '{"x": 1}')
 
     assert result.returncode == 0, result.stderr
     solved = second_line(result.stdout)
     # the seed takes ``x < 6`` then ``x < 5``; flipping the second under the first admits
     # only x == 5, which divides by zero before the second fork is tested
-    assert solved["aim"] == {
-        "file": CUT_SHORT_ON_THE_OTHER_SIDE_FILE,
-        "line": 4,
-        "col": 11,
-        "position": 1,
-    }
+    assert solved["aim"] == {"file": CUT_SHORT_FILE, "line": 4, "col": 11, "position": 1}
     # the detail is CPython's own sentence, and 3.14 shortened it, so only the kind
     # and the exception's name are pyct's to pin
     failure = solved["failure"]
@@ -293,13 +286,7 @@ def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
     assert str(failure["detail"]).startswith("ZeroDivisionError:")
     # the plan had two forks and the run recorded one, so the mismatch sits past the path
     assert solved["forks"] == [
-        {
-            "file": CUT_SHORT_ON_THE_OTHER_SIDE_FILE,
-            "line": 2,
-            "col": 7,
-            "taken": True,
-            "expression": ["<", "x", 6],
-        }
+        {"file": CUT_SHORT_FILE, "line": 2, "col": 7, "taken": True, "expression": ["<", "x", 6]}
     ]
     assert solved["mismatch_at"] == 1
     # the trace says there was nothing at that position rather than naming a fork

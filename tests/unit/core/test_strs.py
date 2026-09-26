@@ -392,28 +392,14 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
         )
     }
 
+    compares = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"}
+    searches = {"__contains__", "startswith", "endswith", "count"}
+    positions = {"find", "index", "rfind", "rindex"}
+    kept = {"__hash__", "__repr__", "__getnewargs__", "__sizeof__"}
+
     # whatever str defines on the Python that runs this, the only methods left unwrapped are
     # the six compares and the searches taught above and the four str keeps
-    assert methods - _derived_downgrades() == {
-        "__lt__",
-        "__le__",
-        "__gt__",
-        "__ge__",
-        "__eq__",
-        "__ne__",
-        "__contains__",
-        "startswith",
-        "endswith",
-        "find",
-        "index",
-        "rfind",
-        "rindex",
-        "count",
-        "__hash__",
-        "__repr__",
-        "__getnewargs__",
-        "__sizeof__",
-    }
+    assert methods - _derived_downgrades() == compares | searches | positions | kept
     assert _derived_downgrades().isdisjoint(strs._KEPT)
 
 

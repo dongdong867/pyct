@@ -162,38 +162,40 @@ def test_a_method_that_answers_not_implemented_records_nothing() -> None:
     assert sink == []
 
 
+# None in sys.modules makes importing that name raise, so a shared module that reached into
+# ints or bools fails before the print
+STAND_IN_ALONE = textwrap.dedent(
+    """
+    import sys
+
+    sys.modules["pyct.core.ints"] = None
+    sys.modules["pyct.core.bools"] = None
+
+    from pyct.core.values import downgrade_the_rest
+
+
+    class StandIn:
+        def untaught(self):
+            return "the base type's"
+
+
+    class Untaught(StandIn):
+        def __init__(self, sink):
+            self.sink = sink
+
+
+    downgrade_the_rest(Untaught, StandIn, kept=(), inherited=())
+    sink = []
+    print(Untaught(sink).untaught(), sink)
+    """
+)
+
+
 def test_a_stand_in_derives_through_the_shared_module_alone() -> None:
     # this session has already imported every core module, so only a fresh interpreter shows
-    # what the shared module needs on its own. None in sys.modules makes importing that name
-    # raise, so a shared module that reached into ints or bools would fail here
-    script = textwrap.dedent(
-        """
-        import sys
-
-        sys.modules["pyct.core.ints"] = None
-        sys.modules["pyct.core.bools"] = None
-
-        from pyct.core.values import downgrade_the_rest
-
-
-        class StandIn:
-            def untaught(self):
-                return "the base type's"
-
-
-        class Untaught(StandIn):
-            def __init__(self, sink):
-                self.sink = sink
-
-
-        downgrade_the_rest(Untaught, StandIn, kept=(), inherited=())
-        sink = []
-        print(Untaught(sink).untaught(), sink)
-        """
-    )
-
+    # what the shared module needs on its own
     result = subprocess.run(
-        [sys.executable, "-c", script], capture_output=True, text=True, check=False
+        [sys.executable, "-c", STAND_IN_ALONE], capture_output=True, text=True, check=False
     )
 
     assert result.returncode == 0, result.stderr

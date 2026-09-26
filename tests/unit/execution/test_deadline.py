@@ -4,14 +4,17 @@ import time
 import pytest
 
 from pyct.execution.deadline import DeadlineError, deadline
+from tests.unit.deadline_fires import DEADLINE_FIRES
 
 
+@DEADLINE_FIRES
 def test_deadline_stops_a_loop_that_never_ends() -> None:
     with pytest.raises(DeadlineError), deadline(time.monotonic() + 0.05):
         while True:
             pass
 
 
+@DEADLINE_FIRES
 def test_deadline_fires_at_once_when_the_instant_has_passed() -> None:
     with pytest.raises(DeadlineError), deadline(time.monotonic() - 1):
         while True:

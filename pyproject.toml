@@ -13,9 +13,12 @@ pyct = "pyct.cli:main"
 
 [dependency-groups]
 dev = [
+  "coverage>=7.10",
   "import-linter>=2.0",
   "pyrefly>=0.33",
   "pytest>=8.0",
+  "pytest-cov>=7.1",
+  "pytest-timeout>=2.3",
   "ruff>=0.12",
 ]
 
@@ -31,13 +34,50 @@ search-path = ["src", "."]
 [tool.pytest.ini_options]
 addopts = "-v --tb=short"
 testpaths = ["tests"]
+# a test still running after 60 seconds ends the run with every thread's stack, so a hang
+# fails instead of stalling; tests/test_timeout.py shows it ends one stuck on coverage's
+# lock. The thread method, because pyct's deadline owns SIGALRM
+timeout = 60
+timeout_method = "thread"
+
+# Measured when pytest runs with --cov. The acceptance tests start pyct in a
+# subprocess, and patch = subprocess measures the code it runs there too. fork
+# starts measuring in a forked child, whose data is saved only when it exits
+# normally. No _exit: it makes os._exit save coverage first, and the timeout's
+# os._exit would then wait on the lock a stuck test holds, so a child ending in
+# os._exit saves nothing.
+[tool.coverage.run]
+branch = true
+source = ["pyct"]
+patch = ["subprocess", "fork"]
+
+# fail_under is the lowest total of three full runs when this floor was set,
+# 98.696%, rounded down to 0.1. Raise it when coverage rises; a total that
+# rounds to less fails the run.
+[tool.coverage.report]
+fail_under = 98.6
+precision = 1
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 src = ["src", "tests"]
 line-length = 100
 
+# C901, PLR0913 and PLR0915 hold the size rules of CLAUDE.md › Conventions.
+# tests/line_limits.py holds the two ruff has no rule for: body and file lines.
 [tool.ruff.lint]
-select = ["E", "F", "I", "B", "UP", "SIM"]
+select = ["E", "F", "I", "B", "UP", "SIM", "C901", "PLR0913", "PLR0915"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+# max-args counts every parameter but self, cls, *args, **kwargs and dummy names such as _
+# and _name, in functions not marked @override or @overload. max-statements counts a
+# docstring as one
+[tool.ruff.lint.pylint]
+max-args = 5
+max-statements = 20
 
 [tool.setuptools.packages.find]
 where = ["src"]

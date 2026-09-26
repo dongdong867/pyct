@@ -47,4 +47,5 @@ def deadline(at: float | None) -> Iterator[None]:
 
 
 def _raise_deadline(signal_number: int, frame: object) -> NoReturn:
-    raise DeadlineError
+    # the tests that fire the alarm run without coverage, which a raise here can hang
+    raise DeadlineError  # pragma: no cover

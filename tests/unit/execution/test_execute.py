@@ -14,6 +14,7 @@ from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, _free_tool_id, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
+from tests.unit.deadline_fires import DEADLINE_FIRES
 
 TARGETS = Path(__file__).resolve().parents[3] / "targets" / "trace"
 FIXTURE = TARGETS / "uncalled_helper.py"
@@ -193,6 +194,7 @@ def test_execute_reports_a_system_exit_as_a_failure_and_keeps_going() -> None:
     assert result.failure == Failure(kind=FailureKind.SYSTEM_EXIT, detail="SystemExit: 3")
 
 
+@DEADLINE_FIRES
 def test_execute_reports_a_timeout_and_keeps_the_lines_it_reached() -> None:
     ctx = ExecutionContext(fn=_load(NEVER_RETURNS, "spin"), file=str(NEVER_RETURNS))
 

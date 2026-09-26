@@ -3,7 +3,7 @@
 ``inspect.signature`` stops at a declared ``__signature__`` while
 ``inspect.unwrap`` walks straight past it, so the text below is written here
 and the function underneath is written somewhere else. ``Number`` is a
-``str`` here and an ``int`` in ``test_checks``; ``Elsewhere`` is spelled only
+``str`` here and an ``int`` in ``test_seed_types``; ``Elsewhere`` is spelled only
 here.
 """
 
