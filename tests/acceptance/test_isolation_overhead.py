@@ -2,12 +2,15 @@
 
 Measured as the contract says, the same run through the command line with and without
 ``--in-process``, over at least 50 inputs. Each way runs three times and keeps its fastest,
-so a slow moment on the machine does not decide the result.
+so a slow moment on the machine does not decide the result. The runs leave coverage.py
+out, so a ``--cov`` run of the suite measures isolation, not coverage.py.
 """
 
 import time
 
-from tests.acceptance.harness import run_pyct, summary_line
+import pytest
+
+from tests.acceptance.harness import COVERAGE_STARTUP, run_pyct, summary_line
 
 MANY_INPUTS = "targets.isolate.many_inputs::pick"
 SEED = '{"x": -1}'
@@ -30,7 +33,12 @@ def fastest(*argv: str) -> tuple[float, int]:
     return min(took), inputs
 
 
-def test_isolation_adds_at_most_ten_milliseconds_per_input() -> None:
+def test_isolation_adds_at_most_ten_milliseconds_per_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # coverage.py in the runs would restart in every child and measure its own cost per input
+    for name in COVERAGE_STARTUP:
+        monkeypatch.delenv(name, raising=False)
     isolated, inputs = fastest()
     in_process, same = fastest("--in-process")
 
