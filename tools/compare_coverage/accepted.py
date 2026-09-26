@@ -16,9 +16,9 @@ they are in, and the exception type and message as they were. A row keeps the te
 - A row that ends on the budget can change with the budget, so a run is compared only with
   a file made with the same limits, with or without ``--accept``.
 - ``--accept`` rewrites FILE after the last row, with the run's limits first: each row this
-  run produced replaces its
-  record, a ``same``, ``left out`` or ``not listed`` row leaves none, records for entries
-  this run did not run stay, and a record whose entry the list no longer holds is dropped.
+  run produced replaces its record, a ``same``, ``left out`` or ``not listed`` row leaves
+  none, records for entries this run did not run stay, and a record whose entry the list no
+  longer holds is dropped.
 """
 
 import json
