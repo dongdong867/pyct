@@ -232,8 +232,10 @@ def test_indexes_a_string_inside_a_list() -> None:
 
 
 # run-with-nested-arguments-gives-each-input-its-own-arguments
-def test_gives_each_input_its_own_arguments() -> None:
-    result = run_pyct(OWN_ARGUMENTS, '{"items": [0], "config": {}}')
+@pytest.mark.parametrize("where", [(), ("--in-process",)], ids=["own-process", "in-process"])
+def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
+    # in pyct's own process the inputs share every other state, so the copy is what holds it
+    result = run_pyct(OWN_ARGUMENTS, '{"items": [0], "config": {}}', *where)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
