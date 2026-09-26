@@ -255,9 +255,12 @@ def test_cvc5_agrees_with_python_on_every_search_path_it_answers() -> None:
 
     answers = [solve(path, {"s": str}, 1.0) for path in paths]
 
-    # the questions reach every search, so a clean result is not a narrow one
-    assert set().union(*(_heads(path) for path in paths)) == set(SEARCH_HEADS)
+    # the paths cvc5 answered reach every search, so a clean result is not a narrow one
+    answered = [
+        path for path, answer in zip(paths, answers, strict=True) if isinstance(answer, Sat | Unsat)
+    ]
+    assert set().union(*(_heads(path) for path in answered)) == set(SEARCH_HEADS)
     # a timeout or an unknown is a miss, which the run reports as one; only an answer can be
-    # wrong, so how often cvc5 runs out of time does not decide this test
+    # wrong, so a miss fails this test only by leaving a search unanswered
     wrong = [path for path, answer in zip(paths, answers, strict=True) if _disagrees(path, answer)]
     assert wrong == []
