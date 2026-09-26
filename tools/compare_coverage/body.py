@@ -23,7 +23,8 @@ never disagree about it (decision own-lines-from-the-compiled-code). The rule:
 - A class's own lines are those of the functions its body defines, its methods, each without
   its starting line, in the class body's blocks too. The rest of the class body runs at
   import, a lambda or generator in a class-level assignment among it; a class nested in it
-  counts its own methods the same way.
+  counts its own methods the same way. A method in a block Python compiles no code for,
+  such as ``if False:``, has no own lines, since no call can run it.
 """
 
 import ast
@@ -196,12 +197,23 @@ def _lines_run(
     A class's are those of the functions and classes its body defines, in its blocks too:
     the rest of the body, lambdas and generators in its assignments among it, runs at import.
     """
-    if not isinstance(definition, ast.ClassDef):
-        code = _find(codes, definition, file)
-        return _lines(code) - {code.co_firstlineno}
+    if isinstance(definition, ast.ClassDef):
+        return _method_lines(definition, codes)
+    code = _find(codes, definition, file)
+    return _lines(code) - {code.co_firstlineno}
+
+
+def _method_lines(cls: ast.ClassDef, codes: Mapping[tuple[str, int], CodeType]) -> set[int]:
+    """The lines a call of a method of ``cls`` or of a class nested in it runs.
+
+    A method in a block Python compiles no code for, such as ``if False:``, runs none.
+    """
     lines: set[int] = set()
-    for member in _members(definition):
-        lines |= _lines_run(member, codes, file)
+    for member in _members(cls):
+        if isinstance(member, ast.ClassDef):
+            lines |= _method_lines(member, codes)
+        elif (code := codes.get((member.name, _start(member)))) is not None:
+            lines |= _lines(code) - {code.co_firstlineno}
     return lines
 
 

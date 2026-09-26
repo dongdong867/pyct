@@ -238,6 +238,26 @@ def test_a_generic_function_and_class_are_read_through_their_type_parameters(
     assert read_body(file, "Box").own_lines == frozenset({10})
 
 
+DEAD_METHODS = """\
+class Klass:
+    def keep(self):
+        return 1
+
+    if False:
+        def old(self):
+            return 2
+
+        class Old:
+            def gone(self):
+                return 3
+"""
+
+
+def test_a_method_python_compiles_no_code_for_adds_no_own_line(tmp_path: Path) -> None:
+    # Python drops the block under if False, so no call can run what it defines
+    assert read_body(write(tmp_path, DEAD_METHODS), "Klass").own_lines == frozenset({3})
+
+
 def test_a_definition_with_no_compiled_code_is_refused_naming_the_file(tmp_path: Path) -> None:
     file = write(tmp_path, "def f():\n    return 1\n")
     (definition,) = ast.parse(file.read_text()).body
