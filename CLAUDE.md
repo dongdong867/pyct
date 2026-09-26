@@ -9,10 +9,12 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v --cov` — healthy: every test passes, no fewer pass than on the base branch, and it prints `Required test coverage of … reached`: branch coverage of `pyct`, subprocesses included, is at or above `fail_under` in pyproject.toml. Drop `--cov` for a quick run. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`)
-- lint: `uv run ruff check src/ tests/ && uv run python -m tests.line_limits src/ tests/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 1 kept, 0 broken.` Style, sizes, types, import layers
-- format: `uv run ruff format src/ tests/`
+- test: `uv run pytest tests/ -v --cov` — healthy: every test passes, no fewer pass than on the base branch, and it prints `Required test coverage of … reached`: branch coverage of `pyct` and `tools`, subprocesses included, is at or above `fail_under` in pyproject.toml. Drop `--cov` for a quick run. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`). The compare tool's `legacy` tests build a checkout of `main` once per session, or reuse the one `PYCT_LEGACY_CHECKOUT` names; `-m "not legacy"` skips them
+- lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 2 kept, 0 broken.` Style, sizes, types, import layers, and the compare tool never importing pyct
+- format: `uv run ruff format src/ tests/ tools/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
+- compare: `uv run python -m tools.compare_coverage --legacy DIR` — runs every target in `tools/compare_coverage/targets.json` through v2 and through legacy at a 30 s budget, on demand. DIR is a checkout of `main` with its own environment: `git worktree add DIR main && uv sync --project DIR --frozen`
+- compare gate, per merge: `uv run python -m tools.compare_coverage --legacy DIR --set v2 --set fixtures --budget 5 --accepted tools/compare_coverage/accepted.jsonl` — healthy: exit 0, every row `same`, `left out` or `accepted`. A change that closes or opens a gap reruns it with `--accept` and commits the file; a new file under `targets/` needs an entry
 
 ## Layout
 
@@ -41,8 +43,11 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 ├── tests/
 │   ├── acceptance/   one test per acceptance criterion, through the CLI or run()
 │   ├── unit/         mirrors src/pyct/, one directory per layer
+│   ├── compare_coverage/  the compare tool's unit/ and acceptance/ tests, and a stub legacy engine
 │   ├── line_limits.py  the size rules ruff has no rule for, run by lint. Tested beside it
 │   └── test_timeout.py  the per-test timeout ends a test stuck on coverage's lock
+├── tools/            development tools outside pyct's layers. They never import pyct
+│   └── compare_coverage/  v2's coverage against legacy's, target by target. `python -m tools.compare_coverage`
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
     ├── ints/         a follow story's fixtures, under the type it follows
     └── strs/         the same for strings. floats/ later
