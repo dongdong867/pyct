@@ -41,6 +41,7 @@ INDEX_PAST_THE_END = "targets.strs.index_past_the_end::fourth"
 INDEX_PAST_THE_END_FILE = str(REPO_ROOT / "targets" / "strs" / "index_past_the_end.py")
 TRACKED_INDEX = "targets.strs.tracked_index::pick"
 REBUILT = "targets.strs.rebuilt::rebuild"
+REBUILT_FILE = str(REPO_ROOT / "targets" / "strs" / "rebuilt.py")
 
 
 def sides_of(lines: list[dict[str, object]]) -> set[tuple[object, str, object]]:
@@ -170,12 +171,20 @@ def test_cuts_a_long_expression() -> None:
     result = run_pyct(REBUILT, '{"s": "aaaaaaaaaaaaaaaaaa"}')
 
     assert result.returncode == 0, result.stderr
-    forks = [fork for line in input_lines(result.stdout) for fork in forks_of(line)]
-    # each pass holds the last one twice, so written out the expression doubles every pass
+    inputs = input_lines(result.stdout)
+    forks = [fork for line in inputs for fork in forks_of(line)]
+    # each pass holds the last one three times, so written out the expression triples every pass
     assert all(printed_nodes(fork["expression"]) <= 1000 for fork in forks)
-    cut = forks_of(first_line(result.stdout))[-1]
+    seed_forks = forks_of(inputs[0])
+    cut = seed_forks[-1]
     counts = cut_counts(cut["expression"])
     assert counts and all(isinstance(count, int) and count > 2 for count in counts)
-    fork_line = next(line for line in result.stderr.splitlines() if line.startswith("fork "))
+    site = f"{REBUILT_FILE}:{cut['line']}:{cut['col']}"
+    fork_line = next(line for line in result.stderr.splitlines() if line.startswith(f"fork {site}"))
     assert fork_line.count(" nodes)") == len(counts)
     assert all(f"...({count} nodes)" in fork_line for count in counts)
+    # the solver still gets the whole condition, so the cut fork is flipped like any other
+    aim = {"file": REBUILT_FILE, "line": cut["line"], "col": cut["col"], "position": 18}
+    reaching = [line for line in inputs[1:] if line["aim"] == aim and line["mismatch_at"] is None]
+    assert reaching, [line["aim"] for line in inputs[1:]]
+    assert text(reaching[0], "s") == "abcdefghijklmnopqr"
