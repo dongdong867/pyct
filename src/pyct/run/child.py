@@ -47,7 +47,7 @@ def serve(writer: JournalWriter, call: Served) -> NoReturn:
     except BaseException as error:
         with contextlib.suppress(BaseException):
             writer.end(own_bug(error))
-    _flush()
+    flush_streams()
     _EXIT(0)
 
 
@@ -89,8 +89,13 @@ def _stdout_to_stderr() -> None:
     sys.stdout = sys.stderr
 
 
-def _flush() -> None:
-    """Hand on what the target wrote before ``os._exit``, which flushes nothing."""
+def flush_streams() -> None:
+    """Write out what the four standard streams hold, as ``os._exit`` would not.
+
+    pyct's process calls it before a fork, so a child does not hold a copy
+    of text already on its way out; the input's process calls it before it
+    exits, so what the target wrote is not lost.
+    """
     for stream in (sys.stdout, sys.stderr, sys.__stdout__, sys.__stderr__):
         with contextlib.suppress(Exception):
             stream.flush()  # pyrefly: ignore[missing-attribute]

@@ -42,7 +42,7 @@ from dataclasses import dataclass
 
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
-from pyct.run.child import Served, serve
+from pyct.run.child import Served, flush_streams, serve
 from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import InputStartError, ending, watched
@@ -126,12 +126,10 @@ def _forked(buffer: mmap.mmap, call: Served) -> int:
     Only the child writes the journal, so only the child holds a view of it,
     and this process can unmap it once it is read.
 
-    pyct's streams are flushed first, so the child cannot print pyct's
-    buffered text a second time.
+    The four standard streams are flushed first, so the child cannot write
+    this process's buffered text a second time.
     """
-    for stream in (sys.stdout, sys.stderr):
-        with contextlib.suppress(Exception):
-            stream.flush()
+    flush_streams()
     pid = _fork_frozen()
     if pid == 0:
         # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork

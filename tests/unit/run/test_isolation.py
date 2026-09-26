@@ -4,6 +4,7 @@ import dataclasses
 import faulthandler
 import gc
 import inspect
+import io
 import logging
 import mmap
 import os
@@ -382,3 +383,21 @@ def test_a_freeze_the_caller_made_outlasts_an_input() -> None:
         assert gc.get_freeze_count() > 0
     finally:
         gc.unfreeze()
+
+
+def test_text_a_caller_left_in_the_real_stdout_is_written_once(
+    capfd: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    real = io.TextIOWrapper(os.fdopen(os.dup(1), "wb"), encoding="utf-8")
+    # a caller that points sys.stdout elsewhere and leaves text in the real stdout's buffer
+    monkeypatch.setattr(sys, "__stdout__", real)
+    monkeypatch.setattr(sys, "stdout", io.StringIO())
+    real.write("held\n")
+
+    in_child(returns)
+    in_child(returns)
+    real.flush()
+
+    out, err = capfd.readouterr()
+    assert out.count("held") == 1
+    assert "held" not in err
