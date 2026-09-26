@@ -1,7 +1,7 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
 import ast
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import access_name
@@ -19,6 +19,11 @@ _QUOTES = ("'", '"')
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
+
+# what names the assertion that holds a float leaf finite, before the leaf's symbol, so the
+# unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
+# assertion's name never meets a constant
+FINITE = "finite!"
 
 
 @dataclass(frozen=True)
@@ -78,7 +83,7 @@ class Program:
 
 
 def program(
-    prefix: tuple[Branch, ...], leaves: Mapping[str, type], *, finite: bool = False
+    prefix: tuple[Branch, ...], leaves: Mapping[str, type], *, finite: Collection[str] = ()
 ) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
@@ -88,8 +93,10 @@ def program(
     does, and ``_symbol`` names its constant. Two pieces of one string side by
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
-    assertions (see `_Program`). ``finite`` holds each float leaf the prefix
-    names to a finite double, for the first of a float fork's two asks.
+    assertions (see `_Program`). Each float leaf in ``finite`` that the
+    prefix names is held to a finite double by an assertion named for its
+    symbol, and cvc5 is asked to dump the unsat core, so an unsat says which
+    of them it rests on.
     """
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
@@ -99,11 +106,11 @@ def program(
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
-    lines = ["(set-logic ALL)"]
+    held = [name for name in constants if name in finite and leaves[name] is float]
+    lines = ["(set-option :dump-unsat-cores true)"] if held else []
+    lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
-    if finite:
-        held = [constant for name, constant in constants.items() if leaves[name] is float]
-        lines += [f"(assert {floats.finite(constant)})" for constant in held]
+    lines += [_held_finite(constants[name], symbols[name]) for name in held]
     lines += body.definitions
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
@@ -112,14 +119,19 @@ def program(
     return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
 
 
-def names_a_float(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> bool:
-    """Whether a fork of the prefix names a float leaf, so its asks are finite first."""
+def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> frozenset[str]:
+    """The float leaves a fork of the prefix names: those its first ask holds finite."""
     if float not in leaves.values():
-        return False
+        return frozenset()
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
     order, _ = distinct(prefix, seed.holds)
-    return any(leaves[name] is float for name in _symbols(prefix, order, seed))
+    return frozenset(name for name in _symbols(prefix, order, seed) if leaves[name] is float)
+
+
+def _held_finite(constant: str, symbol: str) -> str:
+    """The assertion that holds one float leaf finite, named for the leaf's symbol."""
+    return f"(assert (! {floats.finite(constant)} :named {FINITE}{symbol}))"
 
 
 def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:

@@ -43,6 +43,7 @@ LITERALS_FILE = str(FLOATS / "literals.py")
 ABOVE_ZERO = "targets.floats.above_zero::sign"
 BELOW_TEN = "targets.floats.below_ten::size"
 NAN_OR_INFINITY = "targets.floats.nan_or_infinity::kind"
+NAN_BESIDE_FINITE = "targets.floats.nan_beside_finite::count"
 ROUNDING_EXACT = "targets.floats.rounding_exact::hit"
 MINUS_ZERO = "targets.floats.minus_zero::zero"
 UNTAUGHT = "targets.floats.untaught::lose"
@@ -205,6 +206,21 @@ def test_answers_a_finite_float_first(target: str, seed: str) -> None:
     # cvc5 answers NaN for either flip when every double is allowed from the start
     assert "NaN" not in result.stdout
     assert "Infinity" not in result.stdout
+
+
+# follow-floats-answers-a-finite-float-first
+def test_answers_a_finite_float_beside_one_only_nan_serves() -> None:
+    result = run_pyct(NAN_BESIDE_FINITE, '{"x": 1.0, "y": 1.0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the path with x NaN and y flipped below zero: only x needs a NaN, so y stays finite
+    below = [
+        line for line in inputs if math.isnan(real(line, "x")) and taken(line) == [True, False]
+    ]
+    assert below, result.stdout
+    assert all(math.isfinite(real(line, "y")) for line in below)
+    assert reached(inputs)
 
 
 # follow-floats-answers-nan-or-infinity-only-when-needed

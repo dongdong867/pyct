@@ -2,12 +2,13 @@
 
 import math
 import re
+from collections.abc import Collection
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.branch import Branch, Expression
 from pyct.solver.floats import finite, literal, minus, unequal, whole
-from pyct.solver.render import names_a_float, program
+from pyct.solver.render import float_leaves, program
 from tests.unit.solver.test_render import fork, render
 
 # each compare on doubles as the expression carries it, and the operator the program writes.
@@ -94,33 +95,52 @@ def test_an_operation_on_doubles_nothing_encodes_is_an_error(head: str) -> None:
         _lines(["==", [head, "x", 2.0], 1.0])
 
 
-def test_the_finite_ask_holds_each_float_leaf_finite_before_the_path() -> None:
+def _finite_lines(
+    prefix: tuple[Branch, ...], leaves: dict[str, type], finite: Collection[str]
+) -> list[str]:
+    return program(prefix, leaves, finite=finite).text.splitlines()
+
+
+def test_the_finite_ask_holds_each_float_leaf_it_names_finite_before_the_path() -> None:
     prefix = (fork(["<", "n", 3], taken=True), fork([">", "x", 2.5], taken=False))
 
-    leaves = {"n": int, "x": float, "y": float}
-    lines = program(prefix, leaves, finite=True).text.splitlines()
+    lines = _finite_lines(prefix, {"n": int, "x": float, "y": float}, {"x", "y"})
 
-    # y is on no fork, so it is not declared, and n is an int, which is always finite
-    assert lines[:5] == [
+    # each held leaf is named for its symbol, so cvc5's dumped unsat core says which of them
+    # the unsat rests on. y is on no fork, so it is not declared or held, and n is an int
+    assert lines[:6] == [
+        "(set-option :dump-unsat-cores true)",
         "(set-logic ALL)",
         f"(declare-const {N} Int)",
         f"(declare-const {X} Float64)",
-        f"(assert {finite(X)})",
+        f"(assert (! {finite(X)} :named finite!arg.x))",
         f"(assert (< {N} 3))",
     ]
     assert Y not in "\n".join(lines)
 
 
-def test_the_finite_ask_on_a_path_of_no_float_is_the_path_itself() -> None:
-    prefix = (fork(["<", "n", 3], taken=True),)
+def test_a_leaf_left_out_of_the_finite_ask_may_be_any_double() -> None:
+    prefix = (fork(["==", "x", "y"], taken=False),)
 
-    assert program(prefix, {"n": int}, finite=True).text == render(prefix, {"n": int})
+    lines = _finite_lines(prefix, {"x": float, "y": float}, {"y"})
+
+    assert f"(assert (! {finite(Y)} :named finite!arg.y))" in lines
+    assert f"fp.isNaN {X}" not in "\n".join(lines)
 
 
-def test_a_path_names_a_float_when_a_fork_names_a_float_leaf() -> None:
-    leaves = {"n": int, "x": float}
+def test_a_finite_ask_holding_no_leaf_is_the_path_itself() -> None:
+    prefix = (fork([">", "x", 2.5], taken=True),)
 
-    assert names_a_float((fork([">", ["abs", "x"], 1.0], taken=True),), leaves)
-    assert not names_a_float((fork(["<", "n", 3], taken=True),), leaves)
-    assert not names_a_float((fork(["<", "n", 3], taken=True),), {"n": int})
-    assert not names_a_float((), leaves)
+    plain = render(prefix, {"x": float})
+    assert program(prefix, {"x": float}, finite=()).text == plain
+    assert program(prefix, {"x": float}, finite={"n"}).text == plain
+
+
+def test_the_float_leaves_are_those_a_fork_names() -> None:
+    leaves = {"n": int, "x": float, "y": float}
+
+    assert float_leaves((fork([">", ["abs", "x"], "y"], taken=True),), leaves) == {"x", "y"}
+    assert float_leaves((fork([">", "x", 1.0], taken=True),), leaves) == {"x"}
+    assert float_leaves((fork(["<", "n", 3], taken=True),), leaves) == set()
+    assert float_leaves((fork(["<", "n", 3], taken=True),), {"n": int}) == set()
+    assert float_leaves((), leaves) == set()
