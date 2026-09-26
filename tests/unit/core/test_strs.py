@@ -335,10 +335,12 @@ def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
     assert sink == [Downgrade(name=name)]
 
 
-# a keyword str's own method refuses: one it names nowhere, and one on a method that takes none
+# a keyword str's own method refuses: one encode names nowhere, and one to a taught search,
+# whose str method takes none; index is the search that forks before it may raise
 REFUSED_KEYWORDS: dict[str, Callable[[str], object]] = {
     "s.encode(bogus=1)": lambda s: s.encode(bogus=1),  # pyrefly: ignore[unexpected-keyword]
     's.find("x", start=1)': lambda s: s.find("x", start=1),  # pyrefly: ignore[unexpected-keyword]
+    's.index("x", start=1)': lambda s: s.index("x", start=1),  # pyrefly: ignore[unexpected-keyword]
 }
 
 
