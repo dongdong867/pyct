@@ -1,6 +1,8 @@
+from collections.abc import Callable
+
 import pytest
 
-from pyct.cli import RunCommand, UsageError, parse_command, parse_solver_timeout
+from pyct.cli import RunCommand, UsageError, parse_budget, parse_command, parse_solver_timeout
 from pyct.config.solver_timeout import SolverTimeout
 
 
@@ -65,3 +67,25 @@ def test_parse_solver_timeout_refuses_anything_but_a_positive_number(text: str) 
 
     # the value is named as it was typed, so the text can be found on the command line
     assert repr(text) in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("parse", "text", "refusal"),
+    [
+        (parse_budget, "abc", "budget must be a number of seconds, got 'abc'"),
+        (parse_budget, "0", "budget must be a finite number of seconds above zero, got '0'"),
+        (parse_solver_timeout, "abc", "solver timeout must be a number of seconds, got 'abc'"),
+        (
+            parse_solver_timeout,
+            "0",
+            "solver timeout must be a finite number of seconds above zero, got '0'",
+        ),
+    ],
+)
+def test_the_two_seconds_flags_refuse_in_the_same_words(
+    parse: Callable[[str | None], object], text: str, refusal: str
+) -> None:
+    with pytest.raises(UsageError) as refused:
+        parse(text)
+
+    assert str(refused.value) == refusal
