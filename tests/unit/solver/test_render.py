@@ -5,9 +5,18 @@ import pytest
 
 from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import SolverAnswerError
-from pyct.solver.render import program
-from pyct.solver.strings import above, below, last_index, occurrences
+from pyct.solver.render import render
+from pyct.solver.strings import (
+    above,
+    below,
+    character,
+    last_index,
+    occurrences,
+    piece,
+    replaced,
+    without_prefix,
+    without_suffix,
+)
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -269,96 +278,69 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
     ]
 
 
-# a value inside an argument, as bind names it and as leaves keys it
-PORT: Expression = ["[]", ["[]", "config", "'server'"], "'port'"]
-FIRST: Expression = ["[]", "items", 0]
-SECOND: Expression = ["[]", "items", 1]
+# each piece as the expression carries it, and the term the program carries for it
+PIECES: dict[str, tuple[Expression, str]] = {
+    "index": (["[]", "s", 0], character("s", 0)),
+    # a negative index reaches its form as the number it is, not a subtraction already written
+    "negative-index": (["[]", "s", -1], character("s", -1)),
+    "slice": (["[:]", "s", 1, 3], piece("s", 1, 3)),
+    "slice-missing-stop": (["[:]", "s", 2, None], piece("s", 2, None)),
+    "slice-missing-start": (["[:]", "s", None, -1], piece("s", None, -1)),
+    "plus": (["+", "s", "t"], "(str.++ s t)"),
+    "plus-literal-first": (["+", "'x'", "s"], '(str.++ "x" s)'),
+    "replace": (["replace", "s", "'a'", "t"], replaced("s", '"a"', "t")),
+    "removeprefix": (["removeprefix", "s", "'x'"], without_prefix("s", '"x"')),
+    "removesuffix": (["removesuffix", "s", "t"], without_suffix("s", "t")),
+    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character(piece("s", 1, None), 0)),
+}
 
 
-def test_a_value_inside_an_argument_is_declared_under_a_constant_of_its_own() -> None:
-    text = render((fork(["<", PORT, 1], taken=True),), {json.dumps(PORT): int})
+@pytest.mark.parametrize(("expression", "term"), PIECES.values(), ids=list(PIECES))
+def test_a_piece_is_written_as_the_term_that_means_it(expression: Expression, term: str) -> None:
+    text = render((fork(["==", expression, "'ab'"], taken=True),), {"s": str, "t": str})
 
-    assert text.splitlines() == [
-        "(set-logic ALL)",
-        "(declare-const |leaf.0| Int)",
-        "(assert (< |leaf.0| 1))",
-        "(check-sat)",
-        "(get-value (|leaf.0|))",
-    ]
+    assert f'(assert (= {term} "ab"))' in text.splitlines()
 
 
-def test_two_values_inside_one_argument_are_two_constants() -> None:
-    leaves = {"x": int, json.dumps(FIRST): int, json.dumps(SECOND): int}
+def test_the_length_of_a_string_is_cvc5s_own() -> None:
+    text = render((fork([">", ["len", "s"], 3], taken=False),), {"s": str})
 
-    text = render((fork(["==", FIRST, SECOND], taken=False),), leaves)
-
-    lines = text.splitlines()
-    assert lines[1:3] == ["(declare-const |leaf.1| Int)", "(declare-const |leaf.2| Int)"]
-    assert "(assert (not (= |leaf.1| |leaf.2|)))" in lines
+    assert "(assert (not (> (str.len s) 3)))" in text.splitlines()
 
 
-def test_a_str_inside_an_argument_compares_as_a_string() -> None:
-    text = render((fork(["==", FIRST, "'x'"], taken=True),), {json.dumps(FIRST): str})
-
-    lines = text.splitlines()
-    assert "(declare-const |leaf.0| String)" in lines
-    assert '(assert (= |leaf.0| "x"))' in lines
-    ordered = render(
-        (fork(["<", FIRST, SECOND], taken=True),),
-        {
-            json.dumps(FIRST): str,
-            json.dumps(SECOND): str,
-        },
+def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
+    text = render(
+        (
+            fork(["==", ["+", "s", "'a'"], "'ba'"], taken=True),
+            fork(["<", ["+", "x", 1], 3], taken=True),
+        ),
+        {"s": str, "x": int},
     )
-    assert "(assert (str.< |leaf.0| |leaf.1|))" in ordered.splitlines()
+
+    assert '(assert (= (str.++ s "a") "ba"))' in text.splitlines()
+    assert "(assert (< (+ x 1) 3))" in text.splitlines()
 
 
-def test_an_access_the_seed_does_not_hold_names_its_parameter_in_the_error() -> None:
-    # not a leaf, so an operation on items, and items is no leaf either
-    with pytest.raises(ValueError, match="items"):
-        render((fork(["<", ["[]", "items", 5], 1], taken=True),), {json.dumps(FIRST): int})
+def test_an_order_on_a_piece_against_a_literal_is_written_letter_by_letter() -> None:
+    text = render((fork(["<", ["[:]", "s", 1, 3], "'mn'"], taken=True),), {"s": str})
+
+    assert f"(assert {below(piece('s', 1, 3), 'mn', or_equal=False)})" in text.splitlines()
 
 
-def test_a_program_reads_its_answer_back_by_leaf() -> None:
-    leaves = {"x": int, "y": int, json.dumps(PORT): int}
-    path = (fork([">", ["+", "x", PORT], 1], taken=True),)
+def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
+    # neither side is a literal or a name, so the heads alone say both sides are strings
+    text = render(
+        (fork([">=", ["[]", "s", 0], ["+", "t", "t"]], taken=True),), {"s": str, "t": str}
+    )
 
-    written = program(path, leaves)
-
-    # y is not on the path, so it is neither declared nor read
-    assert written.names_by_symbol == {"arg.x": "x", "leaf.2": json.dumps(PORT)}
-    assert written.read({"arg.x": 3, "leaf.2": 70000}) == {"x": 3, json.dumps(PORT): 70000}
+    assert f"(assert (str.<= (str.++ t t) {character('s', 0)}))" in text.splitlines()
 
 
-@pytest.mark.parametrize(
-    ("name", "constant"),
-    [
-        pytest.param("div", "|arg.div|", id="a word of the solver's own"),
-        pytest.param("café", "|arg.caf%C3%A9|", id="past ascii"),
-        # a **kwargs key need not be a name; a quoted symbol cannot hold `|` or a backslash
-        pytest.param("a|b\\c", "|leaf.0|", id="not an identifier"),
-    ],
-)
-def test_every_constant_is_quoted_under_pycts_own_prefix(name: str, constant: str) -> None:
-    text = render((fork([">", name, 3], taken=True),), {name: int})
-
-    assert f"(declare-const {constant} Int)" in text.splitlines()
-    assert f"(assert (> {constant} 3))" in text.splitlines()
+def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
+    with pytest.raises(ValueError, match="position"):
+        render((fork(["==", ["[]", "s", "n"], "'a'"], taken=True),), {"s": str, "n": int})
 
 
-def test_an_access_is_a_leaf_by_the_steps_binding_takes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # an attribute is a step binding may take next; the solver follows with no change of its own
-    monkeypatch.setattr(bind, "_STEPS", frozenset({"[]", "getattr"}))
-    limit: Expression = ["getattr", "rule", "'limit'"]
-
-    text = render((fork([">", limit, 100], taken=True),), {json.dumps(limit): int})
-
-    assert "(declare-const |leaf.0| Int)" in text.splitlines()
-    assert "(assert (> |leaf.0| 100))" in text.splitlines()
-
-
-def test_a_model_about_a_symbol_the_program_did_not_declare_is_unreadable() -> None:
-    written = program((fork(["<", "x", 10], taken=True),), {"x": int})
-
-    with pytest.raises(SolverAnswerError, match="arg.y"):
-        written.read({"arg.x": 3, "arg.y": 4})
+def test_a_missing_bound_outside_a_slice_is_an_error() -> None:
+    with pytest.raises(ValueError, match="missing bound"):
+        render((fork(["==", "s", None], taken=True),), {"s": str})

@@ -10,13 +10,18 @@ from pyct.solver.answer import SolverAnswerError
 from pyct.solver.strings import (
     above,
     below,
+    character,
     contains,
     encode,
     ends_with,
     first_index,
     last_index,
     occurrences,
+    piece,
+    replaced,
     starts_with,
+    without_prefix,
+    without_suffix,
 )
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
@@ -41,7 +46,14 @@ OPERATORS: Mapping[str, str] = {
     "*": "*",
     "abs": "abs",
     "**": "^",
+    "len": "str.len",
 }
+
+# an operator SMT-LIB spells apart on strings: `+` joins two strings where it adds two ints
+STRING_OPERATORS: Mapping[str, str] = {"+": "str.++"}
+
+# the heads whose value is a string whatever their operands are: a piece of a string
+STRING_HEADS = frozenset({"[]", "[:]", "replace", "removeprefix", "removesuffix"})
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
 # whether its operands swap. `a > b` is written `b < a`, the same term the target would have
@@ -74,9 +86,9 @@ def _modulo(dividend: str, divisor: str) -> str:
 
 
 # an operation SMT-LIB has no operator for, or spells in another order, written out as the form
-# that means it. The operands arrive rendered, in the expression's order, so a form only joins
-# text.
-FORMS: Mapping[str, Callable[[str, str], str]] = {
+# that means it. The operands arrive rendered, as many as the expression holds and in its
+# order, so a form only joins text.
+FORMS: Mapping[str, Callable[..., str]] = {
     "//": _floor_division,
     "%": _modulo,
     "in": contains,
@@ -89,7 +101,14 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
     # find it mirrors
     "index": first_index,
     "rindex": last_index,
+    "replace": replaced,
+    "removeprefix": without_prefix,
+    "removesuffix": without_suffix,
 }
+
+# a piece taken at positions: the string arrives rendered, and each position as the plain int
+# it is, or None for a slice's missing bound, so the form sees its sign
+POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": piece}
 
 
 @dataclass(frozen=True)
@@ -220,33 +239,72 @@ def _assertion(fork: Branch, leaves: _Leaves) -> str:
     return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
 
-def _expression(expression: Expression, leaves: _Leaves) -> str:
-    """One condition, operator first. A negative number is a subtraction from nothing."""
-    if isinstance(expression, bool):
-        return "true" if expression else "false"
-    if isinstance(expression, int):
-        return f"(- {-expression})" if expression < 0 else str(expression)
-    name = leaves.named(expression)
-    if name is not None:
-        return leaves.constants[name]
-    if isinstance(expression, str):
-        return encode(_value(expression))
-    head, *operands = expression
+def _expression(expression: Expression, leaves: Mapping[str, type]) -> str:
+    """One condition, operator first."""
+    if isinstance(expression, list):
+        head, *operands = expression
+        return _operation(head, operands, leaves)
+    return _leaf(expression)
+
+
+def _leaf(leaf: str | int | bool | None) -> str:
+    """A number, a truth value, a string literal or a name. A negative number is a subtraction."""
+    if leaf is None:
+        raise ValueError("pyct cannot render a missing bound outside a slice")
+    if isinstance(leaf, bool):
+        return "true" if leaf else "false"
+    if isinstance(leaf, int):
+        return f"(- {-leaf})" if leaf < 0 else str(leaf)
+    return encode(_value(leaf)) if _is_literal(leaf) else leaf
+
+
+def _operation(head: Expression, operands: list[Expression], leaves: Mapping[str, type]) -> str:
+    """An operation on its operands, as the form, the order or the operator that means it."""
+    if not isinstance(head, str):
+        raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+    if (positioned := POSITIONED.get(head)) is not None:
+        term, *positions = operands
+        return positioned(_expression(term, leaves), *(_position(part) for part in positions))
     rendered = [_expression(part, leaves) for part in operands]
-    form = FORMS.get(head) if isinstance(head, str) else None
-    if form is not None and len(rendered) == 2:
-        return form(rendered[0], rendered[1])
-    if isinstance(head, str) and head in STRING_ORDERS and _on_strings(operands, leaves):
+    if (form := FORMS.get(head)) is not None:
+        return form(*rendered)
+    if head in STRING_ORDERS and _on_strings(operands, leaves):
         return _string_order(head, operands, rendered)
-    return "({} {})".format(_operator(head), " ".join(rendered))
+    if head in STRING_OPERATORS and _on_strings(operands, leaves):
+        return f"({STRING_OPERATORS[head]} {' '.join(rendered)})"
+    return f"({_operator(head)} {' '.join(rendered)})"
 
 
-def _on_strings(operands: list[Expression], leaves: _Leaves) -> bool:
-    """Whether a compare's operands are strings: a string literal, or a leaf bound to a str.
+def _position(part: Expression) -> int | None:
+    """A position in a piece, as the plain int it is, or None for a slice's missing bound."""
+    if part is None or (isinstance(part, int) and not isinstance(part, bool)):
+        return part
+    raise ValueError(f"pyct cannot render {part} as a position: core writes a plain int there")
 
-    Both operands of a compare are of one sort, so one string between them decides it.
+
+def _on_strings(operands: list[Expression], leaves: Mapping[str, type]) -> bool:
+    """Whether an operation's operands are strings.
+
+    Both operands of a compare or a `+` are of one sort, so one string
+    between them decides it.
     """
-    return any(_literal(part) is not None or leaves.kind(part) is str for part in operands)
+    return any(_is_string(part, leaves) for part in operands)
+
+
+def _is_string(term: Expression, leaves: Mapping[str, type]) -> bool:
+    """Whether a term is a string.
+
+    A string literal, a name bound to a str, a piece of a string, and a `+`
+    on strings are.
+    """
+    if isinstance(term, str):
+        return _is_literal(term) or leaves.get(term) is str
+    if not isinstance(term, list) or not term:
+        return False
+    head, *operands = term
+    return isinstance(head, str) and (
+        head in STRING_HEADS or (head in STRING_OPERATORS and _on_strings(operands, leaves))
+    )
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
@@ -284,9 +342,9 @@ def _value(literal: str) -> str:
     return value
 
 
-def _operator(head: Expression) -> str:
+def _operator(head: str) -> str:
     """How SMT-LIB spells the operator a condition leads with."""
-    operator = OPERATORS.get(head) if isinstance(head, str) else None
+    operator = OPERATORS.get(head)
     if operator is None:
         raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
     return operator
