@@ -17,8 +17,8 @@ from tests.compare_coverage.acceptance.checker import (
     DEFAULT_LIMITS,
     IMPLIED_CHECK,
     ONE_CHECK,
+    ONE_CHECK_ENTRY,
     ONE_CHECK_FILE,
-    REPO_ROOT,
     TWO_ARGS,
     a_run,
     compare_on,
@@ -26,6 +26,7 @@ from tests.compare_coverage.acceptance.checker import (
     one_row,
     read_limits,
     read_records,
+    roots,
     rows,
     run_checker,
     table_rows,
@@ -36,13 +37,11 @@ from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage.accepted import Accepted, key_of
 from tools.compare_coverage.accepted import read_records as read_file
 from tools.compare_coverage.compare import Sides
-from tools.compare_coverage.entries import Entry, Origin
+from tools.compare_coverage.entries import Entry
 from tools.compare_coverage.process import side_environment
 from tools.compare_coverage.v2_side import Stamp, V2Side
 
 type Row = dict[str, Any]
-
-ONE_CHECK_ENTRY = Entry(set="v2", module="targets.flip.one_check", name="classify", seed={"x": 0})
 
 # a gap v2 has since closed: legacy covered line 4 and v2 did not
 ONE_CHECK_GAP = {
@@ -163,7 +162,7 @@ class LegacyFails:
         self.sides = Sides(v2=v2, legacy=legacy_side(stub.path))
         self.stub = stub
         self.file = tmp_path / "accepted.jsonl"
-        self.roots = {Origin.V2: REPO_ROOT, Origin.LEGACY: stub.path}
+        self.roots = roots(stub.path)
 
     def run(self, v2_lines: list[int], error: str, accept: bool = False) -> tuple[int, Row]:
         self.lines.write_text(json.dumps(v2_lines))
@@ -255,13 +254,12 @@ def test_accepts_a_failure_whose_text_names_an_address(
     root.mkdir()
     (root / "closure_deco.py").write_text(CLOSURE_DECORATED)
     entry = Entry(set="v2", module="closure_deco", name="wrapped", seed={"x": 0})
-    roots = {Origin.V2: root, Origin.LEGACY: legacy_checkout}
     sides = Sides(v2=v2_side(), legacy=legacy_side(legacy_checkout))
     file = tmp_path / "accepted.jsonl"
     listed = frozenset({key_of("closure_deco::wrapped", {"x": 0})})
 
     for accept in (True, False):
-        run = a_run([entry], roots)
+        run = a_run([entry], roots(legacy_checkout, v2=root))
         records = read_file(file, accept, run.limits)
         accepted = Accepted(path=file, records=records, accept=accept, listed=listed)
         code, (row,), _ = compare_on(replace(run, accepted=accepted), sides)

@@ -13,21 +13,22 @@ from pathlib import Path
 from tests.compare_coverage.acceptance.checker import (
     IMPLIED_CHECK,
     ONE_CHECK,
+    ONE_CHECK_ENTRY,
     REPO_ROOT,
     a_run,
     compare_on,
     legacy_side,
     one_row,
+    roots,
     run_checker,
     v2_side,
 )
 from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage.compare import Sides
-from tools.compare_coverage.entries import Entry, Origin
+from tools.compare_coverage.entries import Entry
 from tools.compare_coverage.sides import Limits
 from tools.compare_coverage.v2_side import Stamp
 
-ONE_CHECK_ENTRY = Entry(set="v2", module="targets.flip.one_check", name="classify", seed={"x": 0})
 IMPLIED_ENTRY = Entry(set="v2", module="targets.flip.implied_check", name="narrow", seed={"x": 3})
 
 # stands in for pyct run: a summary line stamped with a Python that is not the checker's
@@ -42,10 +43,6 @@ print(json.dumps({
 """
 
 
-def roots(stub: StubCheckout, v2: Path = REPO_ROOT) -> dict[Origin, Path]:
-    return {Origin.V2: v2, Origin.LEGACY: stub.path}
-
-
 def real_sides(stub: StubCheckout) -> Sides:
     return Sides(v2=v2_side(), legacy=legacy_side(stub.path))
 
@@ -55,7 +52,7 @@ def test_fails_a_target_v2_refuses(stub_checkout: StubCheckout) -> None:
     refused = Entry(
         set="v2", module="targets.annotations.plain", name="echo_number", seed={"n": "5"}
     )
-    run = a_run([refused, ONE_CHECK_ENTRY], roots(stub_checkout))
+    run = a_run([refused, ONE_CHECK_ENTRY], roots(stub_checkout.path))
 
     code, (row, after), _ = compare_on(run, real_sides(stub_checkout))
 
@@ -85,7 +82,7 @@ def test_fails_a_quiet_success(stub_checkout: StubCheckout, tmp_path: Path) -> N
     stub_checkout.script({ONE_CHECK: {"exit": 0}})
 
     code, (silent,), _ = compare_on(
-        a_run([ONE_CHECK_ENTRY], roots(stub_checkout)), real_sides(stub_checkout)
+        a_run([ONE_CHECK_ENTRY], roots(stub_checkout.path)), real_sides(stub_checkout)
     )
 
     assert silent["status"] == "legacy failed"
@@ -97,7 +94,7 @@ def test_fails_a_quiet_success(stub_checkout: StubCheckout, tmp_path: Path) -> N
     sides = Sides(v2=v2_side((sys.executable, str(fake))), legacy=legacy_side(stub_checkout.path))
     stub_checkout.script({})
 
-    code, (stamped,), _ = compare_on(a_run([ONE_CHECK_ENTRY], roots(stub_checkout)), sides)
+    code, (stamped,), _ = compare_on(a_run([ONE_CHECK_ENTRY], roots(stub_checkout.path)), sides)
 
     here = Stamp.here()
     assert stamped["status"] == "v2 failed"
@@ -110,7 +107,9 @@ def test_fails_a_quiet_success(stub_checkout: StubCheckout, tmp_path: Path) -> N
 def test_stops_a_side_that_runs_too_long(stub_checkout: StubCheckout) -> None:
     """compare-coverage-against-legacy-stops-a-side-that-runs-too-long"""
     stub_checkout.script({ONE_CHECK: {"sleep": 30}})
-    run = a_run([ONE_CHECK_ENTRY, IMPLIED_ENTRY], roots(stub_checkout), limits=Limits(budget=1.0))
+    run = a_run(
+        [ONE_CHECK_ENTRY, IMPLIED_ENTRY], roots(stub_checkout.path), limits=Limits(budget=1.0)
+    )
 
     code, (stopped, after), stderr = compare_on(run, real_sides(stub_checkout))
 
@@ -145,7 +144,7 @@ def test_fails_a_side_that_loads_another_file(stub_checkout: StubCheckout, tmp_p
         Entry(set="v2", module="shutil", name="which", seed={"cmd": "x"}),
         Entry(set="v2", module="alias", name="named", seed={"x": 0}),
     ]
-    run = a_run(entries, roots(stub_checkout, v2=tmp_path))
+    run = a_run(entries, roots(stub_checkout.path, v2=tmp_path))
 
     code, (shadowed, alias), _ = compare_on(run, real_sides(stub_checkout))
 

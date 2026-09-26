@@ -30,6 +30,13 @@ ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 # line 5 is unreachable: x < 5 always holds x < 10, so no engine can cover it
 IMPLIED_CHECK = "targets.flip.implied_check::narrow"
 TWO_ARGS = "targets.flip.two_args::pick"
+# one_check's committed entry, for the tests that run it through compare()
+ONE_CHECK_ENTRY = Entry(set="v2", module="targets.flip.one_check", name="classify", seed={"x": 0})
+
+
+def roots(legacy: Path, v2: Path = REPO_ROOT) -> dict[Origin, Path]:
+    """Where each origin's files live: this checkout for v2, unless given, and ``legacy``."""
+    return {Origin.V2: v2, Origin.LEGACY: legacy}
 
 
 def run_checker(
