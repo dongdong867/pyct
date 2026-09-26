@@ -1,12 +1,13 @@
 import logging
 import shutil
+import time
 from pathlib import Path
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
-from pyct.solver.cvc5 import solve
+from pyct.solver.cvc5 import GRACE_SECONDS, solve
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -34,7 +35,7 @@ def fake_cvc5(directory: Path, *, out: str = "", err: str = "", code: int = 0) -
     script.chmod(0o755)
 
 
-def ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: float | None = None) -> object:
+def ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: float = 10.0) -> object:
     """One solve of the one-fork path, against whatever cvc5 the tmp directory holds."""
     monkeypatch.setenv("PATH", str(tmp_path))
     return solve((fork(["<", "x", 10], taken=False),), {"x": int}, timeout)
@@ -107,23 +108,58 @@ def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
     assert "--tlimit=1500" in (tmp_path / "argv").read_text()
 
 
-def test_no_timeout_leaves_the_solver_unlimited(
+def test_a_limit_under_a_millisecond_reaches_the_solver_as_one(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
 
-    ask(tmp_path, monkeypatch, timeout=None)
+    # a nearly spent budget gives a limit like this; cvc5 reads --tlimit=0 as no limit
+    ask(tmp_path, monkeypatch, timeout=0.0001)
 
-    assert "--tlimit" not in (tmp_path / "argv").read_text()
+    assert "--tlimit=1" in (tmp_path / "argv").read_text().split()
+
+
+def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, out="unsat\n")
+
+    # about 115 days, past the 2**31 - 1 milliseconds Python's poll can wait
+    assert ask(tmp_path, monkeypatch, timeout=1e7) == Unsat()
+
+    # cut to that wait in whole seconds, less the grace second, and no shorter
+    assert "--tlimit=2147482000" in (tmp_path / "argv").read_text().split()
+
+
+def test_a_solver_that_runs_past_its_limit_is_stopped_as_a_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    script = tmp_path / "cvc5"
+    # it reads the formula and ignores --tlimit; exec lets stopping the script stop the sleep
+    script.write_text("#!/bin/sh\nPATH=/bin:/usr/bin\ncat > /dev/null\nexec sleep 3600\n")
+    script.chmod(0o755)
+
+    started = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.cvc5"):
+        answer = ask(tmp_path, monkeypatch, timeout=0.1)
+    elapsed = time.monotonic() - started
+
+    assert answer == Timeout()
+    # pyct gives it the limit and the grace, then stops it, instead of waiting on the sleep
+    assert 0.1 + GRACE_SECONDS <= elapsed < 0.1 + GRACE_SECONDS + 1.0, elapsed
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1, caplog.text
+    # the command line holds the limit, so the warning does not repeat it
+    assert warnings[0].getMessage() == "pyct stopped cvc5, which ran past its time limit"
 
 
 @pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
 def test_the_real_cvc5_answers_both_ways() -> None:
-    reachable = solve((fork(["<", "x", 10], taken=False),), {"x": int}, None)
+    reachable = solve((fork(["<", "x", 10], taken=False),), {"x": int}, 10.0)
     assert isinstance(reachable, Sat)
     value = reachable.model["x"]
     assert isinstance(value, int)
     assert value >= 10
 
     contradiction = (fork(["<", "x", 5], taken=True), fork(["<", "x", 10], taken=False))
-    assert solve(contradiction, {"x": int}, None) == Unsat()
+    assert solve(contradiction, {"x": int}, 10.0) == Unsat()

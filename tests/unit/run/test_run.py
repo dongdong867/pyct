@@ -8,6 +8,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
+from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext
 from pyct.results.coverage import Coverage
@@ -97,6 +98,52 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)
+
+
+def limits_given(monkeypatch: pytest.MonkeyPatch, limits: Limits) -> list[float]:
+    """The time limit each solve got, over a run whose one fork the solver misses."""
+    given: list[float] = []
+
+    def unknown(prefix: object, names: object, timeout: float) -> Answer:
+        given.append(timeout)
+        return Unknown()
+
+    monkeypatch.setattr("pyct.run.run.solve", unknown)
+    run(load_target("targets.flip.one_check::classify"), {"x": 3}, limits=limits)
+    return given
+
+
+def test_a_run_with_no_limits_gives_each_solve_ten_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert limits_given(monkeypatch, Limits()) == [10.0]
+
+
+def test_each_solve_gets_the_solver_timeout_when_there_is_no_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = Limits(solver_timeout=SolverTimeout(seconds=2.5))
+
+    assert limits_given(monkeypatch, limits) == [2.5]
+
+
+def test_a_solve_gets_the_solver_timeout_when_the_budget_has_more_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = Limits(budget=Budget(seconds=30.0), solver_timeout=SolverTimeout(seconds=1.0))
+
+    assert limits_given(monkeypatch, limits) == [1.0]
+
+
+def test_a_solve_gets_what_is_left_of_the_budget_when_that_is_shorter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    limits = Limits(budget=Budget(seconds=5.0), solver_timeout=SolverTimeout(seconds=30.0))
+
+    (given,) = limits_given(monkeypatch, limits)
+
+    # the seed ran first, so some of the budget is gone, and the rest is still above zero
+    assert 0 < given <= 5.0
 
 
 def test_run_solves_for_the_other_side_of_the_seeds_fork() -> None:
