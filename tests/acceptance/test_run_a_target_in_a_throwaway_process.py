@@ -39,6 +39,7 @@ EXITS = "targets.isolate.exits::leave"
 ABORTS = "targets.isolate.aborts::give_up"
 PRINTS = "targets.isolate.prints::speak"
 READS_STDIN = "targets.isolate.reads_stdin::ask"
+BASE_RAISES = "targets.isolate.base_raises::stop"
 C_HANG = "targets.isolate.c_hang::stall"
 C_HANG_FILE = ISOLATE / "c_hang.py"
 SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
@@ -384,3 +385,30 @@ def test_stops_when_it_cannot_start_an_input(
     stopped = err.splitlines().index("stopped: could not start an input")
     assert "Resource temporarily unavailable" in err.splitlines()[stopped + 1]
     assert err.splitlines()[stopped + 1].startswith("    ")
+
+
+def args_of(line: dict[str, object]) -> dict[str, int]:
+    args = line["args"]
+    assert isinstance(args, dict), line
+    return args
+
+
+def failure_of(line: dict[str, object]) -> dict[str, object]:
+    failure = line["failure"]
+    assert isinstance(failure, dict), line
+    return failure
+
+
+# run-a-target-in-a-throwaway-process-reports-a-base-exception-the-target-raises
+def test_reports_a_base_exception_the_target_raises() -> None:
+    result = run_pyct(BASE_RAISES, '{"x": 0, "y": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    interrupted = [line for line in inputs if args_of(line)["x"] > 3]
+    halted = [line for line in inputs if args_of(line)["x"] <= 3 and args_of(line)["y"] > 3]
+    assert interrupted and halted, result.stdout
+    assert failure_of(interrupted[0]) == {"kind": "target_raised", "detail": "KeyboardInterrupt"}
+    assert failure_of(halted[0])["kind"] == "target_raised"
+    assert str(failure_of(halted[0])["detail"]).endswith("Halt: halted")
+    assert "stopped" in json.loads(result.stdout.splitlines()[-1])

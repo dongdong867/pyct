@@ -52,10 +52,11 @@ class Isolation:
 
 def isolation(target: Target, isolated: bool) -> Isolation:
     """Choose once, for the whole run, where its inputs run."""
-    ctx = ExecutionContext(fn=target.fn, file=target.file)
     if not isolated:
+        ctx = ExecutionContext(fn=target.fn, file=target.file)
         return Isolation(call=functools.partial(execute, ctx), isolated=False)
-    return Isolation(call=functools.partial(in_a_child, ctx), isolated=True)
+    alone = ExecutionContext(fn=target.fn, file=target.file, alone=True)
+    return Isolation(call=functools.partial(in_a_child, alone), isolated=True)
 
 
 def in_a_child(

@@ -21,10 +21,18 @@ _TOOL_IDS = (3, 4, 0, 1, 2, 5)
 
 @dataclass(frozen=True)
 class ExecutionContext:
-    """What stays fixed across calls: the callable and the file whose lines count."""
+    """What stays fixed across calls: the callable, the file whose lines count, and what a raise is.
+
+    ``alone`` says each call has its process to itself, as in a child process
+    pyct starts for one input. No Ctrl-C reaches such a call as a raise, so a
+    KeyboardInterrupt, or another BaseException that is neither an Exception
+    nor SystemExit, is a raise like any other and ends the call as one. In
+    pyct's own process it may be the person's Ctrl-C, so it passes through.
+    """
 
     fn: Callable[..., object]
     file: str
+    alone: bool = False
 
 
 @dataclass(frozen=True)
@@ -53,7 +61,7 @@ def execute(
     sink belongs to one call and nothing outside this function needs it.
     ``run()`` stays assembly. A raise in the target is a failure on the
     result, not an exception here; ``KeyboardInterrupt`` is the person's
-    and passes through.
+    and passes through, unless the call is ``ctx.alone`` in its process.
 
     ``watch`` hears each fork, line and downgrade the moment the call makes
     it, so a caller whose process can die mid-call keeps what the call did.
@@ -63,7 +71,7 @@ def execute(
     tracer = _LineTracer(ctx.file, tally)
     tracer.start()
     try:
-        ending = _call(ctx.fn, bound, until)
+        ending = _call(ctx, bound, until)
     finally:
         tracer.stop()
     # sealed before the failure is written: writing it asks the raise for its text, which
@@ -89,14 +97,15 @@ class _Ending:
     called: bool
 
 
-def _call(fn: Callable[..., object], bound: Mapping[str, object], until: float | None) -> _Ending:
+def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | None) -> _Ending:
     """Call the target and keep how it ended, for ``_failure`` to write once the sink is read."""
     called = False
+    caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
         with deadline(until):
             called = True
-            fn(**bound)
-    except (DeadlineError, SystemExit, Exception) as error:
+            ctx.fn(**bound)
+    except caught as error:
         return _Ending(error=error, called=called)
     return _Ending(error=None, called=called)
 
@@ -110,7 +119,7 @@ def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")  # pragma: no cover
     if isinstance(error, SystemExit):
         return Failure(kind=FailureKind.SYSTEM_EXIT, detail=one_line(error))
-    if isinstance(error, Exception):
+    if error is not None:
         return blame(fn, error, called=ending.called)
     return None
 
