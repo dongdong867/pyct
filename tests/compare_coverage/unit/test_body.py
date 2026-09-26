@@ -250,6 +250,16 @@ def test_a_name_bound_again_after_its_definition_is_refused(tmp_path: Path, rebi
         read_body(file, "f")
 
 
+@pytest.mark.parametrize("after", ["f.calls = 0", "f.calls: int = 0", "f = wrap(f)"])
+def test_setting_an_attribute_or_wrapping_the_name_keeps_the_definition(
+    tmp_path: Path, after: str
+) -> None:
+    # a call of the wrapper still reaches the body, as it does under a decorator
+    source = f"def wrap(fn):\n    return fn\n\n\ndef f():\n    return 2\n\n\n{after}\n"
+
+    assert read_body(write(tmp_path, source), "f").own_lines == frozenset({6})
+
+
 def test_a_name_bound_before_its_definition_is_its_definition(tmp_path: Path) -> None:
     file = write(tmp_path, "from os import path as f\nf = 1\n\n\ndef f():\n    return 2\n")
 

@@ -4,8 +4,9 @@ The checker decides which lines belong to the target, not either side, so the tw
 never disagree about it (decision own-lines-from-the-compiled-code). The rule:
 
 - ``NAME`` is the last top-level ``def``, ``async def`` or ``class`` of that name in the file.
-  A top-level assignment or import after it that binds the name again is refused: a call
-  would then run another object, and both sides would cover none of this body.
+  A top-level assignment or import after it that binds the name to another object is
+  refused: a call would then run that object, and both sides would cover none of this body.
+  ``NAME = wrap(NAME)`` is not refused, since it wraps the target as a decorator does.
 - Its own lines are the lines its compiled code runs, read from the line table of its code
   object and of the code nested in it, such as an inner function. A line inside a statement
   that spans several lines stands for the innermost statement that holds it, as Python's
@@ -94,24 +95,44 @@ def _rebinding(tree: ast.Module, definition: Definition) -> int | None:
     """The line of the first top-level assignment or import to bind the name after its def."""
     after = tree.body[tree.body.index(definition) + 1 :]
     for statement in after:
-        if definition.name in _bound(statement):
+        if _binds(statement, definition.name):
             return statement.lineno
     return None
 
 
-def _bound(statement: ast.stmt) -> set[str]:
-    """The names a top-level assignment or import binds."""
+def _binds(statement: ast.stmt, name: str) -> bool:
+    """True when a top-level assignment or import binds ``name`` to another object.
+
+    Setting an attribute of the name binds nothing, and ``name = wrap(name)`` wraps the object
+    the way a decorator does, so a call still reaches its body.
+    """
     if isinstance(statement, ast.Import | ast.ImportFrom):
-        return {alias.asname or alias.name.split(".")[0] for alias in statement.names}
+        return name in {alias.asname or alias.name.split(".")[0] for alias in statement.names}
     if isinstance(statement, ast.Assign):
-        targets = statement.targets
-    elif isinstance(statement, ast.AnnAssign) and statement.value is not None:
-        targets = [statement.target]
-    else:
-        return set()
+        return name in _stored(statement.targets) and not _wraps(statement, name)
+    if isinstance(statement, ast.AnnAssign) and statement.value is not None:
+        return name in _stored([statement.target])
+    return False
+
+
+def _stored(targets: list[ast.expr]) -> set[str]:
+    """The names an assignment to ``targets`` binds: names stored to, not read."""
     return {
-        node.id for target in targets for node in ast.walk(target) if isinstance(node, ast.Name)
+        node.id
+        for target in targets
+        for node in ast.walk(target)
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
     }
+
+
+def _wraps(assign: ast.Assign, name: str) -> bool:
+    """True for ``name = <value that reads name>``, such as ``f = wrap(f)``."""
+    alone = all(isinstance(target, ast.Name) for target in assign.targets)
+    reads = any(
+        isinstance(node, ast.Name) and node.id == name and isinstance(node.ctx, ast.Load)
+        for node in ast.walk(assign.value)
+    )
+    return alone and reads
 
 
 def _codes(code: CodeType) -> dict[tuple[str, int], CodeType]:
