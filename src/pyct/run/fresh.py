@@ -147,8 +147,9 @@ def _command(request: int, journal: int) -> list[str]:
 def _spawned(request: int, journal: int, hash_seed: str) -> int:
     """Start the new interpreter and return its pid.
 
-    Ctrl-C has its default action from the start, and stdin and stdout are
-    set before any Python runs there.
+    SIGINT is unblocked from its first instruction, and takes its default
+    action once ``serve`` settles the process; Python's startup installs its
+    own handler in between. Stdin and stdout are set before any Python runs.
     """
     for handed in (request, journal):
         os.set_inheritable(handed, True)
