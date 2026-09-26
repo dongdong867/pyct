@@ -1,6 +1,5 @@
 """One input in a child process, for real: each test forks, and each child takes milliseconds."""
 
-import faulthandler
 import gc
 import io
 import mmap
@@ -22,10 +21,9 @@ from pyct.run.process import KILL_GRACE, InputStartError
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
-def segfault(x: int) -> None:
-    # pytest's faulthandler would print this process's stack before the signal ends it
-    faulthandler.disable()
-    os.kill(os.getpid(), signal.SIGSEGV)
+def terminated(x: int) -> None:
+    # a signal that ends the process without a crash report, unlike a real fault
+    os.kill(os.getpid(), signal.SIGTERM)
 
 
 def in_child(fn: Callable[..., object], args: dict[str, object] | None = None) -> ExecutionResult:
@@ -71,8 +69,8 @@ def test_a_child_that_returns_reads_as_the_same_call_in_process() -> None:
             id="exits-without-raising",
         ),
         pytest.param(
-            segfault,
-            Failure(kind=FailureKind.CRASHED, detail="killed by SIGSEGV"),
+            terminated,
+            Failure(kind=FailureKind.CRASHED, detail="killed by SIGTERM"),
             id="killed-by-a-signal",
         ),
     ],

@@ -16,7 +16,7 @@ from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import load_target
 
 ONE_CHECK = "targets.flip.one_check::classify"
-SEGFAULT = "targets.isolate.segfault::fault"
+TERMINATES = "targets.isolate.terminates::stop"
 SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
 BASE_RAISES = "targets.isolate.base_raises::stop"
 
@@ -31,12 +31,12 @@ def test_a_fresh_interpreter_runs_the_call_as_pyct_s_process_would() -> None:
 
 
 def test_a_fresh_interpreter_ends_the_way_its_call_did() -> None:
-    target = load_target(SEGFAULT)
+    target = load_target(TERMINATES)
 
-    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 7, "y": 0}, None)
+    fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 5}, None)
 
-    assert fresh.failure == Failure(kind=FailureKind.CRASHED, detail="killed by SIGSEGV")
-    assert [branch.taken for branch in fresh.branches] == [False, True]
+    assert fresh.failure == Failure(kind=FailureKind.CRASHED, detail="killed by SIGTERM")
+    assert [branch.taken for branch in fresh.branches] == [True]
 
 
 def test_a_fresh_interpreter_is_alone_in_its_process() -> None:
