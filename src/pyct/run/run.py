@@ -29,6 +29,7 @@ from pyct.results.record import (
     StopKind,
 )
 from pyct.run.isolation import Call, isolation
+from pyct.run.process import InputStartError
 from pyct.run.target import Target
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
@@ -142,22 +143,37 @@ def run(
     # before the deadline starts: the probe is the run's setup, not its time
     environment = _environment(chosen.isolated)
     bounds = Bounds.of(limits)
-    told = _Told(scope=scope, tell=tell)
-    seeded = _record_of(seed, chosen.call(seed, bounds.until))
-    told.record(seeded)
-    tree = Tree()
-    tree.add(seeded.forks)
-    looped = _loop(chosen.call, seeded, tree, bounds, told)
-    records = (seeded, *looped.records)
-    covered = frozenset[int]().union(*(record.covered_lines for record in records))
+    looped = _inputs(chosen.call, seed, bounds, _Told(scope=scope, tell=tell))
+    covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
-        records=records,
+        records=looped.records,
         coverage=Coverage.of(scope, covered),
         stopped=looped.stop,
         environment=environment,
         misses=looped.misses,
     )
+
+
+def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told) -> Loop:
+    """The seed and every input after it, what the solver missed, and why they stopped.
+
+    A seed whose process cannot start stops the run before any input.
+    """
+    try:
+        seeded = _record_of(seed, call(seed, bounds.until))
+    except InputStartError as error:
+        return Loop((), (), _could_not_start(error))
+    told.record(seeded)
+    tree = Tree()
+    tree.add(seeded.forks)
+    looped = _loop(call, seeded, tree, bounds, told)
+    return Loop((seeded, *looped.records), looped.misses, looped.stop)
+
+
+def _could_not_start(error: InputStartError) -> Stop:
+    """The stop for an input pyct could not start a process for, with the system's reason."""
+    return Stop(StopKind.COULD_NOT_START, str(error))
 
 
 def _environment(isolated: bool) -> Environment:
@@ -228,8 +244,9 @@ def _attempt(
 
     Each solve gets the solver timeout, or what is left of the budget when
     that is less, so the budget still bounds the solver. A solver that
-    crashed ends the run as a failure. Any other answer is an input to run,
-    or a miss on that fork.
+    crashed ends the run as a failure, and so does an input pyct could not
+    start a process for. Any other answer is an input to run, or a miss on
+    that fork.
     """
     left = _seconds_left(bounds.until)
     # a deadline that has passed is no time at all; cvc5 reads --tlimit-per=0 as no limit
@@ -246,7 +263,10 @@ def _attempt(
     if not isinstance(answer, Sat):
         return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
     args = apply(seed, answer.model)
-    return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
+    try:
+        return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
+    except InputStartError as error:
+        return Attempt(stop=_could_not_start(error))
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

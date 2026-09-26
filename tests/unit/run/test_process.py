@@ -154,3 +154,41 @@ def test_with_no_deadline_pyct_waits_as_long_as_the_process_runs() -> None:
     waited = watched(lambda: sleeper(0.2), None)
 
     assert waited == Waited(signal=None, code=0, killed=False)
+
+
+def test_a_ctrl_c_as_the_process_starts_still_ends_it() -> None:
+    started: list[int] = []
+
+    def start_then_interrupt() -> int:
+        pid = sleeper(10)
+        started.append(pid)
+        # a Ctrl-C landing after the process exists, before pyct holds its pid
+        os.kill(os.getpid(), signal.SIGINT)
+        return pid
+
+    with pytest.raises(KeyboardInterrupt):
+        watched(start_then_interrupt, None)
+
+    # the process was killed and reaped on the way out, so no pid of it is left to wait for
+    with pytest.raises(ChildProcessError):
+        os.waitpid(started[0], os.WNOHANG)
+
+
+def test_a_ctrl_c_while_pyct_waits_ends_the_process_and_goes_on() -> None:
+    started: list[int] = []
+
+    def start() -> int:
+        pid = os.fork()
+        if pid == 0:
+            # only pyct's process is interrupted, as by a kill aimed at it alone
+            os.kill(os.getppid(), signal.SIGINT)
+            time.sleep(10)
+            os._exit(0)
+        started.append(pid)
+        return pid
+
+    with pytest.raises(KeyboardInterrupt):
+        watched(start, None)
+
+    with pytest.raises(ChildProcessError):
+        os.waitpid(started[0], os.WNOHANG)

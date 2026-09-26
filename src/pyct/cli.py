@@ -59,7 +59,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
-    could not be loaded, or pyct itself broke during the run. 2: usage.
+    could not be loaded, pyct could not start a process for an input, or
+    pyct itself broke during the run. 2: usage.
 
     The run prints each input as it finishes, through ``_report``, and each
     fork the solver could not flip, through ``_missed``, so a second input
@@ -94,7 +95,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
-    print(render_summary(result), flush=True)
+    _line(render_summary(result))
     return _exit_code(result)
 
 
@@ -119,7 +120,13 @@ def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]
 def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read."""
     print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
-    print(render(record, coverage), flush=True)
+    _line(render(record, coverage))
+
+
+def _line(text: str) -> None:
+    """One stdout line, written with its end in one call, so a Ctrl-C never splits it."""
+    sys.stdout.write(f"{text}\n")
+    sys.stdout.flush()
 
 
 def _missed(miss: Miss) -> None:
@@ -128,8 +135,9 @@ def _missed(miss: Miss) -> None:
 
 
 def _exit_code(result: RunResult) -> int:
-    """Every line is printed either way; a dead solver or a pyct bug still ends it badly."""
-    if result.stopped.kind is StopKind.SOLVER_FAILED:
+    """Every line is printed either way; a dead solver, an input that could not start, or a
+    pyct bug still ends it badly."""
+    if result.stopped.kind in (StopKind.SOLVER_FAILED, StopKind.COULD_NOT_START):
         return 1
     return 1 if any(_is_a_bug(record.failure) for record in result.records) else 0
 

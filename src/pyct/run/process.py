@@ -67,9 +67,20 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
 
     ``until`` is the input's deadline, a monotonic instant; the process is
     killed ``KILL_GRACE`` after it. ``None`` waits as long as it runs.
+
+    A Ctrl-C is held from before the start until pyct holds the pid inside
+    the guard that ends the process on the way out, so none lands between
+    the two and leaves the process running. It then goes on, as
+    KeyboardInterrupt, once the process is ended and reaped.
     """
-    child = _Child(start())
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
     try:
+        child = _Child(start())
+    except BaseException:
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        raise
+    try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
     finally:

@@ -6,14 +6,26 @@ run through the command line starts from a clean interpreter. The closure test c
 ``run()`` in a fresh interpreter of its own for the same reason.
 """
 
+import contextlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+import pytest
+
+from pyct.cli import main
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    input_lines,
+    let_pyct_run_in_process,
+    run_pyct,
+    summary_line,
+)
 
 ISOLATE = REPO_ROOT / "targets" / "isolate"
 COUNTER = "targets.isolate.counter::count"
@@ -33,6 +45,8 @@ SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
 # the budget these tests give, and how long after its start a run with it must have ended
 BUDGET = "1"
 ENDED_WITHIN = 4.0
+# how soon after Ctrl-C pyct must have exited
+EXITED_WITHIN = 2.0
 
 # run() on a closure no module attribute names, printing what each record covered
 RUN_A_CLOSURE = """
@@ -268,3 +282,105 @@ def test_ends_a_target_that_swallows_the_alarm() -> None:
     }
     assert summary_line(result.stdout)["stopped"] == "budget spent"
     assert took < ENDED_WITHIN, took
+
+
+def pid_written_to(path: Path, process: subprocess.Popen[str]) -> int:
+    """The pid the target wrote to ``path``, once it has; the run must still be going."""
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and process.poll() is None:
+        with contextlib.suppress(FileNotFoundError, ValueError):
+            return int(path.read_text())
+        time.sleep(0.05)
+    raise AssertionError(f"no pid in {path}; pyct exited {process.poll()}")
+
+
+def is_running(pid: int) -> bool:
+    """Whether ``pid`` names a process, after a moment for the system to reap an orphan."""
+    for _ in range(20):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        time.sleep(0.05)
+    return True
+
+
+@contextlib.contextmanager
+def pyct_in_a_session(spec: str, pid_file: Path) -> Iterator[subprocess.Popen[str]]:
+    """``pyct run`` in a session of its own, so a SIGINT can reach its whole group.
+
+    That is how a terminal sends Ctrl-C. Whatever is left of the run, and the
+    input's process named in ``pid_file``, is killed on the way out.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYCT_TEST_PID_FILE"] = str(pid_file)
+    process = subprocess.Popen(
+        [sys.executable, "-P", "-m", "pyct", "run", spec, '{"x": 0}'],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        yield process
+    finally:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        with contextlib.suppress(FileNotFoundError, ValueError, ProcessLookupError):
+            os.kill(int(pid_file.read_text()), signal.SIGKILL)
+
+
+# run-a-target-in-a-throwaway-process-leaves-no-process-behind-on-ctrl-c
+def test_leaves_no_process_behind_on_ctrl_c(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with pyct_in_a_session(C_HANG, pid_file) as process:
+        child = pid_written_to(pid_file, process)
+        sent = time.monotonic()
+        os.killpg(process.pid, signal.SIGINT)
+        stdout, stderr = process.communicate(timeout=10)
+        took = time.monotonic() - sent
+
+    assert took < EXITED_WITHIN, took
+    # the way a Ctrl-C has always ended pyct: the interrupt's traceback, and its signal
+    assert process.returncode == -signal.SIGINT, stderr
+    assert "KeyboardInterrupt" in stderr
+    assert all(json.loads(line) for line in stdout.splitlines()), stdout
+    assert not is_running(child)
+
+
+def fail_the_second_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Let pyct start the seed's process, and refuse the next, however pyct starts it."""
+    starts = [0]
+
+    def refusing[**P](start: Callable[P, int]) -> Callable[P, int]:
+        def attempt(*args: P.args, **kwargs: P.kwargs) -> int:
+            starts[0] += 1
+            if starts[0] == 2:
+                raise BlockingIOError(35, "Resource temporarily unavailable")
+            return start(*args, **kwargs)
+
+        return attempt
+
+    monkeypatch.setattr(os, "fork", refusing(os.fork))
+    monkeypatch.setattr(os, "posix_spawn", refusing(os.posix_spawn))
+
+
+# run-a-target-in-a-throwaway-process-stops-when-it-cannot-start-an-input
+def test_stops_when_it_cannot_start_an_input(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    fail_the_second_start(monkeypatch)
+
+    code = main(["run", COUNTER, '{"x": 0}'])
+
+    out, err = capsys.readouterr()
+    assert code == 1
+    (seed,) = input_lines(out)
+    assert seed["source"] == "seed"
+    assert summary_line(out)["stopped"] == "could not start an input"
+    stopped = err.splitlines().index("stopped: could not start an input")
+    assert "Resource temporarily unavailable" in err.splitlines()[stopped + 1]
+    assert err.splitlines()[stopped + 1].startswith("    ")

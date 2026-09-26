@@ -46,3 +46,9 @@ def test_exit_code_is_zero_when_the_target_raised() -> None:
 
 def test_exit_code_is_zero_when_the_call_returned() -> None:
     assert _exit_code(result_of(None)) == 0
+
+
+def test_exit_code_is_one_when_an_input_could_not_start() -> None:
+    refused = Stop(kind=StopKind.COULD_NOT_START, detail="[Errno 35] Resource unavailable")
+
+    assert _exit_code(result_of(None, stopped=refused)) == 1
