@@ -404,6 +404,30 @@ def test_a_freeze_the_caller_made_outlasts_an_input() -> None:
         gc.unfreeze()
 
 
+def test_an_input_leaves_pyct_s_freeze_as_it_found_it() -> None:
+    frozen = gc.get_freeze_count()
+
+    in_child(returns)
+
+    assert gc.get_freeze_count() == frozen
+
+
+def test_a_failed_start_leaves_pyct_s_freeze_as_it_found_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frozen = gc.get_freeze_count()
+
+    def refuse() -> int:
+        raise BlockingIOError(35, "Resource temporarily unavailable")
+
+    monkeypatch.setattr(os, "fork", refuse)
+
+    with pytest.raises(InputStartError):
+        in_child(returns)
+
+    assert gc.get_freeze_count() == frozen
+
+
 def test_the_input_s_process_freezes_what_it_started_with() -> None:
     frozen = gc.get_freeze_count()
 
