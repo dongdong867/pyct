@@ -174,6 +174,28 @@ def test_cvc5_agrees_with_python_on_every_piece() -> None:
     assert disagreements == []
 
 
+# a replace whose old string overlaps itself in the value, so only replacing left to right
+# without overlap gives Python's answer: the value, the old string, and the new one
+OVERLAPPING = [("aaaaa", "aa", "b"), ("ababa", "aba", "x")]
+
+
+@needs_cvc5
+def test_cvc5_replaces_an_old_string_that_overlaps_itself_as_python_does() -> None:
+    lines = ["(set-logic ALL)"]
+    for at, (value, old, new) in enumerate(OVERLAPPING):
+        lines += [f"(declare-const s{at} String)", f"(assert (= s{at} {encode(value)}))"]
+        lines += [f"(declare-const t{at} String)", f"(assert (= t{at} {encode(new)}))"]
+        # the new string as a literal, and as a constant, the way a tracked str reaches the form
+        for asked_at, written in ((2 * at, encode(new)), (2 * at + 1, f"t{at}")):
+            term = replaced(f"s{at}", encode(old), written)
+            lines += [f"(declare-const v{asked_at} String)", f"(assert (= v{asked_at} {term}))"]
+    lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(4))}))"]
+
+    # each case is asked twice, the new string a literal and then a constant
+    python = [value.replace(old, new) for value, old, new in OVERLAPPING for _ in range(2)]
+    assert asked(lines) == python
+
+
 # what each head on a piece path means in Python, to hold a model against the plan
 PYTHON_HEADS: dict[str, Callable[..., object]] = {
     "[]": operator.getitem,
