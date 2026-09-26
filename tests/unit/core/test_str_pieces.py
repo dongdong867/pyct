@@ -248,10 +248,6 @@ def test_what_str_refuses_raises_as_the_targets_and_records_nothing(
 
 
 @pytest.mark.skipif(sys.version_info >= (3, 13), reason="replace takes a keyword count from 3.13")
-@pytest.mark.xfail(
-    strict=True,
-    reason="PR #46, pass-keywords-through-a-downgrade: the downgrade refuses a keyword itself",
-)
 def test_a_keyword_goes_to_strs_own_replace_and_records_nothing() -> None:
     sink: list[SinkItem] = []
 
