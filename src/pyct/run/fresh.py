@@ -139,10 +139,13 @@ def _command(request: int, journal: int) -> list[str]:
     ``-P`` keeps the working directory off the import path while pyct boots,
     so a module there named like one of the standard library's cannot stand
     in for it. The target's import still sees pyct's own path, which the
-    request carries. The flags are pyct's, so ``-O`` and the rest hold for
-    the target the same way whether a run forks or starts interpreters.
-    Only the flags that would make the new interpreter ignore the run's
-    hash seed are left out: ``-E``, and ``-I``, which stands in as ``-s``.
+    request carries. pyct's own flags follow, as CPython's helper gives
+    them: ``-O``, ``-B``, ``-S``, ``-s``, ``-v``, ``-b``, ``-q``, ``-d``, the
+    ``-W`` options, and the ``-X`` options dev, faulthandler, tracemalloc,
+    importtime, frozen_modules, showrefcount and utf8. Other ``-X`` options,
+    such as int_max_str_digits, and ``-u`` do not follow. Left out are the
+    flags that would make the new interpreter ignore the run's hash seed:
+    ``-E``, and ``-I``, which stands in as ``-s``.
     """
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     given = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
