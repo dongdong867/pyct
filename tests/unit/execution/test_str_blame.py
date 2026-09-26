@@ -22,7 +22,9 @@ FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_
             id="search-keyword-refused",
         ),
         pytest.param(lambda s: s[5], id="index-past-the-end"),
+        pytest.param(lambda s: s["a"], id="index-str-refuses"),
         pytest.param(lambda s: s + 1, id="plus-str-refuses"),
+        pytest.param(lambda s: s.replace(1, "x"), id="replace-str-refuses"),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
