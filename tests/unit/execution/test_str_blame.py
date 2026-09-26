@@ -1,4 +1,4 @@
-"""A raise from a search on a tracked str: execute reports it as the target's."""
+"""A raise from a search or a piece of a tracked str: execute reports it as the target's."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -21,6 +21,8 @@ FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_
             lambda s: s.find("b", start=1),  # pyrefly: ignore[unexpected-keyword]
             id="search-keyword-refused",
         ),
+        pytest.param(lambda s: s[5], id="index-past-the-end"),
+        pytest.param(lambda s: s + 1, id="plus-str-refuses"),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
@@ -34,9 +36,9 @@ def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(
     result = execute(ctx, {"s": "abc"})
 
     # the detail is CPython's own sentence, so plain Python on this interpreter gives it
-    with pytest.raises((TypeError, ValueError)) as plain:
+    with pytest.raises((TypeError, ValueError, IndexError)) as plain:
         operation("abc")
-    # a taught search runs str's own, and so does the downgrade it falls back to
+    # a taught search or piece runs str's own, and so does the downgrade it falls back to
     assert result.failure == Failure(
         kind=FailureKind.TARGET_RAISED,
         detail=f"{type(plain.value).__name__}: {plain.value}",

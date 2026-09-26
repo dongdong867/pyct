@@ -220,9 +220,9 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "s.split()": (lambda s: s.split(), "split"),
     "len(s)": (len, "__len__"),
     "str(s)": (str, "__str__"),
-    "s[0]": (lambda s: s[0], "__getitem__"),
+    "s[::-1]": (lambda s: s[::-1], "__getitem__"),
     "s.expandtabs()": (lambda s: s.expandtabs(), "expandtabs"),
-    "s + 'x'": (lambda s: s + "x", "__add__"),
+    "2 * s": (lambda s: 2 * s, "__rmul__"),
     "s * 2": (lambda s: s * 2, "__mul__"),
     "next(iter(s))": (lambda s: next(iter(s)), "__iter__"),
 }
@@ -395,11 +395,12 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     compares = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"}
     searches = {"__contains__", "startswith", "endswith", "count"}
     positions = {"find", "index", "rfind", "rindex"}
+    pieces = {"__getitem__", "__add__", "replace", "removeprefix", "removesuffix"}
     kept = {"__hash__", "__repr__", "__getnewargs__", "__sizeof__"}
 
     # whatever str defines on the Python that runs this, the only methods left unwrapped are
-    # the six compares and the searches taught above and the four str keeps
-    assert methods - _derived_downgrades() == compares | searches | positions | kept
+    # the six compares, the searches and the pieces taught above, and the four str keeps
+    assert methods - _derived_downgrades() == compares | searches | positions | pieces | kept
     assert _derived_downgrades().isdisjoint(strs._KEPT)
 
 

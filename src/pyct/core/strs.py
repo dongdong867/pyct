@@ -5,15 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pyct.core.bools import ConcolicBool, compare
-from pyct.core.branch import BranchSink, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
-# the `ConcolicStr` body below is the taught set: the compares, the truth test and the searches
-# it writes stay symbolic, and a copy is the value itself. The tuple here names what is left to
-# str on purpose, and the derivation at the bottom of the file downgrades every other method str
-# defines, plain methods and operators alike. str defines `__str__` and `__format__` itself,
-# so nothing inherited needs naming.
+# the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
+# the pieces it writes stay symbolic, and a copy is the value itself. The tuple here names what
+# is left to str on purpose, and the derivation at the bottom of the file downgrades every other
+# method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
+# itself, so nothing inherited needs naming.
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. str takes `__getattribute__` from
@@ -143,14 +143,146 @@ def _contains(self: ConcolicStr, sub: object) -> object:
     return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
 
 
+def _position(value: object) -> int | None:
+    """A position pyct encodes, a plain int or a plain bool, as the int it indexes with.
+
+    Any other value is None.
+    """
+    return int(value) if isinstance(value, int) and type(value) in (int, bool) else None
+
+
+def _bounds(key: object) -> list[Expression] | None:
+    """The start and the stop of a slice pyct encodes, a missing bound as None.
+
+    That slice has no step, and each bound it has is a position pyct encodes.
+    Any other key is None.
+    """
+    if not isinstance(key, slice) or key.step is not None:
+        return None
+    ends = (key.start, key.stop)
+    if not all(end is None or _position(end) is not None for end in ends):
+        return None
+    return [None if end is None else _position(end) for end in ends]
+
+
+def _long_enough(self: ConcolicStr, index: int) -> None:
+    """The fork an index takes on its way to a raise: whether s is long enough for it.
+
+    `[">", ["len", s], i]` for an index of zero or more, and
+    `[">=", ["len", s], -i]` for a negative one, which counts back from the
+    end. It goes in before str's own index may raise IndexError, as `_found`
+    does for ValueError. str's own length, not `len(s)`, which would record
+    `__len__`.
+    """
+    length = own(str.__len__, self)
+    measured: Expression = ["len", self.expression]
+    if index >= 0:
+        forked(self.sink, [">", measured, index], length > index)
+    else:
+        forked(self.sink, [">=", measured, -index], length >= -index)
+
+
+_GETITEM_DOWNGRADE = downgraded(str, "__getitem__")
+
+
+def _item(self: ConcolicStr, key: object) -> object:
+    """str's own `s[i]` or `s[i:j]`, a tracked str carrying `["[]", s, i]` or `["[:]", s, i, j]`.
+
+    An index records whether s is long enough first (see `_long_enough`). A
+    slice clamps to the string, so it records no fork. A key in a form pyct
+    does not encode is str's own answer and a `__getitem__` downgrade.
+    """
+    index = _position(key)
+    if index is not None:
+        _long_enough(self, index)
+        expression = ["[]", self.expression, index]
+        return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+    bounds = _bounds(key)
+    if bounds is None:
+        return _GETITEM_DOWNGRADE(self, key)
+    expression = ["[:]", self.expression, *bounds]
+    return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+
+
+def _one_str(args: tuple[object, ...]) -> list[Expression] | None:
+    """The operand of a piece that takes one str, in the form pyct encodes, or None."""
+    form = _needle(args)
+    return None if form is None else [form]
+
+
+def _replaced_exactly(old: object) -> bool:
+    """Whether cvc5's replace_all is Python's replace for this old string.
+
+    It is for a plain str with at least one character. For an empty one,
+    cvc5 leaves the string as it is where Python puts the new string between
+    every character, and a tracked old string may be empty.
+    """
+    return isinstance(old, str) and not isinstance(old, ConcolicStr) and str.__len__(old) > 0
+
+
+def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
+    """The old and the new string of a replace pyct encodes, or None.
+
+    That replace takes two str arguments the solver reads as they are, and
+    no count, and cvc5 replaces its old string as Python does.
+    """
+    if len(args) != 2 or not all(_within_cvc5(arg) for arg in args):
+        return None
+    old, new = args
+    if not _replaced_exactly(old) or not isinstance(new, str):
+        return None
+    return [_operand(old), _operand(new)]
+
+
+def _piece(
+    name: str, operands: Callable[[tuple[object, ...]], list[Expression] | None], *, head: str = ""
+) -> Callable[..., object]:
+    """str's own answer to one method that builds a str, as a tracked str.
+
+    It carries `[head, s, *operands]`, the head being the method's name
+    unless one is given. A call in a form pyct does not encode, a keyword
+    included, is str's own answer and a downgrade named by the method
+    (``README.md › Rules › downgrades``).
+    """
+    operation = getattr(str, name)
+    downgrade = downgraded(str, name)
+
+    def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
+        forms = None if kwargs else operands(args)
+        if forms is None:
+            return downgrade(self, *args, **kwargs)
+        expression = [head or name, self.expression, *forms]
+        return ConcolicStr(own(operation, self, *args), expression=expression, sink=self.sink)
+
+    return compute
+
+
+def _prepended(self: ConcolicStr, other: object) -> object:
+    """`other + s` with a str on the left that is not tracked, carrying `["+", other, s]`.
+
+    Python asks a str subclass on the right before str's own concatenation,
+    so `"x" + s` comes here. A non-str gets NotImplemented, and Python raises
+    its own TypeError. str has no `__radd__` of its own to downgrade to, so a
+    literal the solver cannot hold is joined by str's concatenation here and
+    named `__radd__`.
+    """
+    if not isinstance(other, str):
+        return NotImplemented
+    joined = own(str.__add__, other, self)
+    if not _within_cvc5(other):
+        self.sink.append(Downgrade(name="__radd__"))
+        return joined
+    return ConcolicStr(joined, expression=["+", _operand(other), self.expression], sink=self.sink)
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
     The operations taught below stay symbolic. Any other instance method str defines,
     except those left to it in `_KEPT`, is str's own and returns a plain value, with a
     downgrade in the sink naming what was lost: a method by its name, an operator by its
-    dunder (``README.md › Rules › downgrades``). A taught search called in a form pyct
-    does not encode is str's own and a downgrade the same way.
+    dunder (``README.md › Rules › downgrades``). A taught search or piece called in a form
+    pyct does not encode is str's own and a downgrade the same way.
     """
 
     expression: Expression
@@ -184,6 +316,16 @@ class ConcolicStr(str):
     count = _search("count", ConcolicInt)  # pyrefly: ignore[bad-override]
     index = _search("index", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
     rindex = _search("rindex", ConcolicInt, raises=True)  # pyrefly: ignore[bad-override]
+
+    # a piece of a tracked str is a tracked str, so a compare or a search on it is a fork on s.
+    # An index records whether s is long enough before it may raise. A piece hands a form it
+    # does not encode to str, so its signature is not str's; the override breaks str's on purpose
+    __getitem__ = _item  # pyrefly: ignore[bad-override]
+    __add__ = _piece("__add__", _one_str, head="+")  # pyrefly: ignore[bad-override]
+    __radd__ = _prepended
+    replace = _piece("replace", _replacement)  # pyrefly: ignore[bad-override]
+    removeprefix = _piece("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
+    removesuffix = _piece("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)
