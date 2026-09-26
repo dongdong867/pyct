@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
-import itertools
 import sys
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
-from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.core.branch import Branch
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, deadline
+from pyct.execution.tally import Tally, Watch
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
@@ -41,7 +41,10 @@ class ExecutionResult:
 
 
 def execute(
-    ctx: ExecutionContext, args: Mapping[str, object], until: float | None = None
+    ctx: ExecutionContext,
+    args: Mapping[str, object],
+    until: float | None = None,
+    watch: Watch | None = None,
 ) -> ExecutionResult:
     """Call ``ctx.fn`` on the seed under a line tracer limited to ``ctx.file``.
 
@@ -51,37 +54,26 @@ def execute(
     ``run()`` stays assembly. A raise in the target is a failure on the
     result, not an exception here; ``KeyboardInterrupt`` is the person's
     and passes through.
+
+    ``watch`` hears each fork, line and downgrade the moment the call makes
+    it, so a caller whose process can die mid-call keeps what the call did.
     """
-    sink: list[SinkItem] = []
-    bound = bind(args, sink)
-    tracer = _LineTracer(ctx.file)
+    tally = Tally(watch)
+    bound = bind(args, tally)
+    tracer = _LineTracer(ctx.file, tally)
     tracer.start()
     try:
         ending = _call(ctx.fn, bound, until)
     finally:
         tracer.stop()
-    # the sink is read before the failure is written: writing it asks the raise for its text,
-    # which asks any tracked value in it for its own, and that call is pyct's, not the target's
-    recorded = tuple(sink)
-    # one sink holds both, in the order they happened; the result reports each in its own
+    # sealed before the failure is written: writing it asks the raise for its text, which
+    # asks any tracked value in it for its own, and that call is pyct's, not the target's
+    tally.seal()
     return ExecutionResult(
-        lines=frozenset(tracer.seen),
-        branches=tuple(item for item in recorded if isinstance(item, Branch)),
-        downgrades=_counted(item.name for item in recorded if isinstance(item, Downgrade)),
+        lines=frozenset(tally.lines),
+        branches=tuple(tally.branches),
+        downgrades=tally.counted(),
         failure=_failure(ctx.fn, ending),
-    )
-
-
-def _counted(names: Iterable[str]) -> tuple[DowngradeCount, ...]:
-    """Consecutive calls of one method or dunder as a single entry, in call order.
-
-    The sink still grows one item per call while the target runs: core
-    pushes and never reads, so a loop over an argument is collapsed here,
-    after the call, and only the result carries the counts.
-    """
-    return tuple(
-        DowngradeCount(name=name, count=sum(1 for _ in run))
-        for name, run in itertools.groupby(names)
     )
 
 
@@ -132,9 +124,10 @@ class _LineTracer:
     needs a tool id nobody else holds, taken at start and freed at stop.
     """
 
-    def __init__(self, file: str) -> None:
+    def __init__(self, file: str, tally: Tally) -> None:
         self.file = file
-        self.seen: set[int] = set()
+        self.tally = tally
+        self.seen = tally.lines
         self.tool_id: int | None = None
 
     def start(self) -> None:
@@ -156,7 +149,9 @@ class _LineTracer:
     def _on_line(self, code: types.CodeType, line: int) -> object:
         if code.co_filename != self.file:
             return sys.monitoring.DISABLE
-        self.seen.add(line)
+        # a line seen before costs one set lookup, as it did before the tally
+        if line not in self.seen:
+            self.tally.line(line)
         return None
 
 
