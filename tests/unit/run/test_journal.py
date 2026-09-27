@@ -210,6 +210,25 @@ def test_a_shared_part_is_written_once_and_read_back_shared() -> None:
     assert part == "x"
 
 
+def test_a_piece_reads_back_with_its_missing_bound_and_its_shared_string() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    # `u = s[1:]`, then `u[-1] + u[:2]`: a slice with a missing bound, held in two places
+    string: Expression = ["[:]", "s", 1, None]
+    pieces: Expression = ["+", ["[]", string, -1], ["[:]", string, None, 2]]
+    fork = Branch(expression=["==", pieces, "'ab'"], taken=False, site=SITE)
+
+    writer.fork(fork)
+
+    (read_back,) = read(buffer).branches
+    assert read_back == fork
+    joined = read_back.expression
+    assert isinstance(joined, list) and isinstance(joined[1], list)
+    last, first = joined[1][1], joined[1][2]
+    assert isinstance(last, list) and isinstance(first, list)
+    assert last[1] is first[1]
+
+
 def test_a_part_two_forks_share_is_one_part_in_both() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
