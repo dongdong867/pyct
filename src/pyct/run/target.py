@@ -13,7 +13,8 @@ from types import ModuleType
 
 from pyct.run.import_watch import ImportWatch
 
-# what inspect raises when it cannot read a signature itself; its message says why on its own
+# the two exceptions inspect raises when it cannot read a signature; one of exactly these types
+# reads by its message alone
 _INSPECT_S_OWN = (ValueError, TypeError)
 
 
@@ -87,12 +88,13 @@ def _signature(spec: str, fn: Callable[..., object]) -> inspect.Signature:
 def _reason(error: BaseException) -> str:
     """Python's message for ``error`` as one line that is never empty.
 
-    That is the message's first line that holds anything. An exception that
-    is not one of inspect's own refusals, such as a ``KeyError`` or a
-    ``SystemExit`` from the target's code, is named before it, as
-    ``SystemExit: 0``. A message with no such line gives the type's name
-    alone, and so does one that cannot be read, since its ``__str__`` raises.
-    So the refusal stays one line on stderr.
+    That is the message's first line that holds anything. A ValueError or a
+    TypeError reads by that line alone, as inspect's own refusals do; any
+    other exception, a subclass of those two included, is named before it,
+    as ``SystemExit: 0`` and ``UnicodeError: bad text``. A message with no
+    such line gives the type's name alone, and so does one that cannot be
+    read, since its ``__str__`` raises. So the refusal stays one line on
+    stderr.
     """
     named = type(error).__name__
     try:

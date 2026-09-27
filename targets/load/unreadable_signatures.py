@@ -78,3 +78,4 @@ class UnprintableError(Exception):
 
 
 unprintable = _Raises(UnprintableError())
+subclass_of_value_error = _Raises(UnicodeError("bad text"))
