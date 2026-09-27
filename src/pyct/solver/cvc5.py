@@ -7,14 +7,31 @@ from collections.abc import Mapping
 from time import monotonic
 
 from pyct.core.branch import Branch
-from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
+from pyct.solver.answer import (
+    Answer,
+    Error,
+    Sat,
+    SolverAnswerError,
+    Timeout,
+    Unknown,
+    Unsat,
+    model_from,
+)
+from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.locate import locate
 from pyct.solver.render import FINITE, Program, float_leaves, program
 
 logger = logging.getLogger(__name__)
 
-# read one SMT-LIB program from stdin, print a model with the answer, say nothing else
-ARGUMENTS = ("--produce-models", "--lang", "smt", "--quiet")
+# read one SMT-LIB program from stdin, print a model with the answer, say nothing else, and
+# write each string in the model in full, up to the longest an answer holds
+ARGUMENTS = (
+    "--produce-models",
+    "--lang",
+    "smt",
+    "--quiet",
+    f"--strings-model-max-len={MOST_ITEMS}",
+)
 
 # asked after the program's last command, so the last line cvc5 prints is why it answered
 # unknown, or an error after any other answer
@@ -71,10 +88,10 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
-    records it already has and says the solver failed. The one exception is
-    a ``sat`` whose model has a value line pyct cannot read: that is
-    ``SolverAnswerError``, because a half-read model would quietly hand the
-    seed's values back as the solver's.
+    records it already has and says the solver failed. A ``sat`` whose model
+    has a value line pyct cannot read is an ``Unknown()``, warned about with
+    the line: a half-read model would quietly hand the seed's values back as
+    the solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     deadline = monotonic() + timeout
@@ -142,15 +159,23 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
         return Timeout(), frozenset()
-    answer = _answer(finished.stdout, finished.stderr)
-    if isinstance(answer, Sat):
-        # cvc5 answered by the constants the program declared; the run reads leaves by name
-        answer = Sat(written.read(answer.model))
+    answer = _read(finished.stdout, finished.stderr, written)
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
     return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
+
+
+def _read(stdout: str, stderr: str, written: Program) -> Answer:
+    """What cvc5 said, a model named by the leaves; one pyct cannot read is an ``Unknown()``."""
+    try:
+        answer = _answer(stdout, stderr)
+        # cvc5 answered by the constants the program declared; the run reads leaves by name
+        return Sat(written.read(answer.model)) if isinstance(answer, Sat) else answer
+    except SolverAnswerError as error:
+        logger.warning("%s", error)
+        return Unknown()
 
 
 def _core(stdout: str, written: Program) -> frozenset[str]:
