@@ -148,6 +148,9 @@ def _work_out(
     grows with the function, the lines or the inputs (``graphs.Pace``), and
     before dis's label pass, which no step can break into.
     """
+    # reading every input's forks grows with the inputs, and past the stop no line is worked out
+    if run.late():
+        raise OutOfTimeError
     seen = _Seen.of(file, covered, run)
     for line in lines:
         if run.late():

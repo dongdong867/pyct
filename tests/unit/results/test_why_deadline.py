@@ -165,3 +165,21 @@ def test_off_the_main_thread_the_clock_checks_still_stop_the_analysis(tmp_path: 
     assert ended, "the analysis did not finish"
     assert ended[0] - stop_at < 0.5, ended[0] - stop_at
     assert sorted(named) == sorted(uncovered)
+
+
+def test_a_run_past_its_stop_at_the_start_reads_no_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = module(tmp_path)
+    clock_after(monkeypatch, 0)
+
+    def never(*_args: object) -> object:
+        raise AssertionError("the inputs are read")
+
+    # reading every input's forks is the first work that grows with the inputs, and no line
+    # can be worked out after it, so it is not started
+    monkeypatch.setattr(why_module._Seen, "of", never)
+
+    entries = explained(file, stop_at=5.0)
+
+    assert entries == (WhyEntry(file=file, lines=(1, 3, 4, 5, 8, 9), reason=Reason.NOT_WORKED_OUT),)

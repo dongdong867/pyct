@@ -1,4 +1,4 @@
-"""run() keeps the site of each fork it left untried, for why_uncovered's not_tried count."""
+"""run() counts the forks it left untried at each site, for why_uncovered's not_tried count."""
 
 from pathlib import Path
 
@@ -29,7 +29,7 @@ def test_a_run_that_emptied_the_tree_left_nothing_untried() -> None:
     result = run(target, {"x": 3}, isolation=Isolation.IN_PROCESS)
 
     assert result.stopped.kind is StopKind.NO_FORK
-    assert result.untried == ()
+    assert result.untried == {}
 
 
 def test_a_plateau_stop_counts_the_fork_it_picked_and_never_solved() -> None:
@@ -44,7 +44,7 @@ def test_a_plateau_stop_counts_the_fork_it_picked_and_never_solved() -> None:
 
     assert result.stopped.kind is StopKind.NO_GAIN
     # `y < 10` was flipped; the pick of `x < 10` came before the plateau stop, and it ran nothing
-    assert result.untried == (ForkSite(Site(file=TWO_OTHER_SIDES, line=3, col=7)),)
+    assert result.untried == {ForkSite(Site(file=TWO_OTHER_SIDES, line=3, col=7)): 1}
 
 
 def test_a_solver_failure_counts_the_fork_being_solved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,7 +54,7 @@ def test_a_solver_failure_counts_the_fork_being_solved(monkeypatch: pytest.Monke
     result = run(target, {"x": 3}, isolation=Isolation.IN_PROCESS)
 
     assert result.stopped.kind is StopKind.SOLVER_FAILED
-    assert result.untried == (ForkSite(Site(file=ONE_CHECK, line=2, col=7)),)
+    assert result.untried == {ForkSite(Site(file=ONE_CHECK, line=2, col=7)): 1}
 
 
 def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
@@ -81,4 +81,4 @@ def test_a_budget_stop_counts_every_fork_still_open() -> None:
 
     # the seed forked on `x < 10`, then spun past the deadline, so that fork was never tried
     assert result.stopped.kind is StopKind.BUDGET
-    assert result.untried == (ForkSite(Site(file=SPINS, line=2, col=7)),)
+    assert result.untried == {ForkSite(Site(file=SPINS, line=2, col=7)): 1}

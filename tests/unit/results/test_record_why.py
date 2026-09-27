@@ -56,7 +56,7 @@ def run_of(file: str, site: Site) -> RunResult:
         stopped=Stop(kind=StopKind.BUDGET),
         environment=ENVIRONMENT,
         misses=misses,
-        untried=(ForkSite(site), ForkSite(site), ForkSite(site, raising=True)),
+        untried={ForkSite(site): 2, ForkSite(site, raising=True): 1},
     )
 
 
@@ -106,3 +106,21 @@ def test_the_analysis_stops_so_its_longest_stretch_still_ends_within_the_grace(
     [stop_at] = stops
     assert stop_at is not None
     assert stop_at + LONGEST_STRETCH <= 100.0 + record.ANALYSIS_GRACE
+
+
+def test_a_run_read_past_the_analysis_stop_reads_no_input_and_no_try(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    # a run whose deadline is long past: no cause can be worked out in the time left
+    run = dataclasses.replace(run_of(str(file), Site(str(file), 3, 7)), deadline=0.0)
+
+    def never(_result: RunResult) -> object:
+        raise AssertionError("the tries are read")
+
+    monkeypatch.setattr(record, "_tries", never)
+
+    assert run.why_uncovered == (
+        WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
+    )

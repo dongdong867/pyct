@@ -4,7 +4,7 @@ import dataclasses
 import functools
 from collections import Counter
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.core.branch import Branch, ForkSite, Site
@@ -165,8 +165,8 @@ class RunResult:
 
     ``misses`` are the forks the solver gave no input for. A miss is never
     why the run stopped; ``stopped`` carries the loop's own reason.
-    ``untried`` is the site of each fork the run never tried, once per fork:
-    still open when it stopped, or picked and then left by the stop.
+    ``untried`` counts the forks the run never tried at each site: still open
+    when it stopped, or picked and then left by the stop.
     ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
     """
 
@@ -176,7 +176,7 @@ class RunResult:
     stopped: Stop
     environment: Environment
     misses: tuple[Miss, ...] = ()
-    untried: tuple[ForkSite, ...] = ()
+    untried: Mapping[ForkSite, int] = field(default_factory=dict)
     deadline: float | None = None
 
     @property
@@ -209,14 +209,17 @@ class RunResult:
         it, so it still ends within one second of it; the lines left then are
         not worked out.
         """
-        walked = [
-            Walked(record.forks, record.failure is not None, record.covered_lines)
-            for record in self.records
-        ]
         # the analysis sees its stop at most one stretch late, so it stops that much early
         grace = ANALYSIS_GRACE - LONGEST_STRETCH
         stop_at = None if self.deadline is None else self.deadline + grace
-        run = Run(walked, _tries(self), stop_at=stop_at)
+        run = Run((), {}, stop_at=stop_at)
+        # the inputs and their tries are read only when a cause can still be worked out
+        if not run.late():
+            walked = [
+                Walked(record.forks, record.failure is not None, record.covered_lines)
+                for record in self.records
+            ]
+            run = Run(walked, _tries(self), stop_at=stop_at)
         covered = self.coverage.covered
         return tuple(
             entry
@@ -228,8 +231,8 @@ class RunResult:
 def _tries(result: RunResult) -> dict[ForkSite, Tries]:
     """What happened at each site each time the run could have flipped a fork there."""
     counts: dict[ForkSite, Counter[str]] = {}
-    for where in result.untried:
-        counts.setdefault(where, Counter())["not_tried"] += 1
+    for where, count in result.untried.items():
+        counts.setdefault(where, Counter())["not_tried"] += count
     for miss in result.misses:
         counts.setdefault(ForkSite(miss.site, miss.raising), Counter())[miss.why.value] += 1
     for record in result.records:

@@ -6,7 +6,7 @@ import dataclasses
 import platform
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import assert_never
 
 from pyct.binding.bind import Seed
@@ -138,13 +138,13 @@ class Attempt:
 class Loop:
     """The inputs that ran, the seed's first, what the solver missed, and why they stopped.
 
-    ``untried`` is the site of each fork the run never tried, once per fork.
+    ``untried`` counts the forks the run never tried at each site.
     """
 
     records: tuple[InputRecord, ...]
     misses: tuple[Miss, ...]
     stop: Stop
-    untried: tuple[ForkSite, ...] = ()
+    untried: Mapping[ForkSite, int] = field(default_factory=dict)
 
 
 def run(
@@ -316,10 +316,13 @@ def _attempt(
     return Attempt(ran=Ran(record, solved))
 
 
-def _untried(tree: Tree, attempt: Attempt) -> tuple[ForkSite, ...]:
-    """The site of each fork the run never tried: the open ones, and one picked but not run."""
-    sites = [where for where, count in tree.untried().items() for _ in range(count)]
-    return (*sites, attempt.unrun) if attempt.unrun is not None else tuple(sites)
+def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
+    """How many forks the run never tried at each site: the open ones, and one picked but not
+    run."""
+    counts = tree.untried()
+    if attempt.unrun is not None:
+        counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
+    return counts
 
 
 def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
