@@ -123,6 +123,18 @@ def test_a_class_written_outside_the_package_is_no_entry_whatever_its_module_say
     assert entries(api, api) == [Entry(api, "gauge", seed={"n": 0})]
 
 
+def test_a_class_is_named_by_its_file_whatever_its_module_says() -> None:
+    relabeled = f"{SWEEP}.relabeled"
+    core = f"{relabeled}.core"
+    assert entries(f"{relabeled}.api", relabeled) == [
+        Entry(core, "Gadget", seed={"n": 0}),
+        Entry(core, "Meter", seed={"n": 0}),
+        Entry(core, "Widget", seed={"n": 0}),
+        Entry(core, "Widget.spin", skip=METHOD),
+        Entry(f"{relabeled}.api", "gauge", seed={"n": 0}),
+    ]
+
+
 def test_a_class_that_borrows_a_same_named_constructor_is_named_by_its_own_body() -> None:
     package = f"{SWEEP}.borrowed.pkg"
     assert entries(package, package) == [
