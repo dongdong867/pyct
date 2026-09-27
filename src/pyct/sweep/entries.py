@@ -150,16 +150,22 @@ class _Package:
         return [seeded(home, name, cls), *rows] if constructed else rows
 
     def _class_home(self, cls: type) -> str | None:
-        """The module of the package whose file holds the class's code: that of a function its
-        own body defines, else that of the module ``__module__`` names, which a library may have
-        rewritten. A function whose file is no module of the package, such as the ``_make`` a
-        named tuple takes from Python, says nothing."""
+        """The module of the package whose file holds the class's code, or None.
+
+        A function the class body compiled says where the body is: its
+        compiled qualified name starts with the class's. The ``_make`` a named
+        tuple takes from Python claims the class's ``__qualname__`` but was
+        compiled elsewhere, so it says nothing. A body file outside the package
+        is no home, whatever ``__module__`` says; a library may rewrite that.
+        Only a class whose body compiled no function falls back to the module
+        ``__module__`` names.
+        """
         prefix = f"{cls.__qualname__}."
         for value in list(vars(cls).values()):
             target = function_of(value)
-            home = self._home_of(_code_file(target))
-            if home is not None and getattr(target, "__qualname__", "").startswith(prefix):
-                return home
+            code = getattr(target, "__code__", None)
+            if getattr(code, "co_qualname", "").startswith(prefix):
+                return self._home_of(_code_file(target))
         return self._home_of(getattr(sys.modules.get(cls.__module__), "__file__", None))
 
     def _home_of(self, file: object) -> str | None:

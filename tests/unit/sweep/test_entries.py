@@ -117,6 +117,11 @@ def test_function_of_reads_through_static_and_class_methods() -> None:
     assert function_of(len) is None
 
 
+def test_a_class_written_outside_the_package_is_no_entry_whatever_its_module_says() -> None:
+    api = f"{SWEEP}.relabeled.api"
+    assert entries(api, api) == [Entry(api, "gauge", seed={"n": 0})]
+
+
 def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
     # a named tuple's _make and _replace say they are its own, but their code is Python's
     module = f"{SWEEP}.tuples"

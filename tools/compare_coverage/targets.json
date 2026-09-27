@@ -209,6 +209,7 @@
     {"set": "v2", "module": "targets.sweep.methods", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.not_its_own", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.nothing", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.relabeled.core", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.rough.broken", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.rough.crashes", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.rough.exits", "left_out": "a sweep fixture"},
