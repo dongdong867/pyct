@@ -8,9 +8,10 @@ builtins. It is mechanical and fixed, one to one, and not a rewrite; the
 LLM source rewrite of the next paper is `pyct.rewrite`, which may hand its
 source to the same loader.
 
-Substituted code calls pyct through four names it binds in the module,
-``__pyct_is__``, ``__pyct_is_not__``, ``__pyct_in__`` and
-``__pyct_not_in__``, and each class body declares them global. The names
+Substituted code calls pyct through six names it binds in the module,
+``__pyct_is__``, ``__pyct_is_not__``, ``__pyct_in__``, ``__pyct_not_in__``,
+``__pyct_searched__`` and ``__pyct_identity__``, and each class body
+declares them global. The names
 are reserved for pyct: a target module of the package that binds one of
 them itself changes what its substituted compares call, and one that
 annotates one in a class body does not load.

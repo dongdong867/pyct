@@ -130,7 +130,14 @@ def test_the_passing_frames_are_the_routers() -> None:
         "ord",
         "chr",
         "_routed",
+        # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a
+        # link hands on to the next
+        "__contains__",
+        "forward",
     }
+    assert {
+        code.co_qualname for code in PASSING if code.co_name in ("__contains__", "forward")
+    } == {"Searched.__contains__", "Identity.__contains__", "_forwarded.<locals>.forward"}
 
 
 @pytest.mark.parametrize("name", ["len", "ord", "chr"])

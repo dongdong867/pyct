@@ -152,6 +152,16 @@ SPREAD_OUT = [
     "{" + ", ".join(f"k{n}: {n}" for n in range(15)) + ",\n k: 1} in d",
     "{" + ", ".join(f"k{n}: {n}" for n in range(16)) + ",\n k: 1} in d",
     "{'a':\n f(), 'b': 2, **c} in d",
+    # a chained compare's `in` link and its `is` link against True or False
+    "0 < (\n x) in c",
+    "0 < x in {\n 1, 5}",
+    "0 < x in [\n 1, 2]",
+    "x in [\n 1, 2] < y",
+    "x in {\n 1, 2} < y",
+    "(\n a) < x not in {'k':\n 1}",
+    "1 == (\n flag) is True",
+    "flag is (\n False) == 1",
+    "if 0 < x in c < (\n y):\n    pass",
 ]
 
 

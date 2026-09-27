@@ -48,6 +48,26 @@ PROGRAMS: dict[str, str] = {
     "in literal tuple": "answer = note('a', a) in (1, 'x')",
     "in empty dict": "answer = note('a', a) in {}",
     "in repeated set": "answer = note('a', a) in {1, True, 1.0, 'x', 'x'}",
+    # a chained compare: its `in` link searches through pyct, and its `is` link against True
+    # or False is answered by pyct, each operand evaluated once and the chain stopping as written
+    "chain in first": "answer = note('a', a) in note('b', b) != note('c', 2)",
+    "chain in last": "answer = note('c', 0) != note('a', a) in note('b', b)",
+    "chain not in": "answer = note('c', 0) != note('a', a) not in note('b', b)",
+    "chain in literal set": "answer = note('c', 0) != note('a', a) in {1, 5, 'x'}",
+    "chain in literal list": "answer = note('c', 0) != note('a', a) in [1,\n    'x']",
+    "chain is True": "answer = note('b', b) != note('a', a) is True",
+    "chain is not False": "answer = note('a', a) is not False == note('b', b)",
+    "chain in then is": "answer = note('c', 1) in note('a', a) is note('b', b)",
+    "chain in then in": "answer = note('c', 1) in note('a', a) in note('b', b)",
+    "chain in then <": "answer = note('c', 1) in note('a', a) < note('b', b)",
+    "if chain in": (
+        "if note('c', 0) != note('a', a) in note('b', b):\n    answer = 'yes'\n"
+        "else:\n    answer = 'no'"
+    ),
+    "chain in class body": (
+        "class Held(metaclass=Logging):\n    held = 0 != note('a', a) in note('b', b)\n"
+        "answer = Held.held"
+    ),
     # a class body whose namespace logs every name it is asked for and does not hold
     "in class body": (
         "class Held(metaclass=Logging):\n    held = note('a', a) in note('b', b)\n"

@@ -13,6 +13,16 @@ dunder name, ``__pyct_in__(a, b)`` say. The operands are the compare's own
 nodes, moved into the call and never copied, so each is evaluated once and
 in Python's order: the left, then the right, then the test.
 
+A chained compare keeps its own shape, because CPython holds each operand
+on its stack for the next link. An `in` or `not in` link searches its
+container through ``__pyct_searched__(b)``, and an `is` or `is not` link
+with True or False on its right becomes an `in` or `not in` on
+``__pyct_identity__(True)``: both are Python's own `in`, which asks the
+container, so the link is answered by pyct at the chain's own position.
+The next link meets what the call made as its left operand, so an `is`
+link there becomes an `in` on ``__pyct_identity__`` whatever its right,
+and a compare runs on the operand the call holds.
+
 The module binds those names itself, in an import placed before its first
 statement that runs code, after its docstring and its ``__future__``
 imports and at that statement's first instruction
@@ -50,13 +60,20 @@ _NAMES: dict[type[ast.cmpop], str] = {
     ast.In: "__pyct_in__",
     ast.NotIn: "__pyct_not_in__",
 }
-# the function of pyct.core.substitutes each of those names is bound to
+# the name a chain's `in` link searches through, and the one an `is` link's constant becomes
+_SEARCHED = "__pyct_searched__"
+_IDENTITY = "__pyct_identity__"
+# the member of pyct.core.substitutes each name is bound to
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
     "__pyct_in__": "in_",
     "__pyct_not_in__": "not_in",
+    _SEARCHED: "Searched",
+    _IDENTITY: "Identity",
 }
+# the operator an `is` link becomes on pyct's identity
+_AS_IN: dict[type[ast.cmpop], type[ast.cmpop]] = {ast.Is: ast.In, ast.IsNot: ast.NotIn}
 _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.Is: ast.IsNot,
     ast.IsNot: ast.Is,
@@ -120,8 +137,11 @@ def _calls_a_substitute(node: ast.AST) -> bool:
     return isinstance(node, ast.Name) and node.id in BOUND
 
 
-def _replacement(node: ast.AST) -> ast.Call | None:
-    """The call that replaces a compare of the three shapes, or None for any other node."""
+def _replacement(node: ast.AST) -> ast.expr | None:
+    """The call that replaces a compare of the three shapes, the chain that replaces a chained
+    compare with a link to search, or None for any other node."""
+    if isinstance(node, ast.Compare) and len(node.ops) > 1:
+        return _chain(node)
     folded = _folded(node)
     if folded is None:
         return None
@@ -132,6 +152,48 @@ def _replacement(node: ast.AST) -> ast.Call | None:
     function = _function(_NAMES[operator], left)
     arguments = [left, right] if operator in (ast.Is, ast.IsNot) else [left, *_container(right)]
     return ast.copy_location(ast.Call(func=function, args=arguments, keywords=[]), compare)
+
+
+def _chain(compare: ast.Compare) -> ast.Compare | None:
+    """The chain with each link to search handed to pyct, or None when it has none."""
+    ops, comparators = list(compare.ops), list(compare.comparators)
+    held = False
+    for index, (operator, right) in enumerate(zip(compare.ops, compare.comparators, strict=True)):
+        link = _link(operator, right, last=index == len(ops) - 1, held=held)
+        if link is not None:
+            ops[index], comparators[index] = link
+        held = link is not None
+    if comparators == compare.comparators:
+        return None
+    chain = ast.Compare(left=compare.left, ops=ops, comparators=comparators)
+    return ast.copy_location(chain, compare)
+
+
+def _link(
+    operator: ast.cmpop, right: ast.expr, *, last: bool, held: bool
+) -> tuple[ast.cmpop, ast.Call] | None:
+    """One link's operator and the container it searches, or None for a link left to Python.
+
+    ``held`` says the link before handed this one a call's operand as its
+    left. Only the last link's container is compiled as CPython compiles it
+    beside `in`, since CPython folds the display of that link alone.
+    """
+    if isinstance(operator, ast.In | ast.NotIn):
+        return operator, _called(_SEARCHED, _container(right, folded=last), right)
+    if isinstance(operator, ast.Is | ast.IsNot) and (held or _is_bool(right)):
+        return _AS_IN[type(operator)](), _called(_IDENTITY, [right], right)
+    return None
+
+
+def _called(name: str, arguments: list[ast.expr], operand: ast.expr) -> ast.Call:
+    """A call of the name on the arguments, where the operand it stands for was.
+
+    The name sits where the first argument's first instruction does, as the
+    operand's first instruction was: a display CPython folds to a constant
+    has its own.
+    """
+    call = ast.Call(func=_function(name, arguments[0]), args=arguments, keywords=[])
+    return ast.copy_location(call, operand)
 
 
 def _folded(node: ast.AST) -> tuple[ast.Compare, type[ast.cmpop]] | None:
@@ -169,18 +231,23 @@ def _function(name: str, left: ast.expr) -> ast.Name:
     )
 
 
-def _container(display: ast.expr) -> list[ast.expr]:
-    """The container as CPython compiles it beside `in`, then any constants it was written with."""
-    if isinstance(display, ast.List) and not _starred(display.elts):
-        folded = constants(display.elts, display)
-        if folded is None:
+def _container(display: ast.expr, *, folded: bool = True) -> list[ast.expr]:
+    """The container as CPython compiles it beside `in`, then any constants it was written with.
+
+    A display CPython does not fold stays as written, and a set still hands
+    over its constants.
+    """
+    if folded and isinstance(display, ast.List) and not _starred(display.elts):
+        elements = constants(display.elts, display)
+        if elements is None:
             return [ast.copy_location(ast.Tuple(elts=display.elts, ctx=ast.Load()), display)]
-        return [_constant(folded, display)]
+        return [_constant(elements, display)]
     if isinstance(display, ast.Set):
-        folded = constants(display.elts, display)
-        if folded is None:
+        elements = constants(display.elts, display)
+        if elements is None:
             return [display]
-        return [_constant(frozenset(folded), display), *_written(folded, display)]
+        held = _constant(frozenset(elements), display) if folded else display
+        return [held, *_written(elements, display)]
     if isinstance(display, ast.Dict):
         # a key of None is a `**` unpacking, whose keys the display does not write
         keys = [key for key in display.keys if key is not None]

@@ -168,9 +168,9 @@ def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_writt
     # an int element meets the float as `x == 2` does, a compare it follows
     assert in_(x, frozenset({2}), (2,)) is False
     assert expressions(sink)[-1] == (["==", "x", 2], False)
-    # a bool beside a float is float's own answer, a downgrade named by the compare
+    # a bool beside a float is the double 1.0 or 0.0, a compare it follows too
     assert in_(x, frozenset({True}), (True,)) is False
-    assert expressions(sink)[-1] == "__eq__"
+    assert expressions(sink)[-1] == (["==", "x", True], False)
 
 
 def test_a_tracked_int_in_a_literal_display_of_floats_meets_each_as_python_does() -> None:

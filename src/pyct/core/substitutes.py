@@ -7,7 +7,10 @@ answers `is` without asking either operand, and tests the answer of `in`
 for truth before the target sees it, so a tracked value would lose its
 condition in both. Here a tracked value
 answers as it stands for, and any other operand gets Python's own answer
-and Python's own exception.
+and Python's own exception. Inside a chained compare, where each operand
+is evaluated once on Python's stack, the link keeps Python's own `in` and
+searches a container of this module's, `Searched` or `Identity`, which asks
+the same functions.
 
 It also binds `len`, `ord` and `chr` in the module's builtins to the three
 functions `pyct.core.bound` holds, routers of the same kind.
@@ -20,17 +23,39 @@ unless one of core's own frames sits below.
 
 from __future__ import annotations
 
+import operator
 import types
+from collections.abc import Callable
+from typing import Any
 
 from pyct.core import bound, strs
 from pyct.core.bools import ConcolicBool
+from pyct.core.branch import Downgrade
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
+from pyct.core.values import own, plain
 
-# the tracked values a set or dict can hold: those a literal display is searched for, element
-# by element, as a tuple of the same elements is
-_HASHABLE = (ConcolicBool, ConcolicInt, ConcolicFloat, ConcolicStr)
+# the tracked values a set or dict can hold, and the Python type each stands for: those a set,
+# a frozenset or a dict's keys are searched for, element by element, as a tuple of the same
+# elements is
+_HASHABLE: dict[type, type] = {
+    ConcolicBool: bool,
+    ConcolicInt: int,
+    ConcolicFloat: float,
+    ConcolicStr: str,
+}
+
+# the containers Python searches by hash rather than element by element
+_HASHED: tuple[type, ...] = (set, frozenset, dict, type({}.keys()))
+
+# the most elements or keys a search compares one by one; past it Python answers, and the
+# search is a downgrade named `__contains__`. It bounds the forks one `in` records
+SEARCHED_MOST = 100
+
+# the elements whose `==` with a tracked value is followed and agrees with their hash: an
+# element of another type is found by Python's own lookup
+_COMPARED: frozenset[type] = frozenset({int, bool, float, str, *_HASHABLE})
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -65,14 +90,18 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     ``written`` holds the literal elements of a set, or the literal keys of
     a dict, in the order the display writes them: a tracked value is
     searched for there, one `==` fork per element tried (see `_searched`).
-    Anything else is Python's own `in`.
+    A tracked value in a set, a frozenset or a dict's keys is searched for
+    in the container's own order (see `_looked_up`). Anything else is
+    Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.in_text(item, container)
-    if written is not None and isinstance(item, _HASHABLE):
+    if written is not None and type(item) in _HASHABLE:
         return _searched(item, written)
+    if type(item) in _HASHABLE and (kind := _hashed(container)) is not None:
+        return _looked_up(item, container, kind)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
     return item in container  # pyrefly: ignore[not-iterable]
 
@@ -89,6 +118,41 @@ def _searched(item: object, written: tuple[object, ...]) -> bool:
     return any(item == element for element in written)
 
 
+def _hashed(container: object) -> type | None:
+    """The type Python searches the container as by hash, or None for any other container.
+
+    A subclass counts when it keeps its base's own `__contains__`, as an
+    `OrderedDict` or a `Counter` does; one that defines its own is asked, as
+    Python asks it.
+    """
+    kind = next((base for base in _HASHED if isinstance(container, base)), None)
+    if kind is None or getattr(type(container), "__contains__", None) is not kind.__contains__:
+        return None
+    return kind
+
+
+def _looked_up(item: object, container: object, kind: type) -> bool:
+    """Whether the tracked item is in a container Python searches by hash, as Python answers.
+
+    Python finds the element by its hash and compares only on a match, so a
+    miss would record nothing. Here the item is compared with each element
+    in the container's own order, as `_searched` compares, until one holds,
+    for the elements whose `==` pyct follows. When none holds, Python's own
+    lookup of the plain value answers, so an element of any other type that
+    equals the item is found as Python finds it. Past `SEARCHED_MOST`
+    elements Python answers alone, and the search is a downgrade.
+    """
+    held = plain(item, _HASHABLE[type(item)])
+    if len(container) <= SEARCHED_MOST:  # pyrefly: ignore[bad-argument-type]
+        elements = kind.__iter__(container)
+        compared = tuple(element for element in elements if type(element) in _COMPARED)
+        return _searched(item, compared) or own(operator.contains, container, held)
+    answer = own(operator.contains, container, held)
+    # recorded after Python answered, as a downgrade is, so a lookup that raises records nothing
+    item.sink.append(Downgrade(name="__contains__"))  # pyrefly: ignore[missing-attribute]
+    return answer
+
+
 def not_in(item: object, container: object, written: tuple[object, ...] | None = None) -> object:
     """`item not in container`, by the rules of `in_`, with `not in` as its own head on strings.
 
@@ -98,9 +162,75 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
         return strs.not_contains(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.not_in_text(item, container)
-    if written is not None and isinstance(item, _HASHABLE):
+    if written is not None and type(item) in _HASHABLE:
         return not _searched(item, written)
+    if type(item) in _HASHABLE and (kind := _hashed(container)) is not None:
+        return not _looked_up(item, container, kind)
     return item not in container  # pyrefly: ignore[not-iterable]
+
+
+def _forwarded(compare: Callable[[Any, Any], object]) -> Callable[[_Link, object], object]:
+    """A rich compare of the operand a link holds, as Python runs it on the operand itself."""
+
+    def forward(self: _Link, other: object) -> object:
+        return compare(self.held, other)
+
+    return forward
+
+
+class _Link:
+    """An operand of a chained compare that pyct's `in` searches, handed to the next link.
+
+    CPython holds each operand of a chain once, on its stack, and hands it
+    to the next link as that link's left. So a link after this one sees it:
+    a compare runs on the operand it holds, as Python runs it, and a link
+    of pyct's own reads the operand it holds (`_unlinked`).
+    """
+
+    __slots__ = ("held",)
+
+    def __init__(self, held: object) -> None:
+        self.held = held
+
+    __lt__ = _forwarded(operator.lt)
+    __le__ = _forwarded(operator.le)
+    __gt__ = _forwarded(operator.gt)
+    __ge__ = _forwarded(operator.ge)
+    __eq__ = _forwarded(operator.eq)  # pyrefly: ignore[bad-override]
+    __ne__ = _forwarded(operator.ne)  # pyrefly: ignore[bad-override]
+
+
+def _unlinked(item: object) -> object:
+    """The operand a link holds, where the link before handed one on; any other item itself."""
+    return item.held if isinstance(item, _Link) else item
+
+
+class Searched(_Link):
+    """The container a chained compare's `in` link searches, as `in_` searches it.
+
+    Python's own `in` asks it with the item, so the chain keeps its stack,
+    each operand evaluated once, and the fork is recorded at the chain's
+    own position. ``written`` is `in_`'s.
+    """
+
+    __slots__ = ("written",)
+
+    def __init__(self, held: object, written: tuple[object, ...] | None = None) -> None:
+        super().__init__(held)
+        self.written = written
+
+    def __contains__(self, item: object) -> object:
+        # Python tests the answer for truth itself, which records a tracked answer's fork here
+        return in_(_unlinked(item), self.held, self.written)
+
+
+class Identity(_Link):
+    """The right operand a chained compare's `is` link meets, answered as `is_` answers it."""
+
+    __slots__ = ()
+
+    def __contains__(self, item: object) -> bool:
+        return is_(_unlinked(item), self.held)
 
 
 # the tracked values core follows through each bound builtin, by their exact type, and the
@@ -109,5 +239,17 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
 PASSING: frozenset[types.CodeType] = (
-    frozenset(function.__code__ for function in (is_, is_not, in_, not_in)) | bound.PASSING
+    frozenset(
+        function.__code__
+        for function in (
+            is_,
+            is_not,
+            in_,
+            not_in,
+            Searched.__contains__,
+            Identity.__contains__,
+            _Link.__lt__,
+        )
+    )
+    | bound.PASSING
 )

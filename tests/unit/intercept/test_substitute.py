@@ -11,7 +11,8 @@ from pyct.intercept.substitute import BOUND, WRITTEN_MOST, substitute
 # the import a module with a substitution starts with
 BINDING = (
     "from pyct.core.substitutes import is_ as __pyct_is__, is_not as __pyct_is_not__, "
-    "in_ as __pyct_in__, not_in as __pyct_not_in__"
+    "in_ as __pyct_in__, not_in as __pyct_not_in__, Searched as __pyct_searched__, "
+    "Identity as __pyct_identity__"
 )
 
 
@@ -55,8 +56,11 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
         "a is None",
         "a is 1",
         "not (a is None)",
-        # a chained compare, and every other operator
-        "0 < x in {1, 5}",
+        # a chained compare with no `in` link and no `is` link against True or False on its
+        # right, and every other operator
+        "a < b < c",
+        "a < b is None",
+        "True is a < b",
         "a == b",
         "not (a == b)",
         # a loop, a comprehension and a pattern hold `in` or `is` but no compare
@@ -69,6 +73,45 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
 )
 def test_other_code_is_left_as_written(source: str) -> None:
     assert substituted(source) == ast.unparse(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        # the chain stays, and its link searches a container of pyct's, which asks `in_`
+        ("0 < x in s", "0 < x in __pyct_searched__(s)"),
+        ("0 < x not in s", "0 < x not in __pyct_searched__(s)"),
+        # the last link's container is handed over as CPython compiles it beside `in`
+        ("0 < x in {1, 5}", "0 < x in __pyct_searched__(frozenset({1, 5}), (1, 5))"),
+        ("0 < x in [a, b]", "0 < x in __pyct_searched__((a, b))"),
+        # an earlier link's display is compiled as written, and a set still hands its constants
+        ("x in [1, 2] < y", "x in __pyct_searched__([1, 2]) < y"),
+        ("x in {2, 1} < y", "x in __pyct_searched__({2, 1}, (2, 1)) < y"),
+        ("x in {'a': 1} < y", "x in __pyct_searched__({'a': 1}, ('a',)) < y"),
+        # `is` against True or False on its right is an `in` on pyct's identity
+        ("1 == flag is True", "1 == flag in __pyct_identity__(True)"),
+        ("1 == flag is not False", "1 == flag not in __pyct_identity__(False)"),
+        ("a is False < b in c", "a in __pyct_identity__(False) < b in __pyct_searched__(c)"),
+        # a link of any other operator is left to Python, and after a searched link it meets
+        # the operand the call holds: a compare runs on it, and an `is` reads it through pyct
+        ("a is None < b in c", "a is None < b in __pyct_searched__(c)"),
+        ("a in b < c", "a in __pyct_searched__(b) < c"),
+        ("a in b is c", "a in __pyct_searched__(b) in __pyct_identity__(c)"),
+        ("a in b is not None", "a in __pyct_searched__(b) not in __pyct_identity__(None)"),
+    ],
+)
+def test_an_in_or_is_link_of_a_chain_searches_through_pyct(source: str, expected: str) -> None:
+    assert substituted(source) == expected
+
+
+def test_a_chain_link_s_call_takes_its_operand_s_position() -> None:
+    (statement,) = statements("y = (0 < x in\n     s)")
+    chain = statement.value  # pyrefly: ignore[missing-attribute]
+    call = chain.comparators[1]
+
+    assert (chain.lineno, chain.col_offset) == (1, 5)
+    assert (call.lineno, call.col_offset, call.end_lineno) == (2, 5, 2)
+    assert (call.func.lineno, call.func.col_offset) == (2, 5)
 
 
 def test_a_compare_inside_an_operand_is_substituted_too() -> None:
@@ -143,7 +186,7 @@ def test_each_call_takes_the_compare_s_position_and_its_name_the_first_operand_s
 
 def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
     assert all(name.startswith("__") and name.endswith("__") for name in BOUND)
-    assert set(BOUND.values()) == {"is_", "is_not", "in_", "not_in"}
+    assert set(BOUND.values()) == {"is_", "is_not", "in_", "not_in", "Searched", "Identity"}
 
 
 def test_a_repeated_constant_is_handed_over_once_as_the_display_holds_it() -> None:
