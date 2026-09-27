@@ -84,3 +84,15 @@ def test_function_of_reads_through_static_and_class_methods() -> None:
     assert function_of(classmethod(plain)) is plain
     assert function_of(property(plain)) is None
     assert function_of(len) is None
+
+
+def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
+    # a named tuple's _make and _replace say they are its own, but their code is Python's
+    module = f"{SWEEP}.tuples"
+    assert entries(module, module) == [
+        Entry(module, "Pair", seed={"a": 0, "b": 0}),
+        Entry(module, "Point", seed={"x": 0, "y": 0}),
+        Entry(module, "Span", seed={"start": 0, "end": 0}),
+        Entry(module, "Span.length", skip=METHOD),
+        Entry(module, "Box", seed={"width": 0, "label": "box"}),
+    ]

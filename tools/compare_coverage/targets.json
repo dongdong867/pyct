@@ -223,6 +223,7 @@
     {"set": "v2", "module": "targets.sweep.stall.hangs", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.stall.zeta", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.text_annotations", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.tuples", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.walk._internal", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.walk.prices", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.walk.tests.test_prices", "left_out": "a sweep fixture"},

@@ -84,7 +84,7 @@ class _Package:
             owner = getattr(target, "__module__", None)
             generated = isinstance(owner, str) and _within(owner, self.name)
             return [Entry(found_in, found_as, skip=GENERATED)] if generated else []
-        home = self.files.get(os.path.realpath(file))
+        home = self._home_of(file)
         if home is None:
             return []
         name = self._name_in(home, target)
@@ -93,8 +93,7 @@ class _Package:
         return [seeded(home, name, vars(sys.modules[home])[name])]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
-        file = _class_file(cls)
-        home = None if file is None else self.files.get(os.path.realpath(file))
+        home = self._class_home(cls)
         constructed = _python_constructor(cls)
         methods = own_methods(cls)
         if home is None or not (constructed or methods):
@@ -104,6 +103,23 @@ class _Package:
             return [_unnamed(home, found_in, found_as)]
         rows = [Entry(home, f"{name}.{method}", skip=METHOD) for method in methods]
         return [seeded(home, name, cls), *rows] if constructed else rows
+
+    def _class_home(self, cls: type) -> str | None:
+        """The module of the package whose file holds the class's code: that of a function its
+        own body defines, else that of the module ``__module__`` names, which a library may have
+        rewritten. A function whose file is no module of the package, such as the ``_make`` a
+        named tuple takes from Python, says nothing."""
+        prefix = f"{cls.__qualname__}."
+        for value in list(vars(cls).values()):
+            target = function_of(value)
+            home = self._home_of(_code_file(target))
+            if home is not None and getattr(target, "__qualname__", "").startswith(prefix):
+                return home
+        return self._home_of(getattr(sys.modules.get(cls.__module__), "__file__", None))
+
+    def _home_of(self, file: object) -> str | None:
+        """The module of the package whose file ``file`` is, or None."""
+        return self.files.get(os.path.realpath(file)) if isinstance(file, str) else None
 
     def _name_in(self, home: str, target: object) -> str | None:
         """The name ``home`` gives ``target``: its own name when that holds it, else the first."""
@@ -159,19 +175,6 @@ def own_methods(cls: type) -> list[str]:
 def _python_constructor(cls: type) -> bool:
     """Whether the ``__init__`` or ``__new__`` the class takes is Python code, generated or not."""
     return any(function_of(getattr(cls, name, None)) is not None for name in CONSTRUCTORS)
-
-
-def _class_file(cls: type) -> str | None:
-    """The file that holds the class's code: that of a function its own body defines, else
-    that of the module ``__module__`` names, which a library may have rewritten."""
-    prefix = f"{cls.__qualname__}."
-    for value in list(vars(cls).values()):
-        target = function_of(value)
-        file = _code_file(target)
-        if file is not None and getattr(target, "__qualname__", "").startswith(prefix):
-            return file
-    file = getattr(sys.modules.get(cls.__module__), "__file__", None)
-    return file if isinstance(file, str) else None
 
 
 def _code_file(target: object) -> str | None:
