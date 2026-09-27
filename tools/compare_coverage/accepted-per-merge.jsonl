@@ -29,7 +29,9 @@
 {"set": "v2", "target": "targets.lists.changes::appended", "seed": {"items": [1, 2, 3, 4, 5, 6]}, "status": "differs", "only_legacy": [], "only_v2": [9]}
 {"set": "v2", "target": "targets.lists.changes::extended", "seed": {"items": [1, 2, 3, 4, 5, 6]}, "status": "differs", "only_legacy": [], "only_v2": [17]}
 {"set": "v2", "target": "targets.lists.empties::check", "seed": {"items": [1, 2]}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.lists.fills::walk_floats", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [13]}
 {"set": "v2", "target": "targets.lists.fills::walk_strs", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [8]}
+{"set": "v2", "target": "targets.lists.keeps::keep", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [8]}
 {"set": "v2", "target": "targets.lists.len_downgrade::check", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
