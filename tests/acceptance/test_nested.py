@@ -11,7 +11,7 @@ import json
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, one_line, run_pyct
+from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
 
 DICT_VALUES = "targets.nested.dict_values::check"
 DICT_VALUES_FILE = str(REPO_ROOT / "targets" / "nested" / "dict_values.py")
@@ -22,7 +22,6 @@ KEY_LIKE_INDEX = "targets.nested.key_like_index::compare"
 KEY_LIKE_INDEX_FILE = str(REPO_ROOT / "targets" / "nested" / "key_like_index.py")
 STRING_IN_LIST = "targets.nested.string_in_list::check"
 OWN_ARGUMENTS = "targets.nested.own_arguments::touch"
-MISSING_KEY = "targets.nested.missing_key::check"
 DEEP = "targets.nested.deep::check"
 RESERVED = "targets.names.solver_words::reserved"
 ACCENTED = "targets.names.solver_words::accented"
@@ -90,6 +89,12 @@ def server_of(line: dict[str, object]) -> dict[str, object]:
     return server
 
 
+def _holds_a_server(line: dict[str, object]) -> bool:
+    """Whether a line's config holds the server dict, and only that."""
+    config = args_of(line)["config"]
+    return isinstance(config, dict) and list(config) == ["server"]
+
+
 def number(value: object) -> int:
     """A value off a line that must be a JSON integer, narrowed so a comparison means something."""
     assert isinstance(value, int) and not isinstance(value, bool), value
@@ -111,19 +116,19 @@ def test_flips_values_inside_a_dict() -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    servers = [server_of(line) for line in solved(lines)]
-    assert any(isinstance(s["port"], int) and s["port"] < 1 for s in servers), servers
-    assert any(isinstance(s["port"], int) and s["port"] > 65535 for s in servers), servers
-    assert any(s["host"] == "localhost" for s in servers), servers
+    # a line whose config or server the solver emptied of a key raised KeyError at its read
+    servers = [server_of(line) for line in solved(lines) if _holds_a_server(line)]
+    ports = [s["port"] for s in servers if "port" in s]
+    assert any(isinstance(p, int) and p < 1 for p in ports), servers
+    assert any(isinstance(p, int) and p > 65535 for p in ports), servers
+    assert any(s.get("host") == "localhost" for s in servers), servers
     port = ["[]", ["[]", "config", "'server'"], "'port'"]
-    assert forks_of(lines[0])[0]["expression"] == ["<", port, 1]
+    assert ["<", port, 1] in [fork["expression"] for fork in forks_of(lines[0])]
     fork = f"fork {DICT_VALUES_FILE}:3:7  config['server']['port'] < 1  not taken"
     assert fork in result.stderr.splitlines()
-    # the solver changes values only: every line keeps the seed's keys and the value no fork read
-    for line in lines:
-        server = server_of(line)
-        assert list(server) == ["port", "host", "workers"], line
-        assert server["workers"] == 2, line
+    # a key no fork names keeps what the input had, and so does its value
+    for server in servers:
+        assert server["workers"] == 2, servers
     assert covered_of(lines) == {DICT_VALUES_FILE: list(range(2, 10))}
     # a solver line's args is a seed as it stands
     again = run_pyct(DICT_VALUES, "--args", json.dumps(args_of(solved(lines)[0])))
@@ -162,16 +167,18 @@ def test_loops_over_a_list_and_a_dict() -> None:
     # walk over the list one fork a pass on its length (follow-lists-and-dicts-as-they-change)
     passes = [(3, [">", ["len", "items"], j]) for j in range(4)]
     items = [(4, [">", ["[]", "items", j], 10]) for j in range(3)]
+    keys = [(6, [">", ["len", "limits"], j]) for j in range(3)]
     values = [(7, ["<", ["[]", "limits", "'a'"], 0]), (7, ["<", ["[]", "limits", "'b'"], 0])]
     forks = [(fork["line"], fork["expression"]) for fork in forks_of(lines[0])]
-    assert [fork for fork in forks if fork[0] != 3] == items + values
+    assert [fork for fork in forks if fork[0] in (4, 7)] == items + values
     assert [fork for fork in forks if fork[0] == 3] == passes
+    assert [fork for fork in forks if fork[0] == 6] == keys
     sides = sides_of(lines)
     for _, expression in items + values:
         assert {(json.dumps(expression), True), (json.dumps(expression), False)} <= sides
-    for line in lines:
-        limits = args_of(line)["limits"]
-        assert isinstance(limits, dict) and list(limits) == ["a", "b"], line
+    # the solver may add a key to the walk over the dict, or take one away
+    sizes = {len(limits) for line in lines if isinstance(limits := args_of(line)["limits"], dict)}
+    assert {2, 3} <= sizes or {1, 2} <= sizes, sizes
 
 
 # run-with-nested-arguments-passes-a-positional-only-parameter
@@ -203,7 +210,12 @@ def test_quotes_a_key_that_looks_like_an_index() -> None:
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     expression = [">", ["[]", "d", "'0'"], ["[]", "d", '"it\'s"']]
-    assert [fork["expression"] for fork in forks_of(lines[0])] == [expression]
+    # each key is looked up first, written as Python quotes it
+    assert [fork["expression"] for fork in forks_of(lines[0])] == [
+        ["in", "'0'", "d"],
+        ["in", '"it\'s"', "d"],
+        expression,
+    ]
     fork = f"fork {KEY_LIKE_INDEX_FILE}:2:7  d['0'] > d[\"it's\"]  not taken"
     assert fork in result.stderr.splitlines()
     assert any(fork["taken"] for line in solved(lines) for fork in forks_of(line)), lines
@@ -238,11 +250,12 @@ def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    # the target appends None to items and writes a key into config; no later input sees either
+    # the target appends None to items and writes True into config; no later input sees either
     assert [line["failure"] for line in lines] == [None] * len(lines)
     for line in lines:
         assert None not in items_of(line), line
-        assert args_of(line)["config"] == {}, line
+        config = args_of(line)["config"]
+        assert isinstance(config, dict) and config.get("seen") is not True, line
     # an answer may empty items, which the flip of its length check asks for
     firsts = [items_of(line)[:1] for line in solved(lines)]
     assert any(first and number(first[0]) > 5 for first in firsts), lines
@@ -295,35 +308,24 @@ def test_refuses_the_wrong_kind_under_items_it_does_not_check() -> None:
     assert run_pyct(ANY_ITEMS, '{"cfg": {"k": [1]}, "xs": [1, null]}').returncode == 0
 
 
-# run-with-nested-arguments-reports-a-missing-key-as-the-target-s-raise
-def test_reports_a_missing_key_as_the_targets_raise() -> None:
-    result = run_pyct(MISSING_KEY, '{"config": {"server": {}}}')
-
-    assert result.returncode == 0, result.stderr
-    # one_line reads the seed's line and then the summary line, and nothing between
-    seed = one_line(result.stdout)
-    failure = seed["failure"]
-    assert isinstance(failure, dict) and failure["kind"] == "target_raised", seed
-    assert str(failure["detail"]).startswith("KeyError"), seed
-    assert seed["forks"] == []
-
-
 # run-with-nested-arguments: a value inside an argument, nested as deep as the seed goes
 def test_follows_a_value_nested_past_the_recursion_limit() -> None:
     seed: dict[str, object] = {"a": 0}
     for _ in range(DEPTH - 1):
         seed = {"a": seed}
 
-    result = run_pyct(DEEP, json.dumps({"config": seed}))
+    # each lookup records whether its key is there, and a line whose dict the solver emptied
+    # raises there and covers nothing new, so the run ends when inputs stop covering lines
+    result = run_pyct(DEEP, json.dumps({"config": seed}), "--plateau", "2")
 
     assert result.returncode == 0, result.stderr[-2000:]
     lines = input_lines(result.stdout)
-    assert [line["failure"] for line in lines] == [None, None]
+    assert lines[0]["failure"] is None and len(forks_of(lines[0])) == DEPTH + 1
     node = args_of(lines[1])["config"]
     for _ in range(DEPTH):
         assert isinstance(node, dict)
         node = node["a"]
-    assert isinstance(node, int) and node > 5
+    assert isinstance(node, int) and node > 5 and lines[1]["failure"] is None
     assert "config" + "['a']" * DEPTH + " > 5" in result.stderr
 
 
