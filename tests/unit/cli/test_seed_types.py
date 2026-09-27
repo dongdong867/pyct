@@ -398,8 +398,8 @@ def test_check_seed_types_accepts_a_matching_seed() -> None:
 class ReadOnce:
     """A callable whose signature Python can read no more: a read raises.
 
-    The loader read it once already, which is the signature ``target_for``
-    hands over.
+    The test hands the seed check the signature the loader would have read
+    before that, in a Target it builds itself.
     """
 
     @property
