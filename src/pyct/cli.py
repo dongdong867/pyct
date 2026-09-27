@@ -29,8 +29,9 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
-from pyct.run.launch import ImportWatch, launch
+from pyct.run.launch import launch
 from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError

@@ -7,7 +7,7 @@ from types import ModuleType
 
 import pytest
 
-from pyct.run.launch import ImportWatch
+from pyct.run.import_watch import ImportWatch
 from pyct.run.target import Target, TargetError, load_target
 
 REPO_ROOT = Path(__file__).resolve().parents[3]

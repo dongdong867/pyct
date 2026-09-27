@@ -11,7 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
-from pyct.run.launch import ImportWatch
+from pyct.run.import_watch import ImportWatch
 
 
 class TargetError(Exception):

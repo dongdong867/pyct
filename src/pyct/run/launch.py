@@ -21,56 +21,20 @@ as the command's process.
 from __future__ import annotations
 
 import contextlib
-import mmap
 import os
 import signal
-import struct
 import sys
 from collections.abc import Callable, Generator, Iterable, Sequence
 
 from pyct.run.child import flush_streams
+from pyct.run.import_watch import ImportWatch
 from pyct.run.process import Child, Waited, how
 
-# the page starts with the length of the module name it holds, zero when it names none
-_LENGTH = struct.Struct("<I")
 # the signals the watcher notes; they are held from before the fork until it does
 _NOTED = frozenset({signal.SIGINT, signal.SIGTERM})
 
 # the command line's work, given the page when a watcher reads it; returns the exit code
 type Command = Callable[[ImportWatch | None], int]
-
-
-class ImportWatch:
-    """The page on which the command's process names the module it is importing."""
-
-    def __init__(self, argv: Sequence[str]) -> None:
-        """A page every process forked from this one shares, with room for the whole ``argv``.
-
-        A module name is part of one argument, so any name the command line
-        gives fits.
-        """
-        room = len("".join(argv).encode("utf-8", "surrogateescape"))
-        self._page = mmap.mmap(-1, _LENGTH.size + room)
-
-    @contextlib.contextmanager
-    def importing(self, module_name: str) -> Generator[None]:
-        """Name ``module_name`` on the page until the block ends, however it ends."""
-        self._write(module_name.encode())
-        try:
-            yield
-        finally:
-            self._write(b"")
-
-    def module(self) -> str | None:
-        """The module the page names, or None."""
-        (length,) = _LENGTH.unpack_from(self._page)
-        if length == 0:
-            return None
-        return self._page[_LENGTH.size : _LENGTH.size + length].decode()
-
-    def _write(self, name: bytes) -> None:
-        self._page[_LENGTH.size : _LENGTH.size + len(name)] = name
-        _LENGTH.pack_into(self._page, 0, len(name))
 
 
 def launch(command: Command, argv: Sequence[str]) -> int:
