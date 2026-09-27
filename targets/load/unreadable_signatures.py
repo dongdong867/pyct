@@ -48,3 +48,22 @@ class _Odd:
 
 
 odd_callable = _Odd()
+
+
+class _Raises:
+    """A callable whose signature, when read, raises the error it was made with."""
+
+    def __init__(self, error: BaseException) -> None:
+        self.error = error
+
+    @property
+    def __signature__(self) -> object:
+        raise self.error
+
+    def __call__(self, x: int) -> int:
+        return x
+
+
+no_message = _Raises(RuntimeError())
+two_line_message = _Raises(ValueError("first line\nsecond line"))
+blank_first_line = _Raises(ValueError("\nafter a blank line"))

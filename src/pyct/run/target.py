@@ -68,13 +68,26 @@ def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
 
 
 def _signature(spec: str, fn: Callable[..., object]) -> inspect.Signature:
-    """``fn``'s signature. Anything ``inspect.signature`` raises is a ``TargetError``.
+    """``fn``'s signature. Any Exception ``inspect.signature`` raises is a ``TargetError``.
 
-    Its message is the reason the refusal gives. Reading a signature can
-    run the target's own code, such as an attribute lookup or, from Python
-    3.14, an annotation's evaluation, so any Exception can come of it.
+    Reading a signature can run the target's own code, such as an attribute
+    lookup or, from Python 3.14, an annotation's evaluation, so any
+    Exception can come of it. The refusal gives ``_reason`` for it.
     """
     try:
         return inspect.signature(fn)
     except Exception as error:
-        raise TargetError(f"cannot read the signature of {spec}: {error}") from error
+        raise TargetError(f"cannot read the signature of {spec}: {_reason(error)}") from error
+
+
+def _reason(error: BaseException) -> str:
+    """Python's message for ``error`` as one line that is never empty.
+
+    That is the message's first line that holds anything, or the
+    exception's type name when no line does, so the refusal stays one
+    line on stderr.
+    """
+    for line in str(error).splitlines():
+        if line.strip():
+            return line
+    return type(error).__name__
