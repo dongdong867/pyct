@@ -256,18 +256,21 @@ def _least(level: int, *, right: bool) -> int:
 # the builtins a fork line writes as Python calls them: `len(s)`
 _CALLED = ("len",)
 
+# the methods with no argument a fork line writes as Python calls them: `x.is_integer()`. A
+# named head on one operand is otherwise a builtin written before it, `abs x`
+_METHODS = ("is_integer",)
+
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     """A condition Python writes around its operands, or None for one it writes between them.
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``.
-    A builtin in `_CALLED` reads ``len(s)``, and a named head with arguments
-    reads as Python calls a method, ``a.name(b)``. A part cut from a long
-    expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
-    ``null``. Each binds tighter than any operator, so none needs parentheses
-    of its own.
+    ``config['port']``. A builtin in `_CALLED` reads ``len(s)``, a method in
+    `_METHODS` reads ``x.is_integer()``, and a named head with arguments reads
+    as Python calls a method, ``a.name(b)``. A part cut from a long expression
+    reads ``...(N nodes)``, and ``...(? nodes)`` when its count is ``null``.
+    Each binds tighter than any operator, so none needs parentheses of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
@@ -279,7 +282,7 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         return f"{_operand(operands[0], _ALONE)}[{written}]"
     if head in _CALLED:
         return f"{head}({', '.join(texts)})"
-    if _is_named_with_arguments(expression):
+    if head in _METHODS or _is_named_with_arguments(expression):
         return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
     return None
 

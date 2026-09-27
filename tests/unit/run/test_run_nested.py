@@ -132,3 +132,20 @@ def test_run_copies_the_seed_before_the_seed_input_can_change_it() -> None:
     assert [record.failure for record in result.records] == [None, None]
     starts = [record.args["a"] for record in result.records]
     assert all(isinstance(a, list) and len(a) == 1 for a in starts), starts
+
+
+@pytest.mark.parametrize("isolation", EVERYWHERE)
+def test_a_float_inside_an_argument_passes_through_plain(isolation: Isolation) -> None:
+    # run-with-nested-arguments follows a float inside an argument; until then it is a value
+    target = load_target("targets.floats.inside_a_dict::check")
+
+    result = run(target, {"config": {"ratio": 0.25, "count": 1}}, isolation=isolation)
+
+    assert [record.failure for record in result.records] == [None, None]
+    seeded, solved = result.records
+    assert [fork.expression for fork in seeded.forks] == [[">", ["[]", "config", "'count'"], 3]]
+    assert not seeded.downgrades
+    config = solved.args["config"]
+    assert isinstance(config, dict)
+    assert type(config["ratio"]) is float and config["ratio"] == 0.25
+    assert solved.mismatch_at is None

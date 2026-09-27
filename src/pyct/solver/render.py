@@ -1,159 +1,29 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
 import ast
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
+from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node, distinct
+from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
 from pyct.solver.joined import joined
-from pyct.solver.strings import (
-    above,
-    below,
-    character,
-    contains,
-    encode,
-    ends_with,
-    first_index,
-    last_index,
-    occurrences,
-    replaced,
-    sliced,
-    starts_with,
-    without_prefix,
-    without_suffix,
-)
-
-# the sort of every type pyct binds. Nothing else reaches a solver yet.
-SORTS: Mapping[type, str] = {int: "Int", str: "String"}
+from pyct.solver.strings import above, below, encode
 
 # what opens a string literal in an expression: repr writes one in either quote, and a
 # parameter name holds neither
 _QUOTES = ("'", '"')
 
-# the type of the value each head builds, as Python has it, so a head above it knows what its
-# operands are: `+` joins two strs and adds two ints. None is a head whose value has its
-# operands' type. Every head render writes has an entry, and a new type adds its own
-RESULTS: Mapping[str, type | None] = {
-    "<": bool,
-    "<=": bool,
-    ">": bool,
-    ">=": bool,
-    "==": bool,
-    "!=": bool,
-    "in": bool,
-    "startswith": bool,
-    "endswith": bool,
-    # core writes `&`, `|` and `^` between two bools only; on ints they stay downgrades
-    "&": bool,
-    "|": bool,
-    "^": bool,
-    "+": None,
-    "-": None,
-    "*": None,
-    "**": None,
-    "abs": None,
-    "//": None,
-    "%": None,
-    "find": int,
-    "rfind": int,
-    "index": int,
-    "rindex": int,
-    "count": int,
-    "len": int,
-    "[]": str,
-    "[:]": str,
-    "replace": str,
-    "removeprefix": str,
-    "removesuffix": str,
-}
-
-# Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one
-# place the two meet, so a head that is missing raises here and names the gap, rather than
-# handing cvc5 a program it cannot parse, which comes back as `solver failed`.
-OPERATORS: Mapping[tuple[str, type], str] = {
-    ("<", int): "<",
-    ("<=", int): "<=",
-    (">", int): ">",
-    (">=", int): ">=",
-    ("==", int): "=",
-    ("!=", int): "distinct",
-    ("+", int): "+",
-    ("-", int): "-",
-    ("*", int): "*",
-    ("abs", int): "abs",
-    ("**", int): "^",
-    ("==", str): "=",
-    ("!=", str): "distinct",
-    ("+", str): "str.++",
-    ("len", str): "str.len",
-    ("==", bool): "=",
-    ("!=", bool): "distinct",
-    ("&", bool): "and",
-    ("|", bool): "or",
-    ("^", bool): "xor",
-}
-
-# Python's order on two strings, read as a less-than: whether it takes equal strings, and
-# whether its operands swap. `a > b` is written `b < a`, the same term the target would have
-# met had it written that
-STRING_ORDERS: Mapping[str, tuple[bool, bool]] = {
-    "<": (False, False),
-    "<=": (True, False),
-    ">": (False, True),
-    ">=": (True, True),
-}
-
-
-def _euclidean_agrees(dividend: str, divisor: str) -> str:
-    """When SMT-LIB's division is already Python's: a positive divisor, or nothing left over."""
-    return f"(or (> {divisor} 0) (= (mod {dividend} {divisor}) 0))"
-
-
-# SMT-LIB's `div` and `mod` are Euclidean: the remainder is never negative. Python floors
-# toward minus infinity and its `%` takes the divisor's sign. The two agree when the divisor
-# is positive or the remainder is zero; otherwise Python's quotient is one lower and its
-# remainder is shifted by the divisor. Decision division-floor-correction-in-render.
-def _floor_division(dividend: str, divisor: str) -> str:
-    quotient = f"(div {dividend} {divisor})"
-    return f"(ite {_euclidean_agrees(dividend, divisor)} {quotient} (- {quotient} 1))"
-
-
-def _modulo(dividend: str, divisor: str) -> str:
-    remainder = f"(mod {dividend} {divisor})"
-    return f"(ite {_euclidean_agrees(dividend, divisor)} {remainder} (+ {remainder} {divisor}))"
-
-
-# an operation SMT-LIB has no operator for, or spells in another order, written out as the form
-# that means it. The operands arrive rendered, as many as the expression holds and in its
-# order, so a form only joins text.
-FORMS: Mapping[str, Callable[..., str]] = {
-    "//": _floor_division,
-    "%": _modulo,
-    "in": contains,
-    "startswith": starts_with,
-    "endswith": ends_with,
-    "find": first_index,
-    "rfind": last_index,
-    "count": occurrences,
-    # index and rindex answer only past their `in` fork, where sub is in s and each is the
-    # find it mirrors
-    "index": first_index,
-    "rindex": last_index,
-    "replace": replaced,
-    "removeprefix": without_prefix,
-    "removesuffix": without_suffix,
-}
-
-# a piece taken at positions: the string arrives rendered, and each position as the plain int
-# it is, or None for a slice's missing bound, so the form sees its sign
-POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced}
-
-
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
+
+# what names the assertion that holds a float leaf finite, before the leaf's symbol, so the
+# unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
+# assertion's name never meets a constant
+FINITE = "finite!"
 
 
 @dataclass(frozen=True)
@@ -212,7 +82,13 @@ class Program:
         return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
 
 
-def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
+def program(
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    *,
+    finite: Collection[str] = (),
+    cores: bool = False,
+) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
     What to declare, what to define, what to assert, what to ask. Only the
@@ -221,7 +97,11 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     does, and ``_symbol`` names its constant. Two pieces of one string side by
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
-    assertions (see `_Program`).
+    assertions (see `_Program`). Each float leaf in ``finite`` that the
+    prefix names is held to a finite double. With ``cores``, each of those
+    assertions is named for the leaf's symbol and cvc5 is asked to dump the
+    unsat core, so an unsat says which of them it rests on; that slows some
+    sat answers, so only a program asked after an unsat does it.
     """
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
@@ -231,14 +111,33 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
-    lines = ["(set-logic ALL)"]
+    held = [name for name in constants if name in finite and leaves[name] is float]
+    lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
+    lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
     lines += body.definitions
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     text = "\n".join(lines) + "\n"
     return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
+
+
+def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> frozenset[str]:
+    """The float leaves a fork of the prefix names: those its first ask holds finite."""
+    if float not in leaves.values():
+        return frozenset()
+    seed = _Leaves(kinds=leaves, constants={})
+    prefix = joined(prefix, seed.holds)
+    order, _ = distinct(prefix, seed.holds)
+    return frozenset(name for name in _symbols(prefix, order, seed) if leaves[name] is float)
+
+
+def _held_finite(constant: str, symbol: str | None) -> str:
+    """The assertion that holds one float leaf finite, named for the leaf's symbol if given."""
+    held = floats.finite(constant)
+    return f"(assert {held})" if symbol is None else f"(assert (! {held} :named {FINITE}{symbol}))"
 
 
 def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:
@@ -374,10 +273,17 @@ class _Program:
         """The parts a form reads: an operand of a form, a piece, or an order on strings."""
         read: set[int] = set()
         for node in order:
-            head, *operands = node
-            if head in FORMS or head in POSITIONED or self._orders_strings(node):
-                read |= {id(part) for part in operands if isinstance(part, list)}
+            if self._form(node) is not None or node[0] in POSITIONED or self._orders_strings(node):
+                read |= {id(part) for part in node[1:] if isinstance(part, list)}
         return read
+
+    def _form(self, node: Node) -> Callable[..., str] | None:
+        """The form that writes an operation on the type it works on, or None for an operator."""
+        head, *operands = node
+        if not isinstance(head, str):
+            return None
+        kind = self._kind(head, operands)
+        return None if kind is None else FORMS.get((head, kind))
 
     def _orders_strings(self, node: Node) -> bool:
         head, *operands = node
@@ -407,7 +313,7 @@ class _Program:
             return positioned(self.term(term), *(_position(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
-        if (form := FORMS.get(head)) is not None:
+        if (form := self._form(node)) is not None:
             return form(*rendered)
         if head in STRING_ORDERS and kind is str:
             return _string_order(head, operands, rendered)
@@ -423,14 +329,19 @@ class _Program:
         return term
 
 
-def _leaf(leaf: str | int | bool | None) -> str:
-    """A number, a truth value or a string literal. A negative number is a subtraction."""
+def _leaf(leaf: str | int | float | bool | None) -> str:
+    """A number, a truth value or a string literal.
+
+    A negative int is a subtraction, and a float is its bit pattern, sign and all.
+    """
     if leaf is None:
         raise ValueError("pyct cannot render a missing bound outside a slice")
     if isinstance(leaf, bool):
         return "true" if leaf else "false"
     if isinstance(leaf, int):
         return f"(- {-leaf})" if leaf < 0 else str(leaf)
+    if isinstance(leaf, float):
+        return floats.literal(leaf)
     return encode(_value(leaf))
 
 

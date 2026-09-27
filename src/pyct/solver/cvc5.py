@@ -4,11 +4,12 @@ import logging
 import math
 import subprocess
 from collections.abc import Mapping
+from time import monotonic
 
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
-from pyct.solver.render import program
+from pyct.solver.render import FINITE, Program, float_leaves, program
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +47,20 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     near its limit. A limit longer than Python can wait, about 24 days, is
     cut to what it can.
 
+    A prefix that names a float leaf is asked first with each such leaf held
+    finite; decision float-finite-first-frees-the-unsat-core. Only an
+    ``Unsat`` asks again: once with the same leaves held and cvc5 asked for
+    its unsat core, which says which of them the unsat rests on, and then
+    with those leaves free and the rest still held. That repeats until an
+    ask answers otherwise or the core names no held leaf. So a leaf may be
+    NaN or an infinity only once an unsat that held it finite names it in
+    its core. One core may name several leaves where freeing any one of them
+    would do, and each is freed. The core costs its ask time only after an
+    unsat, since asking for it slows some sat answers. Each ask after the
+    first gets what the ones before left of ``timeout``, so all stay inside
+    the one limit, and one with nothing left is a ``Timeout()`` without
+    starting cvc5.
+
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
     records it already has and says the solver failed. The one exception is
@@ -53,9 +68,42 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    written = program(prefix, leaves)
-    text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
+    deadline = monotonic() + timeout
+    finite = float_leaves(prefix, leaves)
+    answer, _ = _ask(program(prefix, leaves, finite=finite), timeout)
+    while finite and isinstance(answer, Unsat):
+        cored = _ask_by(program(prefix, leaves, finite=finite, cores=True), deadline)
+        if cored is None:
+            return Timeout()
+        answer, core = cored
+        freed = finite & core
+        if not isinstance(answer, Unsat) or not freed:
+            return answer
+        finite -= freed
+        freer = _ask_by(program(prefix, leaves, finite=finite), deadline)
+        if freer is None:
+            return Timeout()
+        answer, _ = freer
+    return answer
+
+
+def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:
+    """One ask with what is left before ``deadline``, or None with nothing left to ask with."""
+    left = deadline - monotonic()
+    if left <= 0:
+        logger.debug("no time left to ask cvc5 again with more doubles")
+        return None
+    return _ask(written, left)
+
+
+def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
+    """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds.
+
+    Also the leaves an unsat answer's core holds finite, when the program
+    held any.
+    """
+    text = written.text + WHY
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
     try:
@@ -69,7 +117,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        return Timeout()
+        return Timeout(), frozenset()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Sat):
         # cvc5 answered by the constants the program declared; the run reads leaves by name
@@ -78,7 +126,19 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
-    return answer
+    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
+
+
+def _core(stdout: str, written: Program) -> frozenset[str]:
+    """The leaves an unsat answer's dumped core holds finite, by their names.
+
+    cvc5 prints the core right after the answer, its assertion names on one
+    line or one per line; every other line after an unsat is a refusal that
+    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
+    """
+    words = stdout.replace("(", " ").replace(")", " ").split()
+    symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
+    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
 
 
 def _argv(timeout: float) -> list[str]:

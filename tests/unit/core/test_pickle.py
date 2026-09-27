@@ -12,6 +12,7 @@ from multiprocessing.reduction import ForkingPickler
 import pytest
 
 from pyct.core.branch import Downgrade, SinkItem
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -20,6 +21,7 @@ TRACKED: dict[str, tuple[Callable[[list[SinkItem]], object], object]] = {
     "a tracked int": (lambda sink: ConcolicInt(3, expression="n", sink=sink), 3),
     "a compare's answer": (lambda sink: ConcolicInt(3, expression="n", sink=sink) > 0, True),
     "a tracked str": (lambda sink: ConcolicStr("ab", expression="s", sink=sink), "ab"),
+    "a tracked float": (lambda sink: ConcolicFloat(2.5, expression="x", sink=sink), 2.5),
 }
 PROTOCOLS = range(pickle.HIGHEST_PROTOCOL + 1)
 
@@ -34,7 +36,7 @@ def test_a_round_trip_loads_the_plain_value_at_every_protocol(
 
     loaded = pickle.loads(pickle.dumps(value, protocol))
 
-    # Python's own type and value, carrying nothing: an int, a bool and a str
+    # Python's own type and value, carrying nothing: an int, a bool, a str and a float
     assert type(loaded) is type(plain)
     assert loaded == plain
     assert sink == [Downgrade(name="__reduce_ex__")]

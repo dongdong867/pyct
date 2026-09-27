@@ -2,7 +2,8 @@
 
 cvc5 is asked the value of fixed terms, a random path is walked in Python
 with its last fork flipped, and an answer is judged against Python. A test
-names the heads its paths use and what each means in Python.
+names the heads its paths use and what each means in Python. A path's one
+leaf is named s unless a test names it otherwise.
 """
 
 import ast
@@ -15,6 +16,7 @@ from collections.abc import Callable, Iterable, Mapping
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
+from pyct.solver import floats
 from pyct.solver.answer import Answer, Sat, Unsat
 from pyct.solver.strings import decode
 
@@ -32,8 +34,9 @@ PATH_LETTERS = ["a", "b", "é"]
 # what each head a test's paths use means in Python
 type Heads = Mapping[str, Callable[..., object]]
 
-# one value cvc5 prints for an asked `vN`: a negative Int, an Int, a Bool, or a String literal
-_VALUE = re.compile(r'\(v\d+ (\(- \d+\)|\d+|true|false|"(?:[^"]|"")*")\)')
+# one value cvc5 prints for an asked `vN`: a negative Int, an Int, a Bool, a String literal, or
+# a Float64 in its three fields
+_VALUE = re.compile(r'\(v\d+ (\(- \d+\)|\d+|true|false|"(?:[^"]|"")*"|\(fp [^()]*\))\)')
 
 
 def asked(lines: list[str]) -> list[object]:
@@ -50,19 +53,22 @@ def asked(lines: list[str]) -> list[object]:
 
 
 def _read(value: str) -> object:
-    """A Bool, an Int or a String as cvc5 prints it."""
+    """A Bool, an Int, a String or a Float64 as cvc5 prints it."""
     if value in ("true", "false"):
         return value == "true"
     if value.startswith('"'):
         return decode(value)
+    if value.startswith("(fp "):
+        return floats.decode(value)
     return -int(value[len("(- ") : -1]) if value.startswith("(") else int(value)
 
 
-def python(expression: Expression, s: str, heads: Heads) -> object:
+def python(expression: Expression, s: object, heads: Heads, *, name: str = "s") -> object:
     """What Python makes of a condition on s. A leaf is s, a literal, a number, or None.
 
-    A part the condition holds in more than one place is worked out once, so
-    a condition that doubles written out costs one step per distinct part.
+    s is the leaf named ``name``. A part the condition holds in more than one
+    place is worked out once, so a condition that doubles written out costs
+    one step per distinct part.
     """
     values: dict[int, object] = {}
 
@@ -74,14 +80,18 @@ def python(expression: Expression, s: str, heads: Heads) -> object:
                 values[id(part)] = heads[head](*(value(operand) for operand in operands))
             return values[id(part)]
         if isinstance(part, str):
-            return s if part == "s" else ast.literal_eval(part)
+            return s if part == name else ast.literal_eval(part)
         return part
 
     return value(expression)
 
 
 def flipped_path(
-    s: str, conditions: Iterable[tuple[Expression, Expression | None]], heads: Heads
+    s: object,
+    conditions: Iterable[tuple[Expression, Expression | None]],
+    heads: Heads,
+    *,
+    name: str = "s",
 ) -> tuple[Branch, ...]:
     """The forks s takes through the conditions, the last one flipped.
 
@@ -93,19 +103,19 @@ def flipped_path(
     forks: list[Branch] = []
     for condition, guard in conditions:
         if guard is not None:
-            forks.append(Branch(expression=guard, taken=bool(python(guard, s, heads)), site=SITE))
+            taken = bool(python(guard, s, heads, name=name))
+            forks.append(Branch(expression=guard, taken=taken, site=SITE))
             if not forks[-1].taken:
                 break
-        forks.append(
-            Branch(expression=condition, taken=bool(python(condition, s, heads)), site=SITE)
-        )
+        taken = bool(python(condition, s, heads, name=name))
+        forks.append(Branch(expression=condition, taken=taken, site=SITE))
     last = forks[-1]
     return (*forks[:-1], Branch(expression=last.expression, taken=not last.taken, site=SITE))
 
 
-def takes(path: tuple[Branch, ...], s: str, heads: Heads) -> bool:
+def takes(path: tuple[Branch, ...], s: object, heads: Heads, *, name: str = "s") -> bool:
     """Whether s takes every fork of the path the way the plan says."""
-    return all(bool(python(fork.expression, s, heads)) == fork.taken for fork in path)
+    return all(bool(python(fork.expression, s, heads, name=name)) == fork.taken for fork in path)
 
 
 def disagrees(

@@ -1,3 +1,4 @@
+import math
 import re
 
 import pytest
@@ -122,6 +123,15 @@ INFIX: dict[str, tuple[Expression, str]] = {
     ),
     "method-on-a-negative-number": (["find", -1, "'x'"], "(-1).find('x')"),
     "operator-the-table-does-not-rank": (["@", ["+", "x", 1], "y"], "(x + 1) @ y"),
+    # a float literal as repr writes it
+    "float-exponent": (["<", "x", 1e-05], "x < 1e-05"),
+    "float-whole": (["!=", "x", 2.0], "x != 2.0"),
+    "float-infinity": ([">", "x", math.inf], "x > inf"),
+    "method-with-no-argument": (["is_integer", "x"], "x.is_integer()"),
+    "method-with-no-argument-on-a-condition": (
+        ["is_integer", ["/", "x", "y"]],
+        "(x / y).is_integer()",
+    ),
 }
 
 

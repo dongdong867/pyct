@@ -78,8 +78,17 @@ class _Sinked(Protocol):
     sink: BranchSink
 
 
+# what a type may answer before its base type's own operation, given the operation's name, the
+# tracked value and the one argument: an answer, or NotImplemented to go on to the base type's
+type First = Callable[[str, object, object], object]
+
+
 def downgraded(
-    base: type, name: str, *, calling: Callable[..., object] | None = None
+    base: type,
+    name: str,
+    *,
+    calling: Callable[..., object] | None = None,
+    first: First | None = None,
 ) -> Callable[..., object]:
     """The base type's own operation, and a note in the sink that the condition was lost.
 
@@ -95,11 +104,17 @@ def downgraded(
     is not the answer: str has no `__radd__`, and its reflected
     concatenation is its `__add__` the other way round; a tracked bool
     formats as the bool it is, where int's `__format__` writes a number.
-    The downgrade is still named ``name``.
+    The downgrade is still named ``name``. ``first`` answers a call on one
+    argument before the base type does, when it has an answer, and that
+    answer comes back with no downgrade of pyct's own.
     """
     operation = getattr(base, name) if calling is None else calling
 
     def downgrade(self: _Sinked, /, *args: object, **kwargs: object) -> object:
+        if first is not None and len(args) == 1 and not kwargs:
+            answer = first(name, self, args[0])
+            if answer is not NotImplemented:
+                return answer
         result = own(operation, self, *args, **kwargs)
         if result is NotImplemented:
             return result
@@ -151,7 +166,12 @@ def _called_on_a_value(member: object) -> bool:
 
 
 def downgrade_the_rest(
-    cls: type, base: type, *, kept: tuple[str, ...], inherited: tuple[str, ...]
+    cls: type,
+    base: type,
+    *,
+    kept: tuple[str, ...],
+    inherited: tuple[str, ...],
+    first: First | None = None,
 ) -> None:
     """Downgrade every method of the base type the concolic type has not taught.
 
@@ -162,9 +182,10 @@ def downgrade_the_rest(
     and the rest never take a tracked value as their receiver, so none of
     them can lose a condition. A name the base type inherits is reached
     only by naming it, and a kept name the base type does not define is
-    simply not there to wrap.
+    simply not there to wrap. ``first`` is handed to each downgrade (see
+    `downgraded`).
     """
     candidates = {name for name, member in vars(base).items() if _called_on_a_value(member)}
     candidates |= set(inherited)
     for name in sorted(candidates - set(vars(cls)) - set(kept)):
-        setattr(cls, name, downgraded(base, name))
+        setattr(cls, name, downgraded(base, name, first=first))

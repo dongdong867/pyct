@@ -1,11 +1,15 @@
 import json
+import math
 import sys
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 
+import pytest
+
 from pyct.binding.bind import access_name, bind, leaf_name, leaves
 from pyct.core.branch import Expression, SinkItem
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -40,8 +44,36 @@ def test_a_str_becomes_a_concolic_str_named_after_its_parameter() -> None:
     assert bound.sink is sink
 
 
+@pytest.mark.parametrize("value", [2.5, -0.0, math.nan, math.inf])
+def test_a_float_becomes_a_concolic_float_named_after_its_parameter(value: float) -> None:
+    sink: list[SinkItem] = []
+
+    args = bind({"x": value}, sink)
+
+    bound = args["x"]
+    assert isinstance(bound, ConcolicFloat)
+    # the same double, bit for bit: repr tells -0.0 from 0.0 and reads NaN without a compare
+    assert repr(bound) == repr(value)
+    assert bound.expression == "x"
+    assert bound.sink is sink
+
+
+def test_a_float_inside_a_dict_or_a_list_stays_plain() -> None:
+    seed: dict[str, object] = {"d": {"f": 1.5, "n": 2}, "xs": [2.5, -0.0]}
+
+    args = bind(seed, [])
+
+    # run-with-nested-arguments follows a float inside an argument; until then it is a value
+    d, xs = args["d"], args["xs"]
+    assert isinstance(d, dict) and isinstance(xs, list)
+    assert type(d["f"]) is float and type(d["n"]) is ConcolicInt
+    assert [type(item) for item in xs] == [float, float]
+    assert repr(xs) == "[2.5, -0.0]"
+    assert leaves(seed) == {json.dumps(["[]", "d", "'n'"]): int}
+
+
 def test_every_other_value_is_a_plain_copy_of_its_own() -> None:
-    seed = {"f": 1.5, "n": None, "xs": {1, 2}}
+    seed = {"n": None, "xs": {1, 2}}
 
     args = bind(seed, [])
 
@@ -65,7 +97,11 @@ def test_binding_leaves_the_seed_alone() -> None:
 
 
 def test_leaves_names_the_type_of_every_argument_bind_would_wrap() -> None:
-    assert leaves({"x": 3, "flag": True, "name": "a", "f": 1.5}) == {"x": int, "name": str}
+    assert leaves({"x": 3, "flag": True, "name": "a", "f": 1.5, "n": None}) == {
+        "x": int,
+        "name": str,
+        "f": float,
+    }
 
 
 def test_leaves_keeps_the_order_the_seed_gave() -> None:
