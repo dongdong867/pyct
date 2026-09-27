@@ -108,3 +108,8 @@ def test_cvc5_answers_no_split_with_more_pieces_than_the_join_reads() -> None:
     # Python joins every piece: a string with one comma more joins three
     assert isinstance(held, Sat) and "-".join(str(held.model["s"]).split(",")) == "a-b"
     assert isinstance(more, Unsat)
+
+
+def test_a_count_of_anything_but_a_split_is_a_pyct_bug() -> None:
+    with pytest.raises(ValueError, match="the solver writes a split"):
+        counted("s", "s", 2)

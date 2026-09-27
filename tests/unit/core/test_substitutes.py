@@ -373,6 +373,7 @@ def test_any_other_method_call_is_the_method_s_own() -> None:
     assert method(str.find, "abc", s) == 1
     assert method("-".join, ["a", "b"]) == "a-b"
     assert method(["a", "b"].index, "b") == 1
+    assert method(dict, a=1) == {"a": 1}
     assert sink == []
 
 
