@@ -247,3 +247,17 @@ def test_a_pin_that_does_not_provide_the_module_fails_the_side() -> None:
     assert row.legacy is not None
     assert row.legacy.failure == "werkzeug 3.1.3 does not provide w.http"
     assert row.legacy.covered == ()
+
+
+def test_the_pinned_version_loaded_from_elsewhere_fails_naming_both_paths(tmp_path: Path) -> None:
+    v2_folder, legacy_folder = copies(tmp_path, "same\n", "same\n")
+    shadow = replace(in_folder(v2_folder, 2, 3), file=str(tmp_path / "elsewhere" / "w" / "http.py"))
+    reports = Reports(v2=shadow, legacy=in_folder(legacy_folder, 2, 3))
+
+    row = compared_row(LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports)
+
+    named = Path(v2_folder, "w", "http.py")
+    assert row.status is Status.V2_FAILED
+    assert row.v2 is not None
+    assert row.v2.failure == f"loaded {shadow.file}, the entry names {named}"
+    assert row.v2.covered == ()
