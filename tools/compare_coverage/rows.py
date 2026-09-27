@@ -177,8 +177,9 @@ def _installed_file(module: str, library: Library, installed: Installed | None) 
 def _view(report: SideReport, file: Path | None, body: Body, entry: Entry) -> SideView:
     """The side as the row shows it. Lines of a file other than the entry's are not its lines.
 
-    The library is checked only on a side that said which one it has: a side stopped, or
-    ended with no line, keeps the reason it failed.
+    The library is checked on every side whose library probe answered, so a side at another
+    version fails on that first, even when it was stopped. A side whose probe failed has no
+    library to check and keeps the failure ``with_library`` gave it.
     """
     library = entry.library
     checked = library is not None and report.library is not None
