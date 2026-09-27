@@ -194,6 +194,31 @@ def test_an_identity_operation_answers_the_int_with_the_same_condition(
     assert sink == []
 
 
+# the int a bool is, reached as a value too: its text is the int's, 1 or 0, never True or False
+AS_AN_INT_VALUE: dict[str, Callable[[int], object]] = {
+    **AS_THE_INT,
+    "b.real": lambda b: b.real,
+    "b.numerator": lambda b: b.numerator,
+    "(+b).real": lambda b: (+b).real,
+}
+
+
+@pytest.mark.parametrize("call", AS_AN_INT_VALUE.values(), ids=list(AS_AN_INT_VALUE))
+def test_the_text_of_the_int_a_bool_is_reads_the_int(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    above, below = _conditions(sink)
+
+    texts = [str(call(above)), f"{call(below)}"]
+
+    # Python writes the int 1 or 0; its node reads the condition as that int, as `int(b)` does
+    tracked = [text for text in texts if isinstance(text, ConcolicStr)]
+    assert [(str.__str__(text), text.expression) for text in tracked] == [
+        (str(call(True)), ["str", ["int", ABOVE]]),
+        (f"{call(False)}", ["str", ["int", BELOW]]),
+    ]
+    assert sink == []
+
+
 @pytest.mark.parametrize(("call", "name"), UNTAUGHT.values(), ids=list(UNTAUGHT))
 def test_an_untaught_operation_is_a_downgrade(call: Callable[[int], object], name: str) -> None:
     sink: list[SinkItem] = []

@@ -6,9 +6,11 @@ Each test spawns ``python -P -m pyct`` through the harness. A tracked value's `_
 run through the command line proves the condition reaches the solver.
 """
 
-from tests.acceptance.harness import input_lines, run_pyct
+import math
+
+from tests.acceptance.harness import input_lines, run_pyct, summary_line
 from tests.acceptance.test_bools import expressions, sides
-from tests.acceptance.test_ints import argument
+from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_substitute_conversions import downgrade_names, no_line_lists
 
 TEXT = "targets.strs.text_of_values"
@@ -86,3 +88,27 @@ def test_downgrades_a_format_spec() -> None:
 
     assert downgrade_names(inputs[0]) == [("__format__", 1)]
     assert expressions(inputs[0]) == []
+
+
+# follow-builtins-and-conversions-follows-str-of-a-bool, on the int a bool is
+def test_follows_the_text_of_the_int_a_bool_is() -> None:
+    result = run_pyct("targets.strs.bool_int_text::counted", '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # `+b`, `math.trunc(b)`, `round(b)` and `b.real` are the int 1 or 0, which Python writes as
+    # such, so each text is `str` of that int
+    expression = ["==", ["str", ["int", [">", "x", 0]]], "'1'"]
+    assert expressions(inputs[0]) == [expression] * 4
+    assert sides(inputs, expression) == {True, False}
+    wanted = [str(+True), str(math.trunc(True)), str(round(True)), f"{True.real}"]
+    assert wanted == ["1"] * 4
+    # one input takes all four, as plain Python does for any positive x; the four share one
+    # condition, so each later fork cannot flip alone, and those misses are unsat
+    assert any(
+        argument(line, "x") > 0 and [fork["taken"] for fork in forks_of(line)] == [True] * 4
+        for line in inputs
+    )
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list)
+    assert all(miss["line"] != 7 for miss in misses)

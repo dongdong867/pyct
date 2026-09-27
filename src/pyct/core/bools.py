@@ -26,8 +26,14 @@ from pyct.core.values import (
 
 
 def _the_int(self: ConcolicBool) -> Any:
-    """The int a bool is, 1 or 0, with the same condition: `+True` is 1, and adds no node."""
-    return numbers.tracked(own(int.__index__, self), self.expression, self.sink)
+    """The int a bool is, 1 or 0, with the same condition: `+True` is 1, and adds no node.
+
+    Its text reads the condition as that int, `["int", b]`, as `int(b)`
+    writes it, since Python writes the int, `1`, where the bool writes `True`.
+    """
+    number = numbers.tracked(own(int.__index__, self), self.expression, self.sink)
+    number.as_int = ["int", self.expression]
+    return number
 
 
 def _truth(other: object) -> Expression | None:

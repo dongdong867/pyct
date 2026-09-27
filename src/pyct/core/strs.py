@@ -471,7 +471,7 @@ class ConcolicStr(str):
         # spec is str's own format and a downgrade
         return self
 
-    __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore
+    __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

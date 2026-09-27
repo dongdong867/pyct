@@ -15,18 +15,26 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.core import numbers
+from pyct.core.branch import Expression
 from pyct.core.values import First, own
 
 
-def text(written: Callable[[Any], str]) -> Callable[[Any], Any]:
+def _its_expression(value: numbers.Number) -> Expression:
+    return value.expression
+
+
+def text(
+    written: Callable[[Any], str], read: Callable[[Any], Expression] = _its_expression
+) -> Callable[[Any], Any]:
     """A tracked int's or bool's `__str__`: the text Python writes, carrying `["str", x]`.
 
     ``written`` writes the text of the plain value, and a raise out of it,
-    past Python's digit limit say, is the target's.
+    past Python's digit limit say, is the target's. ``read`` is the node the
+    text reads, the value's expression unless its type says otherwise.
     """
 
     def compute(self: numbers.Number) -> Any:
-        return numbers.tracked(own(written, self), ["str", self.expression], self.sink)
+        return numbers.tracked(own(written, self), ["str", read(self)], self.sink)
 
     return compute
 

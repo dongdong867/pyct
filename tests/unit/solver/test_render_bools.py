@@ -173,6 +173,9 @@ def test_a_bool_held_twice_is_defined_once_as_a_bool() -> None:
         ),
         pytest.param([">", ["+", "x", True], 5], lambda x, y: x + True > 5, id="literal"),
         pytest.param(["==", ["str", ABOVE], "'True'"], lambda x, y: str(x > 0) == "True", id="str"),
+        pytest.param(
+            ["==", ["str", ["int", ABOVE]], "'1'"], lambda x, y: str(+(x > 0)) == "1", id="str int"
+        ),
     ],
 )
 def test_cvc5_answers_a_bool_used_as_a_number_as_python_does(
@@ -184,3 +187,10 @@ def test_cvc5_answers_a_bool_used_as_a_number_as_python_does(
     model = {"x": 0, "y": 0, **answer.model}
     assert callable(holds)
     assert holds(model["x"], model["y"]) is True
+
+
+def test_the_int_a_bool_is_never_writes_true() -> None:
+    # Python writes `+(x > 0)` as 1 or 0, so no x makes its text `True`
+    fork = Branch(expression=["==", ["str", ["int", ABOVE]], "'True'"], taken=True, site=SITE)
+
+    assert isinstance(solve((fork,), INTS, 10.0), Unsat)

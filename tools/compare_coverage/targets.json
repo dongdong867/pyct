@@ -311,6 +311,7 @@
     {"set": "v2", "module": "targets.scope.measure.probe", "left_out": "a package beside shop under targets/scope, not a target"},
     {"set": "v2", "module": "targets.scope.shop.cart", "left_out": "imports measure as a top-level package, so it runs only from targets/scope"},
     {"set": "v2", "module": "targets.scope.shop.sized", "left_out": "imports measure as a top-level package, so it runs only from targets/scope"},
+    {"set": "v2", "target": "targets.strs.bool_int_text::counted", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}},
