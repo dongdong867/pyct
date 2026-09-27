@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Iterator
+from typing import Protocol
 
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
@@ -165,13 +166,19 @@ def caller(depth: int) -> tuple[int, int]:
     return id(frame), frame.f_lasti
 
 
-def hinted(self: ListState) -> bool:
+class Walked(Protocol):
+    """A tracked value a walk starts on: where the last walk started, until its size is asked."""
+
+    walked_at: tuple[int, int] | None
+
+
+def hinted(self: Walked) -> bool:
     """Whether a `__len__` call is Python's own guess at the size of a walk it just started.
 
     `list(items)`, `sorted`, `tuple` and `str.join` start a walk and then ask the length only
     to size what they build, in the same call of the same code. Only the first ask after a
-    walk starts can be that guess.
+    walk starts can be that guess. A tracked list and a tracked range each ask it.
     """
     started, self.walked_at = self.walked_at, None
-    # this function, then the list's `__len__`, then the code that asked
+    # this function, then the value's `__len__`, then the code that asked
     return started is not None and started == caller(3)
