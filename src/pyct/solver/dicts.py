@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
@@ -41,39 +42,50 @@ class TrackedDict:
 class Tracked:
     """One dict of the path: what the path names of it, and what its program declares.
 
-    ``named`` holds each key a fork names, in the order the path first names it, and ``held``
-    those a read says the dict holds. ``counted`` says a fork reads the dict's size, and
-    ``tracked`` that a fork looks a tracked key up in it.
+    ``named`` holds each key a fork names, by its place in the order the path first names it,
+    and ``held`` those a read says the dict holds. ``counted`` says a fork reads the dict's
+    size, and ``tracked`` that a fork looks a tracked key up in it: then each of the input's
+    keys is named after the path's own, since a tracked key may equal any of them, and
+    ``asked`` holds the keys a fork names itself.
     """
 
     name: str
     symbol: str
     shape: DictShape
-    named: dict[object, None] = field(default_factory=dict)
+    named: dict[object, int] = field(default_factory=dict)
     held: dict[object, None] = field(default_factory=dict)
     counted: bool = False
     tracked: bool = False
+    asked: frozenset[object] = frozenset()
 
     def constant(self, part: str) -> str:
         return f"|{self.symbol}.{part}|"
 
     def candidates(self, typed: type | None) -> list[object]:
         """Every key of that type a tracked key may equal: the input's, then the path's own."""
-        keys = [*self.shape.keys, *(key for key in self.named if key not in self.shape.keys)]
+        keys = [*self.shape.keys, *(key for key in self.named if key not in self.places)]
         return [key for key in keys if type(key) is typed]
+
+    @cached_property
+    def places(self) -> dict[object, int]:
+        """Each of the input's keys by its place among them."""
+        return {key: place for place, key in enumerate(self.shape.keys)}
 
     def slot(self, key: object) -> int:
         """Where a key stands among the input's keys and then the path's own: its value's
         constant is named by it."""
-        if key in self.shape.keys:
-            return self.shape.keys.index(key)
-        added = [named for named in self.named if named not in self.shape.keys]
-        return len(self.shape.keys) + added.index(key)
+        places = self.places
+        return places[key] if key in places else len(places) + self.named[key]
 
     @property
     def unnamed(self) -> list[object]:
         """The input's keys no fork names, in order: the ones ``kept`` counts from the first."""
         return [key for key in self.shape.keys if key not in self.named]
+
+    def kind_under(self, key: object) -> str:
+        """The kind of the value under a key: the input's, or an added value's."""
+        places = self.places
+        return self.shape.kinds[places[key]] if key in places else self.shape.fill
 
     @property
     def sized(self) -> bool:
@@ -100,6 +112,8 @@ class DictTerms(Keyed):
         self.values = values
         self.constants = constants
         self.dicts: dict[str, Tracked] = {}
+        # what `of` found each part named, by its identity
+        self._names: dict[int, str | None] = {}
         self.named: Callable[[Expression], str] = lambda part: ""
         self.type_of: Callable[[Expression], type | None] = lambda part: None
         # whether the first ask holds each dict's other keys and makes none up
@@ -122,8 +136,14 @@ class DictTerms(Keyed):
         return terms
 
     def of(self, part: Expression) -> Tracked | None:
-        """The dict a part is, when the seed names one there."""
-        name = part if isinstance(part, str) else access_name(part)
+        """The dict a part is, when the seed names one there. An access is written out as JSON
+        to be looked up, so each part's name is worked out once."""
+        if isinstance(part, str):
+            name: str | None = part
+        elif id(part) in self._names:
+            name = self._names[id(part)]
+        else:
+            name = self._names[id(part)] = access_name(part)
         if name is None or name not in self.shapes:
             return None
         if name not in self.dicts:
@@ -143,6 +163,11 @@ class DictTerms(Keyed):
                     seen.add(id(part))
                     self._note(part)
                     stack.extend(reversed(part[1:]))
+        for found in self.dicts.values():
+            found.asked = frozenset(found.named)
+            if found.tracked:
+                for key in found.shape.keys:
+                    found.named.setdefault(key, len(found.named))
 
     def _note(self, part: list[Expression]) -> None:
         head = part[0]
@@ -158,7 +183,7 @@ class DictTerms(Keyed):
         if literal is MISSING:
             found.tracked = True
             return
-        found.named.setdefault(literal)
+        found.named.setdefault(literal, len(found.named))
         if held:
             found.held.setdefault(literal)
 
@@ -204,9 +229,9 @@ class DictTerms(Keyed):
         literal = literal_key(key)
         if literal is MISSING:
             held = self.values.get(leaf_name(key)) if isinstance(key, str | list) else None
-            literal = held if held in found.shape.keys else MISSING
+            literal = held if held in found.places else MISSING
         if literal is not MISSING:
-            return self.kind_under(found, literal)
+            return found.kind_under(literal)
         kinds = set(found.shape.kinds)
         return kinds.pop() if len(kinds) == 1 else "none"
 
@@ -258,6 +283,8 @@ class DictTerms(Keyed):
         ]
         if self.keep:
             lines += [f"(assert (= {kept} {others}))", f"(assert (= {made} 0))"]
+            unasked = [key for key in found.named if key in found.places and key not in found.asked]
+            lines += [f"(assert {self.present(found, key)})" for key in unasked]
         return lines
 
     @property

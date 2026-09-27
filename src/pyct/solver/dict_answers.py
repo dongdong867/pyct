@@ -34,8 +34,7 @@ def dict_answers(terms: DictTerms, model: Mapping[str, object]) -> dict[str, obj
             values[where][key] = answered
     for found in terms.dicts.values():
         present = {
-            key: bool(model[found.constant(f"in.{j}").strip("|")])
-            for j, key in enumerate(found.named)
+            key: bool(model[found.constant(f"in.{j}").strip("|")]) for key, j in found.named.items()
         }
         kept, made = counts[found.name]
         answers[found.name] = DictAnswer(present, kept, made, values[found.name])

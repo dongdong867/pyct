@@ -128,29 +128,20 @@ def _equal(self: DictState, other: object) -> object:
     same = self.size() == dict.__len__(other)
     if not forked(self.sink, ["==", self.size_term(), theirs], same, "__eq__"):
         return False
-    if tracked:
+    if isinstance(other, DictState) and tracked:
         return _pairs_match(self, other, dict.keys(self))
     return _pairs_match(other, self, dict.keys(other))
 
 
-def _pairs_match(keyed: dict[object, object], other: dict[object, object], keys: Any) -> bool:
-    """Whether ``other`` holds each of ``keyed``'s keys, with an equal value there."""
+def _pairs_match(keyed: dict[object, object], tracked: DictState, keys: Any) -> bool:
+    """Whether the tracked dict holds each of ``keyed``'s keys, with an equal value there: each
+    lookup and each compare a fork."""
     for key in list(keys):
-        if not (_holds(other, key) and matches(_value(other, key), dict.__getitem__(keyed, key))):
+        if not reads.found(tracked, key, "__eq__"):
+            return False
+        if not matches(reads.value(tracked, key), dict.__getitem__(keyed, key)):
             return False
     return True
-
-
-def _holds(mapping: dict[object, object], key: object) -> bool:
-    if isinstance(mapping, DictState) and mapping.expression is not None:
-        return reads.found(mapping, key, "__eq__")
-    return own(dict.__contains__, mapping, key)
-
-
-def _value(mapping: dict[object, object], key: object) -> object:
-    if isinstance(mapping, DictState) and mapping.expression is not None:
-        return reads.value(mapping, key)
-    return dict.__getitem__(mapping, key)
 
 
 def _plain_side(other: dict[object, object]) -> dict[object, object]:

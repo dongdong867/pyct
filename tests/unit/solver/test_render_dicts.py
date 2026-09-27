@@ -207,3 +207,52 @@ def test_a_dict_s_answer_names_only_what_it_declared() -> None:
 def test_a_made_up_key_s_number_is_its_digits_written_plainly() -> None:
     assert made_up_number("pyct12") == 12
     assert [made_up_number(text) for text in ("pyct", "pyct01", "pyct1a", "x1", 3)] == [None] * 5
+
+
+@needs_cvc5
+def test_a_tracked_key_may_keep_a_later_key_and_drop_an_earlier_one() -> None:
+    solved = answered(
+        {"name": "x", "prices": {"a": 1, "b": 2}},
+        fork(["==", "name", "'b'"]),
+        fork(["in", "name", "prices"]),
+        fork(["==", ["len", "prices"], 1]),
+    )
+
+    assert solved["name"] == "b" and solved["prices"] == {"b": 2}
+
+
+@needs_cvc5
+def test_a_tracked_key_keeps_the_input_s_keys_where_the_path_allows() -> None:
+    solved = answered(
+        {"name": "x", "prices": {"a": 1, "b": 2, "c": 3}},
+        fork(["in", "name", "prices"]),
+        fork(["!=", "name", "'a'"]),
+    )
+
+    assert solved["prices"] == {"a": 1, "b": 2, "c": 3} and solved["name"] in ("b", "c")
+
+
+@needs_cvc5
+def test_a_value_read_by_a_literal_and_a_tracked_key_is_one_constant() -> None:
+    solved = answered(
+        {"name": "x", "prices": {"apple": 1}},
+        fork([">", ["[]", "prices", "'apple'"], 0]),
+        fork(["in", "name", "prices"]),
+        fork([">", ["[]", "prices", "name"], 5]),
+        fork([">", ["[]", "prices", "name"], 6]),
+    )
+
+    prices = solved["prices"]
+    assert solved["name"] == "apple" and isinstance(prices, dict) and prices["apple"] > 6
+
+
+@needs_cvc5
+def test_a_tracked_int_key_equals_an_int_key() -> None:
+    solved = answered(
+        {"n": 0, "config": {1: 5, "a": 2}},
+        fork(["in", "n", "config"]),
+        fork([">", ["[]", "config", "n"], 7]),
+    )
+
+    config = solved["config"]
+    assert solved["n"] == 1 and isinstance(config, dict) and config[1] > 7

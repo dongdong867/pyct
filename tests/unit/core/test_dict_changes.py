@@ -102,6 +102,9 @@ def test_storing_a_value_no_expression_holds_turns_the_dict_plain() -> None:
 def test_values_an_expression_holds_are_stored() -> None:
     config, sink = tracked({"a": 1})
 
+    looped: list[object] = [1]
+    looped.append(looped)
+    config["looped"] = looped
     config["list"] = [1, "s", None, 1.5, True, {"k": [2]}]
     config["itself"] = config.get("list")
 
@@ -264,7 +267,8 @@ def test_a_plain_dict_s_operations_are_python_s_own() -> None:
     config, sink = tracked({"a": 1})
     config.clear()
 
-    assert config.popitem() if config else True
+    config["a"] = 1
+    assert config.popitem() == ("a", 1)
     config["a"] = 1
     config.update(b=2)
     assert config.pop("a") == 1 and config.setdefault("c", 3) == 3
@@ -303,3 +307,66 @@ def test_every_other_dict_method_is_a_downgrade() -> None:
 
     # an f-string with no format spec asks `__str__` through `__format__`, as for an int
     assert downgrades(sink) == ["__str__", "__str__", "__format__"]
+
+
+def test_popitem_hands_out_a_key_the_target_added_as_it_is() -> None:
+    config, sink = tracked({"a": 1})
+
+    config["n"] = 2
+    assert config.popitem() == ("n", 2)
+    assert bool(config)
+
+    assert forks(sink)[-1] == (["!=", ["len", "config"], 0], True)
+
+
+def test_popitem_notices_a_last_value_changed_without_the_methods() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+
+    dict.__setitem__(config, "b", 9)
+    assert config.popitem() == ("b", 9)
+
+    assert downgrades(sink) == ["popitem"]
+    assert bool(config) and len(forks(sink)) == 1
+
+
+def test_a_key_of_another_kind_the_dict_holds_is_not_stored_again() -> None:
+    config, sink = tracked({"a": 1})
+
+    config[(1, 2)] = 3
+    assert config.setdefault((1, 2), 9) == 3
+    merged = {(5, 6): 0, "a": 7} | config
+
+    assert list(merged) == [(5, 6), "a", (1, 2)] and merged["a"] == 1
+    assert bool(merged)
+    assert forks(sink)[-1] == (["!=", ["+", ["len", "config"], 2], 0], True)
+    assert downgrades(sink) == ["__setitem__", "setdefault", "__ror__"]
+
+
+def test_a_tracked_key_hands_out_a_str_value_tracked_and_any_other_as_it_is() -> None:
+    config, sink = tracked({"s": "x", "rows": [1]})
+    name = ConcolicStr("s", expression="name", sink=sink)
+    rows = ConcolicStr("rows", expression="name", sink=sink)
+
+    read = config[name]
+    assert type(read) is ConcolicStr and read.expression == ["[]", "config", "name"]
+    assert config[rows] == [1] and type(config[rows]) is list
+
+
+def test_a_view_of_a_plain_dict_is_python_s_own() -> None:
+    config, sink = tracked({"a": 1})
+    config.clear()
+    config["a"] = 1
+
+    assert config.keys() & {"a"} == {"a"} and (1, 2) not in config
+    assert ("z", 1) not in config.items() and config.keys().__eq__(5) is NotImplemented
+    assert pickle.loads(pickle.dumps(config)) == {"a": 1}
+
+    assert downgrades(sink) == [] and forks(sink) == []
+
+
+def test_an_item_whose_key_the_dict_lacks_is_not_in_its_items() -> None:
+    config, sink = tracked({"a": 1})
+
+    assert ("z", 1) not in config.items()
+
+    assert forks(sink) == [(["in", "'z'", "config"], False)]

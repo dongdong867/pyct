@@ -93,23 +93,12 @@ class Keyed:
 
     def present(self, found: Tracked, key: object) -> str:
         """Whether the dict holds a key the path names: its `Bool`."""
-        return found.constant(f"in.{list(found.named).index(key)}")
-
-    def _held(self, found: Tracked, key: object) -> str:
-        """Whether the dict holds a key of the input or of the path: a named key's `Bool`, and
-        for the input's other keys, whether the count kept reaches its place."""
-        if key in found.named:
-            return self.present(found, key)
-        return f"(< {found.unnamed.index(key)} {found.constant('kept')})"
-
-    def kind_under(self, found: Tracked, key: object) -> str:
-        """The kind of the value under a key: the input's, or an added value's."""
-        if key in found.shape.keys:
-            return found.shape.kinds[found.shape.keys.index(key)]
-        return found.shape.fill
+        return found.constant(f"in.{found.named[key]}")
 
     def _equals(self, found: Tracked, term: str, key: object) -> str:
-        return f"(and (= {term} {key_term(key)}) {self._held(found, key)})"
+        """Whether a tracked key equals a key and the dict holds it: every key a tracked key
+        may equal is named, the input's among them (see ``DictTerms.learn``)."""
+        return f"(and (= {term} {key_term(key)}) {self.present(found, key)})"
 
     def equals_a_key(self, found: Tracked, term: str, typed: type | None) -> str:
         """Whether a tracked key equals a key the dict holds, a made-up one among them."""
@@ -131,7 +120,7 @@ class Keyed:
         read = self._declared(found, f"made.{kind}", kind, (found.name, MADE))
         for key in reversed(found.candidates(typed)):
             here = self._equals(found, term, key)
-            if self.kind_under(found, key) != kind:
+            if found.kind_under(key) != kind:
                 self.hold(f"(not {here})")
                 continue
             read = f"(ite {here} {self.value_under(found, container, key, kind)} {read})"
@@ -141,7 +130,7 @@ class Keyed:
         """The value under a key: the input's own value's constant, when the path names it, or
         one declared here, which the answer names by the input's leaf or as an added value."""
         access: Expression = ["[]", container, key_term(key, written=True)]
-        held = key in found.shape.keys
+        held = key in found.places
         constant = self.constants.get(leaf_name(access)) if held else None
         if constant is not None:
             return constant
