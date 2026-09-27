@@ -81,6 +81,9 @@ def python_raise(call: object) -> BaseException:
 def test_reads_each_type_as_python_s(where: tuple[str, ...]) -> None:
     assert read.each_type(1, 2.5, "a", True, [1]) == "base"
     covers_plainly("targets.types.read::each_type", EVERY_TYPE, READ_FILE, "base", *where)
+    # a tracked range, which a call written `range(n)` builds, reads as Python's range too
+    assert read.range_type(2) == "base"
+    covers_plainly("targets.types.read::range_type", '{"n": 2}', READ_FILE, "base", *where)
 
 
 # read-a-tracked-value-s-type-as-its-base-type-follows-past-a-type-guard
@@ -117,6 +120,7 @@ def test_reads_the_class_and_its_name() -> None:
 def test_answers_isinstance_in_a_library() -> None:
     seed = '{"flag": true, "x": 1}'
     covers_plainly("shop.typed::checks", seed, TYPED_FILE, "python", cwd=SCOPE)
+    covers_plainly("shop.typed::ranged", '{"n": 2}', TYPED_FILE, "python", cwd=SCOPE)
 
 
 # read-a-tracked-value-s-type-as-its-base-type-picks-the-bool-handler-in-singledispatch

@@ -92,3 +92,16 @@ def two_argument_type(x: int) -> object:
 
 def checked_against_a_number(flag: bool) -> bool:
     return isinstance(flag, 5)  # type: ignore[arg-type]
+
+
+def range_type(n: int) -> str:
+    r = range(n)
+    if (
+        isinstance(r, range)
+        and type(r) is range
+        and r.__class__ is range
+        and type(r).__name__ == "range"
+        and type(r)(3) == range(3)
+    ):
+        return "base"
+    return "other"

@@ -10,6 +10,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
+from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
 # the table: each tracked class, and the base type it reports
@@ -19,6 +20,7 @@ _ROWS: dict[type, type] = {
     ConcolicStr: str,
     ConcolicBool: bool,
     ConcolicList: list,
+    ConcolicRange: range,
 }
 values.BASES.update(_ROWS)
 values.BASES_BY_ID.update({id(tracked): base for tracked, base in _ROWS.items()})

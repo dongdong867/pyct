@@ -27,3 +27,14 @@ def rebuilt(n: int, r: float, s: str, b: bool, xs: list[int]) -> str:
 
 def rebuilt_from_text(x: int) -> object:
     return classes.rebuild(x, "abc")
+
+
+def ranged(n: int) -> str:
+    r = range(n)
+    if (
+        classes.is_range(r)
+        and classes.class_of(r) is range
+        and classes.rebuild(r, 3) == range(3)
+    ):
+        return "python"
+    return "other"

@@ -8,3 +8,7 @@ def class_of(value: object) -> object:
 
 def rebuild(value: object, made_from: object) -> object:
     return type(value)(made_from)
+
+
+def is_range(value: object) -> bool:
+    return isinstance(value, range)

@@ -13,6 +13,7 @@ from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
+from pyct.core.ranges import ConcolicRange, ranged
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import BASES, BASES_BY_ID, raised_by_target
 
@@ -25,6 +26,7 @@ def tracked_values(sink: list[SinkItem]) -> list[tuple[object, type]]:
         (ConcolicStr.made("a", "s", sink), str),
         (ConcolicBool.made(True, "b", sink), bool),
         (ConcolicList.made([1], "xs", sink), list),
+        (ranged(ConcolicInt.made(3, "n", sink)), range),
     ]
 
 
@@ -35,6 +37,7 @@ def test_the_table_holds_each_tracked_class_and_its_base_type() -> None:
         ConcolicStr: str,
         ConcolicBool: bool,
         ConcolicList: list,
+        ConcolicRange: range,
     } == BASES
     assert {id(tracked): base for tracked, base in BASES.items()} == BASES_BY_ID
 
@@ -96,6 +99,8 @@ def test_the_class_itself_is_still_a_class() -> None:
         (ConcolicList, ([1],), [1]),
         (ConcolicList, ("ab",), ["a", "b"]),
         (ConcolicList, (), []),
+        (ConcolicRange, (3,), range(3)),
+        (ConcolicRange, (1, 9, 2), range(1, 9, 2)),
     ],
 )
 def test_a_tracked_class_called_with_a_value_builds_the_plain_value(
@@ -120,6 +125,8 @@ def test_a_tracked_class_called_with_keywords_builds_as_its_base_type_does() -> 
         (ConcolicInt, (1,), {"expression": "n"}),
         (ConcolicStr, ("a",), {"expression": "s", "sink": []}),
         (ConcolicList, (5,), {}),
+        (ConcolicRange, (), {}),
+        (ConcolicRange, ("a",), {}),
     ],
 )
 def test_a_tracked_class_raises_what_its_base_type_raises(
@@ -167,7 +174,8 @@ def test_assigning_the_class_raises_what_python_raises_for_the_plain_value(kind:
     sink: list[SinkItem] = []
 
     for value, base in tracked_values(sink):
-        plain = base()
+        # a plain value of the base type: range alone needs an argument
+        plain = base(3) if base is range else base()
         try:
             plain.__class__ = kind
         except TypeError as error:

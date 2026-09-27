@@ -173,6 +173,9 @@ BASES: dict[type, type] = {}
 # router does: reading a class's identity runs none of its code, where hashing it may
 BASES_BY_ID: dict[int, type] = {}
 
+# what each base type is called with for a plain value of its own, when not with nothing
+_EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
+
 # object's own `__class__`, which each tracked class's hides
 _OBJECT_CLASS = object.__dict__["__class__"]
 
@@ -186,11 +189,12 @@ def _assigned_class(self: _Sinked, kind: object) -> None:
     """`v.__class__ = kind`: made on a plain value of the base type first, so a class Python
     refuses for it raises Python's own error, in its words, and then on the value itself.
 
-    Python refuses every class for an int, float, str or bool; a list takes a
+    Python refuses every class for an int, float, str, bool or range; a list takes a
     subclass of list that is laid out as it is, and is no longer tracked
     after it, so the change is a downgrade named `__class__`.
     """
-    own(setattr, BASES[type(self)](), "__class__", kind)
+    base = BASES[type(self)]
+    own(setattr, base(*_EMPTY.get(base, ())), "__class__", kind)
     own(_OBJECT_CLASS.__set__, self, kind)
     self.sink.append(Downgrade(name="__class__"))
 
