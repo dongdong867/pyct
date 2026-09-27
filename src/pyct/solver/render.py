@@ -133,11 +133,6 @@ class Program:
         return {self.leaves[constant]: value for constant, value in model.items()}
 
 
-def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
-    """The whole little program: what to declare, what to assert, what to ask."""
-    return program(prefix, leaves).text
-
-
 def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     """The program for a path, with the table that reads its answer back.
 

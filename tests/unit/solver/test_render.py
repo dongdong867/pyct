@@ -1,14 +1,19 @@
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 
 import pytest
 
 from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import program, render
+from pyct.solver.render import program
 from pyct.solver.strings import above, below, last_index, occurrences
 
 SITE = Site(file="m.py", line=2, col=7)
+
+
+def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
+    """The program's text alone, which is what most tests here read."""
+    return program(prefix, leaves).text
 
 
 def fork(expression: Expression, *, taken: bool) -> Branch:
@@ -322,7 +327,6 @@ def test_a_program_reads_its_answer_back_by_leaf() -> None:
     # y is not on the path, so it is neither declared nor read
     assert written.leaves == {"arg.x": "x", "leaf.2": json.dumps(PORT)}
     assert written.read({"arg.x": 3, "leaf.2": 70000}) == {"x": 3, json.dumps(PORT): 70000}
-    assert written.text == render(path, leaves)
 
 
 @pytest.mark.parametrize(
