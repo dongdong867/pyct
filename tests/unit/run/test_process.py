@@ -14,8 +14,19 @@ import pytest
 from pyct.core.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
+from pyct.run import process
 from pyct.run.journal import Reading
-from pyct.run.process import KILL_GRACE, Waited, _Child, ending, watched
+from pyct.run.process import (
+    KILL_GRACE,
+    Child,
+    Stopped,
+    Waited,
+    ending,
+    refuse_after_a_stop,
+    stop,
+    stop_asked,
+    watched,
+)
 from tests.unit.another_thread import another_thread
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="t.py", line=2, col=7))
@@ -128,7 +139,7 @@ def test_ending_a_process_that_still_runs_kills_and_reaps_it() -> None:
     if pid == 0:
         time.sleep(10)
         os._exit(0)
-    child = _Child(pid)
+    child = Child(pid)
 
     child.end()
 
@@ -147,7 +158,7 @@ def test_ending_a_process_already_reaped_leaves_its_pid_alone(
     os.waitpid(pid, 0)
     killed: list[int] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
-    child = _Child(pid)
+    child = Child(pid)
 
     # reaped by pyct, the status lost on the way out: the pid may be another process's now
     child.end()
@@ -302,7 +313,7 @@ def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = exited(monkeypatch)
-    child = _Child(FAKE_PID)
+    child = Child(FAKE_PID)
 
     # the timer fires after the process ended and before the wait reaped it
     child.kill_if_running()
@@ -316,7 +327,7 @@ def test_the_kill_timer_leaves_a_process_it_already_read_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = exited(monkeypatch)
-    child = _Child(FAKE_PID)
+    child = Child(FAKE_PID)
     child.kill_if_running()
 
     child.kill_if_running()
@@ -332,7 +343,7 @@ def test_the_kill_timer_leaves_a_process_the_wait_reaped_alone(
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
 
     # the wait reaped it, and the timer fired before the status was kept
-    _Child(pid).kill_if_running()
+    Child(pid).kill_if_running()
 
     assert killed == []
 
@@ -341,14 +352,14 @@ def test_a_wait_on_a_process_no_one_kept_the_status_of_raises() -> None:
     pid = reaped()
 
     with pytest.raises(ChildProcessError):
-        _Child(pid).wait()
+        Child(pid).wait()
 
 
 def test_ending_a_process_that_exited_reaps_it_without_a_kill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = exited(monkeypatch)
-    child = _Child(FAKE_PID)
+    child = Child(FAKE_PID)
 
     child.end()
 
@@ -371,7 +382,7 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_still_reaps_it(
     monkeypatch.setattr(os, "kill", kill_then_interrupt)
 
     with pytest.raises(KeyboardInterrupt):
-        _Child(pid).end()
+        Child(pid).end()
 
     with pytest.raises(ChildProcessError):
         os.waitpid(pid, os.WNOHANG)
@@ -422,7 +433,19 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_reaps_it_while_another_thread_
     monkeypatch.setattr(os, "kill", kill_then_interrupt)
 
     with another_thread(), pytest.raises(KeyboardInterrupt):
-        _Child(pid).end()
+        Child(pid).end()
 
     monkeypatch.undo()
     assert not left_unreaped(pid)
+
+
+def test_a_stop_raises_and_refuses_every_input_after_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process, "_stop_asked", False)
+    refuse_after_a_stop()
+
+    with pytest.raises(Stopped):
+        stop()
+
+    assert stop_asked()
+    with pytest.raises(Stopped):
+        refuse_after_a_stop()

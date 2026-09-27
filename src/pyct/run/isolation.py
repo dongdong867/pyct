@@ -49,7 +49,7 @@ from pyct.results.failure import Failure
 from pyct.run.child import Served, flush_streams, serve
 from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter, read
-from pyct.run.process import InputStartError, ending, watched
+from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
 from pyct.run.target import Target
 from pyct.run.threads import running
 
@@ -111,9 +111,14 @@ class Inputs:
         return self.isolation is not Isolation.IN_PROCESS and Isolation.IN_PROCESS not in self.ran
 
     def __call__(self, args: Mapping[str, object], until: float | None) -> ExecutionResult:
+        # target code that caught a stop and went on starts nothing more, and a call in this
+        # process that caught one gets no line, nor a solve after it
+        refuse_after_a_stop()
         where = self._where()
         self.ran.append(where)
-        return self._calls[where](args, until)
+        result = self._calls[where](args, until)
+        refuse_after_a_stop()
+        return result
 
     def _where(self) -> Isolation:
         """Where the next input runs."""

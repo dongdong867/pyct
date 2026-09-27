@@ -29,7 +29,9 @@ from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
+from pyct.run.launch import launch
 from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
@@ -65,7 +67,19 @@ class RunCommand:
     in_process: bool = False
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def entry() -> int:
+    """The command line as the shell starts it: ``main`` in a process of its own, watched here.
+
+    A target whose import ends its process, by ``os._exit`` or a signal,
+    ends the process ``main`` runs in, so the process the shell started
+    outlives it to say so (see ``pyct.run.launch``). Tests call ``main`` in
+    their own process instead.
+    """
+    argv = sys.argv[1:]
+    return launch(functools.partial(main, argv), argv)
+
+
+def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
@@ -87,10 +101,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     about the machine. The import comes before the three seed checks because
     they all read the loaded target: its parameters, and the annotations on
     them.
+
+    While the target imports, ``watch`` names its module for the process
+    that watches this one, when ``entry`` started one.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
-        target, seed, limits = _checked(command)
+        target, seed, limits = _checked(command, watch)
         result = run(
             target,
             seed,
@@ -109,7 +126,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     return _exit_code(result)
 
 
-def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]:
+def _checked(
+    command: RunCommand, watch: ImportWatch | None
+) -> tuple[Target, Mapping[str, object], Limits]:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
@@ -118,7 +137,7 @@ def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
     )
-    target = load_target(command.spec)
+    target = load_target(command.spec, watch)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed_fits(target.signature, seed)
