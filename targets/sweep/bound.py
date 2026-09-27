@@ -1,5 +1,6 @@
 """A sweep fixture: public names that hold bound methods of module-level instances, as the
-standard library's random module exposes randint; wrap's code is outside the package."""
+standard library's random module exposes randint, one under two names;
+wrap's code is outside the package."""
 
 import textwrap
 
@@ -17,5 +18,6 @@ class _Dice:
 
 _dice = _Dice()
 roll = _dice.roll
+throw = roll
 make = _Dice.make
 wrap = textwrap.TextWrapper().wrap

@@ -184,8 +184,9 @@ class _Package:
         function's code is in the package; otherwise it is no entry, as any name from outside
         the package. ``pyct run`` calls it through a name, so a module that exposes it names
         it: the module whose file holds its function when that module does, and otherwise the
-        first exposing module of the package in name order. Every module that exposes it then
-        gives the same name, so a re-export is one row."""
+        first exposing module of the package in name order, under the method's own name when
+        that module holds it so, and otherwise its first name. Every name that holds it then
+        gives the same row, so a re-export or an alias is one row."""
         home = self._home_of(_code_file(function_of(method.__func__)))
         if home is None:
             return []
@@ -193,7 +194,8 @@ class _Package:
         for module in exposing:
             names = _exposing(sys.modules[module], method)
             if names:
-                return [seeded(module, found_as if found_as in names else min(names), method)]
+                own = method.__name__
+                return [seeded(module, own if own in names else min(names), method)]
         return [seeded(found_in, found_as, method)]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:

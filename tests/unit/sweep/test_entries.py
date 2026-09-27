@@ -158,6 +158,8 @@ def test_a_bound_method_is_named_by_the_module_that_exposes_it() -> None:
     module = f"{SWEEP}.bound"
     assert entries(module, module) == [
         Entry(module, "roll", seed={"sides": 0}),
+        # an alias is the same entry, under the method's own name
+        Entry(module, "roll", seed={"sides": 0}),
         Entry(module, "make", seed={"seed": 0}),
     ]
 
