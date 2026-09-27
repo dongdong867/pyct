@@ -2,6 +2,7 @@ import json
 import sys
 import threading
 from collections import OrderedDict
+from dataclasses import dataclass
 
 from pyct.binding.bind import access_name, bind, leaf_name, leaves
 from pyct.core.branch import SinkItem
@@ -319,3 +320,19 @@ def test_a_dict_copied_first_inside_a_tuple_keeps_its_own_keys_when_named() -> N
     assert len(a) == 2
     assert isinstance(a["n"], ConcolicInt)
     assert a["n"].expression == ["[]", "a", "'n'"]
+
+
+@dataclass(slots=True)
+class Slotted:
+    """An object deepcopy copies through state it builds for the copy and then lets go of."""
+
+    n: int
+
+
+def test_objects_copied_in_one_walk_keep_their_own_state() -> None:
+    # deepcopy memoizes that passing state by identity; were it let go, its identity could be
+    # reused, and the second object would read the first one's state
+    args = bind({"p": (Slotted(1),), "q": (Slotted(2),), "r": (Slotted(3),)}, [])
+
+    copies = [args[name] for name in ("p", "q", "r")]
+    assert [copy[0].n for copy in copies if isinstance(copy, tuple)] == [1, 2, 3]
