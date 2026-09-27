@@ -256,17 +256,17 @@ def test_an_operand_that_opens_with_a_quote_but_holds_no_str_is_an_error() -> No
 
 
 @pytest.mark.parametrize("separator", ["','", None], ids=["on a separator", "on whitespace"])
-def test_an_rsplit_with_a_large_limit_renders_in_size_and_memory_that_grow_with_it(
+def test_an_rsplit_walked_to_its_longest_renders_in_size_that_grows_with_its_limit(
     separator: str | None,
 ) -> None:
     def rendered(limit: int) -> str:
-        condition: Expression = ["==", ["[]", ["rsplit", "s", separator, limit], 0], "'a'"]
+        condition: Expression = ["==", ["[]", ["rsplit", "s", separator, limit], 1], "'a'"]
         return render((fork(condition, taken=False),), {"s": str})
 
     tracemalloc.start()
     try:
         started = time.perf_counter()
-        text = rendered(2000)
+        text = rendered(LONGEST_WALK)
         elapsed = time.perf_counter() - started
         _, peak = tracemalloc.get_traced_memory()
     finally:
@@ -274,11 +274,11 @@ def test_an_rsplit_with_a_large_limit_renders_in_size_and_memory_that_grow_with_
         tracemalloc.stop()
 
     # the reversed string is walked once, each step naming the last, so twice the limit is
-    # about twice the text: 0.6 MB on a separator and 1.7 MB on whitespace at 2,000
-    assert len(text) < 2.2 * len(rendered(1000))
-    assert len(text) < 2_000_000
-    assert elapsed < 1.0
-    assert peak < 20_000_000
+    # about twice the text: 5 KB on a separator and 14 KB on whitespace at sixteen
+    assert len(text) < 2.4 * len(rendered(LONGEST_WALK // 2))
+    assert len(text) < 30_000
+    assert elapsed < 0.5
+    assert peak < 2_000_000
 
 
 @pytest.mark.parametrize("head", ["rsplit", "split"])
