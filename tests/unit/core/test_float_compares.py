@@ -18,13 +18,19 @@ TAUGHT_COMPARES: dict[str, tuple[Callable[[float], object], bool]] = {
     "!=": (lambda x: x != 2.5, False),
 }
 
-# an operand float answers but pyct does not encode, and the dunder its compare runs: an int
-# meets a float in follow-floats-that-meet-ints, a bool in follow-booleans
+# an operand float answers but pyct does not encode, and the dunder its compare runs: a bool
+# meets a float in follow-booleans-and-chained-compares
 NOT_ENCODED: dict[str, tuple[Callable[[float], object], str]] = {
-    "x < 3": (lambda x: x < 3, "__lt__"),
     "x == True": (lambda x: x == True, "__eq__"),  # noqa: E712 - the target's spelling
-    "3 < x": (lambda x: 3 < x, "__gt__"),  # noqa: SIM300 - the reflected form is the point
-    "x >= n": (lambda x: x >= ConcolicInt(2, expression="n", sink=[]), "__ge__"),
+    "x < False": (lambda x: x < False, "__lt__"),
+}
+
+# a compare with an int, plain or tracked, and the node it builds: Python compares the two
+# numbers, and render converts the int as Python does
+WITH_INTS: dict[str, tuple[Callable[[float], object], list[object]]] = {
+    "x < 3": (lambda x: x < 3, ["<", "x", 3]),
+    "3 < x": (lambda x: 3 < x, [">", "x", 3]),  # noqa: SIM300 - the reflected form is the point
+    "x >= n": (lambda x: x >= ConcolicInt(2, expression="n", sink=[]), [">=", "x", "n"]),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -107,6 +113,21 @@ def test_an_operand_float_answers_but_pyct_does_not_encode_is_a_downgrade(
     assert type(result) is bool
     assert result is call(2.5)
     assert sink == [Downgrade(name=name)]
+
+
+@pytest.mark.parametrize(("call", "expression"), WITH_INTS.values(), ids=list(WITH_INTS))
+def test_a_compare_with_an_int_builds_its_expression_and_records_nothing(
+    call: Callable[[float], object], expression: list[object]
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(2.5, expression="x", sink=sink)
+
+    result = call(x)
+
+    assert isinstance(result, ConcolicBool)
+    assert result.expression == expression
+    assert int.__bool__(result) is call(2.5)
+    assert sink == []
 
 
 def test_equal_to_a_str_is_pythons_own_constant() -> None:
