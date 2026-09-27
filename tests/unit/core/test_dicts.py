@@ -27,9 +27,9 @@ def tracked(values: dict[str, Any], name: str = "config") -> tuple[Any, list[Sin
     for key, value in values.items():
         access: Expression = ["[]", name, repr(key)]
         if isinstance(value, str):
-            items[key] = ConcolicStr(value, expression=access, sink=sink)
+            items[key] = ConcolicStr.made(value, access, sink)
         elif isinstance(value, int) and not isinstance(value, bool):
-            items[key] = ConcolicInt(value, expression=access, sink=sink)
+            items[key] = ConcolicInt.made(value, access, sink)
         else:
             items[key] = value
     return ConcolicDict.made(items, name, sink), sink
@@ -99,7 +99,7 @@ def test_a_program_answers_as_python_and_each_fork_holds_over_the_argument(
 ) -> None:
     config, sink = tracked({"a": 1, "b": "x"})
     argument = {"a": 1, "b": "x"}
-    tracked_key = ConcolicStr(key, expression="name", sink=sink)
+    tracked_key = ConcolicStr.made(key, "name", sink)
     expected: dict[object, object] = {}
     expected.update(argument)
     try:
@@ -260,7 +260,7 @@ def test_a_change_while_it_walks_raises_python_s_own_error() -> None:
 
 def test_a_tracked_key_is_looked_up_by_its_expression() -> None:
     config, sink = tracked({"apple": 1})
-    name = ConcolicStr("apple", expression="name", sink=sink)
+    name = ConcolicStr.made("apple", "name", sink)
 
     assert name in config
     read = config[name]
@@ -271,7 +271,7 @@ def test_a_tracked_key_is_looked_up_by_its_expression() -> None:
 
 def test_a_tracked_key_into_a_changed_dict_is_python_s_answer() -> None:
     config, sink = tracked({"apple": 1})
-    name = ConcolicStr("apple", expression="name", sink=sink)
+    name = ConcolicStr.made("apple", "name", sink)
     config["pear"] = 2
 
     assert name in config

@@ -21,7 +21,14 @@ from pyct.core.dict_state import MISSING, DictState
 from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.list_compares import matches
 from pyct.core.list_state import enter_kind, plain
-from pyct.core.values import built_plainly, downgrade_the_rest, forked, own
+from pyct.core.values import (
+    REPORTED_CLASS,
+    as_base,
+    built_plainly,
+    downgrade_the_rest,
+    forked,
+    own,
+)
 
 # not the target's path: `__repr__`, the object plumbing, and `__init__`, which a target calls
 # only to fill the dict anew, a change made without the methods that the next operation notices
@@ -195,6 +202,11 @@ class ConcolicDict(DictState):
     to it in `_KEPT`, is dict's own and returns a plain value, with a downgrade in the sink
     naming what was lost (``README.md › Rules › downgrades``).
     """
+
+    # the base type, as `isinstance`, singledispatch and a class pattern read it; the class
+    # called with a value is dict's own, a plain dict, since pyct builds one through `made`
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
+    __new__ = as_base
 
     # the lookups, each recording whether the key is there the first time the path asks
     __getitem__ = _item  # pyrefly: ignore[bad-override]

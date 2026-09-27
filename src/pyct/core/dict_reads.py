@@ -147,9 +147,9 @@ def value(self: DictState, key: object) -> object:
     read: Expression = ["[]", self.expression, key.expression]
     stored = plain(held)
     if type(stored) is str:
-        return ConcolicStr(stored, expression=read, sink=self.sink)
+        return ConcolicStr.made(stored, read, self.sink)
     if type(stored) is int:
-        return ConcolicInt(stored, expression=read, sink=self.sink)
+        return ConcolicInt.made(stored, read, self.sink)
     return held
 
 
@@ -171,7 +171,7 @@ def length(self: DictState) -> int:
     term its own forks read. A dict with no form gives its plain size."""
     if not self.holds("__len__"):
         return self.size()
-    return ConcolicInt(self.size(), expression=self.size_term(), sink=self.sink)
+    return ConcolicInt.made(self.size(), self.size_term(), self.sink)
 
 
 def truth(self: DictState) -> bool:

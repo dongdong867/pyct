@@ -24,7 +24,7 @@ from tests.unit.core.test_dicts import downgrades, forks, plain_dict, tracked
 
 def test_a_change_under_a_tracked_key_is_python_s_own_and_the_dict_goes_on() -> None:
     config, sink = tracked({"a": 1})
-    name = ConcolicStr("b", expression="name", sink=sink)
+    name = ConcolicStr.made("b", "name", sink)
 
     config[name] = 1
     config.setdefault(name, 5)
@@ -150,7 +150,7 @@ def test_two_dicts_compare_sizes_first_then_each_key_and_its_value() -> None:
 def test_two_tracked_dicts_compare_by_the_left_one_s_keys() -> None:
     left, sink = tracked({"a": 1}, "left")
     right = ConcolicDict.made(
-        {"a": ConcolicInt(1, expression=["[]", "right", "'a'"], sink=sink)}, "right", sink
+        {"a": ConcolicInt.made(1, ["[]", "right", "'a'"], sink)}, "right", sink
     )
 
     assert left == right
@@ -345,8 +345,8 @@ def test_a_key_of_another_kind_the_dict_holds_is_not_stored_again() -> None:
 
 def test_a_tracked_key_hands_out_a_str_value_tracked_and_any_other_as_it_is() -> None:
     config, sink = tracked({"s": "x", "rows": [1]})
-    name = ConcolicStr("s", expression="name", sink=sink)
-    rows = ConcolicStr("rows", expression="name", sink=sink)
+    name = ConcolicStr.made("s", "name", sink)
+    rows = ConcolicStr.made("rows", "name", sink)
 
     read = config[name]
     assert type(read) is ConcolicStr and read.expression == ["[]", "config", "name"]
@@ -399,7 +399,7 @@ def test_every_method_of_a_view_is_taught_or_a_downgrade(view: type) -> None:
 def test_setdefault_under_a_tracked_key_into_a_changed_dict_is_named_once() -> None:
     config, sink = tracked({"a": 1})
     config["n"] = 2
-    name = ConcolicStr("b", expression="name", sink=sink)
+    name = ConcolicStr.made("b", "name", sink)
 
     assert config.setdefault(name, 5) == 5
 
@@ -422,7 +422,7 @@ def test_a_view_turned_into_text_is_named_as_the_dict_is(view: str) -> None:
 
 def test_the_size_term_follows_every_change_as_it_happens() -> None:
     config, sink = tracked({"a": 1, "b": 2})
-    name = ConcolicStr("x", expression="name", sink=sink)
+    name = ConcolicStr.made("x", "name", sink)
 
     config["n"] = 1
     config["a"] = 5

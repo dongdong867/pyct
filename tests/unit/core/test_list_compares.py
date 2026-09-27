@@ -169,7 +169,7 @@ def test_each_kind_of_item_is_its_own() -> None:
         "list",
         "other",
     ]
-    assert kind_of(ConcolicStr("a", expression="s", sink=[])) == "str"
+    assert kind_of(ConcolicStr.made("a", expression="s", sink=[])) == "str"
 
 
 def test_a_form_reads_an_argument_when_it_names_one_as_it_came() -> None:
@@ -182,7 +182,7 @@ def test_a_form_reads_an_argument_when_it_names_one_as_it_came() -> None:
 
 def test_a_display_writes_what_an_expression_holds_and_nothing_else() -> None:
     sink: list[object] = []
-    x = ConcolicInt(1, expression="x", sink=sink)  # pyrefly: ignore[bad-argument-type]
+    x = ConcolicInt.made(1, expression="x", sink=sink)  # pyrefly: ignore[bad-argument-type]
     row = ConcolicList.made([], "row", sink)  # pyrefly: ignore[bad-argument-type]
 
     assert displayed([x, 2, "a", None, 1.5, True, [3], row], "append") == [

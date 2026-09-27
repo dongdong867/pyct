@@ -39,8 +39,8 @@ COMPARED: dict[str, tuple[Callable[[int, float], object], list[object]]] = {
 
 def _operands(sink: list[SinkItem]) -> tuple[ConcolicBool, ConcolicFloat]:
     return (
-        ConcolicBool(True, expression=ABOVE, sink=sink),
-        ConcolicFloat(2.0, expression="f", sink=sink),
+        ConcolicBool.made(True, expression=ABOVE, sink=sink),
+        ConcolicFloat.made(2.0, expression="f", sink=sink),
     )
 
 
@@ -86,8 +86,8 @@ def test_a_plain_float_on_the_left_of_a_tracked_bool_is_floats_own_and_records_n
 
 def test_a_float_divided_by_a_false_bool_raises_with_its_fork_recorded() -> None:
     sink: list[SinkItem] = []
-    b = ConcolicBool(False, expression=ABOVE, sink=sink)
-    f = ConcolicFloat(2.0, expression="f", sink=sink)
+    b = ConcolicBool.made(False, expression=ABOVE, sink=sink)
+    f = ConcolicFloat.made(2.0, expression="f", sink=sink)
 
     with pytest.raises(ZeroDivisionError):
         f / b

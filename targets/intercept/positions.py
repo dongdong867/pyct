@@ -4,7 +4,6 @@ def place(x: int) -> str:
     seen.append(x)
     if b is True:
         return "big"
-    if x in {1,
-             5}:
+    if x in {1, 5}:
         return "picked"
     return "other"

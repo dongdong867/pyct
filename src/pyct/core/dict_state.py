@@ -54,7 +54,8 @@ class DictState(dict):
         cls, items: dict[object, object], expression: Expression | None, sink: BranchSink
     ) -> Self:
         """A tracked dict of these items and this argument, nothing settled or changed yet."""
-        made = cls.__new__(cls)
+        # dict's own, since the class called with a value builds a plain dict
+        made = dict.__new__(cls)
         dict.update(made, items)
         made.expression = expression
         made.sink = sink

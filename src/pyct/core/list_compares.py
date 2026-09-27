@@ -123,7 +123,7 @@ def ordered(self: ListState, other: list[object], op: str) -> object:
             return own(ORDERS[op], mine, theirs)
         at += 1
     answer = bool(own(ORDERS[op], self.length(), list.__len__(other)))
-    return ConcolicBool(answer, expression=[op, left.size(), right.size()], sink=self.sink)
+    return ConcolicBool.made(answer, expression=[op, left.size(), right.size()], sink=self.sink)
 
 
 _NAMES = {"<": "lt", "<=": "le", ">": "gt", ">=": "ge"}

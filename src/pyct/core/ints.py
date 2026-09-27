@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Self
+
 from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import (
@@ -12,6 +14,8 @@ from pyct.core.numbers import (
     promoted,
 )
 from pyct.core.values import (
+    REPORTED_CLASS,
+    as_base,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -48,6 +52,8 @@ class ConcolicInt(int):
 
     expression: Expression
     sink: BranchSink
+    # the base type, as `isinstance`, singledispatch and a class pattern read it
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
     # set on the int a tracked bool is (`bools._the_int`), whose expression is the bool's own
     # condition: what its text reads that condition as, the int it is
     as_int: Expression | None = None
@@ -113,11 +119,16 @@ class ConcolicInt(int):
     # int's own would build this class from the value alone
     from_bytes = built_plainly(int, "from_bytes")  # pyrefly: ignore[bad-override]
 
-    def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
+    # the class called with a value is int's own, a plain int; pyct builds a tracked one
+    __new__ = as_base
+
+    @classmethod
+    def made(cls, value: int, expression: Expression, sink: BranchSink) -> Self:
+        """A tracked int of this value and form: how pyct builds one."""
+        made = int.__new__(cls, value)
+        made.expression = expression
+        made.sink = sink
+        return made
 
     def __bool__(self) -> bool:
         # the int is the condition: zero is the one value that takes the other side

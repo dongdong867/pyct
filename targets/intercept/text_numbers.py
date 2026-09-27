@@ -22,4 +22,3 @@ def read_as_float(s: str) -> str:
     if float(s) == 100000.0:
         return "hundred thousand"
     return "other"
-
