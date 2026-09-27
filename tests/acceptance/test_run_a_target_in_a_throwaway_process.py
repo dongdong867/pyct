@@ -311,16 +311,20 @@ def is_running(pid: int) -> bool:
 
 
 @contextlib.contextmanager
-def pyct_in_a_session(spec: str, pid_file: Path) -> Generator[subprocess.Popen[str]]:
+def pyct_in_a_session(
+    spec: str, pid_file: Path, *flags: str, env: dict[str, str] | None = None
+) -> Generator[subprocess.Popen[str]]:
     """``pyct run`` in a session of its own, so a SIGINT can reach its whole group.
 
-    That is how a terminal sends Ctrl-C. Whatever is left of the run, and the
-    input's process named in ``pid_file``, is killed on the way out.
+    That is how a terminal sends Ctrl-C. The seed is ``{"x": 0}``, ``flags``
+    follow it, and ``env`` is the environment, this one's without PYTHONPATH
+    when not given. Whatever is left of the run, and the process named in
+    ``pid_file``, is killed on the way out.
     """
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env = dict(env or {k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
     env["PYCT_TEST_PID_FILE"] = str(pid_file)
     process = subprocess.Popen(
-        [sys.executable, "-P", "-m", "pyct", "run", spec, '{"x": 0}'],
+        [sys.executable, "-P", "-m", "pyct", "run", spec, '{"x": 0}', *flags],
         cwd=REPO_ROOT,
         env=env,
         stdout=subprocess.PIPE,

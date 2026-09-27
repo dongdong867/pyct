@@ -242,46 +242,19 @@ def test_a_crash_after_the_import_is_said_and_not_repeated() -> None:
     assert result.stderr.splitlines()[-1] == "pyct's process was killed by SIGSEGV"
 
 
-@contextmanager
-def in_a_session(
-    pid_file: Path, *argv: str, env: dict[str, str] | None = None
-) -> Generator[subprocess.Popen[str]]:
-    """``pyct run *argv`` in a session of its own, asked to write its target's pid to ``pid_file``.
-
-    ``env`` is the environment, this one's without PYTHONPATH when not given.
-    Whatever is left of the run is killed on the way out.
-    """
-    env = dict(env or {k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
-    env["PYCT_TEST_PID_FILE"] = str(pid_file)
-    process = subprocess.Popen(
-        [sys.executable, "-P", "-m", "pyct", "run", *argv],
-        cwd=REPO_ROOT,
-        env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        start_new_session=True,
-    )
-    try:
-        yield process
-    finally:
-        with suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
-
-
 # target code that catches BaseException catches the stop, and the run still ends
 @pytest.mark.parametrize(
     "argv",
     [
-        pytest.param((SWALLOWS_AT_IMPORT, '{"x": 0}'), id="at-import"),
-        pytest.param((SWALLOWS_IN_A_CALL, '{"x": 0}', "--in-process"), id="in-a-call"),
+        pytest.param((SWALLOWS_AT_IMPORT,), id="at-import"),
+        pytest.param((SWALLOWS_IN_A_CALL, "--in-process"), id="in-a-call"),
     ],
 )
 def test_a_sigterm_ends_a_run_whose_target_catches_the_stop(
     argv: tuple[str, ...], tmp_path: Path
 ) -> None:
     pid_file = tmp_path / "pid"
-    with in_a_session(pid_file, *argv) as process:
+    with pyct_in_a_session(argv[0], pid_file, *argv[1:]) as process:
         pid_written_to(pid_file, process)
         sent = time.monotonic()
         os.kill(process.pid, signal.SIGTERM)
@@ -295,7 +268,7 @@ def test_a_sigterm_ends_a_run_whose_target_catches_the_stop(
 
 def test_a_sigkill_to_pyct_ends_an_import_that_catches_the_stop(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
-    with in_a_session(pid_file, SWALLOWS_AT_IMPORT, '{"x": 0}') as process:
+    with pyct_in_a_session(SWALLOWS_AT_IMPORT, pid_file) as process:
         importing = pid_written_to(pid_file, process)
         os.kill(process.pid, signal.SIGKILL)
         process.wait(timeout=10)
@@ -328,7 +301,7 @@ def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
 def test_a_sigkill_to_pyct_ends_a_fresh_pyct_process_and_its_input(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     env = site_in(tmp_path / "site", thread=True)
-    with in_a_session(pid_file, C_HANG, '{"x": 0}', env=env) as process:
+    with pyct_in_a_session(C_HANG, pid_file, env=env) as process:
         child = pid_written_to(pid_file, process)
         os.kill(process.pid, signal.SIGKILL)
         process.wait(timeout=10)
@@ -341,13 +314,13 @@ def test_a_sigkill_to_pyct_ends_a_fresh_pyct_process_and_its_input(tmp_path: Pat
 @pytest.mark.parametrize(
     "argv",
     [
-        pytest.param((HANGS_IN_C_AT_IMPORT, '{"x": 0}'), id="at-import"),
-        pytest.param((C_HANG, '{"x": 0}', "--in-process"), id="in-a-call"),
+        pytest.param((HANGS_IN_C_AT_IMPORT,), id="at-import"),
+        pytest.param((C_HANG, "--in-process"), id="in-a-call"),
     ],
 )
 def test_a_sigterm_ends_pyct_s_process_in_c_code(argv: tuple[str, ...], tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
-    with in_a_session(pid_file, *argv) as process:
+    with pyct_in_a_session(argv[0], pid_file, *argv[1:]) as process:
         pid_written_to(pid_file, process)
         sent = time.monotonic()
         os.kill(process.pid, signal.SIGTERM)
@@ -362,7 +335,7 @@ def test_a_sigterm_ends_pyct_s_process_in_c_code(argv: tuple[str, ...], tmp_path
 # the watcher killed while pyct's process is in one long C call: that process ends too
 def test_a_sigkill_to_pyct_ends_its_process_in_c_code(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
-    with in_a_session(pid_file, HANGS_IN_C_AT_IMPORT, '{"x": 0}') as process:
+    with pyct_in_a_session(HANGS_IN_C_AT_IMPORT, pid_file) as process:
         importing = pid_written_to(pid_file, process)
         os.kill(process.pid, signal.SIGKILL)
         process.wait(timeout=10)
@@ -374,18 +347,7 @@ def test_a_sigkill_to_pyct_ends_its_process_in_c_code(tmp_path: Path) -> None:
 # target code that catches the stop and returns does not let the run go on: no input starts
 def test_a_stop_the_import_catches_and_returns_from_still_ends_the_run(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env["PYCT_TEST_PID_FILE"] = str(pid_file)
-    process = subprocess.Popen(
-        [sys.executable, "-P", "-m", "pyct", "run", CATCHES_ONE_STOP, '{"x": 0}'],
-        cwd=REPO_ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-        start_new_session=True,
-    )
-    try:
+    with pyct_in_a_session(CATCHES_ONE_STOP, pid_file) as process:
         pid_written_to(pid_file, process)
         os.kill(process.pid, signal.SIGTERM)
         stdout, _ = process.communicate(timeout=10)
@@ -393,9 +355,6 @@ def test_a_stop_the_import_catches_and_returns_from_still_ends_the_run(tmp_path:
         assert process.returncode == -signal.SIGTERM
         assert stdout == ""
         assert group_ended(process.pid)
-    finally:
-        with suppress(ProcessLookupError):
-            os.killpg(process.pid, signal.SIGKILL)
 
 
 # a Ctrl-C after a SIGTERM reaches pyct's group, not its guard, which still ends the run;
@@ -406,7 +365,7 @@ def test_a_ctrl_c_during_the_grace_leaves_the_guard_to_end_the_run(
 ) -> None:
     pid_file = tmp_path / "pid"
     env = site_in(tmp_path / "site", thread=thread)
-    with in_a_session(pid_file, SWALLOWS_AT_IMPORT, '{"x": 0}', env=env) as process:
+    with pyct_in_a_session(SWALLOWS_AT_IMPORT, pid_file, env=env) as process:
         pid_written_to(pid_file, process)
         sent = time.monotonic()
         os.kill(process.pid, signal.SIGTERM)
