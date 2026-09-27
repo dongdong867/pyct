@@ -3,7 +3,6 @@
 import ast
 import sys
 import types
-from typing import Any
 
 import pytest
 
@@ -136,7 +135,7 @@ def _steps_run(source: str) -> int:
     tool = next(tool for tool in (3, 4, 5) if monitoring.get_tool(tool) is None)
     counted = 0
 
-    def on_jump(code: types.CodeType, offset: int, destination: int) -> Any:
+    def on_jump(code: types.CodeType, offset: int, destination: int) -> object:
         nonlocal counted
         if code.co_filename != constants.__file__:
             return monitoring.DISABLE

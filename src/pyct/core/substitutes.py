@@ -37,7 +37,7 @@ from pyct.core import bound, str_literals, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.handed import PASSING as HANDED_PASSING
-from pyct.core.handed import handed as handed
+from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 

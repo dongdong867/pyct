@@ -109,8 +109,8 @@ def handed(right: object, left: object, /) -> object:
 
 # the frames blame reads through: a raise under one of them, from Python's own operator on the
 # literal and the tracked value, is the target's, as it is when the target's operator raises
-# every stand-in method is a closure over `_reflected`'s one inner function, so one built here
-# reaches the code object all eighteen share
+# each stand-in method is `_reflected`'s inner `answer`, so one built here gives the code
+# object every stand-in method shares
 PASSING: frozenset[types.CodeType] = frozenset(
     {handed.__code__, _reflected("__radd__", operator.add).__code__}
 )
