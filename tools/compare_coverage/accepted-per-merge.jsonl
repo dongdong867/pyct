@@ -12,6 +12,7 @@
 {"set": "v2", "target": "targets.flip.order::order", "seed": {"s": "a", "t": "b"}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.ints.compare_deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.constant_power::root", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.ints.counted_up::count_up", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.ints.deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.divmod_check::split", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ints.each_copy::count", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [13, 15, 17, 19, 21, 23]}
@@ -30,6 +31,10 @@
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.find_from_position::check", "seed": {"s": "abcx"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.length_check::check", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [4], "only_v2": []}
+{"set": "v2", "target": "targets.strs.long_or_empty::measure", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.strs.padded::pad", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}, "status": "differs", "only_legacy": [], "only_v2": [7, 9]}
+{"set": "v2", "target": "targets.strs.rebuilt::rebuild", "seed": {"s": "aaaaaaaaaaaaaaaaaa"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.strs.search::kind", "seed": {"s": "a=#", "t": "!"}, "status": "differs", "only_legacy": [], "only_v2": [11, 13, 17, 19]}
 {"set": "v2", "target": "targets.strs.six_compares::count", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
