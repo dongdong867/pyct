@@ -148,3 +148,26 @@ def test_zero_is_the_one_value_on_the_other_side_of_the_truth_test(
 
     assert _probe()(x) == ("yes" if truth else "no")
     assert sink == [Branch(expression=["!=", "x", 0.0], taken=truth, site=PROBE_SITE)]
+
+
+class Gauge(float):
+    """A float subclass of a library's own, as numpy.float64 is, with a compare of its own."""
+
+    def __gt__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return "gauge >"
+
+    def __eq__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return "gauge =="
+
+    __hash__ = float.__hash__
+
+
+def test_a_float_subclass_with_its_own_reflected_compare_answers_first() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(2.5, expression="x", sink=sink)
+
+    # `x < g` asks `g.__gt__` first, as it would with a plain 2.5 on the left
+    assert (2.5 < Gauge(1.0)) == "gauge >"  # noqa: SIM300 - the order is the point
+    assert (x < Gauge(1.0)) == "gauge >"
+    assert (x == Gauge(1.0)) == "gauge =="
+    assert sink == []

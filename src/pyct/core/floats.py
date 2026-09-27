@@ -44,6 +44,45 @@ _KEPT = (
 # and `print(x)` still drops the condition
 _INHERITED = ("__str__",)
 
+# each operation float defines on two operands, and the reflected one Python asks the right
+# operand for first when that operand's type is a float subclass defining it otherwise
+_REFLECTED = {
+    "__add__": "__radd__",
+    "__sub__": "__rsub__",
+    "__mul__": "__rmul__",
+    "__truediv__": "__rtruediv__",
+    "__floordiv__": "__rfloordiv__",
+    "__mod__": "__rmod__",
+    "__divmod__": "__rdivmod__",
+    "__pow__": "__rpow__",
+    "__lt__": "__gt__",
+    "__le__": "__ge__",
+    "__gt__": "__lt__",
+    "__ge__": "__le__",
+    "__eq__": "__eq__",
+    "__ne__": "__ne__",
+}
+
+
+def _answered_first(name: str, self: object, other: object) -> object:
+    """What a float subclass on the right answers first, as Python asks it, or NotImplemented.
+
+    With a plain float on the left, Python asks the right operand's
+    reflected operation first when its type is a float subclass, a
+    library's such as numpy.float64 or the target's own, that defines that
+    operation otherwise than float. So pyct asks it too, before anything of
+    float's runs, and its answer is the answer. One that answers
+    NotImplemented hands the operation back to float, as it would.
+    """
+    reflected = _REFLECTED.get(name)
+    kind = type(other)
+    if reflected is None or kind is float or not issubclass(kind, float):
+        return NotImplemented
+    operation = getattr(kind, reflected)
+    if issubclass(kind, ConcolicFloat) or operation is getattr(float, reflected):
+        return NotImplemented
+    return own(operation, other, self)
+
 
 def _operand(other: object) -> Expression | None:
     """How a float reads the other side of an operation, or None for one it does not take.
@@ -69,6 +108,8 @@ def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
     downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
+        if (first := _answered_first(name, self, other)) is not NotImplemented:
+            return first
         answer = followed(self, other)
         return downgrade(self, other) if answer is NotImplemented else answer
 
@@ -91,6 +132,8 @@ def _arithmetic(
     downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
+        if (first := _answered_first(name, self, other)) is not NotImplemented:
+            return first
         form = _operand(other)
         if form is None:
             return downgrade(self, other)
@@ -174,5 +217,5 @@ class ConcolicFloat(float):
 # `__str__` float inherits, differ only in the name they call and record, so the derivation
 # writes them. A float that Python computes, a sum or a quotient among them, is tracked as a
 # ConcolicFloat
-downgrade_the_rest(ConcolicFloat, float, kept=_KEPT, inherited=_INHERITED)
+downgrade_the_rest(ConcolicFloat, float, kept=_KEPT, inherited=_INHERITED, first=_answered_first)
 numbers.enter(float, ConcolicFloat)

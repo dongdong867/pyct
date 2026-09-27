@@ -180,3 +180,54 @@ def test_is_integer_given_an_argument_raises_as_the_target() -> None:
         x.is_integer(1)  # pyrefly: ignore[bad-argument-count]
 
     assert raised_by_target(raised.value)
+
+
+class Gauge(float):
+    """A float subclass of a library's own, as numpy.float64 is: it answers some reflected
+    operations itself, and hands one back to float. It reads the other side by float's own
+    `__float__`, as numpy reads a float's value, so a tracked float records nothing."""
+
+    def __rtruediv__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
+        return ("gauge /", float.__float__(other))
+
+    def __radd__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
+        return ("gauge +", float.__float__(other))
+
+    def __rmod__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
+        return ("gauge %", float.__float__(other))
+
+    def __rsub__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
+        return NotImplemented
+
+
+# an operation with a Gauge on the right, and what Python gives were the float on the left plain
+GAUGED: dict[str, tuple[Callable[[float], object], object]] = {
+    "x / g": (lambda x: x / Gauge(0.0), ("gauge /", 2.5)),
+    "x + g": (lambda x: x + Gauge(1.0), ("gauge +", 2.5)),
+    "x % g": (lambda x: x % Gauge(0.0), ("gauge %", 2.5)),
+}
+
+
+@pytest.mark.parametrize(("call", "answer"), GAUGED.values(), ids=list(GAUGED))
+def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
+    call: Callable[[float], object], answer: object
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(2.5, expression="x", sink=sink)
+
+    # Python asks a float subclass on the right first when it defines the reflected operation,
+    # so a plain 2.5 gets the subclass's answer, and so does the tracked one
+    assert call(2.5) == answer
+    assert call(x) == answer
+    assert sink == []
+
+
+def test_a_float_subclass_that_hands_the_reflected_operation_back_gets_floats_answer() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(2.5, expression="x", sink=sink)
+
+    result = x - Gauge(1.0)
+
+    # its `__rsub__` answers NotImplemented, so float's own subtraction answers, followed
+    assert isinstance(result, ConcolicFloat)
+    assert result.expression == ["-", "x", 1.0]
