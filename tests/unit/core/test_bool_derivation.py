@@ -9,10 +9,8 @@ from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
-# own with no downgrade, silently. Fifteen on the floor version; a newer Python may add another
+# own with no downgrade, silently. Thirteen on the floor version; a newer Python may add another
 UNTAUGHT_OPERATIONS = (
-    "__truediv__",
-    "__rtruediv__",
     "__rpow__",
     "__lshift__",
     "__rlshift__",
@@ -44,9 +42,9 @@ def _downgrades(cls: type) -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the fifteen are counted on the floor; a newer Python may define another int method",
+    reason="the thirteen are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_bool_downgrades_the_fifteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_bool_downgrades_the_thirteen_operations_it_has_not_taught() -> None:
     assert _downgrades(ConcolicBool) == set(UNTAUGHT_OPERATIONS)
 
 

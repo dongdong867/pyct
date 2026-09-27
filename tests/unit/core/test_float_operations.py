@@ -27,14 +27,6 @@ ARITHMETIC: dict[str, tuple[Callable[[float], object], list[object]]] = {
     "abs(x)": (lambda x: abs(x), ["abs", "x"]),
 }
 
-# an operand float answers but pyct does not encode, and the dunder the operation runs: a bool
-# meets a float in follow-booleans-and-chained-compares
-NOT_ENCODED: dict[str, tuple[Callable[[float], object], str]] = {
-    "x * True": (lambda x: x * True, "__mul__"),
-    "True + x": (lambda x: True + x, "__radd__"),
-    "x // True": (lambda x: x // True, "__floordiv__"),
-}
-
 # probes whose text is fixed here, so the line and column of the zero fork are exact
 DIVIDE = "def probe(a, b):\n    return a / b\n"
 REFLECTED = "def probe(b):\n    return 7.0 / b\n"
@@ -82,20 +74,6 @@ def test_unary_plus_is_the_value_itself() -> None:
     x = ConcolicFloat(1.5, expression="x", sink=[])
 
     assert +x is x
-
-
-@pytest.mark.parametrize(("call", "name"), NOT_ENCODED.values(), ids=list(NOT_ENCODED))
-def test_an_operand_float_answers_but_pyct_does_not_encode_is_a_downgrade(
-    call: Callable[[float], object], name: str
-) -> None:
-    sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
-
-    result = call(x)
-
-    assert type(result) is float
-    assert result == call(1.5)
-    assert sink == [Downgrade(name=name)]
 
 
 def test_an_operand_float_refuses_is_pythons_own_type_error() -> None:
