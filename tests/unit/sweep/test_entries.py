@@ -143,6 +143,15 @@ def test_a_class_that_borrows_a_same_named_constructor_is_named_by_its_own_body(
     ]
 
 
+def test_a_class_that_borrows_from_a_same_named_class_of_the_package_keeps_its_own_file() -> None:
+    inside = f"{SWEEP}.borrowed.inside"
+    v2 = f"{inside}.v2"
+    assert entries(v2, inside) == [
+        Entry(v2, "Thing", seed={"n": 0}),
+        Entry(v2, "Thing.extra", skip=METHOD),
+    ]
+
+
 def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
     # a named tuple's _make and _replace say they are its own, but their code is Python's
     module = f"{SWEEP}.tuples"

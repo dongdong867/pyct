@@ -200,6 +200,8 @@
     {"set": "v2", "target": "targets.strs.tracked_rsplit::cut", "seed": {"s": "xabyab", "t": "aba"}},
     {"set": "v2", "target": "targets.strs.truth_test::tell", "seed": {"s": "abc"}},
     {"set": "v2", "target": "targets.strs.unannotated::greet", "seed": {"s": "x"}},
+    {"set": "v2", "module": "targets.sweep.borrowed.inside.v1", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.borrowed.inside.v2", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.borrowed.other", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.cannot_seed", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.defaults", "left_out": "a sweep fixture"},

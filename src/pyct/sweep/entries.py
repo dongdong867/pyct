@@ -171,16 +171,17 @@ class _Package:
         compiled qualified name starts with the class's, a property's accessors
         and a ``cached_property``'s function included. The ``_make`` a named
         tuple takes from Python claims the class's ``__qualname__`` but was
-        compiled elsewhere, so it says nothing. A function borrowed from a
-        same-named class elsewhere does match, so the first matching function
-        in the package decides, and a class whose matching functions are all
-        outside the package has no home, whatever ``__module__`` says; a library
-        may rewrite that. Only a class whose body compiled no function falls
-        back to the module ``__module__`` names.
+        compiled elsewhere, so it says nothing. A function the body borrows
+        from a base, as ``__init__ = Base.__init__`` does, says nothing either,
+        since a same-named base's code would match. A class whose matching
+        functions are all outside the package has no home, whatever
+        ``__module__`` says; a library may rewrite that. Only a class whose body
+        compiled no function falls back to the module ``__module__`` names.
         """
         prefix = f"{cls.__qualname__}."
         matched = False
-        for target in [part for value in list(vars(cls).values()) for part in _compiled(value)]:
+        own = [value for key, value in list(vars(cls).items()) if not _inherited(cls, key, value)]
+        for target in [part for value in own for part in _compiled(value)]:
             if target.__code__.co_qualname.startswith(prefix):
                 matched = True
                 home = self._home_of(_code_file(target))
@@ -244,6 +245,11 @@ def function_of(value: object) -> object | None:
     except Exception:
         return None
     return target if inspect.isfunction(target) else None
+
+
+def _inherited(cls: type, key: str, value: object) -> bool:
+    """Whether a base of ``cls`` holds ``value`` under ``key`` too: the body borrowed it."""
+    return any(vars(base).get(key) is value for base in cls.__mro__[1:])
 
 
 def _compiled(value: object) -> list[FunctionType]:
