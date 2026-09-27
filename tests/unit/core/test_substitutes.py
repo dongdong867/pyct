@@ -165,6 +165,17 @@ def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_writt
 
     assert in_(x, frozenset({2.5, 1.5}), (2.5, 1.5)) is True
     assert expressions(sink) == [(["==", "x", 2.5], False), (["==", "x", 1.5], True)]
-    # an int element meets the float as `x == 2` does, a compare floats do not teach yet
+    # an int element meets the float as `x == 2` does, a compare it follows
     assert in_(x, frozenset({2}), (2,)) is False
+    assert expressions(sink)[-1] == (["==", "x", 2], False)
+    # a bool beside a float is float's own answer, a downgrade named by the compare
+    assert in_(x, frozenset({True}), (True,)) is False
     assert expressions(sink)[-1] == "__eq__"
+
+
+def test_a_tracked_int_in_a_literal_display_of_floats_meets_each_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(3, expression="n", sink=sink)
+
+    assert in_(n, frozenset({1.5, 3.0}), (1.5, 3.0)) is True
+    assert expressions(sink) == [(["==", "n", 1.5], False), (["==", "n", 3.0], True)]

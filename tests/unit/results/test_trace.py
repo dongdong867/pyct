@@ -141,6 +141,12 @@ INFIX: dict[str, tuple[Expression, str]] = {
         ["is_integer", ["/", "x", "y"]],
         "(x / y).is_integer()",
     ),
+    # a rounding and the finite check as the target calls them, from math or the builtins
+    "floor": (["==", ["floor", "x"], 3], "math.floor(x) == 3"),
+    "ceil-of-a-sum": (["<", ["ceil", ["+", "x", 0.5]], "n"], "math.ceil(x + 0.5) < n"),
+    "trunc": (["==", ["trunc", "x"], -2], "math.trunc(x) == -2"),
+    "round": (["==", ["round", "x"], 2], "round(x) == 2"),
+    "finite": (["isfinite", "x"], "math.isfinite(x)"),
 }
 
 

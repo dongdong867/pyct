@@ -1,27 +1,28 @@
 """The concolic float: a real float that also carries its symbolic form.
 
 The `ConcolicFloat` body below is the taught set: the compares, the truth
-test, `+ - * /`, the unary operations and `is_integer` stay symbolic, and a
-copy is the value itself. `_KEPT` names what is left to float on purpose.
-`_INHERITED` names what float inherits rather than defines, which the
-derivation at the bottom of the file downgrades along with every other
-method float defines. What each operation answers is tracked by the class
-numbers holds for its Python type, so this module names no other number's
-class (decision numbers-typed-by-python-result).
+test, `+ - * / // %` and `divmod`, the unary operations, the four roundings
+to an int and `is_integer` stay symbolic, and a copy is the value itself.
+`_KEPT` names what is left to float on purpose. `_INHERITED` names what
+float inherits rather than defines, which the derivation at the bottom of
+the file downgrades along with every other method float defines. What each
+operation answers is tracked by the class numbers holds for its Python
+type, so this module names no other number's class, and a rounding answers
+a tracked int (decision numbers-typed-by-python-result).
 
-A float's operations take the float family: a tracked float by its
-expression, a plain float as itself. Any other operand gets float's own
-answer: NotImplemented where float gives it, as for a str, and a downgrade
-named by the dunder where float answers, as for an int or a bool. Never
-NotImplemented where float answers: int's own methods answer
-NotImplemented for a float, so that would make `f < 3` a TypeError and
-`f == 2` False. An int meets a float in follow-floats-that-meet-ints. A
-float subclass that defines a reflected operation otherwise than float is
-asked first, as Python asks it of a plain float.
+A float's operations take a float or an int, tracked or plain, as float's
+own do. A bool, and any other operand, gets float's own answer:
+NotImplemented where float gives it, as for a str, and a downgrade named by
+the dunder where float answers, as for a bool. Never NotImplemented where
+float answers: int's own methods answer NotImplemented for a float, so that
+would make `f < True` a TypeError. A float subclass that defines a
+reflected operation otherwise than float is asked first, as Python asks it
+of a plain float.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from typing import Any
 
@@ -89,26 +90,43 @@ def _answered_first(name: str, self: object, other: object) -> object:
 def _operand(other: object) -> Expression | None:
     """How a float reads the other side of an operation, or None for one it does not take.
 
-    It takes the float family alone. A tracked float reads as its
-    expression, and any other float as a literal of its plain value, so a
-    float of the target's own prints as a float.
+    A tracked float reads as its expression, and any other float as a
+    literal of its plain value, so a float of the target's own prints as a
+    float. An int reads as an int does beside a float
+    (`numbers.int_beside_float`), and render converts it as Python does.
     """
     if isinstance(other, ConcolicFloat):
         return other.expression
     if isinstance(other, float):
         return float.__float__(other)
-    return None
+    return numbers.int_beside_float(other)
 
 
-def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
-    """float's own answer to one compare, followed for an operand of the float family.
+type Binary = Callable[[ConcolicFloat, object], object]
 
-    A float subclass that defines the reflected compare answers first (see
-    `_answered_first`). For any other operand, float's own answer comes with
-    a downgrade named by the compare's dunder, and float's NotImplemented,
-    for a str say, passes through with no downgrade.
+
+def _own(name: str) -> Callable[[object, object], object]:
+    """float's own operation by that name, taking an int operand by its plain value.
+
+    See `numbers.plain_int`: a tracked int handed to float's compare would
+    record what the target never wrote.
     """
-    followed = numbers.compare(op, getattr(float, name), _operand)
+    operation = getattr(float, name)
+
+    def compute(self: object, other: object) -> object:
+        return operation(self, numbers.plain_int(other))
+
+    return compute
+
+
+def _followed(name: str, followed: Callable[..., object]) -> Binary:
+    """An operation on two operands, followed for an operand `_operand` takes.
+
+    A float subclass that defines the reflected operation answers first (see
+    `_answered_first`). For any other operand, float's own answer comes with
+    a downgrade named by the dunder, and float's NotImplemented, for a str
+    say, passes through with no downgrade.
+    """
     downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
@@ -120,34 +138,74 @@ def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
     return compute
 
 
-def _arithmetic(
-    op: str, name: str, *, reflected: bool = False
-) -> Callable[[ConcolicFloat, object], object]:
+def _compare(op: str, name: str) -> Binary:
+    """float's own answer to one compare, a tracked bool for an operand `_operand` takes."""
+    return _followed(name, numbers.compare(op, _own(name), _operand))
+
+
+def _arithmetic(op: str, name: str, *, reflected: bool = False) -> Binary:
     """float's own answer to one binary operation, carrying the expression that built it.
 
     The expression keeps Python's written order: a reflected method is
-    called on the right operand, so `10.0 - x` is ["-", 10.0, "x"]. A
-    division records its zero fork before float's own call, as an int
-    division does (``README.md › Rules › division``), so the input that
-    raises already lists the fork it died on. A float subclass that
-    defines the reflected operation answers first (see `_answered_first`).
-    For any other operand, float's own answer comes with a downgrade named
-    by the dunder, and float's NotImplemented passes through with no
-    downgrade.
+    called on the right operand, so `10.0 - x` is ["-", 10.0, "x"].
     """
-    operation = getattr(float, name)
-    downgrade = downgraded(float, name)
+    operation = _own(name)
+    return _followed(name, numbers.arithmetic(op, operation, _operand, reflected=reflected))
 
-    def compute(self: ConcolicFloat, other: object) -> object:
-        if (first := _answered_first(name, self, other)) is not NotImplemented:
-            return first
-        form = _operand(other)
-        if form is None:
-            return downgrade(self, other)
-        if op == "/":
-            numbers.zero_fork(self if reflected else other)
-        sides = [form, self.expression] if reflected else [self.expression, form]
-        return numbers.tracked(own(operation, self, other), [op, *sides], self.sink)
+
+def _division(op: str, name: str, *, reflected: bool = False) -> Binary:
+    """float's own division, with the zero fork of a tracked divisor recorded before it.
+
+    `/`, `//` and `%` raise on a zero divisor, -0.0 among them, so each
+    records the fork first, as an int division does (``README.md › Rules ›
+    division``), and the input that raises lists the fork it died on.
+    """
+    operation = _own(name)
+    return _followed(name, numbers.division(op, operation, _operand, reflected=reflected))
+
+
+def _divmod(name: str, *, reflected: bool = False) -> Binary:
+    """float's own divmod: one zero fork, and the quotient and the remainder, each tracked."""
+    return _followed(name, numbers.divmod_of(_own(name), _operand, reflected=reflected))
+
+
+def _finite(self: ConcolicFloat) -> None:
+    """The fork a rounding takes before it runs: NaN and the infinities have no int to round to.
+
+    It is taken true when the float is finite; Python raises ValueError on
+    NaN and OverflowError on an infinity, so the input that flips it raises,
+    and its line lists the fork it died on.
+    """
+    forked(self.sink, ["isfinite", self.expression], own(math.isfinite, self))
+
+
+def _rounding(head: str, operation: Callable[[float], int]) -> Callable[[ConcolicFloat], Any]:
+    """float's own rounding to an int, a tracked int carrying `[head, x]`, after its finite fork.
+
+    `math.floor`, `math.ceil` and `math.trunc` call it and hand its answer
+    back unchanged, as `round` with no digits does.
+    """
+
+    def compute(self: ConcolicFloat) -> Any:
+        _finite(self)
+        return numbers.tracked(own(operation, self), [head, self.expression], self.sink)
+
+    return compute
+
+
+def _round() -> Callable[..., Any]:
+    """`round(x)` is a tracked int; `round(x, n)` rounds through a decimal string, a downgrade.
+
+    `round(x, None)` is `round(x)`, as float's own says. Any other form
+    reaches float as the target wrote it, so float takes or refuses it.
+    """
+    whole = _rounding("round", float.__round__)
+    to_digits = downgraded(float, "__round__")
+
+    def compute(self: ConcolicFloat, /, *args: object, **kwargs: object) -> Any:
+        if not kwargs and (not args or (len(args) == 1 and args[0] is None)):
+            return whole(self)
+        return to_digits(self, *args, **kwargs)
 
     return compute
 
@@ -195,16 +253,27 @@ class ConcolicFloat(float):
     __deepcopy__ = copy_as_itself
     __reduce_ex__, __reduce__ = pickled(float)
 
-    # each takes any operand and hands one outside the float family to float, so its signature
-    # is not float's; the override breaks float's on purpose
+    # each takes any operand and hands one it does not follow to float, so its signature is not
+    # float's; the override breaks float's on purpose
     __add__ = _arithmetic("+", "__add__")  # pyrefly: ignore[bad-override]
     __radd__ = _arithmetic("+", "__radd__", reflected=True)  # pyrefly: ignore[bad-override]
     __sub__ = _arithmetic("-", "__sub__")  # pyrefly: ignore[bad-override]
     __rsub__ = _arithmetic("-", "__rsub__", reflected=True)  # pyrefly: ignore[bad-override]
     __mul__ = _arithmetic("*", "__mul__")  # pyrefly: ignore[bad-override]
     __rmul__ = _arithmetic("*", "__rmul__", reflected=True)  # pyrefly: ignore[bad-override]
-    __truediv__ = _arithmetic("/", "__truediv__")  # pyrefly: ignore[bad-override]
-    __rtruediv__ = _arithmetic("/", "__rtruediv__", reflected=True)  # pyrefly: ignore[bad-override]
+    __truediv__ = _division("/", "__truediv__")  # pyrefly: ignore[bad-override]
+    __rtruediv__ = _division("/", "__rtruediv__", reflected=True)  # pyrefly: ignore[bad-override]
+    __floordiv__ = _division("//", "__floordiv__")  # pyrefly: ignore[bad-override]
+    __rfloordiv__ = _division("//", "__rfloordiv__", reflected=True)  # pyrefly: ignore[bad-override]
+    __mod__ = _division("%", "__mod__")  # pyrefly: ignore[bad-override]
+    __rmod__ = _division("%", "__rmod__", reflected=True)  # pyrefly: ignore[bad-override]
+    __divmod__ = _divmod("__divmod__")  # pyrefly: ignore[bad-override]
+    __rdivmod__ = _divmod("__rdivmod__", reflected=True)  # pyrefly: ignore[bad-override]
+    # each rounding answers a tracked int, the way float's own answers an int
+    __floor__ = _rounding("floor", float.__floor__)
+    __ceil__ = _rounding("ceil", float.__ceil__)
+    __trunc__ = _rounding("trunc", float.__trunc__)
+    __round__ = _round()  # pyrefly: ignore[bad-override]
     __neg__ = numbers.unary("-", float.__neg__)
     __abs__ = numbers.unary("abs", float.__abs__)
     __pos__ = _itself
