@@ -391,6 +391,22 @@ def test_a_read_through_pieces_of_other_kinds_leaves_them_out() -> None:
     assert "(ite (< p!0 3) (or (= p!0 0) (= p!0 2)) false)" in text
 
 
+def test_a_length_inside_a_bound_is_read_as_the_list_s_length() -> None:
+    measured: Expression = ["len", "items"]
+    last: Expression = ["[]", "items", ["-", measured, 1]]
+    shapes = {"items": ListShape(("int",), fill="int")}
+
+    written = program((fork([">", last, 5]),), {}, shapes)
+
+    # the position is the list's length less one, read as a sum, not through the length's term
+    position = "(ite (< (+ |arg.items.len| (- 1)) 0)"
+    assert f"(define-fun p!1 () Int {position}" in written.text
+    # render let go of that inner length once the bound was written, so a read of it is a miss
+    assert written.lists is not None
+    with pytest.raises(UnencodedError, match="already let go"):
+        written.lists.named(measured)
+
+
 def test_a_read_past_every_piece_is_refused() -> None:
     shown: Expression = ["+", ["[,]", 1], ["[,]", 2]]
 

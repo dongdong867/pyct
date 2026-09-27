@@ -17,6 +17,7 @@ def slices(*, settle: bool = False, n: int = 3, i: int = 1) -> Slices:
     """Slices of a list the input held ``n`` items of, with a tracked ``i`` it held as ``i``."""
     made = Slices()
     made.named = lambda part: INDEX if part == "i" else "e!7"
+    made.constant = lambda part: INDEX if part == "i" else None
     made.least[N] = 0
     made.origin.update({N: n, INDEX: i})
     made.settle = settle

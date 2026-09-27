@@ -27,12 +27,14 @@ class Slices:
     """Positions and slices of one path's lists: each term it defined, and the least value each
     named term takes on the path.
 
-    ``named`` is render's term of a part, ``definitions`` render's own list, and ``positions``
-    each tracked position or bound, whose value the answer reads.
+    ``named`` is render's term of a part, ``constant`` a leaf's constant or None for any other
+    part, ``definitions`` render's own list, and ``positions`` each tracked position or bound,
+    whose value the answer reads.
     """
 
     def __init__(self) -> None:
         self.named: Callable[[Expression], str] = str
+        self.constant: Callable[[Expression], str | None] = lambda part: None
         self.definitions: list[str] = []
         self.least: dict[str, int] = {}
         # each named term's value in the input whose path this is, where it is known, whether
@@ -91,13 +93,20 @@ class Slices:
         return Lin.of(self.named(part)) if linear is None else linear
 
     def _linear(self, part: Expression, depth: int) -> Lin | None:
-        """A bound written as a sum of leaves and numbers, `i + 1` say, as that sum, so the
-        input's values settle its clamp; None for any other, or one nested past ``depth``."""
+        """A bound written as a sum of numbers, leaves and lists' lengths, `i + 1` or
+        `len(items) - 1` say, as that sum, so the input's values settle its clamp; None for any
+        other, or one nested past ``depth``.
+
+        An operand inside the bound is never read by render's term: render let go of it once
+        the bound was written, and only the bound as a whole stays named."""
         if isinstance(part, int) and not isinstance(part, bool):
             return Lin(part)
-        term = self.named(part) if not isinstance(part, list) or depth else ""
-        if term.startswith("|"):
-            return Lin.of(term)
+        length = self.length_of(part)
+        if length is not None:
+            return length
+        constant = self.constant(part)
+        if constant is not None:
+            return Lin.of(constant)
         if not isinstance(part, list) or not depth or part[0] not in ("+", "-", "*"):
             return None
         operands = [self._linear(operand, depth - 1) for operand in part[1:]]

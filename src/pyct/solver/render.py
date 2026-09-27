@@ -180,6 +180,7 @@ class _Program:
         # define what they write once in the program's own definitions
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
+        lists.constant = self._constant
         for node in order:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
@@ -214,11 +215,23 @@ class _Program:
 
     def _named(self, part: Expression) -> str:
         """A part's term as a list reads it: a leaf's constant, a literal, or a defined part's
-        name, which no read lets go."""
+        name, which no read lets go.
+
+        A list reads only its own operands, whose terms stay until it is written; a part whose
+        term was let go is refused as a miss rather than a crash."""
+        constant = self._constant(part)
+        if constant is not None:
+            return constant
+        if not isinstance(part, list):
+            return leaf_term(part)
+        if id(part) not in self.terms:
+            raise UnencodedError(f"pyct cannot render {part}: its term was already let go")
+        return _read(self.terms[id(part)], part)
+
+    def _constant(self, part: Expression) -> str | None:
+        """The constant of the leaf a part is, or None for any other part."""
         name = self.leaves.named(part)
-        if name is not None:
-            return self.leaves.constants[name]
-        return _read(self.terms[id(part)], part) if isinstance(part, list) else leaf_term(part)
+        return None if name is None else self.leaves.constants[name]
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.

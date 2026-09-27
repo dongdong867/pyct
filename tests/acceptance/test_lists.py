@@ -30,6 +30,7 @@ THOUSANDS = "targets.lists.thousands::gather"
 MILLION = "targets.lists.million"
 MILLION_FILE = str(LISTS / "million.py")
 LEN = "targets.lists.length::check"
+LENGTH_BOUNDS = "targets.lists.length_bounds"
 UNTAUGHT = "targets.lists.untaught::check"
 OUTSIDE = "targets.lists.outside_change::check"
 RAISES = "targets.lists.raises"
@@ -429,6 +430,25 @@ def test_follows_len_of_a_list() -> None:
     # the flip takes the long side: three items of the argument's, and the appended one
     long = [items_of(line) for line in solved(lines) if listed(line)[0][2]]
     assert long and all(len(items) >= 3 for items in long), lines
+
+
+# follow-lists-and-dicts-as-they-change-follows-len-of-a-list: a length inside an index or a
+# slice bound is read as the list's length term, and its flip is one Python agrees with
+@pytest.mark.parametrize(
+    ("function", "line"), [("last", 2), ("all_but_last", 9), ("named_length", 16)]
+)
+def test_follows_a_length_inside_an_index_or_a_slice(function: str, line: int) -> None:
+    result = run_pyct(f"{LENGTH_BOUNDS}::{function}", '{"items": [1, 2]}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    # the one failure is Python's own, on an input too short to read the item
+    failures = {failure_detail(line_) for line_ in lines} - {None}
+    assert failures <= {"IndexError: list index out of range"}, lines
+    assert [line_["mismatch_at"] for line_ in solved(lines)] == [None] * len(solved(lines))
+    # the item's fork took both sides, the flip an input Python ran down the other one
+    sides = {taken for line_ in lines for at, _, taken in listed(line_) if at == line}
+    assert sides == {True, False}, lines
 
 
 # follow-lists-and-dicts-as-they-change-downgrades-an-untaught-list-form
