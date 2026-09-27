@@ -15,7 +15,9 @@ foreground group, so the watcher only notes it and the command's process
 ends as it does on any Ctrl-C. A SIGTERM is sent to one process, so the
 watcher notes it and passes it on. The command's process ends on a
 SIGTERM as on a Ctrl-C: it ends its input's process and cvc5 on the way
-out, then ends by the SIGTERM. When the command's process ends by a
+out, then ends by the SIGTERM. It ends the same way once the watcher is
+gone, however the watcher went, so a SIGKILL sent to the pid the shell
+got still ends the whole run. When the command's process ends by a
 signal the watcher got too, that ending is the signal's, not the
 import's, so the watcher ends the same way.
 """
@@ -23,6 +25,8 @@ import's, so the watcher ends the same way.
 from __future__ import annotations
 
 import contextlib
+import fcntl
+import functools
 import os
 import signal
 import sys
@@ -40,7 +44,7 @@ type Command = Callable[[ImportWatch | None], int]
 
 
 class Stopped(BaseException):
-    """The command's process got a SIGTERM.
+    """The command's process got a SIGTERM, or its watcher is gone.
 
     A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
     it through and ends each process pyct started on the way out.
@@ -56,6 +60,7 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     When no process can start, this one runs the command, unwatched.
     """
     watch = ImportWatch(argv)
+    lifeline, kept = os.pipe()
     flush_streams()
     held = signal.pthread_sigmask(signal.SIG_BLOCK, _NOTED)
     try:
@@ -63,40 +68,99 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     except OSError:
         pid = None
     if pid:
-        return _watch(Child(pid), watch, held)
-    return _serve(command, None if pid is None else watch, held)
+        os.close(lifeline)
+        return _watch(Child(pid), watch, held, kept)
+    os.close(kept)
+    if pid is None:
+        os.close(lifeline)
+        return _serve(command, None, held, None)
+    # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
+    return _serve(command, watch, held, lifeline)  # pragma: no cover
 
 
-def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int:
-    """Run ``command`` as the command's process, which ends on a SIGTERM as on a Ctrl-C.
+def _serve(
+    command: Command, watch: ImportWatch | None, held: Iterable[int], lifeline: int | None
+) -> int:
+    """Run ``command`` as the command's process, which stops on a SIGTERM or with its watcher.
 
-    The SIGTERM raises ``Stopped`` wherever the process is, so the input's
-    process and cvc5 are ended on the way out, and then the command's
-    process ends by the SIGTERM. The handler goes in while SIGTERM is still
-    held from before the fork; ``held`` is the mask to put back.
+    Either raises ``Stopped`` wherever the process is, as a Ctrl-C raises
+    KeyboardInterrupt, so the input's process and cvc5 are ended on the way
+    out, and then the command's process ends by SIGTERM. The handlers go in
+    while SIGTERM is still held from before the fork; ``held`` is the mask
+    to put back. The watcher may be gone before the system could say so, so
+    the pipe is read once here too.
     """
-    previous = signal.signal(signal.SIGTERM, _stop)
     try:
-        signal.pthread_sigmask(signal.SIG_SETMASK, held)
-        return command(watch)
+        with _stops_on(lifeline):
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
+            if lifeline is not None:
+                _stop_if_alone(lifeline)
+            return command(watch)
     except Stopped:
         return _end_by(signal.SIGTERM)
+
+
+@contextlib.contextmanager
+def _stops_on(lifeline: int | None) -> Generator[None]:
+    """Raise ``Stopped`` on a SIGTERM, and once the watcher is gone, until the block ends.
+
+    ``lifeline`` is the read end of a pipe whose write end only the watcher
+    holds, and never writes to, so the pipe reads an end of file once the
+    watcher is gone, however it went, SIGKILL included. The system says so
+    by SIGIO, whose handler reads the pipe itself, so no thread waits on it.
+    """
+    handlers: dict[int, Callable[[int, object], None]] = {signal.SIGTERM: _stop}
+    if lifeline is not None:
+        handlers[signal.SIGIO] = functools.partial(_stop_if_alone, lifeline)
+    previous = {number: signal.signal(number, handler) for number, handler in handlers.items()}
+    try:
+        if lifeline is not None:
+            _signal_at_end_of_file(lifeline)
+        yield
     finally:
-        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
+        for number, handler in previous.items():
+            signal.signal(number, signal.SIG_DFL if handler is None else handler)
+
+
+def _signal_at_end_of_file(lifeline: int) -> None:
+    """Have the system send this process SIGIO when ``lifeline`` can be read, and not wait on it."""
+    fcntl.fcntl(lifeline, fcntl.F_SETOWN, os.getpid())
+    flags = fcntl.fcntl(lifeline, fcntl.F_GETFL)
+    fcntl.fcntl(lifeline, fcntl.F_SETFL, flags | os.O_ASYNC | os.O_NONBLOCK)
 
 
 def _stop(_number: int, _frame: object) -> None:
     raise Stopped
 
 
-def _watch(child: Child, watch: ImportWatch, held: Iterable[int]) -> int:
-    """Wait for the command's process to end, then end as it did or say which import ended it."""
+def _stop_if_alone(lifeline: int, *_: object) -> None:
+    """Raise ``Stopped`` when ``lifeline`` reads an end of file: the watcher is gone.
+
+    A read that finds nothing yet raises BlockingIOError, and one on a
+    descriptor the target closed raises another OSError; neither says the
+    watcher is gone.
+    """
+    try:
+        gone = os.read(lifeline, 1) == b""
+    except OSError:
+        return
+    if gone:
+        raise Stopped
+
+
+def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int) -> int:
+    """Wait for the command's process to end, then end as it did or say which import ended it.
+
+    ``kept`` is the lifeline's write end, closed once the command's process
+    is gone.
+    """
     signaled: list[int] = []
     try:
         with _noting(signaled, child, held):
             waited = child.wait()
     finally:
         child.end()
+        os.close(kept)
     return _ending(waited, watch.module(), signaled)
 
 

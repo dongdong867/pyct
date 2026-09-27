@@ -15,7 +15,7 @@ from typing import NoReturn
 import pytest
 
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import Stopped, launch
+from pyct.run.launch import Stopped, _stop_if_alone, launch
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -283,3 +283,19 @@ def test_the_command_runs_in_this_process_when_no_other_can_start(
 
     assert code == 7
     assert signal.pthread_sigmask(signal.SIG_BLOCK, set()) == held
+
+
+def test_the_lifeline_stops_the_command_s_process_once_the_watcher_is_gone() -> None:
+    lifeline, kept = os.pipe()
+    os.set_blocking(lifeline, False)
+    try:
+        # the watcher still holds its end: nothing to read yet, so the process goes on
+        _stop_if_alone(lifeline)
+        # nor is a byte an end of file, though the watcher never writes one
+        os.write(kept, b"!")
+        _stop_if_alone(lifeline)
+        os.close(kept)
+        with pytest.raises(Stopped):
+            _stop_if_alone(lifeline)
+    finally:
+        os.close(lifeline)

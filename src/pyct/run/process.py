@@ -38,8 +38,9 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import Reading
 
 # the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
-# SIGINT, and SIGTERM, which the command's process ends on (see ``launch``)
-STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
+# SIGINT, and in the command's process SIGTERM and the SIGIO that says its watcher is gone
+# (see ``launch``)
+STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM, signal.SIGIO})
 
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
