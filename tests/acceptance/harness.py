@@ -34,7 +34,7 @@ def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess
     env = {k: v for k, v in os.environ.items() if k not in unset}
     if path is not None:
         env["PATH"] = path
-    return subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
         cwd=REPO_ROOT,
         env=env,
@@ -45,6 +45,27 @@ def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess
         # budget has to fail the test instead of hanging the suite
         timeout=30,
     )
+    check_every_uncovered_line_explained_once(result.stdout)
+    return result
+
+
+def check_every_uncovered_line_explained_once(stdout: str) -> None:
+    """Fail unless the summary's ``why_uncovered`` names each uncovered line exactly once.
+
+    Every run the acceptance suite makes passes through here, so each target it
+    runs proves see-why-a-line-was-missed-accounts-for-every-uncovered-line-once.
+    A run with no summary line, such as a refused seed, has nothing to check.
+    """
+    lines = stdout.splitlines()
+    summary = json.loads(lines[-1]) if lines and lines[-1].startswith("{") else {}
+    if "stopped" not in summary:
+        return
+    named: dict[str, list[int]] = {}
+    for entry in summary["why_uncovered"]:
+        named.setdefault(entry["file"], []).extend(entry["lines"])
+    for file, uncovered in summary["uncovered"].items():
+        assert sorted(named.pop(file, [])) == uncovered, (file, summary["why_uncovered"])
+    assert not named, named
 
 
 def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:

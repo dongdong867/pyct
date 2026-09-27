@@ -16,6 +16,7 @@ from pyct.results.record import (
     RunResult,
     SolverCounts,
 )
+from pyct.results.why_render import why_json
 
 
 def render(
@@ -57,6 +58,7 @@ def render_summary(result: RunResult) -> str:
         "covered": _numbers(result.coverage.covered),
         "total": dict(result.coverage.total),
         "uncovered": _numbers(result.coverage.uncovered),
+        "why_uncovered": [why_json(entry) for entry in result.why_uncovered],
         "environment": _environment(result.environment),
     }
     return json.dumps(payload)

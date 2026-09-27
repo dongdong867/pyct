@@ -1,5 +1,8 @@
 """One input's record, and the result of one run."""
 
+import dataclasses
+import functools
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
@@ -7,6 +10,7 @@ from enum import StrEnum
 from pyct.core.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
+from pyct.results.why import Tries, Walked, WhyEntry, explain
 
 
 class Source(StrEnum):
@@ -180,3 +184,33 @@ class RunResult:
             unknown=whys.count(MissWhy.UNKNOWN),
             timeout=whys.count(MissWhy.TIMEOUT),
         )
+
+    @functools.cached_property
+    def why_uncovered(self) -> tuple[WhyEntry, ...]:
+        """Why each uncovered line was not run, one entry per cause, file by file.
+
+        Worked out the first time it is read, from the module's code and the
+        run's inputs, so a caller that never reads it never pays for it.
+        """
+        walked = [Walked(record.forks, record.failure is not None) for record in self.records]
+        tries = _tries(self)
+        covered = self.coverage.covered
+        return tuple(
+            entry
+            for file, lines in self.coverage.uncovered.items()
+            for entry in explain(file, lines, covered.get(file, frozenset()), walked, tries)
+        )
+
+
+def _tries(result: RunResult) -> dict[Site, Tries]:
+    """What happened at each site each time the run could have flipped a fork there."""
+    counts: dict[Site, Counter[str]] = {}
+    for site in result.untried:
+        counts.setdefault(site, Counter())["not_tried"] += 1
+    for miss in result.misses:
+        counts.setdefault(miss.site, Counter())[miss.why.value] += 1
+    for record in result.records:
+        if record.aim is not None and record.mismatch_at is not None:
+            counts.setdefault(record.aim.site, Counter())["left_the_plan"] += 1
+    fields = [field.name for field in dataclasses.fields(Tries)]
+    return {site: Tries(*(counted[name] for name in fields)) for site, counted in counts.items()}

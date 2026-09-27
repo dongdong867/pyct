@@ -75,7 +75,9 @@ def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
 def test_a_budget_stop_counts_every_fork_still_open() -> None:
     target = load_target("targets.flip.spins_after_a_check::spin")
 
-    result = run(target, {"x": 3}, limits=Limits(budget=Budget(seconds=0.05)))
+    # in pyct's process, so the fork comes before the deadline however slow a process starts
+    limits = Limits(budget=Budget(seconds=0.2))
+    result = run(target, {"x": 3}, limits=limits, isolation=Isolation.IN_PROCESS)
 
     # the seed forked on `x < 10`, then spun past the deadline, so that fork was never tried
     assert result.stopped.kind is StopKind.BUDGET

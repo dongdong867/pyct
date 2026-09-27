@@ -316,11 +316,14 @@ def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
 def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
     lines = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK))).splitlines()
 
-    # the coverage is worded the way each input's own trace words it, over the run's counts
+    # the coverage is worded the way each input's own trace words it, over the run's counts;
+    # each cause of the uncovered lines follows them. m.py is no file on disk, so no code places
+    # its lines in a function
     assert lines == [
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 0 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
+        "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",
     ]
 
@@ -360,6 +363,7 @@ def test_render_stop_leaves_the_missed_lines_to_the_run() -> None:
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
+        "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",
     ]
 

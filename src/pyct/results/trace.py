@@ -18,6 +18,7 @@ from pyct.results.record import (
     SolverCounts,
     Stop,
 )
+from pyct.results.why_render import why_line
 
 
 def render_trace(
@@ -70,6 +71,7 @@ def _summary(result: RunResult) -> list[str]:
     coverage = result.coverage
     lines = [*_coverage(coverage), _solver(result.solver)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
+    lines += [why_line(entry) for entry in result.why_uncovered]
     return lines
 
 

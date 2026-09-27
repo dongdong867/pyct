@@ -206,6 +206,7 @@ def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
         "covered",
         "total",
         "uncovered",
+        "why_uncovered",
         "environment",
     ]
 
