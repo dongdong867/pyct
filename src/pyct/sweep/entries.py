@@ -176,7 +176,9 @@ class _Package:
         since a same-named base's code would match. A class whose matching
         functions are all outside the package has no home, whatever
         ``__module__`` says; a library may rewrite that. Only a class whose body
-        compiled no function falls back to the module ``__module__`` names.
+        holds none of these functions falls back to the module ``__module__``
+        names, so a body with only other kinds of code, a nested class say, is
+        placed by that name.
         """
         prefix = f"{cls.__qualname__}."
         matched = False
