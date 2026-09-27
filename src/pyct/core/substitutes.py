@@ -166,11 +166,11 @@ def _sequence(container: object) -> type | None:
     A subclass counts when it keeps its base's own `__contains__`, as a
     named tuple does; one that defines its own is asked, as Python asks it.
     """
-    own_type = type(container)
-    kind = next((base for base in _WALKED if issubclass(own_type, base)), None)
-    if kind is None or own_type.__contains__ is not kind.__contains__:
-        return None
-    return kind
+    own_type: type[Any] = type(container)
+    for kind in _WALKED:
+        if issubclass(own_type, kind):
+            return kind if own_type.__contains__ is kind.__contains__ else None
+    return None
 
 
 def _walked(item: Tracked, elements: Iterator[object]) -> bool:
