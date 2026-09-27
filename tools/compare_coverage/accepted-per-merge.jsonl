@@ -53,6 +53,8 @@
 {"set": "v2", "target": "targets.intercept.plain_text::search", "seed": {"s": "b"}, "status": "differs", "only_legacy": [], "only_v2": [7, 11, 13, 15]}
 {"set": "v2", "target": "targets.intercept.positions::place", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.intercept.recursion::deep_own_int", "seed": {"x": 4}, "status": "differs", "only_legacy": [], "only_v2": [29]}
+{"set": "v2", "target": "targets.intercept.releases::f", "seed": {"x": 0, "s": "zz"}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.intercept.spread_operand::h", "seed": {"s": "zz"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.intercept.text_numbers::read_as_float", "seed": {"s": "1"}, "status": "differs", "only_legacy": [], "only_v2": [21, 23]}
 {"set": "v2", "target": "targets.intercept.threaded_identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [18]}
 {"set": "v2", "target": "targets.intercept.type_errors::in_set", "seed": {"items": [1]}, "status": "differs", "only_legacy": [10], "only_v2": []}
