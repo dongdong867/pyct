@@ -47,7 +47,7 @@ def position(key: object) -> Expression | None:
 
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
-    whose items share a kind (lists-and-dicts-as-arrays-with-a-length)."""
+    whose items share a kind (containers-arrays-and-a-kept-key-count)."""
     if type(key) is ConcolicInt:
         return len(self.kinds) <= 1
     return plain_index(key) is not None

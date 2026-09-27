@@ -1,7 +1,7 @@
 """What the solver knows of a tracked list or dict in the input, and what it answers about one.
 
 A list's shape is the kind of the item at each position of the input, the shape of each list
-inside, and the kind of an item the solver adds (lists-and-dicts-as-arrays-with-a-length). An
+inside, and the kind of an item the solver adds (containers-arrays-and-a-kept-key-count). An
 answer is the list's new length, the arrays the solver chose its items from, and the positions
 a fork on the path read, whose items take the solver's values; every other position keeps what
 the input had.

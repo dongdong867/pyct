@@ -1,5 +1,5 @@
 """A tracked list as cvc5 reads it: a length, and the pieces it was built from
-(lists-and-dicts-as-arrays-with-a-length).
+(containers-arrays-and-a-kept-key-count).
 
 An argument's list is an ``Int`` length and one array per kind of item. A list the target built
 from it is a tree of the pieces Python joined: a display of items, two lists joined, a window a
