@@ -5,8 +5,8 @@ A parameter with no default gets the first of ``VALUES`` that Python's
 ``""`` because ``isinstance`` accepts ``""`` for ``Sequence`` too, and a
 ``Sequence[str]`` asks for a list first. A parameterized annotation is
 tested by its base type, ``Literal`` gives its first value, also as a
-member of a union, and ``Annotated[T, ...]`` is read as ``T``. A parameter with no annotation, or
-one Python cannot test, gets ``0``.
+member of a union, and ``Annotated[T, ...]`` is read as ``T``. A parameter
+with no annotation, or one Python cannot test, gets ``0``.
 
 A default stays in the seed when JSON carries it and ``pyct run``'s own seed
 check accepts it. Otherwise the parameter is left out and the target's own
@@ -15,8 +15,9 @@ default applies.
 A text annotation is read in every module that could have written it, as
 the seed check reads it (``binding.resolve``), and those modules must agree
 on the value, not on the object: two modules that each define their own
-``T`` build two ``list[T]`` objects, and both give ``[]``. Where the value
-is agreed, the check the run makes agrees too.
+``T`` build two ``list[T]`` objects, and both give ``[]``. Modules that
+agree on what a text asks of a seed agree on its value too, so the value
+passes that check.
 """
 
 import copy

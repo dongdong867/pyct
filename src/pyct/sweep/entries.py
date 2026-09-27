@@ -242,8 +242,8 @@ def _holders(module: ModuleType) -> dict[int, list[str]]:
 
 
 def _held(value: object) -> object | None:
-    """The class or function ``value`` is, or None, also when asking raises: a name another
-    module holds is no concern of the module being read."""
+    """The class or function ``value`` is, or None when asking raises: a value that cannot be
+    read names no entry, and a public one says so where its own module is read."""
     try:
         return value if isinstance(value, type) else function_of(value)
     except Exception:
