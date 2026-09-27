@@ -266,7 +266,7 @@ declared_over_a_cycle = declares_its_signature(loops, {"n": "Here"})
 
 
 def target_for(fn: object) -> Target:
-    """A Target around ``fn``; only ``fn`` matters to the seed-type check."""
+    """A Target around ``fn``: what the seed-type check reads, ``fn`` and its signature."""
     assert callable(fn)
     return Target(spec="m::f", fn=fn, file="m.py", signature=inspect.signature(fn))
 
