@@ -115,7 +115,7 @@ def test_a_fresh_path_leaves_each_of_its_forks_untried() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True), fork(3, taken=True)))
 
-    assert tree.untried() == {fork(2, taken=True).site: 1, fork(3, taken=True).site: 1}
+    assert tree.untried() == {fork(2, taken=True).where: 1, fork(3, taken=True).where: 1}
 
 
 def test_an_aimed_fork_and_a_fork_whose_other_side_ran_are_not_untried() -> None:
@@ -135,4 +135,13 @@ def test_a_fork_two_paths_share_is_counted_once_and_one_site_under_two_prefixes_
     tree.add((fork(2, taken=False), fork(3, taken=True)))
 
     # line 2 had both sides run; line 3 sits under two prefixes, each its own fork
-    assert tree.untried() == {fork(3, taken=True).site: 2, fork(4, taken=True).site: 1}
+    assert tree.untried() == {fork(3, taken=True).where: 2, fork(4, taken=True).where: 1}
+
+
+def test_a_test_and_an_operation_s_fork_at_one_column_are_counted_apart() -> None:
+    tree = Tree()
+    test = fork(2, taken=True)
+    operation = Branch(expression=[">", "x", 0], taken=True, site=test.site, raising=True)
+    tree.add((operation, test))
+
+    assert tree.untried() == {test.where: 1, operation.where: 1}

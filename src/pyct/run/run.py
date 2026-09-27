@@ -17,7 +17,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
-from pyct.core.branch import Site
+from pyct.core.branch import ForkSite
 from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Scope, no_gain
 from pyct.results.record import (
@@ -116,7 +116,7 @@ class Attempt:
     stop: Stop | None = None
     record: InputRecord | None = None
     miss: Miss | None = None
-    unrun: Site | None = None
+    unrun: ForkSite | None = None
 
 
 @dataclass(frozen=True)
@@ -129,7 +129,7 @@ class Loop:
     records: tuple[InputRecord, ...]
     misses: tuple[Miss, ...]
     stop: Stop
-    untried: tuple[Site, ...] = ()
+    untried: tuple[ForkSite, ...] = ()
 
 
 def run(
@@ -275,14 +275,14 @@ def _attempt(
     wanted = tree.next()
     if wanted is None:
         return Attempt(stop=Stop(StopKind.NO_FORK))
-    unrun = wanted.aim.site
+    unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
     answer = solve(wanted.prefix, seed.leaves, _solve_limit(bounds, left))
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail), unrun=unrun)
     if not isinstance(answer, Sat):
-        return Attempt(miss=Miss(unrun, _why(answer)))
+        return Attempt(miss=Miss(wanted.aim.site, _why(answer), wanted.aim.raising))
     args = apply(seed, answer.model)
     try:
         return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
@@ -290,9 +290,9 @@ def _attempt(
         return Attempt(stop=_could_not_start(error), unrun=unrun)
 
 
-def _untried(tree: Tree, attempt: Attempt) -> tuple[Site, ...]:
+def _untried(tree: Tree, attempt: Attempt) -> tuple[ForkSite, ...]:
     """The site of each fork the run never tried: the open ones, and one picked but not run."""
-    sites = [site for site, count in tree.untried().items() for _ in range(count)]
+    sites = [where for where, count in tree.untried().items() for _ in range(count)]
     return (*sites, attempt.unrun) if attempt.unrun is not None else tuple(sites)
 
 

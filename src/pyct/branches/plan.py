@@ -26,4 +26,5 @@ def plan(forks: tuple[Branch, ...]) -> Plan | None:
         return None
     last = forks[-1]
     flipped = dataclasses.replace(last, taken=not last.taken)
-    return Plan(prefix=(*forks[:-1], flipped), aim=Aim(site=last.site, position=len(forks) - 1))
+    aim = Aim(site=last.site, position=len(forks) - 1, raising=last.raising)
+    return Plan(prefix=(*forks[:-1], flipped), aim=aim)

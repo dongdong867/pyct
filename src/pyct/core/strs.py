@@ -127,7 +127,7 @@ def _found(self: ConcolicStr, form: Expression, sub: object) -> None:
     of that call, and the raising input's line already lists the fork,
     taken false. On every path past it sub is in s.
     """
-    forked(self.sink, ["in", form, self.expression], own(str.__contains__, self, sub))
+    forked(self.sink, ["in", form, self.expression], own(str.__contains__, self, sub), raising=True)
 
 
 _CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
@@ -174,9 +174,9 @@ def _long_enough(self: ConcolicStr, index: int) -> None:
     length = own(str.__len__, self)
     measured: Expression = ["len", self.expression]
     if index >= 0:
-        forked(self.sink, [">", measured, index], length > index)
+        forked(self.sink, [">", measured, index], length > index, raising=True)
     else:
-        forked(self.sink, [">=", measured, -index], length >= -index)
+        forked(self.sink, [">=", measured, -index], length >= -index, raising=True)
 
 
 _GETITEM_DOWNGRADE = downgraded(str, "__getitem__")

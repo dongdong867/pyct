@@ -3,7 +3,7 @@
 import dataclasses
 from pathlib import Path
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.record import (
     Aim,
@@ -40,6 +40,7 @@ def run_of(file: str, site: Site) -> RunResult:
     followed = dataclasses.replace(seed, forks=(), source=Source.SOLVER, aim=aimed)
     elsewhere = Site(file=file, line=9, col=0)
     misses = (
+        Miss(site, MissWhy.UNKNOWN, raising=True),
         Miss(site, MissWhy.UNSAT),
         Miss(site, MissWhy.TIMEOUT),
         Miss(elsewhere, MissWhy.UNKNOWN),
@@ -51,7 +52,7 @@ def run_of(file: str, site: Site) -> RunResult:
         stopped=Stop(kind=StopKind.BUDGET),
         environment=ENVIRONMENT,
         misses=misses,
-        untried=(site, site),
+        untried=(ForkSite(site), ForkSite(site), ForkSite(site, raising=True)),
     )
 
 
@@ -64,7 +65,8 @@ def test_the_tries_at_a_condition_count_every_way_the_run_could_have_flipped_it(
 
     result = run_of(str(file), site)
 
-    # an input that followed its plan took the side, so only the one that left it counts
+    # an input that followed its plan took the side, so only the one that left it counts; what
+    # the run tried at an operation's fork at the same column is that fork's, not the test's
     assert result.why_uncovered == (
         WhyEntry(file=str(file), lines=(1,), reason=Reason.IMPORT),
         WhyEntry(

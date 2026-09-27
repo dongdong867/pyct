@@ -246,7 +246,7 @@ def test_a_reflected_division_by_a_bool_forks_on_its_own_condition() -> None:
     result = _probe(REFLECTED)(above)
 
     # the zero fork is the bool's condition, as `if` would test it, not `!= 0` around it
-    assert sink == [Branch(expression=ABOVE, taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=ABOVE, taken=True, site=DIVISION_SITE, raising=True)]
     assert isinstance(result, ConcolicInt)
     assert result.expression == ["//", 7, ABOVE]
     assert int.__int__(result) == 7
@@ -259,7 +259,7 @@ def test_an_int_divided_by_a_bool_forks_on_its_condition() -> None:
 
     result = _probe(DIVMOD)(x, above)
 
-    assert sink == [Branch(expression=ABOVE, taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=ABOVE, taken=True, site=DIVISION_SITE, raising=True)]
     assert isinstance(result, tuple)
     assert [part.expression for part in result] == [["//", "x", ABOVE], ["%", "x", ABOVE]]
 
@@ -282,7 +282,7 @@ def test_divmod_with_a_bool_divides_the_int_it_is(
     assert json.dumps([part.expression for part in result]) == json.dumps(nodes)
     assert tuple(int.__int__(part) for part in result) == answer
     # only a tracked divisor forks, and a bool forks on its own condition
-    fork = Branch(expression=ABOVE, taken=True, site=DIVISION_SITE)
+    fork = Branch(expression=ABOVE, taken=True, site=DIVISION_SITE, raising=True)
     assert sink == ([fork] if divisor else [])
 
 
@@ -293,5 +293,5 @@ def test_a_division_by_a_false_bool_raises_with_its_fork_recorded() -> None:
     with pytest.raises(ZeroDivisionError) as raised:
         _probe(DIVIDE)(10, below)
 
-    assert sink == [Branch(expression=BELOW, taken=False, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=BELOW, taken=False, site=DIVISION_SITE, raising=True)]
     assert raised_by_target(raised.value)

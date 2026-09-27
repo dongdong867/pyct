@@ -1,7 +1,7 @@
 """Every path a run has taken, and the fork it aims at next."""
 
 from pyct.branches.plan import Plan, plan
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, ForkSite, Site
 
 # what tells one fork from another: the id of the fork before it, -1 at the root, then its own site
 type ForkKey = tuple[int, Site]
@@ -56,7 +56,7 @@ class Tree:
                     return plan(forks[: at + 1])
         return None
 
-    def untried(self) -> dict[Site, int]:
+    def untried(self) -> dict[ForkSite, int]:
         """How many forks at each site are still open: no input aimed at them, no other side ran.
 
         A fork that paths share is one fork, counted once. It is read when
@@ -64,14 +64,14 @@ class Tree:
         never tried.
         """
         still_open = {
-            key
+            key: fork.where
             for forks, keys in self._paths
             for fork, key in zip(forks, keys, strict=True)
             if self._open(key, fork.taken)
         }
-        counts: dict[Site, int] = {}
-        for _, site in still_open:
-            counts[site] = counts.get(site, 0) + 1
+        counts: dict[ForkSite, int] = {}
+        for where in still_open.values():
+            counts[where] = counts.get(where, 0) + 1
         return counts
 
     def _open(self, key: ForkKey, taken: bool) -> bool:

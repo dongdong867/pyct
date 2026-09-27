@@ -4,82 +4,39 @@ Read from the compiled code, not the source, so an early ``return`` counts:
 the lines after ``if x: return`` need the test's false side, which the
 nesting of the source does not show (decision
 why-missed-first-untaken-condition-from-control-flow). A function's flow
-is its basic blocks joined by their jumps, with exception edges left out;
-each ``except`` block, reached only by a raise, hangs off a root of its
-own. A condition's two sides are nodes of their own between its block and
-the next, so "every run passes this side" is "this node dominates the
-line".
+is its basic blocks joined by their jumps. A raise into an ``except`` block,
+a ``finally`` or the cleanup Python compiles for a ``with``, a
+comprehension or an ``await`` is one node, reached from every block the
+handler's range covers, so a guard around a ``try`` guards its handler too.
+A condition's two sides are nodes of their own between its block and the
+next, so "every run passes this side" is "this node dominates the line".
 """
 
 from __future__ import annotations
 
-import dis
 import functools
 import types
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from enum import StrEnum
 
-# the jumps that test a value: `if`, `while`, `and`, `or`, `assert`, a ternary, a comprehension's
-# `if`, and the test `is None` compiles to; a for loop's next item is its own two-way test
-_TESTS = frozenset(
-    {
-        "POP_JUMP_IF_FALSE",
-        "POP_JUMP_IF_TRUE",
-        "POP_JUMP_IF_NONE",
-        "POP_JUMP_IF_NOT_NONE",
-        "FOR_ITER",
-    }
-)
-# a test jumps on its true side only here; every other one falls through into its true side
-_JUMPS_WHEN_TRUE = frozenset({"POP_JUMP_IF_TRUE"})
-# what an `except` clause tests the raise against: the jump after it is the clause's match
-_MATCHES = frozenset({"CHECK_EXC_MATCH", "CHECK_EG_MATCH"})
-# where a block's run ends with no way on
-_ENDS = frozenset({"RETURN_VALUE", "RETURN_CONST", "RAISE_VARARGS", "RERAISE"})
-_JUMPS = frozenset(dis.opname[op] for op in {*dis.hasjrel, *dis.hasjabs})
+from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
+
 # CPython's flag on a function's code; a module and a class body run without it
 _OPTIMIZED = 0x1
 
 
-class StepKind(StrEnum):
-    """What a step on a line's way is."""
-
-    # a place that tests a value for truth, or a fork before an operation that may raise
-    CONDITION = "condition"
-    # the way into an except block: the raise reaching it, or the clause matching the raise
-    HANDLER = "handler"
-
-
 @dataclass(frozen=True)
-class Step:
-    """One place on a line's way, and the side of it the line needs.
+class Place:
+    """A step as a walk meets it: the side's node, and the node the side leaves."""
 
-    ``reaches`` is the first line that side runs other than the step's own,
-    or None when that side stays on the step's line until it next branches:
-    a run that covered it went that way.
-    """
-
-    kind: StepKind
-    line: int
-    col: int
-    side: bool
-    reaches: int | None
+    step: Step
+    node: int
+    source: int
 
 
-@dataclass(frozen=True)
-class _Op:
-    """One instruction, as the flow reads it."""
-
-    offset: int
-    name: str
-    target: int | None
-    line: int | None
-    col: int | None
-
-
-# one way out of a block: the offset it goes to, and the step it passes, if any
-type _Exit = tuple[int, Step | None]
+# a fork as the flow reads it: its line and column, the side it took, and whether it is an
+# operation's before a raise
+type Fork = tuple[int, int, bool, bool]
 
 
 def owners(module: types.CodeType) -> dict[int, types.CodeType | None]:
@@ -118,122 +75,197 @@ def _lines(code: types.CodeType) -> set[int]:
 
 
 class Flow:
-    """One function's blocks and the sides between them, with who dominates whom.
+    """One function's blocks, sides and raises, with who dominates whom.
 
     ``raising`` holds the positions, ``(line, col)``, where a run recorded
     a fork before an operation that may raise; the instruction there is a
-    condition whose true side goes on to the next instruction. A position a
-    test jump holds is that test's, never such a fork.
+    condition whose true side goes on to the next instruction.
     """
 
     def __init__(self, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> None:
-        ops = [_op(instruction) for instruction in dis.get_instructions(code)]
-        # where each except block starts: the code's exception table, which dis reads since 3.11
-        # and typeshed leaves out
-        table = dis.Bytecode(code).exception_entries  # pyrefly: ignore[missing-attribute]
-        handlers = sorted({entry.target for entry in table})
-        graph = _Graph.of(ops, handlers, _splits(ops, raising))
+        graph = _Graph.of(code, raising)
         self._graph = graph
-        self._idom = _dominators(graph.successors, graph.root, graph.order)
-        self._normal = _reachable(graph.successors, graph.entry)
+        self._order = {n: at for at, n in enumerate(_postorder(graph.successors, graph.entry))}
+        self._idom = _dominators(graph.successors, graph.entry, self._order)
+        self._normal = frozenset(_postorder(graph.normal, graph.entry))
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
-        holders = [block for block in self._graph.blocks_of(line) if block in self._idom]
-        if not holders:
-            return ()
-        node = functools.reduce(self._meet, holders)
-        chain: list[int] = []
-        while node != self._graph.root:
-            chain.append(node)
-            node = self._idom[node]
-        steps = self._graph.steps
-        return tuple(steps[node] for node in reversed(chain) if node in steps)
+        return tuple(place.step for place in self.places(line))
+
+    def places(self, line: int) -> tuple[Place, ...]:
+        """The way's steps as places, in the order a run meets them."""
+        return tuple(self._place(node) for node in self.chain(line) if node in self._graph.steps)
+
+    def chain(self, line: int) -> list[int]:
+        """Every node every run passes on its way to ``line``, the function's entry first."""
+        meet = self._meet_of(self._holders(line))
+        return [] if meet is None else list(reversed(self._up(meet)))
+
+    def reaching(self, line: int) -> tuple[Place, ...]:
+        """Each condition's side from which ``line`` can still be reached, in test order."""
+        toward = self._toward(line)
+        sides = [
+            node
+            for node, step in self._graph.steps.items()
+            if step.kind is StepKind.CONDITION and node in toward and node in self._order
+        ]
+        return tuple(self._place(node) for node in sorted(sides, key=self._tested_before))
+
+    def marked(self, lines: Iterable[int], forks: Iterable[Fork]) -> frozenset[int]:
+        """The nodes a run passed, as far as covered lines and recorded forks prove it.
+
+        A line proves the nodes that dominate every block that holds it; a fork
+        proves the side it took, or, for an operation that raised, its block.
+        """
+        found: set[int] = set()
+        for line in set(lines):
+            found.update(self._proved(self._holders(line)))
+        for fork in set(forks):
+            found.update(self._proved(self._graph.forked(fork)))
+        return frozenset(found)
+
+    @functools.cached_property
+    def _by_lines(self) -> frozenset[int]:
+        """The nodes some line could prove a run passed, were it covered."""
+        return self.marked(self._graph.lines(), ())
+
+    @functools.cached_property
+    def _by_forks(self) -> dict[int, set[tuple[int, int, bool]]]:
+        """Each node, and the tests whose forks could prove a run passed it."""
+        proving: dict[int, set[tuple[int, int, bool]]] = {}
+        sides = self._graph.steps.items()
+        for node, step in [(n, s) for n, s in sides if s.kind is StepKind.CONDITION]:
+            # a side no run can reach proves nothing
+            for each in self._up(node) if node in self._idom else ():
+                proving.setdefault(each, set()).add((step.line, step.col, step.raising))
+        return proving
+
+    def knowable(self, place: Place) -> bool:
+        """Whether a run could show it took this side, when the side's own test forks nowhere.
+
+        It can when a line only this side leads to is covered, or another test
+        only this side leads to records a fork. The sides of a ternary, which
+        join again at once, show nothing.
+        """
+        step = place.step
+        own = (step.line, step.col, step.raising)
+        others = self._by_forks.get(place.node, set()) - {own}
+        return place.node in self._by_lines or bool(others)
 
     def only_in_handlers(self, line: int) -> bool:
         """Whether only a raise reaches ``line``: no block that holds it runs without one."""
         holders = self._graph.blocks_of(line)
         return bool(holders) and not any(block in self._normal for block in holders)
 
-    def _meet(self, a: int, b: int) -> int:
-        return _intersect(a, b, self._idom, self._graph.order)
+    def raises(self) -> frozenset[int]:
+        """The raise nodes: the way into each handler."""
+        return frozenset(self._graph.raises)
 
+    def toward(self, line: int) -> frozenset[int]:
+        """The nodes from which ``line`` can still be reached."""
+        return self._toward(line)
 
-def _op(instruction: dis.Instruction) -> _Op:
-    positions = instruction.positions
-    target = instruction.argval if instruction.opname in _JUMPS else None
-    return _Op(
-        offset=instruction.offset,
-        name=instruction.opname,
-        target=target if isinstance(target, int) else None,
-        line=None if positions is None else positions.lineno,
-        col=None if positions is None else positions.col_offset,
-    )
+    def _place(self, node: int) -> Place:
+        return Place(self._graph.steps[node], node, self._idom[node])
 
+    def _holders(self, line: int) -> list[int]:
+        return [block for block in self._graph.blocks_of(line) if block in self._idom]
 
-def _splits(ops: list[_Op], raising: frozenset[tuple[int, int]]) -> frozenset[int]:
-    """The offsets of the instructions a raising operation's fork sits on.
+    def _meet_of(self, nodes: list[int]) -> int | None:
+        reachable = [node for node in nodes if node in self._idom]
+        if not reachable:
+            return None
+        return functools.reduce(lambda a, b: _intersect(a, b, self._idom, self._order), reachable)
 
-    Several instructions of one expression start where it starts, such as the
-    ``10`` and the ``//`` of ``10 // d``; the fork is the operation's, which
-    runs last, so it is the last of them in each run of one line.
-    """
-    tested = {(op.line, op.col) for op in ops if op.name in _TESTS}
-    forked = raising - tested
-    found: set[int] = set()
-    line: int | None = None
-    seen: set[int | None] = set()
-    for op in reversed(ops):
-        if op.line != line:
-            line, seen = op.line, set()
-        if (op.line, op.col) in forked and op.col not in seen:
-            found.add(op.offset)
-        seen.add(op.col)
-    return frozenset(found)
+    def _proved(self, nodes: list[int]) -> list[int]:
+        meet = self._meet_of(nodes)
+        return [] if meet is None else self._up(meet)
+
+    def _up(self, node: int) -> list[int]:
+        """``node`` and every node that dominates it, nearest first."""
+        found = [node]
+        while node != self._graph.entry:
+            node = self._idom[node]
+            found.append(node)
+        return found
+
+    def _toward(self, line: int) -> frozenset[int]:
+        return frozenset(_postorder(self._graph.predecessors(), *self._holders(line)))
+
+    def _tested_before(self, node: int) -> tuple[int, int]:
+        """Test order: the node a side leaves, earliest first, then the side's own number."""
+        return (-self._order[self._idom[node]], node)
 
 
 @dataclass(frozen=True)
 class _Graph:
-    """The blocks and sides as numbered nodes: each node's successors, and each side's step.
+    """The blocks, sides and raises as numbered nodes.
 
-    Nodes below ``len(starts)`` are blocks, by their first offset; the ones
-    above are sides. ``root`` stands before the function's first block and
-    before each except block, since a raise can reach one from anywhere.
+    Nodes below ``len(lines)`` are blocks; the ones above are sides and
+    raises, each with its step. ``normal`` is the flow with the raises left out.
     """
 
     successors: list[list[int]]
+    normal: list[list[int]]
     steps: dict[int, Step]
-    lines: dict[int, frozenset[int]]
-    root: int
+    held: dict[int, frozenset[int]]
+    raises: tuple[int, ...]
     entry: int
-    order: dict[int, int]
 
     @classmethod
-    def of(cls, ops: list[_Op], handlers: list[int], splits: frozenset[int]) -> _Graph:
-        blocks = _blocks(ops, handlers, splits)
+    def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> _Graph:
+        blocks, splits = blocks_of_code(code, raising)
         builder = _Builder(blocks)
         for index, block in enumerate(blocks):
-            for target, step in _exits(block, blocks, index, splits):
+            for target, step in exits(block, blocks, index, splits):
                 builder.join(index, builder.block_at(target), step)
-        root = builder.node()
-        builder.successors[root].append(0)
-        for start in handlers:
-            builder.join(root, builder.block_at(start), builder.handler_step(start))
-        order = {node: at for at, node in enumerate(_postorder(builder.successors, root))}
-        return cls(builder.successors, builder.steps, builder.lines(), root, 0, order)
+        normal = [list(each) for each in builder.successors]
+        for start, covered in handler_ranges(code, blocks):
+            builder.raise_into(start, covered)
+        normal += [[] for _ in range(len(builder.successors) - len(normal))]
+        return cls(builder.successors, normal, builder.steps, builder.held(), builder.raises, 0)
 
     def blocks_of(self, line: int) -> list[int]:
-        return [block for block, lines in self.lines.items() if line in lines]
+        return [block for block, lines in self.held.items() if line in lines]
+
+    def lines(self) -> set[int]:
+        return {line for lines in self.held.values() for line in lines}
+
+    def predecessors(self) -> list[list[int]]:
+        before: list[list[int]] = [[] for _ in self.successors]
+        for node, following in enumerate(self.successors):
+            for each in following:
+                before[each].append(node)
+        return before
+
+    def forked(self, fork: Fork) -> list[int]:
+        """The nodes a fork proves: the side it took, or the block of an operation that raised."""
+        return self._proved_by.get(fork, [])
+
+    @functools.cached_property
+    def _proved_by(self) -> dict[Fork, list[int]]:
+        """Each fork the code can record, and the nodes it proves. Built once, read per fork."""
+        proved: dict[Fork, list[int]] = {}
+        for node, step in self.steps.items():
+            if step.kind is not StepKind.CONDITION:
+                continue
+            proved.setdefault((step.line, step.col, step.side, step.raising), []).append(node)
+            if step.raising:
+                source = next(n for n, following in enumerate(self.successors) if node in following)
+                proved.setdefault((step.line, step.col, False, True), []).append(source)
+        return proved
 
 
 class _Builder:
     """Numbers the nodes as the graph is built."""
 
-    def __init__(self, blocks: list[list[_Op]]) -> None:
+    def __init__(self, blocks: list[list[Op]]) -> None:
         self.blocks = blocks
         self.starts = {block[0].offset: index for index, block in enumerate(blocks)}
         self.successors: list[list[int]] = [[] for _ in blocks]
         self.steps: dict[int, Step] = {}
+        self.raises: tuple[int, ...] = ()
 
     def node(self) -> int:
         self.successors.append([])
@@ -252,84 +284,29 @@ class _Builder:
         self.successors[source].append(side)
         self.successors[side].append(target)
 
-    def handler_step(self, start: int) -> Step:
-        """The way a raise takes into the except block that starts at ``start``."""
-        first = _first_line(self.blocks[self.block_at(start)], None)
-        return Step(StepKind.HANDLER, first or 0, 0, True, first)
+    def raise_into(self, start: int, covered: Iterable[int]) -> None:
+        """One raise node into the handler at ``start``, from every block its range covers."""
+        target = self.block_at(start)
+        first = next((op.line for op in self.blocks[target] if op.line), None)
+        into = self.node()
+        self.steps[into] = Step(StepKind.HANDLER, first or 0, 0, True)
+        self.raises = (*self.raises, into)
+        self.successors[into].append(target)
+        for offset in covered:
+            self.successors[self.block_at(offset)].append(into)
 
-    def lines(self) -> dict[int, frozenset[int]]:
+    def held(self) -> dict[int, frozenset[int]]:
         return {
             index: frozenset(op.line for op in block if op.line)
             for index, block in enumerate(self.blocks)
         }
 
 
-def _blocks(ops: list[_Op], handlers: list[int], splits: frozenset[int]) -> list[list[_Op]]:
-    """The instructions cut where a jump lands, after a jump or an end, and after a split."""
-    starts = {ops[0].offset, *handlers}
-    starts |= {op.target for op in ops if op.target is not None}
-    for op, after in zip(ops, ops[1:], strict=False):
-        if op.name in _JUMPS or op.name in _ENDS or op.offset in splits:
-            starts.add(after.offset)
-    blocks: list[list[_Op]] = []
-    for op in ops:
-        if op.offset in starts or not blocks:
-            blocks.append([])
-        blocks[-1].append(op)
-    return blocks
-
-
-def _exits(
-    block: list[_Op], blocks: list[list[_Op]], index: int, splits: frozenset[int]
-) -> Iterator[_Exit]:
-    """Where a block goes on to, and the step each way passes."""
-    last = block[-1]
-    after = blocks[index + 1][0].offset if index + 1 < len(blocks) else None
-    if last.name in _ENDS:
-        return
-    if last.name in _TESTS and last.target is not None and after is not None:
-        yield from _test_exits(block, blocks, last.target, after)
-        return
-    if last.target is not None:
-        yield last.target, None
-        if last.name.startswith("JUMP"):
-            return
-    # the compiler ends every code on a return, a raise or a jump, so a last block goes nowhere
-    if after is None:  # pragma: no cover
-        return
-    if last.offset in splits and last.line is not None and last.col is not None:
-        first = _first_line(blocks[index + 1], last.line)
-        yield after, Step(StepKind.CONDITION, last.line, last.col, True, first)
-        return
-    yield after, None
-
-
-def _test_exits(
-    block: list[_Op], blocks: list[list[_Op]], jump: int, after: int
-) -> Iterator[_Exit]:
-    """A test's two sides as conditions; an except clause's match as a step on its true side."""
-    last = block[-1]
-    jumps_on = last.name in _JUMPS_WHEN_TRUE
-    matching = len(block) > 1 and block[-2].name in _MATCHES
-    by_start = {each[0].offset: each for each in blocks}
-    for target, side in ((jump, jumps_on), (after, not jumps_on)):
-        first = _first_line(by_start[target], last.line)
-        if matching:
-            yield target, Step(StepKind.HANDLER, last.line or 0, 0, True, first) if side else None
-        else:
-            yield target, Step(StepKind.CONDITION, last.line or 0, last.col or 0, side, first)
-
-
-def _first_line(block: list[_Op], other_than: int | None) -> int | None:
-    """The first line a block runs other than ``other_than``, or None when it runs no other."""
-    return next((op.line for op in block if op.line and op.line != other_than), None)
-
-
-def _postorder(successors: list[list[int]], root: int) -> list[int]:
-    """The nodes reachable from ``root``, each after every node it leads to first."""
+def _postorder(successors: list[list[int]], *roots: int) -> list[int]:
+    """The nodes reachable from ``roots``, each after every node it leads to first."""
     order: list[int] = []
-    seen = {root}
-    stack: list[tuple[int, Iterator[int]]] = [(root, iter(successors[root]))]
+    seen = set(roots)
+    stack: list[tuple[int, Iterator[int]]] = [(root, iter(successors[root])) for root in roots]
     while stack:
         node, pending = stack[-1]
         following = next((each for each in pending if each not in seen), None)
@@ -340,10 +317,6 @@ def _postorder(successors: list[list[int]], root: int) -> list[int]:
         seen.add(following)
         stack.append((following, iter(successors[following])))
     return order
-
-
-def _reachable(successors: list[list[int]], start: int) -> frozenset[int]:
-    return frozenset(_postorder(successors, start))
 
 
 def _dominators(successors: list[list[int]], root: int, number: dict[int, int]) -> dict[int, int]:

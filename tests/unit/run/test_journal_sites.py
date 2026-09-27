@@ -2,7 +2,7 @@
 
 import sys
 
-from pyct.core.branch import Site
+from pyct.core.branch import Branch, Site
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import JournalWriter, read
 
@@ -60,3 +60,15 @@ def test_a_site_in_a_file_whose_name_is_not_utf8_reads_back_as_written() -> None
 def read_end(buffer: bytearray) -> int:
     """Where the next record goes: the committed mark the header's first word holds."""
     return int.from_bytes(buffer[:8], sys.byteorder)
+
+
+def test_a_fork_s_mark_as_an_operation_s_reads_back_as_written() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    test = Branch(expression=["!=", "x", 0], taken=True, site=SITE)
+    operation = Branch(expression=["!=", "x", 0], taken=True, site=SITE, raising=True)
+
+    writer.fork(operation)
+    writer.fork(test)
+
+    assert read(buffer).branches == (operation, test)

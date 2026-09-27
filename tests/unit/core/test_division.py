@@ -104,7 +104,7 @@ def test_the_zero_fork_is_recorded_where_the_division_ran() -> None:
     _probe(DIVIDE)(x, y)
 
     # the division happens inside the probe, so the fork is the probe's line, not this one
-    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE, raising=True)]
 
 
 def test_the_reflected_form_records_the_same_fork() -> None:
@@ -114,7 +114,7 @@ def test_the_reflected_form_records_the_same_fork() -> None:
     # `7 // y` runs int's reflected divide on y, and y is still the divisor
     _probe(REFLECTED)(y)
 
-    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE, raising=True)]
 
 
 def test_divmod_divides_once_and_forks_once() -> None:
@@ -125,7 +125,7 @@ def test_divmod_divides_once_and_forks_once() -> None:
     _probe(DIVMOD)(x, y)
 
     # one call divides once, where `x // y` and `x % y` written out would fork twice
-    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE, raising=True)]
 
 
 def test_the_reflected_divmod_forks_once_too() -> None:
@@ -134,7 +134,7 @@ def test_the_reflected_divmod_forks_once_too() -> None:
 
     _probe(REFLECTED_DIVMOD)(y)
 
-    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE)]
+    assert sink == [Branch(expression=["!=", "y", 0], taken=True, site=DIVISION_SITE, raising=True)]
 
 
 def test_divmod_hands_back_a_quotient_and_a_remainder_that_carry_their_own_nodes() -> None:
@@ -234,6 +234,8 @@ def test_a_division_by_zero_raises_with_the_fork_it_died_on_already_recorded() -
         _probe(DIVIDE)(x, y)
 
     # the fork goes in before int divides, so the crashing input still carries the side it took
-    assert sink == [Branch(expression=["!=", "y", 0], taken=False, site=DIVISION_SITE)]
+    assert sink == [
+        Branch(expression=["!=", "y", 0], taken=False, site=DIVISION_SITE, raising=True)
+    ]
     # pyct only ran int's own divide, so the raise that came out of it is the target's
     assert raised_by_target(raised.value)

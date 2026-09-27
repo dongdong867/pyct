@@ -8,14 +8,15 @@ got past names the cause (``README.md › Rules › the summary line``).
 
 from __future__ import annotations
 
+import functools
 import types
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import Enum, StrEnum
+from enum import StrEnum
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import compiled
-from pyct.results.way import Flow, Step, StepKind, owners
+from pyct.results.way import Flow, Fork, Step, StepKind, owners
 
 
 class Reason(StrEnum):
@@ -66,10 +67,12 @@ class WhyEntry:
 
 @dataclass(frozen=True)
 class Walked:
-    """One input as the cause reads it: its forks in order, and whether it ended in a failure."""
+    """One input as the cause reads it: its forks in order, whether it ended in a failure,
+    and the lines it covered."""
 
     forks: tuple[Branch, ...]
     failed: bool
+    lines: frozenset[int] = frozenset()
 
 
 def explain(
@@ -77,7 +80,7 @@ def explain(
     uncovered: frozenset[int],
     covered: frozenset[int],
     walked: Sequence[Walked],
-    tries: Mapping[Site, Tries],
+    tries: Mapping[ForkSite, Tries],
 ) -> tuple[WhyEntry, ...]:
     """One entry per cause, for the lines of ``file`` no input ran, the earliest line's first.
 
@@ -105,18 +108,25 @@ def _with_lines(cause: WhyEntry, lines: list[int]) -> WhyEntry:
     )
 
 
+@dataclass(frozen=True)
+class _Input:
+    """One input as a file's flow reads it: its lines, its forks there, and how it ended."""
+
+    lines: frozenset[int]
+    forks: tuple[Fork, ...]
+    failed: bool
+
+
 @dataclass
 class _Seen:
-    """What the run showed about one file: its lines, the sides its forks took, and its code."""
+    """What the run showed about one file: its lines, its inputs' forks, and its code."""
 
     file: str
     covered: frozenset[int]
-    taken: dict[tuple[int, int], set[bool]]
-    raising: frozenset[tuple[int, int]]
-    tries: Mapping[Site, Tries]
+    inputs: tuple[_Input, ...]
+    tries: Mapping[ForkSite, Tries]
     owners: dict[int, types.CodeType | None]
-    entered: frozenset[types.CodeType]
-    flows: dict[types.CodeType, Flow] = field(default_factory=dict)
+    flows: dict[types.CodeType, _Walk] = field(default_factory=dict)
 
     @classmethod
     def of(
@@ -124,78 +134,135 @@ class _Seen:
         file: str,
         covered: frozenset[int],
         walked: Sequence[Walked],
-        tries: Mapping[Site, Tries],
+        tries: Mapping[ForkSite, Tries],
     ) -> _Seen:
-        taken: dict[tuple[int, int], set[bool]] = {}
-        went_on: set[tuple[int, int]] = set()
-        for each in walked:
-            for at, branch in enumerate(each.forks):
-                if branch.site.file != file:
-                    continue
-                position = (branch.site.line, branch.site.col)
-                taken.setdefault(position, set()).add(branch.taken)
-                last = at == len(each.forks) - 1
-                if not branch.taken and not (last and each.failed):
-                    went_on.add(position)
-        # a fork an input went on past on its false side was a truth test, not an operation
-        # that raised there
-        raising = frozenset(taken) - went_on
-        held = _owners(file)
-        entered = frozenset(code for line, code in held.items() if code and line in covered)
-        return cls(file, covered, taken, raising, tries, held, entered)
+        inputs = tuple(
+            _Input(
+                each.lines,
+                tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
+                each.failed,
+            )
+            for each in walked
+        )
+        return cls(file, covered, inputs, tries, _owners(file))
 
     def cause(self, line: int) -> WhyEntry:
         """The one cause of an uncovered line. A line no function holds is the import's."""
         code = self.owners.get(line)
         if code is None:
             return WhyEntry(file=self.file, lines=(), reason=Reason.IMPORT)
-        if code not in self.entered:
+        if not any(owner is code and at in self.covered for at, owner in self.owners.items()):
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
-        return self._on_the_way(self._flow(code), line)
-
-    def _flow(self, code: types.CodeType) -> Flow:
         if code not in self.flows:
-            self.flows[code] = Flow(code, self.raising)
-        return self.flows[code]
+            self.flows[code] = _Walk.of(self, code)
+        return self.flows[code].cause(line)
 
-    def _on_the_way(self, flow: Flow, line: int) -> WhyEntry:
-        """The first step on the line's way no input got past, or why none stopped them."""
-        entered_a_handler = False
-        for step in flow.way(line):
-            if step.kind is StepKind.HANDLER:
-                if not self._reached(step.reaches):
-                    return WhyEntry(self.file, (), Reason.HANDLER)
-                entered_a_handler = True
-                continue
-            verdict = self._judged(step)
-            if verdict is _Verdict.PASSED:
-                continue
-            if verdict is _Verdict.UNREACHED:
-                break
-            return verdict
-        if flow.only_in_handlers(line) and not entered_a_handler:
-            return WhyEntry(self.file, (), Reason.HANDLER)
-        return WhyEntry(self.file, (), Reason.ENDED_BEFORE)
 
-    def _judged(self, step: Step) -> WhyEntry | _Verdict:
-        """Whether a run got past a condition's side, or the cause when none did."""
-        site = Site(file=self.file, line=step.line, col=step.col)
+def _fork(branch: Branch) -> Fork:
+    return (branch.site.line, branch.site.col, branch.taken, branch.raising)
+
+
+@dataclass
+class _Walk:
+    """One function's flow, and the nodes the run's lines and forks prove some input passed."""
+
+    seen: _Seen
+    flow: Flow
+    passed: frozenset[int]
+    forked: frozenset[tuple[int, int, bool]]
+
+    @classmethod
+    def of(cls, seen: _Seen, code: types.CodeType) -> _Walk:
+        forks = [fork for each in seen.inputs for fork in each.forks]
+        raising = frozenset((line, col) for line, col, _, is_raising in forks if is_raising)
+        flow = Flow(code, raising)
+        passed = flow.marked(seen.covered, forks)
+        forked = frozenset((line, col, is_raising) for line, col, _, is_raising in forks)
+        return cls(seen, flow, passed, forked)
+
+    def cause(self, line: int) -> WhyEntry:
+        """The first place on the line's way no input got past, else the first reaching side
+        no input took, else a handler no raise reached, else the inputs that ended before it."""
+        found = self._on_the_way(line) or self._reaching(line, shown=True)
+        if found is not None:
+            return found
+        if self._no_raise_reached(line):
+            return self._entry(Reason.HANDLER)
+        if self._ended(line):
+            return self._entry(Reason.ENDED_BEFORE)
+        # a side that joins again at once, as a ternary's, shows no run took it, so it is named
+        # only when nothing else explains the line
+        found = self._reaching(line, shown=False)
+        # otherwise no condition leads to the line and no input ended on the way: the run
+        # shows nothing more, and the line is put down to its inputs ending before it
+        return found or self._entry(Reason.ENDED_BEFORE)
+
+    def _no_raise_reached(self, line: int) -> bool:
+        """Whether the line is in an except block that no raise on its way reached."""
+        places = self.flow.places(line)
+        into = [place for place in places if place.step.kind is StepKind.HANDLER]
+        return self.flow.only_in_handlers(line) and any(p.node not in self.passed for p in into)
+
+    def _on_the_way(self, line: int) -> WhyEntry | None:
+        for place in self.flow.places(line):
+            if place.node in self.passed:
+                continue
+            if place.source not in self.passed:
+                return None
+            if place.step.kind is StepKind.HANDLER:
+                return self._entry(Reason.HANDLER)
+            return self._named(place.step)
+        return None
+
+    def _reaching(self, line: int, *, shown: bool) -> WhyEntry | None:
+        """The first reaching side no input took, of a condition an input reached.
+
+        ``shown`` asks only for a side a run would show it took, by a fork or
+        by a line or a fork only that side leads to.
+        """
+        for place in self.flow.reaching(line):
+            if place.node in self.passed or place.source not in self.passed:
+                continue
+            knowable = self._forks_at(place.step) or self.flow.knowable(place)
+            if knowable == shown:
+                return self._named(place.step)
+        return None
+
+    def _ended(self, line: int) -> bool:
+        """Whether an input that went as far toward the line as any did ended there.
+
+        It failed, or a raise took it into a handler from which the line
+        cannot be reached.
+        """
+        chain = [node for node in self.flow.chain(line) if node in self.passed]
+        frontier = chain[-1] if chain else None
+        away = self.flow.raises() - self.flow.toward(line)
+        for each, marked in zip(self.seen.inputs, self._marks, strict=True):
+            if frontier is not None and frontier not in marked:
+                continue
+            if each.failed or marked & away:
+                return True
+        return False
+
+    @functools.cached_property
+    def _marks(self) -> list[frozenset[int]]:
+        """The nodes each input's own lines and forks prove it passed, found once."""
+        return [self.flow.marked(each.lines, each.forks) for each in self.seen.inputs]
+
+    def _forks_at(self, step: Step) -> bool:
+        return (step.line, step.col, step.raising) in self.forked
+
+    def _named(self, step: Step) -> WhyEntry:
+        """A condition no input took the side of: not taken when it forked there, else no fork."""
+        site = Site(file=self.seen.file, line=step.line, col=step.col)
         condition = Condition(site=site, side=step.side)
-        sides = self.taken.get((step.line, step.col))
-        if sides is not None:
-            if step.side in sides:
-                return _Verdict.PASSED
-            tries = self.tries.get(site, Tries())
-            return WhyEntry(self.file, (), Reason.NOT_TAKEN, condition=condition, tries=tries)
-        if step.line not in self.covered:
-            return _Verdict.UNREACHED
-        if self._reached(step.reaches):
-            return _Verdict.PASSED
-        return WhyEntry(self.file, (), Reason.NO_FORK, condition=condition)
+        if not self._forks_at(step):
+            return WhyEntry(self.seen.file, (), Reason.NO_FORK, condition=condition)
+        tries = self.seen.tries.get(ForkSite(site, step.raising), Tries())
+        return WhyEntry(self.seen.file, (), Reason.NOT_TAKEN, condition=condition, tries=tries)
 
-    def _reached(self, line: int | None) -> bool:
-        """Whether a run reached ``line``. None is a side that stays on its step's line."""
-        return line is None or line in self.covered
+    def _entry(self, reason: Reason) -> WhyEntry:
+        return WhyEntry(self.seen.file, (), reason)
 
 
 def _owners(file: str) -> dict[int, types.CodeType | None]:
@@ -209,10 +276,3 @@ def _owners(file: str) -> dict[int, types.CodeType | None]:
         return owners(compiled(file))
     except (OSError, SyntaxError, ValueError):
         return {}
-
-
-class _Verdict(Enum):
-    """A step's verdict that names no cause: a run got past it, or no run reached it."""
-
-    PASSED = "passed"
-    UNREACHED = "unreached"

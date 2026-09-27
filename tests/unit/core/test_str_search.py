@@ -163,7 +163,12 @@ def test_a_raising_search_records_the_in_fork_at_the_call_before_its_answer(
     assert result.expression == [name, "s", "'b'"]
     assert int.__index__(result) == answer
     assert sink == [
-        Branch(expression=["in", "'b'", "s"], taken=True, site=Site(file="<probe>", line=2, col=11))
+        Branch(
+            expression=["in", "'b'", "s"],
+            taken=True,
+            site=Site(file="<probe>", line=2, col=11),
+            raising=True,
+        )
     ]
 
 
@@ -180,7 +185,10 @@ def test_a_raising_search_of_a_missing_substring_raises_as_the_targets_after_its
     assert raised_by_target(raised.value)
     assert sink == [
         Branch(
-            expression=["in", "'x'", "s"], taken=False, site=Site(file="<probe>", line=2, col=11)
+            expression=["in", "'x'", "s"],
+            taken=False,
+            site=Site(file="<probe>", line=2, col=11),
+            raising=True,
         )
     ]
 

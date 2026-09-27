@@ -9,7 +9,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
-from pyct.core.branch import Site
+from pyct.core.branch import ForkSite, Site
 from pyct.results.record import StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
@@ -44,7 +44,7 @@ def test_a_plateau_stop_counts_the_fork_it_picked_and_never_solved() -> None:
 
     assert result.stopped.kind is StopKind.NO_GAIN
     # `y < 10` was flipped; the pick of `x < 10` came before the plateau stop, and it ran nothing
-    assert result.untried == (Site(file=TWO_OTHER_SIDES, line=3, col=7),)
+    assert result.untried == (ForkSite(Site(file=TWO_OTHER_SIDES, line=3, col=7)),)
 
 
 def test_a_solver_failure_counts_the_fork_being_solved(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,7 +54,7 @@ def test_a_solver_failure_counts_the_fork_being_solved(monkeypatch: pytest.Monke
     result = run(target, {"x": 3}, isolation=Isolation.IN_PROCESS)
 
     assert result.stopped.kind is StopKind.SOLVER_FAILED
-    assert result.untried == (Site(file=ONE_CHECK, line=2, col=7),)
+    assert result.untried == (ForkSite(Site(file=ONE_CHECK, line=2, col=7)),)
 
 
 def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
@@ -69,7 +69,7 @@ def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
     attempt = _attempt(refused, Seed.of(seed), tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
 
     assert attempt.stop is not None
-    assert attempt.unrun == Site(file=ONE_CHECK, line=2, col=7)
+    assert attempt.unrun == ForkSite(Site(file=ONE_CHECK, line=2, col=7))
 
 
 def test_a_budget_stop_counts_every_fork_still_open() -> None:
@@ -81,4 +81,4 @@ def test_a_budget_stop_counts_every_fork_still_open() -> None:
 
     # the seed forked on `x < 10`, then spun past the deadline, so that fork was never tried
     assert result.stopped.kind is StopKind.BUDGET
-    assert result.untried == (Site(file=SPINS, line=2, col=7),)
+    assert result.untried == (ForkSite(Site(file=SPINS, line=2, col=7)),)

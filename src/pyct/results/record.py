@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.why import Tries, Walked, WhyEntry, explain
@@ -22,10 +22,14 @@ class Source(StrEnum):
 
 @dataclass(frozen=True)
 class Aim:
-    """The fork an input was solved for: where it is, and where on the path."""
+    """The fork an input was solved for: where it is, and where on the path.
+
+    ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
+    """
 
     site: Site
     position: int
+    raising: bool = False
 
 
 @dataclass(frozen=True)
@@ -115,10 +119,14 @@ class MissWhy(StrEnum):
 
 @dataclass(frozen=True)
 class Miss:
-    """A fork the run asked for and got no input to: where it is, and what the solver said."""
+    """A fork the run asked for and got no input to: where it is, and what the solver said.
+
+    ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
+    """
 
     site: Site
     why: MissWhy
+    raising: bool = False
 
 
 @dataclass(frozen=True)
@@ -163,7 +171,7 @@ class RunResult:
     stopped: Stop
     environment: Environment
     misses: tuple[Miss, ...] = ()
-    untried: tuple[Site, ...] = ()
+    untried: tuple[ForkSite, ...] = ()
 
     @property
     def inputs(self) -> int:
@@ -192,7 +200,10 @@ class RunResult:
         Worked out the first time it is read, from the module's code and the
         run's inputs, so a caller that never reads it never pays for it.
         """
-        walked = [Walked(record.forks, record.failure is not None) for record in self.records]
+        walked = [
+            Walked(record.forks, record.failure is not None, record.covered_lines)
+            for record in self.records
+        ]
         tries = _tries(self)
         covered = self.coverage.covered
         return tuple(
@@ -202,15 +213,16 @@ class RunResult:
         )
 
 
-def _tries(result: RunResult) -> dict[Site, Tries]:
+def _tries(result: RunResult) -> dict[ForkSite, Tries]:
     """What happened at each site each time the run could have flipped a fork there."""
-    counts: dict[Site, Counter[str]] = {}
-    for site in result.untried:
-        counts.setdefault(site, Counter())["not_tried"] += 1
+    counts: dict[ForkSite, Counter[str]] = {}
+    for where in result.untried:
+        counts.setdefault(where, Counter())["not_tried"] += 1
     for miss in result.misses:
-        counts.setdefault(miss.site, Counter())[miss.why.value] += 1
+        counts.setdefault(ForkSite(miss.site, miss.raising), Counter())[miss.why.value] += 1
     for record in result.records:
         if record.aim is not None and record.mismatch_at is not None:
-            counts.setdefault(record.aim.site, Counter())["left_the_plan"] += 1
+            aimed = ForkSite(record.aim.site, record.aim.raising)
+            counts.setdefault(aimed, Counter())["left_the_plan"] += 1
     fields = [field.name for field in dataclasses.fields(Tries)]
     return {site: Tries(*(counted[name] for name in fields)) for site, counted in counts.items()}

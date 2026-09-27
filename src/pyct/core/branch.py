@@ -38,11 +38,35 @@ class Site:
 
 @dataclass(frozen=True)
 class Branch:
-    """One fork: the condition, the side the run took, and the position."""
+    """One fork: the condition, the side the run took, and the position.
+
+    ``raising`` marks a fork recorded before an operation that may raise, such
+    as division's zero fork, rather than where a value is tested for truth.
+    Both can sit at one column, as in ``if s[0] != s[0]:``, so only the mark
+    tells whose side a fork took.
+    """
 
     expression: Expression
     taken: bool
     site: Site
+    raising: bool = False
+
+    @property
+    def where(self) -> ForkSite:
+        """The fork's site, told apart from another kind of fork at the same column."""
+        return ForkSite(self.site, self.raising)
+
+
+@dataclass(frozen=True)
+class ForkSite:
+    """A fork's site, and whether it is an operation's before a raise.
+
+    What tells two forks at one column apart: ``if s[0] != s[0]:`` records
+    the index's fork and the test's at the same line and column.
+    """
+
+    site: Site
+    raising: bool = False
 
 
 @dataclass(frozen=True)
@@ -118,3 +142,24 @@ def site_of(frame: types.FrameType | None) -> Site:
         _SITES[(id(code), at)] = (weakref.ref(code), site)
     _LAST[0] = (code, at, site)
     return site
+
+
+# the last downgrade recorded, with the instruction outside pyct that made it: a loop that loses
+# one condition on every pass records the one object again. One tuple, set in one store
+_LAST_LOST: list[tuple[types.CodeType | None, int, Downgrade | None]] = [(None, -1, None)]
+
+
+def lost_at(name: str, frame: types.FrameType) -> Downgrade:
+    """The downgrade ``name`` made from ``frame``, or from the frame outside pyct that called it.
+
+    The same call at the same instruction is the same downgrade, so it is
+    built once and handed back while the calls repeat.
+    """
+    code, at, last = _LAST_LOST[0]
+    if last is not None and frame.f_code is code and frame.f_lasti == at and last.name == name:
+        return last
+    lost = Downgrade(name=name, site=site_of(frame))
+    # site_of kept the frame outside pyct it read the site from
+    held_code, held_at, _ = _LAST[0]
+    _LAST_LOST[0] = (held_code, held_at, lost)
+    return lost

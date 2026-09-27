@@ -102,3 +102,53 @@ def test_a_sink_holds_forks_and_downgrades_in_the_order_they_happened() -> None:
     sink.append(branch)
 
     assert sink == [downgrade, branch]
+
+
+def test_a_truth_test_s_fork_is_not_marked_as_an_operation_s() -> None:
+    sink: list[SinkItem] = []
+
+    bool(ConcolicInt(3, expression="x", sink=sink))
+
+    assert [item.raising for item in sink if isinstance(item, Branch)] == [False]
+
+
+def test_a_fork_before_an_operation_that_may_raise_is_marked_as_the_operation_s() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    10 // x
+    bool(x)
+
+    # the division's zero fork is marked; the plain truth test after it is not, so the mark
+    # does not outlive the division
+    assert [item.raising for item in sink if isinstance(item, Branch)] == [True, False]
+
+
+def test_a_repeated_downgrade_at_one_instruction_is_the_one_object() -> None:
+    namespace: dict[str, object] = {}
+    source = "def spin(x):\n    for _ in range(3):\n        x ^ 0\n    return x ^ 1\n"
+    exec(compile(source, "<spun>", "exec"), namespace)
+    spin = namespace["spin"]
+    assert callable(spin)
+    sink: list[SinkItem] = []
+
+    spin(ConcolicInt(3, expression="x", sink=sink))
+
+    first, second, third, last = sink
+    assert first is second is third
+    assert last == Downgrade(name="__xor__", site=Site(file="<spun>", line=4, col=11))
+
+
+def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
+    namespace: dict[str, object] = {}
+    exec(compile("def both(x, f):\n    return f(x)\n", "<both>", "exec"), namespace)
+    both = namespace["both"]
+    assert callable(both)
+    sink: list[SinkItem] = []
+    x = ConcolicInt(3, expression="x", sink=sink)
+
+    both(x, float)
+    both(x, str)
+
+    # one call instruction, two methods lost through it
+    assert [item.name for item in sink if isinstance(item, Downgrade)] == ["__float__", "__str__"]
