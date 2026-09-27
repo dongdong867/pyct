@@ -89,6 +89,7 @@
     {"set": "v2", "target": "targets.nested.dict_values::check", "seed": {"config": {"server": {"port": 100, "host": "x", "workers": 2}}}},
     {"set": "v2", "module": "targets.nested.float_key", "left_out": "the seed has a float key, which JSON cannot hold"},
     {"set": "v2", "module": "targets.nested.grows_through_tuple", "left_out": "the seed holds a tuple, which JSON cannot hold"},
+    {"set": "v2", "module": "targets.nested.holder", "left_out": "the seed holds an object with a lock, which JSON cannot hold"},
     {"set": "v2", "module": "targets.nested.holds_itself", "left_out": "the seed is a list that holds itself, which JSON cannot hold"},
     {"set": "v2", "target": "targets.nested.keeps_shape::check", "seed": {"items": [0], "config": {}, "note": null}},
     {"set": "v2", "target": "targets.nested.key_like_index::compare", "seed": {"d": {"0": 1, "it's": 2}}},

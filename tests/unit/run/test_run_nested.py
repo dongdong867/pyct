@@ -1,5 +1,6 @@
-"""run() with seeds only a caller can give: a seed that holds itself, and keys JSON cannot hold."""
+"""run() on nested seeds: values only a caller can give, and what each input is handed, per mode."""
 
+import threading
 from collections.abc import Mapping
 
 import pytest
@@ -110,3 +111,24 @@ def test_run_passes_a_positional_only_parameter_by_position(isolation: Isolation
 
     assert [record.failure for record in result.records] == [None, None]
     assert [record.args["value"] for record in result.records] == ["x", "abc"]
+
+
+class Holder:
+    """An object deepcopy refuses, for its lock, that holds a list the seed also passes."""
+
+    def __init__(self, xs: list[int]) -> None:
+        self.lock = threading.Lock()
+        self.xs = xs
+
+
+def test_run_copies_the_seed_before_the_seed_input_can_change_it() -> None:
+    # the holder cannot be copied, so the target grows the caller's own list through it; the
+    # run's copy of `a` was made before, and every input starts from that copy
+    x = [0]
+    target = load_target("targets.nested.holder::grow")
+
+    result = run(target, {"a": x, "h": Holder(x)}, isolation=Isolation.IN_PROCESS)
+
+    assert [record.failure for record in result.records] == [None, None]
+    starts = [record.args["a"] for record in result.records]
+    assert all(isinstance(a, list) and len(a) == 1 for a in starts), starts
