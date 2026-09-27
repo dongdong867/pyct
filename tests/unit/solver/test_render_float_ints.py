@@ -9,6 +9,7 @@ from pyct.core.branch import Expression
 from pyct.solver.answer import Error, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.floats import QUOTIENT_BOUND, finite, floor_division, from_int, literal
+from pyct.solver.lists import Origin
 from pyct.solver.render import program
 from tests.unit.solver.test_cvc5 import NOT_UNKNOWN, fork
 from tests.unit.solver.test_cvc5_floats import asked, fake_cvc5, needs_cvc5
@@ -72,7 +73,7 @@ def test_a_float_floor_division_holds_its_bound_on_the_path() -> None:
 def test_a_bound_left_out_writes_the_term_past_it_as_a_double_of_its_own() -> None:
     fork_ = fork(["==", ["//", "x", 2.5], 3.0], taken=True)
     held = program((fork_,), LEAVES).text
-    left_out = program((fork_,), LEAVES, bounded=False).text
+    left_out = program((fork_,), LEAVES, Origin(bounded=False)).text
 
     # holding the bound, the term is the floor everywhere, which cvc5 answers far faster; left
     # out, the term past it is a double declared for it alone

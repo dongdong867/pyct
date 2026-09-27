@@ -52,7 +52,7 @@ class Rescan:
                     if self._open(forks, at) and (not new_side_only or self._new_side(forks[at])):
                         self.aimed.add(self._key(forks, at))
                         self.picked = path
-                        return plan(forks[: at + 1])
+                        return plan(forks[: at + 1], path)
         return None
 
     def timed_out(self) -> None:

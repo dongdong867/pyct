@@ -58,7 +58,7 @@ def test_an_input_that_cannot_start_stops_the_loop() -> None:
     def refused(args: object, until: float | None) -> object:
         raise InputStartError(f"could not start a child process: {REFUSED}")
 
-    attempt = _attempt(refused, Seed.of(seed), tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
+    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
 
     assert attempt.record is None
     assert attempt.stop == Stop(

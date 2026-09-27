@@ -2,7 +2,8 @@
 
 The `ConcolicFloat` body below is the taught set: the compares, the truth
 test, `+ - * / // %` and `divmod`, the unary operations, the four roundings
-to an int and `is_integer` stay symbolic, and a copy is the value itself.
+to an int and `is_integer` stay symbolic, `real` and `conjugate` are the
+value itself, `fromhex` is float's own, and a copy is the value itself.
 `_KEPT` names what is left to float on purpose. `_INHERITED` names what
 float inherits rather than defines, which the derivation at the bottom of
 the file downgrades along with every other method float defines. What each
@@ -28,7 +29,15 @@ from typing import Any
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
+from pyct.core.values import (
+    built_plainly,
+    copy_as_itself,
+    downgrade_the_rest,
+    downgraded,
+    forked,
+    own,
+    pickled,
+)
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
@@ -278,6 +287,14 @@ class ConcolicFloat(float):
     __abs__ = numbers.unary("abs", float.__abs__)
     __pos__ = _itself
     is_integer = _is_integer
+    # float's plain names that hand back the value itself. `imag` stays float's own constant,
+    # 0.0, and `as_integer_ratio` and `hex` are derived downgrades
+    real = numbers.attribute(float.real, _itself)  # pyrefly: ignore[bad-override]
+    conjugate = numbers.itself(float.conjugate, _itself)
+    # float's own would build this class from the value alone. Every classmethod float defines
+    # is named here, since the derivation reads only methods called on a value
+    fromhex = built_plainly(float, "fromhex")  # pyrefly: ignore[bad-override]
+    __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> ConcolicFloat:
         self = super().__new__(cls, value)

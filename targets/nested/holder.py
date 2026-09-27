@@ -1,7 +1,8 @@
 def grow(a, h):
-    if len(a) != 1:
+    # the caller's own list, grown through h, would end in the None an earlier input appended
+    if a and a[-1] is None:
         raise ValueError("an earlier input changed the arguments")
-    h.xs.append(0)
-    if a[0] > 5:
+    h.xs.append(None)
+    if a and a[0] > 5:
         return "big"
     return "small"

@@ -11,7 +11,7 @@ from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicFloat leaves to float, written out because the derivation reads the
 # same sets the production code does: a name that slipped out of the taught set would run as
-# float's own with no downgrade, silently. Nine on the floor version, `__str__` among them
+# float's own with no downgrade, silently. Eight on the floor version, `__str__` among them
 # because float inherits it; a newer Python may add another. `round(x, n)` is a downgrade too,
 # named `__round__`, but by `__round__`'s own hand, since `round(x)` is taught
 UNTAUGHT_OPERATIONS = (
@@ -22,7 +22,6 @@ UNTAUGHT_OPERATIONS = (
     "__str__",
     "__format__",
     "as_integer_ratio",
-    "conjugate",
     "hex",
 )
 
@@ -38,9 +37,9 @@ def _derived_downgrades() -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the nine are counted on the floor; a newer Python may define another method",
+    reason="the eight are counted on the floor; a newer Python may define another method",
 )
-def test_a_concolic_float_downgrades_the_nine_operations_it_has_not_taught() -> None:
+def test_a_concolic_float_downgrades_the_eight_operations_it_has_not_taught() -> None:
     assert _derived_downgrades() == set(UNTAUGHT_OPERATIONS)
 
 
