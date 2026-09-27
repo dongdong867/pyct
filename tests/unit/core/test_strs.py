@@ -311,8 +311,8 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     assert sink == []
 
 
-# the downgrades str's own method answers with s itself when there is nothing to fill in: the
-# call, and the name its downgrade carries
+# the downgrades str's own method answers with s itself when there is nothing to fill in, or
+# a format spec changes nothing: the call, and the name its downgrade carries
 NOTHING_TO_FILL: dict[str, tuple[Callable[[str], object], str]] = {
     "s % ()": (lambda s: s % (), "__mod__"),
     "s % {}": (lambda s: s % {}, "__mod__"),
@@ -320,6 +320,8 @@ NOTHING_TO_FILL: dict[str, tuple[Callable[[str], object], str]] = {
     "s.format()": (lambda s: s.format(), "format"),
     's.format("q")': (lambda s: s.format("q"), "format"),
     "s.format_map({})": (lambda s: s.format_map({}), "format_map"),
+    'format(s, "s")': (lambda s: format(s, "s"), "__format__"),
+    'f"{s:<3}"': (lambda s: f"{s:<3}", "__format__"),
 }
 
 

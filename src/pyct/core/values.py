@@ -86,11 +86,10 @@ def downgraded(
     keywords too, so the operation takes and refuses what it would take and
     refuse on a plain value. The note comes after the call, so an operation
     that raises records nothing and the raise stays the target's.
-    The result is plain: an operation that answers with its receiver, as
-    str's `%` and `format` do with nothing to fill in, hands back the
-    receiver's plain value, so a fork on the result names nothing it lost.
     ``NotImplemented`` is not an answer either: the other operand's reflected
-    method gets its turn, and only a real result is a lost condition.
+    method gets its turn, and only a real result is a lost condition. A
+    result that is the receiver itself, as str's `%`, `format` and
+    `__format__` can give, comes back as the receiver's plain value.
     ``calling`` is how the base type answers when its method by that name
     is not the answer: str has no `__radd__`, and its reflected
     concatenation is its `__add__` the other way round; a tracked bool
@@ -104,7 +103,7 @@ def downgraded(
         if result is NotImplemented:
             return result
         self.sink.append(Downgrade(name=name))
-        return plain(self, base) if result is self else result
+        return own(plain, self, base) if result is self else result
 
     return downgrade
 
