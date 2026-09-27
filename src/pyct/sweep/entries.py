@@ -10,11 +10,12 @@ one entry.
 A public name is one in ``__all__``, or, with no ``__all__``, one without a
 leading underscore. It holds an entry when it holds a function, looked at
 through ``__wrapped__``, or a class, whose code is in a ``.py`` file of a
-module of the swept package, or a bound method of such code, named where it
-is found. A class is an entry when its constructor is Python code, since
-``pyct run MODULE::Class`` calls it. Each method a class's own body defines
-under a public name is listed too, and skipped until ``pyct run`` can call
-one.
+module of the swept package, or a bound method of such code, named by a
+module that exposes it: the module of its function's code when that module
+does, and otherwise the first exposing module in name order. A class is an
+entry when its constructor is Python code, since ``pyct run MODULE::Class``
+calls it. Each method a class's own body defines under a public name is
+listed too, and skipped until ``pyct run`` can call one.
 """
 
 import contextlib
