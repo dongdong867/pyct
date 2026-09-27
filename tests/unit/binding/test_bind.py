@@ -303,3 +303,19 @@ def test_a_tuple_copied_once_is_the_same_copy_wherever_the_seed_reaches_it() -> 
 
     u = args["u"]
     assert isinstance(u, list) and u[0] is args["t"] and args["t"] is not shared
+
+
+class IdentityKey:
+    """A key that is equal only to itself, as an object with no __eq__ of its own is."""
+
+
+def test_a_dict_copied_first_inside_a_tuple_keeps_its_own_keys_when_named() -> None:
+    d: dict[object, object] = {IdentityKey(): 1, "n": 2}
+
+    args = bind({"t": (d,), "a": d}, [])
+
+    a, t = args["a"], args["t"]
+    assert isinstance(a, dict) and isinstance(t, tuple) and t[0] is a
+    assert len(a) == 2
+    assert isinstance(a["n"], ConcolicInt)
+    assert a["n"].expression == ["[]", "a", "'n'"]

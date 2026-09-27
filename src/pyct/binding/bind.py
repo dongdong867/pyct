@@ -227,11 +227,14 @@ def _items(
     """A container's values to place into its copy, each with the access one step in.
 
     A dict's value is named by its key when the key can be written as a
-    literal (see ``_key``), and by nothing otherwise.
+    literal (see ``_key``), and by nothing otherwise. It goes in under the
+    copy's own key, in the same order: a copy deepcopy made holds copies of
+    the seed's keys, and a key equal only to itself would go in twice.
     """
     if isinstance(value, list):
         return ((item, _step(access, i), into, i) for i, item in enumerate(value))
-    return ((item, _step(access, _key(key)), into, key) for key, item in value.items())
+    pairs = zip(value.items(), into, strict=True)
+    return ((item, _step(access, _key(key)), into, slot) for (key, item), slot in pairs)
 
 
 class _Unnamed(Enum):
