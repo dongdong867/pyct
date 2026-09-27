@@ -11,6 +11,11 @@ paths of a few regular expression memberships to its time limit. A check
 also states the fact that the counts add up to the string's length (see
 `counted`), which cvc5 does not work out from the removals.
 
+A count costs cvc5 more the longer the string must be: a digit string of at
+least 13 characters ran past 10 s. So a string only one check reads, where
+no sums have anything to meet, is asked as one regular expression
+membership instead (see `check`), which gives the same answer.
+
 Each kind is exact for ASCII. Past ASCII, a character is no digit, no letter
 and no space, and it has no case, as cvc5's ``str.to_upper`` and
 ``str.to_lower`` leave it; U+0080 to U+00A0 and the soft hyphen are not
@@ -22,6 +27,8 @@ plan. ``isascii`` is exact for every character.
 from collections.abc import Callable, Iterable, Mapping
 
 from pyct.core.str_operands import LAST_CHARACTER
+from pyct.solver.dag import Node
+from pyct.solver.letters import Key, Keyed
 from pyct.solver.strings import encode, length
 
 # a class of characters: runs of code points, each from its first to its last, in order
@@ -191,3 +198,64 @@ def _checked(answer: Callable[[str], str]) -> Callable[[str], Check]:
 CHECKS: Mapping[str, Callable[[str], Check]] = {
     head: _checked(answer) for head, answer in _ANSWERS.items()
 }
+
+
+def _in(kinds: Iterable[str]) -> str:
+    """The regular expression that matches one character of the kinds."""
+    return one_of(_joined(tuple(run for kind in kinds for run in KINDS[kind])))
+
+
+def _not_in(kinds: Iterable[str]) -> str:
+    """The regular expression that matches one character of none of the kinds."""
+    return one_of(outside(_joined(tuple(run for kind in kinds for run in KINDS[kind]))))
+
+
+def _one_of_case(cased: str, other: str) -> str:
+    """A letter of one case at least, and none of the other, as a regular expression."""
+    rest = f"(re.* {_not_in([other])})"
+    return f"(re.++ {rest} {_in([cased])} {rest})"
+
+
+_ALL_DIGITS = f"(re.+ {_in(['digit'])})"
+_UNPRINTABLE = ["whitespace_but_space", "control_but_whitespace", "unprintable_past_ascii"]
+
+# each check as the one regular expression a string matches exactly where the check's counts
+# say true
+_MEMBERSHIPS: Mapping[str, str] = {
+    "isdigit": _ALL_DIGITS,
+    "isdecimal": _ALL_DIGITS,
+    "isnumeric": _ALL_DIGITS,
+    "isalpha": f"(re.+ {_in(['upper', 'lower'])})",
+    "isalnum": f"(re.+ {_in(['digit', 'upper', 'lower'])})",
+    "isspace": f"(re.+ {_in(['space', 'whitespace_but_space'])})",
+    "isupper": _one_of_case("upper", "lower"),
+    "islower": _one_of_case("lower", "upper"),
+    "isascii": f"(re.* {_not_in(['unprintable_past_ascii', 'printable_past_ascii'])})",
+    "isprintable": f"(re.* {_not_in(_UNPRINTABLE)})",
+    "istitle": _TITLED,
+    "isidentifier": (
+        f"(re.++ {_in(['upper', 'lower', 'underscore'])}"
+        f" (re.* {_in(['digit', 'upper', 'lower', 'underscore'])}))"
+    ),
+}
+
+
+def membership(head: str, term: str) -> str:
+    """The check on the term as one regular expression membership, true where its counts are."""
+    return f"(str.in_re {term} {_MEMBERSHIPS[head]})"
+
+
+def check(head: str, term: str, *, alone: bool) -> Check:
+    """The check on the term: a membership when ``alone``, no other check reading the string,
+    and otherwise counts with their fact, for the checks on one string to meet as sums."""
+    return (membership(head, term), "true") if alone else CHECKS[head](term)
+
+
+def checks_by_string(order: Iterable[Node], key: Keyed) -> dict[Key, set[str]]:
+    """The checks the path reads on each string, by the string's key."""
+    heads: dict[Key, set[str]] = {}
+    for node in order:
+        head = node[0]
+        if isinstance(head, str) and head in CHECKS and (string := key(node[1])) is not None:
+            heads.setdefault(string, set()).add(head)
+    return heads
