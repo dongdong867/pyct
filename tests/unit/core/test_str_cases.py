@@ -183,6 +183,7 @@ REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s.center()": (lambda s: s.center(), TypeError),  # pyrefly: ignore[no-matching-overload]
     "s.split(',', 1, 2)": (lambda s: s.split(",", 1, 2), TypeError),  # pyrefly: ignore[no-matching-overload]
     "s.partition(None)": (lambda s: s.partition(None), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s.partition()": (lambda s: s.partition(), TypeError),  # pyrefly: ignore[no-matching-overload]
 }
 
 
