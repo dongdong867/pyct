@@ -186,9 +186,16 @@ def site_in(site: Path, *, thread: bool) -> dict[str, str]:
     return env
 
 
-def run_in(env: dict[str, str], *argv: str) -> subprocess.CompletedProcess[str]:
+# how a person starts pyct: as a module, or through the console script beside this Python
+AS_A_MODULE = (sys.executable, "-P", "-m", "pyct")
+THROUGH_THE_SCRIPT = (str(Path(sys.executable).with_name("pyct")),)
+
+
+def run_in(
+    env: dict[str, str], *argv: str, pyct: tuple[str, ...] = AS_A_MODULE
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [sys.executable, "-P", "-m", "pyct", "run", *argv],
+        [*pyct, "run", *argv],
         cwd=REPO_ROOT,
         env=env,
         capture_output=True,
@@ -298,8 +305,11 @@ def test_a_sigkill_to_pyct_ends_an_import_that_catches_the_stop(tmp_path: Path) 
 
 
 # pyct's process started fresh gives the target the import path a forked one gives it
+@pytest.mark.parametrize(
+    "pyct", [AS_A_MODULE, THROUGH_THE_SCRIPT], ids=["as-a-module", "through-the-script"]
+)
 def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
-    tmp_path: Path,
+    pyct: tuple[str, ...], tmp_path: Path
 ) -> None:
     paths: dict[bool, object] = {}
     for thread in (False, True):
@@ -307,7 +317,7 @@ def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
         told = tmp_path / f"path-{thread}"
         env["PYCT_TEST_PATH"] = str(told)
 
-        result = run_in(env, TELLS_ITS_PATH, '{"x": 0}')
+        result = run_in(env, TELLS_ITS_PATH, '{"x": 0}', pyct=pyct)
 
         assert result.returncode == 0, result.stderr
         paths[thread] = json.loads(told.read_text())

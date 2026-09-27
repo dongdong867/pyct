@@ -37,16 +37,15 @@ C or by catching the stop, the guard ends it by SIGKILL about
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import signal
 import subprocess
 import sys
 import time
 from collections.abc import Callable, Generator, Iterable, Sequence
-from pathlib import Path
 from typing import NoReturn
 
-from pyct.core.branch import PYCT_DIR
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
 from pyct.run.import_watch import ImportWatch
@@ -67,14 +66,13 @@ _NOTED = _PASSED_ON | {signal.SIGINT}
 # names the page's descriptor, and the lifeline's the guard reads, to a command's process
 # started fresh
 _HANDED = "PYCT_WATCHED_BY"
-# what a command's process started fresh runs: the pyct this process runs, as ``python -m pyct``.
-# pyct's root goes on the import path only until pyct is imported, so the target's path is the
-# one a forked command's process gives it
+# what a command's process started fresh runs: this process's import path, which holds the pyct
+# this process runs, and then that pyct, as ``python -m pyct``; so the target's import path is
+# the one a forked command's process gives it
 _BOOT = (
-    "import runpy, sys; root = sys.argv.pop(1); sys.path.insert(0, root); import pyct; "
-    "sys.path.remove(root); runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
+    "import json, runpy, sys; sys.path[:] = json.loads(sys.argv.pop(1)); "
+    "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
-_PYCT_ROOT = str(Path(PYCT_DIR).parent)
 # the signals whose default action writes a core, as POSIX lists them, and SIGEMT where the
 # system has it; the watcher does not end by one of these
 _WRITES_A_CORE = frozenset(
@@ -138,9 +136,10 @@ def launch(command: Command, argv: Sequence[str]) -> int:
 def _spawned(watch: ImportWatch, lifeline: int, argv: Sequence[str], held: Iterable[int]) -> int:
     """Start the command's process as a fresh interpreter, and return its pid.
 
-    It runs the pyct this process runs, with this interpreter's flags, on
-    the same command line. ``-P`` keeps the working directory off the
-    import path while pyct boots, as for a fresh input's interpreter. Its
+    It runs the pyct this process runs, with this interpreter's flags and
+    import path, on the same command line. ``-P`` keeps the working
+    directory off the import path while the boot runs, as for a fresh
+    input's interpreter. Its
     standard streams are this process's own, and it starts with ``held``
     as its mask.
     """
@@ -148,7 +147,7 @@ def _spawned(watch: ImportWatch, lifeline: int, argv: Sequence[str], held: Itera
         os.set_inheritable(fd, True)
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
-    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, *argv]
+    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, json.dumps(sys.path), *argv]
     environment = {**os.environ, _HANDED: f"{watch.fd},{lifeline}"}
     return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
 
