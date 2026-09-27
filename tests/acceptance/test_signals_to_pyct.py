@@ -23,6 +23,7 @@ from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
 
 C_HANG = "targets.isolate.c_hang::stall"
 SLOW_INPUTS = "targets.load.slow_inputs::f"
+SLOW_IMPORT = "targets.load.slow_import::f"
 # how soon after the signal every process of the run must have ended
 ENDED_WITHIN = 1.5
 
@@ -116,3 +117,33 @@ def test_a_sigkill_to_pyct_starts_no_further_input(tmp_path: Path) -> None:
         assert notes_in(notes) <= started + 1
         time.sleep(0.5)
         assert notes_in(notes) <= started + 1
+
+
+# a SIGINT sent to the pid the shell got alone, as a harness sends one, stops an import
+def test_a_sigint_to_pyct_alone_ends_an_import_as_a_ctrl_c_does(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with pyct_in_a_session(SLOW_IMPORT, pid_file) as process:
+        importing = pid_written_to(pid_file, process)
+        sent = time.monotonic()
+        os.kill(process.pid, signal.SIGINT)
+        _, stderr = process.communicate(timeout=10)
+        took = time.monotonic() - sent
+
+        assert process.returncode == -signal.SIGINT, stderr
+        assert stderr.splitlines()[-1] == "KeyboardInterrupt"
+        assert "cannot import" not in stderr
+        assert took < ENDED_WITHIN, took
+        assert not is_running(importing)
+
+
+# a Ctrl-C from the terminal reaches every process of the run once, not twice
+def test_a_ctrl_c_during_an_import_ends_pyct_once(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with pyct_in_a_session(SLOW_IMPORT, pid_file) as process:
+        pid_written_to(pid_file, process)
+        os.killpg(process.pid, signal.SIGINT)
+        _, stderr = process.communicate(timeout=10)
+
+        assert process.returncode == -signal.SIGINT, stderr
+        assert stderr.count("Traceback (most recent call last)") == 1, stderr
+        assert "cannot import" not in stderr

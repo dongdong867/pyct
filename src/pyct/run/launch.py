@@ -10,16 +10,20 @@ names one, the watcher says ``cannot import <module>: <how it ended>``, in
 the words an input's line uses, and exits 1. Otherwise the watcher ends as
 the command's process ended: with its exit code, or by its signal.
 
-A Ctrl-C reaches both processes, since the terminal signals its whole
-foreground group, so the watcher only notes it and the command's process
-ends as it does on any Ctrl-C. A SIGTERM is sent to one process, so the
-watcher notes it and passes it on. The command's process ends on a
-SIGTERM as on a Ctrl-C: it ends its input's process and cvc5 on the way
-out, then ends by the SIGTERM. It ends the same way once the watcher is
-gone, however the watcher went, so a SIGKILL sent to the pid the shell
-got still ends the whole run. When the command's process ends by a
-signal the watcher got too, that ending is the signal's, not the
+The watcher passes on each signal that one process sends another to end
+it, so a signal sent to the pid the shell got ends pyct as it always did.
+A SIGINT waits ``CTRL_C_GRACE`` first. A Ctrl-C reaches both processes,
+since the terminal signals its whole foreground group, and the command's
+process ends on it well within that time. So a SIGINT is passed on only
+when the command's process still runs after it, as it does when the
+SIGINT was sent to the watcher alone. When the command's process ends
+by a signal the watcher got too, that ending is the signal's, not the
 import's, so the watcher ends the same way.
+
+The command's process ends on a SIGTERM as on a Ctrl-C: it ends its
+input's process and cvc5 on the way out, then ends by the SIGTERM. It
+ends the same way once the watcher is gone, however the watcher went, so
+a SIGKILL sent to the pid the shell got still ends the whole run.
 """
 
 from __future__ import annotations
@@ -36,8 +40,16 @@ from pyct.run.child import flush_streams
 from pyct.run.import_watch import ImportWatch
 from pyct.run.process import Child, Waited, how
 
+# the signals the watcher passes on to the command's process as soon as it gets them: those
+# whose default action ends a process and that one process sends another to end it
+_PASSED_ON = frozenset(
+    {signal.SIGHUP, signal.SIGQUIT, signal.SIGTERM, signal.SIGUSR1, signal.SIGUSR2}
+)
+# how long the watcher keeps a SIGINT before it passes it on; a Ctrl-C from the terminal
+# reaches the command's process too and ends it well within this
+CTRL_C_GRACE = 0.5
 # the signals the watcher notes; they are held from before the fork until it does
-_NOTED = frozenset({signal.SIGINT, signal.SIGTERM})
+_NOTED = _PASSED_ON | {signal.SIGINT}
 
 # the command line's work, given the page when a watcher reads it; returns the exit code
 type Command = Callable[[ImportWatch | None], int]
@@ -166,23 +178,33 @@ def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int) -> 
 
 @contextlib.contextmanager
 def _noting(signaled: list[int], child: Child, held: Iterable[int]) -> Generator[None]:
-    """Note each SIGINT and SIGTERM until the block ends, and pass a SIGTERM on to ``child``.
+    """Note each signal in ``_NOTED`` until the block ends, and pass it on to ``child``.
 
-    The handlers go in while both signals are still held from before the
-    fork, so neither ends this process in between; ``held`` is the mask to
-    put back once they are in.
+    A SIGINT goes on ``CTRL_C_GRACE`` after it came, and only when ``child``
+    still runs then, since a Ctrl-C from the terminal reached ``child`` too;
+    the kill timer's SIGALRM says when. Every other signal goes on at once.
+    The handlers go in while the signals are still held from before the
+    fork, so none ends this process in between; ``held`` is the mask to put
+    back once they are in.
     """
 
     def note(number: int, _frame: object) -> None:
         signaled.append(number)
-        if number == signal.SIGTERM:
+        if number == signal.SIGINT:
+            signal.setitimer(signal.ITIMER_REAL, CTRL_C_GRACE)
+        else:
             child.send_if_running(number)
 
+    def pass_on_ctrl_c(_number: int, _frame: object) -> None:
+        child.send_if_running(signal.SIGINT)
+
     previous = {number: signal.signal(number, note) for number in _NOTED}
+    previous[signal.SIGALRM] = signal.signal(signal.SIGALRM, pass_on_ctrl_c)
     signal.pthread_sigmask(signal.SIG_SETMASK, held)
     try:
         yield
     finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
         for number, handler in previous.items():
             signal.signal(number, signal.SIG_DFL if handler is None else handler)
 

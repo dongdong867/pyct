@@ -21,10 +21,21 @@ MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
 
 
+# every signal these tests send, or the watcher takes a handler for
+SIGNALS = (
+    signal.SIGINT,
+    signal.SIGTERM,
+    signal.SIGHUP,
+    signal.SIGUSR1,
+    signal.SIGUSR2,
+    signal.SIGALRM,
+)
+
+
 @pytest.fixture(autouse=True)
 def _handlers_kept() -> Generator[None]:
     """Put back the handlers the watcher takes or resets for the signals these tests send."""
-    kept = {number: signal.getsignal(number) for number in (signal.SIGINT, signal.SIGTERM)}
+    kept = {number: signal.getsignal(number) for number in SIGNALS}
     yield
     for number, handler in kept.items():
         signal.signal(number, handler)
@@ -271,6 +282,36 @@ def test_a_sigterm_ends_the_command_by_sigterm_and_puts_its_handler_back(
     assert raised == [signal.SIGTERM]
     assert code == 128 + signal.SIGTERM
     assert signal.getsignal(signal.SIGTERM) is before
+
+
+def outlasts_the_grace() -> None:
+    """Wait with SIGINT at its default action, so a SIGINT passed on ends the process by it."""
+    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    time.sleep(5)
+    os._exit(9)
+
+
+def test_a_sigint_the_watcher_got_alone_goes_on_after_a_grace(
+    signaled_while_importing: Signaled, raised: list[int], capsys: pytest.CaptureFixture[str]
+) -> None:
+    started = time.monotonic()
+    code = launch(signaled_while_importing(signal.SIGINT, outlasts_the_grace), ARGV)
+
+    # the command's process got no SIGINT of its own, so the watcher's reached it
+    assert raised == [signal.SIGINT]
+    assert code == 128 + signal.SIGINT
+    assert time.monotonic() - started < 2
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("number", [signal.SIGHUP, signal.SIGUSR1, signal.SIGUSR2])
+def test_a_signal_that_ends_a_process_goes_on_at_once(
+    number: int, signaled_while_importing: Signaled, raised: list[int]
+) -> None:
+    code = launch(signaled_while_importing(number, outlasts_the_grace), ARGV)
+
+    assert raised == [number]
+    assert code == 128 + number
 
 
 def test_the_command_runs_in_this_process_when_no_other_can_start(
