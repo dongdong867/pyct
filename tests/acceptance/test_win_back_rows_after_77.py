@@ -57,4 +57,5 @@ def test_a_timeout_sends_the_other_forks_at_its_site_last() -> None:
     aims = [at for at, line in enumerate(events) if line.startswith("aim ")]
     assert len(aims) == 3 and len(timeouts) == 3, result.stderr
     assert max(aims) < timeouts[1], result.stderr
-    assert covered_in(result.stdout, DIGIT_FIELDS_FILE) >= {8, 10, 12}, result.stdout
+    # each field's `return`, which only its `isdigit` flip reaches
+    assert covered_in(result.stdout, DIGIT_FIELDS_FILE) >= {9, 11, 13}, result.stdout

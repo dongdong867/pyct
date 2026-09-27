@@ -99,8 +99,9 @@ class Tree:
         sides on a path that runs it, so a loop that adds a pass on every
         input cannot starve the forks around it, and the seed's last fork is
         the first pick unless its other side already ran (flip-one-fork). The
-        pick is the aim, so the fork is spent whether or not the solver answers. Each order resumes where it last
-        stopped, so a run's picks read each fork at most once in each.
+        pick is the aim, so the fork is spent whether or not the solver
+        answers. Each order resumes where it last stopped, so a run's picks
+        read each fork at most once in each.
         """
         picked = self._next_new_side() or self._next_oldest() or self._next_later()
         if picked is None:
