@@ -1,13 +1,19 @@
-"""The calls pyct substitutes where the target writes them: conversions, `type`, a str's methods.
+"""The calls pyct substitutes where the target writes them: conversions, `type`, `math`
+functions and a str's methods.
 
 - A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
   dot as in `builtins.int(...)`, a call written `map(...)` with one of
-  those three first, and a call written `type(...)` with one argument
-  alone, becomes ``__pyct_call__(int)(...)``: the callee is
+  those three first, a call written `type(...)` with one argument alone,
+  and a call of a function of `math` that pyct routes
+  (`pyct.core.math_calls.NAMES`) through a name the module binds to `math`
+  or to that function alone, `math.sqrt(...)` or `root(...)` after `from
+  math import sqrt as root` (`pyct.intercept.constants`), becomes
+  ``__pyct_call__(int)(...)``: the callee is
   handed to pyct, which hands back pyct's router when it is Python's own
-  builtin and the callee itself otherwise, and that is called with the
+  function and the callee itself otherwise, and that is called with the
   arguments as written. So a name the target binds to its own keeps the
   target's meaning, and its function runs with no frame of pyct's above it.
+  The `math` module itself is never changed.
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
@@ -40,10 +46,11 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion or a str literal's method, or None for any other."""
+    """The call that replaces a conversion, a `math` function or a str literal's method, or None
+    for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
-    if _conversion(node):
+    if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
         return _curried(node, parts)
     if _text_method(node.func, parts):
         callee = parts.named("__pyct_method__", node)
@@ -88,7 +95,9 @@ def _spelled(node: ast.expr) -> str | None:
     return node.attr if isinstance(node, ast.Attribute) else None
 
 
-def _conversion(call: ast.Call) -> bool:
+def _asks_for_its_callee(call: ast.Call) -> bool:
+    """Whether a call is a conversion, a `map` of one or a one-argument `type`, whose callee pyct
+    asks for first."""
     spelled = _spelled(call.func)
     if spelled in _CONVERSIONS:
         return True

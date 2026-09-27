@@ -41,6 +41,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 
+from pyct.core import math_calls
 from pyct.intercept import calls, compiled, constants, operators, positions, substitute
 
 logger = logging.getLogger(__name__)
@@ -106,11 +107,11 @@ def cached(
 
 @functools.cache
 def _version() -> str:
-    """A digest of the code that decides what an entry holds: the transform, its compile, and this
-    module's format."""
+    """A digest of the code that decides what an entry holds: the transform, the `math` names it
+    takes, its compile, and this module's format."""
     digest = hashlib.sha256()
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
-    rules += (positions.__file__,)
+    rules += (positions.__file__, math_calls.__file__)
     for file in (*rules, compiled.__file__, __file__):
         digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]
