@@ -34,8 +34,9 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   │                 Composition root for one run. isolation.py runs each input in a throwaway process
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
 │   ├── intercept/    builtin interception, one import hook: the target's package loads with
-│   │                 `is True` and `in` substituted by calls into core, kept in `.pyct_cache/`
-│   │                 or `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's
+│   │                 a fixed set of operations, `is True`, `in`, conversions and literal
+│   │                 operands, substituted by calls into core, kept in `.pyct_cache/` or
+│   │                 `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's own
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue

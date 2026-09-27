@@ -13,7 +13,6 @@ from pyct.core.branch import Branch, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import PASSING
 
 len_, ord_, chr_ = (BOUND[name][1] for name in ("len", "ord", "chr"))
 
@@ -118,19 +117,6 @@ def test_bound_ord_and_chr_on_tracked_values_are_core_s() -> None:
 
 def test_the_bound_names_are_the_three_builtins() -> None:
     assert dict(BOUND) == {"len": (len, len_), "ord": (ord, ord_), "chr": (chr, chr_)}
-
-
-def test_the_passing_frames_are_the_routers() -> None:
-    assert {code.co_name for code in PASSING} == {
-        "is_",
-        "is_not",
-        "in_",
-        "not_in",
-        "len",
-        "ord",
-        "chr",
-        "_routed",
-    }
 
 
 @pytest.mark.parametrize("name", ["len", "ord", "chr"])

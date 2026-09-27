@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, compare, promoted
+from pyct.core.numbers import (
+    INT_INHERITED,
+    INT_KEPT,
+    answered_first,
+    asked_first,
+    compare,
+    promoted,
+)
 from pyct.core.values import (
     built_plainly,
     copy_as_itself,
@@ -47,13 +54,15 @@ class ConcolicInt(int):
     # int promises a bool from each, and a ConcolicBool is an int that is not a bool,
     # because bool cannot be subclassed; the override breaks that promise on purpose.
     # Each operation on two numbers meets a float as Python's int does, through float's own
-    # (see `numbers.promoted`), so `n < 2.5` is ["<", "n", 2.5] and `n + 0.5` a tracked float
-    __lt__ = compare("<", *promoted(int.__lt__))
-    __le__ = compare("<=", *promoted(int.__le__))
-    __gt__ = compare(">", *promoted(int.__gt__))
-    __ge__ = compare(">=", *promoted(int.__ge__))
-    __eq__ = compare("==", *promoted(int.__eq__))
-    __ne__ = compare("!=", *promoted(int.__ne__))
+    # (see `numbers.promoted`), so `n < 2.5` is ["<", "n", 2.5] and `n + 0.5` a tracked float.
+    # Each one Python would ask an int subclass on the right for first, it asks first too, the
+    # derived downgrades among them (see `numbers.answered_first`)
+    __lt__ = asked_first("__lt__", compare("<", *promoted(int.__lt__)))
+    __le__ = asked_first("__le__", compare("<=", *promoted(int.__le__)))
+    __gt__ = asked_first("__gt__", compare(">", *promoted(int.__gt__)))
+    __ge__ = asked_first("__ge__", compare(">=", *promoted(int.__ge__)))
+    __eq__ = asked_first("__eq__", compare("==", *promoted(int.__eq__)))
+    __ne__ = asked_first("__ne__", compare("!=", *promoted(int.__ne__)))
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = int.__hash__
     __copy__ = copy_as_itself
@@ -61,25 +70,25 @@ class ConcolicInt(int):
     # a pickle holds the plain value and loads as an int, and writing it is a downgrade
     __reduce_ex__, __reduce__ = pickled(int)
 
-    __add__ = numbers.arithmetic("+", *promoted(int.__add__))
+    __add__ = asked_first("__add__", numbers.arithmetic("+", *promoted(int.__add__)))
     __radd__ = numbers.arithmetic("+", *promoted(int.__radd__), reflected=True)
-    __sub__ = numbers.arithmetic("-", *promoted(int.__sub__))
+    __sub__ = asked_first("__sub__", numbers.arithmetic("-", *promoted(int.__sub__)))
     __rsub__ = numbers.arithmetic("-", *promoted(int.__rsub__), reflected=True)
-    __mul__ = numbers.arithmetic("*", *promoted(int.__mul__))
+    __mul__ = asked_first("__mul__", numbers.arithmetic("*", *promoted(int.__mul__)))
     __rmul__ = numbers.arithmetic("*", *promoted(int.__rmul__), reflected=True)
     # `/` answers a float even on two ints, which numbers tracks as a tracked float
-    __truediv__ = numbers.division("/", *promoted(int.__truediv__))
+    __truediv__ = asked_first("__truediv__", numbers.division("/", *promoted(int.__truediv__)))
     __rtruediv__ = numbers.division("/", *promoted(int.__rtruediv__), reflected=True)
-    __floordiv__ = numbers.division("//", *promoted(int.__floordiv__))
+    __floordiv__ = asked_first("__floordiv__", numbers.division("//", *promoted(int.__floordiv__)))
     __rfloordiv__ = numbers.division("//", *promoted(int.__rfloordiv__), reflected=True)
-    __mod__ = numbers.division("%", *promoted(int.__mod__))
+    __mod__ = asked_first("__mod__", numbers.division("%", *promoted(int.__mod__)))
     __rmod__ = numbers.division("%", *promoted(int.__rmod__), reflected=True)
-    __divmod__ = numbers.divmod_of(*promoted(int.__divmod__))
+    __divmod__ = asked_first("__divmod__", numbers.divmod_of(*promoted(int.__divmod__)))
     __rdivmod__ = numbers.divmod_of(*promoted(int.__rdivmod__), reflected=True)
     __neg__ = numbers.unary("-", int.__neg__)
     __abs__ = numbers.unary("abs", int.__abs__)
     # a float exponent is float's own answer, and a downgrade like any power it does not encode
-    __pow__ = numbers.power(promoted(int.__pow__)[0])
+    __pow__ = asked_first("__pow__", numbers.power(promoted(int.__pow__)[0]))
     __pos__ = _itself
     __index__ = _itself
     __trunc__ = _itself
@@ -110,5 +119,5 @@ class ConcolicInt(int):
 # the class body above is everything ConcolicInt teaches. The rest of int, and the `__str__`
 # int inherits, differ only in the name they call and record, so the derivation writes them.
 # An int that Python computes is tracked as a ConcolicInt
-downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT, inherited=INT_INHERITED)
+downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT, inherited=INT_INHERITED, first=answered_first)
 numbers.enter(int, ConcolicInt)

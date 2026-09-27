@@ -203,9 +203,10 @@ def test_records_a_truth_test_where_a_builtin_runs() -> None:
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
-    # `bool()` makes its answer plain where it runs, so `if y:` has nothing left to record
-    assert at(inputs[0], 2) == [["!=", "x", 0]]
-    assert at(inputs[0], 4) == []
+    # a `bool(x)` the code writes holds its condition untested, so its fork is recorded at
+    # `if y:`, where intercept-builtin-functions-records-bool-where-it-is-tested moves it
+    assert at(inputs[0], 2) == []
+    assert at(inputs[0], 4) == [["!=", "x", 0]]
     assert at(inputs[0], 6) == [[">", "x", 5], [">", "z", 5]]
     for expression in (["!=", "x", 0], [">", "x", 5], [">", "z", 5]):
         assert sides(inputs, expression) == {True, False}, expression
@@ -227,7 +228,9 @@ def test_downgrades_an_untaught_bool_operation() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    names = ["__invert__", "__lshift__", "__and__", "__int__", "__str__", "__format__"]
+    # `int(b)` written in the target's package is 1 or 0 with its condition, no longer a
+    # downgrade (intercept-builtin-functions-follows-int-of-a-bool)
+    names = ["__invert__", "__lshift__", "__and__", "__str__", "__format__"]
     assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
     # `str(b)` and the f-string read `True`, so the `if b:` inside them runs and records the fork
     assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [(8, [">", "x", 0])]

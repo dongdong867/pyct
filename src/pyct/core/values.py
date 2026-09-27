@@ -120,8 +120,8 @@ def downgraded(
     Such a replacement may turn its arguments into plain values, and it is
     what takes and refuses them. The downgrade is still named ``name``.
     ``first`` answers a call on one argument before the base type does,
-    when it has an answer, and that answer comes back with no downgrade of
-    pyct's own.
+    when it has an answer, and that answer comes back as it is: ``first``
+    names any downgrade it makes.
     """
     operation = getattr(base, name) if calling is None else calling
 
