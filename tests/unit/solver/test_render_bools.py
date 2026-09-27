@@ -6,7 +6,8 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.cvc5 import Sat, Unsat, solve
-from pyct.solver.render import render
+from pyct.solver.render import program
+from tests.unit.solver.test_render import BOOL_TERMS, TYPED_LEAVES, _head
 
 SITE = Site(file="m.py", line=2, col=7)
 ABOVE: Expression = [">", "x", 0]
@@ -17,22 +18,30 @@ INTS: dict[str, type] = {"x": int, "y": int}
 WRITTEN: dict[str, tuple[Expression, str]] = {
     "a count of conditions": (
         ["==", ["+", ABOVE, BELOW], 2],
-        "(= (+ (ite (> x 0) 1 0) (ite (> y 0) 1 0)) 2)",
+        "(= (+ (ite (> |arg.x| 0) 1 0) (ite (> |arg.y| 0) 1 0)) 2)",
     ),
-    "a true literal in a sum": ([">", ["+", "x", True], 5], "(> (+ x 1) 5)"),
-    "an int equal to a false literal": (["==", "x", False], "(= x 0)"),
-    "a bool equal to an int": (["==", ABOVE, 1], "(= (ite (> x 0) 1 0) 1)"),
-    "an order on two bools": (["<", ABOVE, BELOW], "(< (ite (> x 0) 1 0) (ite (> y 0) 1 0))"),
-    "a negated bool": (["<", ["-", ABOVE], 0], "(< (- (ite (> x 0) 1 0)) 0)"),
-    "a power of a literal": (["==", ["**", "x", True], 3], "(= (^ x 1) 3)"),
-    "and": (["&", ABOVE, BELOW], "(and (> x 0) (> y 0))"),
-    "or": (["|", ABOVE, BELOW], "(or (> x 0) (> y 0))"),
-    "xor": (["^", ABOVE, BELOW], "(xor (> x 0) (> y 0))"),
-    "and with a literal": (["&", ABOVE, True], "(and (> x 0) true)"),
-    "two bools equal": (["==", ABOVE, BELOW], "(= (> x 0) (> y 0))"),
-    "two bools unequal": (["!=", ABOVE, BELOW], "(distinct (> x 0) (> y 0))"),
-    "a bool equal to a literal": (["==", ABOVE, True], "(= (> x 0) true)"),
+    "a true literal in a sum": ([">", ["+", "x", True], 5], "(> (+ |arg.x| 1) 5)"),
+    "an int equal to a false literal": (["==", "x", False], "(= |arg.x| 0)"),
+    "a bool equal to an int": (["==", ABOVE, 1], "(= (ite (> |arg.x| 0) 1 0) 1)"),
+    "an order on two bools": (
+        ["<", ABOVE, BELOW],
+        "(< (ite (> |arg.x| 0) 1 0) (ite (> |arg.y| 0) 1 0))",
+    ),
+    "a negated bool": (["<", ["-", ABOVE], 0], "(< (- (ite (> |arg.x| 0) 1 0)) 0)"),
+    "a power of a literal": (["==", ["**", "x", True], 3], "(= (^ |arg.x| 1) 3)"),
+    "and": (["&", ABOVE, BELOW], "(and (> |arg.x| 0) (> |arg.y| 0))"),
+    "or": (["|", ABOVE, BELOW], "(or (> |arg.x| 0) (> |arg.y| 0))"),
+    "xor": (["^", ABOVE, BELOW], "(xor (> |arg.x| 0) (> |arg.y| 0))"),
+    "and with a literal": (["&", ABOVE, True], "(and (> |arg.x| 0) true)"),
+    "two bools equal": (["==", ABOVE, BELOW], "(= (> |arg.x| 0) (> |arg.y| 0))"),
+    "two bools unequal": (["!=", ABOVE, BELOW], "(distinct (> |arg.x| 0) (> |arg.y| 0))"),
+    "a bool equal to a literal": (["==", ABOVE, True], "(= (> |arg.x| 0) true)"),
 }
+
+
+def render(prefix: tuple[Branch, ...], leaves: dict[str, type]) -> str:
+    """The program's text alone: the table that reads the answer back is not what these check."""
+    return program(prefix, leaves).text
 
 
 def _asserted(expression: Expression) -> str:
@@ -46,13 +55,23 @@ def test_a_bool_meets_an_int_as_the_int_1_or_0(expression: Expression, term: str
     assert _asserted(expression) == f"(assert {term})"
 
 
+@pytest.mark.parametrize("term", BOOL_TERMS, ids=[_head(term) for term in BOOL_TERMS])
+def test_a_head_that_builds_a_bool_is_ordered_as_the_int_1_or_0(term: Expression) -> None:
+    text = render((Branch(expression=["<", term, "n"], taken=True, site=SITE),), TYPED_LEAVES)
+
+    # Python orders a bool as the int it is, so the term is read as 1 or 0
+    assert next(line for line in text.splitlines() if line.startswith("(assert ")).startswith(
+        "(assert (< (ite "
+    )
+
+
 def test_a_division_by_a_bool_divides_by_1_or_0() -> None:
     text = render((Branch(expression=["==", ["//", 10, ABOVE], 10], taken=True, site=SITE),), INTS)
 
     # a form's operand is defined once, as the bool it is, and the form reads it as a number
     divisor = "(ite e!0 1 0)"
     assert text.splitlines()[2:4] == [
-        "(define-fun e!0 () Bool (> x 0))",
+        "(define-fun e!0 () Bool (> |arg.x| 0))",
         f"(assert (= (ite (or (> {divisor} 0) (= (mod 10 {divisor}) 0))"
         f" (div 10 {divisor}) (- (div 10 {divisor}) 1)) 10))",
     ]
@@ -81,8 +100,8 @@ def test_a_division_of_two_bools_divides_their_numbers(expression: Expression, t
     text = render((Branch(expression=expression, taken=True, site=SITE),), INTS)
 
     assert text.splitlines()[3:6] == [
-        "(define-fun e!0 () Bool (> x 0))",
-        "(define-fun e!1 () Bool (> y 0))",
+        "(define-fun e!0 () Bool (> |arg.x| 0))",
+        "(define-fun e!1 () Bool (> |arg.y| 0))",
         f"(assert {term})",
     ]
 
@@ -143,7 +162,7 @@ def test_a_bool_held_twice_is_defined_once_as_a_bool() -> None:
 
     lines = render(prefix, INTS).splitlines()
 
-    assert "(define-fun e!0 () Bool (> x 0))" in lines
+    assert "(define-fun e!0 () Bool (> |arg.x| 0))" in lines
     assert "(assert e!0)" in lines
     assert "(assert (= (+ (ite e!0 1 0) (ite e!0 1 0)) 2))" in lines
 

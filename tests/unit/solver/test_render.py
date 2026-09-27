@@ -452,14 +452,6 @@ def test_a_head_that_builds_a_str_is_ordered_as_a_str(term: Expression) -> None:
     assert _asserted(text).startswith("(assert (str.< ")
 
 
-@pytest.mark.parametrize("term", BOOL_TERMS, ids=[_head(term) for term in BOOL_TERMS])
-def test_a_head_that_builds_a_bool_is_ordered_as_the_int_1_or_0(term: Expression) -> None:
-    text = render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
-
-    # Python orders a bool as the int it is, so the term is read as 1 or 0
-    assert _asserted(text).startswith("(assert (< (ite ")
-
-
 def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
     with pytest.raises(ValueError, match="position"):
         render((fork(["==", ["[]", "s", "n"], "'a'"], taken=True),), {"s": str, "n": int})
