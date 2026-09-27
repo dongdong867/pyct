@@ -28,11 +28,11 @@ LIMIT = 1000
 # the head of a cut part, `["...", N]`
 CUT = "..."
 
-# the most steps counting a line's cut parts may take (see `_Steps`). Where it was measured, a
-# step took at most about 0.12 µs, and counting that spent them all took 0.25 s at most. That
-# still counts every cut part of the loops the tests run: the edit loop at 2,000 passes in
-# about 114,000 steps, a chain with a fork on each of 20,000 steps in about 230,000, and
-# 40,000 characters gathered into one string, the most, in about 1.73 million
+# the most steps counting a line's cut parts may take (see `_Steps`). On the two machines it
+# was measured on, a step took 0.12 to 0.23 µs, and counting that spent them all took 0.25 to
+# 0.5 s. Measured, not tested, the budget counts every cut part of these loops: the edit loop
+# at 2,000 passes in about 114,000 steps, a chain with a fork on each of 20,000 steps in about
+# 230,000, and 40,000 characters gathered into one string, the most, in about 1.73 million
 COUNTING_STEPS = 2**21
 
 # what a cut part costs on the line: its list and the count it carries
