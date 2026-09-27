@@ -347,6 +347,7 @@
     {"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}},
     {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}},
+    {"set": "v2", "target": "targets.strs.digit_checksum::checksum", "seed": {"number": "41111111"}},
     {"set": "v2", "target": "targets.strs.empty_needle::past", "seed": {"s": "abc", "n": 0}},
     {"set": "v2", "target": "targets.strs.encode_check::check", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.encode_forms::encode_three_ways", "seed": {"s": "abc"}},
