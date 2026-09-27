@@ -10,7 +10,7 @@ import os
 import signal
 import threading
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 from typing import NoReturn
 
 import pytest
@@ -310,6 +310,24 @@ def test_a_command_that_catches_the_stop_and_returns_still_ends_by_sigterm(
         return 0
 
     assert launch(catches, ARGV) == 128 + signal.SIGTERM
+    assert raised == [signal.SIGTERM]
+
+
+def test_a_stop_that_lands_as_the_handler_comes_off_still_ends_by_sigterm(
+    monkeypatch: pytest.MonkeyPatch, raised: list[int]
+) -> None:
+    # a SIGTERM that lands while the handler goes in or comes off escapes the command's own
+    # catch, as Python runs a pending handler inside signal.signal
+    no_process_starts(monkeypatch)
+
+    def stopped_outside(command: object, watch: object, held: Iterable[int]) -> int:
+        # the mask comes back first, as it does before the handler can run
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        raise Stopped
+
+    monkeypatch.setattr(launch_module, "_stoppable", stopped_outside)
+
+    assert launch(lambda watch: 0, ARGV) == 128 + signal.SIGTERM
     assert raised == [signal.SIGTERM]
 
 

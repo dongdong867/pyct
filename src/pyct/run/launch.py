@@ -192,7 +192,11 @@ def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> 
     need not block SIGTERM, so a SIGTERM before its handler takes the
     default action and ends it, as a stop would.
     """
-    code = _stoppable(command, watch, held)
+    try:
+        code = _stoppable(command, watch, held)
+    except Stopped:
+        # a SIGTERM that landed as the handler went in or came off, where Python runs it
+        code = None
     return _end_by(signal.SIGTERM) if code is None else code
 
 
