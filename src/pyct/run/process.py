@@ -48,7 +48,7 @@ class InputStartError(Exception):
 
 @dataclass(frozen=True)
 class Waited:
-    """How the input's process ended, as the system reported it, and whether pyct ended it.
+    """How a process pyct started ended, as the system reported it, and whether pyct ended it.
 
     ``signal`` is the number of the signal that ended it, and ``code`` its
     exit code when it exited instead.
