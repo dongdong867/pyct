@@ -36,6 +36,8 @@ class Leaves:
     # what `named` answered for each list part, by its identity: a path reads each part many
     # times, and an access is written out as JSON to be looked up
     _names: dict[int, str | None] = field(default_factory=dict, compare=False)
+    # the access each part reads as, whether or not the seed holds it (see ``access_name``)
+    _accesses: dict[int, str | None] = field(default_factory=dict, compare=False)
 
     def named(self, part: Expression) -> str | None:
         """The name of the leaf a part of a condition is, or None for a literal or an operation.
@@ -51,7 +53,7 @@ class Leaves:
         if not isinstance(part, list):
             return None
         if id(part) not in self._names:
-            name = access_name(part)
+            name = access_name(part, self._accesses)
             known = name in self.kinds or name in self.lists or name in self.dicts
             self._names[id(part)] = name if known else None
         return self._names[id(part)]

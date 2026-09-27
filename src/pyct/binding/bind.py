@@ -1,7 +1,7 @@
 """Turn a seed dict into the arguments the target is called with."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
 from typing import TypeGuard
 
@@ -183,7 +183,9 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
 _STEPS = frozenset({"[]"})
 
 
-def access_name(part: Expression) -> str | None:
+def access_name(
+    part: Expression, known: MutableMapping[int, str | None] | None = None
+) -> str | None:
     """The leaf name of a part of a condition that reads as an access, or None for any other.
 
     Only a chain of the steps the walk takes, each key not a list, down to a
@@ -192,13 +194,24 @@ def access_name(part: Expression) -> str | None:
     that holds a long or shared expression costs a step or two, not the
     expression written out. Whether the seed holds that access is the
     caller's to ask.
+
+    ``known`` holds the name found for each part already asked about, by its identity: the
+    loop stops at one, so a path that names every access of a deep chain reads each step once.
+    The answer goes into it.
     """
+    memo: MutableMapping[int, str | None] = {} if known is None else known
+    if id(part) in memo:
+        return memo[id(part)]
     step: Expression = part
-    while _is_step(step):
+    while _is_step(step) and id(step[1]) not in memo:
         step = step[1]
-    if step is part or not isinstance(step, str):
-        return None
-    return leaf_name(part)
+    below = step[1] if _is_step(step) else step
+    if _is_step(step):
+        reached = memo[id(below)] is not None
+    else:
+        reached = step is not part and isinstance(step, str)
+    memo[id(part)] = name = leaf_name(part) if reached else None
+    return name
 
 
 def _is_step(part: Expression) -> TypeGuard[list[Expression]]:

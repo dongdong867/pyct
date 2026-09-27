@@ -138,12 +138,7 @@ class DictTerms(Keyed):
     def of(self, part: Expression) -> Tracked | None:
         """The dict a part is, when the seed names one there. An access is written out as JSON
         to be looked up, so each part's name is worked out once."""
-        if isinstance(part, str):
-            name: str | None = part
-        elif id(part) in self._names:
-            name = self._names[id(part)]
-        else:
-            name = self._names[id(part)] = access_name(part)
+        name = part if isinstance(part, str) else access_name(part, self._names)
         if name is None or name not in self.shapes:
             return None
         if name not in self.dicts:

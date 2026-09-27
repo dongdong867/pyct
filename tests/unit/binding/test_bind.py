@@ -408,3 +408,16 @@ def test_a_dict_the_walk_names_is_tracked_under_its_access_and_one_it_cannot_nam
     assert isinstance(by, dict)
     inner = dict.__getitem__(by, 1.5)
     assert type(inner) is dict and type(inner["a"]) is int
+
+
+def test_access_name_reads_each_step_once_given_what_it_already_named() -> None:
+    inner: Expression = ["[]", "config", "'a'"]
+    outer: Expression = ["[]", inner, "'b'"]
+    not_one: Expression = ["+", "x", 1]
+    known: dict[int, str | None] = {}
+
+    assert access_name(inner, known) == leaf_name(inner)
+    assert access_name(outer, known) == leaf_name(outer) == access_name(outer, known)
+    assert access_name(["[]", not_one, 0], known) is None
+    assert access_name(["[]", ["[]", not_one, 0], 1], known) is None
+    assert access_name("x", known) is None
