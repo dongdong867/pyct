@@ -46,10 +46,9 @@ import sys
 import time
 from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NoReturn
 
-from pyct.core.branch import PYCT_DIR
+from pyct.core.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
 from pyct.run.import_watch import ImportWatch
@@ -79,8 +78,6 @@ _BOOT = (
     "sys.path[:] = json.loads(sys.argv.pop(1)); "
     "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
-# the folder that holds the pyct this process runs
-_PYCT_ROOT = str(Path(PYCT_DIR).parent)
 # the signals whose default action writes a core, as POSIX lists them, and SIGEMT where the
 # system has it; the watcher does not end by one of these
 _WRITES_A_CORE = frozenset(
@@ -158,19 +155,19 @@ class _Lifeline:
 def _spawned(watch: ImportWatch, argv: Sequence[str], held: Iterable[int]) -> int:
     """Start the command's process as a fresh interpreter, and return its pid.
 
-    It runs the pyct this process runs, imported from where this process
-    imported it, and then takes this interpreter's flags and import path,
-    on the same command line. ``-P`` keeps the working directory off the
-    import path while the boot runs, as for a fresh input's interpreter. Its
-    standard streams are this process's own, and it starts with ``held``
-    as its mask.
+    It runs with this interpreter's flags. It imports the pyct this process
+    runs from where this process imported it, then takes this process's
+    import path and runs that pyct on the same command line. ``-P`` keeps
+    the working directory off the import path while the boot runs, as for a
+    fresh input's interpreter. Its standard streams are this process's own,
+    and it starts with ``held`` as its mask.
     """
     os.set_inheritable(watch.fd, True)
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
     # import reads only the str entries, and so does the fresh process
     path = [entry for entry in sys.path if isinstance(entry, str)]
-    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, json.dumps(path), *argv]
+    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, PYCT_ROOT, json.dumps(path), *argv]
     environment = {**os.environ, _HANDED: str(watch.fd)}
     return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
 

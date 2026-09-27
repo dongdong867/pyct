@@ -32,11 +32,10 @@ import sys
 import tempfile
 from collections.abc import Generator, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import NoReturn
 
 from pyct.binding.call import positional_only
-from pyct.core.branch import PYCT_DIR
+from pyct.core.branch import PYCT_ROOT
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
@@ -50,7 +49,6 @@ _BOOT = (
     "import sys; sys.path.insert(0, sys.argv[1]); from pyct.run.fresh import main; "
     "main(int(sys.argv[2]), int(sys.argv[3]))"
 )
-_PYCT_ROOT = str(Path(PYCT_DIR).parent)
 
 
 # the largest seed PYTHONHASHSEED takes
@@ -162,7 +160,7 @@ def _command(request: int, journal: int) -> list[str]:
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     given = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
     flags = ["-s" if flag == "-I" else flag for flag in given if flag != "-E"]
-    return [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, str(request), str(journal)]
+    return [sys.executable, *flags, "-P", "-c", _BOOT, PYCT_ROOT, str(request), str(journal)]
 
 
 def _environment(hash_seed: str) -> dict[str, str]:
