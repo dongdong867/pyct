@@ -4,7 +4,7 @@ a module ends it or stalls it.
 The lister runs in a session of its own, so its process group holds every
 process a module's import started, and the whole group is killed once sweep
 is done with it, as the compare tool learned. Its facts come over a pipe,
-read with a limit: when no fact comes for ``GRACE`` seconds, the module it
+read with a limit: when no fact comes for the grace, the module it
 was importing gets a failed row and a new lister starts after it. Reading
 also watches for the lister's end, so a process a module left holding the
 pipe cannot keep sweep waiting.
@@ -14,22 +14,18 @@ import contextlib
 import json
 import os
 import select
-import signal
 import subprocess
 import sys
 import time
-from collections.abc import Generator
 from dataclasses import dataclass
 
-from pyct.run.process import Waited, how
+from pyct.run.process import how
+from pyct.sweep.process import Where, started, waited_of
 from pyct.sweep.rows import Row, Status
 
 # the lister, started with sweep's own interpreter; -P keeps a folder named pyct in the working
 # directory from standing in for pyct, and the lister puts that directory on the path itself
 LISTER: tuple[str, ...] = (sys.executable, "-P", "-m", "pyct.sweep.lister")
-
-# how long the lister may go with no fact: the limit on one module's import
-GRACE = 60.0
 
 # how often a wait for a fact looks at whether the lister has ended
 POLL = 0.05
@@ -42,10 +38,6 @@ class PackageImportError(Exception):
     """The package itself did not import. The message says so, and how its import ended."""
 
 
-class _HangUpError(BaseException):
-    """A SIGHUP, raised so the lister is stopped before sweep ends by it."""
-
-
 @dataclass(frozen=True)
 class Heard:
     """What one lister said: its rows, and the module it stopped on and how, unless it finished."""
@@ -55,22 +47,24 @@ class Heard:
 
 
 def list_package(
-    package: str, *, grace: float = GRACE, lister: tuple[str, ...] = LISTER
+    package: str, *, grace: float, lister: tuple[str, ...] = LISTER
 ) -> tuple[Row, ...]:
     """Every row of the package, one per module and entry name, in order.
 
+    ``grace`` is how long the lister may go with no fact: the limit on one
+    module's import (``SweepLimits.grace``).
+
     An entry several modules export is one row. Raises ``PackageImportError``
     when the package itself does not import, since then nothing is swept. A
-    Ctrl-C, or the ``Stopped`` a SIGTERM raises in the command's process (see
-    ``pyct.run.launch``), stops the lister on its way out. A SIGHUP ends the
-    sweep by the SIGHUP, with the lister stopped too. Like a Ctrl-C's
-    handling, this needs the main thread.
+    Ctrl-C, the ``Stopped`` a SIGTERM raises in the command's process (see
+    ``pyct.run.launch``), or a SIGHUP under
+    ``pyct.sweep.process.hangup_stops_children`` stops the lister on its way
+    out.
     """
     kept: dict[tuple[str, str], Row] = {}
     after: str | None = None
     while True:
-        with _sighup_stops_the_lister():
-            heard = _listen(package, after, grace, lister)
+        heard = _listen(package, after, grace, lister)
         for row in heard.rows:
             kept.setdefault(row.order, row)
         if heard.stuck is None:
@@ -82,53 +76,13 @@ def list_package(
         after = module
 
 
-@contextlib.contextmanager
-def _sighup_stops_the_lister() -> Generator[None]:
-    """Stop the lister before a SIGHUP ends sweep, then put the old handler back.
-
-    The lister leads a session of its own, so the SIGHUP a closing terminal
-    sends never reaches it, and ending sweep by the SIGHUP's default action
-    would leave it running, forever if an import hangs. So the SIGHUP raises
-    inside the block, the ``finally`` that stops the lister's group runs, and
-    the sweep then ends by the SIGHUP itself. A SIGHUP already ignored, as
-    ``nohup`` ignores it, stays so. A SIGTERM needs nothing here: the
-    command's process raises ``Stopped`` for it, which the same ``finally``
-    meets.
-    """
-    previous = signal.getsignal(signal.SIGHUP)
-    if previous is signal.SIG_DFL:
-        signal.signal(signal.SIGHUP, _hang_up)
-    try:
-        yield
-    except _HangUpError:
-        signal.signal(signal.SIGHUP, signal.SIG_DFL)
-        signal.raise_signal(signal.SIGHUP)
-        raise
-    finally:
-        signal.signal(signal.SIGHUP, signal.SIG_DFL if previous is None else previous)
-
-
-def _hang_up(number: int, frame: object) -> None:
-    """Raise so the lister is stopped. A closing terminal can send a second SIGHUP, which is
-    ignored from here on so it cannot cut that short; the sweep then ends by the SIGHUP."""
-    signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    raise _HangUpError
-
-
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:
     """Start one lister, hear it out, and stop its whole process group."""
     argv = [*lister, package, *(() if after is None else ("--after", after))]
-    process = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    try:
-        return _heard(_Lines(process), package, grace)
-    finally:
-        _stop(process)
+    with started(argv, Where(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+        assert process.stdout is not None
+        with process.stdout:
+            return _heard(_Lines(process), package, grace)
 
 
 def _heard(lines: "_Lines", package: str, grace: float) -> Heard:
@@ -196,9 +150,7 @@ class _Lines:
         code = self.process.poll()
         if code is None:
             return f"did not finish in {grace:g} s"
-        if code < 0:
-            return how(Waited(signal=-code, code=None))
-        return how(Waited(signal=None, code=code))
+        return how(waited_of(code))
 
     def _ended(self) -> bool:
         """The lister has exited and nothing it wrote is left to read."""
@@ -217,16 +169,3 @@ class _Lines:
             chunk = os.read(self.fd, CHUNK)
             self.buffer += chunk
             self.closed = not chunk
-
-
-def _stop(process: subprocess.Popen[bytes]) -> None:
-    """Kill the lister's whole process group and reap the lister.
-
-    A group with no process left needs nothing; on macOS a group whose only
-    member has exited but is not yet reaped refuses the signal.
-    """
-    with contextlib.suppress(ProcessLookupError, PermissionError):
-        os.killpg(process.pid, signal.SIGKILL)
-    process.wait()
-    if process.stdout is not None:
-        process.stdout.close()

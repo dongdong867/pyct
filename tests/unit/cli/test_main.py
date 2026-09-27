@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 from pathlib import Path
 
@@ -5,6 +6,8 @@ import pytest
 
 from pyct import cli
 from pyct.cli import main
+from pyct.sweep.result import SweepLimits, SweepResult, SweepStop
+from pyct.sweep.sweep import Mode, SweepTell
 from tests.acceptance.harness import (
     input_lines,
     let_pyct_run_in_process,
@@ -178,14 +181,58 @@ def test_main_asks_for_a_missing_seed_after_the_import_and_before_the_seed_check
     assert capsys.readouterr().out == ""
 
 
-def test_sweep_needs_the_list_flag_until_it_can_run_entries(
-    capsys: pytest.CaptureFixture[str],
+def sweeps_seen(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Each sweep main asks for, in place of one, which finds nothing."""
+    seen: list[dict[str, object]] = []
+
+    def sweep(package: str, *, limits: SweepLimits, mode: Mode, tell: SweepTell) -> SweepResult:
+        seen.append({"package": package, "limits": limits, "mode": mode})
+        return SweepResult(package, (), SweepStop.DONE, limits)
+
+    monkeypatch.setattr(cli, "sweep", sweep)
+    return seen
+
+
+def test_a_sweep_runs_its_entries_with_the_default_limits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    assert main(["sweep", "targets.sweep.shop"]) == 2
+    seen = sweeps_seen(monkeypatch)
+
+    assert main(["sweep", "p.q"]) == 0
+    assert seen == [{"package": "p.q", "limits": SweepLimits(), "mode": Mode.RUN}]
+    assert json.loads(capsys.readouterr().out)["swept"] == "p.q"
+
+
+def test_a_sweep_passes_on_the_limits_it_was_given_and_whether_to_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen = sweeps_seen(monkeypatch)
+    argv = ["--budget", "20", "--plateau", "3", "--solver-timeout", "1", "--total-budget", "9"]
+
+    assert main(["sweep", "p", "--list", *argv]) == 0
+    limits = SweepLimits(budget=20.0, plateau=3, solver_timeout=1.0, total_budget=9.0)
+    assert seen == [{"package": "p", "limits": limits, "mode": Mode.LIST}]
+
+
+@pytest.mark.parametrize("package", ["shop/", "shop.py", "a..b", ""])
+def test_a_sweep_refuses_a_package_that_is_no_module_name(
+    package: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert main(["sweep", package]) == 2
 
     said = capsys.readouterr()
     assert said.out == ""
-    assert said.err.startswith("pyct sweep runs no entry yet; pass --list\n")
+    assert said.err == f"PACKAGE must be a module name, got {package!r}\n"
+
+
+def test_a_sweep_refuses_a_total_budget_in_the_budgets_words(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["sweep", "p", "--total-budget", "0"]) == 2
+
+    said = capsys.readouterr()
+    assert said.out == ""
+    assert said.err == "total budget must be a finite number of seconds above zero, got '0'\n"
 
 
 def test_sweep_lists_a_package_without_opening_the_interception(
