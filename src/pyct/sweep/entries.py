@@ -18,6 +18,7 @@ own body defines under a public name is listed too, and skipped until
 
 import inspect
 import os
+import pkgutil
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -56,9 +57,12 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
     Reading a name can run the module's code, a lazy attribute or a
     ``__class__`` property, and raise though the import did not. Such a name
     holds no entry, and the first one is kept, with Python's own words, so
-    the module's row can say which name and why. The module is named as the
-    walk reached it, since an object a module put in its own place may have
-    no ``__name__``.
+    the module's row can say which name and why. A package's ``__all__`` may
+    name a module below it that the package does not import, as
+    ``from package import *`` would import it; that name is no error, since
+    the walk lists the module on its own. The module is named as the walk
+    reached it, since an object a module put in its own place may have no
+    ``__name__``.
     """
     found = _Package(package)
     entries: list[Entry] = []
@@ -67,7 +71,8 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
         try:
             entries.extend(found.entries(module, found_in, name))
         except Exception as error:
-            unread = unread or f"{found_in}::{name}: {error!r}"
+            if name not in _modules_below(module):
+                unread = unread or f"{found_in}::{name}: {error!r}"
     return Reading(entries, unread)
 
 
@@ -82,6 +87,12 @@ def package_path(module: ModuleType) -> list[str] | None:
     except TypeError:
         return None
     return None if path is None else list(path)
+
+
+def _modules_below(module: ModuleType) -> set[str]:
+    """The names of the modules one level below a package, or none for a plain module."""
+    path = package_path(module)
+    return set() if path is None else {found.name for found in pkgutil.iter_modules(path)}
 
 
 def public_names(module: ModuleType) -> list[str]:
