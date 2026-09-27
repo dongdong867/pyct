@@ -184,6 +184,15 @@ PROGRAMS: dict[str, str] = {
     "text name rebound through globals": (
         "TEXT = 'xyz'\nglobals()['TEXT'] = note('a', a)\nanswer = TEXT.find(note('b', b))"
     ),
+    # the value a `return` in a `__bool__` method hands over, each value `and` picks too
+    "bool method return": (
+        "class Held(metaclass=Logging):\n    def __bool__(self):\n        return note('a', a)\n"
+        "answer = 'yes' if Held() else 'no'"
+    ),
+    "bool method and": (
+        "class Held:\n    def __bool__(self):\n        return note('a', a) and note('b', b)\n"
+        "answer = not Held()"
+    ),
 }
 
 
