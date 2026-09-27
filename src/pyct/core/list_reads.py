@@ -30,23 +30,23 @@ def plain_index(key: object) -> int | None:
     return None
 
 
-def long_enough(self: ListState, index: int) -> bool:
+def long_enough(self: ListState, index: int, name: str = "__getitem__") -> bool:
     """Record whether the list holds a plain ``index``, and answer it."""
     measured: Expression = ["len", self.expression]
     length = self.length()
     if index >= 0:
-        return forked(self.sink, [">", measured, index], length > index)
-    return forked(self.sink, [">=", measured, -index], length >= -index)
+        return forked(self.sink, [">", measured, index], length > index, name)
+    return forked(self.sink, [">=", measured, -index], length >= -index, name)
 
 
-def tracked_long_enough(self: ListState, index: ConcolicInt) -> bool:
+def tracked_long_enough(self: ListState, index: ConcolicInt, name: str = "__getitem__") -> bool:
     """Record whether the list holds a tracked ``index``, in two forks, and answer it."""
     measured: Expression = ["len", self.expression]
     value = int.__int__(index)
     length = self.length()
-    if not forked(self.sink, [">", measured, index.expression], length > value):
+    if not forked(self.sink, [">", measured, index.expression], length > value, name):
         return False
-    return forked(self.sink, [">=", measured, ["-", index.expression]], length >= -value)
+    return forked(self.sink, [">=", measured, ["-", index.expression]], length >= -value, name)
 
 
 def handed(self: ListState, position: int, written: Expression, name: str) -> object:
@@ -89,9 +89,9 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
             row.expression = wanted
 
 
-def more(self: ListState, at: int) -> bool:
+def more(self: ListState, at: int, name: str) -> bool:
     """The walk's fork for step ``at``: whether the list holds an item there."""
-    return forked(self.sink, [">", ["len", self.expression], at], at < self.length())
+    return forked(self.sink, [">", ["len", self.expression], at], at < self.length(), name)
 
 
 def walk(self: ListState) -> Iterator[object]:
@@ -108,7 +108,7 @@ def walk(self: ListState) -> Iterator[object]:
 def _walked(self: ListState) -> Iterator[object]:
     at = 0
     while self.holds("__iter__", at):
-        if not more(self, at):
+        if not more(self, at, "__iter__"):
             return
         yield handed(self, at, at, "__iter__")
         at += 1
@@ -130,7 +130,7 @@ def backward(self: ListState) -> Iterator[object]:
 def _backward(self: ListState, size: int) -> Iterator[object]:
     step = 0
     while self.holds("__reversed__", size - 1 - step) and self.length() == size:
-        if not more(self, step):
+        if not more(self, step, "__reversed__"):
             return
         yield handed(self, size - 1 - step, -(step + 1), "__reversed__")
         step += 1

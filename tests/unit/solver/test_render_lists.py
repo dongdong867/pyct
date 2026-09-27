@@ -3,19 +3,22 @@ and answered back as each list's new length and the items a fork read."""
 
 import json
 import time
+from typing import Any
 
 import pytest
 
 from pyct.binding.annotations import Items
-from pyct.binding.bind import Seed
+from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
 from pyct.binding.shapes import ArrayValue, ListShape
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Expression, SinkItem, Site
+from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Sat, SolverAnswerError, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.declared import Program
 from pyct.solver.list_reader import RenderTimeError
 from pyct.solver.list_terms import FALSE, TRUE, Lin, both, either, ite
-from pyct.solver.lists import UnencodedError
+from pyct.solver.lists import Origin, UnencodedError
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
 
@@ -282,3 +285,140 @@ def test_a_list_changed_in_place_at_a_plain_index_is_written_in_one_row() -> Non
     text = program(tuple(forks), {}, {"items": ListShape(("int",), fill="int")}).text
 
     assert time.perf_counter() - started < 0.5 and len(text) < 50_000
+
+
+def _changed(change: str, times: int) -> tuple[Seed, tuple[Branch, ...]]:
+    """The path of ``times`` changes of one kind to a tracked list, then a fork on an item,
+    the fork flipped, and the input it came from."""
+    args: dict[str, object] = {"items": [1, 2, 3], "i": 1}
+    sink: list[SinkItem] = []
+    bound = bind(args, sink)
+    items: Any = bound["items"]
+    i = bound["i"]
+    for value in range(times):
+        if change == "slice assignment":
+            items[1:2] = [value]
+        elif change == "slice deletion":
+            items.insert(1, value)
+            del items[1:2]
+        else:
+            items[i] = value
+    bool(items[2] > 100)
+    forks = [item for item in sink if isinstance(item, Branch)]
+    last = forks[-1]
+    return Seed.of(args), (*forks[:-1], Branch(last.expression, not last.taken, last.site))
+
+
+@needs_cvc5
+@pytest.mark.parametrize("change", ["slice assignment", "slice deletion", "tracked index"])
+def test_a_list_changed_at_slices_or_a_tracked_index_many_times_renders_in_a_row(
+    change: str,
+) -> None:
+    seed, path = _changed(change, 24)
+
+    started = time.perf_counter()
+    text = program(path, seed.leaves, seed.lists, None, Origin(seed.values, settle=True)).text
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+    spent = time.perf_counter() - started
+
+    assert len(text) < 100_000, len(text)
+    assert isinstance(answer, Sat), answer
+    assert spent < 5, spent
+    # the answer takes the path: the item past the changes is the input's own, raised
+    solved: Any = apply(seed, answer.model).args
+    assert solved["items"][2] > 100
+
+
+REPEATED: Expression = ["*", "items", 600_000]
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("longer_than", "answer"),
+    [
+        # the input's own ten items are allowed: the repeat's hold never binds under them
+        (5, Sat),
+        # only a longer list takes the fork, and the hold keeps the answer from it: a miss
+        (20, Unknown),
+        # past a million items, no answer takes it with or without the hold
+        (1_000_000, Unsat),
+    ],
+)
+def test_a_list_the_target_repeats_holds_the_answers_length_not_its_own(
+    longer_than: int, answer: type
+) -> None:
+    seed = Seed.of({"items": [0] * 10})
+    forks = (
+        fork([">", ["len", REPEATED], 0]),
+        fork([">", ["len", "items"], longer_than]),
+    )
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.lists, seed.values), answer)
+
+
+MIXED = {"items": ListShape(("int", "str"), fill="none")}
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        ["startswith", ["[]", "items", -1], "'q'"],
+        ["==", ["[]", ["[]", "items", -1], 0], "'z'"],
+        ["==", ["len", ["[]", "items", -1]], 2],
+        ["==", ["[]", "items", -1], "'b'"],
+    ],
+)
+def test_a_read_of_a_mixed_list_is_typed_a_str_by_what_the_path_does_with_it(
+    condition: Expression,
+) -> None:
+    text = program((fork(condition),), {}, MIXED).text
+
+    assert "(select |arg.items.str| (+ |arg.items.len| (- 1)))" in text
+    assert "|arg.items.int|" not in text
+
+
+def test_a_read_of_a_mixed_list_is_typed_an_int_by_what_the_path_does_with_it() -> None:
+    text = program((fork([">", ["+", ["[]", "items", -1], 1], 5]),), {}, MIXED).text
+
+    assert "(select |arg.items.int| (+ |arg.items.len| (- 1)))" in text
+
+
+def test_a_read_through_pieces_of_other_kinds_leaves_them_out() -> None:
+    joined: Expression = ["+", ["[,]", "'a'", 1, "'b'"], "items"]
+    shapes = {"items": ListShape(("int",), fill="int")}
+
+    text = program((fork(["==", ["[]", joined, "i"], "'a'"]),), {"i": int}, shapes).text
+
+    # the list of ints holds no str, so a str read lands in the display, on one of its strs
+    assert "|arg.items.int|" not in text
+    assert "(ite (< p!0 3) (or (= p!0 0) (= p!0 2)) false)" in text
+
+
+def test_a_read_past_every_piece_is_refused() -> None:
+    shown: Expression = ["+", ["[,]", 1], ["[,]", 2]]
+
+    with pytest.raises(UnencodedError):
+        program((fork(["==", ["[]", shown, 5], 1]),), {}, {})
+
+
+def test_a_display_holding_a_tracked_list_counts_it_as_a_list() -> None:
+    shapes = {"items": ListShape(("int",), fill="int")}
+
+    text = program((fork(["==", ["len", ["[,]", "items", 1]], 2]),), {}, shapes).text
+
+    assert "(assert (= 2 2))" in text
+
+
+def test_a_list_inside_at_a_position_the_model_does_not_name_is_left_out() -> None:
+    grid = {"grid": ListShape(("list",), rows={0: ListShape(("int",), fill="int")}, fill="list")}
+    written = program((fork([">", ["len", ["[]", "grid", "i"]], 0]),), {"i": int}, grid)
+
+    read = written.read({"arg.grid.len": 1, "arg.grid.rows.len": _array(1)})
+
+    assert set(read) == {"grid"}
+
+
+def test_an_unsat_answer_under_clamps_settled_as_the_input_had_them_is_unknown() -> None:
+    narrowed = Program(text="", names_by_symbol={}, narrowed=True)
+
+    assert cvc5_module._unheld(narrowed, ((), {}, {}), time.monotonic() + 1, {}) == Unknown()

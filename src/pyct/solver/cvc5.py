@@ -10,8 +10,8 @@ from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.declared import Program
-from pyct.solver.list_reader import RenderTimeError
-from pyct.solver.lists import UnencodedError
+from pyct.solver.list_reader import RenderTimeError, RenderTooLargeError
+from pyct.solver.lists import Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import program
 
@@ -42,22 +42,26 @@ def solve(
     leaves: Mapping[str, type],
     timeout: float,
     lists: Mapping[str, ListShape] | None = None,
+    values: Mapping[str, object] | None = None,
 ) -> Answer:
-    """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds cvc5 gets.
+    """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds the solve
+    gets, writing the program included.
 
-    ``leaves`` and ``lists`` are what the input whose path it extends holds: each int and str
-    the solver may change, and each tracked list with its shape.
+    ``leaves``, ``lists`` and ``values`` are what the input whose path it extends holds: each
+    int and str the solver may change, each tracked list with its shape, and each leaf's value.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
 
-    ``timeout`` is finite and above zero, and cvc5 is told it as its limit. At
-    the limit cvc5 answers ``unknown`` and, asked why, says ``timeout``: that
+    ``timeout`` is finite and above zero. The program is written first, and cvc5 is told what
+    is left of it as its limit, so one solve ends near its limit however long the writing
+    took. At the limit cvc5 answers ``unknown`` and, asked why, says ``timeout``: that
     is a ``Timeout()``, and an ``unknown`` for any other reason stays an
     ``Unknown()``. A cvc5 still running ``GRACE_SECONDS`` past the limit is
-    stopped by pyct, and that is a ``Timeout()`` as well, so every solve ends
-    near its limit. A limit longer than Python can wait, about 24 days, is
-    cut to what it can.
+    stopped by pyct, and that is a ``Timeout()`` as well. A limit longer than Python can wait,
+    about 24 days, is cut to what it can. An unsat answer to a program that holds the answer
+    to more than the path (``Program.narrowed``) says only that no answer was found: it is an
+    ``Unknown()``.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -66,9 +70,44 @@ def solve(
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    written = _written(prefix, leaves, lists, time.monotonic() + timeout)
+    until = time.monotonic() + timeout
+    path = (prefix, leaves, lists)
+    written = _written(path, until, Origin(values or {}))
     if not isinstance(written, Program):
         return written
+    answer = _in_time(written, until)
+    if isinstance(answer, Unsat) and (written.narrowed or written.held):
+        return _unheld(written, path, until, values or {})
+    return answer
+
+
+def _in_time(written: Program, until: float) -> Answer:
+    """What cvc5 answers in what is left of the solve's limit once the program is written."""
+    left = until - time.monotonic()
+    return Timeout() if left <= 0 else _asked(written, left)
+
+
+# the path a solve asks about: its forks, and the leaves and lists of the input it extends
+type _Path = tuple[tuple[Branch, ...], Mapping[str, type], Mapping[str, ListShape] | None]
+
+
+def _unheld(written: Program, path: _Path, until: float, values: Mapping[str, object]) -> Answer:
+    """An unsat answer to a program that holds the answer to more than the path.
+
+    Clamps settled as the input had them leave it unknown. A repeated list's hold is let go and
+    the path asked again: unsat still is unsat, and any other answer, one that would make the
+    target build a list past the hold, is an unknown miss.
+    """
+    if written.narrowed:
+        logger.debug("cvc5 found no answer with the clamps settled as the input had them")
+        return Unknown()
+    free = _written(path, until, Origin(values, hold=False))
+    again = _in_time(free, until) if isinstance(free, Program) else free
+    return again if isinstance(again, Unsat) else Unknown()
+
+
+def _asked(written: Program, timeout: float) -> Answer:
+    """What cvc5 answers the program within ``timeout`` seconds."""
     text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
@@ -96,17 +135,22 @@ def solve(
     return answer
 
 
-def _written(
-    prefix: tuple[Branch, ...],
-    leaves: Mapping[str, type],
-    lists: Mapping[str, ListShape] | None,
-    until: float,
-) -> Program | Timeout | Unknown:
-    """The program for the path, written by ``until``: a program that outlives the solve's
-    limit is a ``Timeout()``, as a solve that does is, and a path with a read nothing on it
-    types is an ``Unknown()``, a miss rather than a crash."""
+def _written(path: _Path, until: float, origin: Origin) -> Program | Timeout | Unknown:
+    """The program for the path, written by ``until``.
+
+    A read that runs long goes through a list cut again and again at clamps the path does not
+    settle: it is written again with each clamp settled as the input had it (``Origin``). A
+    program that outlives the solve's limit is a ``Timeout()``, as a solve that does is, and a
+    path with a read nothing on it types is an ``Unknown()``, a miss rather than a crash.
+    """
+    prefix, leaves, lists = path
     try:
-        return program(prefix, leaves, lists, until)
+        try:
+            return program(prefix, leaves, lists, until, origin)
+        except RenderTooLargeError:
+            logger.debug("writing the path again with its clamps settled as the input had them")
+            settled = Origin(origin.values, settle=True, hold=origin.hold)
+            return program(prefix, leaves, lists, until, settled)
     except RenderTimeError:
         logger.warning("writing the program for cvc5 ran past the time limit")
         return Timeout()

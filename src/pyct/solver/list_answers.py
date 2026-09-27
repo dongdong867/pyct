@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from pyct.binding.shapes import ArrayValue, ListAnswer
 from pyct.core.branch import Expression
 from pyct.solver.answer import SolverAnswerError
+from pyct.solver.list_kinds import measured
 from pyct.solver.lists import ListTerms
 
 # where an item of a list the path built came from: a list the seed names, the positions of the
@@ -148,9 +149,13 @@ class _Answering:
         return self.stored[key]
 
     def _number(self, part: Expression) -> int | None:
-        """A position or a bound's value: a number as written, or the value cvc5 gave its term."""
+        """A position or a bound's value: a number as written, a list's length as the answer
+        builds the list, or the value cvc5 gave its term."""
         if part is None or (isinstance(part, int) and not isinstance(part, bool)):
             return part
+        listed = measured(part)
+        if listed is not None and self.terms.kinds_of(listed) is not None:
+            return len(self._marks(listed))
         value = self.model.get(self.terms.named(part).strip("|"))
         return value if isinstance(value, int) else None
 

@@ -15,7 +15,7 @@ from pyct.solver.declared import (
     value_of,
 )
 from pyct.solver.joined import joined
-from pyct.solver.lists import ListTerms, TrackedList, UnencodedError
+from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
 from pyct.solver.strings import (
     above,
     below,
@@ -161,6 +161,7 @@ def program(
     leaves: Mapping[str, type],
     lists: Mapping[str, ListShape] | None = None,
     until: float | None = None,
+    origin: Origin | None = None,
 ) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
@@ -172,7 +173,8 @@ def program(
     the one piece they make (see `joined`), and a part of the conditions written
     more than once is defined once before the assertions (see `_Program`).
     ``until`` is the monotonic instant writing must end by: a read of a list the
-    target changed thousands of times stops there (``RenderTimeError``).
+    target changed thousands of times stops there (``RenderTimeError``). ``origin`` is the
+    input whose path this is, whose values settle a list cut at clamps the path leaves open.
     """
     shapes = lists or {}
     seed = Leaves(kinds=leaves, constants={}, lists=shapes)
@@ -185,10 +187,12 @@ def program(
     declared = [(constant, sort_of(name, leaves[name])) for name, constant in constants.items()]
     terms = _list_terms(shapes, {name: named[name] for name in named if name in shapes}, prefix)
     terms.until = until
+    terms.start_from(origin or Origin({}), constants)
     body = _Program(Leaves(kinds=leaves, constants=constants, lists=shapes), order, holders, terms)
     text = _text(prefix, body, declared)
     by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
-    return Program(text=text, names_by_symbol=by_symbol, lists=terms if terms.declared else None)
+    listed_terms = terms if terms.declared else None
+    return Program(text, by_symbol, listed_terms, narrowed=terms.narrowed, held=terms.held)
 
 
 def _list_terms(

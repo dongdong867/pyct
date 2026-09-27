@@ -15,10 +15,18 @@ at a plain index, `counts[0] += 1` thirty times, is a row of pieces a read goes 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
-from pyct.solver.list_kinds import ITEM_SORTS, ITEM_TYPES, Kinds, ListTyping, TrackedList
+from pyct.solver.list_kinds import (
+    ITEM_SORTS,
+    ITEM_TYPES,
+    Kinds,
+    ListTyping,
+    TrackedList,
+    measured,
+)
 from pyct.solver.list_reader import Context, Memo, read
 from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import (
@@ -39,7 +47,7 @@ from pyct.solver.list_terms import (
     shape_guard,
 )
 
-__all__ = ["ITEM_SORTS", "ListTerms", "TrackedList", "UnencodedError"]
+__all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
 
 # the longest list an answer holds, and the longest a list the target builds from one
 MOST_ITEMS = 1_000_000
@@ -58,6 +66,23 @@ _AT_LEAST: Mapping[tuple[str, bool], Callable[[int], int]] = {
 # where a list inside a list sits: the list the seed names, each position on the way as the
 # path wrote it, and each as a term
 type Place = tuple[str, tuple[Expression, ...], tuple[str, ...]]
+
+
+# the steps one read takes before its program is written again with its clamps settled: far
+# more than a read through a list changed at plain positions takes, and far less than one that
+# doubles with each cut
+READ_STEPS = 512
+
+
+@dataclass(frozen=True)
+class Origin:
+    """The input whose path this is: each leaf's value, and whether a clamp the path leaves
+    open goes the way it went there (see ``list_slices``)."""
+
+    values: Mapping[str, object]
+    settle: bool = False
+    # whether a list the target repeats holds the answer's lengths (see ``_repeated``)
+    hold: bool = True
 
 
 class UnencodedError(ValueError):
@@ -92,6 +117,8 @@ class ListTerms(ListTyping, Slices):
         # how long each list part is at least on the path, by the path's forks on it
         self.facts: dict[int, int] = {}
         self.memo: Memo = {}
+        self.steps: int | None = READ_STEPS
+        self.hold = True
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
 
@@ -137,6 +164,12 @@ class ListTerms(ListTyping, Slices):
             self.leaves[name] = self._stored(name, (), kinds, shape_guard(self.shapes[name]))
         return self.leaves[name]
 
+    def length_of(self, part: Expression) -> Lin | None:
+        listed = measured(part)
+        if listed is not None and self.kinds_of(listed) is not None:
+            return self.piece(listed).length
+        return None
+
     def build(self, node: list[Expression]) -> None:
         """Make the piece a list part is, its own list parts already made."""
         head, *operands = node
@@ -179,8 +212,19 @@ class ListTerms(ListTyping, Slices):
         self.reads.append((operand, rest[0]))
         return found.value
 
+    def start_from(self, origin: Origin, constants: Mapping[str, str]) -> None:
+        """Take the values of the input whose path this is, each int leaf by its constant, and
+        whether clamps settle as they went there, with no limit on the reads then."""
+        for name, constant in constants.items():
+            value = origin.values.get(name)
+            if type(value) is int:
+                self.origin[constant] = value
+        self.settle = origin.settle
+        self.hold = origin.hold
+        self.steps = None if origin.settle else READ_STEPS
+
     def _context(self) -> Context:
-        return Context(self.least, self.memo, self._define_read, ITEM_SORTS, self.until)
+        return Context(self.least, self.memo, self._define_read, ITEM_SORTS, self.until, self.steps)
 
     def _define_read(self, text: str, sort: str) -> str:
         """A read written once, as ``(define-fun r!N () Sort ...)``, and named wherever read."""
@@ -213,6 +257,8 @@ class ListTerms(ListTyping, Slices):
         if length not in self.bounded:
             self.bounded[length] = None
             self.least[length] = max(self.least.get(length, 0), 0)
+            if kinds.shape is not None:
+                self.origin[length] = len(kinds.shape.kinds)
         return Stored(
             Lin.of(length),
             kinds.kinds,
@@ -274,14 +320,29 @@ class ListTerms(ListTyping, Slices):
         return guard
 
     def _repeated(self, operands: list[Expression], kinds: Kinds) -> Repeated:
-        """A list repeated a plain number of times: one piece, and held, as an answer is, to a
-        million items, so no answer makes the target build a list past that."""
+        """A list repeated a plain number of times: one piece.
+
+        The list the target builds is its own, and no cap holds it. The answer's lengths are
+        held instead: the list repeated is no longer than it was in the input whose path this
+        is, or than a million items repeated, so no answer makes the target build a list past
+        both. Where that hold is what makes a path unsat, the fork is an unknown miss.
+        """
         times = max(next(part for part in operands if isinstance(part, int)), 0)
         listed = self.piece(next(part for part in operands if not isinstance(part, int)))
-        length = listed.length.times(times)
-        if times > 1:
-            self.capped.append(f"(assert (<= {length.text()} {MOST_ITEMS}))")
-        return Repeated(length, kinds.kinds, kinds.every, base=listed)
+        if times > 1 and self.hold:
+            longest = max(self.origin_of(listed.length) or 0, MOST_ITEMS // times)
+            self.capped.append(f"(assert (<= {listed.length.text()} {longest}))")
+        return Repeated(listed.length.times(times), kinds.kinds, kinds.every, base=listed)
+
+    @property
+    def narrowed(self) -> bool:
+        """Whether the program holds the answer to clamps settled as the input had them."""
+        return bool(self.regime)
+
+    @property
+    def held(self) -> bool:
+        """Whether the program holds the length of a list the target repeats."""
+        return bool(self.capped)
 
     def asked(self) -> list[str]:
         """What the program asks cvc5 for about the lists: each length and array it declared,
@@ -303,4 +364,5 @@ class ListTerms(ListTyping, Slices):
         each list the target repeats no longer, and each read's guard."""
         lengths = [f"(assert (<= 0 {length} {MOST_ITEMS}))" for length in self.bounded]
         held = [f"(assert (>= {length} {least}))" for length, least in self.present.items()]
-        return lengths + self.capped + held + [f"(assert {guard})" for guard in self.guards]
+        guards = [f"(assert {guard})" for guard in self.guards]
+        return lengths + self.capped + list(self.regime) + held + guards

@@ -29,7 +29,7 @@ def apply(origin: Seed, model: Mapping[str, object]) -> Seed:
         raise ValueError(f"the model names values the input does not hold: {named}")
     applied = _Applied(origin, model)
     args = Walk(applied).rebuilt(origin.args, origin.checks)
-    return Seed(args, applied.leaves, applied.shapes(), origin.checks)
+    return Seed(args, applied.leaves, applied.shapes(), origin.checks, applied.values)
 
 
 class _Applied(Noted):

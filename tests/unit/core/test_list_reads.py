@@ -8,6 +8,7 @@ import pytest
 
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.list_reads import handed
 from pyct.core.list_state import plain
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
@@ -352,3 +353,13 @@ def test_a_slice_whose_bound_pyct_does_not_follow_is_a_downgrade() -> None:
 
     assert part == []
     assert downgrades(sink) == ["__getitem__"]
+
+
+def test_an_item_handed_out_from_a_slot_changed_outside_the_methods_is_plain() -> None:
+    items, sink = tracked([1, 2])
+
+    list.__setitem__(items, 0, 5)
+    item = handed(items, 0, 0, "__iter__")
+
+    assert type(item) is int and item == 5
+    assert downgrades(sink) == ["__iter__"]

@@ -88,6 +88,13 @@ def of_rows(shape: ListShape) -> Kinds:
     return Kinds(frozenset(kinds), every)
 
 
+def measured(part: Expression) -> Expression | None:
+    """The part a length measures, ``items`` for ``["len", items]``; None for any other part."""
+    if isinstance(part, list) and len(part) == 2 and part[0] == "len":
+        return part[1]
+    return None
+
+
 def from_start(position: Expression) -> TypeGuard[int]:
     """Whether a position is a plain number from the start: the one a static read is typed by."""
     return isinstance(position, int) and not isinstance(position, bool) and position >= 0

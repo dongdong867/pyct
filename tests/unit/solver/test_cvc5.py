@@ -3,10 +3,12 @@ import logging
 import shutil
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
+from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Error, Sat, SolverAnswerError, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import GRACE_SECONDS, solve
 
@@ -153,15 +155,42 @@ def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
     assert "--tlimit-per=1500" in (tmp_path / "argv").read_text().split()
 
 
-def test_a_limit_under_a_millisecond_reaches_the_solver_as_one(
+def test_a_limit_under_a_millisecond_reaches_the_solver_as_one() -> None:
+    # a nearly spent budget leaves a limit like this; cvc5 reads --tlimit-per=0 as no limit
+    assert "--tlimit-per=1" in cvc5_module._argv(0.0001)
+
+
+def slow_program(monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
+    """Writing the program takes ``seconds``, as a path through a long list's changes may."""
+    written = cvc5_module.program
+
+    def slow(*args: Any) -> Any:
+        time.sleep(seconds)
+        return written(*args)
+
+    monkeypatch.setattr(cvc5_module, "program", slow)
+
+
+def test_cvc5_gets_what_is_left_of_the_limit_once_the_program_is_written(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
+    slow_program(monkeypatch, 0.4)
 
-    # a nearly spent budget gives a limit like this; cvc5 reads --tlimit-per=0 as no limit
-    ask(tmp_path, monkeypatch, timeout=0.0001)
+    ask(tmp_path, monkeypatch, timeout=1.0)
 
-    assert "--tlimit-per=1" in (tmp_path / "argv").read_text().split()
+    limit = next(arg for arg in (tmp_path / "argv").read_text().split() if "tlimit" in arg)
+    assert int(limit.split("=")[1]) <= 600
+
+
+def test_a_program_that_spends_the_whole_limit_leaves_cvc5_unasked(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, out="unsat\n")
+    slow_program(monkeypatch, 0.3)
+
+    assert ask(tmp_path, monkeypatch, timeout=0.2) == Timeout()
+    assert not (tmp_path / "argv").exists()
 
 
 def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(

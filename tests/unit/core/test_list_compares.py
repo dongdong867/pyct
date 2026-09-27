@@ -237,3 +237,22 @@ def test_a_search_that_changes_the_list_goes_on_as_pythons_own() -> None:
     # compares the rest, the appended item among them
     assert found == 0 and items.expression is None
     assert downgrades(sink) == ["count"]
+
+
+class _AppendsThenMatches(_Appends):
+    """A value whose first compare appends to the list without its methods, and that then
+    equals 9."""
+
+    def __eq__(self, other: object) -> bool:
+        super().__eq__(other)
+        return type(other) is int and other == 9
+
+    __hash__ = None  # type: ignore[assignment]
+
+
+def test_a_search_that_goes_plain_part_way_still_finds_a_later_match() -> None:
+    items, sink = tracked([3, 9])
+
+    # the first compare appends, so the rest of the search is Python's own and finds the 9
+    assert items.index(_AppendsThenMatches(items)) == 1
+    assert downgrades(sink) == ["index"] and items.expression is None

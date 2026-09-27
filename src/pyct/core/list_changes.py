@@ -53,11 +53,11 @@ def follows(self: ListState, key: object) -> bool:
     return plain_index(key) is not None
 
 
-def in_range(self: ListState, key: object) -> bool:
+def in_range(self: ListState, key: object, name: str = "__getitem__") -> bool:
     """Record whether the list holds the index ``key``, as the index's own kind records it."""
     if type(key) is ConcolicInt:
-        return tracked_long_enough(self, key)
-    return long_enough(self, _number(key))
+        return tracked_long_enough(self, key, name)
+    return long_enough(self, _number(key), name)
 
 
 def resolved(self: ListState, key: object) -> int:
@@ -185,7 +185,7 @@ def pop(self: ListState, *args: Any) -> object:
 def _pops(self: ListState, key: object, given: bool) -> bool:
     """The fork a pop records before Python may raise: not empty, or the index in range."""
     if given:
-        return in_range(self, key)
+        return in_range(self, key, "pop")
     return bool(self)
 
 
@@ -193,10 +193,13 @@ def remove(self: ListState, value: object, found: int | None) -> None:
     """``items.remove(x)`` once the search found ``x`` at ``found``, or raised: the list becomes
     ``items[:j] + items[j + 1:]``."""
     if found is None:
+        # nothing is there to remove: Python's own refusal, from a list with nothing in it
         own(list.remove, [], value)
-        return
-    form = joined(["[:]", self.expression, None, found], ["[:]", self.expression, found + 1, None])
-    made(self, lambda items: list.__delitem__(items, found), form, frozenset())
+    else:
+        form = joined(
+            ["[:]", self.expression, None, found], ["[:]", self.expression, found + 1, None]
+        )
+        made(self, lambda items: list.__delitem__(items, found), form, frozenset())
 
 
 def clear(self: ListState) -> None:
@@ -238,7 +241,7 @@ def assign(self: ListState, key: Any, value: object) -> None:
     if form is UNWRITTEN or not follows(self, key) or not self.holds("__setitem__"):
         unfollowed(self, "__setitem__", change)
         return
-    if not in_range(self, key):
+    if not in_range(self, key, "__setitem__"):
         own(change, self)
     made(self, change, put(self.expression, position(key), form), frozenset({kind_of(value)}))
 
@@ -270,7 +273,7 @@ def delete(self: ListState, key: Any) -> None:
     if bounds is not None:
         made(self, change, spliced(self.expression, bounds, None), frozenset())
         return
-    if not in_range(self, key):
+    if not in_range(self, key, "__delitem__"):
         own(change, self)
     made(self, change, dropped(self.expression, position(key)), frozenset())
 

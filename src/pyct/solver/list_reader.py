@@ -37,7 +37,7 @@ from pyct.solver.list_terms import (
 )
 
 # how many steps a read takes between two looks at the clock
-_STEPS_PER_LOOK = 256
+_STEPS_PER_LOOK = 64
 
 # a read already written, by the piece, the position's text and the kind read
 type Memo = dict[tuple[int, str, str], Read]
@@ -60,6 +60,10 @@ class RenderTimeError(Exception):
     """Writing the program ran past the solve's deadline."""
 
 
+class RenderTooLargeError(Exception):
+    """A read ran past its steps: it goes through a list cut at clamps the path leaves open."""
+
+
 # a term written once in the program, by its text and its sort, and the name it goes by
 type Define = Callable[[str, str], str]
 
@@ -78,6 +82,8 @@ class Context:
     define: Define
     sorts: Mapping[str, str]
     until: float | None
+    # the steps one read may take, None for no limit
+    steps: int | None = None
 
 
 def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
@@ -118,12 +124,18 @@ class _Reader:
             steps += 1
             if steps % _STEPS_PER_LOOK == 0:
                 self._in_time()
+                self._in_steps(steps)
             task = tasks.pop()
             if isinstance(task, _Join):
                 self._put_together(task, done)
             else:
                 self._step(task[0], task[1], tasks, done)
         return done[0]
+
+    def _in_steps(self, steps: int) -> None:
+        most = self.context.steps
+        if most is not None and steps > most:
+            raise RenderTooLargeError("a read ran past its steps")
 
     def _in_time(self) -> None:
         if self.until is not None and time.monotonic() > self.until:

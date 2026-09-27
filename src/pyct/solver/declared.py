@@ -95,6 +95,10 @@ class Program:
     text: str
     names_by_symbol: Mapping[str, str]
     lists: ListTerms | None = None
+    # whether the program holds the answer to more than the path: clamps settled as the input
+    # had them, so unsat is only unknown; or a repeated list's length held
+    narrowed: bool = False
+    held: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for,

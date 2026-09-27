@@ -80,13 +80,15 @@ class Seed:
     leaves: Mapping[str, type]
     lists: Mapping[str, ListShape] = field(default_factory=dict)
     checks: Mapping[str, Check] = field(default_factory=dict)
+    # each leaf's value in this input, which settles how a list the path changed was cut
+    values: Mapping[str, object] = field(default_factory=dict)
 
     @classmethod
     def of(cls, args: Mapping[str, object], checks: Mapping[str, Check] | None = None) -> "Seed":
         """The arguments copied, and their leaves and lists noted, in one walk."""
         noted = Noted()
         copied = Walk(noted).rebuilt(args, checks)
-        return cls(copied, noted.leaves, noted.shapes(), checks or {})
+        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values)
 
 
 class Noted:
@@ -96,6 +98,7 @@ class Noted:
         # every int and str in walk order, and those the solver declares on their own
         self.named: dict[str, type] = {}
         self.leaves: dict[str, type] = {}
+        self.values: dict[str, object] = {}
         # each tracked list in the order the walk made it: its copy, its name or the list and
         # position it is a row of, and what its annotation asks of each item
         self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
@@ -109,6 +112,7 @@ class Noted:
         self.named[name] = type(value)
         if not place.in_list:
             self.leaves[name] = type(value)
+            self.values[name] = value
         return value
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:

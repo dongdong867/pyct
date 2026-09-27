@@ -121,11 +121,9 @@ class ListState(list):
     def current(self, *positions: int) -> bool:
         """Whether the form still describes the list: its length and each position read.
 
-        A list already plain has no form to describe it. One whose items were changed without
-        its methods turns plain here, so no fork reads a form that no longer matches.
+        One whose items were changed without its methods turns plain here, so no fork reads a
+        form that no longer matches. ``holds`` asks it only of a list that has a form.
         """
-        if self.expression is None:
-            return False
         size = self.length()
         matches = size == len(self.shadow) and all(
             not 0 <= at < size or list.__getitem__(self, at) is self.shadow[at] for at in positions

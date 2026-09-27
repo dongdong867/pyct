@@ -46,7 +46,7 @@ def searched(self: ListState, value: object, name: str, *, every: bool = False) 
     found: list[int] = []
     at = 0
     while self.holds(name, at):
-        if not more(self, at):
+        if not more(self, at, name):
             return found
         if matches(handed(self, at, at, name), value):
             found.append(at)
@@ -88,7 +88,7 @@ class _Side:
         """Whether this side holds an item at ``at``, a fork when it is tracked."""
         tracked = self.form()
         if tracked is not None:
-            return more(tracked, at)
+            return more(tracked, at, self.name)
         return at < list.__len__(self.value)
 
     def item(self, at: int) -> object:
@@ -103,7 +103,7 @@ def equal(self: ListState, other: list[object], name: str) -> bool:
     """``self == other`` as Python answers it: the lengths first, then each pair in turn."""
     left, right = _Side(self, name), _Side(other, name)
     same = self.length() == list.__len__(other)
-    if not forked(self.sink, ["==", left.size(), right.size()], same):
+    if not forked(self.sink, ["==", left.size(), right.size()], same, name):
         return False
     return all(matches(left.item(at), right.item(at)) for at in range(self.length()))
 

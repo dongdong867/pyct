@@ -59,14 +59,13 @@ class Tally:
 
         A sealed tally keeps nothing. A value the target kept from this call can still reach it
         from a later call in the same process, and that call's condition is then lost: the
-        call running now names it, a fork as the truth test `__bool__` that lost it.
+        call running now names it, a fork by the operation that took it: a truth test's `__bool__`,
+        a walk's `__iter__`, an index's `__getitem__`.
         """
         if self.sealed:
             live = _LIVE[0]
             if live is not None and live is not self:
-                live.append(
-                    Downgrade(name=item.name if isinstance(item, Downgrade) else "__bool__")
-                )
+                live.append(Downgrade(name=item.lost_as if isinstance(item, Branch) else item.name))
             return
         if isinstance(item, Branch):
             self.branches.append(item)
