@@ -82,3 +82,13 @@ def test_a_module_whose_name_is_no_identifier_is_not_walked(tmp_path: Path) -> N
         entry("ph.ok", "fine", {"n": 0}),
         {"done": True},
     ]
+
+
+def test_a_module_whose_getattr_raises_is_read_to_the_end_by_one_lister() -> None:
+    # asking a plain module for __path__ must not run its __getattr__, which raises here
+    unread = "targets.sweep.unread"
+    facts, said = lister(unread)
+
+    lazy = f"{unread}.lazy"
+    assert {"importing": lazy} in facts
+    assert facts[-1] == {"done": True}, said

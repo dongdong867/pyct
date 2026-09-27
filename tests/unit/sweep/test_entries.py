@@ -1,6 +1,7 @@
 import importlib
 import sys
 import types
+import typing
 
 import pytest
 
@@ -11,6 +12,7 @@ from pyct.sweep.entries import (
     Reading,
     entries_in,
     function_of,
+    package_path,
     public_names,
 )
 
@@ -158,3 +160,13 @@ def test_only_a_module_of_the_package_is_asked_its_file_and_its_raise_costs_noth
 
     assert [entry.name for entry in entries(shop, shop)] == ["parse_price", "total"]
     assert _LoadsWhenAsked.asked == [f"{shop}.lazy"]
+
+
+def test_a_package_path_is_read_without_asking_the_module() -> None:
+    lazy = importlib.import_module(f"{SWEEP}.unread.lazy")
+    walk = importlib.import_module(f"{SWEEP}.walk")
+
+    assert package_path(lazy) is None
+    assert package_path(walk) == list(walk.__path__)
+    # an object a module put in its own place may have no names of its own at all
+    assert package_path(typing.cast(types.ModuleType, object())) is None

@@ -71,6 +71,19 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
     return Reading(entries, unread)
 
 
+def package_path(module: ModuleType) -> list[str] | None:
+    """The folders a package's modules are in, or None for a plain module.
+
+    Read from the module's own names, not by asking it: a module-level
+    ``__getattr__`` that raises for any name it lacks would run and raise.
+    """
+    try:
+        path = vars(module).get("__path__")
+    except TypeError:
+        return None
+    return None if path is None else list(path)
+
+
 def public_names(module: ModuleType) -> list[str]:
     """The names in ``__all__`` when the module defines it, else every name without ``_``."""
     listed = getattr(module, "__all__", None)

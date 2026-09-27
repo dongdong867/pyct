@@ -43,7 +43,7 @@ from dataclasses import asdict, dataclass
 from types import ModuleType
 from typing import TextIO
 
-from pyct.sweep.entries import Reading, entries_in
+from pyct.sweep.entries import Reading, entries_in, package_path
 
 # parts of a module name below the package that leave the module out of the walk
 LEFT_OUT = frozenset({"test", "tests"})
@@ -118,7 +118,7 @@ def _imported(name: str, out: TextIO) -> ModuleType | None:
 
 def _modules_below(module: ModuleType, name: str) -> list[str]:
     """The modules one level below the package ``name`` that the walk takes, in name order."""
-    path = getattr(module, "__path__", None)
+    path = package_path(module)
     if path is None:
         return []
     names = sorted(found.name for found in pkgutil.iter_modules(path, f"{name}."))
