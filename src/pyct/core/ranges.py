@@ -17,22 +17,31 @@ and the arguments' forms for its forks (``README.md › Rules › forks``):
 - ``x in r`` is one fork, ``["in", x, ["range", start, stop]]``, with the step
   when the target passed one, whichever side is tracked.
 
+- ``r == other`` with another range, tracked or plain, is its answer with
+  one condition, ``["==", ["range", ...], ["range", ...]]``, untested, and
+  ``!=`` the same with its own head.
+- ``start``, ``stop`` and ``step`` are the arguments the target passed, a
+  tracked one as itself (downgrades-class-body-taught-attributes-named).
+
 Every other operation is range's own answer and a downgrade named by its
-dunder, method or attribute (`values.downgrade_through`). `__hash__` and
-`__repr__` stay range's.
+dunder or method (`values.downgrade_through`); a pickle holds Python's range
+and records `__reduce_ex__` (pickle-holds-the-plain-value). `__hash__` and
+`__repr__` stay range's. A tracked range is a `Sequence`, as Python's is, so
+`random.sample` and `match` read it as one; `isinstance(r, range)` and
+`type(r)` still tell it apart.
 """
 
 from __future__ import annotations
 
 import operator
-from collections.abc import Iterator
-from typing import TypeGuard
+from collections.abc import Iterator, Sequence
+from typing import Any, SupportsIndex, TypeGuard
 
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.ints import ConcolicInt
-from pyct.core.list_reads import caller
+from pyct.core.list_reads import caller, hinted
 from pyct.core.values import (
     copy_as_itself,
     downgrade_through,
@@ -44,13 +53,13 @@ from pyct.core.values import (
 
 # the most arguments range takes: a start, a stop and a step
 _MOST = 3
-# the tracked values range reads as ints
-_TRACKED = (ConcolicInt, ConcolicBool)
+# the tracked values range reads as ints, and an `in` searches a range for with one fork
+TRACKED_INTS = (ConcolicInt, ConcolicBool)
 
 
 def _form(value: object) -> Expression:
     """How a fork writes a bound: a tracked int by its expression, a plain one as the int."""
-    if isinstance(value, _TRACKED):
+    if isinstance(value, TRACKED_INTS):
         return value.expression
     return int.__index__(value)  # pyrefly: ignore[bad-argument-type]
 
@@ -63,22 +72,29 @@ def _plain(form: Expression) -> TypeGuard[int]:
 class ConcolicRange:
     """Python's range, held beside the forms of its start, stop and step, and a sink.
 
-    `__iter__`, `__len__` for a walk's size, and `in` are taught below;
-    every other method range has is its own answer on the held range and a
-    downgrade, derived at the bottom of the module.
+    `__iter__`, `__len__` for a walk's size, `in`, `==`, `!=` and the
+    three attributes are taught below; every other method range has is its
+    own answer on the held range and a downgrade, derived at the bottom of
+    the module.
     """
 
-    __slots__ = ("forms", "held", "sink", "walked_at", "written")
+    __slots__ = ("bounds", "forms", "held", "sink", "walked_at", "written")
 
     def __init__(
         self,
         held: range,
-        forms: tuple[Expression, Expression, Expression],
+        bounds: tuple[int, int, int],
         written: int,
         sink: BranchSink,
     ) -> None:
         self.held = held
-        self.forms = forms
+        # the start, the stop and the step, a tracked one as the target passed it, and each's form
+        self.bounds = bounds
+        self.forms: tuple[Expression, Expression, Expression] = (
+            _form(bounds[0]),
+            _form(bounds[1]),
+            _form(bounds[2]),
+        )
         # the arguments the target passed, which an `in` fork writes as it passed them
         self.written = written
         self.sink = sink
@@ -92,9 +108,10 @@ class ConcolicRange:
     def __len__(self) -> int:
         # Python's `len` makes the answer plain, so it is a downgrade, but for the size a walk
         # just started asks for, as `list(r)` asks it
-        if not _hinted(self):
+        if not hinted(self):
             self.sink.append(Downgrade(name="__len__"))
-        return len(self.held)
+        # past the largest size Python raises OverflowError, the target's as in plain Python
+        return own(len, self.held)
 
     def __contains__(self, item: object) -> object:
         return contains(self, item)
@@ -105,38 +122,45 @@ class ConcolicRange:
     def __repr__(self) -> str:
         return repr(self.held)
 
+    def __eq__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return _compared(self, other, "==")
+
+    def __ne__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return _compared(self, other, "!=")
+
+    def __reduce_ex__(self, protocol: SupportsIndex, /) -> str | tuple[Any, ...]:
+        # a pickle holds Python's range, and writing it is a downgrade at every protocol
+        self.sink.append(Downgrade(name="__reduce_ex__"))
+        return own(self.held.__reduce_ex__, protocol)
+
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
 
     @property
     def start(self) -> int:
-        return _attribute(self, "start")
+        return self.bounds[0]
 
     @property
     def stop(self) -> int:
-        return _attribute(self, "stop")
+        return self.bounds[1]
 
     @property
     def step(self) -> int:
-        return _attribute(self, "step")
+        return self.bounds[2]
 
 
-def _attribute(r: ConcolicRange, name: str) -> int:
-    """An attribute of range, read plain: range's own value and a downgrade named by it."""
-    r.sink.append(Downgrade(name=name))
-    return getattr(r.held, name)
-
-
-def _hinted(r: ConcolicRange) -> bool:
-    """Whether a `__len__` call is Python's own guess at the size of a walk it just started.
-
-    `list(r)`, `tuple(r)` and `sorted(r)` start a walk and then ask the
-    length in the same call of the same code. Only the first ask after a
-    walk starts can be that guess.
-    """
-    started, r.walked_at = r.walked_at, None
-    # this function, then the range's `__len__`, then the code that asked
-    return started is not None and started == caller(3)
+def _compared(r: ConcolicRange, other: object, op: str) -> object:
+    """``r == other`` or ``r != other``: range's answer with its condition, untested, when the
+    other is a range too, and NotImplemented otherwise, as range's own gives."""
+    if type(other) is ConcolicRange:
+        held, form = other.held, _spelled(other)
+    elif type(other) is range:
+        held, form = other, range_form(other)
+    else:
+        return NotImplemented
+    same = own(range.__eq__, r.held, held)
+    answer = same if op == "==" else not same
+    return ConcolicBool(answer, expression=[op, _spelled(r), form], sink=r.sink)
 
 
 def ranged(*args: object, **kwargs: object) -> object:
@@ -148,18 +172,27 @@ def ranged(*args: object, **kwargs: object) -> object:
     """
     if kwargs or not 1 <= len(args) <= _MOST:
         return own(range, *args, **kwargs)
-    # Python's own index makes a tracked int plain, and a tracked one is an int already
-    indexed = [arg if isinstance(arg, _TRACKED) else own(operator.index, arg) for arg in args]
+    indexed = [_index(arg) for arg in args]
     bounds = [0, indexed[0], 1] if len(indexed) == 1 else [*indexed, 1][:_MOST]
     step = bounds[2]
-    if isinstance(step, _TRACKED):
+    if isinstance(step, TRACKED_INTS):
         _signed(step)
     held = own(range, *indexed)
-    sink = next((arg.sink for arg in indexed if isinstance(arg, _TRACKED)), None)
+    sink = next((arg.sink for arg in indexed if isinstance(arg, TRACKED_INTS)), None)
     if sink is None:
         return held
-    start, stop, step_form = (_form(bound) for bound in bounds)
-    return ConcolicRange(held, (start, stop, step_form), len(indexed), sink)
+    return ConcolicRange(held, (bounds[0], bounds[1], bounds[2]), len(indexed), sink)
+
+
+def _index(arg: object) -> int:
+    """An argument as range reads it, by `__index__`: a tracked one as the tracked int it is.
+
+    Python's own index would make a tracked int plain, so a tracked one is
+    asked its own `__index__`, which hands a tracked bool back as a tracked int.
+    """
+    if isinstance(arg, TRACKED_INTS):
+        return arg.__index__()
+    return own(operator.index, arg)
 
 
 def _signed(step: ConcolicInt | ConcolicBool) -> None:
@@ -259,7 +292,7 @@ def _value(item: object) -> int:
 
 def _item(item: object) -> Expression:
     """How an `in` fork writes its item: a tracked one's expression, a plain int as itself."""
-    return item.expression if isinstance(item, _TRACKED) else item  # pyrefly: ignore[bad-return]
+    return item.expression if isinstance(item, TRACKED_INTS) else item  # pyrefly: ignore[bad-return]
 
 
 # the class body above is everything ConcolicRange teaches; the rest of range is derived here,
@@ -267,3 +300,5 @@ def _item(item: object) -> Expression:
 downgrade_through(ConcolicRange, range, kept=("__getattribute__",))
 # `in` with an item that is not an int, which range answers by comparing it with each element
 _CONTAINS_DOWNGRADE = downgraded(range, "__contains__", calling=held_by(range.__contains__))
+# a sequence, as Python's range is: `random.sample` asks the ABC, and `match` the flag it sets
+Sequence.register(ConcolicRange)  # pyrefly: ignore[missing-attribute]

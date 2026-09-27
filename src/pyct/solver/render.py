@@ -14,6 +14,7 @@ from pyct.solver.heads import (
     BOUNDED,
     FORMS,
     INDEXED,
+    MEMBERSHIPS,
     OPERATORS,
     POSITIONED,
     POSITIONS_FROM,
@@ -279,14 +280,11 @@ class _Program:
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
-        """The type an operation works on: its operands', with a bool read as the int 1 or 0.
-
-        Two bools stay bools only under an operator bool has of its own, such
-        as `&` or `==`; `+` or `<` on them works on the ints they are.
-        """
-        if head in WORKS_ON:
-            return WORKS_ON[head]
-        kind = self._operands_type(operands)
+        """The type an operation works on: its operands', a bool read as the int 1 or 0 but under
+        an operator bool has of its own, such as `&` or `==`, and a range's by its ints."""
+        kind = WORKS_ON.get(head) or self._operands_type(operands)
+        if kind is range and head in MEMBERSHIPS:
+            return int
         return int if kind is bool and (head, bool) not in OPERATORS else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:

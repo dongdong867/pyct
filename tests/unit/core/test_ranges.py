@@ -3,7 +3,10 @@ tracked step records its zero and sign forks where the range is built, membershi
 fork, and every other operation is range's own answer and a downgrade."""
 
 import copy
+import itertools
 import pickle
+import random
+from collections.abc import Sequence
 
 import pytest
 
@@ -32,10 +35,8 @@ def built(*args):
     return ranged(*args)
 
 def untaught(r):
-    return [len(r), r[0], list(reversed(r)), r.count(1), r.index(1), bool(r), r.stop]
+    return [len(r), r[0], list(reversed(r)), r.count(1), r.index(1), bool(r)]
 
-def compared(r):
-    return r == range(0, 2)
 """
 
 
@@ -289,10 +290,10 @@ def test_every_untaught_operation_is_range_s_answer_and_a_downgrade() -> None:
 
     answers = _probe("untaught", _range(_int(3, sink, "n")))
 
-    assert answers == [3, 0, [2, 1, 0], 1, 1, True, 3]
+    assert answers == [3, 0, [2, 1, 0], 1, 1, True]
     assert sink == [
         Downgrade(name=name)
-        for name in ("__len__", "__getitem__", "__reversed__", "count", "index", "__bool__", "stop")
+        for name in ("__len__", "__getitem__", "__reversed__", "count", "index", "__bool__")
     ]
 
 
@@ -310,11 +311,116 @@ def test_an_untaught_operation_python_refuses_raises_as_the_target_s() -> None:
     assert sink == []
 
 
-def test_a_compare_is_range_s_answer_and_a_downgrade() -> None:
+# ranges of every shape two ranges can be equal in: empty ones with other bounds, one-element
+# ones with other steps, and longer ones with a start, a stop or a step apart
+_SHAPES = [
+    (2,),
+    (0, 2),
+    (0, 3),
+    (1, 3),
+    (5, 5),
+    (7, 3),
+    (4, 5),
+    (4, 5, 9),
+    (0, 4, 2),
+    (0, 3, 2),
+    (3, 0, -1),
+]
+
+
+def _tracked_range(bounds: tuple[int, ...], sink: list[SinkItem], name: str) -> ConcolicRange:
+    """A range with its first bound tracked, named ``name``."""
+    return _range(_int(bounds[0], sink, name), *bounds[1:])
+
+
+@pytest.mark.parametrize(("left", "right"), list(itertools.product(_SHAPES, repeat=2)))
+def test_two_ranges_compare_as_python_compares_them(
+    left: tuple[int, ...], right: tuple[int, ...]
+) -> None:
+    sink: list[SinkItem] = []
+    a, b = _tracked_range(left, sink, "a"), _tracked_range(right, sink, "b")
+    same = range(*left) == range(*right)
+
+    plain_left = range(*left) == b
+    for answer, expected in (
+        (a == b, same),
+        (a != b, not same),
+        (a == range(*right), same),
+        (plain_left, same),
+    ):
+        assert type(answer) is ConcolicBool
+        assert int.__index__(answer) == expected
+    # an answer handed back untested records nothing until the target tests it
+    assert sink == []
+
+
+def test_an_equality_of_two_ranges_is_one_fork_on_their_arguments() -> None:
+    sink: list[SinkItem] = []
+    a, b = _range(_int(2, sink, "n")), _range(0, _int(2, sink, "m"), 1)
+
+    answer = a == b
+
+    assert isinstance(answer, ConcolicBool)
+    assert answer.expression == ["==", ["range", 0, "n"], ["range", 0, "m", 1]]
+    unequal = a != b
+    assert isinstance(unequal, ConcolicBool)
+    assert unequal.expression == ["!=", ["range", 0, "n"], ["range", 0, "m", 1]]
+    assert len({a, b}) == 1
+
+
+def test_a_range_equals_nothing_but_a_range_as_python_s_does() -> None:
+    sink: list[SinkItem] = []
+    r = _range(_int(2, sink, "n"))
+
+    assert (r == [0, 1]) is False and (r != (0, 1)) is True
+    assert sink == []
+
+
+def test_an_order_between_ranges_raises_as_python_s_does() -> None:
     sink: list[SinkItem] = []
 
-    assert _probe("compared", _range(_int(2, sink, "n"))) is True
-    assert sink == [Downgrade(name="__eq__")]
+    with pytest.raises(TypeError) as raised:
+        assert _range(_int(2, sink, "n")) < _range(_int(3, sink, "m"))  # pyrefly: ignore
+    with pytest.raises(TypeError) as plain:
+        assert range(2) < range(3)  # pyrefly: ignore[unsupported-operation]
+    # Python names the two types, and a tracked range's is its own
+    assert str(raised.value) == str(plain.value).replace("'range'", "'ConcolicRange'")
+    assert sink == []
+
+
+def test_a_range_is_a_sequence_as_python_s_is() -> None:
+    sink: list[SinkItem] = []
+    r = _range(_int(5, sink, "n"))
+
+    assert isinstance(r, Sequence)
+    assert random.Random(0).sample(r, 2) == random.Random(0).sample(range(5), 2)
+
+
+def test_a_match_reads_a_range_as_a_sequence() -> None:
+    sink: list[SinkItem] = []
+    namespace: dict[str, object] = {}
+    exec(
+        "def shape(r):\n    match r:\n        case [a, b, c]:\n            return (a, b, c)\n"
+        "        case _:\n            return None\n",
+        namespace,
+    )
+    shape = namespace["shape"]
+    assert callable(shape)
+
+    assert shape(_range(_int(3, sink, "n"))) == shape(range(3)) == (0, 1, 2)
+
+
+def test_a_length_past_the_largest_size_raises_the_target_s_overflow() -> None:
+    sink: list[SinkItem] = []
+    r = _range(_int(10**23, sink, "n"))
+
+    with pytest.raises(OverflowError) as raised:
+        len(r)
+
+    with pytest.raises(OverflowError) as plain:
+        len(range(10**23))
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
 
 
 def test_every_method_range_defines_is_taught_kept_or_derived() -> None:
@@ -341,14 +447,19 @@ def test_a_copy_is_the_range_itself_and_a_pickle_holds_python_s() -> None:
     r = _range(_int(3, sink, "n"))
 
     assert copy.copy(r) is r and copy.deepcopy(r) is r
-    assert pickle.loads(pickle.dumps(r)) == range(3)
-    assert sink == [Downgrade(name="__reduce__")]
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        assert pickle.loads(pickle.dumps(r, protocol)) == range(3)
+    assert sink == [Downgrade(name="__reduce_ex__")] * (pickle.HIGHEST_PROTOCOL + 1)
 
 
-def test_the_attributes_are_range_s_plain_answers_and_downgrades() -> None:
+def test_the_attributes_are_the_arguments_the_target_passed() -> None:
     sink: list[SinkItem] = []
-    r = _range(_int(1, sink, "a"), 7, 2)
+    a = _int(1, sink, "a")
+    r = _range(a, 7, _int(2, sink, "k"))
 
-    assert (r.start, r.stop, r.step) == (1, 7, 2)
-    assert all(type(value) is int for value in (r.start, r.stop, r.step))
-    assert sink[:3] == [Downgrade(name="start"), Downgrade(name="stop"), Downgrade(name="step")]
+    assert r.start is a and r.stop == 7 and type(r.stop) is int
+    assert isinstance(r.step, ConcolicInt) and r.step.expression == "k"
+    one = _range(_int(4, sink, "n"))
+    assert (one.start, one.step) == (0, 1) and one.stop.expression == "n"  # pyrefly: ignore
+    # the step's own two forks, and no downgrade
+    assert all(isinstance(item, Branch) for item in sink)

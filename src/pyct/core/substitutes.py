@@ -45,8 +45,9 @@ from pyct.core.strs import ConcolicStr
 # the tracked values a set or dict can hold: those a literal display is searched for, element
 # by element, as a tuple of the same elements is
 _HASHABLE = (ConcolicBool, ConcolicInt, ConcolicFloat, ConcolicStr)
-# the tracked values a plain range is searched for with one fork
-_RANGE_ITEMS = (ConcolicInt, ConcolicBool)
+# the tracked values a plain range is searched for with one fork, by their exact type, a set so
+# a plain item costs one lookup
+_RANGE_ITEMS = frozenset(ranges.TRACKED_INTS)
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -92,8 +93,8 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
         return strs.in_text(item, container)
     if type(container) is ConcolicRange:
         return ranges.contains(container, item)
-    if type(container) is range and isinstance(item, _RANGE_ITEMS):
-        return ranges.within(item, container)
+    if type(container) is range and type(item) in _RANGE_ITEMS:
+        return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
     if written is not None and isinstance(item, _HASHABLE):
         return _searched(item, written)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
@@ -123,8 +124,8 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
         return strs.not_in_text(item, container)
     if type(container) is ConcolicRange:
         return ranges.not_contains(container, item)
-    if type(container) is range and isinstance(item, _RANGE_ITEMS):
-        return ranges.not_within(item, container)
+    if type(container) is range and type(item) in _RANGE_ITEMS:
+        return ranges.not_within(item, container)  # pyrefly: ignore[bad-argument-type]
     if written is not None and isinstance(item, _HASHABLE):
         return not _searched(item, written)
     return item not in container  # pyrefly: ignore[not-iterable]

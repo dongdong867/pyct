@@ -23,7 +23,7 @@ from pyct.solver.positions import (
     starts_with,
 )
 from pyct.solver.recased import TO_DECLARE
-from pyct.solver.spans import within, without
+from pyct.solver.spans import equal, unequal, within, without
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
 
@@ -137,6 +137,9 @@ OPERATORS: Mapping[tuple[str, type], str] = {
 
 # the type a head works on whatever its operands are: Python's `/` divides two ints as floats
 WORKS_ON: Mapping[str, type] = {"/": float}
+# the heads that search a container: over a range they work on ints, whatever the item is, so a
+# bool item reads as the int 1 or 0, as Python's range reads it
+MEMBERSHIPS = frozenset({"in", "not in"})
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
 # whether its operands swap. `a > b` is written `b < a`, the same term the target would have
@@ -163,6 +166,9 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     # an int in a range, its arguments arriving as their terms
     ("in", int): within,
     ("not in", int): without,
+    # two ranges, each arriving as its arguments' terms
+    ("==", range): equal,
+    ("!=", range): unequal,
     ("startswith", str): starts_with,
     ("endswith", str): ends_with,
     ("find", str): first_index,

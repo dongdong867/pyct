@@ -209,3 +209,36 @@ def test_reports_a_range_of_a_string() -> None:
     assert failure["kind"] == "target_raised"
     assert str(failure["detail"]).startswith("TypeError")
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+# review of follow-ranges, RNG-1: two ranges compare as Python compares them, with one fork
+def test_compares_two_ranges_as_python_does() -> None:
+    result = run_pyct(target("compared", "same"), '{"n": 2, "m": 2}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    assert at_lines(inputs[0]) == [(2, ["==", ["range", 0, "n"], ["range", 0, "m"]], True)]
+    assert covers(inputs[0], file_of("compared"), 3)
+    differ = [line for line in inputs[1:] if covers(line, file_of("compared"), 4)]
+    assert differ, [line["args"] for line in inputs]
+    assert range(number(differ[0], "n")) != range(number(differ[0], "m"))
+
+
+# review of follow-ranges, RNG-2: a tracked bool searched in a range is the int it is
+def test_searches_a_range_for_a_tracked_bool() -> None:
+    result = run_pyct(target("bool_item", "check"), '{"x": 0}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    assert at_lines(inputs[0]) == [(3, ["in", [">", "x", 3], ["range", 1, 2]], False)]
+    yes = [line for line in inputs[1:] if covers(line, file_of("bool_item"), 4)]
+    assert yes and number(yes[0], "x") > 3, [line["args"] for line in inputs]
+
+
+# review of follow-ranges, RNG-3: a tracked range is a sequence, as random.sample asks
+def test_samples_a_tracked_range() -> None:
+    result = run_pyct(target("sampled", "pick"), '{"n": 3}', "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    assert seed["failure"] is None, seed
