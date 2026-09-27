@@ -51,7 +51,8 @@ def joined(separator: str, iterable: object, tracked: type[ConcolicStr]) -> obje
     try:
         iterator = own(iter, iterable)
     except TypeError:
-        return own(str.join, plain(separator), iterable)
+        # Python's join makes any TypeError `iter` raises its own refusal, and calls `iter` once
+        return own(str.join, plain(separator), None)
     form = _form(iterable)
     items: list[object] = own(list, iterator)
     answer = _answer(plain(separator), items)

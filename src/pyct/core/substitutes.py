@@ -256,25 +256,41 @@ def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: obj
     """A call written ``"text".join(...)``, on a str literal or a name bound only to str
     literals, as ``receiver_method(...)``.
 
-    Given one argument, it joins as a tracked separator holding the
-    literal's text joins (`str_joins.joined`), so a tracked list, or a
-    tracked value among the items, makes the answer tracked. A plain list or
-    tuple that holds no tracked value is the method's own, as is any other
-    call, through `method`. Only the types of the method, its receiver, the
-    argument and a plain argument's items are read.
+    Given one argument, it reads what it joins once, as Python's own join
+    does, and joins as a tracked separator holding the literal's text joins
+    (`str_joins.joined`) when the argument or an item is tracked. Anything
+    else is the method's own, handed the items read, and any other call is
+    `method`'s. Only the types of the method, its receiver, the argument and
+    its items are read.
     """
-    plain = not kwargs and len(args) == 1 and type(args[0]) in _SEQUENCES
-    if plain and TRACKED_CLASSES.isdisjoint(map(type, cast("list[object]", args[0]))):
-        return receiver_method(*args)
-    receiver = getattr(receiver_method, "__self__", None)
-    written = type(receiver_method) is types.BuiltinMethodType and type(receiver) is str
-    if kwargs or len(args) != 1 or not written:
+    if kwargs or len(args) != 1:
         return method(receiver_method, *args, **kwargs)
-    return str_joins.joined(cast(str, receiver), args[0], ConcolicStr)
+    items = args[0]
+    if type(items) not in TRACKED_CLASSES:
+        items = _read(receiver_method, items)
+        for item in items:
+            if type(item) in TRACKED_CLASSES:
+                break
+        else:
+            return receiver_method(items)
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver_method) is not types.BuiltinMethodType or type(receiver) is not str:
+        return receiver_method(items)
+    return str_joins.joined(receiver, items, ConcolicStr)
 
 
-# what str's own join reads as it is, without walking it, and so does a join here
-_SEQUENCES = (list, tuple)
+def _read(receiver_method: Callable[..., object], items: object) -> list[object] | tuple[object]:
+    """What a join reads, as Python's own join reads it: a list or a tuple as it is, and any
+    other iterable into a list, its `__iter__` called once. Python's join raises its own refusal
+    for any TypeError `iter` raises, so it is asked to refuse a value that is not iterable."""
+    if type(items) is list or type(items) is tuple:
+        return cast("list[object]", items)
+    try:
+        iterator = iter(items)  # pyrefly: ignore[no-matching-overload]
+    except TypeError:
+        receiver_method(None)
+        raise
+    return list(iterator)
 
 
 def _on_text(
@@ -317,6 +333,7 @@ PASSING: frozenset[types.CodeType] = (
             call,
             method,
             join,
+            _read,
             _on_text,
             truth,
             Searched.__contains__,

@@ -194,3 +194,41 @@ def test_a_plain_item_that_is_not_a_str_beside_a_tracked_one_raises_python_s_wor
         substitutes.join("-".join, items)
 
     assert str(raised.value) == _python_raises("-".join, ["a", None])
+
+
+class Refusing:
+    """An object of the target's whose `__iter__` refuses, counting each time it is asked."""
+
+    def __init__(self) -> None:
+        self.asked = 0
+
+    def __iter__(self) -> Iterator[str]:
+        self.asked += 1
+        raise TypeError("not iterable today")
+
+
+@pytest.mark.parametrize(
+    "join",
+    [lambda value: substitutes.join("-".join, value), lambda value: _separator().join(value)],
+    ids=["literal", "tracked"],
+)
+def test_an_iter_that_refuses_is_asked_once_as_python_asks_it(
+    join: Callable[[object], object],
+) -> None:
+    python, pyct = Refusing(), Refusing()
+    message = _python_raises("-".join, python)
+
+    with pytest.raises(TypeError) as raised:
+        join(pyct)
+
+    assert str(raised.value) == message
+    assert pyct.asked == python.asked == 1
+
+
+def test_a_type_error_inside_a_generator_is_the_generator_s_own() -> None:
+    def broken() -> Iterator[str]:
+        yield "a"
+        raise TypeError("broken")
+
+    with pytest.raises(TypeError, match="broken"):
+        substitutes.join("-".join, broken())
