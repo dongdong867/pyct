@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from pyct.core import bound
+from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.dicts import ConcolicDict
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import kind_of
@@ -370,3 +371,26 @@ def test_an_item_whose_key_the_dict_lacks_is_not_in_its_items() -> None:
     assert ("z", 1) not in config.items()
 
     assert forks(sink) == [(["in", "'z'", "config"], False)]
+
+
+def test_every_method_of_dict_is_taught_kept_or_a_downgrade() -> None:
+    # the class body teaches, `_KEPT` keeps, and the derivation downgrades the rest: no method
+    # of dict is left to answer silently as dict's own
+    kept = {
+        "__new__",
+        "__init__",
+        "__repr__",
+        "__getattribute__",
+        "__sizeof__",
+        "__class_getitem__",
+    }
+    methods = {name for name, member in vars(dict).items() if callable(member)}
+    assert methods - set(vars(ConcolicDict)) <= kept
+
+
+@pytest.mark.parametrize("view", [ConcolicKeys, ConcolicValues, ConcolicItems])
+def test_every_method_of_a_view_is_taught_or_a_downgrade(view: type) -> None:
+    python = type(view.python({}))
+    methods = {name for name, member in vars(python).items() if callable(member)}
+    taught = set(vars(view)) | set(vars(view.__mro__[1]))
+    assert methods - taught <= {"__new__", "__getattribute__", "__sizeof__", "__hash__"}

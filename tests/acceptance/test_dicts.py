@@ -39,6 +39,8 @@ UNTAUGHT = "targets.dicts.untaught::check"
 ALIKE = "targets.dicts.alike::check"
 MISSING_KEY = "targets.dicts.missing_key::check"
 MISSING_KEY_FILE = str(DICTS / "missing_key.py")
+LENGTH = "targets.dicts.length::check"
+LENGTH_FILE = str(DICTS / "length.py")
 
 # a walk over a dict has no limit on its passes, so a run over a target that walks one ends when
 # inputs stop covering new lines rather than when no fork is left
@@ -242,3 +244,15 @@ def test_reports_a_missing_key() -> None:
     servers = [(line, dict_of(line, "config").get("server")) for line in solved(lines)]
     held = [line for line, server in servers if isinstance(server, dict) and "port" in server]
     assert held and any(line["failure"] is None for line in held), lines
+
+
+# follow-dicts-as-they-change: `len(config)` in the target's package is the dict's size term
+def test_len_of_a_dict_is_its_size() -> None:
+    result = run_pyct(LENGTH, '{"config": {"a": 1}}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert downgrade_names(lines[0]) == []
+    assert (3, [">", ["+", ["len", "config"], 1], 2], False) in listed(lines[0])
+    assert fork_line(result.stderr, LENGTH_FILE, 3, "len(config) + 1 > 2", False)
+    assert any(len(dict_of(line, "config")) >= 2 for line in solved(lines)), lines

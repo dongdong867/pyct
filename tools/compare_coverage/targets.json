@@ -59,6 +59,7 @@
     {"set": "v2", "target": "targets.dicts.changes::values", "seed": {"config": {"a": 1, "b": 2}}},
     {"set": "v2", "target": "targets.dicts.compared::check", "seed": {"config": {}}},
     {"set": "v2", "target": "targets.dicts.inside_lists::check", "seed": {"orders": [{"coupon": "x"}]}},
+    {"set": "v2", "target": "targets.dicts.length::check", "seed": {"config": {"a": 1}}},
     {"set": "v2", "target": "targets.dicts.made_up::check", "seed": {"config": {}}},
     {"set": "v2", "target": "targets.dicts.missing_key::check", "seed": {"config": {"server": {}}}},
     {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}},
