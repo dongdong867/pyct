@@ -200,14 +200,21 @@ def _tracked_int(sink: list[SinkItem]) -> ConcolicInt:
 # a piece in a form pyct does not encode: the call on s = "abcb" and a tracked int n = 1 in the
 # same sink, and the name its downgrade carries
 FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str, int], object], str]] = {
-    "s[n]": (lambda s, n: s[n], "__getitem__"),
-    "s[n:]": (lambda s, n: s[n:], "__getitem__"),
-    "s[:n]": (lambda s, n: s[:n], "__getitem__"),
-    "s[::-1]": (lambda s, n: s[::-1], "__getitem__"),
-    "s[0:3:1]": (lambda s, n: s[0:3:1], "__getitem__"),
+    # a step other than 1 and -1, and a tracked step, have no clean encoding
+    "s[::2]": (lambda s, n: s[::2], "__getitem__"),
+    "s[::-2]": (lambda s, n: s[::-2], "__getitem__"),
+    "s[::n]": (lambda s, n: s[::n], "__getitem__"),
     "s[Position()]": (lambda s, n: s[Position()], "__getitem__"),
+    "s[Position():]": (lambda s, n: s[Position() :], "__getitem__"),
+    # a compare's answer is a tracked bool, not a tracked int
     "s[n == 1]": (lambda s, n: s[n == 1], "__getitem__"),
-    "s.replace('b', 'x', 1)": (lambda s, n: s.replace("b", "x", 1), "replace"),
+    "s[:n == 1]": (lambda s, n: s[: n == 1], "__getitem__"),
+    # a count of two or more, and a tracked count
+    "s.replace('b', 'x', 2)": (lambda s, n: s.replace("b", "x", 2), "replace"),
+    "s.replace('b', 'x', n)": (lambda s, n: s.replace("b", "x", n), "replace"),
+    # a negative count is every occurrence, which cvc5 does not replace as Python does for an
+    # empty old string
+    "s.replace('', 'x', -1)": (lambda s, n: s.replace("", "x", -1), "replace"),
     "s.replace('', 'x')": (lambda s, n: s.replace("", "x"), "replace"),
     "s.replace(past cvc5, 'x')": (lambda s, n: s.replace(PAST_CVC5, "x"), "replace"),
     "s.replace('b', past cvc5)": (lambda s, n: s.replace("b", PAST_CVC5), "replace"),
@@ -252,6 +259,8 @@ REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s['a']": (lambda s: s["a"], TypeError),  # pyrefly: ignore[bad-index]
     "s.replace(1, 'x')": (lambda s: s.replace(1, "x"), TypeError),  # pyrefly: ignore[no-matching-overload]
     "s.removeprefix(1)": (lambda s: s.removeprefix(1), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s[1.5:]": (lambda s: s[1.5:], TypeError),  # pyrefly: ignore[bad-index]
+    "s.replace('b', 1, 1)": (lambda s: s.replace("b", 1, 1), TypeError),  # pyrefly: ignore[no-matching-overload]
 }
 
 

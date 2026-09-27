@@ -166,6 +166,7 @@ def test_a_str_leaf_is_declared_a_string() -> None:
     assert text.splitlines() == [
         "(set-logic ALL)",
         "(declare-const |arg.s| String)",
+        "(assert (<= (str.len |arg.s|) 1000000))",
         '(assert (= |arg.s| "abc"))',
         "(check-sat)",
         "(get-value (|arg.s|))",
@@ -291,6 +292,7 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
         "(set-logic ALL)",
         "(declare-const |arg.s| String)",
         "(declare-const |arg.n| Int)",
+        "(assert (<= (str.len |arg.s|) 1000000))",
         '(assert (not (< (str.indexof |arg.s| "x" 0) |arg.n|)))',
         "(check-sat)",
         "(get-value (|arg.s|))",
@@ -397,9 +399,10 @@ def test_a_piece_given_a_piece_defines_each_once(head: str) -> None:
     assert (text.count(string), text.count(affix)) == (1, 1)
 
 
-def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
-    with pytest.raises(ValueError, match="position"):
-        render((fork(["==", ["[]", "s", "n"], "'a'"], taken=True),), {"s": str, "n": int})
+def test_a_width_that_is_not_a_plain_int_is_an_error() -> None:
+    # a padding's width is plain wherever core writes one; an index's position may be tracked
+    with pytest.raises(ValueError, match="position, a separator or a fill"):
+        render((fork(["==", ["ljust", "s", "n", "' '"], "'a'"], taken=True),), {"s": str, "n": int})
 
 
 def test_a_missing_bound_outside_a_slice_is_an_error() -> None:

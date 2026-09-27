@@ -16,10 +16,11 @@ from __future__ import annotations
 
 import functools
 import types
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
+from pyct.results.graphs import dominators, intersect, postorder, strictly_after
 
 # CPython's flag on a function's code; a module and a class body run without it
 _OPTIMIZED = 0x1
@@ -85,9 +86,9 @@ class Flow:
     def __init__(self, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> None:
         graph = _Graph.of(code, raising)
         self._graph = graph
-        self._order = {n: at for at, n in enumerate(_postorder(graph.successors, graph.entry))}
-        self._idom = _dominators(graph.successors, graph.entry, self._order)
-        self._normal = frozenset(_postorder(graph.normal, graph.entry))
+        self._order = {n: at for at, n in enumerate(postorder(graph.successors, graph.entry))}
+        self._idom = dominators(graph.successors, graph.entry, self._order)
+        self._normal = frozenset(postorder(graph.normal, graph.entry))
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
 
@@ -208,7 +209,7 @@ class Flow:
         return frozenset(
             line
             for at, line in enumerate(lines)
-            if not _strictly_after(parts_of[line], (held, later, earlier)) & ~(1 << at)
+            if not strictly_after(parts_of[line], (held, later, earlier)) & ~(1 << at)
         )
 
     @functools.cached_property
@@ -251,7 +252,7 @@ class Flow:
         ends = set(self._holders(line))
         holders = self._holders(start)
         return bool(holders) and all(
-            ends.intersection(_postorder(self._plain, *self._plain[block])) for block in holders
+            ends.intersection(postorder(self._plain, *self._plain[block])) for block in holders
         )
 
     @functools.cached_property
@@ -306,7 +307,7 @@ class Flow:
         reachable = [node for node in nodes if node in self._idom]
         if not reachable:
             return None
-        return functools.reduce(lambda a, b: _intersect(a, b, self._idom, self._order), reachable)
+        return functools.reduce(lambda a, b: intersect(a, b, self._idom, self._order), reachable)
 
     def _up(self, node: int) -> list[int]:
         """``node`` and every node that dominates it, nearest first."""
@@ -318,7 +319,7 @@ class Flow:
 
     def _toward(self, line: int) -> frozenset[int]:
         if line not in self._towards:
-            self._towards[line] = frozenset(_postorder(self._predecessors, *self._holders(line)))
+            self._towards[line] = frozenset(postorder(self._predecessors, *self._holders(line)))
         return self._towards[line]
 
     def _tested_before(self, node: int) -> tuple[int, int]:
@@ -463,64 +464,3 @@ class _Builder:
             index: frozenset(op.line for op in block if op.line)
             for index, block in enumerate(self.blocks)
         }
-
-
-def _strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]) -> int:
-    """The lines, as bits, in parts after ``parts`` that cannot reach back into them."""
-    held, later, earlier = bits
-    after = back = same = 0
-    for each in parts:
-        after |= later[each]
-        back |= earlier[each]
-        same |= held[each]
-    return after & ~back & ~same
-
-
-def _postorder(successors: list[list[int]], *roots: int) -> list[int]:
-    """The nodes reachable from ``roots``, each after every node it leads to first."""
-    order: list[int] = []
-    seen = set(roots)
-    stack: list[tuple[int, Iterator[int]]] = [(root, iter(successors[root])) for root in roots]
-    while stack:
-        node, pending = stack[-1]
-        following = next((each for each in pending if each not in seen), None)
-        if following is None:
-            stack.pop()
-            order.append(node)
-            continue
-        seen.add(following)
-        stack.append((following, iter(successors[following])))
-    return order
-
-
-def _dominators(successors: list[list[int]], root: int, number: dict[int, int]) -> dict[int, int]:
-    """Each reachable node's immediate dominator, the root its own (Cooper, Harvey and Kennedy).
-
-    ``number`` is each reachable node's place in the postorder from ``root``.
-    """
-    order = sorted(number, key=number.__getitem__)
-    predecessors: dict[int, list[int]] = {node: [] for node in order}
-    for node in order:
-        for following in successors[node]:
-            predecessors[following].append(node)
-    idom = {root: root}
-    changed = True
-    while changed:
-        changed = False
-        for node in reversed(order[:-1]):
-            known = [each for each in predecessors[node] if each in idom]
-            meet = functools.reduce(lambda a, b: _intersect(a, b, idom, number), known)
-            if idom.get(node) != meet:
-                idom[node] = meet
-                changed = True
-    return idom
-
-
-def _intersect(a: int, b: int, idom: dict[int, int], number: dict[int, int]) -> int:
-    """The nearest node that dominates both ``a`` and ``b``."""
-    while a != b:
-        while number[a] < number[b]:
-            a = idom[a]
-        while number[b] < number[a]:
-            b = idom[b]
-    return a

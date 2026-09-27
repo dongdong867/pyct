@@ -34,7 +34,6 @@ TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "strs" / "truth_test.py")
 PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
 ENCODE_CHECK = "targets.strs.encode_check::check"
 TEXT_CONVERSION = "targets.strs.text_conversion::show"
-FIND_FROM_POSITION = "targets.strs.find_from_position::check"
 FIND_BELOW = "targets.strs.find_below::check"
 MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
 MISSING_SUBSTRING_FILE = str(REPO_ROOT / "targets" / "strs" / "missing_substring.py")
@@ -306,17 +305,6 @@ def test_finds_the_missing_substring() -> None:
     assert isinstance(failure, dict), solved
     assert failure["kind"] == "target_raised"
     assert str(failure["detail"]).startswith("ValueError:")
-
-
-# follow-strings-downgrades-a-search-from-a-position
-def test_downgrades_a_search_from_a_position() -> None:
-    result = run_pyct(FIND_FROM_POSITION, '{"s": "abcx"}')
-
-    assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
-    # a start position is a form pyct does not encode, so str answers and the method is named
-    assert seed["downgrades"] == [downgrade("find", 1, "targets/strs/find_from_position.py:2:7")]
-    assert seed["forks"] == []
 
 
 # follow-strings-reports-an-ordered-compare-with-a-number

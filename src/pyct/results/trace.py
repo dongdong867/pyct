@@ -284,7 +284,8 @@ _FUNCTIONS: Mapping[str, str] = {
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     """A condition Python writes around its operands, or None for one it writes between them.
 
-    An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
+    A tuple reads ``('a', t)``, and one item ``('a',)``. An index reads
+    ``s[i]`` and a slice ``s[i:j]`` or ``s[i:j:k]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
     ``config['port']``. A function in `_FUNCTIONS` reads as the table spells
     it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
@@ -297,6 +298,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     texts = [text for text, _ in operands]
     if head == CUT:
         return f"...({'?' if expression[1] is None else texts[0]} nodes)"
+    if head == "()":
+        return f"({texts[0]},)" if len(texts) == 1 else f"({', '.join(texts)})"
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)

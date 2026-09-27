@@ -7,10 +7,8 @@ runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
-    downgrade,
     first_line,
     input_lines,
-    one_line,
     run_pyct,
     summary_line,
 )
@@ -40,7 +38,6 @@ PIECES_FORKS: list[tuple[int, list[object]]] = [
 LONG_OR_EMPTY = "targets.strs.long_or_empty::measure"
 INDEX_PAST_THE_END = "targets.strs.index_past_the_end::fourth"
 INDEX_PAST_THE_END_FILE = str(REPO_ROOT / "targets" / "strs" / "index_past_the_end.py")
-TRACKED_INDEX = "targets.strs.tracked_index::pick"
 REBUILT = "targets.strs.rebuilt::rebuild"
 REBUILT_FILE = str(REPO_ROOT / "targets" / "strs" / "rebuilt.py")
 PADDED = "targets.strs.padded::pad"
@@ -138,18 +135,6 @@ def test_reports_an_index_past_the_end() -> None:
     solved = input_lines(result.stdout)[1]
     assert solved["aim"] == {"file": INDEX_PAST_THE_END_FILE, "line": 2, "col": 7, "position": 0}
     assert len(text(solved, "s")) > 3
-
-
-# follow-strings-downgrades-a-tracked-index
-def test_downgrades_a_tracked_index() -> None:
-    result = run_pyct(TRACKED_INDEX, '{"s": "abc", "n": 0}')
-
-    assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
-    # a tracked int as the index is a form pyct does not encode, so str answers and the
-    # operator is named by its dunder
-    assert seed["downgrades"] == [downgrade("__getitem__", 1, "targets/strs/tracked_index.py:2:7")]
-    assert seed["forks"] == []
 
 
 def printed_nodes(expression: object) -> int:
