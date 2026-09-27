@@ -325,7 +325,7 @@ def test_a_program_reads_its_answer_back_by_leaf() -> None:
     written = program(path, leaves)
 
     # y is not on the path, so it is neither declared nor read
-    assert written.leaves == {"arg.x": "x", "leaf.2": json.dumps(PORT)}
+    assert written.names_by_symbol == {"arg.x": "x", "leaf.2": json.dumps(PORT)}
     assert written.read({"arg.x": 3, "leaf.2": 70000}) == {"x": 3, json.dumps(PORT): 70000}
 
 

@@ -121,16 +121,16 @@ class _Leaves:
 class Program:
     """The SMT-LIB program for one path, and the leaf each constant it declares stands for.
 
-    ``leaves`` is keyed by each constant's symbol without its bars, which is
-    how a model names it back.
+    ``names_by_symbol`` holds each leaf's name, keyed by its constant's
+    symbol without the bars, which is how a model names it back.
     """
 
     text: str
-    leaves: Mapping[str, str]
+    names_by_symbol: Mapping[str, str]
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for."""
-        return {self.leaves[constant]: value for constant, value in model.items()}
+        return {self.names_by_symbol[constant]: value for constant, value in model.items()}
 
 
 def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
@@ -150,7 +150,7 @@ def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     text = "\n".join(lines) + "\n"
-    return Program(text=text, leaves={symbol: name for name, symbol in symbols.items()})
+    return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
 
 
 def _symbols(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
