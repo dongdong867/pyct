@@ -53,6 +53,8 @@ def run_pyct(
         timeout=30,
     )
     check_every_uncovered_line_explained_once(result.stdout)
+    # a line no cause explains is put down as ended before with no input that ended
+    assert "no cause explains line" not in result.stderr, result.stderr
     return result
 
 

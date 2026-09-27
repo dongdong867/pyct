@@ -194,3 +194,21 @@ def test_a_raise_the_function_caught_ends_the_input_before_the_line() -> None:
     # `TABLE["z"]` raises on every pass and `continue` goes on: the input raised before line 9
     entry = entry_for(result.stdout, 9)
     assert entry == {"file": file, "lines": [9], "reason": "ended before"}
+
+
+# see-why-a-line-was-missed-says-a-generator-was-left-suspended
+def test_a_generator_its_caller_stopped_asking_is_suspended_at_its_yield() -> None:
+    target, file = spec("suspended", "first")
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    entry = entry_for(result.stdout, 3)
+    assert entry == {
+        "file": file,
+        "lines": [3, 4],
+        "reason": "suspended",
+        "yield": {"file": file, "line": 2},
+    }
+    why = f"why 3, 4 in {file}: suspended at the yield on {file}:2"
+    assert why in result.stderr.splitlines()

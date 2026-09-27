@@ -80,3 +80,15 @@ def test_an_entry_leaves_out_what_its_reason_does_not_name() -> None:
 )
 def test_each_reason_has_its_own_words_on_stderr(entry: WhyEntry, line: str) -> None:
     assert why_line(entry) == line
+
+
+def test_a_suspended_entry_names_the_yield_it_stopped_at() -> None:
+    entry = WhyEntry("m.py", (3, 4), Reason.SUSPENDED, at_yield=2)
+
+    assert why_json(entry) == {
+        "file": "m.py",
+        "lines": [3, 4],
+        "reason": "suspended",
+        "yield": {"file": "m.py", "line": 2},
+    }
+    assert why_line(entry) == "why 3, 4 in m.py: suspended at the yield on m.py:2"

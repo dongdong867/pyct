@@ -1,6 +1,9 @@
 """Why a line was missed where paths join, raises are caught, and nothing shows a side."""
 
+import logging
 from pathlib import Path
+
+import pytest
 
 from pyct.core.branch import ForkSite, Site
 from pyct.results.why import Condition, Reason, Tries, Walked, WhyEntry
@@ -241,3 +244,55 @@ def test_an_input_that_neither_ended_nor_raised_is_never_said_to_have_ended(
 
     # nothing shows which side the ternary took, and nothing ended: the ternary is named
     assert entry.reason is Reason.NO_FORK
+
+
+GENERATOR = """\
+def numbers(x):
+    yield x
+    y = x + 1
+    yield y
+
+
+def first(x):
+    return next(numbers(x))
+"""
+
+
+def test_a_generator_left_at_a_yield_is_suspended_there(tmp_path: Path) -> None:
+    file = module(tmp_path, GENERATOR)
+    lines = frozenset({2, 8})
+
+    entries = why(file, ({1, 3, 4, 7}, set(lines)), [Walked(forks=(), failed=False, lines=lines)])
+
+    assert entries[-1] == WhyEntry(file=file, lines=(3, 4), reason=Reason.SUSPENDED, at_yield=2)
+
+
+def test_a_generator_that_failed_past_its_yield_ended_before_the_line(tmp_path: Path) -> None:
+    file = module(tmp_path, GENERATOR)
+    lines = frozenset({2, 8})
+
+    entries = why(file, ({1, 3, 4, 7}, set(lines)), [Walked(forks=(), failed=True, lines=lines)])
+
+    assert entries[-1] == WhyEntry(file=file, lines=(3, 4), reason=Reason.ENDED_BEFORE)
+
+
+def test_facts_no_cause_explains_are_logged_as_such(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    source = """\
+    def f(x):
+        y = 1
+        return y
+    """
+    file = module(tmp_path, source)
+    # line 2 ran, no input ended, and nothing stands between line 2 and line 3: facts no run
+    # of this code gives, so no cause explains them and the log says so
+    walked = [Walked(forks=(), failed=False, lines=frozenset({2}))]
+
+    with caplog.at_level(logging.WARNING, logger="pyct.results.why"):
+        (entry,) = why(file, ({3}, {2}), walked)
+
+    assert entry.reason is Reason.ENDED_BEFORE
+    assert caplog.messages == [
+        f"no cause explains line 3 of {file}; it is put down as ended before"
+    ]

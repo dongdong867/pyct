@@ -158,6 +158,13 @@ class Flow:
         holders = self._graph.blocks_of(line)
         return bool(holders) and not any(block in self._normal for block in holders)
 
+    def last_yield(self, nodes: frozenset[int]) -> int | None:
+        """The line of the yield in the latest of ``nodes`` that holds one, or None."""
+        held = [node for node in nodes if node in self._graph.yields and node in self._order]
+        if not held:
+            return None
+        return self._graph.yields[min(held, key=self._order.__getitem__)]
+
     def raises_toward(self, line: int) -> frozenset[int]:
         """The raise nodes entered from a block ``line`` can still be reached from."""
         toward = self._toward(line)
@@ -214,6 +221,7 @@ class _Graph:
     held: dict[int, frozenset[int]]
     raises: tuple[int, ...]
     entry: int
+    yields: dict[int, int]
 
     @classmethod
     def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> _Graph:
@@ -226,7 +234,14 @@ class _Graph:
         for start, covered in handler_ranges(code, blocks):
             builder.raise_into(start, covered)
         normal += [[] for _ in range(len(builder.successors) - len(normal))]
-        return cls(builder.successors, normal, builder.steps, builder.held(), builder.raises, 0)
+        yields = {
+            index: op.line
+            for index, block in enumerate(blocks)
+            for op in block
+            if op.name == "YIELD_VALUE" and op.line
+        }
+        steps = builder.steps
+        return cls(builder.successors, normal, steps, builder.held(), builder.raises, 0, yields)
 
     def blocks_of(self, line: int) -> list[int]:
         return [block for block, lines in self.held.items() if line in lines]

@@ -317,6 +317,7 @@
     {"set": "v2", "target": "targets.why.shared_site::first_differs", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.why.sites::sites", "seed": {"x": 3}},
     {"set": "v2", "target": "targets.why.substituted_in::never_part", "seed": {"s": "a"}},
+    {"set": "v2", "target": "targets.why.suspended::first", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.two_guards::two", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "target": "targets.why.uncalled::f", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.untaken::same", "seed": {"x": 2}},

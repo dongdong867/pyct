@@ -9,6 +9,7 @@ got past names the cause (``README.md › Rules › the summary line``).
 from __future__ import annotations
 
 import functools
+import logging
 import types
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -17,6 +18,11 @@ from enum import StrEnum
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import compiled
 from pyct.results.way import Flow, Fork, Place, Step, StepKind, owners
+
+logger = logging.getLogger(__name__)
+
+# what pyct logs for a line no cause explains; a run should never say it
+UNEXPLAINED = "no cause explains line %d of %s; it is put down as ended before"
 
 
 class Reason(StrEnum):
@@ -28,6 +34,7 @@ class Reason(StrEnum):
     NO_FORK = "no fork"
     HANDLER = "handler"
     ENDED_BEFORE = "ended before"
+    SUSPENDED = "suspended"
 
 
 @dataclass(frozen=True)
@@ -54,7 +61,8 @@ class WhyEntry:
     """One cause, and the lines of one file it accounts for, ascending.
 
     ``function`` is set for ``not called``, ``condition`` for ``not taken``
-    and ``no fork``, and ``tries`` for ``not taken``.
+    and ``no fork``, ``tries`` for ``not taken``, and ``at_yield``, the line
+    of the ``yield`` the function was left at, for ``suspended``.
     """
 
     file: str
@@ -63,6 +71,7 @@ class WhyEntry:
     function: str | None = None
     condition: Condition | None = None
     tries: Tries | None = None
+    at_yield: int | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,7 @@ def _with_lines(cause: WhyEntry, lines: list[int]) -> WhyEntry:
         function=cause.function,
         condition=cause.condition,
         tries=cause.tries,
+        at_yield=cause.at_yield,
     )
 
 
@@ -190,6 +200,9 @@ class _Walk:
             return self._entry(Reason.HANDLER)
         if self._ended(line):
             return self._entry(Reason.ENDED_BEFORE)
+        at_yield = self._suspended(line)
+        if at_yield is not None:
+            return WhyEntry(self.seen.file, (), Reason.SUSPENDED, at_yield=at_yield)
         # no input ended, so the line waits on a condition the run cannot show a side of, as a
         # ternary's, which joins again at once: the first such on the way, else reaching it
         return self._first_unshown(line)
@@ -211,10 +224,32 @@ class _Walk:
         reaching = [p for p in self.flow.reaching(line) if p.node not in self.passed]
         place = next(iter([*unshown, *reaching, *conditions]), None)
         if place is None:
-            # every run of the function reaches the line with no condition on the way, as a
-            # generator's body past a yield no consumer resumed: the line's run never ended
+            # no condition leads to the line, and no input ended or was suspended on the way,
+            # so every input ran the line: the run's facts contradict each other
+            logger.warning(UNEXPLAINED, line, self.seen.file)
             return self._entry(Reason.ENDED_BEFORE)
         return self._named(place.step)
+
+    def _suspended(self, line: int) -> int | None:
+        """The line of the yield an input was left at on its way to the line, if one was.
+
+        The input reached a yield from which the line could still be reached,
+        did not end, and never came back: its caller stopped asking for values.
+        """
+        frontier = self._frontier(line)
+        toward = self.flow.toward(line)
+        for each, marked in zip(self.seen.inputs, self._marks, strict=True):
+            if each.failed or (frontier is not None and frontier not in marked):
+                continue
+            at = self.flow.last_yield(marked & toward)
+            if at is not None:
+                return at
+        return None
+
+    def _frontier(self, line: int) -> int | None:
+        """The deepest node on the line's way some input is shown to have passed."""
+        chain = [node for node in self.flow.chain(line) if node in self.passed]
+        return chain[-1] if chain else None
 
     def _reached(self, place: Place) -> bool:
         """Whether an input reached a condition: its block ran, or a fork was recorded there.
@@ -256,8 +291,7 @@ class _Walk:
         caught the raise and went on: a raise entered from a block the line can
         still be reached from.
         """
-        chain = [node for node in self.flow.chain(line) if node in self.passed]
-        frontier = chain[-1] if chain else None
+        frontier = self._frontier(line)
         away = self.flow.raises_toward(line)
         for each, marked in zip(self.seen.inputs, self._marks, strict=True):
             if frontier is not None and frontier not in marked:

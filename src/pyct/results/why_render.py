@@ -25,6 +25,8 @@ def why_json(entry: WhyEntry) -> dict[str, object]:
         payload["condition"] = _condition(entry.condition)
     if entry.tries is not None:
         payload["tries"] = dataclasses.asdict(entry.tries)
+    if entry.at_yield is not None:
+        payload["yield"] = {"file": entry.file, "line": entry.at_yield}
     return payload
 
 
@@ -37,6 +39,8 @@ def why_line(entry: WhyEntry) -> str:
 def _cause(entry: WhyEntry) -> str:
     if entry.reason is Reason.NOT_CALLED:
         return f"{entry.function} not called"
+    if entry.reason is Reason.SUSPENDED:
+        return f"suspended at the yield on {entry.file}:{entry.at_yield}"
     if entry.condition is None:
         return _SAID[entry.reason]
     never = _never(entry.condition)
