@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from time import monotonic
 
-from pyct.binding.shapes import ListShape
+from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import (
     Answer,
@@ -75,14 +75,15 @@ def solve(
     prefix: tuple[Branch, ...],
     leaves: Mapping[str, type],
     timeout: float,
-    lists: Mapping[str, ListShape] | None = None,
+    shapes: Mapping[str, ListShape | DictShape] | None = None,
     values: Mapping[str, object] | None = None,
 ) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds the solve
     gets, writing the program included.
 
-    ``leaves``, ``lists`` and ``values`` are what the input whose path it extends holds: each
-    leaf the solver may change, each tracked list with its shape, and each leaf's value.
+    ``leaves``, ``shapes`` and ``values`` are what the input whose path it extends holds: each
+    leaf the solver may change, each tracked list and dict with its shape, and each leaf's
+    value.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
@@ -110,6 +111,10 @@ def solve(
     once more with neither held (see ``_loosened``); decision
     float-floor-division-a-real-floor-inside-a-bound.
 
+    A program that keeps each dict's keys no fork names and makes none up answers with the
+    input's keys where the path does not ask for others. An unsat to it asks once more with
+    them free, and that answer is the path's (see ``dicts``).
+
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
 
@@ -122,11 +127,13 @@ def solve(
     solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
-    until = monotonic() + timeout
-    steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
-    origin = Origin(shapes=lists or {}, values=values or {}, steps=steps, until=until)
+    origin = _origin(shapes or {}, values or {}, timeout)
     path = (prefix, leaves)
     answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat) and written is not None and written.kept:
+        logger.debug("unsat with each dict's other keys kept: asking with them free")
+        origin = replace(origin, keep=False)
+        answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
@@ -134,6 +141,17 @@ def solve(
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin)
     return answer
+
+
+def _origin(
+    shapes: Mapping[str, ListShape | DictShape], values: Mapping[str, object], timeout: float
+) -> Origin:
+    """The input a solve extends, its lists apart from its dicts, and the solve's limits."""
+    lists = {name: shape for name, shape in shapes.items() if isinstance(shape, ListShape)}
+    dicts = {name: shape for name, shape in shapes.items() if isinstance(shape, DictShape)}
+    steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
+    until = monotonic() + timeout
+    return Origin(shapes=lists, dicts=dicts, values=values, steps=steps, until=until)
 
 
 def _loosened(path: _Path, origin: Origin) -> Answer:
@@ -157,7 +175,7 @@ def _loosened(path: _Path, origin: Origin) -> Answer:
 def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
     """What cvc5 answers the path written from ``origin``, and the program it answered, None
     when none was written."""
-    finite = float_leaves(*path, origin.shapes)
+    finite = float_leaves(*path, origin)
     written, origin = _written(path, origin, finite)
     if not isinstance(written, Program):
         return written, None

@@ -1,7 +1,7 @@
 """One walk of a seed: every dict and list rebuilt, every value bind tracks handed to a visitor.
 
 bind, the seed's leaves and the model all read this one walk, so they cannot disagree about
-which values are tracked, what each is named, or which lists are tracked whole.
+which values are tracked, what each is named, or which lists and dicts are tracked whole.
 """
 
 from __future__ import annotations
@@ -37,6 +37,13 @@ class Visitor(Protocol):
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         """The copy that stands for a tracked list, and the items it takes, in order."""
+        ...
+
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        """The copy that stands for a tracked dict, and the items it takes, in order: the copy
+        holds each of their keys, in the same order."""
         ...
 
 
@@ -107,7 +114,7 @@ class Walk:
             if isinstance(into, list):
                 list.__setitem__(into, slot, placed)
             else:
-                into[slot] = placed
+                dict.__setitem__(into, slot, placed)
         return rebuilt
 
     def _later(self, values: Iterable[_Pending]) -> None:
@@ -133,7 +140,7 @@ class Walk:
         elif access is None or id(value) in self._named:
             return made
         else:
-            items = list(value) if isinstance(value, list) else value
+            items = list(value) if isinstance(value, list) else dict(value)
         if access is not None:
             self._named.add(id(value))
         self._later(_items(value, items, access, made, place.check))
@@ -148,8 +155,10 @@ class Walk:
             self._tracked.add(id(made))
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
+        elif access is not None:
+            made, items = self._visitor.mapped(value, place)
         else:
-            made, items = dict.fromkeys(value), value
+            made, items = dict.fromkeys(value), dict(value)
         self._copies[id(value)] = made
         self._kept.append(value)
         return made, items
@@ -203,15 +212,16 @@ def _items(
 ) -> Iterable[_Pending]:
     """A container's values to place into its copy, each with the access one step in.
 
-    A list's are the items the walk decided it takes. A dict's value is named by its key when
-    the key can be written as a literal (see ``_key``), and by nothing otherwise. It goes in
-    under the copy's own key, in the same order: a copy deepcopy made holds copies of the
-    seed's keys, and a key equal only to itself would go in twice.
+    A list's and a dict's are the items the walk decided it takes. A dict's value is named by
+    its key when the key can be written as a literal (see ``_key``), and by nothing otherwise.
+    It goes in under the copy's own key, in the same order: a copy deepcopy made holds copies
+    of the seed's keys, and a key equal only to itself would go in twice. The copy's keys are
+    read in C, since a tracked dict's own walk records forks.
     """
     each = _each(check, list if isinstance(value, list) else dict)
     if isinstance(value, list):
         return ((item, _step(access, i), into, i, each) for i, item in enumerate(items))
-    pairs = zip(value.items(), into, strict=True)
+    pairs = zip(dict.items(items), dict.keys(into), strict=True)
     return ((item, _step(access, _key(key)), into, slot, each) for (key, item), slot in pairs)
 
 

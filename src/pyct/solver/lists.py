@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 
-from pyct.binding.shapes import ListShape
+from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.list_kinds import (
@@ -75,8 +75,8 @@ READ_STEPS = 512
 
 @dataclass(frozen=True)
 class Origin:
-    """The input whose path this is: each tracked list with its shape, each leaf's value, and
-    how the program is written for it.
+    """The input whose path this is: each tracked list and dict with its shape, each leaf's
+    value, and how the program is written for it.
 
     ``settle`` names the list parts whose clamps, where the path leaves them open, go the way
     they went there (see ``list_slices``), and ``everywhere`` settles every one. ``hold`` says
@@ -85,10 +85,12 @@ class Origin:
     ``steps`` is the most steps one read takes before its program is written again settled,
     None for no limit; ``most`` the most all reads of the program take together before the
     program is given up (``ProgramTooLargeError``), None for no limit; and ``until`` the
-    monotonic instant writing must end by.
+    monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
+    keys no fork names and makes none up (see ``dicts``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
+    dicts: Mapping[str, DictShape] = field(default_factory=dict)
     values: Mapping[str, object] = field(default_factory=dict)
     settle: frozenset[int] = frozenset()
     everywhere: bool = False
@@ -97,6 +99,7 @@ class Origin:
     steps: int | None = READ_STEPS
     most: int | None = None
     until: float | None = None
+    keep: bool = True
 
 
 class UnencodedError(ValueError):

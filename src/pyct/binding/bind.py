@@ -6,9 +6,10 @@ from dataclasses import dataclass, field
 from typing import TypeGuard
 
 from pyct.binding.annotations import Check, Items
-from pyct.binding.shapes import ListShape, shaped
+from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import kinds_of
@@ -26,7 +27,8 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     ``["[]", ["[]", "config", "'server'"], "'port'"]``. A bool is an int to
     Python but not a number to bind: it has no ``<`` worth tracking. A list the
     walk names is a tracked list whose form is its access, so its length and
-    its changes are followed too.
+    its changes are followed too, and a dict the walk names is a tracked dict
+    of that access, so its keys and its changes are.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
     under, and every other value deepcopy can copy is copied, so a change the
@@ -42,6 +44,8 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     for made in tracker.lists:
         made.shadow = made.storage()
         made.kinds = kinds_of(made.shadow)
+    for mapped in tracker.dicts:
+        mapped.shadow = mapped.storage()
     return args
 
 
@@ -51,6 +55,7 @@ class _Tracker:
     def __init__(self, sink: BranchSink) -> None:
         self.sink = sink
         self.lists: list[ConcolicList] = []
+        self.dicts: list[ConcolicDict] = []
 
     def scalar(self, value: int | float | str, place: Place) -> object:
         if isinstance(value, str):
@@ -64,6 +69,13 @@ class _Tracker:
         self.lists.append(made)
         return made, list(value)
 
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink)
+        self.dicts.append(made)
+        return made, dict(value)
+
 
 @dataclass(frozen=True)
 class Seed:
@@ -71,7 +83,9 @@ class Seed:
 
     ``leaves`` names each int and str the solver declares on its own: a parameter, or a value
     inside a dict. ``lists`` names each tracked list the solver declares as a length and its
-    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``checks``
+    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``dicts``
+    names each tracked dict, a dict inside a list among them, with its keys, whose presence
+    and count the solver declares. ``checks``
     is what each parameter's annotation asks of it, which says the kind of an item the solver
     adds to a list with none to go by, for this input and each answer made from it. The target
     is never called with the dicts and lists here: ``bind`` rebuilds them for each call. So
@@ -85,13 +99,18 @@ class Seed:
     checks: Mapping[str, Check] = field(default_factory=dict)
     # each leaf's value in this input, which settles how a list the path changed was cut
     values: Mapping[str, object] = field(default_factory=dict)
+    dicts: Mapping[str, DictShape] = field(default_factory=dict)
 
     @classmethod
     def of(cls, args: Mapping[str, object], checks: Mapping[str, Check] | None = None) -> "Seed":
-        """The arguments copied, and their leaves and lists noted, in one walk."""
+        """The arguments copied, and their leaves, lists and dicts noted, in one walk."""
         noted = Noted()
         copied = Walk(noted).rebuilt(args, checks)
-        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values)
+        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values, noted.dicts)
+
+    def containers(self) -> dict[str, ListShape | DictShape]:
+        """Each tracked list and dict with its shape, by name: what the solver declares."""
+        return {**self.lists, **self.dicts}
 
 
 class Noted:
@@ -105,6 +124,8 @@ class Noted:
         # each tracked list in the order the walk made it: its copy, its name or the list and
         # position it is a row of, and what its annotation asks of each item
         self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
+        # each tracked dict by its name, with its keys and the kinds of its values
+        self.dicts: dict[str, DictShape] = {}
 
     def scalar(self, value: int | float | str, place: Place) -> object:
         return self.noted(value, place)
@@ -125,6 +146,14 @@ class Noted:
         each = check.each if isinstance(check, Items) and check.kind is list else None
         self.made.append((made, where, each))
         return made, list(value)
+
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        check = place.check
+        each = check.each if isinstance(check, Items) and check.kind is dict else None
+        self.dicts[leaf_name(place.access)] = dict_shaped(value, each)
+        return dict.fromkeys(value), dict(value)
 
     def shapes(self) -> dict[str, ListShape]:
         """Each list's shape, its rows first: the walk made every row after its list."""
