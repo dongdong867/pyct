@@ -80,7 +80,7 @@ def test_an_untaught_operation_records_the_site_of_the_call() -> None:
     assert callable(lose)
     sink: list[SinkItem] = []
 
-    lose(ConcolicInt(3, expression="x", sink=sink))
+    lose(ConcolicInt.made(3, expression="x", sink=sink))
 
     # the target's `x ^ 0`, at column 11 of its line 2; pyct's own frames are skipped
     assert sink == [Downgrade(name="__xor__", site=Site(file="<lost>", line=2, col=11))]
@@ -108,14 +108,14 @@ def test_a_sink_holds_forks_and_downgrades_in_the_order_they_happened() -> None:
 def test_a_truth_test_s_fork_is_not_marked_as_an_operation_s() -> None:
     sink: list[SinkItem] = []
 
-    bool(ConcolicInt(3, expression="x", sink=sink))
+    bool(ConcolicInt.made(3, expression="x", sink=sink))
 
     assert [item.raising for item in sink if isinstance(item, Branch)] == [False]
 
 
 def test_a_fork_before_an_operation_that_may_raise_is_marked_as_the_operation_s() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     10 // x
     bool(x)
@@ -133,7 +133,7 @@ def test_a_repeated_downgrade_at_one_instruction_is_the_one_object() -> None:
     assert callable(spin)
     sink: list[SinkItem] = []
 
-    spin(ConcolicInt(3, expression="x", sink=sink))
+    spin(ConcolicInt.made(3, expression="x", sink=sink))
 
     first, second, third, last = sink
     assert first is second is third
@@ -146,7 +146,7 @@ def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
     both = namespace["both"]
     assert callable(both)
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     both(x, float)
     both(x, operator.invert)

@@ -13,11 +13,11 @@ from pyct.core.values import raised_by_target
 
 
 def _tracked(value: str = "abcb", sink: list[SinkItem] | None = None) -> ConcolicStr:
-    return ConcolicStr(value, expression="s", sink=[] if sink is None else sink)
+    return ConcolicStr.made(value, expression="s", sink=[] if sink is None else sink)
 
 
 def _n(value: int, sink: list[SinkItem]) -> ConcolicInt:
-    return ConcolicInt(value, expression="n", sink=sink)
+    return ConcolicInt.made(value, expression="n", sink=sink)
 
 
 # a form on s = "abcb", a tracked n = 1 and a tracked t = "x" that records no fork: the call,
@@ -84,7 +84,9 @@ def test_a_form_with_a_position_is_followed_and_records_nothing(
 ) -> None:
     sink: list[SinkItem] = []
 
-    result = call(_tracked(sink=sink), _n(1, sink), ConcolicStr("x", expression="t", sink=sink))
+    result = call(
+        _tracked(sink=sink), _n(1, sink), ConcolicStr.made("x", expression="t", sink=sink)
+    )
 
     assert isinstance(result, ConcolicStr | ConcolicInt | ConcolicBool)
     assert result.expression == expression

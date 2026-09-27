@@ -100,8 +100,8 @@ def _probe(source: str) -> Callable[..., object]:
 
 def _conditions(sink: list[SinkItem]) -> tuple[ConcolicBool, ConcolicBool]:
     """`x > 0` on x = 1 and `y > 0` on y = 0: one true and one false tracked bool."""
-    x = ConcolicInt(1, expression="x", sink=sink)
-    y = ConcolicInt(0, expression="y", sink=sink)
+    x = ConcolicInt.made(1, expression="x", sink=sink)
+    y = ConcolicInt.made(0, expression="y", sink=sink)
     return x > 0, y > 0
 
 
@@ -296,7 +296,7 @@ def test_a_reflected_division_by_a_bool_forks_on_its_own_condition() -> None:
 def test_an_int_divided_by_a_bool_forks_on_its_condition() -> None:
     sink: list[SinkItem] = []
     above, _ = _conditions(sink)
-    x = ConcolicInt(5, expression="x", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
 
     result = _probe(DIVMOD)(x, above)
 

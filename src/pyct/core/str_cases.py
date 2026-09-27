@@ -62,8 +62,8 @@ def width(receiver: object, args: tuple[object, ...]) -> list[Expression] | None
 
 def piece(receiver: Tracked, value: str, expression: Expression) -> object:
     """A str the receiver built, tracked as the receiver's own type is, carrying ``expression``."""
-    made: Callable[..., object] = type(receiver)
-    return made(value, expression=expression, sink=receiver.sink)
+    made: Callable[..., object] = type(receiver).made  # pyrefly: ignore[missing-attribute]
+    return made(value, expression, receiver.sink)
 
 
 def check(name: str) -> Callable[..., object]:
@@ -75,7 +75,7 @@ def check(name: str) -> Callable[..., object]:
         if args or kwargs:
             return downgrade(self, *args, **kwargs)
         value = own(operation, self)
-        return ConcolicBool(value, expression=[name, self.expression], sink=self.sink)
+        return ConcolicBool.made(value, expression=[name, self.expression], sink=self.sink)
 
     return compute
 

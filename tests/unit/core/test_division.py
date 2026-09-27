@@ -66,7 +66,7 @@ def test_a_division_by_a_constant_builds_its_node_and_forks_nothing(
     call: Callable[[int], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     result = call(x)
 
@@ -85,8 +85,8 @@ def test_a_division_by_a_symbolic_divisor_builds_its_node_and_forks_on_the_divis
     call: Callable[[int, int], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
-    y = ConcolicInt(2, expression="y", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
+    y = ConcolicInt.made(2, expression="y", sink=sink)
 
     result = call(x, y)
 
@@ -98,8 +98,8 @@ def test_a_division_by_a_symbolic_divisor_builds_its_node_and_forks_on_the_divis
 
 def test_the_zero_fork_is_recorded_where_the_division_ran() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
-    y = ConcolicInt(2, expression="y", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
+    y = ConcolicInt.made(2, expression="y", sink=sink)
 
     _probe(DIVIDE)(x, y)
 
@@ -109,7 +109,7 @@ def test_the_zero_fork_is_recorded_where_the_division_ran() -> None:
 
 def test_the_reflected_form_records_the_same_fork() -> None:
     sink: list[SinkItem] = []
-    y = ConcolicInt(2, expression="y", sink=sink)
+    y = ConcolicInt.made(2, expression="y", sink=sink)
 
     # `7 // y` runs int's reflected divide on y, and y is still the divisor
     _probe(REFLECTED)(y)
@@ -119,8 +119,8 @@ def test_the_reflected_form_records_the_same_fork() -> None:
 
 def test_divmod_divides_once_and_forks_once() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
-    y = ConcolicInt(2, expression="y", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
+    y = ConcolicInt.made(2, expression="y", sink=sink)
 
     _probe(DIVMOD)(x, y)
 
@@ -130,7 +130,7 @@ def test_divmod_divides_once_and_forks_once() -> None:
 
 def test_the_reflected_divmod_forks_once_too() -> None:
     sink: list[SinkItem] = []
-    y = ConcolicInt(2, expression="y", sink=sink)
+    y = ConcolicInt.made(2, expression="y", sink=sink)
 
     _probe(REFLECTED_DIVMOD)(y)
 
@@ -139,7 +139,7 @@ def test_the_reflected_divmod_forks_once_too() -> None:
 
 def test_divmod_hands_back_a_quotient_and_a_remainder_that_carry_their_own_nodes() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     quotient, remainder = divmod(x, 5)
 
@@ -150,7 +150,7 @@ def test_divmod_hands_back_a_quotient_and_a_remainder_that_carry_their_own_nodes
 
 def test_the_reflected_divmod_keeps_the_order_the_target_wrote() -> None:
     sink: list[SinkItem] = []
-    y = ConcolicInt(5, expression="y", sink=sink)
+    y = ConcolicInt.made(5, expression="y", sink=sink)
 
     quotient, remainder = divmod(7, y)
 
@@ -162,8 +162,8 @@ def test_the_reflected_divmod_keeps_the_order_the_target_wrote() -> None:
 @pytest.mark.parametrize(("a", "b"), SIGNED_PAIRS, ids=[f"{a} by {b}" for a, b in SIGNED_PAIRS])
 def test_a_division_hands_back_pythons_own_value(a: int, b: int) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(a, expression="x", sink=sink)
-    y = ConcolicInt(b, expression="y", sink=sink)
+    x = ConcolicInt.made(a, expression="x", sink=sink)
+    y = ConcolicInt.made(b, expression="y", sink=sink)
     quotient, remainder = divmod(x, b)
 
     assert operator.index(quotient) == a // b
@@ -179,7 +179,7 @@ def test_a_plain_bool_divisor_divides_by_1_or_0(
     call: Callable[[int], object], node: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     result = call(x)
 
@@ -193,7 +193,7 @@ def test_a_plain_bool_divisor_divides_by_1_or_0(
 
 def test_a_plain_bool_divisor_divides_by_1_or_0_in_divmod() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     quotient, remainder = divmod(x, True)
 
@@ -217,7 +217,7 @@ REFUSED_DIVISORS: dict[str, Callable[[int], object]] = {
 @pytest.mark.parametrize("call", REFUSED_DIVISORS.values(), ids=list(REFUSED_DIVISORS))
 def test_a_divisor_int_does_not_take_is_left_to_python(call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     # NotImplemented from both sides, so Python raises, and nothing forks before it does
     with pytest.raises(TypeError):
@@ -227,8 +227,8 @@ def test_a_divisor_int_does_not_take_is_left_to_python(call: Callable[[int], obj
 
 def test_a_division_by_zero_raises_with_the_fork_it_died_on_already_recorded() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
-    y = ConcolicInt(0, expression="y", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
+    y = ConcolicInt.made(0, expression="y", sink=sink)
 
     with pytest.raises(ZeroDivisionError) as raised:
         _probe(DIVIDE)(x, y)

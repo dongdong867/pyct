@@ -47,7 +47,7 @@ def test_a_taught_operation_is_floats_own_answer_carrying_its_node(
     call: Callable[[float], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(0.2, expression="x", sink=sink)
+    x = ConcolicFloat.made(0.2, expression="x", sink=sink)
 
     result = call(x)
 
@@ -61,8 +61,8 @@ def test_a_taught_operation_is_floats_own_answer_carrying_its_node(
 
 def test_an_operation_on_two_tracked_floats_takes_both_expressions() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
-    y = ConcolicFloat(2.0, expression="y", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
+    y = ConcolicFloat.made(2.0, expression="y", sink=sink)
 
     result = (x + y) * x
 
@@ -72,14 +72,14 @@ def test_an_operation_on_two_tracked_floats_takes_both_expressions() -> None:
 
 
 def test_unary_plus_is_the_value_itself() -> None:
-    x = ConcolicFloat(1.5, expression="x", sink=[])
+    x = ConcolicFloat.made(1.5, expression="x", sink=[])
 
     assert +x is x
 
 
 def test_an_operand_float_refuses_is_pythons_own_type_error() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
 
     with pytest.raises(TypeError, match="unsupported operand"):
         _ = x + "a"  # pyrefly: ignore[unsupported-operation]
@@ -89,8 +89,8 @@ def test_an_operand_float_refuses_is_pythons_own_type_error() -> None:
 
 def test_a_tracked_divisor_records_its_zero_fork_before_the_division() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(7.0, expression="x", sink=sink)
-    y = ConcolicFloat(2.0, expression="y", sink=sink)
+    x = ConcolicFloat.made(7.0, expression="x", sink=sink)
+    y = ConcolicFloat.made(2.0, expression="y", sink=sink)
 
     result = _probe(DIVIDE)(x, y)
 
@@ -103,7 +103,7 @@ def test_a_tracked_divisor_records_its_zero_fork_before_the_division() -> None:
 
 def test_a_tracked_divisor_on_the_right_of_a_plain_float_records_its_zero_fork() -> None:
     sink: list[SinkItem] = []
-    y = ConcolicFloat(2.0, expression="y", sink=sink)
+    y = ConcolicFloat.made(2.0, expression="y", sink=sink)
 
     result = _probe(REFLECTED)(y)
 
@@ -117,8 +117,8 @@ def test_a_tracked_divisor_on_the_right_of_a_plain_float_records_its_zero_fork()
 @pytest.mark.parametrize("zero", [0.0, -0.0])
 def test_a_zero_divisor_raises_as_the_target_after_its_fork(zero: float) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(7.0, expression="x", sink=sink)
-    y = ConcolicFloat(zero, expression="y", sink=sink)
+    x = ConcolicFloat.made(7.0, expression="x", sink=sink)
+    y = ConcolicFloat.made(zero, expression="y", sink=sink)
 
     with pytest.raises(ZeroDivisionError) as raised:
         _probe(DIVIDE)(x, y)
@@ -131,7 +131,7 @@ def test_a_zero_divisor_raises_as_the_target_after_its_fork(zero: float) -> None
 
 def test_a_plain_zero_divisor_raises_as_the_target_with_no_fork() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(7.0, expression="x", sink=sink)
+    x = ConcolicFloat.made(7.0, expression="x", sink=sink)
 
     with pytest.raises(ZeroDivisionError) as raised:
         _ = x / 0.0
@@ -145,7 +145,7 @@ def test_a_plain_zero_divisor_raises_as_the_target_with_no_fork() -> None:
 )
 def test_is_integer_answers_a_tracked_bool(value: float, whole: bool) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(value, expression="x", sink=sink)
+    x = ConcolicFloat.made(value, expression="x", sink=sink)
 
     result = x.is_integer()
 
@@ -157,13 +157,13 @@ def test_is_integer_answers_a_tracked_bool(value: float, whole: bool) -> None:
 
 
 def test_is_integer_on_nan_is_false() -> None:
-    x = ConcolicFloat(math.nan, expression="x", sink=[])
+    x = ConcolicFloat.made(math.nan, expression="x", sink=[])
 
     assert int.__bool__(x.is_integer()) is False
 
 
 def test_is_integer_given_an_argument_raises_as_the_target() -> None:
-    x = ConcolicFloat(2.0, expression="x", sink=[])
+    x = ConcolicFloat.made(2.0, expression="x", sink=[])
 
     with pytest.raises(TypeError, match="takes no arguments") as raised:
         x.is_integer(1)  # pyrefly: ignore[bad-argument-count]
@@ -211,7 +211,7 @@ def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
     call: Callable[[float], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     # Python asks a float subclass on the right first when it defines the reflected operation,
     # so a plain 2.5 gets the subclass's answer, and so does the tracked one
@@ -222,7 +222,7 @@ def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
 
 def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     result = x * Gauge(1.0)
 
@@ -233,7 +233,7 @@ def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:
 
 def test_a_float_subclass_that_hands_the_reflected_operation_back_gets_floats_answer() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     result = x - Gauge(1.0)
 

@@ -27,7 +27,7 @@ class Label(str):
 
 
 def _tracked(value: str = "abcb", sink: list[SinkItem] | None = None) -> ConcolicStr:
-    return ConcolicStr(value, expression="s", sink=[] if sink is None else sink)
+    return ConcolicStr.made(value, expression="s", sink=[] if sink is None else sink)
 
 
 @pytest.mark.parametrize(
@@ -52,7 +52,7 @@ def test_a_taught_search_answers_as_str_does_and_carries_its_expression(
 def test_a_tracked_substring_is_written_by_its_expression() -> None:
     sink: list[SinkItem] = []
     s = _tracked(sink=sink)
-    t = ConcolicStr("c", expression="t", sink=sink)
+    t = ConcolicStr.made("c", expression="t", sink=sink)
 
     result = s.find(t)
 
@@ -78,7 +78,7 @@ def test_an_empty_substring_is_followed_as_python_answers_it() -> None:
 
 def test_a_search_answer_compared_with_a_tracked_int_is_one_expression() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(1, expression="n", sink=sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
 
     result = _tracked(sink=sink).find("x") < n
 
@@ -100,7 +100,7 @@ def test_in_answers_as_str_does_in_pythons_operand_order() -> None:
 
 def test_in_on_a_tracked_needle_is_written_by_its_expression() -> None:
     sink: list[SinkItem] = []
-    t = ConcolicStr("cb", expression="t", sink=sink)
+    t = ConcolicStr.made("cb", expression="t", sink=sink)
 
     result = _tracked(sink=sink).__contains__(t)
 

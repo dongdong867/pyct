@@ -54,7 +54,7 @@ def test_an_int_meeting_a_float_is_a_tracked_float_on_pythons_answer(
     call: Callable[[int], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
 
     result = call(n)
 
@@ -70,7 +70,7 @@ def test_an_int_compared_with_a_float_is_a_tracked_bool(
     call: Callable[[int], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
 
     result = call(n)
 
@@ -81,7 +81,7 @@ def test_an_int_compared_with_a_float_is_a_tracked_bool(
 
 
 def test_a_reflected_operation_keeps_the_written_order() -> None:
-    n = ConcolicInt(3, expression="n", sink=[])
+    n = ConcolicInt.made(3, expression="n", sink=[])
 
     # what Python calls when a float subclass on the left hands the sum over to the int
     result = n.__radd__(0.5)
@@ -93,7 +93,7 @@ def test_a_reflected_operation_keeps_the_written_order() -> None:
 
 def test_a_plain_float_on_the_left_is_floats_own_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
 
     # float's own compare takes any int and never asks it, so nothing of the int's runs
     result = 2.5 < n  # noqa: SIM300 - the plain float on the left is the point
@@ -104,8 +104,8 @@ def test_a_plain_float_on_the_left_is_floats_own_and_records_nothing() -> None:
 
 def test_an_int_meeting_a_tracked_float_keeps_both_conditions() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
-    x = ConcolicFloat(0.5, expression="x", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
+    x = ConcolicFloat.made(0.5, expression="x", sink=sink)
 
     total = n + x
     halves = divmod(n, x)
@@ -124,7 +124,7 @@ def test_a_float_subclass_that_keeps_floats_own_reads_as_its_value() -> None:
     class Reading(float):
         pass
 
-    n = ConcolicInt(3, expression="n", sink=[])
+    n = ConcolicInt.made(3, expression="n", sink=[])
 
     result = n * Reading(0.5)
 
@@ -135,8 +135,8 @@ def test_a_float_subclass_that_keeps_floats_own_reads_as_its_value() -> None:
 
 def test_true_division_between_ints_records_the_zero_fork_first() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
-    m = ConcolicInt(2, expression="m", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+    m = ConcolicInt.made(2, expression="m", sink=sink)
 
     result = _probe("def probe(a, b):\n    return a / b\n")(n, m)
 
@@ -148,8 +148,8 @@ def test_true_division_between_ints_records_the_zero_fork_first() -> None:
 
 def test_true_division_by_a_zero_int_lists_the_fork_it_died_on() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
-    m = ConcolicInt(0, expression="m", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+    m = ConcolicInt.made(0, expression="m", sink=sink)
 
     with pytest.raises(ZeroDivisionError) as raised:
         _probe("def probe(a, b):\n    return a / b\n")(n, m)
@@ -160,7 +160,7 @@ def test_true_division_by_a_zero_int_lists_the_fork_it_died_on() -> None:
 
 def test_a_reflected_true_division_forks_on_the_tracked_divisor() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(4, expression="n", sink=sink)
+    n = ConcolicInt.made(4, expression="n", sink=sink)
 
     result = _probe("def probe(b):\n    return 2 / b\n")(n)
 
@@ -170,7 +170,7 @@ def test_a_reflected_true_division_forks_on_the_tracked_divisor() -> None:
 
 def test_an_int_dividend_over_a_tracked_float_forks_on_the_float() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(-0.0, expression="x", sink=sink)
+    x = ConcolicFloat.made(-0.0, expression="x", sink=sink)
 
     # -0.0 is a zero divisor, so the fork is taken false and Python raises
     with pytest.raises(ZeroDivisionError) as raised:
@@ -182,8 +182,8 @@ def test_an_int_dividend_over_a_tracked_float_forks_on_the_float() -> None:
 
 def test_a_float_over_a_tracked_int_forks_on_the_int() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(7.5, expression="x", sink=sink)
-    n = ConcolicInt(2, expression="n", sink=sink)
+    x = ConcolicFloat.made(7.5, expression="x", sink=sink)
+    n = ConcolicInt.made(2, expression="n", sink=sink)
 
     quotient = x // n
     remainder = x % n
@@ -196,7 +196,7 @@ def test_a_float_over_a_tracked_int_forks_on_the_int() -> None:
 
 def test_an_int_too_large_for_a_float_raises_pythons_own_overflow() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(10**400, expression="n", sink=sink)
+    n = ConcolicInt.made(10**400, expression="n", sink=sink)
 
     with pytest.raises(OverflowError) as raised:
         _ = n + 0.5
@@ -210,7 +210,7 @@ def test_a_rounding_is_a_tracked_int_after_its_finite_fork(
     call: Callable[[float], object], head: str
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(-2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(-2.5, expression="x", sink=sink)
 
     result = _probe("def probe(f, r):\n    return r(f)\n")(x, call)
 
@@ -228,7 +228,7 @@ def test_a_value_that_cannot_round_lists_the_fork_it_died_on(
     call: Callable[[float], object], head: str, value: float, error: type[Exception]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(value, expression="x", sink=sink)
+    x = ConcolicFloat.made(value, expression="x", sink=sink)
 
     with pytest.raises(error) as raised:
         _probe("def probe(f, r):\n    return r(f)\n")(x, call)
@@ -240,7 +240,7 @@ def test_a_value_that_cannot_round_lists_the_fork_it_died_on(
 
 
 def test_round_half_to_even_is_pythons() -> None:
-    x = ConcolicFloat(2.5, expression="x", sink=[])
+    x = ConcolicFloat.made(2.5, expression="x", sink=[])
 
     assert int.__index__(round(x)) == 2
     assert round(x, None).expression == ["round", "x"]
@@ -248,7 +248,7 @@ def test_round_half_to_even_is_pythons() -> None:
 
 def test_round_to_digits_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.675, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.675, expression="x", sink=sink)
 
     result = round(x, 2)
 
@@ -258,7 +258,7 @@ def test_round_to_digits_is_a_downgrade() -> None:
 
 def test_round_with_a_form_float_refuses_raises_its_own_error() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     # float's own `__round__` takes no keyword, so it raises, and the raise is the target's
     with pytest.raises(TypeError) as raised:

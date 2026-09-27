@@ -54,7 +54,7 @@ class Position:
 
 
 def _tracked(value: str = "abcb", sink: list[SinkItem] | None = None) -> ConcolicStr:
-    return ConcolicStr(value, expression="s", sink=[] if sink is None else sink)
+    return ConcolicStr.made(value, expression="s", sink=[] if sink is None else sink)
 
 
 # each piece of s = "abcb" that records no fork: the call, and the expression it carries
@@ -99,7 +99,7 @@ def test_a_piece_is_a_tracked_str_carrying_its_expression(
 def test_a_tracked_str_on_either_side_is_written_by_its_expression() -> None:
     sink: list[SinkItem] = []
     s = _tracked(sink=sink)
-    t = ConcolicStr("xb", expression="t", sink=sink)
+    t = ConcolicStr.made("xb", expression="t", sink=sink)
 
     assert _expression_of(s + t) == ["+", "s", "t"]
     assert _expression_of(s.replace("b", t)) == ["replace", "s", "'b'", "t"]
@@ -194,7 +194,7 @@ def test_the_empty_string_has_no_index_at_all() -> None:
 
 
 def _tracked_int(sink: list[SinkItem]) -> ConcolicInt:
-    return ConcolicInt(1, expression="n", sink=sink)
+    return ConcolicInt.made(1, expression="n", sink=sink)
 
 
 # a piece in a form pyct does not encode: the call on s = "abcb" and a tracked int n = 1 in the
@@ -242,7 +242,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
 
 def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    old = ConcolicStr("b", expression="t", sink=sink)
+    old = ConcolicStr.made("b", expression="t", sink=sink)
 
     result = _tracked(sink=sink).replace(old, "x")
 

@@ -21,7 +21,7 @@ from tests.unit.core.test_substitutes import expressions, tracked_bool
 
 def test_a_tracked_value_in_a_set_is_compared_with_each_element_in_its_own_order() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(0, expression="n", sink=sink)
+    n = ConcolicInt.made(0, expression="n", sink=sink)
     held = {3, 1, 2}
 
     assert in_(n, held) is False
@@ -33,7 +33,7 @@ def test_a_tracked_value_in_a_set_is_compared_with_each_element_in_its_own_order
 
 def test_the_search_stops_at_the_first_element_that_holds() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(2, expression="n", sink=sink)
+    n = ConcolicInt.made(2, expression="n", sink=sink)
 
     assert in_(n, frozenset({1, 2, 3})) is True
     tried = expressions(sink)
@@ -53,7 +53,7 @@ def test_the_search_stops_at_the_first_element_that_holds() -> None:
 )
 def test_a_tracked_value_in_a_dict_is_compared_with_each_key(keys: object) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
 
     assert in_(s, keys) is True
     assert expressions(sink) == [(["==", "s", "'a'"], False), (["==", "s", "'b'"], True)]
@@ -61,7 +61,7 @@ def test_a_tracked_value_in_a_dict_is_compared_with_each_key(keys: object) -> No
 
 def test_an_empty_container_compares_with_nothing() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(0, expression="n", sink=sink)
+    n = ConcolicInt.made(0, expression="n", sink=sink)
 
     assert in_(n, set()) is False
     assert not_in(n, {}) is True
@@ -70,7 +70,7 @@ def test_an_empty_container_compares_with_nothing() -> None:
 
 def test_a_hundred_elements_are_each_compared() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(-1, expression="n", sink=sink)
+    n = ConcolicInt.made(-1, expression="n", sink=sink)
 
     assert in_(n, set(range(SEARCHED_MOST))) is False
     assert expressions(sink) == [(["==", "n", k], False) for k in range(SEARCHED_MOST)]
@@ -81,7 +81,7 @@ def test_past_a_hundred_elements_python_answers_and_the_loss_is_named(
     value: int, answer: bool
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(value, expression="n", sink=sink)
+    n = ConcolicInt.made(value, expression="n", sink=sink)
     held = dict.fromkeys(range(SEARCHED_MOST + 1))
 
     assert in_(n, held) is answer
@@ -92,7 +92,7 @@ def test_past_a_hundred_elements_python_answers_and_the_loss_is_named(
 
 def test_an_element_pyct_does_not_compare_leaves_the_answer_to_python_and_names_the_loss() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(1, expression="n", sink=sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
 
     # Decimal(1) equals the int 1 and hashes as it does, so Python finds it; pyct follows no
     # element of such a container, and says so
@@ -118,7 +118,7 @@ class Raising:
 def test_an_element_s_own_raise_comes_as_python_s_lookup_raises_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    n = ConcolicInt(1, expression="n", sink=[])
+    n = ConcolicInt.made(1, expression="n", sink=[])
     held = {Raising(), 1}
     monkeypatch.setattr(Raising, "armed", True)
 
@@ -130,7 +130,7 @@ def test_an_element_s_own_raise_comes_as_python_s_lookup_raises_it(
 
 def test_a_nan_is_found_by_its_identity_as_python_finds_it() -> None:
     sink: list[SinkItem] = []
-    f = ConcolicFloat(math.nan, expression="f", sink=sink)
+    f = ConcolicFloat.made(math.nan, expression="f", sink=sink)
 
     # a NaN equals nothing, itself included, and Python tests identity before `==`
     assert in_(f, {f}) is True
@@ -144,7 +144,7 @@ def test_a_nan_is_found_by_its_identity_as_python_finds_it() -> None:
 
 def test_a_nan_before_its_own_element_records_no_fork_for_the_element_it_is() -> None:
     sink: list[SinkItem] = []
-    f = ConcolicFloat(math.nan, expression="f", sink=sink)
+    f = ConcolicFloat.made(math.nan, expression="f", sink=sink)
 
     assert in_(f, {f}) is True
     assert sink == []
@@ -162,8 +162,8 @@ class Method(StrEnum):
 
 def test_an_enum_element_is_compared_as_the_plain_value_python_compares() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(2, expression="n", sink=sink)
-    s = ConcolicStr("PUT", expression="s", sink=sink)
+    n = ConcolicInt.made(2, expression="n", sink=sink)
+    s = ConcolicStr.made("PUT", expression="s", sink=sink)
 
     assert in_(n, {Level.LOW, Level.HIGH}) is True
     assert in_(s, frozenset({Method.GET, Method.POST})) is False
@@ -178,7 +178,7 @@ def test_an_enum_element_is_compared_as_the_plain_value_python_compares() -> Non
 
 def test_none_among_the_elements_is_never_equal_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("a", expression="s", sink=sink)
+    s = ConcolicStr.made("a", expression="s", sink=sink)
 
     assert in_(s, {None, "a"}) is True
     assert expressions(sink) == [(["==", "s", "'a'"], True)]
@@ -190,7 +190,7 @@ def test_a_subclass_s_own_len_is_never_run() -> None:
             raise RuntimeError("len called")
 
     sink: list[SinkItem] = []
-    n = ConcolicInt(0, expression="n", sink=sink)
+    n = ConcolicInt.made(0, expression="n", sink=sink)
 
     assert in_(n, Sized({1: 1})) is False
     assert expressions(sink) == [(["==", "n", 1], False)]
@@ -199,7 +199,7 @@ def test_a_subclass_s_own_len_is_never_run() -> None:
 def test_a_tracked_bool_and_a_tracked_float_are_searched_too() -> None:
     sink: list[SinkItem] = []
     b = tracked_bool(True, sink)
-    f = ConcolicFloat(2.5, expression="f", sink=sink)
+    f = ConcolicFloat.made(2.5, expression="f", sink=sink)
 
     assert in_(b, {1}) is True
     assert in_(f, frozenset({2.5})) is True
@@ -215,7 +215,7 @@ def test_a_container_with_its_own_contains_is_pythons_own_in() -> None:
             return True
 
     sink: list[SinkItem] = []
-    n = ConcolicInt(0, expression="n", sink=sink)
+    n = ConcolicInt.made(0, expression="n", sink=sink)
 
     assert in_(n, Everything({1})) is True
     assert asked == [n]
@@ -229,7 +229,7 @@ def test_a_plain_value_in_a_set_is_pythons_own_lookup() -> None:
 
 def test_a_chained_in_link_searches_its_container_as_in_does() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(5, expression="x", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
 
     # a set display of constants hands over its constants, in the order written
     assert (x in Searched(frozenset({9, 5, 1}), (1, 5, 9))) is True
@@ -243,7 +243,7 @@ def test_a_chained_in_link_searches_its_container_as_in_does() -> None:
 
 def test_a_chained_in_link_on_a_tracked_string_tests_its_condition_where_it_runs() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     assert ("b" in Searched(s)) is True
     assert expressions(sink) == [(["in", "'b'", "s"], True)]
@@ -251,7 +251,7 @@ def test_a_chained_in_link_on_a_tracked_string_tests_its_condition_where_it_runs
 
 def test_a_link_hands_the_next_link_the_operand_it_holds() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(5, expression="x", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
     held = Searched(x)
 
     # a compare runs on the operand, and pyct's own `in` and `is` read it
@@ -268,7 +268,7 @@ def test_a_link_hands_the_next_link_the_operand_it_holds() -> None:
 
 def test_a_chained_is_link_answers_from_the_value() -> None:
     sink: list[SinkItem] = []
-    flag = ConcolicBool(False, expression="flag", sink=sink)
+    flag = ConcolicBool.made(False, expression="flag", sink=sink)
 
     assert (flag in Identity(True)) is False
     assert (flag not in Identity(False)) is False
@@ -292,8 +292,8 @@ def test_a_subclass_that_hashes_otherwise_leaves_the_answer_to_python() -> None:
         __hash__ = str.__hash__
 
     sink: list[SinkItem] = []
-    n = ConcolicInt(1, expression="n", sink=sink)
-    s = ConcolicStr("a", expression="s", sink=sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
+    s = ConcolicStr.made("a", expression="s", sink=sink)
 
     # its `==` may no longer agree with its hash, so pyct compares nothing and names the loss
     assert in_(n, {Odd(1)}) is (1 in {Odd(1)})

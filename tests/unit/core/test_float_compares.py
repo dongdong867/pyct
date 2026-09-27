@@ -24,7 +24,7 @@ TAUGHT_COMPARES: dict[str, tuple[Callable[[float], object], bool]] = {
 WITH_INTS: dict[str, tuple[Callable[[float], object], list[object]]] = {
     "x < 3": (lambda x: x < 3, ["<", "x", 3]),
     "3 < x": (lambda x: 3 < x, [">", "x", 3]),  # noqa: SIM300 - the reflected form is the point
-    "x >= n": (lambda x: x >= ConcolicInt(2, expression="n", sink=[]), [">=", "x", "n"]),
+    "x >= n": (lambda x: x >= ConcolicInt.made(2, expression="n", sink=[]), [">=", "x", "n"]),
 }
 
 # a probe whose text is fixed here, so the line and column of the fork are exact
@@ -46,7 +46,7 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 ) -> None:
     call, answer = case
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     result = call(x)
 
@@ -59,8 +59,8 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 
 def test_a_compare_against_a_tracked_float_takes_its_expression() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
-    y = ConcolicFloat(2.5, expression="y", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
+    y = ConcolicFloat.made(2.5, expression="y", sink=sink)
 
     result = x < y
 
@@ -70,7 +70,7 @@ def test_a_compare_against_a_tracked_float_takes_its_expression() -> None:
 
 
 def test_a_float_on_the_left_is_compared_the_other_way_round() -> None:
-    x = ConcolicFloat(3.0, expression="x", sink=[])
+    x = ConcolicFloat.made(3.0, expression="x", sink=[])
 
     # Python asks the float subclass on the right first, with the operator mirrored
     result = 2.5 < x  # noqa: SIM300 - the reflected form is the point
@@ -84,7 +84,7 @@ def test_a_float_of_the_targets_own_is_a_plain_float_leaf() -> None:
         def __repr__(self) -> str:
             return f"{float(self)}°C"
 
-    x = ConcolicFloat(3.0, expression="x", sink=[])
+    x = ConcolicFloat.made(3.0, expression="x", sink=[])
 
     result = x < Celsius(4.0)
 
@@ -99,7 +99,7 @@ def test_a_compare_with_an_int_builds_its_expression_and_records_nothing(
     call: Callable[[float], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     result = call(x)
 
@@ -111,7 +111,7 @@ def test_a_compare_with_an_int_builds_its_expression_and_records_nothing(
 
 def test_equal_to_a_str_is_pythons_own_constant() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
 
     # both sides answer NotImplemented; Python settles `==` by identity instead of raising
     assert (x == "a") is False
@@ -121,7 +121,7 @@ def test_equal_to_a_str_is_pythons_own_constant() -> None:
 
 def test_an_order_against_a_str_raises_pythons_own_type_error() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
 
     with pytest.raises(TypeError, match="'<' not supported"):
         _ = x < "a"
@@ -130,7 +130,7 @@ def test_an_order_against_a_str_raises_pythons_own_type_error() -> None:
 
 def test_the_truth_test_records_the_fork_where_it_happens() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
 
     assert _probe()(x) == "yes"
 
@@ -144,7 +144,7 @@ def test_zero_is_the_one_value_on_the_other_side_of_the_truth_test(
     value: float, truth: bool
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(value, expression="x", sink=sink)
+    x = ConcolicFloat.made(value, expression="x", sink=sink)
 
     assert _probe()(x) == ("yes" if truth else "no")
     assert sink == [Branch(expression=["!=", "x", 0.0], taken=truth, site=PROBE_SITE)]
@@ -164,7 +164,7 @@ class Gauge(float):
 
 def test_a_float_subclass_with_its_own_reflected_compare_answers_first() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     # `x < g` asks `g.__gt__` first, as it would with a plain 2.5 on the left
     assert (2.5 < Gauge(1.0)) == "gauge >"  # noqa: SIM300 - the order is the point

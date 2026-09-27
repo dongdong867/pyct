@@ -46,7 +46,7 @@ def _walked(name: str, *args: object) -> list[object]:
 
 
 def _tracked(value: str, sink: list[SinkItem], name: str = "s") -> ConcolicStr:
-    return ConcolicStr(value, expression=name, sink=sink)
+    return ConcolicStr.made(value, expression=name, sink=sink)
 
 
 def _pass(at: int, taken: bool, line: int = 3, col: int = 13, name: str = "s") -> Branch:

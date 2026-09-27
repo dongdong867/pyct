@@ -79,7 +79,7 @@ DOWNGRADED_POWERS: dict[str, Callable[[int], object]] = {
 
 
 def test_a_concolic_int_is_a_real_int() -> None:
-    x = ConcolicInt(3, expression="x", sink=[])
+    x = ConcolicInt.made(3, expression="x", sink=[])
 
     assert isinstance(x, int)
     assert x == 3
@@ -87,7 +87,7 @@ def test_a_concolic_int_is_a_real_int() -> None:
 
 
 def test_an_untaught_operation_returns_a_plain_int() -> None:
-    x = ConcolicInt(3, expression="x", sink=[])
+    x = ConcolicInt.made(3, expression="x", sink=[])
 
     assert type(x >> 1) is int
 
@@ -97,7 +97,7 @@ def test_an_untaught_operation_returns_a_plain_value_and_records_its_name(
     name: str, call: Callable[[int], object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     result = call(x)
 
@@ -113,7 +113,7 @@ def test_a_taught_operation_answers_with_an_int_that_carries_the_expression(
     call: Callable[[int], object], expression: list[object]
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     result = call(x)
 
@@ -129,8 +129,8 @@ def test_a_taught_operation_answers_with_an_int_that_carries_the_expression(
 
 def test_an_operation_on_two_concolic_ints_names_both() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-    y = ConcolicInt(4, expression="y", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
+    y = ConcolicInt.made(4, expression="y", sink=sink)
 
     result = x * y
 
@@ -141,7 +141,7 @@ def test_an_operation_on_two_concolic_ints_names_both() -> None:
 
 def test_arithmetic_nests_the_way_it_was_written() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(0, expression="x", sink=sink)
+    x = ConcolicInt.made(0, expression="x", sink=sink)
 
     result = (x + 1) * 2 - 3
 
@@ -151,7 +151,7 @@ def test_arithmetic_nests_the_way_it_was_written() -> None:
 
 def test_a_bool_operand_is_the_int_1_or_0() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # a bool is the int 1 or 0, as Python has it, so `x + True` is a node on the literal
     result = x + True
@@ -165,7 +165,7 @@ def test_a_bool_operand_is_the_int_1_or_0() -> None:
 @pytest.mark.parametrize("call", DOWNGRADED_POWERS.values(), ids=list(DOWNGRADED_POWERS))
 def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(1, expression="x", sink=sink)
+    x = ConcolicInt.made(1, expression="x", sink=sink)
 
     result = call(x)
 
@@ -176,7 +176,7 @@ def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], obj
 
 def test_a_float_exponent_is_floats_own_power_and_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(4, expression="x", sink=sink)
+    x = ConcolicInt.made(4, expression="x", sink=sink)
 
     # no solver operation gives CPython's pow to the last bit, so float's own answers and the
     # loss is named, where int's own NotImplemented would hand it to float silently
@@ -189,8 +189,8 @@ def test_a_float_exponent_is_floats_own_power_and_a_downgrade() -> None:
 
 def test_a_symbolic_exponent_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(2, expression="x", sink=sink)
-    y = ConcolicInt(3, expression="y", sink=sink)
+    x = ConcolicInt.made(2, expression="x", sink=sink)
+    y = ConcolicInt.made(3, expression="y", sink=sink)
 
     assert x**y == 8
     assert 2**x == 4
@@ -204,7 +204,7 @@ def test_an_identity_operation_hands_the_value_itself_back(
     call: Callable[[ConcolicInt], object],
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert call(x) is x
     assert sink == []
@@ -213,7 +213,7 @@ def test_an_identity_operation_hands_the_value_itself_back(
 @pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
 def test_a_copy_of_a_concolic_int_is_the_value_itself(call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # copy hands a plain int back as it is, because an int cannot change; a tracked one comes
     # back the same way, its expression and sink with it, so nothing is lost
@@ -224,7 +224,7 @@ def test_a_copy_of_a_concolic_int_is_the_value_itself(call: Callable[[int], obje
 @pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
 def test_a_copy_of_a_compares_value_is_the_value_itself(call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    big = ConcolicInt(3, expression="x", sink=sink) > 10
+    big = ConcolicInt.made(3, expression="x", sink=sink) > 10
 
     # the same holds for the value a compare hands back, so testing the copy records the fork
     assert call(big) is big
@@ -233,7 +233,7 @@ def test_a_copy_of_a_compares_value_is_the_value_itself(call: Callable[[int], ob
 
 def test_int_of_a_concolic_int_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # Python copies whatever __int__ hands back into a plain int, so the condition cannot
     # survive int(x) from inside the class: int-conversion-stays-a-downgrade
@@ -245,7 +245,7 @@ def test_int_of_a_concolic_int_is_a_downgrade() -> None:
 
 def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(1234, expression="x", sink=sink)
+    x = ConcolicInt.made(1234, expression="x", sink=sink)
 
     assert round(x, -2) == 1200
     assert sink == [Downgrade(name="__round__", site=ANY)]
@@ -253,7 +253,7 @@ def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
 
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert hash(x) == hash(3)
     assert {x: "small"}[x] == "small"
@@ -263,7 +263,7 @@ def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
 
 def test_reading_a_concolic_int_back_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # repr is the debugger's path, not the target's
     assert repr(x) == "3"
@@ -273,7 +273,7 @@ def test_reading_a_concolic_int_back_records_nothing() -> None:
 
 def test_the_object_plumbing_on_a_concolic_int_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # `__getnewargs__` and the interpreter's own reads are not the target's path
     assert x.__getnewargs__() == (3,)
@@ -302,7 +302,7 @@ def test_an_int_alone_turned_into_text_is_its_tracked_text(
     call: Callable[[int], object], value: int
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(value, expression="x", sink=sink)
+    x = ConcolicInt.made(value, expression="x", sink=sink)
 
     text = call(x)
 
@@ -313,7 +313,7 @@ def test_an_int_alone_turned_into_text_is_its_tracked_text(
 
 def test_text_joined_around_an_int_is_plain_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(7, expression="x", sink=sink)
+    x = ConcolicInt.made(7, expression="x", sink=sink)
 
     # Python joins the pieces without calling any method of the tracked str
     text = f"n={x}"
@@ -351,7 +351,7 @@ FLOAT_CONVERSIONS = ["%e", "%E", "%f", "%F", "%g", "%G", "%.2f", "%10.3e"]
 
 def _tracked_values(sink: list[SinkItem]) -> list[tuple[object, int | bool]]:
     """A tracked int and a tracked bool, beside the plain value each is."""
-    x = ConcolicInt(65, expression="x", sink=sink)
+    x = ConcolicInt.made(65, expression="x", sink=sink)
     return [(x, 65), (x > 0, True)]
 
 
@@ -379,7 +379,7 @@ def test_a_float_percent_conversion_is_a_float_downgrade(form: str) -> None:
 @pytest.mark.parametrize("spec", ["d", "05d", "x", ">4", ","])
 def test_a_format_spec_is_a_downgrade_named_format(spec: str) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(1234, expression="x", sink=sink)
+    x = ConcolicInt.made(1234, expression="x", sink=sink)
 
     text = format(x, spec)
 
@@ -390,7 +390,7 @@ def test_a_format_spec_is_a_downgrade_named_format(spec: str) -> None:
 def test_text_past_pythons_digit_limit_raises_as_the_targets() -> None:
     sink: list[SinkItem] = []
     huge = 10 ** (sys.get_int_max_str_digits() + 1)
-    x = ConcolicInt(huge, expression="x", sink=sink)
+    x = ConcolicInt.made(huge, expression="x", sink=sink)
 
     with pytest.raises(ValueError) as raised:
         str(x)
@@ -404,7 +404,7 @@ def test_text_past_pythons_digit_limit_raises_as_the_targets() -> None:
 
 def test_using_a_concolic_int_as_an_index_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert list(range(x)) == [0, 1, 2]
 
@@ -414,7 +414,7 @@ def test_using_a_concolic_int_as_an_index_records_nothing() -> None:
 
 def test_asking_a_concolic_int_for_its_index_is_the_value_itself() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert x.__index__() is x
 
@@ -423,7 +423,7 @@ def test_asking_a_concolic_int_for_its_index_is_the_value_itself() -> None:
 
 def test_an_operation_that_raises_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     with pytest.raises(ZeroDivisionError):
         _ = x // 0
@@ -434,7 +434,7 @@ def test_an_operation_that_raises_records_nothing() -> None:
 
 def test_a_raise_out_of_ints_own_operation_is_marked_as_the_targets() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     with pytest.raises(ZeroDivisionError) as raised:
         _ = x // 0
@@ -460,7 +460,7 @@ def test_a_raise_that_is_not_the_operations_carries_no_mark() -> None:
 
 def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # to_bytes is a derived downgrade that takes keywords
     assert x.to_bytes(length=2, byteorder="big") == b"\x00\x03"
@@ -469,7 +469,7 @@ def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
 
 def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     with pytest.raises(TypeError) as plain:
         (3).__format__(operation="d")  # pyrefly: ignore[bad-argument-count, unexpected-keyword]
@@ -485,7 +485,7 @@ def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
 
 def test_an_operation_the_other_type_answers_is_named_as_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     class Measured(float):
         def __radd__(self, other: object) -> str:  # pyrefly: ignore[bad-override]

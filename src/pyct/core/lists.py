@@ -20,7 +20,7 @@ from pyct.core import list_reads as reads
 from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
-from pyct.core.values import downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import REPORTED_CLASS, as_base, downgrade_the_rest, downgraded, forked, own
 
 # not the target's path: `__repr__`, the object plumbing, and `__init__`, which a target calls
 # only to fill the list anew, a change made without the methods that the next operation
@@ -274,6 +274,11 @@ class ConcolicList(ListState):
     to it in `_KEPT`, is list's own and returns a plain value, with a downgrade in the sink
     naming what was lost (``README.md › Rules › downgrades``).
     """
+
+    # the base type, as `isinstance`, singledispatch and a class pattern read it; the class
+    # called with a value is list's own, a plain list, since pyct builds one through `made`
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
+    __new__ = as_base
 
     # the form's reads and walks: an index records whether the list is long enough first
     __getitem__ = _item  # pyrefly: ignore[bad-override]

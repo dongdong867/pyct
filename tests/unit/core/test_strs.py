@@ -29,7 +29,7 @@ class Label(str):
 
 
 def test_a_concolic_str_is_a_real_str() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     assert isinstance(s, str)
     assert str.__eq__(s, "abc") is True
@@ -42,7 +42,7 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 ) -> None:
     call, answer = case
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     result = call(s)
 
@@ -55,7 +55,7 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 
 
 def test_a_literal_holding_a_single_quote_is_written_in_double_quotes() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     result = s == "it's"
 
@@ -65,8 +65,8 @@ def test_a_literal_holding_a_single_quote_is_written_in_double_quotes() -> None:
 
 def test_a_compare_with_another_concolic_str_takes_its_expression() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
-    t = ConcolicStr("abd", expression="t", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
+    t = ConcolicStr.made("abd", expression="t", sink=sink)
 
     result = s != t
 
@@ -75,7 +75,7 @@ def test_a_compare_with_another_concolic_str_takes_its_expression() -> None:
 
 
 def test_a_literal_on_the_left_is_the_compare_python_runs() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     # Python gives a subclass's reflected method the first turn, so `"abc" == s` runs on s
     result = "abc" == s  # noqa: SIM300 - the order this test is about
@@ -85,7 +85,7 @@ def test_a_literal_on_the_left_is_the_compare_python_runs() -> None:
 
 
 def test_a_literal_on_the_left_of_an_order_is_the_reflected_compare() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     # Python swaps the operands itself, so `"b" < s` runs `s > "b"`; nothing here reflects
     result = "b" < s  # noqa: SIM300 - the order this test is about
@@ -97,7 +97,7 @@ def test_a_literal_on_the_left_of_an_order_is_the_reflected_compare() -> None:
 
 def test_less_than_a_non_str_is_left_to_python_to_refuse() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     # both sides answer NotImplemented, so Python raises the TypeError the target wrote
     with pytest.raises(TypeError, match="'<' not supported"):
@@ -106,7 +106,7 @@ def test_less_than_a_non_str_is_left_to_python_to_refuse() -> None:
 
 
 def test_a_str_of_the_targets_own_is_a_literal_of_its_plain_value() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     result = s == Label("abc")
 
@@ -116,7 +116,7 @@ def test_a_str_of_the_targets_own_is_a_literal_of_its_plain_value() -> None:
 
 def test_equal_to_a_non_str_is_pythons_own_answer() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("5", expression="s", sink=sink)
+    s = ConcolicStr.made("5", expression="s", sink=sink)
 
     # both sides answer NotImplemented; Python settles `==` by identity instead of raising
     assert (s == 5) is False
@@ -145,7 +145,7 @@ def test_a_literal_past_the_last_character_is_strs_own_compare_and_a_downgrade(
 ) -> None:
     call, answer = case
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     result = call(s)
 
@@ -155,7 +155,7 @@ def test_a_literal_past_the_last_character_is_strs_own_compare_and_a_downgrade(
 
 def test_a_literal_up_to_the_last_character_is_followed() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     result = s == "a\U0002ffff"
 
@@ -167,8 +167,8 @@ def test_a_literal_up_to_the_last_character_is_followed() -> None:
 def test_a_tracked_str_holding_a_character_past_the_last_is_still_followed() -> None:
     # the solver reads the expression, never the value, so the value may hold any character
     sink: list[SinkItem] = []
-    s = ConcolicStr("\U00030000", expression="s", sink=sink)
-    t = ConcolicStr("\U00030000", expression="t", sink=sink)
+    s = ConcolicStr.made("\U00030000", expression="s", sink=sink)
+    t = ConcolicStr.made("\U00030000", expression="t", sink=sink)
 
     assert isinstance(s == "abc", ConcolicBool)
     assert isinstance(s == t, ConcolicBool)
@@ -176,7 +176,7 @@ def test_a_tracked_str_holding_a_character_past_the_last_is_still_followed() -> 
 
 
 def test_a_concolic_str_hashes_as_its_value() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     # a class body that defines __eq__ loses __hash__ unless it keeps str's
     assert hash(s) == hash("abc")
@@ -197,7 +197,7 @@ def _probe() -> Callable[[object], object]:
 @pytest.mark.parametrize(("value", "taken"), [("abc", True), ("", False)])
 def test_the_truth_test_records_the_fork_against_the_empty_string(value: str, taken: bool) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr(value, expression="s", sink=sink)
+    s = ConcolicStr.made(value, expression="s", sink=sink)
 
     answer = _probe()(s)
 
@@ -209,7 +209,7 @@ def test_the_truth_test_records_the_fork_against_the_empty_string(value: str, ta
 
 
 def test_the_truth_test_answers_with_a_real_bool() -> None:
-    s = ConcolicStr("abc", expression="s", sink=[])
+    s = ConcolicStr.made("abc", expression="s", sink=[])
 
     assert s.__bool__() is True
 
@@ -241,7 +241,7 @@ def test_an_untaught_operation_is_strs_own_and_a_downgrade(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     result = call(s)
 
@@ -254,7 +254,7 @@ def test_an_untaught_operation_is_strs_own_and_a_downgrade(
 @pytest.mark.parametrize("call", KEPT_CALLS.values(), ids=list(KEPT_CALLS))
 def test_a_kept_operation_is_strs_own_and_records_nothing(call: Callable[[str], object]) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     call(s)
 
@@ -280,7 +280,7 @@ COPIES: dict[str, Callable[[str], object]] = {
 @pytest.mark.parametrize("call", COPIES.values(), ids=list(COPIES))
 def test_a_copy_of_a_concolic_str_is_the_value_itself(call: Callable[[str], object]) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     copied = call(s)
 
@@ -301,7 +301,7 @@ TEXT_ALONE: dict[str, Callable[[str], object]] = {
 
 def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     # Python asks a str subclass on the right for its `__rmod__` first, and that one is untaught
     text = "%s" % s  # noqa: UP031
@@ -313,7 +313,7 @@ def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
 @pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
 def test_a_str_alone_turned_into_text_is_the_value_itself(call: Callable[[str], object]) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     assert call(s) is s
     assert sink == []
@@ -321,7 +321,7 @@ def test_a_str_alone_turned_into_text_is_the_value_itself(call: Callable[[str], 
 
 def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     with pytest.raises(LookupError, match="unknown encoding") as raised:
         s.encode("no-such-codec")
@@ -349,7 +349,7 @@ def test_a_downgrade_str_answers_with_s_itself_hands_back_a_plain_str(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     result = call(s)
 
@@ -362,7 +362,7 @@ def test_a_downgrade_str_answers_with_s_itself_hands_back_a_plain_str(
 
 def test_a_raise_inside_strs_own_mod_is_the_targets_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("a%", expression="s", sink=sink)
+    s = ConcolicStr.made("a%", expression="s", sink=sink)
 
     with pytest.raises(ValueError) as plain:
         str.__mod__("a%", ())
@@ -393,7 +393,7 @@ def test_a_keyword_where_pyct_encodes_none_is_strs_own_and_a_downgrade(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("a,b\t{x},c\n", expression="s", sink=sink)
+    s = ConcolicStr.made("a,b\t{x},c\n", expression="s", sink=sink)
 
     # the keyword reaches str's own method as the target wrote it
     assert call(s) == call("a,b\t{x},c\n")
@@ -402,7 +402,7 @@ def test_a_keyword_where_pyct_encodes_none_is_strs_own_and_a_downgrade(
 
 def test_a_keyword_named_like_pycts_own_parameters_reaches_strs_own_method() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("{self}-{operation}", expression="s", sink=sink)
+    s = ConcolicStr.made("{self}-{operation}", expression="s", sink=sink)
 
     # self and operation are the names pyct's wrappers give the receiver and the method; a
     # target keyword of either name still reaches str's own format as the target wrote it
@@ -426,7 +426,7 @@ def test_a_keyword_str_refuses_is_strs_own_raise_and_records_nothing(
     call: Callable[[str], object],
 ) -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("abc", expression="s", sink=sink)
+    s = ConcolicStr.made("abc", expression="s", sink=sink)
 
     with pytest.raises(TypeError) as plain:
         call("abc")

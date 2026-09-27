@@ -18,10 +18,11 @@ class Tracked(int):
 
     expression: Expression
 
-    def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> "Tracked":
-        self = super().__new__(cls, value)
-        self.expression = expression
-        return self
+    @classmethod
+    def made(cls, value: int, expression: Expression, sink: BranchSink) -> "Tracked":
+        made = cls(value)
+        made.expression = expression
+        return made
 
 
 class Base(int):
@@ -37,10 +38,11 @@ class Measured(float):
 
     expression: Expression
 
-    def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> "Measured":
-        self = super().__new__(cls, value)
-        self.expression = expression
-        return self
+    @classmethod
+    def made(cls, value: float, expression: Expression, sink: BranchSink) -> "Measured":
+        made = cls(value)
+        made.expression = expression
+        return made
 
 
 @pytest.fixture
@@ -77,7 +79,7 @@ def test_a_type_enters_its_class_once() -> None:
     numbers.enter(Base, Tracked)
 
     assert type(numbers.tracked(Base(4), "x", [])) is Tracked
-    assert numbers.operand(Tracked(4, expression="x", sink=[])) == "x"
+    assert numbers.operand(Tracked.made(4, "x", [])) == "x"
 
 
 @pytest.mark.usefixtures("table")
@@ -92,8 +94,8 @@ def test_an_int_reads_a_tracked_number_of_a_float_type_by_its_expression() -> No
     # entered for a stand-in type, so a tracked float entered for float leaves this test alone
     numbers.enter(Reading, Measured)
     sink: list[SinkItem] = []
-    x = ConcolicInt(5, expression="x", sink=sink)
-    f = Measured(2.5, expression="f", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
+    f = Measured.made(2.5, "f", sink)
 
     # int's own answers NotImplemented to a float, and float's mirrored operation answers, as
     # Python's does; the int keeps the condition on both sides
@@ -125,8 +127,8 @@ def test_a_tracked_int_meets_a_tracked_float_with_pythons_own_answer(
     op: str, n: int, f: float, answer: bool
 ) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(n, expression="x", sink=sink)
-    y = ConcolicFloat(f, expression="y", sink=sink)
+    x = ConcolicInt.made(n, expression="x", sink=sink)
+    y = ConcolicFloat.made(f, expression="y", sink=sink)
 
     crossed = {">": x > y, "==": x == y, "<": x < y, ">=": x >= y, "!=": x != y}[op]
     mirrored = {">": y < x, "==": y == x, "<": y > x, ">=": y <= x, "!=": y != x}[op]
@@ -140,7 +142,7 @@ def test_a_tracked_int_meets_a_tracked_float_with_pythons_own_answer(
 
 
 def test_an_operand_reads_as_a_number_does() -> None:
-    x = ConcolicInt(3, expression="x", sink=[])
+    x = ConcolicInt.made(3, expression="x", sink=[])
 
     # a tracked number by its expression, a plain int or bool as itself, anything else not at all
     assert numbers.operand(x) == "x"

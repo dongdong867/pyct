@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Self
 
-from pyct.core import numbers, texts
+from pyct.core import numbers, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
@@ -150,7 +151,7 @@ def _search(
         if raises:
             _found(self, name, forms, args)
         expression = [name, self.expression, *forms]
-        return answer(own(operation, self, *args), expression=expression, sink=self.sink)
+        return answer.made(own(operation, self, *args), expression=expression, sink=self.sink)
 
     return compute
 
@@ -158,14 +159,12 @@ def _search(
 def _found(self: ConcolicStr, name: str, forms: list[Expression], args: tuple[object, ...]) -> None:
     """The fork a search takes on its way to a raise, taken when it finds sub.
 
-    Without a position it is `["in", sub, s]`. From a position it is the
-    search it mirrors, `["!=", ["find", s, sub, *positions], -1]`: Python
-    raises exactly where that answers -1, an empty sub past the end
-    included, where `in` on the slice would say found. It goes in before
-    str's own call, the way a division records its zero fork
-    (``README.md › Rules › forks``): a missing sub raises ValueError out of
-    that call, and the raising input's line already lists the fork, taken
-    false. On every path past it sub is found.
+    Without a position it is `["in", sub, s]`. From a position it is the search it mirrors,
+    `["!=", ["find", s, sub, *positions], -1]`: Python raises exactly where that answers -1, an
+    empty sub past the end included, where `in` on the slice would say found. It goes in before
+    str's own call, the way a division records its zero fork (``README.md › Rules › forks``): a
+    missing sub raises ValueError out of that call, and the raising input's line already lists
+    the fork, taken false. On every path past it sub is found.
     """
     if len(forms) == 1:
         found = own(str.__contains__, self, args[0])
@@ -191,7 +190,7 @@ def _contains(self: ConcolicStr, sub: object) -> object:
     if form is None:
         return _CONTAINS_DOWNGRADE(self, sub)
     expression = ["in", form, self.expression]
-    return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
+    return ConcolicBool.made(own(str.__contains__, self, sub), expression, self.sink)
 
 
 def not_contains(s: ConcolicStr, sub: object) -> object:
@@ -206,7 +205,7 @@ def not_contains(s: ConcolicStr, sub: object) -> object:
     if form is None:
         return not _CONTAINS_DOWNGRADE(s, sub)
     expression = ["not in", form, s.expression]
-    return ConcolicBool(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
+    return ConcolicBool.made(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
 
 
 def length(s: ConcolicStr) -> ConcolicInt:
@@ -217,7 +216,7 @@ def length(s: ConcolicStr) -> ConcolicInt:
     `len` asks for instead (`pyct.core.bound.len`). A length cannot fail, so
     it records no fork.
     """
-    return ConcolicInt(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
+    return ConcolicInt.made(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
 
 
 def in_text(sub: ConcolicStr, text: str) -> object:
@@ -244,7 +243,7 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
         sub.sink.append(Downgrade(name="__contains__", site=caller_site()))
         return answer
     expression = [head, sub.expression, _operand(text)]
-    return ConcolicBool(answer, expression=expression, sink=sub.sink)
+    return ConcolicBool.made(answer, expression=expression, sink=sub.sink)
 
 
 _GETITEM_DOWNGRADE = downgraded(str, "__getitem__")
@@ -268,7 +267,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     if bounds is None:
         return _GETITEM_DOWNGRADE(self, key)
     expression = ["[:]", self.expression, *bounds]
-    return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+    return ConcolicStr.made(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
 
 
 def _one_str(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
@@ -336,7 +335,7 @@ def _appended(self: ConcolicStr, other: object) -> object:
     if form is None:
         return _ADD_DOWNGRADE(self, other)
     expression = ["+", self.expression, form]
-    return ConcolicStr(own(str.__add__, self, other), expression=expression, sink=self.sink)
+    return ConcolicStr.made(own(str.__add__, self, other), expression=expression, sink=self.sink)
 
 
 def _joined_after(self: ConcolicStr, other: str) -> str:
@@ -361,13 +360,13 @@ def _prepended(self: ConcolicStr, other: object) -> object:
     if not _within_cvc5(other):
         return _RADD_DOWNGRADE(self, other)
     expression = ["+", _operand(other), self.expression]
-    return ConcolicStr(own(_joined_after, self, other), expression=expression, sink=self.sink)
+    return ConcolicStr.made(own(_joined_after, self, other), expression=expression, sink=self.sink)
 
 
 def one_character(value: str, expression: Expression, sink: BranchSink) -> ConcolicStr:
     """A tracked str that holds one character on every path that makes it: an index's, a walk's
     or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
-    character = ConcolicStr(value, expression=expression, sink=sink)
+    character = ConcolicStr.made(value, expression=expression, sink=sink)
     character.single = True
     return character
 
@@ -384,6 +383,8 @@ class ConcolicStr(str):
 
     expression: Expression
     sink: BranchSink
+    # the base type, as `isinstance`, singledispatch and a class pattern read it
+    __class__ = values.REPORTED_CLASS  # pyrefly: ignore[bad-override]
     # set by `one_character` alone: a value any other operation makes may have any length
     single: bool = False
 
@@ -474,11 +475,15 @@ class ConcolicStr(str):
 
     __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
 
-    def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
+    __new__ = values.as_base
+
+    @classmethod
+    def made(cls, value: str, expression: Expression, sink: BranchSink) -> Self:
+        """How pyct builds a tracked str: the class called with a value builds a plain one."""
+        made = str.__new__(cls, value)
+        made.expression = expression
+        made.sink = sink
+        return made
 
     def __bool__(self) -> bool:
         # str has no __bool__ and Python falls to __len__; this one comes first. The empty

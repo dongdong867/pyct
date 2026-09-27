@@ -27,15 +27,16 @@ Every other operation is range's own answer and a downgrade named by its
 dunder or method (`values.downgrade_through`); a pickle holds Python's range
 and records `__reduce_ex__` (pickle-holds-the-plain-value). `__hash__` and
 `__repr__` stay range's. A tracked range is a `Sequence`, as Python's is, so
-`random.sample` and `match` read it as one; `isinstance(r, range)` and
-`type(r)` still tell it apart.
+`random.sample` and `match` read it as one. It reports range as its class,
+so `isinstance(r, range)` holds as for Python's own, and pyct tells it apart
+by `type(r)` (tracked-values-report-their-base-type-as-their-class).
 """
 
 from __future__ import annotations
 
 import operator
 from collections.abc import Iterator, Sequence
-from typing import Any, SupportsIndex, TypeGuard
+from typing import Any, Self, SupportsIndex, TypeGuard
 
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
@@ -43,6 +44,8 @@ from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller, hinted
 from pyct.core.values import (
+    REPORTED_CLASS,
+    as_base,
     copy_as_itself,
     downgrade_through,
     downgraded,
@@ -80,26 +83,34 @@ class ConcolicRange:
 
     __slots__ = ("bounds", "forms", "held", "sink", "walked_at", "written")
 
-    def __init__(
-        self,
-        held: range,
-        bounds: tuple[int, int, int],
-        written: int,
-        sink: BranchSink,
-    ) -> None:
-        self.held = held
-        # the start, the stop and the step, a tracked one as the target passed it, and each's form
-        self.bounds = bounds
-        self.forms: tuple[Expression, Expression, Expression] = (
-            _form(bounds[0]),
-            _form(bounds[1]),
-            _form(bounds[2]),
-        )
-        # how many arguments the target passed, which an `in` or `==` fork writes as passed
-        self.written = written
-        self.sink = sink
-        # the call that started the last walk, until its size is asked (see `list_reads.hinted`)
-        self.walked_at: tuple[int, int] | None = None
+    # the base type, as `isinstance`, singledispatch and a class pattern read it; the class
+    # called with a value is range's own, a plain range, and pyct builds a tracked one by `made`
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
+    __new__ = as_base
+
+    held: range
+    # the start, the stop and the step, a tracked one as the target passed it, and each's form
+    bounds: tuple[int, int, int]
+    forms: tuple[Expression, Expression, Expression]
+    # how many arguments the target passed, which an `in` or `==` fork writes as passed
+    written: int
+    sink: BranchSink
+    # the call that started the last walk, until its size is asked (see `list_reads.hinted`)
+    walked_at: tuple[int, int] | None
+
+    @classmethod
+    def made(
+        cls, held: range, bounds: tuple[int, int, int], written: int, sink: BranchSink
+    ) -> Self:
+        """A tracked range holding Python's own, beside its bounds' forms: how pyct builds one."""
+        made = object.__new__(cls)
+        made.held = held
+        made.bounds = bounds
+        made.forms = (_form(bounds[0]), _form(bounds[1]), _form(bounds[2]))
+        made.written = written
+        made.sink = sink
+        made.walked_at = None
+        return made
 
     def __iter__(self) -> Iterator[object]:
         self.walked_at = caller(2)
@@ -160,7 +171,7 @@ def _compared(r: ConcolicRange, other: object, op: str) -> object:
         return NotImplemented
     same = own(range.__eq__, r.held, held)
     answer = same if op == "==" else not same
-    return ConcolicBool(answer, expression=[op, _spelled(r), form], sink=r.sink)
+    return ConcolicBool.made(answer, expression=[op, _spelled(r), form], sink=r.sink)
 
 
 def ranged(*args: object, **kwargs: object) -> object:
@@ -181,7 +192,7 @@ def ranged(*args: object, **kwargs: object) -> object:
     sink = next((arg.sink for arg in indexed if isinstance(arg, TRACKED_INTS)), None)
     if sink is None:
         return held
-    return ConcolicRange(held, (bounds[0], bounds[1], bounds[2]), len(indexed), sink)
+    return ConcolicRange.made(held, (bounds[0], bounds[1], bounds[2]), len(indexed), sink)
 
 
 def _index(arg: object) -> int:
@@ -259,7 +270,7 @@ def contains(r: ConcolicRange, item: object) -> object:
     if type(item) not in _INTS:
         return _CONTAINS_DOWNGRADE(r, item)
     answer = own(range.__contains__, r.held, _value(item))
-    return ConcolicBool(answer, expression=["in", _item(item), _spelled(r)], sink=r.sink)
+    return ConcolicBool.made(answer, expression=["in", _item(item), _spelled(r)], sink=r.sink)
 
 
 def not_contains(r: ConcolicRange, item: object) -> object:
@@ -267,20 +278,22 @@ def not_contains(r: ConcolicRange, item: object) -> object:
     if type(item) not in _INTS:
         return not _CONTAINS_DOWNGRADE(r, item)
     answer = not own(range.__contains__, r.held, _value(item))
-    return ConcolicBool(answer, expression=["not in", _item(item), _spelled(r)], sink=r.sink)
+    return ConcolicBool.made(answer, expression=["not in", _item(item), _spelled(r)], sink=r.sink)
 
 
 def within(item: ConcolicInt | ConcolicBool, r: range) -> ConcolicBool:
     """``item in r`` for a tracked int and a plain range: one fork, where Python alone would
     compare the item with every element in turn."""
     answer = r.__contains__(_value(item))
-    return ConcolicBool(answer, expression=["in", item.expression, range_form(r)], sink=item.sink)
+    return ConcolicBool.made(
+        answer, expression=["in", item.expression, range_form(r)], sink=item.sink
+    )
 
 
 def not_within(item: ConcolicInt | ConcolicBool, r: range) -> ConcolicBool:
     """``item not in r`` for a tracked int and a plain range, as `within` answers it."""
     answer = not r.__contains__(_value(item))
-    return ConcolicBool(
+    return ConcolicBool.made(
         answer, expression=["not in", item.expression, range_form(r)], sink=item.sink
     )
 

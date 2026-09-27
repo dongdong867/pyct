@@ -32,5 +32,5 @@ def on_text(method: types.BuiltinMethodType, /, *args: object, **kwargs: object)
         answer = own(getattr(str, name), text, *args, **kwargs)
         sink.append(Downgrade(name=name, site=caller_site()))
         return answer
-    receiver = ConcolicStr(text, expression=form, sink=sink)
+    receiver = ConcolicStr.made(text, expression=form, sink=sink)
     return getattr(ConcolicStr, name)(receiver, *args, **kwargs)

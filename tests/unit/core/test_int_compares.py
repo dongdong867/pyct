@@ -58,7 +58,7 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 ) -> None:
     call, answer = case
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     result = call(x)
 
@@ -71,8 +71,8 @@ def test_a_taught_compare_builds_its_expression_and_records_nothing(
 
 def test_a_compare_against_a_truth_value_reads_it_as_the_int_1_or_0() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-    y = ConcolicInt(3, expression="y", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
+    y = ConcolicInt.made(3, expression="y", sink=sink)
 
     # a bool is the int 1 or 0, as Python has it: a plain one is a literal, and a compare's
     # value is the condition it stands for
@@ -89,7 +89,7 @@ def test_a_compare_against_a_truth_value_reads_it_as_the_int_1_or_0() -> None:
 
 def test_less_than_builds_the_expression_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     result = x < 10
 
@@ -100,8 +100,8 @@ def test_less_than_builds_the_expression_and_records_nothing() -> None:
 
 def test_less_than_takes_the_other_concolics_expression() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-    y = ConcolicInt(10, expression="y", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
+    y = ConcolicInt.made(10, expression="y", sink=sink)
 
     result = x < y
 
@@ -110,7 +110,7 @@ def test_less_than_takes_the_other_concolics_expression() -> None:
 
 def test_less_than_a_float_is_a_compare_on_the_literal() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # Python compares the int with the float as numbers; render converts the int as Python does
     result = x < 3.5
@@ -123,7 +123,7 @@ def test_less_than_a_float_is_a_compare_on_the_literal() -> None:
 
 def test_less_than_a_bool_is_a_compare_on_the_literal() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     result = x < True
 
@@ -134,7 +134,7 @@ def test_less_than_a_bool_is_a_compare_on_the_literal() -> None:
 
 def test_equal_to_a_non_int_is_pythons_own_answer() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # both sides answer NotImplemented; Python settles `==` by identity instead of raising
     assert (x == None) is False  # noqa: E711 - the target's spelling
@@ -144,8 +144,8 @@ def test_equal_to_a_non_int_is_pythons_own_answer() -> None:
 
 def test_less_than_a_compares_value_is_a_compare_on_its_condition() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(0, expression="x", sink=sink)
-    y = ConcolicInt(3, expression="y", sink=sink)
+    x = ConcolicInt.made(0, expression="x", sink=sink)
+    y = ConcolicInt.made(3, expression="y", sink=sink)
 
     # a compare's value is the int 1 or 0, so `<` against it keeps y's compare behind it
     result = x < (y < 5)
@@ -156,14 +156,14 @@ def test_less_than_a_compares_value_is_a_compare_on_its_condition() -> None:
 
 
 def test_less_than_carries_the_concrete_result() -> None:
-    x = ConcolicInt(50, expression="x", sink=[])
+    x = ConcolicInt.made(50, expression="x", sink=[])
 
     assert (x < 10) == False  # noqa: E712 - the value, not the truth test
 
 
 def test_a_compare_adds_up_like_a_bool() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     total = sum([x < 10, x < 100])
 
@@ -175,7 +175,7 @@ def test_a_compare_adds_up_like_a_bool() -> None:
 
 def test_a_compare_equals_the_bool_it_stands_for() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # comparing to True is what the target may do; the answer is a compare on the condition
     same = (x < 10) == True  # noqa: E712
@@ -191,7 +191,7 @@ def test_a_compare_equals_the_bool_it_stands_for() -> None:
 
 def test_a_compare_reads_back_as_a_bool() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert repr(x < 10) == "True"
     assert repr(x < 100) == "True"
@@ -201,7 +201,7 @@ def test_a_compare_reads_back_as_a_bool() -> None:
 
 def test_the_truth_test_records_the_fork_where_it_happens() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # the compare happens here, the truth test inside the probe; the fork is the probe's
     assert _probe()(x < 10) == "yes"
@@ -213,7 +213,7 @@ def test_the_truth_test_records_the_fork_where_it_happens() -> None:
 
 def test_a_reflected_compare_records_the_same_fork() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # int has no way to compare against a subclass, so Python asks x first: `x < 10`
     assert _probe()(10 > x) == "yes"  # noqa: SIM300 - the reflected form is the point
@@ -225,7 +225,7 @@ def test_a_reflected_compare_records_the_same_fork() -> None:
 
 def test_the_truth_test_records_the_side_it_took() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(50, expression="x", sink=sink)
+    x = ConcolicInt.made(50, expression="x", sink=sink)
 
     assert _probe()(x < 10) == "no"
 
@@ -234,7 +234,7 @@ def test_the_truth_test_records_the_side_it_took() -> None:
 
 def test_two_truth_tests_reach_the_sink_in_the_order_they_ran() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(5, expression="x", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
 
     assert _probe(TWO_CHECKS)(x) == 2
 
@@ -246,7 +246,7 @@ def test_two_truth_tests_reach_the_sink_in_the_order_they_ran() -> None:
 
 def test_equality_forks_where_it_is_tested_for_truth() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert _probe()(x == 3) == "yes"
 
@@ -257,7 +257,7 @@ def test_equality_forks_where_it_is_tested_for_truth() -> None:
 
 def test_a_truth_test_on_a_concolic_int_records_the_fork() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # the int itself is the condition, so the fork is the probe's `if`, like a compare's
     assert _probe()(x) == "yes"
@@ -269,7 +269,7 @@ def test_a_truth_test_on_a_concolic_int_records_the_fork() -> None:
 
 def test_a_truth_test_on_zero_records_the_side_it_took() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(0, expression="x", sink=sink)
+    x = ConcolicInt.made(0, expression="x", sink=sink)
 
     assert _probe(NOT_AND_BOOL)(x) == 1
 
@@ -283,7 +283,7 @@ def test_a_truth_test_on_zero_records_the_side_it_took() -> None:
 
 def test_a_reflected_compare_records_the_compare_python_ran() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # Python swaps the operands: `10 < x` asks x first, as `x.__gt__(10)`
     assert _probe()(10 < x) == "no"  # noqa: SIM300 - the reflected form is the point
@@ -295,7 +295,7 @@ def test_a_reflected_compare_records_the_compare_python_ran() -> None:
 
 def test_downgrades_and_a_fork_reach_the_sink_in_the_order_they_ran() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     assert x >> 1 == 1
     assert x.bit_length() == 2

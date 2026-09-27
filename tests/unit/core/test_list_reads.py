@@ -22,9 +22,9 @@ def tracked(values: list[Any], name: str = "items") -> tuple[Any, list[SinkItem]
     for at, value in enumerate(values):
         access: Expression = ["[]", name, at]
         if isinstance(value, str):
-            items.append(ConcolicStr(value, expression=access, sink=sink))
+            items.append(ConcolicStr.made(value, expression=access, sink=sink))
         elif isinstance(value, int) and not isinstance(value, bool):
-            items.append(ConcolicInt(value, expression=access, sink=sink))
+            items.append(ConcolicInt.made(value, expression=access, sink=sink))
         else:
             items.append(value)
     return ConcolicList.made(items, name, sink), sink
@@ -83,7 +83,7 @@ def test_an_index_past_the_end_raises_after_its_fork() -> None:
 
 def test_a_tracked_index_records_both_ends_as_a_tracked_index_into_a_string_does() -> None:
     items, sink = tracked([1, 7])
-    i = ConcolicInt(-1, expression="i", sink=sink)
+    i = ConcolicInt.made(-1, expression="i", sink=sink)
 
     item = items[i]
 
@@ -99,9 +99,9 @@ def test_a_tracked_index_past_either_end_stops_at_the_fork_it_fails() -> None:
     items, sink = tracked([1, 7])
 
     with pytest.raises(IndexError):
-        items[ConcolicInt(2, expression="i", sink=sink)]
+        items[ConcolicInt.made(2, expression="i", sink=sink)]
     with pytest.raises(IndexError):
-        items[ConcolicInt(-3, expression="j", sink=sink)]
+        items[ConcolicInt.made(-3, expression="j", sink=sink)]
 
     assert forks(sink) == [
         ([">", ["len", "items"], "i"], False),
@@ -113,7 +113,7 @@ def test_a_tracked_index_past_either_end_stops_at_the_fork_it_fails() -> None:
 def test_a_tracked_index_into_items_of_two_kinds_is_a_downgrade() -> None:
     items, sink = tracked([1, "a"])
 
-    item = items[ConcolicInt(1, expression="i", sink=sink)]
+    item = items[ConcolicInt.made(1, expression="i", sink=sink)]
 
     assert type(item) is str and item == "a"
     assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
@@ -143,7 +143,7 @@ def test_a_list_inside_is_named_as_the_target_indexed_it_until_it_changes() -> N
     sink: list[SinkItem] = []
     rows: list[Any] = [ConcolicList.made([], ["[]", "grid", at], sink) for at in range(2)]
     grid: Any = ConcolicList.made(rows, "grid", sink)
-    i = ConcolicInt(0, expression="i", sink=sink)
+    i = ConcolicInt.made(0, expression="i", sink=sink)
 
     last = grid[-1]
     assert last.expression == ["[]", "grid", -1]
@@ -159,7 +159,7 @@ def test_an_index_of_a_kind_pyct_does_not_follow_is_lists_own_answer() -> None:
 
     with pytest.raises(TypeError):
         items["a"]
-    compared = items[ConcolicInt(1, expression="x", sink=sink) > 0]
+    compared = items[ConcolicInt.made(1, expression="x", sink=sink) > 0]
 
     # a compare's answer is a position pyct does not follow: list's own read, named, and plain
     assert type(compared) is int and compared == 2
@@ -168,7 +168,7 @@ def test_an_index_of_a_kind_pyct_does_not_follow_is_lists_own_answer() -> None:
 
 def test_a_slice_is_a_tracked_list_that_records_no_fork() -> None:
     items, sink = tracked([1, 2, 3, 4])
-    n = ConcolicInt(1, expression="n", sink=sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
 
     pieces = [items[1:3], items[n:], items[::-1], items[3:0:-1], items[:], items[::1]]
 
@@ -195,7 +195,7 @@ def test_a_slice_pyct_does_not_follow_is_a_downgrade() -> None:
     items, sink = tracked([1, 2, 3])
 
     stepped = items[::2]
-    tracked_step = items[:: ConcolicInt(2, expression="k", sink=sink)]
+    tracked_step = items[:: ConcolicInt.made(2, expression="k", sink=sink)]
 
     # Python's own slice, its items plain
     assert type(stepped) is list and stepped == [1, 3]
@@ -374,7 +374,7 @@ def test_a_slice_whose_bound_pyct_does_not_follow_is_a_downgrade() -> None:
 
     with pytest.raises(TypeError):
         del items["a":]
-    part = items[1 : ConcolicInt(5, expression="n", sink=sink) > 0]
+    part = items[1 : ConcolicInt.made(5, expression="n", sink=sink) > 0]
 
     assert part == []
     assert downgrades(sink) == ["__getitem__"]

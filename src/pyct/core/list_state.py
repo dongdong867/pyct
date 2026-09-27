@@ -101,7 +101,8 @@ class ListState(list):
     @classmethod
     def made(cls, items: list[object], expression: Expression | None, sink: BranchSink) -> Self:
         """A tracked list of these items and this form, its shadow the items themselves."""
-        made = cls.__new__(cls)
+        # list's own, since the class called with a value builds a plain list
+        made = list.__new__(cls)
         list.extend(made, items)
         made.sink = sink
         made.shadow = list(items)

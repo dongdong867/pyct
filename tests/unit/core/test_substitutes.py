@@ -23,7 +23,7 @@ def expressions(sink: list[SinkItem]) -> list[object]:
 
 def tracked_bool(value: bool, sink: list[SinkItem]) -> ConcolicBool:
     """A compare's answer, `x > 5`, standing for the given bool."""
-    return ConcolicBool(value, expression=[">", "x", 5], sink=sink)
+    return ConcolicBool.made(value, expression=[">", "x", 5], sink=sink)
 
 
 @pytest.mark.parametrize(
@@ -54,8 +54,8 @@ def test_a_tracked_bool_against_true_or_false_answers_as_the_bool_it_stands_for(
 @pytest.mark.parametrize(("left", "right"), [(True, True), (True, False), (False, False)])
 def test_two_tracked_bools_are_identical_when_they_are_equal(left: bool, right: bool) -> None:
     sink: list[SinkItem] = []
-    flag = ConcolicBool(left, expression="flag", sink=sink)
-    other = ConcolicBool(right, expression="other", sink=sink)
+    flag = ConcolicBool.made(left, expression="flag", sink=sink)
+    other = ConcolicBool.made(right, expression="other", sink=sink)
 
     # a bool is one of two singletons, so two bools are the same object when they are equal
     assert is_(flag, other) is (left is right)
@@ -65,7 +65,7 @@ def test_two_tracked_bools_are_identical_when_they_are_equal(left: bool, right: 
 
 def test_a_plain_bool_held_by_a_name_meets_a_tracked_bool_as_the_constant_does() -> None:
     sink: list[SinkItem] = []
-    flag = ConcolicBool(True, expression="flag", sink=sink)
+    flag = ConcolicBool.made(True, expression="flag", sink=sink)
     held = True
 
     assert is_(held, flag) is True
@@ -76,7 +76,7 @@ def test_a_plain_bool_held_by_a_name_meets_a_tracked_bool_as_the_constant_does()
 def test_identity_with_any_other_operand_is_pythons_own_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     b = tracked_bool(True, sink)
-    x = ConcolicInt(1, expression="x", sink=sink)
+    x = ConcolicInt.made(1, expression="x", sink=sink)
 
     assert is_(b, None) is False
     assert is_(b, b) is True
@@ -88,7 +88,7 @@ def test_identity_with_any_other_operand_is_pythons_own_and_records_nothing() ->
 
 def test_in_on_a_tracked_string_hands_back_its_condition_untested() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("xab", expression="s", sink=sink)
+    s = ConcolicStr.made("xab", expression="s", sink=sink)
 
     found = in_("a", s)
     missing = not_in("b", s)
@@ -104,7 +104,7 @@ def test_in_on_a_tracked_string_hands_back_its_condition_untested() -> None:
 
 def test_in_on_a_tracked_string_in_a_form_pyct_does_not_encode_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("xab", expression="s", sink=sink)
+    s = ConcolicStr.made("xab", expression="s", sink=sink)
 
     assert in_("\U00030000", s) is False
     assert not_in("\U00030000", s) is True
@@ -115,7 +115,7 @@ def test_in_on_a_tracked_string_in_a_form_pyct_does_not_encode_is_a_downgrade() 
 
 def test_a_tracked_string_in_a_plain_one_carries_the_plain_one_as_a_literal() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
 
     found = in_(s, "abc")
     missing = not_in(s, "abc")
@@ -128,7 +128,7 @@ def test_a_tracked_string_in_a_plain_one_carries_the_plain_one_as_a_literal() ->
 
 def test_a_tracked_string_in_a_plain_one_the_solver_cannot_hold_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
     # substituted code as the target's module holds it: each router called where the `in` was
     namespace: dict[str, object] = {"in_": in_, "not_in": not_in}
     source = 'def look(s):\n    return in_(s, "ab\\U00030000"), not_in(s, "ab\\U00030000")\n'
@@ -146,7 +146,7 @@ def test_a_tracked_string_in_a_plain_one_the_solver_cannot_hold_is_a_downgrade()
 
 def test_a_tracked_value_in_a_literal_display_is_searched_for_in_the_order_written() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(5, expression="x", sink=sink)
+    x = ConcolicInt.made(5, expression="x", sink=sink)
 
     assert in_(x, frozenset({1, 5, 9}), (1, 5, 9)) is True
     assert not_in(x, frozenset({1, 5, 9}), (1, 5, 9)) is False
@@ -187,7 +187,7 @@ def test_a_tracked_bool_searched_in_a_literal_display_of_bools_records_its_fork(
 
 def test_a_tracked_value_in_a_literal_display_tries_each_element_in_order_until_one_holds() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(1, expression="x", sink=sink)
+    x = ConcolicInt.made(1, expression="x", sink=sink)
 
     # True and 1 are equal, as Python has them; the search stops at the first that holds
     assert in_(x, frozenset({True, 2}), (True, 2)) is True
@@ -196,7 +196,7 @@ def test_a_tracked_value_in_a_literal_display_tries_each_element_in_order_until_
 
 def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_written() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(1.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(1.5, expression="x", sink=sink)
 
     assert in_(x, frozenset({2.5, 1.5}), (2.5, 1.5)) is True
     assert expressions(sink) == [(["==", "x", 2.5], False), (["==", "x", 1.5], True)]
@@ -210,14 +210,14 @@ def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_writt
 
 def test_a_tracked_int_in_a_literal_display_of_floats_meets_each_as_python_does() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
 
     assert in_(n, frozenset({1.5, 3.0}), (1.5, 3.0)) is True
     assert expressions(sink) == [(["==", "n", 1.5], False), (["==", "n", 3.0], True)]
 
 
 def tracked_int(value: int, sink: list[SinkItem]) -> ConcolicInt:
-    return ConcolicInt(value, expression="n", sink=sink)
+    return ConcolicInt.made(value, expression="n", sink=sink)
 
 
 @pytest.mark.parametrize(
@@ -316,7 +316,7 @@ def test_a_plain_item_in_a_plain_range_is_python_s_own_in() -> None:
 
 def test_a_str_literal_s_method_given_a_tracked_str_runs_on_a_tracked_str() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
 
     found = method("abc".find, s)
 
@@ -331,7 +331,7 @@ def test_a_str_literal_s_method_given_a_tracked_str_runs_on_a_tracked_str() -> N
 
 def test_a_str_literal_s_method_in_a_form_pyct_does_not_teach_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("a", expression="s", sink=sink)
+    s = ConcolicStr.made("a", expression="s", sink=sink)
 
     assert method("abab".replace, s, "x", 2) == "xbxb"
     assert sink == [Downgrade(name="replace", site=ANY)]
@@ -339,7 +339,7 @@ def test_a_str_literal_s_method_in_a_form_pyct_does_not_teach_is_a_downgrade() -
 
 def test_a_keyword_call_is_the_method_s_own_and_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr(",", expression="s", sink=sink)
+    s = ConcolicStr.made(",", expression="s", sink=sink)
 
     assert method("a,b".split, sep=s) == ["a", "b"]
     assert sink == [Downgrade(name="split", site=ANY)]
@@ -347,7 +347,7 @@ def test_a_keyword_call_is_the_method_s_own_and_a_downgrade() -> None:
 
 def test_a_keyword_call_the_method_refuses_raises_in_python_s_own_words() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr(",", expression="s", sink=sink)
+    s = ConcolicStr.made(",", expression="s", sink=sink)
 
     with pytest.raises(TypeError) as written:
         "a,b".count(sub=",")  # pyrefly: ignore[unexpected-keyword]
@@ -360,7 +360,7 @@ def test_a_keyword_call_the_method_refuses_raises_in_python_s_own_words() -> Non
 
 def test_a_literal_past_what_cvc5_holds_is_python_s_answer_and_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
 
     assert method("\U00030000b".find, s) == 1
     assert sink == [Downgrade(name="find", site=ANY)]
@@ -368,7 +368,7 @@ def test_a_literal_past_what_cvc5_holds_is_python_s_answer_and_a_downgrade() -> 
 
 def test_a_str_literal_s_index_records_its_in_fork_before_it_raises() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("z", expression="s", sink=sink)
+    s = ConcolicStr.made("z", expression="s", sink=sink)
 
     with pytest.raises(ValueError, match="substring not found"):
         method("abc".index, s)
@@ -378,7 +378,7 @@ def test_a_str_literal_s_index_records_its_in_fork_before_it_raises() -> None:
 
 def test_any_other_method_call_is_the_method_s_own() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("b", expression="s", sink=sink)
+    s = ConcolicStr.made("b", expression="s", sink=sink)
 
     assert method("abc".find, "b") == 1
     assert method(str.find, "abc", s) == 1
@@ -391,7 +391,7 @@ def test_any_other_method_call_is_the_method_s_own() -> None:
 # and the conversions'
 _ROUTERS = {"is_", "is_not", "in_", "not_in", "call", "method", "_on_text", "_tracked_in"}
 _ROUTERS |= {"handed", "answer", "len", "ord", "chr", "_routed", "int_", "float_", "bool_"}
-_ROUTERS |= {"map_", "range_", "itself"}
+_ROUTERS |= {"map_", "range_", "type_", "itself"}
 
 
 def test_the_passing_frames_are_the_routers() -> None:
