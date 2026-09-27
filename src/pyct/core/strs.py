@@ -8,6 +8,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
+from pyct.core.str_operands import position, within_cvc5
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
@@ -29,11 +30,6 @@ _KEPT = (
     "__getattribute__",
     "__sizeof__",
 )
-
-# the last character cvc5 holds: its strings run from U+0000 to here, and the solver writes
-# every one of them
-LAST_CHARACTER = 0x2FFFF
-
 
 def _operand(other: object) -> Expression | None:
     """The symbolic form of an operand str takes, or None for one it does not.
@@ -59,7 +55,7 @@ def _within_cvc5(other: object) -> bool:
     """
     if isinstance(other, ConcolicStr) or not isinstance(other, str):
         return True
-    return all(ord(character) <= LAST_CHARACTER for character in other)
+    return within_cvc5(other)
 
 
 def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
@@ -145,14 +141,6 @@ def _contains(self: ConcolicStr, sub: object) -> object:
     return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
 
 
-def _position(value: object) -> int | None:
-    """A position pyct encodes, a plain int or a plain bool, as the int it indexes with.
-
-    Any other value is None.
-    """
-    return int(value) if isinstance(value, int) and type(value) in (int, bool) else None
-
-
 def _bounds(key: object) -> list[Expression] | None:
     """The start and the stop of a slice pyct encodes, a missing bound as None.
 
@@ -162,9 +150,9 @@ def _bounds(key: object) -> list[Expression] | None:
     if not isinstance(key, slice) or key.step is not None:
         return None
     ends = (key.start, key.stop)
-    if not all(end is None or _position(end) is not None for end in ends):
+    if not all(end is None or position(end) is not None for end in ends):
         return None
-    return [None if end is None else _position(end) for end in ends]
+    return [None if end is None else position(end) for end in ends]
 
 
 def _long_enough(self: ConcolicStr, index: int) -> None:
@@ -194,7 +182,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     slice clamps to the string, so it records no fork. A key in a form pyct
     does not encode is str's own answer and a `__getitem__` downgrade.
     """
-    index = _position(key)
+    index = position(key)
     if index is not None:
         _long_enough(self, index)
         expression = ["[]", self.expression, index]
