@@ -5,6 +5,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
@@ -197,7 +198,9 @@ def killed(pids: Path) -> None:
             os.kill(int(pid), signal.SIGKILL)
 
 
-def signaled(numbers: list[int], tmp_path: Path, sighup: str = "DFL") -> tuple[int, list[str]]:
+def signaled(
+    numbers: list[int], tmp_path: Path, sighup: Literal["DFL", "IGN"] = "DFL"
+) -> tuple[int, list[str]]:
     """How ``pyct sweep``, started with SIGHUP at ``SIG_<sighup>``, ended after each signal in
     ``numbers`` reached it in turn while an import hangs, and the lister's pid and its
     child's, which must be gone by then. A signal before the last must not end it."""
