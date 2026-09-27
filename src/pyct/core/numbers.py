@@ -264,7 +264,8 @@ def promoted(operation: Callable[..., object]) -> tuple[Callable[..., object], R
 
     def floats_own(other: object, *rest: object) -> bool:
         # a tracked float's mirror is followed, and float's own answers it. A three-argument
-        # pow is the subclass's own when it defines either power, as Python's slot is then
+        # pow is the subclass's own when it defines either power, since Python's power slot is
+        # then its own
         kind = type(other)
         if kind is float or kind in _CLASSES:
             return True
