@@ -71,9 +71,15 @@ def test_a_positional_only_and_a_keyword_only_parameter_are_both_named() -> None
     [
         pytest.param(Annotated[int, "meta"], 0, id="annotated"),
         pytest.param(Annotated[Literal["b"], "meta"], "b", id="annotated literal"),
-        # only the top-level Literal gives its own value; in a union each member is tested
-        pytest.param(Literal["b"] | None, None, id="literal in a union"),
-        pytest.param(Literal[0] | str, 0, id="literal of the first value in a union"),
+        # a Literal in a union gives its first value, before any other member is tested
+        pytest.param(Literal["b", "c"] | None, "b", id="literal in a union"),
+        pytest.param(typing.Optional[Literal["a", "b"]], "a", id="optional literal"),  # noqa: UP045
+        pytest.param(int | Literal["x"], "x", id="literal after another member"),
+        pytest.param(
+            Annotated[Literal["d"], "meta"] | None, "d", id="annotated literal in a union"
+        ),
+        # a value JSON cannot carry gives way to the other members
+        pytest.param(Literal[b"x"] | None, None, id="literal JSON cannot carry in a union"),
         pytest.param(typing.Optional[list[int]], [], id="optional list"),  # noqa: UP045
         pytest.param(Annotated[str, "meta"] | None, "", id="annotated in a union"),
         pytest.param(float, 0.0, id="float"),

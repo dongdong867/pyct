@@ -4,8 +4,8 @@ A parameter with no default gets the first of ``VALUES`` that Python's
 ``isinstance`` accepts for its annotation. ``[]`` and ``{}`` come before
 ``""`` because ``isinstance`` accepts ``""`` for ``Sequence`` too, and a
 ``Sequence[str]`` asks for a list first. A parameterized annotation is
-tested by its base type, ``Literal`` gives its first value, and
-``Annotated[T, ...]`` is read as ``T``. A parameter with no annotation, or
+tested by its base type, ``Literal`` gives its first value, also as a
+member of a union, and ``Annotated[T, ...]`` is read as ``T``. A parameter with no annotation, or
 one Python cannot test, gets ``0``.
 
 A default stays in the seed when JSON carries it and ``pyct run``'s own seed
@@ -117,18 +117,43 @@ def _typed_fit(annotation: object) -> tuple[type, object]:
 
 def _fit(annotation: object) -> object:
     """The first of ``VALUES`` the annotation accepts, its ``Literal`` value, ``NO_FIT``, or
-    ``UNTESTABLE`` when Python raised testing it."""
+    ``UNTESTABLE`` when Python raised testing it.
+
+    A union with a ``Literal`` member gives that member's first value, so
+    ``Literal["a", "b"] | None`` gives ``"a"`` rather than a ``null`` that
+    leaves nothing to track; a value JSON cannot carry gives way to the rest.
+    """
+    annotation = _bare(annotation)
     origin = typing.get_origin(annotation)
-    if origin is typing.Annotated:
-        return _fit(typing.get_args(annotation)[0])
     if origin is typing.Literal:
         first = typing.get_args(annotation)[0]
         return first if carried(first) else NO_FIT
+    if origin is typing.Union or origin is types.UnionType:
+        literal = _literal_in(typing.get_args(annotation))
+        if literal is not NO_FIT:
+            return literal
     try:
         fits = [value for value in VALUES if _accepts(value, annotation)]
     except Exception:
         return UNTESTABLE
     return copy.copy(fits[0]) if fits else NO_FIT
+
+
+def _literal_in(members: tuple[object, ...]) -> object:
+    """The first value of the first ``Literal`` member JSON carries, or ``NO_FIT``."""
+    for member in members:
+        if typing.get_origin(_bare(member)) is typing.Literal:
+            fit = _fit(member)
+            if fit is not NO_FIT:
+                return fit
+    return NO_FIT
+
+
+def _bare(annotation: object) -> object:
+    """The annotation ``Annotated`` wraps, or the annotation itself."""
+    while typing.get_origin(annotation) is typing.Annotated:
+        annotation = typing.get_args(annotation)[0]
+    return annotation
 
 
 def _accepts(value: object, annotation: object) -> bool:
@@ -140,7 +165,7 @@ def _accepts(value: object, annotation: object) -> bool:
     if origin is typing.Annotated:
         return _accepts(value, arguments[0])
     if origin is typing.Literal:
-        # a Literal inside a union: the value itself, of the same type, so 0 is not False
+        # a Literal JSON cannot carry, met while the rest of its union is tested
         return any(value == item and type(value) is type(item) for item in arguments)
     if annotation is None:
         return value is None
