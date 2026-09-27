@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import platform
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -16,6 +17,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
+from pyct.core.branch import Site
 from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Scope, no_gain
 from pyct.results.record import (
@@ -105,20 +107,29 @@ class Bounds:
 
 @dataclass(frozen=True)
 class Attempt:
-    """What one pass of the loop produced: an input, or a miss, or the reason to stop."""
+    """What one pass of the loop produced: an input, or a miss, or the reason to stop.
+
+    ``unrun`` is the site of a fork the pass picked and then stopped before it
+    ran an input for: the pick spends the fork, so only the pass knows it.
+    """
 
     stop: Stop | None = None
     record: InputRecord | None = None
     miss: Miss | None = None
+    unrun: Site | None = None
 
 
 @dataclass(frozen=True)
 class Loop:
-    """The inputs that ran, the seed's first, what the solver missed, and why they stopped."""
+    """The inputs that ran, the seed's first, what the solver missed, and why they stopped.
+
+    ``untried`` is the site of each fork the run never tried, once per fork.
+    """
 
     records: tuple[InputRecord, ...]
     misses: tuple[Miss, ...]
     stop: Stop
+    untried: tuple[Site, ...] = ()
 
 
 def run(
@@ -153,6 +164,7 @@ def run(
         stopped=looped.stop,
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,
+        untried=looped.untried,
     )
 
 
@@ -173,7 +185,7 @@ def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told)
         return Loop((), (), _could_not_start(error))
     told.record(seeded)
     looped = _loop(call, copied, seeded, bounds, told)
-    return Loop((seeded, *looped.records), looped.misses, looped.stop)
+    return dataclasses.replace(looped, records=(seeded, *looped.records))
 
 
 def _could_not_start(error: InputStartError) -> Stop:
@@ -222,7 +234,7 @@ def _loop(
     while True:
         attempt = _attempt(call, seed, tree, bounds, covered)
         if attempt.stop is not None:
-            return Loop(tuple(records), tuple(misses), attempt.stop)
+            return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
         if attempt.miss is not None:
             misses.append(attempt.miss)
             told.miss(attempt.miss)
@@ -263,18 +275,25 @@ def _attempt(
     wanted = tree.next()
     if wanted is None:
         return Attempt(stop=Stop(StopKind.NO_FORK))
+    unrun = wanted.aim.site
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
-        return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
+        return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
     answer = solve(wanted.prefix, seed.leaves, _solve_limit(bounds, left))
     if isinstance(answer, Error):
-        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
+        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail), unrun=unrun)
     if not isinstance(answer, Sat):
-        return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
+        return Attempt(miss=Miss(unrun, _why(answer)))
     args = apply(seed, answer.model)
     try:
         return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
     except InputStartError as error:
-        return Attempt(stop=_could_not_start(error))
+        return Attempt(stop=_could_not_start(error), unrun=unrun)
+
+
+def _untried(tree: Tree, attempt: Attempt) -> tuple[Site, ...]:
+    """The site of each fork the run never tried: the open ones, and one picked but not run."""
+    sites = [site for site, count in tree.untried().items() for _ in range(count)]
+    return (*sites, attempt.unrun) if attempt.unrun is not None else tuple(sites)
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

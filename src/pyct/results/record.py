@@ -149,6 +149,8 @@ class RunResult:
 
     ``misses`` are the forks the solver gave no input for. A miss is never
     why the run stopped; ``stopped`` carries the loop's own reason.
+    ``untried`` is the site of each fork the run never tried, once per fork:
+    still open when it stopped, or picked and then left by the stop.
     """
 
     entry: str
@@ -157,6 +159,7 @@ class RunResult:
     stopped: Stop
     environment: Environment
     misses: tuple[Miss, ...] = ()
+    untried: tuple[Site, ...] = ()
 
     @property
     def inputs(self) -> int:

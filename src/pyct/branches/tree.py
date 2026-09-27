@@ -56,6 +56,24 @@ class Tree:
                     return plan(forks[: at + 1])
         return None
 
+    def untried(self) -> dict[Site, int]:
+        """How many forks at each site are still open: no input aimed at them, no other side ran.
+
+        A fork that paths share is one fork, counted once. It is read when
+        the run stops, so a run that stopped early can say which forks it
+        never tried.
+        """
+        still_open = {
+            key
+            for forks, keys in self._paths
+            for fork, key in zip(forks, keys, strict=True)
+            if self._open(key, fork.taken)
+        }
+        counts: dict[Site, int] = {}
+        for _, site in still_open:
+            counts[site] = counts.get(site, 0) + 1
+        return counts
+
     def _open(self, key: ForkKey, taken: bool) -> bool:
         """A fork no input aimed at, whose other side no input ran."""
         parent, site = key
