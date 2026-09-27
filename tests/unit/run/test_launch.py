@@ -16,7 +16,8 @@ import pytest
 
 from pyct.run import launch as launch_module
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import Stopped, _stop_if_alone, launch
+from pyct.run.launch import Stopped, _ending, _stop_if_alone, launch
+from pyct.run.process import Waited
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -362,3 +363,15 @@ def test_with_another_thread_the_command_s_process_starts_fresh_and_is_watched(
     assert capsys.readouterr().err == (
         "cannot import targets.load.crashes_at_import: killed by SIGSEGV\n"
     )
+
+
+@pytest.mark.parametrize("number", [signal.SIGSEGV, signal.SIGABRT, signal.SIGQUIT])
+def test_a_signal_that_writes_a_core_is_said_and_not_raised_again(
+    number: int, raised: list[int], capsys: pytest.CaptureFixture[str]
+) -> None:
+    code = _ending(Waited(signal=number, code=None), None, [])
+
+    assert raised == []
+    assert code == 128 + number
+    name = signal.Signals(number).name
+    assert capsys.readouterr().err == f"pyct's process was killed by {name}\n"

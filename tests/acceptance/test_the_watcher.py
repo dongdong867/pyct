@@ -15,7 +15,7 @@ from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, input_lines
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
     is_running,
     pid_written_to,
@@ -27,6 +27,7 @@ SLOW_INPUTS = "targets.load.slow_inputs::f"
 SLOW_IMPORT = "targets.load.slow_import::f"
 COUNTER = "targets.isolate.counter::count"
 CRASHES = "targets.load.crashes_at_import"
+SEGFAULT = "targets.isolate.segfault::fault"
 # how soon after the signal every process of the run must have ended
 ENDED_WITHIN = 1.5
 
@@ -196,3 +197,12 @@ def test_a_thread_at_entry_still_names_a_crash_at_import(tmp_path: Path) -> None
     assert result.stderr.splitlines() == [f"cannot import {CRASHES}: killed by SIGSEGV"]
     assert result.stdout == ""
     assert result.returncode == 1
+
+
+# a crash that ends pyct's process after the import: the watcher says so and does not crash
+def test_a_crash_after_the_import_is_said_and_not_repeated() -> None:
+    result = run_pyct(SEGFAULT, '{"x": 7, "y": 0}', "--in-process")
+
+    # the exit a shell gives a process SIGSEGV ends, from a watcher that exits instead
+    assert result.returncode == 128 + signal.SIGSEGV
+    assert result.stderr.splitlines()[-1] == "pyct's process was killed by SIGSEGV"

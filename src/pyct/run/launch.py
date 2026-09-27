@@ -8,7 +8,10 @@ watches it. While the command's process imports the target, a page the two
 share names the module. When the command's process ends while the page
 names one, the watcher says ``cannot import <module>: <how it ended>``, in
 the words an input's line uses, and exits 1. Otherwise the watcher ends as
-the command's process ended: with its exit code, or by its signal.
+the command's process ended: with its exit code, or by its signal. A
+signal that writes a core is the exception: the watcher says ``pyct's
+process was killed by <signal>`` and exits 128 plus the signal's number,
+the code a shell gives, so the system records one crash, not two.
 
 The watcher passes on each signal that one process sends another to end
 it, so a signal sent to the pid the shell got ends pyct as it always did.
@@ -64,6 +67,25 @@ _BOOT = (
     "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
 _PYCT_ROOT = str(Path(PYCT_DIR).parent)
+# the signals whose default action writes a core, as POSIX lists them, and SIGEMT where the
+# system has it; the watcher does not end by one of these
+_WRITES_A_CORE = frozenset(
+    getattr(signal, name)
+    for name in (
+        "SIGABRT",
+        "SIGBUS",
+        "SIGEMT",
+        "SIGFPE",
+        "SIGILL",
+        "SIGQUIT",
+        "SIGSEGV",
+        "SIGSYS",
+        "SIGTRAP",
+        "SIGXCPU",
+        "SIGXFSZ",
+    )
+    if hasattr(signal, name)
+)
 # how often a watcher that runs other threads looks whether the command's process has ended
 _LOOK_EVERY = 0.05
 
@@ -281,15 +303,22 @@ def _ending(waited: Waited, module: str | None, signaled: list[int]) -> int:
     """The watcher's exit code, once the command's process has ended, or its end by a signal.
 
     An ending while the page names a module is that import's, unless a
-    signal the watcher got too ended the command's process.
+    signal the watcher got too ended the command's process. A signal that
+    writes a core is said on stderr and given as the exit code a shell gives
+    for it, 128 and the signal's number, rather than raised again: that
+    would have the system record a second crash, the watcher's own. Any
+    other signal ends the watcher too, so a shell sees the same ending.
     """
     if module is not None and waited.signal not in signaled:
         print(f"cannot import {module}: {how(waited)}", file=sys.stderr, flush=True)
         return 1
-    if waited.signal is not None:
-        return _end_by(waited.signal)
-    # Waited.of gives an exit code whenever no signal ended the process
-    return waited.code or 0
+    if waited.signal is None:
+        # Waited.of gives an exit code whenever no signal ended the process
+        return waited.code or 0
+    if waited.signal in _WRITES_A_CORE:
+        print(f"pyct's process was {how(waited)}", file=sys.stderr, flush=True)
+        return 128 + waited.signal
+    return _end_by(waited.signal)
 
 
 def _end_by(number: int) -> int:
