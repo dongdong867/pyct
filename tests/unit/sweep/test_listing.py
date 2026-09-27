@@ -3,7 +3,6 @@ import os
 import signal
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -183,29 +182,6 @@ def test_a_lister_that_ends_before_its_first_fact_fails_the_package() -> None:
     assert str(raised.value) == "cannot import p: exited with code 1"
 
 
-def test_a_sigterm_ends_the_listing_as_a_ctrl_c_does_and_stops_the_lister(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    pids = tmp_path / "pids"
-    monkeypatch.setenv("SWEEP_PIDS_FILE", str(pids))
-
-    def terminate_once_the_import_hangs() -> None:
-        while not (pids.exists() and pids.read_text().endswith("\n")):
-            time.sleep(0.05)
-        os.kill(os.getpid(), signal.SIGTERM)
-
-    threading.Thread(target=terminate_once_the_import_hangs, daemon=True).start()
-    before = signal.getsignal(signal.SIGTERM)
-
-    with pytest.raises(KeyboardInterrupt):
-        list_package(STALL, grace=30)
-
-    assert signal.getsignal(signal.SIGTERM) == before
-    for pid in pids.read_text().split():
-        with pytest.raises(ProcessLookupError):
-            os.kill(int(pid), 0)
-
-
 # starts a command with SIGHUP at its default, whatever the test runner got, as under nohup
 WITH_SIGHUP = (
     "import os, signal, sys\n"
@@ -221,8 +197,9 @@ def killed(pids: Path) -> None:
             os.kill(int(pid), signal.SIGKILL)
 
 
-def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
-    # a closing terminal sends SIGHUP; the lister leads its own session and never gets it
+def signaled(number: int, tmp_path: Path) -> tuple[int, list[str]]:
+    """How ``pyct sweep`` ended after signal ``number`` reached it while an import hangs, and
+    the lister's pid and its child's, which must be gone by then."""
     pids = tmp_path / "pids"
     env = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
     env["SWEEP_PIDS_FILE"] = str(pids)
@@ -238,17 +215,41 @@ def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> N
         while not (pids.exists() and pids.read_text().endswith("\n")):
             time.sleep(0.05)
         alive = pids.read_text().split()
-        sweep.send_signal(signal.SIGHUP)
+        sweep.send_signal(number)
         ended = sweep.wait(timeout=20)
     finally:
         sweep.kill()
         killed(pids)
+    return ended, alive
+
+
+def gone(pids: list[str]) -> bool:
+    return all(not _running(int(pid)) for pid in pids)
+
+
+def _running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def test_a_sigterm_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
+    # the command's process raises Stopped for it, and the listing stops its lister on the way
+    ended, lister = signaled(signal.SIGTERM, tmp_path)
+
+    assert ended == -signal.SIGTERM
+    assert gone(lister)
+
+
+def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
+    # a closing terminal sends SIGHUP; the lister leads its own session and never gets it
+    ended, lister = signaled(signal.SIGHUP, tmp_path)
 
     # a shell reports it as exit 129
     assert ended == -signal.SIGHUP
-    for pid in alive:
-        with pytest.raises(ProcessLookupError):
-            os.kill(int(pid), 0)
+    assert gone(lister)
 
 
 def test_an_ignored_sighup_stays_ignored() -> None:
