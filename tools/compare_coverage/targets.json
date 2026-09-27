@@ -42,6 +42,7 @@
     {"set": "v2", "target": "targets.bools.membership::member", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "target": "targets.bools.not_and_ternary::pick", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "target": "targets.bools.stored::later", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.bools.two_flags::same", "seed": {"flag": true, "other": true}},
     {"set": "v2", "target": "targets.bools.untaught::lose", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.bools.untested::positive", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.compare.decorated::classify", "seed": {"x": 0}},

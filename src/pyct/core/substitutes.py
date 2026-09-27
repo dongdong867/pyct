@@ -30,10 +30,8 @@ from typing import Any
 
 from pyct.core import bound, strs
 from pyct.core.bools import ConcolicBool
-from pyct.core.hashed import SEARCHED_MOST, hashed, looked_up, tracked
+from pyct.core.hashed import hashed, looked_up, tracked
 from pyct.core.strs import ConcolicStr
-
-__all__ = ["SEARCHED_MOST", "Identity", "Searched", "in_", "is_", "is_not", "not_in"]
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -45,8 +43,12 @@ def is_(left: object, right: object) -> bool:
     """`left is right`, with a tracked bool against True or False read as the bool it stands for.
 
     Testing the tracked bool for truth records its fork, as `if b:` would,
-    where the `is` runs. Any other pair is Python's own identity.
+    where the `is` runs. Two tracked bools stand for two of the two bool
+    singletons, so they are the same object when they are equal, and the
+    fork is their `==`. Any other pair is Python's own identity.
     """
+    if isinstance(left, ConcolicBool) and isinstance(right, ConcolicBool) and left is not right:
+        return bool(left == right)
     if _stands_for(left, right):
         return bool(left) is right
     if _stands_for(right, left):

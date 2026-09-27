@@ -2,8 +2,9 @@
 
 Three shapes, each a compare with one operator:
 
-- ``a is True``, ``a is not False``, ``True is a``: `is` or `is not` with
-  the constant True or False on one side;
+- ``a is True``, ``a is not False``, ``True is a``, ``a is b``: `is` or
+  `is not` with no constant on either side but True or False, so ``a is
+  None`` stays Python's own;
 - ``a in b`` and ``a not in b``;
 - ``not`` over one of those, folded into the other operator as CPython's
   optimizer folds it, so ``not (a in b)`` is ``a not in b``.
@@ -149,7 +150,7 @@ def _replacement(node: ast.AST) -> ast.expr | None:
         return None
     compare, operator = folded
     left, right = compare.left, compare.comparators[0]
-    if operator in (ast.Is, ast.IsNot) and not (_is_bool(left) or _is_bool(right)):
+    if operator in (ast.Is, ast.IsNot) and (_other_constant(left) or _other_constant(right)):
         return None
     function = _function(_NAMES[operator], left)
     arguments = [left, right] if operator in (ast.Is, ast.IsNot) else [left, *_container(right)]
@@ -162,9 +163,14 @@ def _chain(compare: ast.Compare) -> ast.Compare | None:
     lefts = [compare.left, *compare.comparators[:-1]]
     held = False
     for index, (operator, right) in enumerate(zip(compare.ops, compare.comparators, strict=True)):
-        # a link after one pyct took meets the call's operand on its left
-        held = held or _is_bool(lefts[index])
-        link = _link(operator, right, last=index == len(ops) - 1, held=held)
+        # an `is` link is pyct's after a link pyct took, whose call's operand the chain hands on
+        # as its left, and wherever neither side is a constant but True or False
+        ours = held or not (_other_constant(lefts[index]) or _other_constant(right))
+        link = (
+            None
+            if _before_python_s_identity(compare, index)
+            else _link(operator, right, last=index == len(ops) - 1, identity=ours)
+        )
         if link is not None:
             ops[index], comparators[index] = link
         held = link is not None
@@ -174,19 +180,34 @@ def _chain(compare: ast.Compare) -> ast.Compare | None:
     return ast.copy_location(chain, compare)
 
 
+def _before_python_s_identity(compare: ast.Compare, index: int) -> bool:
+    """Whether the link after this one is an `is` against a constant other than True or False.
+
+    Python answers that link itself, on the operand this link hands on, and
+    CPython tests it with a jump of its own, `POP_JUMP_IF_NONE` say, which a
+    call of pyct's in its place would change. So this link is Python's own
+    too.
+    """
+    following = index + 1
+    if following >= len(compare.ops):
+        return False
+    is_link = isinstance(compare.ops[following], ast.Is | ast.IsNot)
+    return is_link and _other_constant(compare.comparators[following])
+
+
 def _link(
-    operator: ast.cmpop, right: ast.expr, *, last: bool, held: bool
+    operator: ast.cmpop, right: ast.expr, *, last: bool, identity: bool
 ) -> tuple[ast.cmpop, ast.Call] | None:
     """One link's operator and the container it searches, or None for a link left to Python.
 
-    ``held`` says the link's left is a call's operand, which the link before
-    handed on, or the constant True or False: pyct's identity then reads the
-    right. Only the last link's container is compiled as CPython compiles it
+    ``identity`` says an `is` link is pyct's: its left is a call's operand,
+    which the link before handed on, or neither side is a constant but True
+    or False. Only the last link's container is compiled as CPython compiles it
     beside `in`, since CPython folds the display of that link alone.
     """
     if isinstance(operator, ast.In | ast.NotIn):
         return operator, _called(_SEARCHED, _container(right, folded=last), right)
-    if isinstance(operator, ast.Is | ast.IsNot) and (held or _is_bool(right)):
+    if isinstance(operator, ast.Is | ast.IsNot) and identity:
         return _AS_IN[type(operator)](), _called(_IDENTITY, [right], right)
     return None
 
@@ -217,6 +238,12 @@ def _folded(node: ast.AST) -> tuple[ast.Compare, type[ast.cmpop]] | None:
     if operator not in _NEGATED:
         return None
     return node, _NEGATED[operator] if negated else operator
+
+
+def _other_constant(node: ast.expr) -> bool:
+    """Whether the node is a constant other than True and False, as `None` is: Python's own
+    identity answers an `is` against it."""
+    return isinstance(node, ast.Constant) and not _is_bool(node)
 
 
 def _is_bool(node: ast.expr) -> bool:

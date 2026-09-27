@@ -47,6 +47,28 @@ def test_a_tracked_bool_against_true_or_false_answers_as_the_bool_it_stands_for(
     assert expressions(sink) == [([">", "x", 5], value)]
 
 
+@pytest.mark.parametrize(("left", "right"), [(True, True), (True, False), (False, False)])
+def test_two_tracked_bools_are_identical_when_they_are_equal(left: bool, right: bool) -> None:
+    sink: list[SinkItem] = []
+    flag = ConcolicBool(left, expression="flag", sink=sink)
+    other = ConcolicBool(right, expression="other", sink=sink)
+
+    # a bool is one of two singletons, so two bools are the same object when they are equal
+    assert is_(flag, other) is (left is right)
+    assert is_not(flag, other) is (left is not right)
+    assert expressions(sink) == [(["==", "flag", "other"], left is right)] * 2
+
+
+def test_a_plain_bool_held_by_a_name_meets_a_tracked_bool_as_the_constant_does() -> None:
+    sink: list[SinkItem] = []
+    flag = ConcolicBool(True, expression="flag", sink=sink)
+    held = True
+
+    assert is_(held, flag) is True
+    assert is_(flag, 1) is False
+    assert expressions(sink) == [("flag", True)]
+
+
 def test_identity_with_any_other_operand_is_pythons_own_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     b = tracked_bool(True, sink)

@@ -11,9 +11,10 @@ import pytest
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
+from pyct.core.hashed import SEARCHED_MOST
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import SEARCHED_MOST, Identity, Searched, in_, not_in
+from pyct.core.substitutes import Identity, Searched, in_, not_in
 from tests.unit.core.test_substitutes import expressions, tracked_bool
 
 

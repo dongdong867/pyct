@@ -35,6 +35,10 @@ def statements(source: str) -> list[ast.stmt]:
     [
         ("a is True", "__pyct_is__(a, True)"),
         ("a is not False", "__pyct_is_not__(a, False)"),
+        # `is` between two operands neither of which is a constant
+        ("a is b", "__pyct_is__(a, b)"),
+        ("a.b is not f()", "__pyct_is_not__(a.b, f())"),
+        ("not (a is b)", "__pyct_is_not__(a, b)"),
         ("True is a", "__pyct_is__(True, a)"),
         ("a in b", "__pyct_in__(a, b)"),
         ("a not in b", "__pyct_not_in__(a, b)"),
@@ -55,7 +59,9 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
     [
         # `is` with anything but the constants True and False, a value equal to one included
         "a is None",
+        "None is not a",
         "a is 1",
+        "a is ...",
         "not (a is None)",
         # a chained compare with no `in` link and no `is` link against True or False on its
         # right, and every other operator
@@ -96,13 +102,20 @@ def test_other_code_is_left_as_written(source: str) -> None:
         # with True or False on its left, the right operand is the one pyct reads, so it is
         # the one the call holds
         ("True is flag < 3", "True in __pyct_identity__(flag) < 3"),
+        ("True is flag is other", "True in __pyct_identity__(flag) in __pyct_identity__(other)"),
+        ("a < b is c", "a < b in __pyct_identity__(c)"),
         ("0 < False is not flag", "0 < False not in __pyct_identity__(flag)"),
         # a link of any other operator is left to Python, and after a searched link it meets
         # the operand the call holds: a compare runs on it, and an `is` reads it through pyct
         ("a is None < b in c", "a is None < b in __pyct_searched__(c)"),
+        ("None is a < b", "None is a < b"),
         ("a in b < c", "a in __pyct_searched__(b) < c"),
         ("a in b is c", "a in __pyct_searched__(b) in __pyct_identity__(c)"),
-        ("a in b is not None", "a in __pyct_searched__(b) not in __pyct_identity__(None)"),
+        # a link before an `is` against None stays Python's own, which CPython tests with a
+        # jump of its own that a call would change
+        ("a in b is not None", "a in b is not None"),
+        ("a is b is None", "a is b is None"),
+        ("a is b is None < c in d", "a is b is None < c in __pyct_searched__(d)"),
     ],
 )
 def test_an_in_or_is_link_of_a_chain_searches_through_pyct(source: str, expected: str) -> None:

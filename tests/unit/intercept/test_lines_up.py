@@ -162,6 +162,9 @@ SPREAD_OUT = [
     "1 == (\n flag) is True",
     "flag is (\n False) == 1",
     "if 0 < x in c < (\n y):\n    pass",
+    "if a is b is None:\n    pass",
+    "if x in c is not (\n None):\n    pass",
+    "if a is (\n b) < c:\n    pass",
 ]
 
 

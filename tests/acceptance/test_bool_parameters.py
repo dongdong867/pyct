@@ -22,6 +22,8 @@ HUNDRED = "targets.bools.hundred::within"
 HUNDRED_FILE = str(REPO_ROOT / "targets" / "bools" / "hundred.py")
 BOOL_SEED = "targets.bools.bool_seed::truth"
 FALSE_BOOL_DIVISOR = "targets.bools.false_bool_divisor::share"
+TWO_FLAGS = "targets.bools.two_flags::same"
+TWO_FLAGS_FILE = str(REPO_ROOT / "targets" / "bools" / "two_flags.py")
 
 
 def flag_of(line: dict[str, object], name: str = "flag") -> bool:
@@ -187,3 +189,19 @@ def test_finds_the_false_bool_divisor() -> None:
     assert failure["kind"] == "target_raised"
     assert "ZeroDivisionError" in str(failure["detail"])
     assert first_line(result.stdout)["failure"] is None
+
+
+# follow-booleans-and-chained-compares-answers-identity-from-the-value
+def test_two_bools_are_identical_when_they_are_equal() -> None:
+    result = run_pyct(TWO_FLAGS, '{"flag": true, "other": true}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # plain Python answers `True is True`, so the seed takes the first branch
+    assert placed(inputs[0], 2) == [(7, ["==", "flag", "other"], True)]
+    assert 3 in covered(inputs[0], TWO_FLAGS_FILE)
+    # an input that makes them differ reaches the chain, which reads them the same way, so the
+    # line under it runs for no input, as in plain Python
+    differ = [line for line in inputs if flag_of(line) != flag_of(line, "other")]
+    assert any(6 in covered(line, TWO_FLAGS_FILE) for line in differ), inputs
+    assert not any(5 in covered(line, TWO_FLAGS_FILE) for line in inputs)
