@@ -100,3 +100,13 @@ def test_run_hands_each_input_arguments_of_its_own(isolation: Isolation) -> None
         assert isinstance(a, list) and isinstance(b, tuple)
         # the line shows the input as it was called, both paths on one list
         assert len(a) == 1 and b[0] is a
+
+
+@pytest.mark.parametrize("isolation", EVERYWHERE)
+def test_run_passes_a_positional_only_parameter_by_position(isolation: Isolation) -> None:
+    target = load_target("targets.nested.positional_only::check")
+
+    result = run(target, {"value": "x"}, isolation=isolation)
+
+    assert [record.failure for record in result.records] == [None, None]
+    assert [record.args["value"] for record in result.records] == ["x", "abc"]
