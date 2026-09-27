@@ -12,7 +12,7 @@ tracked int on the right is asked, so a tracked value would lose its
 condition in each. Here a tracked value answers as it stands for, and any
 other operand gets Python's own answer and Python's own exception.
 
-A call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` asks
+A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `range(...)` asks
 `call` for its callee first, and calls what it hands back: pyct's router
 for Python's own builtin, which `pyct.core.bound` holds beside the `len`,
 `ord` and `chr` it binds in the module's builtins, and the callee itself for
@@ -33,17 +33,20 @@ import types
 from collections.abc import Callable
 from typing import Any, cast
 
-from pyct.core import bound, str_literals, strs
+from pyct.core import bound, ranges, str_literals, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.ints import ConcolicInt
+from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
 # the tracked values a set or dict can hold: those a literal display is searched for, element
 # by element, as a tuple of the same elements is
 _HASHABLE = (ConcolicBool, ConcolicInt, ConcolicFloat, ConcolicStr)
+# the tracked values a plain range is searched for with one fork
+_RANGE_ITEMS = (ConcolicInt, ConcolicBool)
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -78,12 +81,19 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     ``written`` holds the literal elements of a set, or the literal keys of
     a dict, in the order the display writes them: a tracked value is
     searched for there, one `==` fork per element tried (see `_searched`).
-    Anything else is Python's own `in`.
+    A tracked range, or a tracked int searched in a plain range, answers
+    with one condition untested (`pyct.core.ranges`), where Python alone
+    would compare a tracked int with every element in turn. Anything else
+    is Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.in_text(item, container)
+    if type(container) is ConcolicRange:
+        return ranges.contains(container, item)
+    if type(container) is range and isinstance(item, _RANGE_ITEMS):
+        return ranges.within(item, container)
     if written is not None and isinstance(item, _HASHABLE):
         return _searched(item, written)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
@@ -111,13 +121,18 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
         return strs.not_contains(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.not_in_text(item, container)
+    if type(container) is ConcolicRange:
+        return ranges.not_contains(container, item)
+    if type(container) is range and isinstance(item, _RANGE_ITEMS):
+        return ranges.not_within(item, container)
     if written is not None and isinstance(item, _HASHABLE):
         return not _searched(item, written)
     return item not in container  # pyrefly: ignore[not-iterable]
 
 
 def call(callee: object, /) -> Any:
-    """What a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls.
+    """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `range(...)`
+    calls.
 
     ``callee`` is what the name the code wrote holds when the call runs.
     Python's own builtin gets pyct's router for it (`bound.CALLED`), and

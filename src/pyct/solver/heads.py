@@ -23,6 +23,7 @@ from pyct.solver.positions import (
     starts_with,
 )
 from pyct.solver.recased import TO_DECLARE
+from pyct.solver.spans import within, without
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
 
@@ -83,6 +84,9 @@ RESULTS: Mapping[str, type | None] = {
     # a tuple of prefixes or suffixes, which SMT-LIB has no sort for: only a search reads it,
     # each item a string term
     "()": tuple,
+    # a range's arguments, which SMT-LIB has no sort for either: only a membership reads it,
+    # each argument an Int term
+    "range": range,
     **dict.fromkeys(CHECKS, bool),
     **dict.fromkeys([*CASES, *PADDINGS, *TO_DECLARE], str),
     # a split builds a list, which SMT-LIB has no sort for here: its term is the string it splits,
@@ -156,6 +160,9 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("%", int): modulo,
     ("in", str): contains,
     ("not in", str): not_contains,
+    # an int in a range, its arguments arriving as their terms
+    ("in", int): within,
+    ("not in", int): without,
     ("startswith", str): starts_with,
     ("endswith", str): ends_with,
     ("find", str): first_index,

@@ -1,8 +1,10 @@
-"""The calls pyct substitutes where the target writes them: conversions and a str's methods.
+"""The calls pyct substitutes where the target writes them: conversions, `range` and a str's
+methods.
 
-- A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
-  dot as in `builtins.int(...)`, and a call written `map(...)` with one of
-  those three first, becomes ``__pyct_call__(int)(...)``: the callee is
+- A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
+  bare or after a dot as in `builtins.int(...)`, and a call written
+  `map(...)` with one of the first three first, becomes
+  ``__pyct_call__(int)(...)``: the callee is
   handed to pyct, which hands back pyct's router when it is Python's own
   builtin and the callee itself otherwise, and that is called with the
   arguments as written. So a name the target binds to its own keeps the
@@ -26,8 +28,10 @@ import ast
 
 from pyct.intercept.positions import Parts
 
-# the names whose calls are conversions pyct follows
+# the names whose calls are conversions pyct follows, which a `map` may also hand its items to
 _CONVERSIONS = frozenset({"int", "float", "bool"})
+# the names whose calls pyct hands its router: the conversions, and `range`
+_CALLED = _CONVERSIONS | {"range"}
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
 
@@ -39,10 +43,11 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion or a str literal's method, or None for any other."""
+    """The call that replaces a conversion, `range` or a str literal's method, or None for any
+    other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
-    if _conversion(node):
+    if _called(node):
         return _curried(node, parts)
     if _text_method(node.func, parts):
         callee = parts.named("__pyct_method__", node)
@@ -87,8 +92,10 @@ def _spelled(node: ast.expr) -> str | None:
     return node.attr if isinstance(node, ast.Attribute) else None
 
 
-def _conversion(call: ast.Call) -> bool:
+def _called(call: ast.Call) -> bool:
+    """Whether a call is one pyct hands its router: a conversion, `range`, or a map of a
+    conversion."""
     spelled = _spelled(call.func)
-    if spelled in _CONVERSIONS:
+    if spelled in _CALLED:
         return True
     return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS

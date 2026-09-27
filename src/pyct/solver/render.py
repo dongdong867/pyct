@@ -190,10 +190,10 @@ class _Program:
         `distinct`), so their terms are written before it, and no part waits on Python's stack
         for its operands."""
         for node in order:
-            if self.types[id(node)] is tuple:
-                # a tuple has no term of its own; a search reads its items' terms
-                # (`_operand_or_items`)
-                self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+            if (kind := self.types[id(node)]) in (tuple, range):
+                # no term of its own: a search reads a tuple's items, a membership a range's Ints
+                item_term = self.term if kind is tuple else partial(self._operand, kind=int)
+                self.tuples[id(node)] = tuple(item_term(item) for item in node[1:])
                 continue
             define = holders[id(node)] > 1 or id(node) in read
             self.terms[id(node)] = self._written(node, define=define)
@@ -398,8 +398,8 @@ class _Program:
         return terms + [self._position(part) for part in operands[first:]]
 
     def _operand_or_items(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
-        """An operand's term, or a tuple's items' terms, which is all a tuple has."""
-        if isinstance(part, list) and self.type_of(part) is tuple:
+        """An operand's term, or a tuple's or a range's items' terms, which is all either has."""
+        if isinstance(part, list) and self.type_of(part) in (tuple, range):
             return self.tuples[id(part)]
         return self._operand(part, kind)
 

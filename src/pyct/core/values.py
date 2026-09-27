@@ -215,3 +215,28 @@ def downgrade_the_rest(
     candidates |= set(inherited)
     for name in sorted(candidates - set(vars(cls)) - set(kept)):
         setattr(cls, name, downgraded(base, name, first=first))
+
+
+def held_by(operation: Callable[..., object]) -> Callable[..., object]:
+    """A base type's operation, called on the base type's own value a stand-in holds.
+
+    A stand-in is a concolic type Python does not let extend its base type,
+    as `range` refuses a subclass. It holds the base type's value as
+    ``held``, and the base type's method answers on that.
+    """
+
+    def call(self: Any, /, *args: object, **kwargs: object) -> object:
+        return operation(self.held, *args, **kwargs)
+
+    return call
+
+
+def downgrade_through(cls: type, base: type, *, kept: tuple[str, ...]) -> None:
+    """Downgrade every method of the base type a stand-in has not taught, on the value it holds.
+
+    As `downgrade_the_rest` derives them for a subclass, but each calls the
+    base type's own method on ``held`` (see `held_by`) and records the loss.
+    """
+    candidates = {name for name, member in vars(base).items() if _called_on_a_value(member)}
+    for name in sorted(candidates - set(vars(cls)) - set(kept)):
+        setattr(cls, name, downgraded(base, name, calling=held_by(getattr(base, name))))
