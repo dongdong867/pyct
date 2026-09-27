@@ -91,8 +91,8 @@ def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> l
     being a subclass of ``int`` is Python's rule too, so ``True`` passes
     ``int`` while ``1`` fails ``bool``. A value is named by the access that
     reaches it, as Python writes it, ``cfg['a'][1]``, and spelled as JSON
-    because the seed was typed as JSON, text past ASCII as it was typed, so the
-    value can be found on the command line that gave it.
+    because the seed was typed as JSON, printable text as it was typed, so the
+    value can be found on the command line that gave it (see ``_as_typed``).
     """
     return [
         line
@@ -133,7 +133,25 @@ def _accepts(hint: type, value: object) -> bool:
 
 
 def _refusal(written: str, kinds: tuple[type, ...], value: object) -> str:
-    return f"{written} must be {_wanted(kinds)}, got {json.dumps(value, ensure_ascii=False)}"
+    return f"{written} must be {_wanted(kinds)}, got {_as_typed(value)}"
+
+
+def _as_typed(value: object) -> str:
+    """The value as JSON, printable text as it was typed and every other character escaped.
+
+    A line separator, a control or a bidi override would break or reorder
+    the line, so each is written as JSON escapes it, in UTF-16 units as JSON
+    does past U+FFFF.
+    """
+    return "".join(
+        character if character.isprintable() else _escaped(character)
+        for character in json.dumps(value, ensure_ascii=False)
+    )
+
+
+def _escaped(character: str) -> str:
+    units = character.encode("utf-16-be")
+    return "".join(f"\\u{units[i]:02x}{units[i + 1]:02x}" for i in range(0, len(units), 2))
 
 
 def _wanted(kinds: tuple[type, ...]) -> str:

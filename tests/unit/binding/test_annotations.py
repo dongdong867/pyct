@@ -166,3 +166,17 @@ def test_contradictions_writes_text_past_ascii_as_it_was_typed() -> None:
         'items must be a list, got {"é": 1}',
         "s must be a str, got 5",
     ]
+
+
+def test_contradictions_escapes_what_a_terminal_cannot_show() -> None:
+    # a line separator, a C1 control and a bidi override would break or reorder the line
+    checks: dict[str, Check] = {"xs": Items(list, int)}
+
+    lines = contradictions(checks, {"xs": ["a b", "\x85é‮", "\U000e0001"]})
+
+    assert lines == [
+        'xs[0] must be an int, got "a\\u2028b"',
+        'xs[1] must be an int, got "\\u0085é\\u202e"',
+        'xs[2] must be an int, got "\\udb40\\udc01"',
+    ]
+    assert all(len(line.splitlines()) == 1 for line in lines)
