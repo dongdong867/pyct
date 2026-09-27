@@ -82,7 +82,8 @@ def check(name: str) -> Callable[..., object]:
 
 def changed(name: str, reader: Reader = _nothing) -> Callable[..., object]:
     """str's own answer to one method that builds a str from s, as a tracked str carrying
-    ``[name, s, *operands]``, the operands as ``reader`` finds them."""
+    ``[name, s, *operands]``, the operands as ``reader`` finds them: a case change, a strip or
+    a padding here, and replace and the removals in strs."""
     operation = getattr(str, name)
     downgrade = downgraded(str, name)
 

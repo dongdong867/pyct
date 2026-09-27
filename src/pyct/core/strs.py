@@ -9,7 +9,7 @@ from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
-from pyct.core.str_operands import position, within_cvc5
+from pyct.core.str_operands import literal, position, within_cvc5
 from pyct.core.str_splits import (
     from_the_right,
     line_ends,
@@ -43,16 +43,13 @@ _KEPT = (
 def _operand(other: object) -> Expression | None:
     """The symbolic form of an operand str takes, or None for one it does not.
 
-    A tracked str gives its expression. Any other str is a literal of its
-    plain value, written as repr writes it, so a literal keeps its quotes and
-    reads apart from a parameter name.
+    A tracked str gives its expression. Any other str the solver holds is a
+    literal of its plain value, written as repr writes it (see `literal`), so
+    a literal keeps its quotes and reads apart from a parameter name.
     """
     if isinstance(other, ConcolicStr):
         return other.expression
-    if isinstance(other, str):
-        # str's own repr: a str of the target's own may print itself another way
-        return str.__repr__(other)
-    return None
+    return literal(other, ConcolicStr)
 
 
 def _within_cvc5(other: object) -> bool:
@@ -203,7 +200,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
 
 
-def _one_str(args: tuple[object, ...]) -> list[Expression] | None:
+def _one_str(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """The operand of a piece that takes one str, in the form pyct encodes, or None."""
     form = _needle(args)
     return None if form is None else [form]
@@ -219,7 +216,7 @@ def _replaced_exactly(old: object) -> bool:
     return isinstance(old, str) and not isinstance(old, ConcolicStr) and str.__len__(old) > 0
 
 
-def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
+def _replacement(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """The old and the new string of a replace pyct encodes, or None.
 
     That replace takes two str arguments the solver reads as they are, and
@@ -231,29 +228,6 @@ def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
     if not _replaced_exactly(old) or not isinstance(new, str):
         return None
     return [_operand(old), _operand(new)]
-
-
-def _piece(
-    name: str, operands: Callable[[tuple[object, ...]], list[Expression] | None]
-) -> Callable[..., object]:
-    """str's own answer to one method that builds a str, as a tracked str carrying
-    `[name, s, *operands]`.
-
-    A call in a form pyct does not encode, a keyword included, is str's own
-    answer and a downgrade named by the method (``README.md › Rules ›
-    downgrades``).
-    """
-    operation = getattr(str, name)
-    downgrade = downgraded(str, name)
-
-    def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
-        forms = None if kwargs else operands(args)
-        if forms is None:
-            return downgrade(self, *args, **kwargs)
-        expression = [name, self.expression, *forms]
-        return ConcolicStr(own(operation, self, *args), expression=expression, sink=self.sink)
-
-    return compute
 
 
 def _reflected(self: ConcolicStr, other: object) -> object:
@@ -363,9 +337,9 @@ class ConcolicStr(str):
     __getitem__ = _item  # pyrefly: ignore[bad-override]
     __add__ = _appended  # pyrefly: ignore[bad-override]
     __radd__ = _prepended
-    replace = _piece("replace", _replacement)  # pyrefly: ignore[bad-override]
-    removeprefix = _piece("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
-    removesuffix = _piece("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
+    replace = changed("replace", _replacement)  # pyrefly: ignore[bad-override]
+    removeprefix = changed("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
+    removesuffix = changed("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
 
     # a character check answers with a tracked bool, and a case change, a strip or a padding
     # with a tracked str (see `str_cases`); each takes any arguments and hands a form it does
