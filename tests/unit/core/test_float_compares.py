@@ -4,7 +4,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, SinkItem, Site
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 
@@ -169,4 +169,5 @@ def test_a_float_subclass_with_its_own_reflected_compare_answers_first() -> None
     assert (2.5 < Gauge(1.0)) == "gauge >"  # noqa: SIM300 - the order is the point
     assert (x < Gauge(1.0)) == "gauge >"
     assert (x == Gauge(1.0)) == "gauge =="
-    assert sink == []
+    # each answer is plain, so x's condition is lost there and each compare is named
+    assert sink == [Downgrade(name="__lt__"), Downgrade(name="__eq__")]
