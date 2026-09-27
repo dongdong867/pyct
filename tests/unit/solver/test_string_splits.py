@@ -26,7 +26,10 @@ from tests.unit.solver.test_render import render
 
 # the characters random strings are made of: the separators here, whitespace and line breaks,
 # and letters; the separators, one that overlaps itself among them
-COMMON = list("ab ,\t\n\r\x0b\x1c=")
+COMMON = list("ab ,\t\n\r\x0b\x0c\x1c\x1f=")
+# the line breaks past ASCII, where splitlines breaks as Python does and a split on whitespace
+# reads none of them
+BREAKS_PAST_ASCII = ["\x85", "\u2028", "\u2029"]
 SEPARATORS = [",", " ", "ab", "aa", "\n"]
 
 # a split: its head, the plain operands after the string, and the pieces Python makes
@@ -89,6 +92,20 @@ def _highest(split: Split) -> int:
     if head == "partition":
         return 2
     return limit if isinstance(limit, int) and 0 <= limit < 4 else 4
+
+
+@needs_cvc5
+def test_cvc5_breaks_lines_past_ascii_where_python_does() -> None:
+    rng = random.Random(1)
+    cases: list[tuple[str, Split, int]] = []
+    for _ in range(150):
+        value = "".join(rng.choices([*COMMON, *BREAKS_PAST_ASCII], k=rng.randint(0, 8)))
+        operands: tuple[object, ...] = rng.choice([(), (False,), (True,)])
+        lines = value.splitlines(*operands)  # pyrefly: ignore[no-matching-overload]
+        cases.append((value, ("splitlines", operands, lines), rng.randint(0, 3)))
+    program, python = _program(cases)
+
+    assert asked(program) == python
 
 
 BAD_OPERANDS: dict[str, tuple[str, tuple[object, ...]]] = {
