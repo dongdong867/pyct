@@ -84,8 +84,8 @@ def access_name(part: Expression) -> str | None:
 def leaf_name(access: Expression) -> str:
     """The name a tracked value goes by in a model: its parameter's, or its access as JSON.
 
-    A parameter's name is an identifier and an access's JSON opens with a
-    bracket, so no two tracked values share a name.
+    An access's JSON opens with a bracket, so it never shares a name with a
+    parameter whose name is an identifier.
     """
     return access if isinstance(access, str) else json.dumps(access)
 
