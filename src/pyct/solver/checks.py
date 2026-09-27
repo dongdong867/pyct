@@ -38,8 +38,21 @@ LETTERS: Ranges = (*UPPER, *LOWER)
 # tab to carriage return and the four separators \x1c to \x1f: whitespace but the space
 _BLANKS: Ranges = ((0x09, 0x0D), (0x1C, 0x1F))
 _SPACE_ITSELF: Ranges = ((0x20, 0x20),)
+
+
+def _joined(ranges: Ranges) -> Ranges:
+    """The runs in order, each joined to the next where the two meet, so a regex has fewer."""
+    runs: list[tuple[int, int]] = []
+    for first, last in sorted(ranges):
+        if runs and first <= runs[-1][1] + 1:
+            runs[-1] = (runs[-1][0], max(last, runs[-1][1]))
+        else:
+            runs.append((first, last))
+    return tuple(runs)
+
+
 # what isspace takes, and what strip and split() take away: one set, as in Python
-SPACE: Ranges = (*_BLANKS, *_SPACE_ITSELF)
+SPACE: Ranges = _joined((*_BLANKS, *_SPACE_ITSELF))
 
 # the kinds of character, apart from each other and together every character cvc5 holds
 KINDS: Mapping[str, Ranges] = {
