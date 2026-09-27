@@ -18,6 +18,7 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Generator
 from dataclasses import dataclass
 
 from pyct.run.process import Waited, how
@@ -55,12 +56,15 @@ def list_package(
     """Every row of the package, one per module and entry name, in order.
 
     An entry several modules export is one row. Raises ``PackageImportError``
-    when the package itself does not import, since then nothing is swept.
+    when the package itself does not import, since then nothing is swept. A
+    SIGTERM ends it as a Ctrl-C does, with the lister stopped. Like a Ctrl-C's
+    handling, this needs the main thread.
     """
     kept: dict[tuple[str, str], Row] = {}
     after: str | None = None
     while True:
-        heard = _listen(package, after, grace, lister)
+        with _sigterm_as_ctrl_c():
+            heard = _listen(package, after, grace, lister)
         for row in heard.rows:
             kept.setdefault(row.order, row)
         if heard.stuck is None:
@@ -70,6 +74,26 @@ def list_package(
             raise PackageImportError(_failed(module, ended).reason)
         kept.setdefault((module, ""), _failed(module, ended))
         after = module
+
+
+@contextlib.contextmanager
+def _sigterm_as_ctrl_c() -> Generator[None]:
+    """Raise ``KeyboardInterrupt`` on a SIGTERM inside the block, then put the old handler back.
+
+    The lister leads a session of its own, so a signal to sweep never
+    reaches it; ending sweep by a signal's default action would leave it
+    running, forever if an import hangs. Raising instead runs the ``finally``
+    that stops its group, and the sweep then ends as it does on a Ctrl-C.
+    """
+
+    def interrupt(number: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    previous = signal.signal(signal.SIGTERM, interrupt)
+    try:
+        yield
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
 
 
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:

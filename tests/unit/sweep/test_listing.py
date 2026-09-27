@@ -1,5 +1,7 @@
 import os
+import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -160,3 +162,26 @@ def test_a_lister_that_ends_before_its_first_fact_fails_the_package() -> None:
         list_package("p", lister=stand_in("import sys\nsys.exit(1)\n"))
 
     assert str(raised.value) == "cannot import p: exited with code 1"
+
+
+def test_a_sigterm_ends_the_listing_as_a_ctrl_c_does_and_stops_the_lister(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pids = tmp_path / "pids"
+    monkeypatch.setenv("SWEEP_PIDS_FILE", str(pids))
+
+    def terminate_once_the_import_hangs() -> None:
+        while not (pids.exists() and pids.read_text().endswith("\n")):
+            time.sleep(0.05)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=terminate_once_the_import_hangs, daemon=True).start()
+    before = signal.getsignal(signal.SIGTERM)
+
+    with pytest.raises(KeyboardInterrupt):
+        list_package(STALL, grace=30)
+
+    assert signal.getsignal(signal.SIGTERM) == before
+    for pid in pids.read_text().split():
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(pid), 0)
