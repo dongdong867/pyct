@@ -195,6 +195,9 @@ def test_a_call_of_a_math_function_by_the_name_the_module_imports_it_under_is_su
         # another module's star import may bind any name
         "from math import sqrt\nfrom cmath import *\nsqrt(x)",
         "import math\nfrom os import *\nmath.sqrt(x)",
+        # a relative star import reads the package's own module, whatever its name
+        "from math import sqrt\nfrom .math import *\nsqrt(x)",
+        "import math\nfrom ..math import *\nmath.sqrt(x)",
         # an attribute of an attribute, and a name math does not route
         "import math\nself.math.sqrt(x)",
         "import math\nmath.floor(x)",

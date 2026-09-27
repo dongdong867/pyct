@@ -98,9 +98,10 @@ class _Bindings:
     counted: set[int] = field(default_factory=set)
     # `*args` and `**kwargs`, which hold a tuple or a dict whatever their annotation says
     gathered: set[int] = field(default_factory=set)
-    # what each import of `math` binds a name to, and the modules star imports read from
+    # what each import of `math` binds a name to, and the modules star imports read from, each
+    # with its import level, so a relative one is the package's own module
     imported: dict[str, set[str]] = field(default_factory=dict)
-    stars: set[str | None] = field(default_factory=set)
+    stars: set[tuple[str | None, int]] = field(default_factory=set)
 
     def literal(self, target: ast.Name, value: object) -> None:
         """One name bound to a literal: a kind of its own, and a bool only for True or False."""
@@ -136,9 +137,10 @@ class _Bindings:
     def _math_names(self) -> tuple[frozenset[str], frozenset[str]]:
         """The names bound to `math` alone, and those bound to one of its functions alone.
 
-        A star import from any module but `math` may bind any name, so none counts.
+        A star import from any module but the standard `math`, a relative one included, may bind
+        any name, so none counts.
         """
-        if self.stars - {"math"}:
+        if self.stars - {("math", 0)}:
             return frozenset(), frozenset()
         held = {name: kinds for name, kinds in self.imported.items() if name not in self.refused}
         modules = frozenset(name for name, kinds in held.items() if kinds == {_MODULE})
@@ -156,7 +158,7 @@ def literal_names(tree: ast.AST) -> Constants:
         _math_bindings(node, bindings)
         _bindings(node, bindings)
         if _star_import(node):
-            bindings.stars.add(getattr(node, "module", None))
+            bindings.stars.add((getattr(node, "module", None), getattr(node, "level", 0)))
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and classed:
             in_class.add(id(node))
         pending.extend(_scoped(node, classed))

@@ -157,9 +157,9 @@ def map_(*args: object, **kwargs: object) -> Any:
     return map(converter, *args[1:], **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
-# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or with a `math`
-# function's name calls in place of Python's own function, by its identity (see
-# `pyct.core.substitutes.call`)
+# what a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)`, or a call of a
+# `math` function through a name the module binds to it, calls in place of Python's own
+# function, by its identity (see `pyct.core.substitutes.call`)
 CALLED: Mapping[int, Callable[..., object]] = {
     **_CONVERTERS,
     id(map): map_,

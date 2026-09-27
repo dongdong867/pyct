@@ -17,7 +17,7 @@ from tests.unit.core.test_substitutes import expressions
 
 
 def called(function: Callable[..., object]) -> Callable[..., Any]:
-    """What a call written with the function's name calls, as substituted code asks for it."""
+    """What a substituted call of the function calls, as substituted code asks for it."""
     return substitutes.call(function)
 
 

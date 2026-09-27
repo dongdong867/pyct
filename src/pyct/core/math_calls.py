@@ -2,10 +2,11 @@
 
 `math` reads a float's double without calling any of its methods, and an
 int through its `__float__` or `__index__`, so a tracked number handed to
-it would lose its condition. pyct substitutes a call written with the name
-of a `math` function, `math.sqrt(x)` or `sqrt(x)` (`pyct.intercept.calls`),
-and when the name holds that function, `pyct.core.bound` hands the call one
-of these routers (`ROUTERS`):
+it would lose its condition. pyct substitutes a call of a `math` function
+through a name the module binds to `math` or to that function,
+`math.sqrt(x)` or `root(x)` after `from math import sqrt as root`
+(`pyct.intercept.constants`), and when the name still holds that function as the
+call runs, `pyct.core.bound` hands the call one of these routers (`ROUTERS`):
 
 - `sqrt`, `fabs`, `copysign`, `isnan`, `isinf`, `isfinite`, and `isclose`
   with plain tolerances, on a tracked float or int beside plain floats or
@@ -192,7 +193,7 @@ def _tracked_call(
 
 
 def _router(function: Callable[..., object], follow: Follow | None) -> Callable[..., Any]:
-    """What a call written with the function's name calls: Python's own on plain values.
+    """What a substituted call of the function calls: Python's own on plain values.
 
     A call with no keyword, the usual one, is handed on without them, which
     costs a plain call a third less.
@@ -233,8 +234,8 @@ NAMES: frozenset[str] = frozenset(
     if callable(member) and not name.startswith("_") and name not in _ASK_THE_NUMBER
 )
 
-# what a call written with a `math` function's name calls in its place, by the function's
-# identity (see `pyct.core.bound.CALLED`)
+# what a substituted call of a `math` function calls in its place, by the function's identity
+# (see `pyct.core.bound.CALLED`)
 ROUTERS: Mapping[int, Callable[..., Any]] = {
     id(getattr(math, name)): _router(getattr(math, name), _FOLLOWED.get(name)) for name in NAMES
 }

@@ -15,8 +15,9 @@ a chained compare, where each operand is evaluated once on Python's stack,
 the link keeps Python's own `in` and searches a container of this module's,
 `Searched` or `Identity`, which asks the same functions.
 
-A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or with a
-`math` function's name asks `call` for its callee first, and calls what it
+A call written `int(...)`, `float(...)`, `bool(...)` or `map(...)`, and a
+call of a `math` function through a name the module binds to it
+(`pyct.intercept.constants`), asks `call` for its callee first, and calls what it
 hands back: pyct's router for Python's own function, which `pyct.core.bound`
 holds beside the `len`, `ord` and `chr` it binds in the module's builtins,
 and the callee itself for anything else, so a function of the target's
@@ -189,8 +190,8 @@ class Identity(_Link):
 
 
 def call(callee: object, /) -> Any:
-    """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or with a `math`
-    function's name calls.
+    """What a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls, and a
+    call of a `math` function through a name the module binds to it.
 
     ``callee`` is what the name the code wrote holds when the call runs.
     Python's own builtin gets pyct's router for it (`bound.CALLED`), and
