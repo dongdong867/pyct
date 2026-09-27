@@ -216,7 +216,8 @@ class _Program:
         # before it, and no part waits on Python's stack for its operands
         for node in order:
             if self.types[id(node)] is tuple:
-                # a tuple has no term of its own: a search reads its items' terms (`_needle`)
+                # a tuple has no term of its own; a search reads its items' terms
+                # (`_operand_or_items`)
                 self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
                 continue
             define = holders[id(node)] > 1 or id(node) in read
@@ -386,10 +387,10 @@ class _Program:
         """Each operand's term; past the operands a search or a replace reads as terms, each
         position as `_position` reads it, and a tuple as its items' terms."""
         first = POSITIONS_FROM.get(head, len(operands)) if kind is str else len(operands)
-        terms: list[object] = [self._needle(part, kind) for part in operands[:first]]
+        terms: list[object] = [self._operand_or_items(part, kind) for part in operands[:first]]
         return terms + [self._position(part) for part in operands[first:]]
 
-    def _needle(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
+    def _operand_or_items(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
         """An operand's term, or a tuple's items' terms, which is all a tuple has."""
         if isinstance(part, list) and self.type_of(part) is tuple:
             return self.tuples[id(part)]
