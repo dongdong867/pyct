@@ -5,7 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from pyct.core.branch import Branch, ForkSite, Site
-from pyct.results.why import Condition, Reason, Tries, Walked, WhyEntry, explain
+from pyct.results.why import Condition, Reason, Run, Tries, Walked, WhyEntry, explain
 
 
 def module(tmp_path: Path, source: str) -> str:
@@ -28,7 +28,7 @@ def why(
 ) -> tuple[WhyEntry, ...]:
     """``explain`` over one file: its uncovered lines, then its covered ones."""
     uncovered, covered = lines
-    return explain(file, frozenset(uncovered), frozenset(covered), walked, tries or {})
+    return explain(file, frozenset(uncovered), frozenset(covered), Run(walked, tries or {}))
 
 
 UNTAKEN = """\

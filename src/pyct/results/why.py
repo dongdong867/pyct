@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import time
 import types
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -35,6 +36,7 @@ class Reason(StrEnum):
     HANDLER = "handler"
     ENDED_BEFORE = "ended before"
     SUSPENDED = "suspended"
+    NOT_WORKED_OUT = "not worked out"
 
 
 @dataclass(frozen=True)
@@ -84,24 +86,53 @@ class Walked:
     lines: frozenset[int] = frozenset()
 
 
+# what the analysis reads the time from; a test sets another
+clock = time.monotonic
+
+
+@dataclass(frozen=True)
+class Run:
+    """What the run gave the analysis: its inputs, what it tried at each site, and when to stop.
+
+    ``stop_at`` is the monotonic instant past which no more causes are
+    worked out, or None for a run with no deadline, which works out every line.
+    """
+
+    walked: Sequence[Walked]
+    tries: Mapping[ForkSite, Tries]
+    stop_at: float | None = None
+
+    def late(self) -> bool:
+        return self.stop_at is not None and clock() > self.stop_at
+
+
+class _OutOfTimeError(Exception):
+    """The stop came while a line's cause was being worked out."""
+
+
 def explain(
-    file: str,
-    uncovered: frozenset[int],
-    covered: frozenset[int],
-    walked: Sequence[Walked],
-    tries: Mapping[ForkSite, Tries],
+    file: str, uncovered: frozenset[int], covered: frozenset[int], run: Run
 ) -> tuple[WhyEntry, ...]:
     """One entry per cause, for the lines of ``file`` no input ran, the earliest line's first.
 
     The module's code is read only when a line is left, so a run that
-    covered everything reads nothing.
+    covered everything reads nothing. The lines left when the run's stop
+    comes share one ``not worked out`` entry.
     """
     if not uncovered:
         return ()
-    seen = _Seen.of(file, covered, walked, tries)
+    seen = _Seen.of(file, covered, run)
     by_cause: dict[WhyEntry, list[int]] = {}
-    for line in sorted(uncovered):
-        by_cause.setdefault(seen.cause(line), []).append(line)
+    lines = sorted(uncovered)
+    for at, line in enumerate(lines):
+        try:
+            if run.late():
+                raise _OutOfTimeError
+            cause = seen.cause(line)
+        except _OutOfTimeError:
+            by_cause[WhyEntry(file, (), Reason.NOT_WORKED_OUT)] = lines[at:]
+            break
+        by_cause.setdefault(cause, []).append(line)
     entries = [_with_lines(cause, lines) for cause, lines in by_cause.items()]
     return tuple(sorted(entries, key=lambda entry: entry.lines[0]))
 
@@ -134,18 +165,12 @@ class _Seen:
     file: str
     covered: frozenset[int]
     inputs: tuple[_Input, ...]
-    tries: Mapping[ForkSite, Tries]
+    run: Run
     owners: dict[int, types.CodeType | None]
     flows: dict[types.CodeType, _Walk] = field(default_factory=dict)
 
     @classmethod
-    def of(
-        cls,
-        file: str,
-        covered: frozenset[int],
-        walked: Sequence[Walked],
-        tries: Mapping[ForkSite, Tries],
-    ) -> _Seen:
+    def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
         # inputs that took one path are one input to every question asked of them
         inputs = tuple(
             dict.fromkeys(
@@ -154,10 +179,10 @@ class _Seen:
                     tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
                     each.failed,
                 )
-                for each in walked
+                for each in run.walked
             )
         )
-        return cls(file, covered, inputs, tries, _owners(file))
+        return cls(file, covered, inputs, run, _owners(file))
 
     def cause(self, line: int) -> WhyEntry:
         """The one cause of an uncovered line. A line no function holds is the import's."""
@@ -340,7 +365,13 @@ class _Walk:
     @functools.cached_property
     def _marks(self) -> list[frozenset[int]]:
         """The nodes each input's own lines and forks prove it passed, found once."""
-        return [self.flow.marked(each.lines, each.forks) for each in self.seen.inputs]
+        marks = []
+        for each in self.seen.inputs:
+            # the one step whose count grows with the run's inputs
+            if self.seen.run.late():
+                raise _OutOfTimeError
+            marks.append(self.flow.marked(each.lines, each.forks))
+        return marks
 
     def _forks_at(self, step: Step) -> bool:
         return (step.line, step.col, step.raising) in self.forked
@@ -351,7 +382,7 @@ class _Walk:
         condition = Condition(site=site, side=step.side)
         if not self._forks_at(step):
             return WhyEntry(self.seen.file, (), Reason.NO_FORK, condition=condition)
-        tries = self.seen.tries.get(ForkSite(site, step.raising), Tries())
+        tries = self.seen.run.tries.get(ForkSite(site, step.raising), Tries())
         return WhyEntry(self.seen.file, (), Reason.NOT_TAKEN, condition=condition, tries=tries)
 
     def _entry(self, reason: Reason) -> WhyEntry:

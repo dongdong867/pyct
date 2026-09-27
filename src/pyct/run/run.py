@@ -165,6 +165,7 @@ def run(
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,
         untried=looped.untried,
+        deadline=bounds.until,
     )
 
 

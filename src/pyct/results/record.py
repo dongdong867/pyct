@@ -10,7 +10,10 @@ from enum import StrEnum
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.why import Tries, Walked, WhyEntry, explain
+from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
+
+# how long past a run's deadline pyct goes on working out why lines were missed
+ANALYSIS_GRACE = 0.5
 
 
 class Source(StrEnum):
@@ -163,6 +166,7 @@ class RunResult:
     why the run stopped; ``stopped`` carries the loop's own reason.
     ``untried`` is the site of each fork the run never tried, once per fork:
     still open when it stopped, or picked and then left by the stop.
+    ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
     """
 
     entry: str
@@ -172,6 +176,7 @@ class RunResult:
     environment: Environment
     misses: tuple[Miss, ...] = ()
     untried: tuple[ForkSite, ...] = ()
+    deadline: float | None = None
 
     @property
     def inputs(self) -> int:
@@ -198,18 +203,22 @@ class RunResult:
         """Why each uncovered line was not run, one entry per cause, file by file.
 
         Worked out the first time it is read, from the module's code and the
-        run's inputs, so a caller that never reads it never pays for it.
+        run's inputs, so a caller that never reads it never pays for it. A
+        run with a deadline works causes out until half a second past it, so
+        it still ends within one second of it; the lines left then are not
+        worked out.
         """
         walked = [
             Walked(record.forks, record.failure is not None, record.covered_lines)
             for record in self.records
         ]
-        tries = _tries(self)
+        stop_at = None if self.deadline is None else self.deadline + ANALYSIS_GRACE
+        run = Run(walked, _tries(self), stop_at=stop_at)
         covered = self.coverage.covered
         return tuple(
             entry
             for file, lines in self.coverage.uncovered.items()
-            for entry in explain(file, lines, covered.get(file, frozenset()), walked, tries)
+            for entry in explain(file, lines, covered.get(file, frozenset()), run)
         )
 
 

@@ -6,9 +6,26 @@ two paths reach names the first side no input took; a fork before an
 operation that may raise is told apart from the test at the same column.
 """
 
+import json
+import time
+
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, run_pyct, summary_line
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
+from pyct.results import why as why_module
+from pyct.results.jsonl import render_summary
+from pyct.results.trace import render_stop
+from pyct.run.isolation import Isolation
+from pyct.run.run import run
+from pyct.run.target import load_target
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    check_every_uncovered_line_explained_once,
+    let_pyct_run_in_process,
+    run_pyct,
+    summary_line,
+)
 
 
 def spec(module: str, function: str) -> tuple[str, str]:
@@ -318,3 +335,34 @@ def test_a_generator_paused_at_a_yield_in_a_loop_is_suspended_and_one_that_raise
     assert entry["reason"] == expected["reason"]
     if "yield" in expected:
         assert entry["yield"] == {"file": file, "line": expected["yield"]}
+
+
+# see-why-a-line-was-missed-stops-at-the-deadline
+def test_the_lines_left_when_the_deadline_comes_are_not_worked_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target, file = spec("suspended", "first")
+    let_pyct_run_in_process(monkeypatch)
+    # the analysis reads its clock after the run, as if the deadline plus half a second is past
+    monkeypatch.setattr(why_module, "clock", lambda: time.monotonic() + 3600)
+    limits = Limits(budget=Budget(seconds=60))
+
+    result = run(load_target(target), {"x": 1}, limits=limits, isolation=Isolation.IN_PROCESS)
+
+    summary = json.loads(render_summary(result))
+    check_every_uncovered_line_explained_once(render_summary(result))
+    entries = summary["why_uncovered"]
+    assert entries == [
+        {"file": file, "lines": summary["uncovered"][file], "reason": "not worked out"}
+    ]
+    assert "not worked out before the deadline" in render_stop(result)
+
+
+def test_a_run_with_no_budget_works_out_every_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    target, _ = spec("suspended", "first")
+    let_pyct_run_in_process(monkeypatch)
+    monkeypatch.setattr(why_module, "clock", lambda: time.monotonic() + 3600)
+
+    result = run(load_target(target), {"x": 1}, isolation=Isolation.IN_PROCESS)
+
+    assert "not worked out" not in {entry.reason.value for entry in result.why_uncovered}

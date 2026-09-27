@@ -9,6 +9,7 @@ _SAID = {
     Reason.IMPORT: "import",
     Reason.HANDLER: "in a handler no raise reached",
     Reason.ENDED_BEFORE: "every input that got there ended before it",
+    Reason.NOT_WORKED_OUT: "not worked out before the deadline",
 }
 
 
