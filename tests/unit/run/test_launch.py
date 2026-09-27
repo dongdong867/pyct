@@ -282,12 +282,11 @@ def no_process_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(os, "fork", refused)
 
 
-def test_a_sigterm_ends_the_command_by_sigterm_and_puts_its_handler_back(
+def test_a_sigterm_ends_the_command_by_sigterm(
     monkeypatch: pytest.MonkeyPatch, raised: list[int]
 ) -> None:
     # with no process of its own, the command's process is this one, so its end is recorded
     no_process_starts(monkeypatch)
-    before = signal.getsignal(signal.SIGTERM)
 
     def stopped(watch: ImportWatch | None) -> int:
         os.kill(os.getpid(), signal.SIGTERM)
@@ -298,6 +297,19 @@ def test_a_sigterm_ends_the_command_by_sigterm_and_puts_its_handler_back(
 
     assert raised == [signal.SIGTERM]
     assert code == 128 + signal.SIGTERM
+
+
+def test_a_command_that_returns_puts_the_sigterm_handler_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    no_process_starts(monkeypatch)
+
+    def before(number: int, frame: object) -> None:
+        raise AssertionError("the sentinel handler ran")
+
+    signal.signal(signal.SIGTERM, before)
+
+    assert launch(lambda watch: 7, ARGV) == 7
     assert signal.getsignal(signal.SIGTERM) is before
 
 
