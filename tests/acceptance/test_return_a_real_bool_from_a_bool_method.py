@@ -64,6 +64,14 @@ def plain_error(call: Callable[[], object]) -> str:
     return f"TypeError: {raised.value}"
 
 
+def refusal_opening() -> str:
+    """How plain Python's refusal of a non-bool from `__bool__` opens in this run, up to the
+    type's name: its message for a method that returns an int, less the name `int`."""
+    message = plain_error(lambda: bool(bool_method_raises.Num(1)))
+    assert message.endswith(" int"), message
+    return message.removesuffix("int")
+
+
 # return-a-real-bool-from-a-bool-method-follows-bool-of-a-value
 def test_follows_bool_of_a_value() -> None:
     result = run_pyct(f"{METHODS}::f", '{"x": 1}')
@@ -160,9 +168,7 @@ def test_passes_a_tracked_int_through() -> None:
     seed = first_line(result.stdout)
     failure = failure_of(seed)
     assert failure["kind"] == "target_raised"
-    opening = "TypeError: __bool__ should return bool, returned "
-    assert plain_error(lambda: bool(bool_method_raises.Num(1))).startswith(opening)
-    assert str(failure["detail"]).startswith(opening), failure
+    assert str(failure["detail"]).startswith(refusal_opening()), failure
     returned, _ = position(RAISES_FILE, "return self.v")
     assert [fork for fork in forks_of(seed) if fork["line"] == returned] == []
 
@@ -175,7 +181,7 @@ def test_still_raises_outside_the_package() -> None:
     assert result.returncode == 0, result.stderr
     failure = failure_of(first_line(result.stdout))
     assert failure["kind"] == "target_raised"
-    assert str(failure["detail"]).startswith("TypeError: __bool__ should return bool, returned ")
+    assert str(failure["detail"]).startswith(refusal_opening()), failure
     plain = subprocess.run(
         [sys.executable, "-c", "from shop.boxed import check; print(check(1))"],
         cwd=SCOPE,
