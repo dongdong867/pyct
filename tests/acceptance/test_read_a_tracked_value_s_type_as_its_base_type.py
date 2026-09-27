@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from targets.types import copied, dispatched, matched, own_type, read
+from targets.types import copied, dispatched, matched, own_type, read, read_dict
 from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
@@ -25,6 +25,7 @@ from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 
 TYPES = REPO_ROOT / "targets" / "types"
 READ_FILE = TYPES / "read.py"
+READ_DICT_FILE = TYPES / "read_dict.py"
 SCOPE = REPO_ROOT / "targets" / "scope"
 TYPED_FILE = SCOPE / "shop" / "typed.py"
 EVERY_TYPE = '{"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}'
@@ -227,15 +228,19 @@ def test_raises_python_s_error_for_a_bad_check(target: str, seed: str, call: obj
 # pickle read as dicts, as plain Python reads them
 @pytest.mark.parametrize("where", [(), ("--in-process",)], ids=["own-process", "in-process"])
 def test_reads_a_dict_s_type_as_python_s(where: tuple[str, ...]) -> None:
-    assert read.dict_type({"a": 1}) == "base"
-    covers_plainly("targets.types.read::dict_type", '{"d": {"a": 1}}', READ_FILE, "base", *where)
+    assert read_dict.dict_type({"a": 1}) == "base"
+    covers_plainly(
+        "targets.types.read_dict::dict_type", '{"d": {"a": 1}}', READ_DICT_FILE, "base", *where
+    )
     # a pickle holds the plain dict, and writing it is the downgrade every tracked value's is
-    assert read.dict_pickled({"a": 1}) == "base"
-    result = run_pyct("targets.types.read::dict_pickled", '{"d": {"a": 1}}', *where)
+    assert read_dict.dict_pickled({"a": 1}) == "base"
+    result = run_pyct("targets.types.read_dict::dict_pickled", '{"d": {"a": 1}}', *where)
     assert result.returncode == 0, result.stderr
     line = first_line(result.stdout)
     assert line["failure"] is None and line["forks"] == []
-    assert line_of(READ_FILE, 'return "base"', "dict_pickled") in covered_in(line, str(READ_FILE))
+    assert line_of(READ_DICT_FILE, 'return "base"', "dict_pickled") in covered_in(
+        line, str(READ_DICT_FILE)
+    )
     downgrades = line["downgrades"]
     assert isinstance(downgrades, list)
     assert [entry["name"] for entry in downgrades] == ["__reduce_ex__"]
