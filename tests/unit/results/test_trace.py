@@ -120,6 +120,7 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "replace-once": (["replace", "s", "'a'", "'b'", 1], "s.replace('a', 'b', 1)"),
     "code": (["==", ["ord", "c"], 65], "ord(c) == 65"),
     "character": (["==", ["chr", "n"], "'z'"], "chr(n) == 'z'"),
+    "text": (["==", ["str", [">", "x", 0]], "'False'"], "str(x > 0) == 'False'"),
     "code-of-a-piece": (["ord", ["[]", "s", 0]], "ord(s[0])"),
     "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
     "method-on-a-piece": (

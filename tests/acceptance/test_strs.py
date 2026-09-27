@@ -272,20 +272,15 @@ def test_records_an_untaught_method_as_a_downgrade() -> None:
     assert seed["forks"] == []
 
 
-# follow-strings-counts-text-conversion-as-a-downgrade
-def test_counts_text_conversion_as_a_downgrade() -> None:
+# follow-strings-counts-text-conversion-as-a-downgrade, as
+# follow-builtins-and-conversions-keeps-str-of-a-tracked-string changes it
+def test_keeps_text_conversion_of_a_tracked_string() -> None:
     result = run_pyct(TEXT_CONVERSION, '{"s": "x"}')
 
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
-    # str(s) runs __str__; an f-string with no format spec runs __format__, which runs
-    # __str__ first. The two __str__ calls sit at two sites, so each is its own entry
-    at = "targets/strs/text_conversion.py"
-    assert seed["downgrades"] == [
-        downgrade("__str__", 1, f"{at}:2:12"),
-        downgrade("__str__", 1, f"{at}:3:13"),
-        downgrade("__format__", 1, f"{at}:3:13"),
-    ]
+    # str(s) and an f-string with no format spec are the value itself, so nothing is lost
+    assert seed["downgrades"] == []
 
 
 # follow-strings-finds-the-missing-substring

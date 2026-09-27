@@ -11,9 +11,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyct.core import numbers
+from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, compare, promoted
+from pyct.core.numbers import INT_KEPT, compare, promoted
 from pyct.core.values import (
     built_plainly,
     copy_as_itself,
@@ -26,8 +26,14 @@ from pyct.core.values import (
 
 
 def _the_int(self: ConcolicBool) -> Any:
-    """The int a bool is, 1 or 0, with the same condition: `+True` is 1, and adds no node."""
-    return numbers.tracked(own(int.__index__, self), self.expression, self.sink)
+    """The int a bool is, 1 or 0, with the same condition: `+True` is 1, and adds no node.
+
+    Its text reads the condition as that int, `["int", b]`, as `int(b)`
+    writes it, since Python writes the int, `1`, where the bool writes `True`.
+    """
+    number = numbers.tracked(own(int.__index__, self), self.expression, self.sink)
+    number.as_int = ["int", self.expression]
+    return number
 
 
 def _truth(other: object) -> Expression | None:
@@ -61,6 +67,12 @@ def _logical(
         return ConcolicBool(answer, expression=[op, *sides], sink=self.sink)
 
     return compute
+
+
+def _written(self: ConcolicBool) -> str:
+    """The bool's text, `True` or `False`, as bool's repr writes it."""
+    # int.__bool__, not bool(self): bool() would record a fork
+    return repr(int.__bool__(self))
 
 
 def _formatted(self: ConcolicBool, spec: str) -> str:
@@ -143,9 +155,12 @@ class ConcolicBool(int):
     __ror__ = _logical("|", "__ror__", reflected=True)  # pyrefly: ignore[bad-override]
     __rxor__ = _logical("^", "__rxor__", reflected=True)  # pyrefly: ignore[bad-override]
 
-    # the text drops the condition, so it stays a downgrade, but it is the bool's text. An
-    # f-string records this one entry: int's own would read `__str__` first
-    __format__ = downgraded(int, "__format__", calling=_formatted)  # pyrefly: ignore[bad-override]
+    # its text is a tracked str, `["str", b]`, `True` or `False` as bool's repr writes it, and so
+    # is a format with no spec; a spec is the bool's own format and a downgrade
+    __str__ = texts.text(_written)
+    __format__ = downgraded(  # pyrefly: ignore[bad-override]
+        int, "__format__", calling=_formatted, first=texts.alone(__str__)
+    )
 
     def __new__(cls, value: bool, *, expression: Expression, sink: BranchSink) -> ConcolicBool:
         self = super().__new__(cls, value)
@@ -156,13 +171,11 @@ class ConcolicBool(int):
     def __bool__(self) -> bool:
         return forked(self.sink, self.expression, own(int.__bool__, self))
 
-    def __repr__(self) -> str:
-        # int.__bool__, not bool(self): bool() would record a fork
-        return repr(int.__bool__(self))
+    __repr__ = _written  # pyrefly: ignore[bad-override]
 
 
-# the class body above is everything ConcolicBool teaches. The rest of int, and the `__str__`
-# int inherits, differ only in the name they call and record, so the derivation writes them.
-# A bool that Python computes, a compare's answer among them, is tracked as a ConcolicBool
-downgrade_the_rest(ConcolicBool, int, kept=INT_KEPT, inherited=INT_INHERITED)
+# the class body above is everything ConcolicBool teaches. The rest of int differs only in the
+# name it calls and records, so the derivation writes it. A bool that Python computes, a
+# compare's answer among them, is tracked as a ConcolicBool
+downgrade_the_rest(ConcolicBool, int, kept=INT_KEPT, inherited=())
 numbers.enter(bool, ConcolicBool)

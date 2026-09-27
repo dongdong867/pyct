@@ -2,10 +2,13 @@
 
 import re
 import sys
+from collections.abc import Callable
 
 import pytest
 
+from pyct.core.branch import Branch, Expression, Site
 from pyct.solver import numerals
+from pyct.solver.cvc5 import Sat, solve
 from pyct.solver.floats import literal
 from pyct.solver.strings import encode
 from tests.unit.solver.agreement import needs_cvc5
@@ -158,6 +161,52 @@ def test_cvc5_counts_the_digits_of_an_int_text_as_python_does(
     said = _values("Bool", [numerals.is_int(encode(text)) for text in texts])
 
     assert said == held
+
+
+# ints whose text cvc5 writes: zero, each sign, a power of ten, and one past a machine word
+TEXT_INTS = [0, 7, -7, -42, 10, 90, -100, 10**25, -(10**25) - 1]
+
+
+def _int_term(value: int) -> str:
+    return f"(- {-value})" if value < 0 else str(value)
+
+
+@needs_cvc5
+def test_cvc5_writes_each_int_as_python_writes_it() -> None:
+    said = _values("String", [numerals.text_of_int(_int_term(value)) for value in TEXT_INTS])
+
+    assert said == [str(value) for value in TEXT_INTS]
+
+
+@needs_cvc5
+def test_cvc5_writes_a_bool_as_python_writes_it() -> None:
+    said = _values("String", [numerals.text_of_bool(term) for term in ("true", "false")])
+
+    assert said == [str(True), str(False)]
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("expression", "holds"),
+    [
+        pytest.param(["==", ["str", "n"], "'-42'"], lambda n: str(n) == "-42", id="equal"),
+        pytest.param(
+            ["startswith", ["str", "n"], "'9'"], lambda n: str(n).startswith("9"), id="prefix"
+        ),
+        pytest.param(["==", ["len", ["str", "n"]], 3], lambda n: len(str(n)) == 3, id="length"),
+    ],
+)
+def test_cvc5_finds_an_int_whose_text_python_writes_so(
+    expression: Expression, holds: Callable[[int], bool]
+) -> None:
+    fork = Branch(expression=expression, taken=True, site=Site(file="m.py", line=2, col=7))
+
+    answer = solve((fork,), {"n": int}, 10.0)
+
+    assert isinstance(answer, Sat), answer
+    value = answer.model["n"]
+    assert isinstance(value, int)
+    assert holds(value)
 
 
 @needs_cvc5

@@ -1,4 +1,5 @@
 import dataclasses
+import operator
 import weakref
 from collections.abc import Callable
 
@@ -148,7 +149,10 @@ def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
     x = ConcolicInt(3, expression="x", sink=sink)
 
     both(x, float)
-    both(x, str)
+    both(x, operator.invert)
 
     # one call instruction, two methods lost through it
-    assert [item.name for item in sink if isinstance(item, Downgrade)] == ["__float__", "__str__"]
+    assert [item.name for item in sink if isinstance(item, Downgrade)] == [
+        "__float__",
+        "__invert__",
+    ]

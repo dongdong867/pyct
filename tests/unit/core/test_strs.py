@@ -6,7 +6,7 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import numbers, str_cases, str_splits, str_walks, strs, values
+from pyct.core import numbers, str_cases, str_splits, str_walks, strs, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
@@ -221,7 +221,6 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "s.rpartition('b')": (lambda s: s.rpartition("b"), "rpartition"),
     "s.translate({})": (lambda s: s.translate({}), "translate"),
     "len(s)": (len, "__len__"),
-    "str(s)": (str, "__str__"),
     "s[::3]": (lambda s: s[::3], "__getitem__"),
     "s.expandtabs()": (lambda s: s.expandtabs(), "expandtabs"),
     "2 * s": (lambda s: 2 * s, "__rmul__"),
@@ -291,13 +290,33 @@ def test_a_copy_of_a_concolic_str_is_the_value_itself(call: Callable[[str], obje
     assert sink == []
 
 
-def test_an_f_string_records_str_and_then_format() -> None:
+# each way Python turns a str alone into text: the tracked str is its own text
+TEXT_ALONE: dict[str, Callable[[str], object]] = {
+    "str(s)": str,
+    'f"{s}"': lambda s: f"{s}",
+    "format(s)": format,
+    '"{}".format(s)': lambda s: "{}".format(s),  # noqa: UP032
+}
+
+
+def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr("abc", expression="s", sink=sink)
 
-    # with no format spec, str's __format__ asks for __str__ itself before it returns
-    assert f"{s}" == "abc"
-    assert sink == [Downgrade(name="__str__", site=ANY), Downgrade(name="__format__", site=ANY)]
+    # Python asks a str subclass on the right for its `__rmod__` first, and that one is untaught
+    text = "%s" % s  # noqa: UP031
+
+    assert (text, type(text)) == ("abc", str)
+    assert sink == [Downgrade(name="__rmod__", site=ANY)]
+
+
+@pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
+def test_a_str_alone_turned_into_text_is_the_value_itself(call: Callable[[str], object]) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    assert call(s) is s
+    assert sink == []
 
 
 def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -> None:
@@ -448,12 +467,13 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     cases |= {"strip", "lstrip", "rstrip", "zfill", "center", "ljust", "rjust"}
     splits = {"split", "rsplit", "partition", "splitlines"}
     walks = {"__iter__"}
+    texts = {"__str__"}
     kept = {"__hash__", "__repr__", "__getnewargs__", "__sizeof__"}
-    taught = compares | searches | positions | pieces | checks | cases | splits | walks
+    taught = compares | searches | positions | pieces | checks | cases | splits | walks | texts
 
     # whatever str defines on the Python that runs this, the only methods left unwrapped are
-    # the compares, searches, pieces, checks, cases, splits and the walk taught above, and the
-    # four str keeps
+    # the compares, searches, pieces, checks, cases, splits, the walk and the text taught above,
+    # and the four str keeps
     assert methods - _derived_downgrades() == taught | kept
     assert _derived_downgrades().isdisjoint(strs._KEPT)
 
@@ -465,7 +485,7 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     # str_splits for the checks, cases and splits, and str_walks for the walk, so the scan
     # covers all six. A compare or a search in strs hands the call to a closure it holds, so
     # what a function holds counts as what it calls
-    files = {strs.__file__, numbers.__file__, values.__file__, str_cases.__file__}
+    files = {strs.__file__, numbers.__file__, values.__file__, texts.__file__, str_cases.__file__}
     files |= {str_splits.__file__, str_walks.__file__}
     written_here = written_in(ConcolicStr, files)
 
@@ -476,4 +496,4 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     )
     assert {"find", "encode", "isdigit", "upper", "split", "__iter__"} <= written_here.keys()
     # these hand the value itself back and never call str, so they have nothing to guard
-    assert without_the_helper(ConcolicStr, files) == {"__copy__", "__deepcopy__"}
+    assert without_the_helper(ConcolicStr, files) == {"__copy__", "__deepcopy__", "__str__"}

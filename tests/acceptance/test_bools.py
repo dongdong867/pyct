@@ -230,18 +230,22 @@ def test_downgrades_an_untaught_bool_operation() -> None:
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     # `int(b)` written in the target's package is 1 or 0 with its condition, no longer a
-    # downgrade (intercept-builtin-functions-follows-int-of-a-bool)
+    # downgrade (intercept-builtin-functions-follows-int-of-a-bool), and `str(b)` and `f"{b}"`
+    # are its text with its condition (follow-builtins-and-conversions-follows-str-of-a-bool)
     at = "targets/bools/untaught.py"
     assert seed["downgrades"] == [
         downgrade("__invert__", 1, f"{at}:3:4"),
         downgrade("__lshift__", 1, f"{at}:4:4"),
         downgrade("__and__", 1, f"{at}:5:4"),
-        # `str(b)` and the f-string's `{b}` are two sites on one line
-        downgrade("__str__", 1, f"{at}:7:7"),
-        downgrade("__format__", 1, f"{at}:7:30"),
     ]
-    # `str(b)` and the f-string read `True`, so the `if b:` inside them runs and records the fork
-    assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [(8, [">", "x", 0])]
+    # `str(b)` and the f-string each record their compare, and read `True`, so the `if b:`
+    # inside them runs and records its fork
+    text: list[object] = ["==", ["str", [">", "x", 0]], "'True'"]
+    assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [
+        (7, text),
+        (7, text),
+        (8, [">", "x", 0]),
+    ]
 
 
 # follow-booleans-and-chained-compares-finds-the-failing-assert

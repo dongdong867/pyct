@@ -10,6 +10,7 @@ import pytest
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem, Site
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
 
 # the condition every test here tests: `x > 0`, true for x = 1
@@ -193,6 +194,31 @@ def test_an_identity_operation_answers_the_int_with_the_same_condition(
     assert sink == []
 
 
+# the int a bool is, reached as a value too: its text is the int's, 1 or 0, never True or False
+AS_AN_INT_VALUE: dict[str, Callable[[int], object]] = {
+    **AS_THE_INT,
+    "b.real": lambda b: b.real,
+    "b.numerator": lambda b: b.numerator,
+    "(+b).real": lambda b: (+b).real,
+}
+
+
+@pytest.mark.parametrize("call", AS_AN_INT_VALUE.values(), ids=list(AS_AN_INT_VALUE))
+def test_the_text_of_the_int_a_bool_is_reads_the_int(call: Callable[[int], object]) -> None:
+    sink: list[SinkItem] = []
+    above, below = _conditions(sink)
+
+    texts = [str(call(above)), f"{call(below)}"]
+
+    # Python writes the int 1 or 0; its node reads the condition as that int, as `int(b)` does
+    tracked = [text for text in texts if isinstance(text, ConcolicStr)]
+    assert [(str.__str__(text), text.expression) for text in tracked] == [
+        (str(call(True)), ["str", ["int", ABOVE]]),
+        (f"{call(False)}", ["str", ["int", BELOW]]),
+    ]
+    assert sink == []
+
+
 @pytest.mark.parametrize(("call", "name"), UNTAUGHT.values(), ids=list(UNTAUGHT))
 def test_an_untaught_operation_is_a_downgrade(call: Callable[[int], object], name: str) -> None:
     sink: list[SinkItem] = []
@@ -212,9 +238,25 @@ def test_a_bool_reads_as_true_or_false() -> None:
 
     assert (repr(above), repr(below)) == ("True", "False")
     assert sink == []
-    # the text drops the condition, so each is a downgrade; an f-string records one entry
-    assert (str(above), f"{below}") == ("True", "False")
-    assert sink == [Downgrade(name="__str__", site=ANY), Downgrade(name="__format__", site=ANY)]
+
+    # the text is a tracked str carrying the condition, and testing it records nothing yet
+    texts = [str(above), f"{below}", format(above), "%s" % below]  # noqa: UP031
+    tracked = [text for text in texts if isinstance(text, ConcolicStr)]
+    assert [(str.__str__(text), text.expression) for text in tracked] == [
+        ("True", ["str", [">", "x", 0]]),
+        ("False", ["str", [">", "y", 0]]),
+        ("True", ["str", [">", "x", 0]]),
+        ("False", ["str", [">", "y", 0]]),
+    ]
+    assert sink == []
+
+
+def test_a_bools_format_spec_is_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    above, _ = _conditions(sink)
+
+    assert f"{above:>5}" == f"{True:>5}"
+    assert sink == [Downgrade(name="__format__", site=ANY)]
 
 
 def test_a_bool_formats_with_a_spec_as_python_formats_a_bool() -> None:
