@@ -231,7 +231,7 @@ def test_an_access_to_a_value_inside_an_argument_is_written_whole() -> None:
 def test_a_cut_part_that_holds_an_access_counts_it_as_one_node() -> None:
     # `s = order["name"]`, then `s = s + "x"` over 600 passes: every cut part reaches the access
     access: Expression = ["[]", "order", "'name'"]
-    term = access
+    term: Expression = access
     for _ in range(600):
         term = ["+", term, "'x'"]
     fork = Branch(expression=["==", term, "'q'"], taken=False, site=Site("m.py", 5, 7))
