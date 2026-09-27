@@ -51,7 +51,8 @@ def test_a_timeout_sends_the_next_input_to_the_seed_s_first_fork() -> None:
 
     assert result.returncode == 0, result.stderr
     # the order below rests on the seed's deepest fork running to the solver's limit
-    assert solver_counts(result.stdout)["timeout"] >= 1, result.stdout
+    timeouts = solver_counts(result.stdout)["timeout"]
+    assert isinstance(timeouts, int) and timeouts >= 1, result.stdout
     solved = [line for line in input_lines(result.stdout) if line["source"] == "solver"]
     # the seed's deepest fork timed out, so the next pick is the seed's first fork, n <= 0
     assert solved, result.stdout

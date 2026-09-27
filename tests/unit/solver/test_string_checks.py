@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.checks import CHECKS, KINDS, Check, membership, outside
 from pyct.solver.cvc5 import solve
@@ -183,7 +183,7 @@ def test_a_long_string_one_check_reads_is_answered_inside_the_limit() -> None:
 
 def test_a_replaced_string_one_check_reads_is_asked_as_one_membership() -> None:
     """The card number's shape: the check reads a string the target made, not a parameter."""
-    replaced = ["replace", "s", "' '", "''"]
+    replaced: Expression = ["replace", "s", "' '", "''"]
     prefix = (Branch(expression=["isdigit", replaced], taken=True, site=SITE),)
 
     text = render(prefix, {"s": str})
