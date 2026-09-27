@@ -15,10 +15,11 @@ With a deadline, the process's own SIGALRM ends a Python hang at the
 deadline, finally blocks included, so its line is the same as in pyct's
 process. A call inside C, or a target that catches the alarm, never ends
 that way, so pyct kills the process ``KILL_GRACE`` after the deadline.
-pyct blocks in ``waitpid``; its own SIGALRM handler kills and does not
-raise, so Python retries the wait, which then returns the killed
-process's status. A handler that raised could land after the wait had
-already reaped the process and lose its status.
+pyct's process sets no timer and takes no signal for that: it waits for the
+system's notice that the process ended, kqueue's on macOS and the BSDs and
+a pidfd's on Linux, with the kill's instant as the wait's limit. Only then
+does it reap, or kill and reap, in one thread, so nothing lands after the
+wait or between a reap and a kill.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
@@ -29,13 +30,16 @@ and the mark that refuses every input after it.
 from __future__ import annotations
 
 import contextlib
+import errno
+import math
 import os
+import select
 import signal
+import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import NoReturn
 
-from pyct.execution.deadline import alarm
 from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import Reading
@@ -122,8 +126,7 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
         # a signal held here goes on as the block ends, with the process in the guard's hands
         with _stops_held():
             child = Child(start())
-        with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
-            return child.wait()
+        return child.wait(None if until is None else until + KILL_GRACE)
     finally:
         if child is not None:
             child.end()
@@ -165,17 +168,17 @@ class Child:
         self.status: int | None = None
         self.killed = False
 
-    def wait(self) -> Waited:
-        """Wait for the process to end, and read how it did."""
-        try:
-            _, status = os.waitpid(self.pid, 0)
-        except ChildProcessError:
-            # the kill timer found the process ended and reaped it first
-            if self.status is None:
-                raise
-            status = self.status
-        self.status = status
-        return Waited.of(status, killed=self.killed)
+    def wait(self, kill_at: float | None = None) -> Waited:
+        """Wait for the process to end, and read how it did.
+
+        With ``kill_at``, a monotonic instant, a process still running then
+        is killed. ``None`` waits as long as it runs.
+        """
+        if kill_at is not None and not _ends_by(self.pid, kill_at):
+            self.kill_if_running()
+        if self.status is None:
+            _, self.status = os.waitpid(self.pid, 0)
+        return Waited.of(self.status, killed=self.killed)
 
     def ended(self) -> bool:
         """Whether the process has ended, without waiting. One that has is reaped here.
@@ -185,7 +188,7 @@ class Child:
         return not self.send_if_running(0)
 
     def kill_if_running(self, *_: object) -> None:
-        """Kill the process unless it has ended. The kill timer's handler: it never raises."""
+        """Kill the process unless it has ended, which reaps it and keeps its status instead."""
         if self.send_if_running(signal.SIGKILL):
             self.killed = True
 
@@ -233,6 +236,49 @@ class Child:
             os.kill(self.pid, signal.SIGKILL)
             _, status = os.waitpid(self.pid, 0)
         self.status = status
+
+
+def _ends_by(pid: int, instant: float) -> bool:
+    """Whether the process ``pid``, one of pyct's not yet reaped, ends by the monotonic ``instant``.
+
+    The system tells of the exit itself: kqueue where the system has it,
+    macOS and the BSDs, and a pidfd elsewhere, Linux 5.3 or later.
+    """
+    left = max(instant - time.monotonic(), 0.0)
+    if hasattr(select, "kqueue"):
+        return _kqueue_says(pid, left)
+    return _pidfd_says(pid, left)
+
+
+def _kqueue_says(pid: int, left: float) -> bool:
+    """Whether kqueue tells of the process's exit within ``left`` seconds."""
+    queue = select.kqueue()
+    try:
+        exit_note = select.kevent(
+            pid,
+            filter=select.KQ_FILTER_PROC,
+            flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
+            fflags=select.KQ_NOTE_EXIT,
+        )
+        events = queue.control([exit_note], 1, left)
+    finally:
+        queue.close()
+    for event in events:
+        # a process that already ended cannot be watched, and says so as ESRCH
+        if event.flags & select.KQ_EV_ERROR and event.data != errno.ESRCH:
+            raise OSError(event.data, os.strerror(event.data))
+    return bool(events)
+
+
+def _pidfd_says(pid: int, left: float) -> bool:
+    """Whether the process's pidfd reads as ready, as it does once the process ended, in time."""
+    notice = os.pidfd_open(pid)  # pyrefly: ignore[missing-attribute]
+    try:
+        poller = select.poll()
+        poller.register(notice, select.POLLIN)
+        return bool(poller.poll(math.ceil(left * 1000)))
+    finally:
+        os.close(notice)
 
 
 def ending(reading: Reading, waited: Waited) -> ExecutionResult:
