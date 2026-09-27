@@ -129,3 +129,21 @@ def test_a_probe_that_fails_fails_the_side_after_its_own_failure(tmp_path: Path)
     assert failed.failure == "cannot read which werkzeug it has: exit 3: no metadata here"
     assert with_library(stopped, str(python), request, {}).failure == "stopped after 90 s"
     assert with_library(ran, str(python), replace(request, library=None), {}) == ran
+
+
+@pytest.mark.parametrize(
+    ("prints", "says"),
+    [("", "no library line from the probe"), ('{"version": 1}', "unreadable library line")],
+)
+def test_a_probe_that_prints_no_library_says_it_was_the_probe(
+    tmp_path: Path, prints: str, says: str
+) -> None:
+    python = tmp_path / "python"
+    python.write_text(f"#!/bin/sh\necho '{prints}'\n")
+    python.chmod(0o755)
+    request = SideRequest("m::f", {}, tmp_path, Limits(), 60, library="werkzeug")
+
+    failed = with_library(SideReport(file="/m.py"), str(python), request, {})
+
+    assert failed.failure is not None
+    assert failed.failure.startswith(f"cannot read which werkzeug it has: {says}")

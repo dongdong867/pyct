@@ -17,8 +17,6 @@ from typing import Protocol
 
 from tools.compare_coverage.process import Command, Finished, run_command
 
-NO_SUMMARY = "no summary line"
-
 LIBRARY_PROBE = Path(__file__).with_name("library_probe.py")
 
 # the probe reads package metadata and prints a line; anything slower is not answering
@@ -85,20 +83,24 @@ class Side(Protocol):
 
 
 def read_report(
-    finished: Finished, key: str, parse: Callable[[dict[str, object]], SideReport]
+    finished: Finished,
+    key: str,
+    parse: Callable[[dict[str, object]], SideReport],
+    line_name: str = "summary line",
 ) -> SideReport:
     """The report in the last stdout line carrying ``key``; how the process ended fails it first.
 
     A line that cannot be read as a report fails the side, naming what was wrong with it.
+    ``line_name`` is what a failure calls the line.
     """
     failure = _process_failure(finished)
     line = result_line(finished.stdout, key)
     if line is None:
-        return SideReport(failure=failure or NO_SUMMARY)
+        return SideReport(failure=failure or f"no {line_name}")
     try:
         report = parse(line)
     except (AttributeError, KeyError, TypeError, ValueError) as error:
-        return SideReport(failure=failure or f"unreadable summary line: {error!r}")
+        return SideReport(failure=failure or f"unreadable {line_name}: {error!r}")
     return report if failure is None else replace(report, failure=failure)
 
 
@@ -124,7 +126,8 @@ def with_library(
     module = request.target.split("::")[0]
     argv = (python, "-P", str(LIBRARY_PROBE), request.library, module)
     command = Command(argv, request.root, environment)
-    probed = read_report(run_command(command, LIBRARY_SECONDS), "version", _library_report)
+    finished = run_command(command, LIBRARY_SECONDS)
+    probed = read_report(finished, "version", _library_report, "library line from the probe")
     if probed.failure is not None:
         failure = f"cannot read which {request.library} it has: {probed.failure}"
         return replace(report, failure=report.failure or failure)
