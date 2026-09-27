@@ -228,6 +228,28 @@ def test_an_access_to_a_value_inside_an_argument_is_written_whole() -> None:
     assert _cut_from(written[2], wide)
 
 
+def test_a_cut_part_that_holds_an_access_counts_it_as_one_node() -> None:
+    # `s = order["name"]`, then `s = s + "x"` over 600 passes: every cut part reaches the access
+    access: Expression = ["[]", "order", "'name'"]
+    term = access
+    for _ in range(600):
+        term = ["+", term, "'x'"]
+    fork = Branch(expression=["==", term, "'q'"], taken=False, site=Site("m.py", 5, 7))
+
+    (written,) = printed_forks([fork], lambda part: part is access)
+
+    # a part k passes deep holds k `+` nodes, k `'x'` leaves and the access, one node however
+    # many steps it takes
+    cuts = _cut_from(written, fork.expression)
+    assert cuts
+    for count, part in cuts:
+        passes = 0
+        while part is not access:
+            assert isinstance(part, list)
+            part, passes = part[1], passes + 1
+        assert count == 2 * passes + 1
+
+
 def _edit_loop(passes: int) -> list[Branch]:
     """`s = s[:i] + s[i] + s[i+1:]` for each i, each pass forking on `len(s) > i`, then `s == …`.
 
