@@ -14,7 +14,7 @@ from typing import Protocol
 # a condition, operator first. A leaf is a parameter's name or the access that reaches a value
 # inside one: ["<", "x", 10], [">", ["[]", "items", 0], 5]. None is a slice's missing bound,
 # ["[:]", "s", 2, None], and prints as null
-type Expression = list[Expression] | str | int | bool | None
+type Expression = list[Expression] | str | int | float | bool | None
 
 # whether a list is a leaf: the access that names a value inside an argument, which a condition
 # names as a value, never opens as an operation, and counts as one node

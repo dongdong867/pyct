@@ -229,8 +229,9 @@ def _leaf(value: object) -> object:
 
 
 def _is_leaf(value: object) -> TypeGuard[Expression]:
-    """A name or literal, a number, a truth value, or null: every leaf an expression holds."""
-    return value is None or isinstance(value, str | int)
+    """A name or literal, a number, a truth value, or null: every leaf an expression holds. A
+    float is a number too: a list display holds one as itself."""
+    return value is None or isinstance(value, str | int | float)
 
 
 def _padded(length: int) -> int:

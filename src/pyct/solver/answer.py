@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from pyct.solver.arrays import ArrayModelError, value_line
 from pyct.solver.strings import decode
 
 # one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))) or ((s "a""b\u{a}")). A name
@@ -51,8 +52,8 @@ class SolverAnswerError(Exception):
     """cvc5 answered, but with a line pyct cannot read."""
 
 
-def model_from(lines: Iterable[str]) -> dict[str, int | str]:
-    """The values cvc5 printed, as a name and a number or a str each.
+def model_from(lines: Iterable[str]) -> dict[str, object]:
+    """The values cvc5 printed, as a name and a number, a str or an array each.
 
     A line pyct cannot read is an error rather than a skip: a model missing
     one of its leaves would quietly become the seed's value again.
@@ -60,11 +61,15 @@ def model_from(lines: Iterable[str]) -> dict[str, int | str]:
     return dict(_value(line) for line in lines)
 
 
-def _value(line: str) -> tuple[str, int | str]:
-    """One leaf's name and value. A value in quotes is a string, any other a number."""
+def _value(line: str) -> tuple[str, object]:
+    """One name and its value. A value in quotes is a string, an array is read as the values it
+    holds (see ``arrays``), and any other is a number."""
     matched = VALUE_LINE.fullmatch(line.strip())
     if matched is None:
-        raise _unreadable(line)
+        try:
+            return value_line(line)
+        except ArrayModelError as error:
+            raise _unreadable(line) from error
     value = matched["value"]
     if not value.startswith('"'):
         return matched["name"], _number(value)

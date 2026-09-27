@@ -266,11 +266,23 @@ def test_a_leaf_of_no_kind_an_expression_holds_stops_the_journal() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
 
-    writer.fork(Branch(expression=["<", "x", 1.5], taken=True, site=SITE))  # type: ignore[list-item]
+    writer.fork(Branch(expression=["<", "x", 1j], taken=True, site=SITE))  # type: ignore[list-item]
 
     reading = read(buffer)
     assert reading.branches == ()
-    assert reading.problem == "could not keep a fork the input took: a leaf of type float"
+    assert reading.problem == "could not keep a fork the input took: a leaf of type complex"
+
+
+def test_a_float_a_list_display_holds_crosses_as_itself() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    shown: Expression = ["[]", ["+", "items", ["[,]", 1.5, None, True]], 1]
+
+    writer.fork(Branch(expression=["==", shown, 2], taken=False, site=SITE))
+
+    reading = read(buffer)
+    assert reading.problem is None
+    assert [branch.expression for branch in reading.branches] == [["==", shown, 2]]
 
 
 def test_an_expression_that_holds_itself_stops_the_journal() -> None:

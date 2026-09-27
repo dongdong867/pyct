@@ -250,10 +250,10 @@ def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    # the target appends to items and writes a key into config; no later input sees either
+    # the target appends None to items and writes a key into config; no later input sees either
     assert [line["failure"] for line in lines] == [None] * len(lines)
     for line in lines:
-        assert len(items_of(line)) == 1, line
+        assert None not in items_of(line), line
         assert args_of(line)["config"] == {}, line
     assert any(number(items_of(line)[0]) > 5 for line in solved(lines)), lines
 

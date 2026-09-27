@@ -49,11 +49,12 @@ class Tree:
         concrete prefix with the path that just ran. The pick is the aim, so
         the fork is spent whether or not the solver answers.
         """
-        for forks, keys in reversed(self._paths):
+        for path in reversed(range(len(self._paths))):
+            forks, keys = self._paths[path]
             for at in reversed(range(len(forks))):
                 if self._open(keys[at], forks[at].taken):
                     self._aimed.add(keys[at])
-                    return plan(forks[: at + 1])
+                    return plan(forks[: at + 1], path)
         return None
 
     def _open(self, key: ForkKey, taken: bool) -> bool:

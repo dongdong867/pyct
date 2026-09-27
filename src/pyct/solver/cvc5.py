@@ -5,6 +5,7 @@ import math
 import subprocess
 from collections.abc import Mapping
 
+from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
@@ -32,8 +33,16 @@ GRACE_SECONDS = 1.0
 LONGEST_WAIT_SECONDS = 2_147_483.0
 
 
-def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float) -> Answer:
+def solve(
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    timeout: float,
+    lists: Mapping[str, ListShape] | None = None,
+) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds cvc5 gets.
+
+    ``leaves`` and ``lists`` are what the input whose path it extends holds: each int and str
+    the solver may change, and each tracked list with its shape.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
@@ -53,7 +62,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    written = program(prefix, leaves)
+    written = program(prefix, leaves, lists)
     text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)

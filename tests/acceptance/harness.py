@@ -22,8 +22,13 @@ CRASH_DETAIL = "cvc5: Fatal failure within the solver"
 COVERAGE_STARTUP = ("COVERAGE_PROCESS_CONFIG", "COVERAGE_PROCESS_START")
 
 
-def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess[str]:
+def run_pyct(
+    *argv: str, path: str | None = None, timeout: float = 30
+) -> subprocess.CompletedProcess[str]:
     """Spawn ``pyct run`` with the given argv. ``path`` replaces the child's ``PATH``.
+
+    ``timeout`` is the seconds the child gets before the test fails, for a run whose own budget
+    is longer than the usual 30.
 
     A run given ``--budget SECONDS`` or ``--budget=SECONDS`` arms pyct's deadline, and the
     deadline firing inside coverage.py's tracer hangs the child, as
@@ -43,7 +48,7 @@ def run_pyct(*argv: str, path: str | None = None) -> subprocess.CompletedProcess
         check=False,
         # the timeout test spawns a target that never returns, so a broken
         # budget has to fail the test instead of hanging the suite
-        timeout=30,
+        timeout=timeout,
     )
 
 

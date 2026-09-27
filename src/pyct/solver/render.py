@@ -1,14 +1,21 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
-import ast
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
 
-from pyct.binding.bind import access_name
+from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
-from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node, distinct
+from pyct.solver.declared import (
+    SORTS,
+    Leaves,
+    Program,
+    is_literal,
+    sort_of,
+    symbols,
+    value_of,
+)
 from pyct.solver.joined import joined
+from pyct.solver.lists import ListTerms, TrackedList
 from pyct.solver.strings import (
     above,
     below,
@@ -25,13 +32,6 @@ from pyct.solver.strings import (
     without_prefix,
     without_suffix,
 )
-
-# the sort of every type pyct binds. Nothing else reaches a solver yet.
-SORTS: Mapping[type, str] = {int: "Int", str: "String"}
-
-# what opens a string literal in an expression: repr writes one in either quote, and a
-# parameter name holds neither
-_QUOTES = ("'", '"')
 
 # the type of the value each head builds, as Python has it, so a head above it knows what its
 # operands are: `+` joins two strs and adds two ints. None is a head whose value has its
@@ -156,127 +156,44 @@ POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced}
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
 
 
-@dataclass(frozen=True)
-class _Leaves:
-    """The seed's leaves by name, with their types and the constant each mentioned one gets."""
-
-    kinds: Mapping[str, type]
-    constants: Mapping[str, str]
-
-    def named(self, part: Expression) -> str | None:
-        """The name of the leaf a part of a condition is, or None for a literal or an operation.
-
-        A parameter is its bare name. A value inside one is its access, which
-        reads as an operation does: only an access to one of the seed's own
-        leaves is a value, and any other is an operation on a tracked value.
-        Which steps an access takes is binding's to say (``access_name``).
-        """
-        if isinstance(part, str):
-            return None if _is_literal(part) else part
-        name = access_name(part)
-        return name if name in self.kinds else None
-
-    def holds(self, part: Expression) -> bool:
-        """Whether a part is one of the seed's leaves, which a condition names and never opens."""
-        return self.named(part) is not None
-
-    def kind(self, part: Expression) -> type | None:
-        """The type of the leaf a part is, or None for anything else."""
-        name = self.named(part)
-        return None if name is None else self.kinds.get(name)
-
-
-@dataclass(frozen=True)
-class Program:
-    """The SMT-LIB program for one path, and the leaf each constant it declares stands for.
-
-    ``names_by_symbol`` holds each leaf's name, keyed by its constant's
-    symbol without the bars, which is how a model names it back.
-    """
-
-    text: str
-    names_by_symbol: Mapping[str, str]
-
-    def read(self, model: Mapping[str, object]) -> dict[str, object]:
-        """A model cvc5 wrote by constant, named by the leaves the constants were declared for.
-
-        A symbol the program did not declare is ``SolverAnswerError``, as any
-        value line pyct cannot read is: a guess would hand back a wrong input.
-        """
-        unknown = [symbol for symbol in model if symbol not in self.names_by_symbol]
-        if unknown:
-            named = ", ".join(unknown)
-            raise SolverAnswerError(
-                f"cvc5 answered about names the program did not declare: {named}"
-            )
-        return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
-
-
-def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
+def program(
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    lists: Mapping[str, ListShape] | None = None,
+) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
     What to declare, what to define, what to assert, what to ask. Only the
     leaves the prefix mentions are declared, so the answer names nothing the
     path did not depend on. ``leaves`` names each leaf as ``pyct.binding``
-    does, and ``_symbol`` names its constant. Two pieces of one string side by
-    side are first written as the one piece they make (see `joined`), and a
-    part of the conditions written more than once is defined once before the
-    assertions (see `_Program`).
+    does, and ``symbol`` names its constant; ``lists`` names each tracked list
+    with its shape. Two pieces of one string side by side are first written as
+    the one piece they make (see `joined`), and a part of the conditions written
+    more than once is defined once before the assertions (see `_Program`).
     """
-    seed = _Leaves(kinds=leaves, constants={})
-    prefix = joined(prefix, seed.holds)
+    shapes = lists or {}
+    seed = Leaves(kinds=leaves, constants={}, lists=shapes)
+    listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
+    prefix = joined(prefix, seed.holds, lambda part: id(part) in listed or part in shapes)
     order, holders = distinct(prefix, seed.holds)
-    symbols = _symbols(prefix, order, seed)
-    constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
+    named = symbols(prefix, order, seed)
+    constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
-    declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
-    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
+    declared = [(constant, sort_of(name, leaves[name])) for name, constant in constants.items()]
+    terms = ListTerms(shapes, {name: named[name] for name in named if name in shapes})
+    body = _Program(Leaves(kinds=leaves, constants=constants, lists=shapes), order, holders, terms)
     lines = ["(set-logic ALL)"]
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
     lines += body.definitions
+    lines += terms.assertions()
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
+    lines += [f"(get-value ({name}))" for name in terms.asked()]
     text = "\n".join(lines) + "\n"
-    return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
-
-
-def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:
-    """The symbol of each leaf the prefix names, in the order the seed bound them."""
-    parts = [fork.expression for fork in prefix] + [part for node in order for part in node[1:]]
-    named = {name for part in parts if (name := seed.named(part)) is not None}
-    unknown = sorted(named - set(seed.kinds))
-    if unknown:
-        raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {name: _symbol(name, index) for index, name in enumerate(seed.kinds) if name in named}
-
-
-def _symbol(name: str, index: int) -> str:
-    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
-
-    The prefix keeps every symbol apart from the solver's own words, which
-    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
-    bars or not. Each character past ASCII is written as its UTF-8 bytes,
-    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
-    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
-    argument is named by its access, which holds brackets, quotes, and any
-    character a key holds, ``|`` and the backslash among them, which not
-    even a quoted symbol can.
-    """
-    if not name.isidentifier():
-        return f"leaf.{index}"
-    written = "".join(
-        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
-        for character in name
-    )
-    return f"arg.{written}"
-
-
-def _sort(name: str, kind: type) -> str:
-    sort = SORTS.get(kind)
-    if sort is None:
-        raise ValueError(f"pyct cannot declare {name}: nothing solves a {kind.__name__} yet")
-    return sort
+    by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
+    return Program(text=text, names_by_symbol=by_symbol, lists=terms if terms.declared else None)
 
 
 class _Program:
@@ -292,7 +209,9 @@ class _Program:
     number of distinct parts, not with the conditions written out.
     """
 
-    def __init__(self, leaves: _Leaves, order: list[Node], holders: dict[int, int]) -> None:
+    def __init__(
+        self, leaves: Leaves, order: list[Node], holders: dict[int, int], lists: ListTerms
+    ) -> None:
         self.leaves = leaves
         self.types: dict[int, type | None] = {}
         # each part's term, its defined name or the part written out, kept until every place
@@ -300,6 +219,10 @@ class _Program:
         self.terms: dict[int, str] = {}
         self.unread = dict(holders)
         self.definitions: list[str] = []
+        # the lists the path reads: they read their parts by name, as often as they need, and
+        # define what they write once in the program's own definitions
+        self.lists = lists
+        lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         for node in order:
             self.types[id(node)] = self._result(node)
         read = self._read_by_forms(order)
@@ -329,6 +252,14 @@ class _Program:
         self.unread[key] -= 1
         return self.terms[key] if self.unread[key] else self.terms.pop(key)
 
+    def _named(self, part: Expression) -> str:
+        """A part's term as a list reads it: a leaf's constant, a literal, or a defined part's
+        name, which no read lets go."""
+        name = self.leaves.named(part)
+        if name is not None:
+            return self.leaves.constants[name]
+        return self.terms[id(part)] if isinstance(part, list) else _leaf(part)
+
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
 
@@ -344,8 +275,11 @@ class _Program:
         return None if term is None else type(term)
 
     def _result(self, node: Node) -> type | None:
-        """The type of an operation's value, its operands already typed."""
+        """The type of an operation's value, its operands already typed. A part that builds or
+        reads a tracked list is typed by the lists (see ``ListTerms.result``)."""
         head, *operands = node
+        if self.lists.involves(node):
+            return self.lists.result(node)
         if not isinstance(head, str) or head not in RESULTS:
             return None
         result = RESULTS[head]
@@ -375,7 +309,9 @@ class _Program:
         read: set[int] = set()
         for node in order:
             head, *operands = node
-            if head in FORMS or head in POSITIONED or self._orders_strings(node):
+            if self.lists.involves(node):
+                read |= {id(part) for part in self.lists.operands(node)}
+            elif head in FORMS or head in POSITIONED or self._orders_strings(node):
                 read |= {id(part) for part in operands if isinstance(part, list)}
         return read
 
@@ -386,10 +322,15 @@ class _Program:
     def _written(self, node: Node, *, define: bool) -> str:
         """A part's term, its own parts already written: its name if it is defined, else itself.
 
-        A part to define is defined once, by name, when it has a sort to define it by.
+        A part to define is defined once, by name, when it has a sort to define it by. A
+        tracked list has no term of its own: its reads and its length do.
         """
-        operation = self._operation(node)
         kind = self.types[id(node)]
+        if kind is TrackedList:
+            self.lists.build(node)
+            return ""
+        involves = self.lists.involves(node)
+        operation = self.lists.scalar(node, kind) if involves else self._operation(node)
         sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
             return operation
@@ -431,7 +372,7 @@ def _leaf(leaf: str | int | bool | None) -> str:
         return "true" if leaf else "false"
     if isinstance(leaf, int):
         return f"(- {-leaf})" if leaf < 0 else str(leaf)
-    return encode(_value(leaf))
+    return encode(value_of(leaf))
 
 
 def _position(part: Expression) -> int | None:
@@ -458,22 +399,9 @@ def _string_order(head: str, operands: list[Expression], rendered: list[str]) ->
     return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"
 
 
-def _is_literal(leaf: str) -> bool:
-    """Whether a str leaf is a string literal, which opens with a quote, or a parameter name."""
-    return leaf.startswith(_QUOTES)
-
-
 def _literal(part: Expression) -> str | None:
     """The value of an operand that is a string literal, or None for any other operand."""
-    return _value(part) if isinstance(part, str) and _is_literal(part) else None
-
-
-def _value(literal: str) -> str:
-    """The str a string literal, written as repr writes it, holds."""
-    value = ast.literal_eval(literal)
-    if not isinstance(value, str):
-        raise ValueError(f"pyct cannot render {literal}: it is not a string literal")
-    return value
+    return value_of(part) if isinstance(part, str) and is_literal(part) else None
 
 
 def _operator(head: str, kind: type | None) -> str:
