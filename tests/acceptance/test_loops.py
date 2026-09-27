@@ -14,6 +14,7 @@ COUNTDOWN_FILE = str(REPO_ROOT / "targets" / "loops" / "countdown.py")
 FIND_X = "targets.loops.find_x::find_x"
 FIND_X_FILE = str(REPO_ROOT / "targets" / "loops" / "find_x.py")
 WALKS = "targets.loops.walks::walk_both"
+WALKS_FILE = str(REPO_ROOT / "targets" / "loops" / "walks.py")
 BEFORE_A_LOOP = "targets.loops.before_a_loop::check_then_count"
 BEFORE_A_LOOP_FILE = str(REPO_ROOT / "targets" / "loops" / "before_a_loop.py")
 COUNT_A = "targets.loops.count_a::count_as"
@@ -103,10 +104,15 @@ def test_walks_a_string_wherever_it_is_iterated() -> None:
         (4, pass_fork(2)),
         *((7, pass_fork(k)) for k in range(3)),
     ]
-    pairs = [(text(line, "s"), text(line, "t")) for line in inputs[1:]]
-    assert any("@" in s for s, _ in pairs), pairs
-    assert any(s[: len(t)] != t[: len(s)] for s, t in pairs), pairs
-    assert any("-" in s for s, _ in pairs), pairs
+    # each walk's body ran on an input the solver handed back: its return line is covered
+    solved = inputs[1:]
+    pairs = [(text(line, "s"), text(line, "t")) for line in solved]
+    at = [line for line in solved if covers(line, WALKS_FILE, 3)]
+    assert at and "@" in text(at[0], "s"), pairs
+    differ = [line for line in solved if covers(line, WALKS_FILE, 6)]
+    assert differ and text(differ[0], "s") != text(differ[0], "t"), pairs
+    dash = [line for line in solved if covers(line, WALKS_FILE, 9)]
+    assert dash and "-" in text(dash[0], "s"), pairs
 
 
 # follow-loops-and-ranges-reaches-a-fork-before-a-loop

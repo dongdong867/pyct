@@ -1,6 +1,8 @@
 import time
 
-from pyct.branches.tree import Tree
+import pytest
+
+from pyct.branches.tree import ForkKey, Tree
 from pyct.core.branch import Branch, Site
 from pyct.results.record import Aim
 
@@ -141,22 +143,36 @@ def test_a_long_path_is_added_in_linear_time() -> None:
     assert time.perf_counter() - started < 1.0
 
 
-def test_the_picks_over_a_loop_s_many_paths_take_linear_time() -> None:
-    """Why a timing test: a pick must not rescan forks that earlier picks already ruled out.
+def test_the_picks_over_a_loop_s_many_paths_read_each_fork_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pick must not reread forks that earlier picks already ruled out.
 
     A loop hands the tree one path per input, each thousands of forks long
     and nearly all of them shared with an older path. Once the older paths
-    are spent, scanning them again on every pick costs their square each
+    are spent, reading them again on every pick costs their square each
     time. The picks here take the other side of the loop's fork, as a
-    countdown's inputs would: one more pass, or the loop ending there.
+    countdown's inputs would: one more pass, or the loop ending there. So
+    the picks read at most every fork the tree holds, once.
     """
+    reads = 0
+    read = Tree._open
+
+    def counted(tree: Tree, key: ForkKey, taken: bool) -> bool:
+        nonlocal reads
+        reads += 1
+        return read(tree, key, taken)
+
+    monkeypatch.setattr(Tree, "_open", counted)
     tree = Tree()
-    tree.add((*(fork(2, taken=True) for _ in range(1_000)), fork(2, taken=False)))
-    started = time.perf_counter()
+    held = 1_001
+    tree.add((*(fork(2, taken=True) for _ in range(held - 1)), fork(2, taken=False)))
     for _ in range(1_100):
         picked = tree.next()
         assert picked is not None
         ending = (fork(2, taken=False),) if picked.prefix[-1].taken else ()
-        tree.add((*picked.prefix, *ending))
+        path = (*picked.prefix, *ending)
+        tree.add(path)
+        held += len(path)
 
-    assert time.perf_counter() - started < 3.0
+    assert reads <= held

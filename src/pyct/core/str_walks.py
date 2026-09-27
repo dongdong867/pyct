@@ -1,4 +1,4 @@
-"""A walk over a tracked str: `for c in s`, and everything else that asks s for its characters.
+"""A walk over a tracked str: `for c in s`, and everything else that iterates s.
 
 Each pass records a fork saying s has a character at that position,
 ``[">", ["len", s], i]``, taken true, and the pass after the last records the
