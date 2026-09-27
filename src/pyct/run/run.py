@@ -288,6 +288,8 @@ def _attempt(
     origin = inputs[wanted.path]
     limit = _solve_limit(bounds, left)
     answer = solve(wanted.prefix, origin.leaves, limit, origin.lists, origin.values)
+    if isinstance(answer, Timeout):
+        tree.timed_out()
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):
