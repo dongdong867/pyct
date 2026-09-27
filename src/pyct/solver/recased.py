@@ -89,10 +89,12 @@ def _cased_alike(name: str, term: str) -> str:
 def swapped(name: str, term: str) -> Declared:
     """``s.swapcase()``: its head written out, then ``name``, held to be the rest swapped.
 
-    Each uppercase letter of ``name`` and each lowercase letter of the rest
-    is marked with U+0000, and the two marked strings, lowercased, are one:
-    so ``name``'s letter is uppercase just where the rest's is lowercase. A
-    U+0000 of s's own stays itself on both sides.
+    ``name`` and the rest are one string uppercased. Each lowercase letter
+    of ``name`` and each uppercase letter of the rest is marked with U+0000,
+    and the rest's marked string is uppercased; the two are then one string,
+    so ``name``'s letter is lowercase just where the rest's is uppercase, and
+    uppercase just where the rest's is lowercase. A U+0000 of s's own stays
+    itself on both sides.
     """
     rest = _rest(term)
     marked = f'(str.replace_re_all {name} {one_of(LOWER)} "\\u{{0}}")'
