@@ -42,7 +42,7 @@ def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
         return None
     if _conversion(node):
         return _curried(node, parts)
-    if _text_method(node.func):
+    if _text_method(node.func, parts):
         callee = parts.named("__pyct_method__", node)
         call = ast.Call(func=callee, args=[node.func, *node.args], keywords=node.keywords)
         return ast.copy_location(call, node)
@@ -68,12 +68,14 @@ def _written_out(call: ast.Call) -> bool:
     return not (unpacked or many or moved) and bool(call.args or call.keywords)
 
 
-def _text_method(callee: ast.expr) -> bool:
-    """Whether a callee is a method str has, on a str literal."""
+def _text_method(callee: ast.expr, parts: Parts) -> bool:
+    """Whether a callee is a method str has, on a str literal or a name bound to str literals."""
     if not isinstance(callee, ast.Attribute) or callee.attr not in _TEXT_METHODS:
         return False
     receiver = callee.value
-    return isinstance(receiver, ast.Constant) and type(receiver.value) is str
+    if isinstance(receiver, ast.Constant):
+        return type(receiver.value) is str
+    return parts.constants.kind(receiver) == {str}
 
 
 def _spelled(node: ast.expr) -> str | None:

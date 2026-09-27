@@ -71,12 +71,9 @@ def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
     if operands is None:
         return None
     left, right = operands
-    literal = parts.folded(left)
-    if literal is None or type(literal[0]) not in (float, bool):
+    again = _again(left, parts)
+    if again is None or isinstance(right, _NEVER) or parts.folded(right) is not None:
         return None
-    if isinstance(right, _NEVER) or parts.folded(right) is not None:
-        return None
-    again = ast.copy_location(ast.Constant(value=cast(float, literal[0])), left)
     name = ast.copy_location(ast.Name(id="__pyct_handed__", ctx=ast.Load()), left)
     handed = ast.copy_location(ast.Call(func=name, args=[right, again], keywords=[]), left)
     if isinstance(node, ast.BinOp):
@@ -84,6 +81,23 @@ def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
     else:
         node.comparators[0] = handed  # pyrefly: ignore[missing-attribute]
     return node
+
+
+def _again(left: ast.expr, parts: Parts) -> ast.expr | None:
+    """The left side written again, when it is a float or bool literal or a name bound to one.
+
+    A name read directly in a class body is left alone: reading it twice
+    there would ask the class's namespace twice.
+    """
+    literal = parts.folded(left)
+    if literal is not None:
+        if type(literal[0]) not in (float, bool):
+            return None
+        return ast.copy_location(ast.Constant(value=cast(float, literal[0])), left)
+    kinds = parts.constants.kind(left)
+    if kinds is None or not kinds <= {float, bool} or id(left) in parts.constants.in_class:
+        return None
+    return ast.copy_location(ast.Name(id=cast(ast.Name, left).id, ctx=ast.Load()), left)
 
 
 def _operands(node: ast.AST) -> tuple[ast.expr, ast.expr] | None:
