@@ -46,6 +46,10 @@ RESULTS: Mapping[str, type | None] = {
     "in": bool,
     "startswith": bool,
     "endswith": bool,
+    # core writes `&`, `|` and `^` between two bools only; on ints they stay downgrades
+    "&": bool,
+    "|": bool,
+    "^": bool,
     "+": None,
     "-": None,
     "*": None,
@@ -85,6 +89,11 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("!=", str): "distinct",
     ("+", str): "str.++",
     ("len", str): "str.len",
+    ("==", bool): "=",
+    ("!=", bool): "distinct",
+    ("&", bool): "and",
+    ("|", bool): "or",
+    ("^", bool): "xor",
 }
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
@@ -340,15 +349,26 @@ class _Program:
         if not isinstance(head, str) or head not in RESULTS:
             return None
         result = RESULTS[head]
-        return result if result is not None else self._operands_type(operands)
+        return result if result is not None else self._kind(head, operands)
 
     def _operands_type(self, operands: list[Expression]) -> type | None:
         """The type of an operation's operands, or None when none of them says.
 
         Python's own operators take two operands of one type here, so the
-        first that says decides it.
+        first that says decides it. A bool gives way to any other type, as
+        Python's bool meets an int as the int 1 or 0.
         """
-        return next((kind for part in operands if (kind := self.type_of(part))), None)
+        kinds = [kind for part in operands if (kind := self.type_of(part))]
+        return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
+
+    def _kind(self, head: str, operands: list[Expression]) -> type | None:
+        """The type an operation works on: its operands', with a bool read as the int 1 or 0.
+
+        Two bools stay bools only under an operator bool has of its own, such
+        as `&` or `==`; `+` or `<` on them works on the ints they are.
+        """
+        kind = self._operands_type(operands)
+        return int if kind is bool and (head, bool) not in OPERATORS else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
         """The parts a form reads: an operand of a form, a piece, or an order on strings."""
@@ -385,13 +405,22 @@ class _Program:
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
             return positioned(self.term(term), *(_position(part) for part in positions))
-        rendered = [self.term(part) for part in operands]
+        kind = self._kind(head, operands)
+        rendered = [self._operand(part, kind) for part in operands]
         if (form := FORMS.get(head)) is not None:
             return form(*rendered)
-        kind = self._operands_type(operands)
         if head in STRING_ORDERS and kind is str:
             return _string_order(head, operands, rendered)
         return f"({_operator(head, kind)} {' '.join(rendered)})"
+
+    def _operand(self, part: Expression, kind: type | None) -> str:
+        """An operand's term, where an operation on ints reads a bool as the int 1 or 0."""
+        if kind is int and isinstance(part, bool):
+            return "1" if part else "0"
+        term = self.term(part)
+        if kind is int and self.type_of(part) is bool:
+            return f"(ite {term} 1 0)"
+        return term
 
 
 def _leaf(leaf: str | int | bool | None) -> str:

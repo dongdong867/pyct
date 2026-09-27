@@ -1,6 +1,7 @@
 """The journal over a plain bytearray: no mapping and no process, only the bytes."""
 
 import enum
+import json
 import sys
 
 from pyct.core.branch import Branch, Expression, Site
@@ -93,6 +94,23 @@ def test_an_int_subclass_in_a_fork_arrives_as_a_plain_int() -> None:
     assert expression == ["<", "x", 10]
     assert isinstance(expression, list)
     assert type(expression[2]) is int
+
+
+def test_a_condition_used_as_a_value_arrives_with_its_bool_literals() -> None:
+    buffer = journal()
+    above: Expression = [">", "x", 0]
+    count: Expression = ["==", ["+", above, ["+", "y", True]], 2]
+    combined: Expression = ["&", above, False]
+
+    writer = JournalWriter(buffer)
+    writer.fork(Branch(expression=count, taken=False, site=SITE))
+    writer.fork(Branch(expression=combined, taken=True, site=SITE))
+
+    # JSON tells true from 1, where `==` on the lists does not, and a shared compare stays shared
+    first, second = (branch.expression for branch in read(buffer).branches)
+    assert json.dumps([first, second]) == json.dumps([count, combined])
+    assert isinstance(first, list) and isinstance(second, list)
+    assert isinstance(first[1], list) and first[1][1] is second[1]
 
 
 def test_bytes_past_the_committed_mark_are_not_read() -> None:

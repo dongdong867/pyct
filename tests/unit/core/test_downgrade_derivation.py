@@ -163,13 +163,20 @@ def test_a_method_that_answers_not_implemented_records_nothing() -> None:
 
 
 # None in sys.modules makes importing that name raise, so a shared module that reached into
-# ints or bools fails before the print
+# a concolic type's module fails before the print. The package stands in bare, because its own
+# init imports every number module to fill the table numbers keeps
 STAND_IN_ALONE = textwrap.dedent(
     """
     import sys
+    import types
 
-    sys.modules["pyct.core.ints"] = None
-    sys.modules["pyct.core.bools"] = None
+    import pyct
+
+    core = types.ModuleType("pyct.core")
+    core.__path__ = [f"{pyct.__path__[0]}/core"]
+    sys.modules["pyct.core"] = core
+    for name in ("ints", "bools", "strs", "numbers"):
+        sys.modules[f"pyct.core.{name}"] = None
 
     from pyct.core.values import downgrade_the_rest
 

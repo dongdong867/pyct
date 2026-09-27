@@ -2,7 +2,7 @@
 
 import json
 import keyword
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -157,9 +157,31 @@ def _ended(failure: Failure | None) -> list[str]:
     return [f"ended {kind}: {failure.detail}", *_indented(failure.traceback)]
 
 
-# a part as the fork line writes it, and whether it stands alone as an operand: a leaf does,
-# and so does a part Python writes around its operands
-type _Text = tuple[str, bool]
+# a part as the fork line writes it, and how tightly it binds as an operand, as `_BINARY` ranks
+type _Text = tuple[str, int]
+
+# how tightly Python's grammar binds what the fork line writes, loosest first. A head Python
+# has no operator for, such as `abs`, is written `abs x` and binds looser than everything
+_UNRANKED = 0
+_COMPARES = 1
+# a unary `-`, `+` or `~`, and a negative number, bind looser than `**` and tighter than `*`
+_UNARY = 8
+_POWER = 9
+# a name, a literal that is not negative, and a part Python writes around its operands stand
+# bare as any operand and as the base of `**`. Core puts a tracked value's expression where a
+# method's receiver goes, never a literal, which Python would not read after a bare int
+_ALONE = 10
+_BINARY: Mapping[str, int] = {
+    **dict.fromkeys(("in", "not in", "is", "is not", "<", "<=", ">", ">=", "==", "!="), _COMPARES),
+    "|": 2,
+    "^": 3,
+    "&": 4,
+    **dict.fromkeys(("<<", ">>"), 5),
+    **dict.fromkeys(("+", "-"), 6),
+    **dict.fromkeys(("*", "/", "//", "%"), 7),
+    "**": _POWER,
+}
+_UNARY_OPERATORS = ("-", "+", "~")
 
 
 def _infix(expression: Expression) -> str:
@@ -176,7 +198,7 @@ def _infix(expression: Expression) -> str:
     while stack:
         part, operands_written = stack.pop()
         if not isinstance(part, list):
-            written.append((part if isinstance(part, str) else repr(part), True))
+            written.append(_leaf(part))
         elif operands_written:
             first = len(written) - (len(part) - 1)
             written[first:] = [_text(part, written[first:])]
@@ -187,16 +209,48 @@ def _infix(expression: Expression) -> str:
     return written[0][0]
 
 
+def _leaf(leaf: Expression) -> _Text:
+    """A name or a literal as the line writes it. A negative number binds as a unary minus."""
+    text = leaf if isinstance(leaf, str) else repr(leaf)
+    return text, _UNARY if text.startswith("-") else _ALONE
+
+
 def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
     """One condition, written from its operands, each already written."""
     around = _around(expression, operands)
     if around is not None:
-        return around, True
+        return around, _ALONE
     operator = expression[0]
-    parts = [_operand(operand) for operand in operands]
-    if len(parts) == 1:
-        return f"{operator} {parts[0]}", False
-    return f" {operator} ".join(parts), False
+    if len(operands) == 1:
+        return _prefixed(operator, operands[0])
+    level = _BINARY.get(operator) if isinstance(operator, str) else None
+    if level is None or len(operands) != 2:
+        return f" {operator} ".join(_operand(part, _ALONE) for part in operands), _UNRANKED
+    left, right = operands
+    left_text = _operand(left, _least(level, right=False))
+    return f"{left_text} {operator} {_operand(right, _least(level, right=True))}", level
+
+
+def _prefixed(operator: Expression, operand: _Text) -> _Text:
+    """A condition on one operand: a unary operator binds as Python's does, a named head not."""
+    if operator in _UNARY_OPERATORS:
+        return f"{operator} {_operand(operand, _UNARY)}", _UNARY
+    return f"{operator} {_operand(operand, _ALONE)}", _UNRANKED
+
+
+def _least(level: int, *, right: bool) -> int:
+    """How tightly an operand must bind to stand bare beside a binary operator of this level.
+
+    Most operators group from the left, so `x - 1 - 2` needs nothing and
+    `x - (1 - 2)` keeps its parentheses. `**` groups from the right and takes
+    a unary operand on its right, `x ** -y`. A compare never stands bare
+    beside another, because two compares side by side are a chain.
+    """
+    if level == _COMPARES:
+        return _COMPARES + 1
+    if level == _POWER:
+        return _UNARY if right else _ALONE
+    return level + 1 if right else level
 
 
 # the builtins a fork line writes as Python calls them: `len(s)`
@@ -222,11 +276,11 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
-        return f"{_operand(operands[0])}[{written}]"
+        return f"{_operand(operands[0], _ALONE)}[{written}]"
     if head in _CALLED:
         return f"{head}({', '.join(texts)})"
     if _is_named_with_arguments(expression):
-        return f"{_operand(operands[0])}.{head}({', '.join(texts[1:])})"
+        return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
     return None
 
 
@@ -246,11 +300,13 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
     )
 
 
-def _operand(written: _Text) -> str:
-    """A condition inside a condition gets parentheses; a leaf stands alone.
+def _operand(written: _Text, least: int) -> str:
+    """An operand, in parentheses unless it binds at least as tightly as its place needs.
 
-    So does a condition Python writes around its operands, ``s[0]`` or
-    ``a.name(b)``.
+    Only a name, a non-negative literal, and a condition Python writes around
+    its operands, ``s[0]`` or ``a.name(b)``, stand bare as the base of
+    ``**``. Only a name and such a condition stand bare as a receiver, which
+    is all core puts there.
     """
-    text, alone = written
-    return text if alone else f"({text})"
+    text, binding = written
+    return text if binding >= least else f"({text})"

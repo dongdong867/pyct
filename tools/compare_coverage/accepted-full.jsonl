@@ -34,6 +34,7 @@
 {"set": "realworld", "target": "validators.i18n.ru::ru_inn", "seed": {"value": "7707083893"}, "status": "differs", "only_legacy": [48, 61, 63], "only_v2": []}
 {"set": "realworld", "target": "werkzeug.http::parse_dict_header", "seed": {"value": "realm=\"test\", nonce=\"abc123\", qop=\"auth\""}, "status": "differs", "only_legacy": [366, 369, 370], "only_v2": []}
 {"set": "realworld", "target": "werkzeug.http::parse_range_header", "seed": {"value": "bytes=0-499, 500-999"}, "status": "differs", "only_legacy": [811, 813, 815, 816, 818, 829], "only_v2": []}
+{"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
 {"set": "v2", "target": "targets.ints.compare_deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.constant_power::root", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ints.counted_up::count_up", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}

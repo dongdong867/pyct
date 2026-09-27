@@ -419,6 +419,7 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["in", "'a'", "s"],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
+    *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
 ]
 TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "s": str, "t": str}
 
@@ -449,13 +450,6 @@ def test_a_head_that_builds_a_str_is_ordered_as_a_str(term: Expression) -> None:
     text = render((fork(["<", term, "t"], taken=True),), TYPED_LEAVES)
 
     assert _asserted(text).startswith("(assert (str.< ")
-
-
-@pytest.mark.parametrize("term", BOOL_TERMS, ids=[_head(term) for term in BOOL_TERMS])
-def test_a_head_that_builds_a_bool_is_no_operand_of_an_order(term: Expression) -> None:
-    # core never orders a truth value, so render refuses it rather than guess a sort
-    with pytest.raises(ValueError, match="on bool"):
-        render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
 
 
 def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:

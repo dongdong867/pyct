@@ -5,11 +5,12 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core import bools, strs, values
+from pyct.core import numbers, strs, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
+from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"
 TAUGHT_COMPARES: dict[str, tuple[Callable[[str], object], bool]] = {
@@ -407,19 +408,11 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
 def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None:
     # a call into str written without the helper leaves its raise blamed on pyct, silently.
     # ConcolicStr's methods, operators and plain names alike, are written in three files: its
-    # own, bools for the compare closures and values for the downgrade closures, so the scan
+    # own, numbers for the compare closures and values for the downgrade closures, so the scan
     # covers all three. A compare or a search in strs hands the call to a closure it holds, so
     # what a function holds counts as what it calls
-    written_here = {
-        name: member
-        for name, member in vars(ConcolicStr).items()
-        if (code := getattr(member, "__code__", None)) is not None
-        and code.co_filename in {strs.__file__, bools.__file__, values.__file__}
-    }
-
-    without_the_helper = {
-        name for name, member in written_here.items() if not _reaches_through_the_helper(member)
-    }
+    files = {strs.__file__, numbers.__file__, values.__file__}
+    written_here = written_in(ConcolicStr, files)
 
     # the scan read the taught compares, the truth test and the searches, and a derived plain
     # method, so an empty answer is not an empty scan
@@ -428,15 +421,4 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     )
     assert {"find", "encode"} <= written_here.keys()
     # these hand the value itself back and never call str, so they have nothing to guard
-    assert without_the_helper == {"__copy__", "__deepcopy__"}
-
-
-def _reaches_through_the_helper(function: object) -> bool:
-    """Whether a function calls `own`, or holds a function that does, the way a closure does."""
-    code = getattr(function, "__code__", None)
-    if code is None:
-        return False
-    if "own" in code.co_names:
-        return True
-    held = [cell.cell_contents for cell in getattr(function, "__closure__", None) or ()]
-    return any(_reaches_through_the_helper(inner) for inner in held)
+    assert without_the_helper(ConcolicStr, files) == {"__copy__", "__deepcopy__"}
