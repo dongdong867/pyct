@@ -18,17 +18,21 @@ ARITHMETIC: dict[str, tuple[Callable[[float], object], list[object]]] = {
     "x * 3.0": (lambda x: x * 3.0, ["*", "x", 3.0]),
     "3.0 * x": (lambda x: 3.0 * x, ["*", 3.0, "x"]),
     "x / 3.0": (lambda x: x / 3.0, ["/", "x", 3.0]),
+    "x + 1": (lambda x: x + 1, ["+", "x", 1]),
+    "1 - x": (lambda x: 1 - x, ["-", 1, "x"]),
+    "x / 2": (lambda x: x / 2, ["/", "x", 2]),
+    "x // 2.5": (lambda x: x // 2.5, ["//", "x", 2.5]),
+    "x % -2.0": (lambda x: x % -2.0, ["%", "x", -2.0]),
     "-x": (lambda x: -x, ["-", "x"]),
     "abs(x)": (lambda x: abs(x), ["abs", "x"]),
 }
 
-# an operand float answers but pyct does not encode, and the dunder the operation runs
+# an operand float answers but pyct does not encode, and the dunder the operation runs: a bool
+# meets a float in follow-booleans-and-chained-compares
 NOT_ENCODED: dict[str, tuple[Callable[[float], object], str]] = {
-    "x + 1": (lambda x: x + 1, "__add__"),
-    "1 - x": (lambda x: 1 - x, "__rsub__"),
     "x * True": (lambda x: x * True, "__mul__"),
-    "x / 2": (lambda x: x / 2, "__truediv__"),
-    "2 / x": (lambda x: 2 / x, "__rtruediv__"),
+    "True + x": (lambda x: True + x, "__radd__"),
+    "x // True": (lambda x: x // True, "__floordiv__"),
 }
 
 # probes whose text is fixed here, so the line and column of the zero fork are exact

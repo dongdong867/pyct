@@ -259,11 +259,15 @@ def _least(level: int, *, right: bool) -> int:
     return level + 1 if right else level
 
 
-# the functions pyct follows, which a fork line writes as Python calls them: `abs(x)`,
-# `len(s)`. A story that follows one more adds its head here. Any other name is a method on its
-# first operand, so a name Python uses for both, such as `format` or `hex`, reads by what pyct
-# follows rather than by what `builtins` holds
-_FUNCTIONS = frozenset(("abs", "len"))
+# the functions pyct follows, by head, and how the fork line spells the call: `abs(x)`,
+# `len(s)`, `round(x)`, and the `math` roundings and finite check as Python spells them,
+# `math.floor(x)`. A story that follows one more adds its head here. Any other name is a method
+# on its first operand, so a name Python uses for both, such as `format` or `hex`, reads by what
+# pyct follows rather than by what `builtins` holds
+_FUNCTIONS: Mapping[str, str] = {
+    **{head: head for head in ("abs", "len", "round")},
+    **{head: f"math.{head}" for head in ("floor", "ceil", "trunc", "isfinite")},
+}
 
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
@@ -271,9 +275,10 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A function in `_FUNCTIONS` reads ``abs(x)``, and any
-    other name is a method as Python calls it, ``a.name(b)`` or ``a.name()``,
-    ``x.is_integer()`` among them. A part cut from a long expression reads ``...(N nodes)``, and
+    ``config['port']``. A function in `_FUNCTIONS` reads as the table spells
+    it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
+    Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among
+    them. A part cut from a long expression reads ``...(N nodes)``, and
     ``...(? nodes)`` when its count is ``null``. Each binds tighter than any
     operator, so none needs parentheses of its own.
     """
@@ -288,7 +293,7 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if not _is_a_name(head):
         return None
     if head in _FUNCTIONS:
-        return f"{head}({', '.join(texts)})"
+        return f"{_FUNCTIONS[head]}({', '.join(texts)})"
     return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
 
 

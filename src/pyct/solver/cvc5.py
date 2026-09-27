@@ -61,6 +61,14 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     the one limit, and one with nothing left is a ``Timeout()`` without
     starting cvc5.
 
+    A program that holds a bound some form is exact inside, as a float
+    floor division's, answers Python's inputs when it is sat. When it ends
+    unsat, the path is asked once more with the bounds left out and every
+    double allowed, where each form past its bound can be whatever Python
+    gives there: an unsat then is Python's, whatever core cvc5 picked, and
+    any other answer is ``Unknown()``, since a model past a bound may not be
+    Python's; decision float-floor-division-a-real-floor-inside-a-bound.
+
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
     records it already has and says the solver failed. The one exception is
@@ -71,7 +79,8 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     deadline = monotonic() + timeout
     finite = float_leaves(prefix, leaves)
-    answer, _ = _ask(program(prefix, leaves, finite=finite), timeout)
+    first = program(prefix, leaves, finite=finite)
+    answer, _ = _ask(first, timeout)
     while finite and isinstance(answer, Unsat):
         cored = _ask_by(program(prefix, leaves, finite=finite, cores=True), deadline)
         if cored is None:
@@ -79,13 +88,28 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         answer, core = cored
         freed = finite & core
         if not isinstance(answer, Unsat) or not freed:
-            return answer
+            break
         finite -= freed
         freer = _ask_by(program(prefix, leaves, finite=finite), deadline)
         if freer is None:
             return Timeout()
         answer, _ = freer
+    if first.bounded and isinstance(answer, Unsat):
+        return _unbounded(prefix, leaves, deadline)
     return answer
+
+
+def _unbounded(prefix: tuple[Branch, ...], leaves: Mapping[str, type], deadline: float) -> Answer:
+    """The path with its bounds left out and every double allowed: ``Unsat()`` if even that is.
+
+    A model is ``Unknown()``, since past a bound it may not be Python's; a
+    timeout or a failure is what it is on any other ask.
+    """
+    asked = _ask_by(program(prefix, leaves, bounded=False), deadline)
+    if asked is None:
+        return Timeout()
+    answer, _ = asked
+    return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
 
 
 def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:
