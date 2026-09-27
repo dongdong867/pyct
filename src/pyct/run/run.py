@@ -286,7 +286,8 @@ def _attempt(
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
     origin = inputs[wanted.path]
-    answer = solve(wanted.prefix, origin.leaves, _solve_limit(bounds, left), origin.lists)
+    limit = _solve_limit(bounds, left)
+    answer = solve(wanted.prefix, origin.leaves, limit, origin.lists, origin.values)
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):

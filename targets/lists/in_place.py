@@ -13,3 +13,10 @@ def swaps(pair):
         return "big"
     return "small"
 
+
+def cuts(items, x):
+    for _ in range(14):
+        items[x : x + 1] = [0]
+    if items[2] == 99:
+        return "found"
+    return "missed"

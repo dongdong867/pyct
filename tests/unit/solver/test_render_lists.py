@@ -326,6 +326,30 @@ def test_a_list_changed_at_slices_or_a_tracked_index_many_times_renders_in_a_row
     assert solved["items"][2] > 100
 
 
+@needs_cvc5
+def test_a_list_cut_past_what_the_input_held_is_solved_unsettled() -> None:
+    # items[1:2] = [n] six times on [5]: only a list of three items or more ends in 99, which
+    # the clamps settled as the input had them rule out. A read through the six cuts runs past
+    # the steps a 5 s solve gives it, so the settled program answers unsat, then the unsettled
+    args: dict[str, object] = {"items": [5]}
+    sink: list[SinkItem] = []
+    items: Any = bind(args, sink)["items"]
+    for value in range(6):
+        items[1:2] = [value]
+    bool(items[-1] == 99)
+    *forks, last = [item for item in sink if isinstance(item, Branch)]
+    path = (*forks, Branch(last.expression, not last.taken, last.site))
+    seed = Seed.of(args)
+
+    started = time.perf_counter()
+    answer = solve(path, seed.leaves, 5.0, seed.lists, seed.values)
+
+    assert isinstance(answer, Sat), answer
+    assert time.perf_counter() - started < 2
+    solved: Any = apply(seed, answer.model).args
+    assert len(solved["items"]) >= 3 and solved["items"][-1] == 99
+
+
 REPEATED: Expression = ["*", "items", 600_000]
 
 

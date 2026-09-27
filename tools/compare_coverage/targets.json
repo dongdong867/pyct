@@ -159,6 +159,7 @@
     {"set": "v2", "target": "targets.lists.fills::walk", "seed": {"items": [1]}},
     {"set": "v2", "target": "targets.lists.fills::walk_floats", "seed": {"items": []}},
     {"set": "v2", "target": "targets.lists.fills::walk_strs", "seed": {"items": []}},
+    {"set": "v2", "target": "targets.lists.in_place::cuts", "seed": {"items": [5, 6, 7], "x": 1}},
     {"set": "v2", "target": "targets.lists.in_place::swaps", "seed": {"pair": [1, 2]}},
     {"set": "v2", "target": "targets.lists.in_place::tally", "seed": {"counts": [0, 0], "n": 3}},
     {"set": "v2", "target": "targets.lists.keeps::keep", "seed": {"items": [1]}},

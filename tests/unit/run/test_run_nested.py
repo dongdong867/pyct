@@ -6,6 +6,8 @@ from collections.abc import Mapping
 import pytest
 
 from pyct.binding import walk
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
 from pyct.results.record import Source, StopKind
 from pyct.run import run as run_module
 from pyct.run.isolation import Isolation
@@ -176,3 +178,23 @@ def test_a_float_inside_an_argument_passes_through_plain(isolation: Isolation) -
     assert type(config["ratio"]) is float and config["ratio"] == 0.25
     assert solved.mismatch_at is None
 
+
+def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None:
+    # each cut at items[x:x + 1] doubles a read through it; written with the clamps settled as
+    # the seed had them, the flip of items[2] == 99 is solved well inside the solver's limit
+    target = load_target("targets.lists.in_place::cuts")
+
+    result = run(
+        target,
+        {"items": [5, 6, 7], "x": 1},
+        limits=Limits(budget=Budget(seconds=20)),
+        isolation=Isolation.IN_PROCESS,
+    )
+
+    # the fork on items[2] == 99, after the one on its length
+    forks = [fork for record in result.records for fork in record.forks]
+    checks = [
+        fork for fork in forks if isinstance(fork.expression, list) and fork.expression[0] == "=="
+    ]
+    assert [fork.taken for fork in checks] == [False, True], result.records
+    assert not result.misses

@@ -116,6 +116,26 @@ def test_a_clamp_whose_input_value_is_not_known_is_written_as_a_term() -> None:
     assert window.start == Lin.of("p!0") and not made.regime
 
 
+@pytest.mark.parametrize(
+    ("start", "written"),
+    [
+        # items[5::-1] on a list the path holds to 6 items or more starts at 5
+        (5, Lin(5)),
+        # items[-2::-1] on one it holds to 2 or more starts 2 back from the end
+        (-2, Lin(-2, ((N, 1),))),
+    ],
+)
+def test_a_backward_bound_the_least_length_settles_is_written_as_it_reads(
+    start: int, written: Lin
+) -> None:
+    made = slices()
+    made.least[N] = 6
+
+    window = made.window(base(), [start, None, -1], NONE)
+
+    assert window.start == written and not made.regime and not made.definitions
+
+
 def test_nested_leaves_out_a_branch_that_fails_and_ends_at_one_that_holds() -> None:
     assert nested([("false", "a"), ("c", "b"), ("true", "d"), ("e", "f")], "g") == "(ite c b d)"
     assert ite("c", "a", "b") == "(ite c a b)"
