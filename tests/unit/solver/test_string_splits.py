@@ -2,6 +2,7 @@
 held against Python on them."""
 
 import random
+import sys
 import time
 import tracemalloc
 from collections.abc import Callable
@@ -9,6 +10,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core.branch import Branch, Expression
+from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.splits import SPLITS
@@ -49,7 +51,9 @@ def _split(rng: random.Random, value: str) -> Split:
         # core hands an rsplit on a separator that overlaps itself on only with a limit
         operands = (separator, rng.randint(0, 2))
     else:
-        operands = rng.choice([(), (separator,), (separator, rng.randint(-1, 2))])
+        # a limit past the longest walk reads as no limit, on strings with fewer separators
+        limit = rng.choice([-1, 0, 1, 2, LONGEST_WALK + 1])
+        operands = rng.choice([(), (separator,), (separator, limit)])
     return head, operands, getattr(value, head)(*operands)
 
 
@@ -263,3 +267,47 @@ def test_an_rsplit_with_a_large_limit_renders_in_size_and_memory_that_grow_with_
     assert len(text) < 2_000_000
     assert elapsed < 1.0
     assert peak < 20_000_000
+
+
+@pytest.mark.parametrize("head", ["rsplit", "split"])
+@pytest.mark.parametrize("separator", ["','", None], ids=["on a separator", "on whitespace"])
+def test_a_split_with_the_largest_limit_python_takes_renders_at_once(
+    head: str, separator: str | None
+) -> None:
+    condition: Expression = ["==", ["[]", [head, "s", separator, sys.maxsize], 1], "'a'"]
+
+    started = time.perf_counter()
+    text = render((fork(condition, taken=False),), {"s": str})
+
+    # past the longest walk, a piece is read as the split's with no limit, so the limit's
+    # size costs nothing
+    assert time.perf_counter() - started < 0.5
+    assert len(text) < 20_000
+
+
+# a string with as many separators, or words, as an rsplit past the longest walk allows, and
+# one with more: an rsplit and a split agree on the first, and the second is no answer
+PAST_THE_WALK: dict[str, tuple[str | None, str, bool]] = {
+    "as many separators": (",", "," * (LONGEST_WALK + 1), True),
+    "one separator more": (",", "," * (LONGEST_WALK + 2), False),
+    "fewer words": (None, "a " * LONGEST_WALK, True),
+    "as many words": (None, "a " * (LONGEST_WALK + 1), False),
+}
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("separator", "value", "there"), PAST_THE_WALK.values(), ids=list(PAST_THE_WALK)
+)
+def test_an_rsplit_past_the_walk_is_an_answer_only_where_it_is_the_split(
+    separator: str | None, value: str, there: bool
+) -> None:
+    limit = LONGEST_WALK + 1
+    split: Split = ("rsplit", (separator, limit), value.rsplit(separator, limit))
+    lines, python = _program([(value, split, 0)])
+
+    answers = asked(lines)
+
+    assert answers[0] is there
+    if there:
+        assert answers == python

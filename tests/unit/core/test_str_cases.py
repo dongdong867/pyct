@@ -91,6 +91,8 @@ SPLITS: dict[str, tuple[Callable[[str], object], Expression]] = {
     "s.rsplit(' ', 0)": (lambda s: s.rsplit(" ", 0), ["rsplit", "s", "' '", 0]),
     "s.rsplit(',')": (lambda s: s.rsplit(","), ["rsplit", "s", "','"]),
     "s.rsplit('aa', 1)": (lambda s: s.rsplit("aa", 1), ["rsplit", "s", "'aa'", 1]),
+    "s.rsplit('aa', 16)": (lambda s: s.rsplit("aa", 16), ["rsplit", "s", "'aa'", 16]),
+    "s.rsplit(',', 17)": (lambda s: s.rsplit(",", 17), ["rsplit", "s", "','", 17]),
     "s.partition(',')": (lambda s: s.partition(","), ["partition", "s", "','"]),
     "s.partition('x')": (lambda s: s.partition("x"), ["partition", "s", "'x'"]),
     "s.splitlines()": (lambda s: s.splitlines(), ["splitlines", "s"]),
@@ -139,6 +141,7 @@ NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
     "s.split(past cvc5)": (lambda s: s.split(PAST_CVC5), "split"),
     "s.rsplit('aa')": (lambda s: s.rsplit("aa"), "rsplit"),
     "s.rsplit('aba', -1)": (lambda s: s.rsplit("aba", -1), "rsplit"),
+    "s.rsplit('aa', 17)": (lambda s: s.rsplit("aa", 17), "rsplit"),
     "s.partition(tracked)": (lambda s: s.partition(_tracked(",")), "partition"),
     "s.splitlines(keepends=True)": (lambda s: s.splitlines(keepends=True), "splitlines"),
 }

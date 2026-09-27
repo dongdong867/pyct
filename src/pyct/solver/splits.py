@@ -19,6 +19,7 @@ here (see `checks`).
 
 from collections.abc import Callable, Mapping
 
+from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.checks import SPACE, Ranges, one_of, outside
 from pyct.solver.strings import encode, length
 
@@ -157,6 +158,8 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
     separator, limit = _separator_and_limit(operands)
     if limit < 0:
         return split_piece(term, operands, index)
+    if limit > LONGEST_WALK:
+        return _unwalked(term, separator, limit, index)
     walk = _words_back(limit) if separator is None else _separators_back(separator, limit)
     bindings, count, pieces = walk
     # there are at most limit + 1 pieces, so piece index is at most limit - index from the right
@@ -167,6 +170,28 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
     chosen = f'{opened}""{")" * len(candidates)}'
     bound = [("r!", f"(str.rev {term})"), *bindings, ("n!", count)]
     return _let(bound, chosen), _let(bound, f"(> n! {index})")
+
+
+def _unwalked(term: str, separator: str | None, limit: int, index: int) -> Piece:
+    """Piece ``index`` of an rsplit whose limit is past `LONGEST_WALK`, read as the split's.
+
+    The two agree on a string with no more separators than the limit, or
+    fewer words, so the piece also asserts that the string is one: every
+    answer is then Python's. A string with more, which only a limit past
+    sixteen reaches, is not an answer, so a path that needs one is a miss.
+    """
+    piece, there = split_piece(term, (separator,), index)
+    if separator is None:
+        # a word starts where a character that is not whitespace follows whitespace, or the start
+        spaced = f'(str.++ " " {term})'
+        starts = f'(str.replace_re_all {spaced} (re.++ {_SPACE} {_NOT_SPACE}) "")'
+        words = f"(div (- (str.len {spaced}) (str.len {starts})) 2)"
+        return piece, _all([there, f"(< {words} {limit})"])
+    # a literal replace, which cvc5 answered at once where the same count as a regular
+    # expression ran past its limit
+    kept = f'(str.len (str.replace_all {term} {encode(separator)} ""))'
+    separators = f"(div (- (str.len {term}) {kept}) {len(separator)})"
+    return piece, _all([there, f"(<= {separators} {limit})"])
 
 
 # a walk of the reversed string: the names it binds, how many pieces the string has, and each
