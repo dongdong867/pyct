@@ -250,6 +250,36 @@ def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
 GATHERED_FROM: dict[str, Expression] = {"s": "s", "s[1:]": ["[:]", "s", 1, None]}
 
 
+def test_counting_cut_short_leaves_a_count_out_rather_than_wrong(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the loop's last fork, whose cut parts reach every pass: counting them all takes 396 steps
+    forks = _edit_loop(12)[-1:]
+    exact: dict[int, int] = {}
+    wrong: list[tuple[int, int]] = []
+    cut_short = 0
+
+    # every limit up to what the whole count needs, so the steps run out at every point of it,
+    # inside a join and between two
+    for limit in range(400):
+        monkeypatch.setattr("pyct.results.printed.COUNTING_STEPS", limit)
+        counts = [
+            pair
+            for shown, fork in zip(printed_forks(forks), forks, strict=True)
+            for pair in _counts_from(shown, fork.expression)
+        ]
+        cut_short += any(count is None for count, _ in counts)
+        wrong += [
+            (limit, count)
+            for count, part in counts
+            if count is not None and count != exact.setdefault(id(part), _distinct(part))
+        ]
+
+    # a part the steps ran out on has no count, never a part of one
+    assert wrong == []
+    assert 0 < cut_short < 400
+
+
 def _gathered(characters: int, string: Expression) -> list[Branch]:
     """`c = u[i]`, then `if c == "x":`, then `t = t + c`, for each i, and a last fork on t.
 
