@@ -310,8 +310,8 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
 def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
     """The parameters whose annotation asks something of the seed, and what it asks.
 
-    What an annotation asks is ``check_of``'s: a bare ``str``, ``int``,
-    ``float`` or ``bool``, or a list or dict of them.
+    What an annotation asks, and which annotations ask nothing, is
+    ``check_of``'s to say.
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
