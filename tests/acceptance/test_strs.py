@@ -9,7 +9,6 @@ solver's answer runs, so only a real run through the command line proves it.
 from tests.acceptance.harness import (
     REPO_ROOT,
     downgrade,
-    first_line,
     input_lines,
     one_line,
     run_pyct,
@@ -38,8 +37,6 @@ TEXT_CONVERSION = "targets.strs.text_conversion::show"
 LENGTH_CHECK = "targets.strs.length_check::check"
 FIND_FROM_POSITION = "targets.strs.find_from_position::check"
 FIND_BELOW = "targets.strs.find_below::check"
-IN_WHERE_IT_RUNS = "targets.strs.in_where_it_runs::look"
-IN_WHERE_IT_RUNS_FILE = str(REPO_ROOT / "targets" / "strs" / "in_where_it_runs.py")
 MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
 MISSING_SUBSTRING_FILE = str(REPO_ROOT / "targets" / "strs" / "missing_substring.py")
 SEARCH = "targets.strs.search::kind"
@@ -321,32 +318,6 @@ def test_finds_the_missing_substring() -> None:
     assert isinstance(failure, dict), solved
     assert failure["kind"] == "target_raised"
     assert str(failure["detail"]).startswith("ValueError:")
-
-
-# follow-strings-records-in-where-it-runs
-def test_records_in_where_it_runs() -> None:
-    result = run_pyct(IN_WHERE_IT_RUNS, '{"s": "x"}')
-
-    assert result.returncode == 0, result.stderr
-    seed = first_line(result.stdout)
-    # Python makes the answer of `in` a plain bool where the `in` runs, so the fork is on the
-    # `y =` line and `if y:` tests a plain bool; `not in` is the same fork with the side reversed
-    assert forks_of(seed) == [
-        {
-            "file": IN_WHERE_IT_RUNS_FILE,
-            "line": 2,
-            "col": 8,
-            "expression": ["in", "'a'", "s"],
-            "taken": False,
-        },
-        {
-            "file": IN_WHERE_IT_RUNS_FILE,
-            "line": 5,
-            "col": 7,
-            "expression": ["in", "'b'", "s"],
-            "taken": False,
-        },
-    ]
 
 
 # follow-strings-downgrades-a-search-from-a-position

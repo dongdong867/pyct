@@ -150,3 +150,24 @@ def test_a_division_whose_raise_is_caught_keeps_its_fork() -> None:
 
     assert result.returncode == 0, result.stderr
     assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 12, True, unsat=1)
+
+
+# see-why-a-line-was-missed-names-the-side-no-input-took
+def test_a_substituted_in_s_test_is_the_condition_on_the_way() -> None:
+    target, file = spec("substituted_in", "never_part")
+
+    result = run_pyct(target, '{"s": "a"}')
+
+    assert result.returncode == 0, result.stderr
+    # the call that stands in for the `in` leaves the `if`'s jump where Python put it
+    assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 7, True, unsat=1)
+
+
+def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
+    target, file = spec("empty_walk", "walk_nothing")
+
+    result = run_pyct(target, '{"s": "a"}')
+
+    assert result.returncode == 0, result.stderr
+    # the walk over s[:0] ends at once; its pass fork sits where the loop steps, at 3:13
+    assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 13, True, unsat=1)

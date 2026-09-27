@@ -269,6 +269,7 @@ SEARCH_TRUTHS: dict[str, tuple[Expression, str]] = {
     # the expression keeps Python's order, needle first; cvc5's contains takes the string first
     "in": (["in", "'x'", "s"], '(str.contains |arg.s| "x")'),
     "in-tracked": (["in", "t", "s"], "(str.contains |arg.s| |arg.t|)"),
+    "not in": (["not in", "'x'", "s"], '(not (str.contains |arg.s| "x"))'),
     "startswith": (["startswith", "s", "'ab'"], '(str.prefixof "ab" |arg.s|)'),
     "endswith": (["endswith", "s", "'ab'"], '(str.suffixof "ab" |arg.s|)'),
 }

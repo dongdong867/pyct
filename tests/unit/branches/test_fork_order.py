@@ -1,0 +1,99 @@
+"""The tree's pick order against the order written plainly: every pick reads every fork again.
+
+The tree keeps cursors so a pick never rereads a fork it has ruled out, and
+decides a fork's tier once, when its path arrives. The reference here keeps
+nothing between picks, so the two agree only if the cursors skip nothing
+and the tiers are right (fork-order-new-side-first).
+"""
+
+import random
+
+import pytest
+
+from pyct.branches.plan import Plan, plan
+from pyct.branches.tree import Tree
+from pyct.core.branch import Branch, Site
+
+# a side of a fork: where it happened, and which way it went
+type Side = tuple[Site, bool]
+
+
+class Rescan:
+    """The fork order, read afresh on every pick.
+
+    A fork is open while no pick aimed at it and no input took its other
+    side after the same prefix. A fork whose other side no input took
+    anywhere comes first, oldest path first and deepest fork first; then
+    every other open fork, in the same order.
+    """
+
+    def __init__(self) -> None:
+        self.paths: list[tuple[Branch, ...]] = []
+        self.walked: set[tuple[Side, ...]] = set()
+        self.aimed: set[tuple[tuple[Side, ...], Site]] = set()
+        self.sides: set[Side] = set()
+
+    def add(self, forks: tuple[Branch, ...]) -> None:
+        self.paths.append(forks)
+        walked: tuple[Side, ...] = ()
+        for fork in forks:
+            walked = (*walked, (fork.site, fork.taken))
+            self.walked.add(walked)
+            self.sides.add((fork.site, fork.taken))
+
+    def next(self) -> Plan | None:
+        for new_side_only in (True, False):
+            for forks in self.paths:
+                for at in reversed(range(len(forks))):
+                    if self._open(forks, at) and (not new_side_only or self._new_side(forks[at])):
+                        self.aimed.add(self._key(forks, at))
+                        return plan(forks[: at + 1])
+        return None
+
+    def _key(self, forks: tuple[Branch, ...], at: int) -> tuple[tuple[Side, ...], Site]:
+        return tuple((fork.site, fork.taken) for fork in forks[:at]), forks[at].site
+
+    def _open(self, forks: tuple[Branch, ...], at: int) -> bool:
+        before, site = self._key(forks, at)
+        other = (*before, (site, not forks[at].taken))
+        return (before, site) not in self.aimed and other not in self.walked
+
+    def _new_side(self, fork: Branch) -> bool:
+        return (fork.site, not fork.taken) not in self.sides
+
+
+def _fork(line: int, taken: bool) -> Branch:
+    return Branch(
+        expression=["<", "x", line], taken=taken, site=Site(file="m.py", line=line, col=7)
+    )
+
+
+def _random_forks(rng: random.Random, most: int) -> tuple[Branch, ...]:
+    """A few forks over four sites, so sides repeat within a path and across paths."""
+    return tuple(_fork(rng.randint(1, 4), rng.random() < 0.5) for _ in range(rng.randint(0, most)))
+
+
+def _after(rng: random.Random, picked: Plan) -> tuple[Branch, ...]:
+    """The path an input took for a plan: it followed the plan and ran on, or left it early."""
+    kept = len(picked.prefix) if rng.random() < 0.7 else rng.randint(0, len(picked.prefix))
+    return (*picked.prefix[:kept], *_random_forks(rng, 4))
+
+
+@pytest.mark.parametrize("seed", range(300))
+def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
+    rng = random.Random(seed)
+    tree, reference = Tree(), Rescan()
+    for _ in range(60):
+        # a path from nowhere, an input that ran on a plan, or a plan the solver answered
+        # nothing for, which adds no path
+        if rng.random() < 0.3:
+            path = _random_forks(rng, 6)
+            tree.add(path)
+            reference.add(path)
+            continue
+        picked = tree.next()
+        assert picked == reference.next()
+        if picked is not None and rng.random() < 0.8:
+            path = _after(rng, picked)
+            tree.add(path)
+            reference.add(path)

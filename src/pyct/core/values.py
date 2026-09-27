@@ -13,18 +13,20 @@ from typing import Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site, lost_at
 
-# the mark that says a raise came out of the base type's own operation. The call that made it
+# the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
 _TARGET_RAISE = "__pyct_target_raise__"
 
 
 def own[T](operation: Callable[..., T], /, *args: object, **kwargs: object) -> T:
-    """The base type's own answer, with a raise out of it marked as the target's.
+    """The answer of a call pyct makes for the target, a raise out of it marked as the target's.
 
     Every call pyct makes into the base type goes through here, taught
-    operation and downgrade alike. A raise under one of them is the target's
-    program failing, not a pyct bug. Only an ``Exception`` is one: a deadline
-    and a keyboard interrupt land here too, and neither is the operation's.
+    operation and downgrade alike, and so do the reads and compiles of the
+    target's own files that pyct makes in Python's place as it imports them.
+    A raise under one of them is the target's program failing, not a pyct
+    bug. Only an ``Exception`` is one: a deadline and a keyboard interrupt
+    land here too, and neither is the operation's.
     """
     try:
         return operation(*args, **kwargs)
@@ -34,7 +36,7 @@ def own[T](operation: Callable[..., T], /, *args: object, **kwargs: object) -> T
 
 
 def raised_by_target(error: BaseException) -> bool:
-    """Whether this raise came out of the base type's own operation."""
+    """Whether this raise came out of a call pyct made for the target, through `own`."""
     return getattr(error, _TARGET_RAISE, False) is True
 
 

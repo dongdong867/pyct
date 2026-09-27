@@ -20,6 +20,7 @@ from pyct.solver.strings import (
     ends_with,
     first_index,
     last_index,
+    not_contains,
     occurrences,
     replaced,
     sliced,
@@ -43,6 +44,7 @@ RESULTS: Mapping[str, type | None] = {
     "==": bool,
     "!=": bool,
     "in": bool,
+    "not in": bool,
     "startswith": bool,
     "endswith": bool,
     # core writes `&`, `|` and `^` between two bools only; on ints they stay downgrades
@@ -133,6 +135,7 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("//", int): floor_division,
     ("%", int): modulo,
     ("in", str): contains,
+    ("not in", str): not_contains,
     ("startswith", str): starts_with,
     ("endswith", str): ends_with,
     ("find", str): first_index,

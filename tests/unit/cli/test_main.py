@@ -176,3 +176,27 @@ def test_main_asks_for_a_missing_seed_after_the_import_and_before_the_seed_check
         "load_target",
     ]
     assert capsys.readouterr().out == ""
+
+
+def test_sweep_needs_the_list_flag_until_it_can_run_entries(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert main(["sweep", "targets.sweep.shop"]) == 2
+
+    said = capsys.readouterr()
+    assert said.out == ""
+    assert said.err.startswith("pyct sweep runs no entry yet; pass --list\n")
+
+
+def test_sweep_lists_a_package_without_opening_the_interception(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # listing runs no target, so it reads each module as written, in a lister of its own
+    def refused(spec: str) -> object:
+        raise AssertionError(f"sweep opened the interception for {spec}")
+
+    let_pyct_run_in_process(monkeypatch)
+    monkeypatch.setattr(cli, "interception", refused)
+
+    assert main(["sweep", "targets.sweep.shop", "--list"]) == 0
+    assert capsys.readouterr().out
