@@ -129,6 +129,14 @@ def test_its_views_are_live(live: LiveBuiltins) -> None:
     assert set(keys) == set(vars(builtins))
 
 
+def test_its_views_reverse_as_builtins_own_views_do(live: LiveBuiltins) -> None:
+    builtins._pyct_live_probe = "late"  # pyrefly: ignore[missing-attribute]
+
+    assert list(reversed(live.keys())) == list(reversed(vars(builtins).keys()))
+    assert list(reversed(live.items())) == list(reversed(expected().items()))
+    assert list(reversed(live.values())) == list(reversed(expected().values()))
+
+
 def test_a_union_answers_as_on_builtins_own_dict(live: LiveBuiltins) -> None:
     assert (live | {PROBE: 1}) == {**expected(), PROBE: 1}
     assert ({PROBE: 1} | live) == {PROBE: 1, **expected()}

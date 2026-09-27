@@ -39,6 +39,39 @@ _BUILTINS = vars(builtins)
 _CLEAR, _UPDATE = dict.clear, dict.update
 
 
+class _Keys(KeysView[str]):
+    """A live keys view that reverses, as a dict's own keys view does."""
+
+    def __init__(self, held: LiveBuiltins) -> None:
+        super().__init__(held)
+        self._held = held
+
+    def __reversed__(self) -> Iterator[str]:
+        return reversed(self._held)
+
+
+class _Items(ItemsView[str, object]):
+    """A live items view that reverses, as a dict's own items view does."""
+
+    def __init__(self, held: LiveBuiltins) -> None:
+        super().__init__(held)
+        self._held = held
+
+    def __reversed__(self) -> Iterator[tuple[str, object]]:
+        return ((name, self._held[name]) for name in reversed(self._held))
+
+
+class _Values(ValuesView[object]):
+    """A live values view that reverses, as a dict's own values view does."""
+
+    def __init__(self, held: LiveBuiltins) -> None:
+        super().__init__(held)
+        self._held = held
+
+    def __reversed__(self) -> Iterator[object]:
+        return (self._held[name] for name in reversed(self._held))
+
+
 class LiveBuiltins(dict[str, object]):
     """A module's builtins: what ``builtins`` holds now, with pyct's `len`, `ord` and `chr`.
 
@@ -83,14 +116,14 @@ class LiveBuiltins(dict[str, object]):
         return len(_BUILTINS)
 
     # views that read through the methods above, so they stay live as a dict's own views do
-    def keys(self) -> KeysView[str]:  # pyrefly: ignore[bad-override]
-        return KeysView(self)
+    def keys(self) -> _Keys:  # pyrefly: ignore[bad-override]
+        return _Keys(self)
 
-    def items(self) -> ItemsView[str, object]:  # pyrefly: ignore[bad-override]
-        return ItemsView(self)
+    def items(self) -> _Items:  # pyrefly: ignore[bad-override]
+        return _Items(self)
 
-    def values(self) -> ValuesView[object]:  # pyrefly: ignore[bad-override]
-        return ValuesView(self)
+    def values(self) -> _Values:  # pyrefly: ignore[bad-override]
+        return _Values(self)
 
     def __eq__(self, other: object) -> bool:
         # equal to what a lookup finds, and to builtins' own dict, as the module's builtins are
