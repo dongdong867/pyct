@@ -1,6 +1,5 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
-import ast
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 
@@ -10,17 +9,22 @@ from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
-from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
+from pyct.solver.heads import (
+    FORMS,
+    INDEXED,
+    OPERATORS,
+    POSITIONED,
+    POSITIONS_FROM,
+    RESULTS,
+    SORTS,
+    STRING_ORDERS,
+)
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
+from pyct.solver.literals import is_literal, leaf, plain, string_order
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import above, below, encode
 from pyct.solver.symbols import leaf_sort, leaf_symbol
-
-# what opens a string literal in an expression: repr writes one in either quote, and a
-# parameter name holds neither
-_QUOTES = ("'", '"')
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
@@ -47,7 +51,7 @@ class _Leaves:
         Which steps an access takes is binding's to say (``access_name``).
         """
         if isinstance(part, str):
-            return None if _is_literal(part) else part
+            return None if is_literal(part) else part
         name = access_name(part)
         return name if name in self.kinds else None
 
@@ -185,6 +189,8 @@ class _Program:
         self.unread = dict(holders)
         self.definitions: list[str] = []
         self.facts: set[str] = set()
+        # each tuple's item terms, read once where the tuple is written (see `_written`)
+        self.tuples: dict[int, tuple[str, ...]] = {}
         for node in order:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
@@ -212,7 +218,7 @@ class _Program:
         if name is not None:
             return self.leaves.constants[name]
         if not isinstance(expression, list):
-            return _leaf(expression)
+            return leaf(expression)
         key = id(expression)
         self.unread[key] -= 1
         return self.terms[key] if self.unread[key] else self.terms.pop(key)
@@ -293,6 +299,9 @@ class _Program:
         kind = self.types[id(node)]
         if kind is list:
             return self.term(node[1])
+        if kind is tuple:
+            self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+            return ""
         operation = self._operation(node)
         sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
@@ -312,11 +321,12 @@ class _Program:
                 return self._piece(term, positions)
             if (letter := self._letter(node)) is not None:
                 return letter
-            return positioned(self.term(term), *(_plain(part) for part in positions))
+            read = self._position if head in INDEXED else plain
+            return positioned(self.term(term), *(read(part) for part in positions))
         kind = self._kind(head, operands)
-        rendered = [self._operand(part, kind) for part in operands]
         if (form := self._form(node)) is not None:
-            return form(*rendered)
+            return form(*self._rendered(head, operands, kind))
+        rendered = [self._operand(part, kind) for part in operands]
         if (declared := TO_DECLARE.get(head)) is not None:
             return self._declared(declared, *rendered)
         if (check := CHECKS.get(head)) is not None:
@@ -324,8 +334,25 @@ class _Program:
             self._hold(fact)
             return answer
         if head in STRING_ORDERS and kind is str:
-            return _string_order(head, operands, rendered)
+            return string_order(head, operands, rendered)
         return f"({_operator(head, kind)} {' '.join(rendered)})"
+
+    def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
+        """Each operand's term; past the operands a search or a replace reads as terms, each
+        position as `_position` reads it, and a tuple as its items' terms."""
+        first = POSITIONS_FROM.get(head, len(operands)) if kind is str else len(operands)
+        terms: list[object] = [self._operand(part, kind) for part in operands[:first]]
+        needle = operands[1] if len(operands) > 1 else None
+        if isinstance(needle, list) and self.type_of(needle) is tuple:
+            terms[1] = self.tuples[id(needle)]
+        return terms + [self._position(part) for part in operands[first:]]
+
+    def _position(self, part: Expression) -> int | str | None:
+        """A position a form reads: a plain int or bool as the int, None for a missing one, and
+        a tracked one by its Int term."""
+        if part is None or isinstance(part, int):
+            return None if part is None else int(part)
+        return self.term(part)
 
     def _operand(self, part: Expression, kind: type | None) -> str:
         """An operand's term, where an operation on ints reads a bool as the int 1 or 0."""
@@ -355,11 +382,11 @@ class _Program:
         The target took the piece out of the list Python built, so the piece
         is there on every input that follows the path this far.
         """
-        (index,) = (_plain(part) for part in positions)
+        (index,) = (plain(part) for part in positions)
         if not isinstance(index, int):
             raise ValueError(f"pyct cannot render piece {index} of a split: core writes an int")
-        plain = tuple(_plain(part) for part in split[2:])
-        piece, there = SPLITS[str(split[0])](self.term(split), plain, index)
+        operands = tuple(plain(part) for part in split[2:])
+        piece, there = SPLITS[str(split[0])](self.term(split), operands, index)
         self._hold(there)
         return piece
 
@@ -390,70 +417,6 @@ class _Program:
 def _read_by_a_form(head: Expression) -> bool:
     """Whether an operation's operands are read by a form of one head whatever their type."""
     return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
-
-
-def _leaf(leaf: str | int | float | bool | None) -> str:
-    """A number, a truth value or a string literal.
-
-    A negative int is a subtraction, and a float is its bit pattern, sign and all.
-    """
-    if leaf is None:
-        raise ValueError("pyct cannot render a missing bound outside a slice")
-    if isinstance(leaf, bool):
-        return "true" if leaf else "false"
-    if isinstance(leaf, int):
-        return f"(- {-leaf})" if leaf < 0 else str(leaf)
-    if isinstance(leaf, float):
-        return floats.literal(leaf)
-    return encode(_value(leaf))
-
-
-def _plain(part: Expression) -> int | str | None:
-    """An operand a form takes as it is: an int or a bool, None for a slice's missing bound, or
-    a string literal's str. A name is not one."""
-    if part is None or isinstance(part, int):
-        return part
-    if isinstance(part, str) and _is_literal(part):
-        return _value(part)
-    raise ValueError(
-        f"pyct cannot render {part} as a position, a separator or a fill: core writes a plain "
-        "value there"
-    )
-
-
-def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
-    """An order on two strings as a less-than: against a literal, written letter by letter.
-
-    Between two tracked strings it is cvc5's own `str.<` or `str.<=`. cvc5's
-    order against a literal can run to any time limit where the letters are
-    answered at once: string-order-against-a-literal-letter-by-letter.
-    """
-    or_equal, swapped = STRING_ORDERS[head]
-    pairs = list(zip(operands, rendered, strict=True))
-    (low, low_term), (high, high_term) = reversed(pairs) if swapped else pairs
-    if (literal := _literal(high)) is not None:
-        return below(low_term, literal, or_equal=or_equal)
-    if (literal := _literal(low)) is not None:
-        return above(high_term, literal, or_equal=or_equal)
-    return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"
-
-
-def _is_literal(leaf: str) -> bool:
-    """Whether a str leaf is a string literal, which opens with a quote, or a parameter name."""
-    return leaf.startswith(_QUOTES)
-
-
-def _literal(part: Expression) -> str | None:
-    """The value of an operand that is a string literal, or None for any other operand."""
-    return _value(part) if isinstance(part, str) and _is_literal(part) else None
-
-
-def _value(literal: str) -> str:
-    """The str a string literal, written as repr writes it, holds."""
-    value = ast.literal_eval(literal)
-    if not isinstance(value, str):
-        raise ValueError(f"pyct cannot render {literal}: it is not a string literal")
-    return value
 
 
 def _operator(head: str, kind: type | None) -> str:

@@ -86,6 +86,18 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
     "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
     "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "tracked-index": (["[]", "s", "n"], "s[n]"),
+    "long-enough-for-a-tracked-index": ([">", ["len", "s"], "n"], "len(s) > n"),
+    "reversed": (["==", ["[:]", "s", None, None, -1], "'abc'"], "s[::-1] == 'abc'"),
+    "backward-between-bounds": (["[:]", "s", "n", 0, -1], "s[n:0:-1]"),
+    "slice-at-a-search": (["[:]", "s", None, ["find", "s", "'='"]], "s[:s.find('=')]"),
+    "search-from-a-position": (["find", "s", "'y'", None, "n"], "s.find('y', None, n)"),
+    "tuple-of-prefixes": (
+        ["startswith", "s", ["()", "'GET'", "'POST'"]],
+        "s.startswith(('GET', 'POST'))",
+    ),
+    "tuple-of-one": (["endswith", "s", ["()", "'a'"], "n"], "s.endswith(('a',), n)"),
+    "replace-once": (["replace", "s", "'a'", "'b'", 1], "s.replace('a', 'b', 1)"),
     "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
     "method-on-a-piece": (
         ["removeprefix", ["[:]", "s", 1, None], "'x'"],

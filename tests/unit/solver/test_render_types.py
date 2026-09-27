@@ -46,6 +46,8 @@ FLOAT_TERMS: list[Expression] = [
     ["/", "f", 2.0],
     ["abs", "f"],
 ]
+# a tuple of prefixes, which only a search reads
+TUPLE_TERMS: list[Expression] = [["()", "'a'", "t"]]
 STR_TERMS: list[Expression] = [
     ["+", "s", "'a'"],
     ["[]", "s", 0],
@@ -61,6 +63,8 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["not in", "'a'", "s"],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
+    ["startswith", "s", TUPLE_TERMS[0]],
+    ["endswith", "s", TUPLE_TERMS[0], "n"],
     ["is_integer", "f"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
     *([head, "s"] for head in CHECKS),
@@ -86,7 +90,7 @@ def _asserted(text: str) -> str:
 
 
 def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
-    terms = INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS + LIST_TERMS
+    terms = INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS + LIST_TERMS + TUPLE_TERMS
     assert {_head(term) for term in terms} == set(RESULTS)
 
 

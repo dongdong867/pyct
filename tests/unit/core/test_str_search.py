@@ -184,20 +184,25 @@ def test_a_raising_search_of_a_missing_substring_raises_as_the_targets_after_its
     ]
 
 
+class Position:
+    """An object Python reads a search's position from through its ``__index__``."""
+
+    def __index__(self) -> int:
+        return 1
+
+
 # a taught search in a form pyct does not encode: the call, and the name its downgrade carries
 FORMS_NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
     "past the last character in s": (lambda s: "\U00030000" in s, "__contains__"),
-    "s.find('b', 2)": (lambda s: s.find("b", 2), "find"),
-    "s.find('b', 0, 2)": (lambda s: s.find("b", 0, 2), "find"),
     "s.find(past the last character)": (lambda s: s.find("\U00030000"), "find"),
-    "s.index('b', 2)": (lambda s: s.index("b", 2), "index"),
-    "s.rindex('b', 0, 3)": (lambda s: s.rindex("b", 0, 3), "rindex"),
-    "s.rfind('b', 0, 2)": (lambda s: s.rfind("b", 0, 2), "rfind"),
-    "s.count('b', 2)": (lambda s: s.count("b", 2), "count"),
-    "s.startswith('b', 1)": (lambda s: s.startswith("b", 1), "startswith"),
-    "s.startswith(('x', 'a'))": (lambda s: s.startswith(("x", "a")), "startswith"),
-    "s.endswith('c', 0, 3)": (lambda s: s.endswith("c", 0, 3), "endswith"),
-    "s.endswith(('b',))": (lambda s: s.endswith(("b",)), "endswith"),
+    "s.startswith(('a', past the last character))": (
+        lambda s: s.startswith(("a", "\U00030000")),
+        "startswith",
+    ),
+    # an item that is not a str, which Python never reaches when an earlier item matches
+    "s.startswith(('a', 1))": (lambda s: s.startswith(("a", 1)), "startswith"),  # pyrefly: ignore[bad-argument-type]
+    # a position that is neither an int, a bool, a tracked int nor None
+    "s.find('b', Position())": (lambda s: s.find("b", Position()), "find"),
 }
 
 
@@ -219,8 +224,11 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
 REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s.find(5)": (lambda s: s.find(5), TypeError),  # pyrefly: ignore[bad-argument-type]
     "5 in s": (lambda s: 5 in s, TypeError),  # pyrefly: ignore[unsupported-operation]
-    # a form pyct does not encode raises out of str's own call, with no fork before it
-    "s.index('x', 2)": (lambda s: s.index("x", 2), ValueError),
+    "s.startswith(('x', 1))": (lambda s: s.startswith(("x", 1)), TypeError),  # pyrefly: ignore[bad-argument-type]
+    "s.find('b', 'x')": (lambda s: s.find("b", "x"), TypeError),  # pyrefly: ignore[bad-argument-type]
+    "s.find()": (lambda s: s.find(), TypeError),  # pyrefly: ignore[bad-argument-count]
+    "s.find('b', 1, 2, 3)": (lambda s: s.find("b", 1, 2, 3), TypeError),  # pyrefly: ignore[bad-argument-count]
+    "s.startswith((), 'x')": (lambda s: s.startswith((), "x"), TypeError),  # pyrefly: ignore[bad-argument-type]
     "s.startswith(5)": (lambda s: s.startswith(5), TypeError),  # pyrefly: ignore[bad-argument-type]
 }
 

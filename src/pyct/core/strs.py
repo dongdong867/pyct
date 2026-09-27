@@ -10,6 +10,7 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
 from pyct.core.str_operands import literal, position, within_cvc5
+from pyct.core.str_positions import long_enough, placed, search_positions, slice_bounds
 from pyct.core.str_splits import (
     from_the_right,
     line_ends,
@@ -94,13 +95,44 @@ def _needle(args: tuple[object, ...]) -> Expression | None:
     return _operand(args[0])
 
 
+def _prefixes(items: tuple[object, ...]) -> Expression | None:
+    """A tuple of what startswith or endswith looks for, `["()", sub, ...]`, each item a str
+    the solver reads as it is; None when any item is not one."""
+    forms = [_needle((item,)) for item in items]
+    return None if None in forms else ["()", *forms]
+
+
+def _searched(args: tuple[object, ...], *, tuples: bool) -> list[Expression] | None:
+    """What a taught search is given, in the form pyct encodes: what it looks for, a tuple of
+    them where ``tuples`` allows one, then any start and end (see `search_positions`).
+
+    Any other call is None.
+    """
+    if not args:
+        return None
+    first, *places = args
+    needle = _prefixes(first) if tuples and isinstance(first, tuple) else _needle((first,))
+    positions = search_positions(places)
+    return None if needle is None or positions is None else [needle, *positions]
+
+
+# the search a raising one answers as, where the substring is there
+_MIRRORS = {"index": "find", "rindex": "rfind"}
+
+# an empty tuple of prefixes or suffixes, which no string starts or ends with
+_NOTHING: Expression = ["()"]
+
+
 def _search(
     name: str, answer: type[ConcolicBool] | type[ConcolicInt], *, raises: bool = False
 ) -> Callable[..., object]:
-    """str's own answer to one search, carrying `[name, s, sub]`, as a tracked bool or int.
+    """str's own answer to one search, carrying `[name, s, sub, *positions]`, as a tracked bool
+    or int.
 
-    A search that ``raises`` on a missing substring records whether sub is
-    in s first (see `_found`). A call in a form pyct does not encode, a
+    A search that ``raises`` on a missing substring records whether it
+    finds sub first (see `_found`). startswith and endswith take a tuple;
+    an empty one answers False whatever s holds, so it is str's own plain
+    answer and records nothing. A call in a form pyct does not encode, a
     keyword included, goes to str's own method as written: its answer and a
     downgrade named by the method (``README.md › Rules › downgrades``), or
     the raise str makes of it.
@@ -109,26 +141,37 @@ def _search(
     downgrade = downgraded(str, name)
 
     def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
-        form = None if kwargs else _needle(args)
-        if form is None:
+        forms = None if kwargs else _searched(args, tuples=answer is ConcolicBool)
+        if forms is None:
             return downgrade(self, *args, **kwargs)
+        if forms[0] == _NOTHING:
+            return own(operation, self, *args)
         if raises:
-            _found(self, form, args[0])
-        expression = [name, self.expression, form]
+            _found(self, name, forms, args)
+        expression = [name, self.expression, *forms]
         return answer(own(operation, self, *args), expression=expression, sink=self.sink)
 
     return compute
 
 
-def _found(self: ConcolicStr, form: Expression, sub: object) -> None:
-    """The fork a search takes on its way to a raise: `["in", sub, s]`, taken when sub is there.
+def _found(self: ConcolicStr, name: str, forms: list[Expression], args: tuple[object, ...]) -> None:
+    """The fork a search takes on its way to a raise, taken when it finds sub.
 
-    It goes in before str's own call, the way a division records its zero
-    fork (``README.md › Rules › forks``): a missing sub raises ValueError out
-    of that call, and the raising input's line already lists the fork,
-    taken false. On every path past it sub is in s.
+    Without a position it is `["in", sub, s]`. From a position it is the
+    search it mirrors, `["!=", ["find", s, sub, *positions], -1]`: Python
+    raises exactly where that answers -1, an empty sub past the end
+    included, where `in` on the slice would say found. It goes in before
+    str's own call, the way a division records its zero fork
+    (``README.md › Rules › forks``): a missing sub raises ValueError out of
+    that call, and the raising input's line already lists the fork, taken
+    false. On every path past it sub is found.
     """
-    forked(self.sink, ["in", form, self.expression], own(str.__contains__, self, sub))
+    if len(forms) == 1:
+        forked(self.sink, ["in", forms[0], self.expression], own(str.__contains__, self, args[0]))
+        return
+    mirror = _MIRRORS[name]
+    found = own(getattr(str, mirror), self, *args) != -1
+    forked(self.sink, ["!=", [mirror, self.expression, *forms], -1], found)
 
 
 _CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
@@ -191,53 +234,24 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
     return ConcolicBool(answer, expression=expression, sink=sub.sink)
 
 
-def _bounds(key: object) -> list[Expression] | None:
-    """The start and the stop of a slice pyct encodes, a missing bound as None.
-
-    That slice has no step, and each bound it has is a position pyct encodes.
-    Any other key is None.
-    """
-    if not isinstance(key, slice) or key.step is not None:
-        return None
-    ends = (key.start, key.stop)
-    if not all(end is None or position(end) is not None for end in ends):
-        return None
-    return [None if end is None else position(end) for end in ends]
-
-
-def _long_enough(self: ConcolicStr, index: int) -> None:
-    """The fork an index takes on its way to a raise: whether s is long enough for it.
-
-    `[">", ["len", s], i]` for an index of zero or more, and
-    `[">=", ["len", s], -i]` for a negative one, which counts back from the
-    end. It goes in before str's own index may raise IndexError, as `_found`
-    does for ValueError. str's own length, not `len(s)`, which would record
-    `__len__`.
-    """
-    length = own(str.__len__, self)
-    measured: Expression = ["len", self.expression]
-    if index >= 0:
-        forked(self.sink, [">", measured, index], length > index)
-    else:
-        forked(self.sink, [">=", measured, -index], length >= -index)
-
-
 _GETITEM_DOWNGRADE = downgraded(str, "__getitem__")
 
 
 def _item(self: ConcolicStr, key: object) -> object:
-    """str's own `s[i]` or `s[i:j]`, a tracked str carrying `["[]", s, i]` or `["[:]", s, i, j]`.
+    """str's own `s[i]` or `s[i:j]`, a tracked str carrying `["[]", s, i]` or `["[:]", s, i, j]`,
+    and `["[:]", s, i, j, k]` for a step of 1 or -1.
 
-    An index records whether s is long enough first (see `_long_enough`). A
-    slice clamps to the string, so it records no fork. A key in a form pyct
-    does not encode is str's own answer and a `__getitem__` downgrade.
+    Each position is plain or tracked (see `str_positions`). An index
+    records whether s is long enough first (see `long_enough`). A slice
+    clamps to the string, so it records no fork. A key in a form pyct does
+    not encode is str's own answer and a `__getitem__` downgrade.
     """
-    index = position(key)
-    if index is not None:
-        _long_enough(self, index)
+    index = placed(key)
+    if index is not None and isinstance(key, int):
+        long_enough(self, key, index)
         expression = ["[]", self.expression, index]
         return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
-    bounds = _bounds(key)
+    bounds = slice_bounds(key)
     if bounds is None:
         return _GETITEM_DOWNGRADE(self, key)
     expression = ["[:]", self.expression, *bounds]
@@ -261,17 +275,23 @@ def _replaced_exactly(old: object) -> bool:
 
 
 def _replacement(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
-    """The old and the new string of a replace pyct encodes, or None.
+    """The old and the new string of a replace pyct encodes, and its count if given, or None.
 
-    That replace takes two str arguments the solver reads as they are, and
-    no count, and cvc5 replaces its old string as Python does.
+    That replace takes two str arguments the solver reads as they are. A
+    count of 1 replaces the first old string and 0 none, whatever old is,
+    empty or tracked. No count, or a negative one, replaces every old
+    string, followed where cvc5 replaces it as Python does (see
+    `_replaced_exactly`). A count of two or more, or a tracked one, is None.
     """
-    if len(args) != 2 or not all(_within_cvc5(arg) for arg in args):
+    if not 2 <= len(args) <= 3 or not all(_within_cvc5(arg) for arg in args[:2]):
         return None
-    old, new = args
-    if not _replaced_exactly(old) or not isinstance(new, str):
+    old, new, *count = args
+    times = position(count[0]) if count else -1
+    if not isinstance(old, str) or not isinstance(new, str) or times is None or times > 1:
         return None
-    return [_operand(old), _operand(new)]
+    if times < 0 and not _replaced_exactly(old):
+        return None
+    return [_operand(old), _operand(new), *([times] if count else [])]
 
 
 def _reflected(self: ConcolicStr, other: object) -> object:
@@ -363,7 +383,7 @@ class ConcolicStr(str):
 
     # a position or a count is a tracked int, so `s.find("x") < n` is one fork on s and n, and
     # `in`, `startswith` and `endswith` answer with a tracked bool for the reason the compares
-    # do. index and rindex record their `in` fork before they may raise. A search takes any
+    # do. index and rindex record their found fork before they may raise. A search takes any
     # arguments and hands a form it does not encode to str, so its signature is not str's;
     # the override breaks str's on purpose
     __contains__ = _contains  # pyrefly: ignore[bad-override]
