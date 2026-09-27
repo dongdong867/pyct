@@ -38,6 +38,10 @@ if name == "silent":
 if name == "crashes":
     print(json.dumps(summary)[:20], flush=True)
     os.kill(os.getpid(), 11)
+if name == "prints":
+    # the line the test hands over, as the target's own or pyct run's
+    print(os.environ["SWEEP_TEST_LINE"])
+    sys.exit(0)
 if name.startswith("stray"):
     # the target's own line, which only looks like a summary
     print(json.dumps({"stopped": "the target's own status", "covered": 1}))

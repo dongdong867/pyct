@@ -1,3 +1,4 @@
+import json
 import os
 from pathlib import Path
 
@@ -92,3 +93,54 @@ def test_a_line_the_target_prints_with_stopped_is_no_summary(name: str, code: in
 
     assert (row.status, row.run) == (Status.FAILED, None)
     assert row.reason == f"exit {code}: "
+
+
+# a line with the shape of pyct run's summary line
+SUMMARY: dict[str, object] = {
+    "stopped": "no fork to flip",
+    "inputs": 2,
+    "solver": {"sat": 1, "unsat": 0, "unknown": 0, "timeout": 0},
+    "misses": [],
+    "covered": {"m.py": [1, 2]},
+    "total": {"m.py": 4},
+    "uncovered": {"m.py": [3]},
+    "environment": {"python": "3.12.14", "cvc5": "1.3.4", "platform": "p", "isolated": True},
+}
+
+# every key in turn, with a value of the wrong type
+WRONG = [
+    ("stopped", 1),
+    ("inputs", "2"),
+    ("inputs", True),
+    ("solver", [1]),
+    ("solver", {"sat": "1"}),
+    ("misses", "none"),
+    ("covered", 1),
+    ("covered", [1, 2]),
+    ("covered", {"m.py": ["1"]}),
+    ("covered", {"m.py": [True]}),
+    ("total", "4"),
+    ("total", {"m.py": 4.0}),
+    ("uncovered", {"m.py": 3}),
+    ("environment", None),
+]
+
+
+def printed(line: dict[str, object], monkeypatch: pytest.MonkeyPatch) -> Row:
+    monkeypatch.setenv("SWEEP_TEST_LINE", json.dumps(line))
+    return ran("prints")
+
+
+def test_a_line_with_the_summarys_shape_is_the_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = printed(SUMMARY, monkeypatch)
+
+    assert (row.status, row.run) == (Status.RAN, SUMMARY)
+
+
+@pytest.mark.parametrize(("key", "value"), WRONG)
+def test_a_line_with_every_key_but_one_of_the_wrong_type_is_no_summary(
+    key: str, value: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = printed({**SUMMARY, key: value}, monkeypatch)
+
+    assert (row.status, row.reason, row.run) == (Status.FAILED, "exit 0: ", None)

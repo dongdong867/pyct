@@ -24,7 +24,7 @@ import json
 import os
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TypeGuard
@@ -46,11 +46,6 @@ _BOOT = (
 
 # pyct, started with sweep's own interpreter, so each run has sweep's Python
 PYCT: tuple[str, ...] = (sys.executable, "-P", "-c", _BOOT)
-
-# the keys of the summary line ``pyct run`` prints last (``pyct.results.jsonl.render_summary``)
-SUMMARY_KEYS = frozenset(
-    {"stopped", "inputs", "solver", "misses", "covered", "total", "uncovered", "environment"}
-)
 
 
 def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, ...] = PYCT) -> Row:
@@ -92,9 +87,8 @@ def _summary(stdout: str) -> Mapping[str, object] | None:
     """The last stdout line with the shape of the summary line ``pyct run`` prints last.
 
     The target's own prints reach the same stdout, and one may carry
-    ``stopped`` too, so a line counts only when it has every key the summary
-    has, and coverage in the summary's form. A line a killed run cut short
-    is no line.
+    ``stopped`` too, so a line counts only when it has the summary's shape,
+    ``SUMMARY_SHAPE``. A line a killed run cut short is no line.
     """
     for line in reversed(stdout.splitlines()):
         try:
@@ -107,26 +101,37 @@ def _summary(stdout: str) -> Mapping[str, object] | None:
 
 
 def _is_summary(read: object) -> TypeGuard[dict[str, object]]:
-    """Whether ``read`` has the summary line's keys, and its coverage as lines and counts by
-    file, which is all sweep reads of it."""
-    if not (isinstance(read, dict) and read.keys() >= SUMMARY_KEYS):
-        return False
-    covered, total = read["covered"], read["total"]
-    return (
-        isinstance(read["stopped"], str)
-        and isinstance(covered, dict)
-        and all(_are_lines(lines) for lines in covered.values())
-        and isinstance(total, dict)
-        and all(_is_count(count) for count in total.values())
+    """Whether ``read`` has every key of the summary line, each holding its kind of value."""
+    return isinstance(read, dict) and all(
+        key in read and fits(read[key]) for key, fits in SUMMARY_SHAPE.items()
     )
 
 
-def _are_lines(lines: object) -> bool:
-    return isinstance(lines, list) and all(_is_count(line) for line in lines)
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _is_count(number: object) -> bool:
-    return isinstance(number, int) and not isinstance(number, bool)
+def _is_map(fits: Callable[[object], bool]) -> Callable[[object], bool]:
+    """A check for a JSON object whose every value passes ``fits``."""
+    return lambda value: isinstance(value, dict) and all(fits(item) for item in value.values())
+
+
+def _are_lines(value: object) -> bool:
+    return isinstance(value, list) and all(_is_count(line) for line in value)
+
+
+# the summary line ``pyct run`` prints last (``pyct.results.jsonl.render_summary``): each key,
+# and a check of the kind of value it holds
+SUMMARY_SHAPE: Mapping[str, Callable[[object], bool]] = {
+    "stopped": lambda value: isinstance(value, str),
+    "inputs": _is_count,
+    "solver": _is_map(_is_count),
+    "misses": lambda value: isinstance(value, list),
+    "covered": _is_map(_are_lines),
+    "total": _is_map(_is_count),
+    "uncovered": _is_map(_are_lines),
+    "environment": lambda value: isinstance(value, dict),
+}
 
 
 def _last_line(stderr: str) -> str:
