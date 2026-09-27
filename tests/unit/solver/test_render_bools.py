@@ -6,8 +6,8 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver.cvc5 import Sat, Unsat, solve
-from pyct.solver.render import program
-from tests.unit.solver.test_render import BOOL_TERMS, TYPED_LEAVES, _head
+from tests.unit.solver.test_render import BOOL_TERMS, TYPED_LEAVES, _head, render
+from tests.unit.solver.test_render import _asserted as _assertion_in
 
 SITE = Site(file="m.py", line=2, col=7)
 ABOVE: Expression = [">", "x", 0]
@@ -39,15 +39,9 @@ WRITTEN: dict[str, tuple[Expression, str]] = {
 }
 
 
-def render(prefix: tuple[Branch, ...], leaves: dict[str, type]) -> str:
-    """The program's text alone: the table that reads the answer back is not what these check."""
-    return program(prefix, leaves).text
-
-
 def _asserted(expression: Expression) -> str:
     """The one assertion a one-fork program holds, for the fork taken."""
-    text = render((Branch(expression=expression, taken=True, site=SITE),), INTS)
-    return next(line for line in text.splitlines() if line.startswith("(assert "))
+    return _assertion_in(render((Branch(expression=expression, taken=True, site=SITE),), INTS))
 
 
 @pytest.mark.parametrize(("expression", "term"), WRITTEN.values(), ids=list(WRITTEN))
@@ -60,9 +54,7 @@ def test_a_head_that_builds_a_bool_is_ordered_as_the_int_1_or_0(term: Expression
     text = render((Branch(expression=["<", term, "n"], taken=True, site=SITE),), TYPED_LEAVES)
 
     # Python orders a bool as the int it is, so the term is read as 1 or 0
-    assert next(line for line in text.splitlines() if line.startswith("(assert ")).startswith(
-        "(assert (< (ite "
-    )
+    assert _assertion_in(text).startswith("(assert (< (ite ")
 
 
 def test_a_division_by_a_bool_divides_by_1_or_0() -> None:
