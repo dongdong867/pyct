@@ -101,7 +101,6 @@
 {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.empty_needle::past", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
-{"set": "v2", "target": "targets.strs.float_position::cut", "seed": {"s": "abc", "x": 2.0}, "status": "differs", "only_legacy": [3], "only_v2": []}
 {"set": "v2", "target": "targets.strs.index_out_of_range::pick", "seed": {"s": "ab", "n": 5}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.strs.long_answer::tail_is_z", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.long_or_empty::measure", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
