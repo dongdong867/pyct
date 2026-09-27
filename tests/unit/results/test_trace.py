@@ -106,6 +106,8 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
     "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
     "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "in-a-range": (["in", "port", ["range", 1, 65536]], "port in range(1, 65536)"),
+    "not-in-a-stepped-range": (["not in", 5, ["range", 0, "n", -2]], "5 not in range(0, n, -2)"),
     "tracked-index": (["[]", "s", "n"], "s[n]"),
     "long-enough-for-a-tracked-index": ([">", ["len", "s"], "n"], "len(s) > n"),
     "reversed": (["==", ["[:]", "s", None, None, -1], "'abc'"], "s[::-1] == 'abc'"),

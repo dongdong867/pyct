@@ -7,6 +7,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_in
 
@@ -210,7 +211,13 @@ def tracked_int(value: int, sink: list[SinkItem]) -> ConcolicInt:
 
 @pytest.mark.parametrize(
     ("builtin", "router"),
-    [(int, bound.int_), (float, bound.float_), (bool, bound.bool_), (map, bound.map_)],
+    [
+        (int, bound.int_),
+        (float, bound.float_),
+        (bool, bound.bool_),
+        (map, bound.map_),
+        (range, bound.range_),
+    ],
 )
 def test_python_s_own_conversion_is_handed_pyct_s_router(builtin: object, router: object) -> None:
     assert call(builtin) is router
@@ -244,6 +251,56 @@ def test_a_conversion_router_on_anything_else_is_python_s_own() -> None:
     with pytest.raises(TypeError, match=r"int\(\) can't convert non-string with explicit base"):
         call(int)(n, 10)
     assert sink == []
+
+
+def test_a_range_router_builds_a_tracked_range_when_an_argument_is_tracked() -> None:
+    sink: list[SinkItem] = []
+    n = tracked_int(3, sink)
+
+    for args in ((n,), (0, n), (1, 9, n)):
+        built = call(range)(*args)
+        assert type(built) is ConcolicRange, args
+    assert list(call(range)(0, 7, 3)) == [0, 3, 6]
+    assert type(call(range)(5)) is range
+    assert [type(fork) for fork in sink] == [Branch, Branch]
+
+
+def test_a_range_router_on_anything_else_is_python_s_own() -> None:
+    with pytest.raises(TypeError) as raised:
+        call(range)("ab")
+    with pytest.raises(TypeError) as plain:
+        range("ab")  # pyrefly: ignore[bad-argument-type]
+    assert str(raised.value) == str(plain.value)
+    assert call(range)(True, 3) == range(1, 3)
+
+
+def _condition(answer: object) -> object:
+    """A tracked bool's condition, which it carries untested."""
+    assert type(answer) is ConcolicBool, answer
+    return answer.expression
+
+
+def test_a_tracked_int_in_a_range_is_one_fork_where_it_is_tested() -> None:
+    sink: list[SinkItem] = []
+    port = tracked_int(80, sink)
+
+    inside = in_(port, range(1, 65536))
+    outside = not_in(port, range(0, 10, 2))
+    tracked = in_(5, call(range)(port))
+
+    assert [_condition(answer) for answer in (inside, outside, tracked)] == [
+        ["in", "n", ["range", 1, 65536]],
+        ["not in", "n", ["range", 0, 10, 2]],
+        ["in", 5, ["range", 0, "n"]],
+    ]
+    assert _condition(not_in(5, call(range)(port))) == ["not in", 5, ["range", 0, "n"]]
+    assert sink == []
+
+
+def test_a_plain_item_in_a_plain_range_is_python_s_own_in() -> None:
+    assert in_(3, range(5)) is True
+    assert not_in(3.5, range(5)) is True
+    assert in_("a", range(5)) is False
 
 
 def test_a_str_literal_s_method_given_a_tracked_str_runs_on_a_tracked_str() -> None:
@@ -319,26 +376,16 @@ def test_any_other_method_call_is_the_method_s_own() -> None:
     assert sink == []
 
 
+# the routers blame reads through: the substitutes', the handed operand's, the bound builtins'
+# and the conversions'
+_ROUTERS = {"is_", "is_not", "in_", "not_in", "call", "method", "_on_text", "_tracked_in"}
+_ROUTERS |= {"handed", "answer", "len", "ord", "chr", "_routed", "int_", "float_", "bool_"}
+_ROUTERS |= {"map_", "range_", "itself"}
+
+
 def test_the_passing_frames_are_the_routers() -> None:
     assert {code.co_name for code in PASSING} == {
-        "is_",
-        "is_not",
-        "in_",
-        "not_in",
-        "call",
-        "method",
-        "_on_text",
-        "handed",
-        "answer",
-        "len",
-        "ord",
-        "chr",
-        "_routed",
-        "int_",
-        "float_",
-        "bool_",
-        "map_",
-        "itself",
+        *_ROUTERS,
         # each `math` function's router
         "route",
         # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a

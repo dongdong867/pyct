@@ -95,6 +95,11 @@
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
 {"set": "v2", "target": "targets.nested.keeps_shape::check", "seed": {"items": [0], "config": {}, "note": null}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [4], "only_v2": [8]}
+{"set": "v2", "target": "targets.ranges.bool_item::check", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.ranges.compared::same", "seed": {"n": 2, "m": 2}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.ranges.membership::check", "seed": {"port": 0, "x": 1}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.ranges.sampled::pick", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [6, 8]}
+{"set": "v2", "target": "targets.ranges.untaught::use", "seed": {"n": 2}, "status": "differs", "only_legacy": [], "only_v2": [5, 6, 7, 8, 9]}
 {"set": "v2", "target": "targets.strs.bool_int_text::counted", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [8, 10, 12, 14]}
 {"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]}
 {"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [14, 18, 20, 23, 24, 25]}

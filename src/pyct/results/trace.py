@@ -270,15 +270,27 @@ def _least(level: int, *, right: bool) -> int:
 
 # the functions pyct follows, by head, and how the fork line spells the call: `abs(x)`,
 # `len(s)`, `ord(c)`, `chr(n)`, `round(x)`, the conversions `int(s)`, `float(n)` and `str(n)`,
-# whether a string reads as a number, `isint(s)`, and the `math` functions as Python spells
-# them, `math.floor(x)`. A story that follows one more adds its head here. Any other name is a
-# method on its first operand, so a name Python uses for both, such as `format` or `hex`, reads
-# by what pyct follows rather than by what `builtins` holds
+# whether a string reads as a number, `isint(s)`, a range an `in` or `==` reads, `range(1, n)`,
+# and the `math` functions as Python spells them, `math.floor(x)`. A story that follows one more
+# adds its head here. Any other name is a method on its first operand, so a name Python uses for
+# both, such as `format` or `hex`, reads by what pyct follows rather than by what `builtins` holds
 _MATH = ("floor", "ceil", "trunc", "isfinite", "sqrt", "fabs", "copysign", "isnan", "isinf")
 _FUNCTIONS: Mapping[str, str] = {
     **{
         head: head
-        for head in ("abs", "len", "ord", "chr", "round", "int", "float", "str", "isint", "isfloat")
+        for head in (
+            "abs",
+            "len",
+            "ord",
+            "chr",
+            "round",
+            "int",
+            "float",
+            "str",
+            "isint",
+            "isfloat",
+            "range",
+        )
     },
     **{head: f"math.{head}" for head in (*_MATH, "isclose")},
 }
