@@ -86,7 +86,7 @@ def test_survives_a_repr_that_raises() -> None:
     assert "Traceback" not in result.stderr
 
 
-# the Bug's expected behavior: an int subclass's own reflected method answers first, as Python asks
+# write-an-int-subclass-operand-as-a-plain-int-lets-a-subclass-answer-first
 def test_asks_an_int_subclass_its_own_reflected_method_first() -> None:
     result = run_pyct(f"{OWN_SUBCLASS}::rev", '{"x": -5}', "--in-process")
 

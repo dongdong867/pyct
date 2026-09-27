@@ -268,3 +268,71 @@ def test_a_tracked_bool_or_float_asks_an_int_subclass_nothing_as_python_does() -
         ["+", "f", 3],
     ]
     assert results == [operation(True, 0.5) for operation in operations]
+
+
+class Dial(float):
+    """A float that defines its own reflected operations, which Python asks once int declines."""
+
+    def __radd__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
+        return "Dial's own sum"
+
+    def __rlshift__(self, other: object) -> str:
+        return "Dial's own shift"
+
+    def __rpow__(self, other: object, modulus: object = None) -> str:  # pyrefly: ignore[bad-override]
+        return "Dial's own power"
+
+    def __gt__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
+        return "Dial's own compare"
+
+    def __rmul__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        # the int on the left, handed back as it came: tracked under pyct
+        return other
+
+    def __rsub__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return NotImplemented
+
+
+# each operation where int declines a float and Python asks a float subclass on the right
+DIALED: dict[str, tuple[Callable[[Any, Any], Any], str]] = {
+    "sum": (lambda n, other: n + other, "__add__"),
+    "shift": (lambda n, other: n << other, "__lshift__"),
+    "power": (lambda n, other: n**other, "__pow__"),
+    "compare": (lambda n, other: n < other, "__lt__"),
+}
+
+
+@pytest.mark.parametrize(("operation", "name"), DIALED.values(), ids=DIALED.keys())
+def test_a_float_subclass_answers_beside_a_tracked_int_as_python_asks_it(
+    operation: Callable[[Any, Any], Any], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = operation(n, Dial(2.0))
+
+    assert result == operation(7, Dial(2.0))
+    # the answer is the subclass's own and plain, so the condition is lost and named
+    assert sink == [Downgrade(name=name)]
+
+
+def test_a_tracked_answer_from_a_float_subclass_beside_a_tracked_int_is_no_downgrade() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = n * Dial(2.0)
+
+    assert result is n
+    assert sink == []
+    assert int.__index__(result) == 7 * Dial(2.0)
+
+
+def test_a_float_subclass_that_declines_beside_a_tracked_int_raises_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    with pytest.raises(TypeError):
+        7 - Dial(2.0)
+    with pytest.raises(TypeError):
+        n - Dial(2.0)
+    assert sink == []

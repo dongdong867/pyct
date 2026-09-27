@@ -184,22 +184,27 @@ _REFLECTED = {
 
 
 def answered_first(name: str, self: object, other: object) -> object:
-    """What an int subclass on the right answers first, as Python asks it, or NotImplemented.
+    """What a number subclass on the right of a tracked int answers, as Python asks it, or
+    NotImplemented.
 
     Python asks the right operand's reflected operation first when its type
     is a subclass of the left one's that defines that operation otherwise:
-    `x > r` runs `type(r).__lt__` when the target's own class of `r`
-    defines one. A tracked int stands where the target's plain int would, so
-    pyct asks it too, before anything of int's runs (see `reflected_answer`).
-    A tracked bool or float asks nothing,
-    as Python's bool and float do not: an int subclass subclasses neither.
+    `x > r` runs `type(r).__lt__` when the target's own class of `r` defines
+    one. int declines every float, so Python asks a float subclass next, and
+    it answers the same way: `x + g` runs `type(g).__radd__` when that is not
+    float's own. A tracked int stands where the target's plain int would, so
+    pyct asks either one too, before anything of int's runs (see
+    `reflected_answer`). A tracked bool or float asks an int subclass
+    nothing, as Python's bool and float do not: an int subclass subclasses
+    neither.
     """
     reflected = _REFLECTED.get(name)
+    base = int if isinstance(other, int) else float if isinstance(other, float) else None
     kind = type(other)
-    if reflected is None or not isinstance(other, int) or kind in (int, bool, *_CLASSES):
+    if reflected is None or base is None or kind in (base, bool, *_CLASSES):
         return NotImplemented
-    operation = getattr(kind, reflected)
-    if operation is getattr(int, reflected):
+    operation = getattr(kind, reflected, None)
+    if operation is None or operation is getattr(base, reflected, None):
         return NotImplemented
     return reflected_answer(name, self, other, operation)
 
@@ -223,7 +228,7 @@ def reflected_answer(
 
 
 def asked_first(name: str, method: Callable[..., Any]) -> Callable[..., Any]:
-    """A tracked int's operation by that name, asked of an int subclass on the right first.
+    """A tracked int's operation by that name, asked of a number subclass on the right first.
 
     See `answered_first`. Python asks the right operand first only for a
     call on one operand, so a three-argument `pow` goes to `method` alone.
