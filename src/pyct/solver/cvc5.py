@@ -102,13 +102,14 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
 def _unbounded(prefix: tuple[Branch, ...], leaves: Mapping[str, type], deadline: float) -> Answer:
     """The path with its bounds left out and every double allowed: ``Unsat()`` if even that is.
 
-    Any other answer is ``Unknown()``, and one out of time a ``Timeout()``.
+    A model is ``Unknown()``, since past a bound it may not be Python's; a
+    timeout or a failure is what it is on any other ask.
     """
     asked = _ask_by(program(prefix, leaves, bounded=False), deadline)
     if asked is None:
         return Timeout()
     answer, _ = asked
-    return answer if isinstance(answer, Unsat | Timeout) else Unknown()
+    return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
 
 
 def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:

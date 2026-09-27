@@ -1,33 +1,22 @@
 """An int meeting a double in SMT-LIB, the roundings to an Int, and a bound a form holds."""
 
 import math
-import subprocess
 from pathlib import Path
 
 import pytest
 
 from pyct.core.branch import Expression
-from pyct.solver.answer import Sat, Unknown, Unsat
+from pyct.solver.answer import Error, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.floats import QUOTIENT_BOUND, finite, floor_division, from_int, literal
 from pyct.solver.render import program
 from tests.unit.solver.test_cvc5 import NOT_UNKNOWN, fork
 from tests.unit.solver.test_cvc5_floats import asked, fake_cvc5, needs_cvc5
+from tests.unit.solver.test_float_agreement import _same
+from tests.unit.solver.test_float_int_agreement import _values
 
 LEAVES: dict[str, type] = {"n": int, "m": int, "x": float, "y": float}
 N, M, X = "|arg.n|", "|arg.m|", "|arg.x|"
-
-
-def run_cvc5(lines: list[str]) -> str:
-    """cvc5's first word on a program."""
-    answer = subprocess.run(
-        ["cvc5", "--lang", "smt", "--quiet"],
-        input="\n".join(lines) + "\n",
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    return answer.stdout.split()[0]
 
 
 def _text(expression: Expression, *, cores: bool = False) -> str:
@@ -127,6 +116,19 @@ def test_a_bounded_unsat_is_asked_again_without_its_bound(
     assert "(declare-const e!0 Float64)" not in first
 
 
+def test_a_solver_failure_on_the_ask_without_the_bound_is_the_failure_it_is(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, "unsat\n", '(error "Parse Error: refused")\n')
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    solved = solve((fork(["==", ["//", "n", 2.5], 3.0], taken=True),), {"n": int}, 10.0)
+
+    # a failure is never a miss: the run stops on `solver failed`, as on any other ask
+    assert isinstance(solved, Error)
+    assert "refused" in solved.detail
+
+
 def test_an_unbounded_program_is_asked_nothing_more_after_an_unsat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -171,19 +173,35 @@ def test_a_bool_under_true_division_divides_as_the_int_it_is(
     assert "(fp.div RNE " in text
 
 
-@needs_cvc5
-def test_past_its_bound_the_floor_division_term_can_be_what_python_gives() -> None:
-    # CPython's two roundings move this quotient, past the bound, off the true floor
-    x, y = 9395975219820272.0, 1.1
-    term, _ = floor_division(literal(x), literal(y), "past")
-    lines = [
-        "(set-logic ALL)",
-        "(declare-const past Float64)",
-        f"(assert (fp.eq {term} {literal(x // y)}))",
-        "(check-sat)",
-    ]
+# pairs whose true quotient is past the bound, one per clause of what CPython's `//` is there:
+# a whole double or an infinity, on the quotient's side, and at least 2**49 in size
+PAST_THE_BOUND: dict[str, tuple[float, float]] = {
+    # CPython's two roundings move this quotient off the true floor
+    "moved off the floor": (9395975219820272.0, 1.1),
+    "negative": (-9395975219820272.0, 1.1),
+    "negative divisor": (9395975219820272.0, -1.1),
+    "infinite": (1e300, 1e-300),
+    "minus infinite": (-1e300, 1e-300),
+    "exactly the bound": (2.0**50, 1.0),
+    "exactly minus the bound": (-(2.0**50), 1.0),
+    "just past the bound": (2.0**50 + 1.0, 1.0),
+    "just past minus the bound": (-(2.0**50) - 1.0, 1.0),
+}
 
-    assert run_cvc5(lines) == "sat"
+
+@needs_cvc5
+@pytest.mark.parametrize(("x", "y"), PAST_THE_BOUND.values(), ids=list(PAST_THE_BOUND))
+def test_past_its_bound_the_floor_division_term_can_be_what_python_gives(
+    x: float, y: float
+) -> None:
+    # the constant set to Python's own answer: the term is that answer, or NaN where the
+    # constraint on the constant refuses it
+    term, bound = floor_division(literal(x), literal(y), literal(x // y))
+
+    held, said = _values("Bool", [bound]) + _values("Float64", [term])
+
+    assert held is False
+    assert _same(said, x // y)
 
 
 def test_a_bounded_path_frees_a_held_leaf_its_core_names(

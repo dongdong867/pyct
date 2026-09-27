@@ -93,6 +93,23 @@ def test_cvc5_agrees_with_python_to_the_bit_on_floor_division_inside_its_bound()
 
 
 @needs_cvc5
+def test_past_its_bound_floor_division_can_be_every_value_python_gives() -> None:
+    pairs = [(x, y) for x, y in _divided() if not _inside(x, y)]
+    # the constant past the bound set to Python's own answer, which the term must then be
+    written = [floats.floor_division(literal(x), literal(y), literal(x // y)) for x, y in pairs]
+
+    said = _values("Float64", [term for term, _ in written])
+
+    wrong = [(x, y, s) for (x, y), s in zip(pairs, said, strict=True) if not _same(s, x // y)]
+    assert wrong == []
+    # every side of what CPython gives past the bound is reached
+    answers = [x // y for x, y in pairs]
+    assert {math.inf, -math.inf} <= set(answers)
+    assert any(math.isfinite(a) and a > 0 for a in answers)
+    assert any(math.isfinite(a) and a < 0 for a in answers)
+
+
+@needs_cvc5
 def test_cvc5_agrees_with_python_on_every_rounding_of_a_finite_double() -> None:
     values = [value for value in DIVISION if math.isfinite(value)] + [0.5, 1.5, -0.5, 2.5]
     cases = list(itertools.product(ROUNDINGS, values))
