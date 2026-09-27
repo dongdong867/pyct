@@ -5,8 +5,9 @@ import time
 
 import pytest
 
+from pyct.core.hashed import SEARCHED_MOST
 from pyct.intercept.compiled import SubstitutionError, substituted_code
-from pyct.intercept.substitute import BOUND, WRITTEN_MOST, substitute
+from pyct.intercept.substitute import BOUND, substitute
 
 # the import a module with a substitution starts with
 BINDING = (
@@ -60,7 +61,7 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
         # right, and every other operator
         "a < b < c",
         "a < b is None",
-        "True is a < b",
+        "None is a < b",
         "a == b",
         "not (a == b)",
         # a loop, a comprehension and a pattern hold `in` or `is` but no compare
@@ -92,6 +93,10 @@ def test_other_code_is_left_as_written(source: str) -> None:
         ("1 == flag is True", "1 == flag in __pyct_identity__(True)"),
         ("1 == flag is not False", "1 == flag not in __pyct_identity__(False)"),
         ("a is False < b in c", "a in __pyct_identity__(False) < b in __pyct_searched__(c)"),
+        # with True or False on its left, the right operand is the one pyct reads, so it is
+        # the one the call holds
+        ("True is flag < 3", "True in __pyct_identity__(flag) < 3"),
+        ("0 < False is not flag", "0 < False not in __pyct_identity__(flag)"),
         # a link of any other operator is left to Python, and after a searched link it meets
         # the operand the call holds: a compare runs on it, and an `is` reads it through pyct
         ("a is None < b in c", "a is None < b in __pyct_searched__(c)"),
@@ -145,7 +150,7 @@ def test_a_container_is_handed_over_as_cpython_compiles_it_beside_in(
 
 
 def test_a_larger_display_hands_over_no_elements() -> None:
-    elements = ", ".join(str(n) for n in range(WRITTEN_MOST + 1))
+    elements = ", ".join(str(n) for n in range(SEARCHED_MOST + 1))
     (call,) = statements(f"x in {{{elements}}}")
 
     assert isinstance(call, ast.Expr) and isinstance(call.value, ast.Call)

@@ -11,12 +11,10 @@ type, so this module names no other number's class, and a rounding answers
 a tracked int (decision numbers-typed-by-python-result).
 
 A float's operations take a float, an int or a bool, tracked or plain, as
-float's own do: a bool is the double 1.0 or 0.0. Any other operand gets
-float's own answer: NotImplemented where float gives it, as for a str, and
-a downgrade named by the dunder where float answers. Never NotImplemented
-where float answers: int's own methods answer NotImplemented for a float,
-so that would make a TypeError of what Python answers. A float subclass
-that defines a reflected operation otherwise than float is asked first, as
+float's own do: a bool is the double 1.0 or 0.0. Those are every operand
+float's own operations answer, so any other gets float's NotImplemented, as
+a str does, and Python asks the other operand. A float subclass that
+defines a reflected operation otherwise than float is asked first, as
 Python asks it of a plain float.
 """
 
@@ -123,17 +121,15 @@ def _followed(name: str, followed: Callable[..., object]) -> Binary:
     """An operation on two operands, followed for an operand `_operand` takes.
 
     A float subclass that defines the reflected operation answers first (see
-    `_answered_first`). For any other operand, float's own answer comes with
-    a downgrade named by the dunder, and float's NotImplemented, for a str
-    say, passes through with no downgrade.
+    `_answered_first`). Any other operand is one float's own operation does
+    not take either, so its NotImplemented, for a str say, passes through
+    with no downgrade.
     """
-    downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
         if (first := _answered_first(name, self, other)) is not NotImplemented:
             return first
-        answer = followed(self, other)
-        return downgrade(self, other) if answer is NotImplemented else answer
+        return followed(self, other)
 
     return compute
 

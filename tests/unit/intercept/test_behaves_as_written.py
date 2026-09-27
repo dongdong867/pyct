@@ -57,6 +57,8 @@ PROGRAMS: dict[str, str] = {
     "chain in literal list": "answer = note('c', 0) != note('a', a) in [1,\n    'x']",
     "chain is True": "answer = note('b', b) != note('a', a) is True",
     "chain is not False": "answer = note('a', a) is not False == note('b', b)",
+    "chain True is": "answer = True is note('a', a) != note('b', b)",
+    "chain False is not": "answer = note('c', 0) == False is not note('a', a)",
     "chain in then is": "answer = note('c', 1) in note('a', a) is note('b', b)",
     "chain in then in": "answer = note('c', 1) in note('a', a) in note('b', b)",
     "chain in then <": "answer = note('c', 1) in note('a', a) < note('b', b)",

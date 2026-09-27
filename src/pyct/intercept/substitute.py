@@ -17,11 +17,13 @@ A chained compare keeps its own shape, because CPython holds each operand
 on its stack for the next link. An `in` or `not in` link searches its
 container through ``__pyct_searched__(b)``, and an `is` or `is not` link
 with True or False on its right becomes an `in` or `not in` on
-``__pyct_identity__(True)``: both are Python's own `in`, which asks the
-container, so the link is answered by pyct at the chain's own position.
-The next link meets what the call made as its left operand, so an `is`
-link there becomes an `in` on ``__pyct_identity__`` whatever its right,
-and a compare runs on the operand the call holds.
+``__pyct_identity__(True)``, and one with True or False on its left an
+`in` on ``__pyct_identity__`` of its right operand: both are Python's own
+`in`, which asks the container, so the link is answered by pyct at the
+chain's own position. The next link meets what the call made as its left
+operand, so an `is` link there becomes an `in` on ``__pyct_identity__``
+whatever its right, and a compare runs on the operand the call holds
+(interception-chain-links-searched-through-a-container).
 
 The module binds those names itself, in an import placed before its first
 statement that runs code, after its docstring and its ``__future__``
@@ -41,7 +43,8 @@ display beside `in` is compiled as CPython compiles it there: a list
 becomes a tuple, and a list or set of constants one constant at the
 display's position. A set or dict display whose elements or keys are all
 constants also hands over those constants, in the order written, each once,
-as the display holds them.
+as the display holds them, when there are at most `SEARCHED_MOST`: a larger
+display is searched as any large set is.
 
 Annotations are left alone: under ``from __future__ import annotations``
 Python keeps one as its text, which the seed checks read.
@@ -51,6 +54,7 @@ from __future__ import annotations
 
 import ast
 
+from pyct.core.hashed import SEARCHED_MOST
 from pyct.intercept.positions import constants, first, statement_start
 
 # the name each operator calls
@@ -84,9 +88,6 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
 # the module the bound names come from
 _SUBSTITUTES = "pyct.core.substitutes"
 
-# the largest display whose constants are handed over; a larger one is Python's own lookup
-WRITTEN_MOST = 100
-
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
     ast.arg: "annotation",
@@ -97,7 +98,8 @@ _ANNOTATIONS: dict[type[ast.AST], str] = {
 
 
 def substitute(tree: ast.Module) -> ast.Module:
-    """Replace every compare of the three shapes in the tree, in place, and return the tree.
+    """Replace every compare of the three shapes in the tree, and each `in` or `is` link of a
+    chained compare, in place, and return the tree.
 
     The walk keeps its own stack rather than recursing, so a deeply nested
     expression, such as a long chain of `+`, needs no deeper Python stack
@@ -157,8 +159,11 @@ def _replacement(node: ast.AST) -> ast.expr | None:
 def _chain(compare: ast.Compare) -> ast.Compare | None:
     """The chain with each link to search handed to pyct, or None when it has none."""
     ops, comparators = list(compare.ops), list(compare.comparators)
+    lefts = [compare.left, *compare.comparators[:-1]]
     held = False
     for index, (operator, right) in enumerate(zip(compare.ops, compare.comparators, strict=True)):
+        # a link after one pyct took meets the call's operand on its left
+        held = held or _is_bool(lefts[index])
         link = _link(operator, right, last=index == len(ops) - 1, held=held)
         if link is not None:
             ops[index], comparators[index] = link
@@ -174,8 +179,9 @@ def _link(
 ) -> tuple[ast.cmpop, ast.Call] | None:
     """One link's operator and the container it searches, or None for a link left to Python.
 
-    ``held`` says the link before handed this one a call's operand as its
-    left. Only the last link's container is compiled as CPython compiles it
+    ``held`` says the link's left is a call's operand, which the link before
+    handed on, or the constant True or False: pyct's identity then reads the
+    right. Only the last link's container is compiled as CPython compiles it
     beside `in`, since CPython folds the display of that link alone.
     """
     if isinstance(operator, ast.In | ast.NotIn):
@@ -270,7 +276,7 @@ def _written(folded: tuple[object, ...] | None, display: ast.expr) -> list[ast.e
         return []
     held: set[object] = set()
     kept = [element for element in folded if not (element in held or held.add(element))]
-    return [] if len(kept) > WRITTEN_MOST else [_constant(tuple(kept), display)]
+    return [] if len(kept) > SEARCHED_MOST else [_constant(tuple(kept), display)]
 
 
 def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) -> ast.expr:
