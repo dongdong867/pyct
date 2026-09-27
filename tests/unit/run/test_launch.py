@@ -5,7 +5,6 @@ runner: every command here ends its process itself. The watcher's own end by a s
 recorded instead of raised, so the test runner outlives it.
 """
 
-import contextlib
 import os
 import signal
 import threading
@@ -17,15 +16,7 @@ import pytest
 
 from pyct.run import launch as launch_module
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import (
-    CTRL_C_GRACE,
-    STOP_GRACE,
-    Stopped,
-    _ending,
-    _serve,
-    _Stops,
-    launch,
-)
+from pyct.run.launch import CTRL_C_GRACE, Stopped, _ending, launch
 from pyct.run.process import Waited
 
 MODULE = "some.module"
@@ -359,98 +350,6 @@ def test_the_command_runs_in_this_process_when_no_other_can_start(
     assert signal.pthread_sigmask(signal.SIG_BLOCK, set()) == held
 
 
-def test_the_lifeline_says_the_watcher_is_gone_at_its_end_of_file() -> None:
-    lifeline, kept = os.pipe()
-    os.set_blocking(lifeline, False)
-    stops = _Stops(lifeline)
-    try:
-        # the watcher still holds its end: nothing to read yet
-        assert not stops.alone()
-        # nor is a byte an end of file, though the watcher never writes one
-        os.write(kept, b"!")
-        assert not stops.alone()
-        os.close(kept)
-        assert stops.alone()
-    finally:
-        os.close(lifeline)
-
-
-def test_a_stop_leaves_sigterm_to_its_default_and_starts_one_backstop() -> None:
-    stops = _Stops(None)
-    try:
-        with pytest.raises(Stopped):
-            stops.stop()
-        backstop = stops.backstop
-        with pytest.raises(Stopped):
-            stops.stop()
-
-        assert signal.getsignal(signal.SIGTERM) is signal.SIG_DFL
-        assert backstop is not None
-        assert stops.backstop is backstop
-        # a process of its own: this one runs no thread it did not run before
-        assert not backstop.ended()
-    finally:
-        # the backstop would end this process by SIGTERM, at its default action now
-        stops.cancel()
-    with pytest.raises(ChildProcessError):
-        os.waitpid(backstop.pid, os.WNOHANG)
-
-
-def test_the_backstop_ends_its_parent_after_the_grace() -> None:
-    pid = os.fork()
-    if pid == 0:
-        # the stop's own process: catches the stop and goes on, as swallowing target code does
-        with contextlib.suppress(Stopped):
-            _Stops(None).stop()
-        time.sleep(10)
-        os._exit(0)
-    started = time.monotonic()
-    _, status = os.waitpid(pid, 0)
-
-    assert os.WIFSIGNALED(status)
-    assert os.WTERMSIG(status) == signal.SIGTERM
-    assert STOP_GRACE <= time.monotonic() - started < STOP_GRACE + 2
-
-
-def test_the_command_does_not_run_once_the_watcher_is_gone_already(raised: list[int]) -> None:
-    lifeline, kept = os.pipe()
-    os.close(kept)
-    ran: list[bool] = []
-
-    def command(watch: ImportWatch | None) -> int:
-        ran.append(True)
-        return 0
-
-    try:
-        code = _serve(command, None, signal.pthread_sigmask(signal.SIG_BLOCK, ()), lifeline)
-    finally:
-        os.close(lifeline)
-
-    assert ran == []
-    assert raised == [signal.SIGTERM]
-    assert code == 128 + signal.SIGTERM
-
-
-def test_the_watcher_going_mid_command_stops_it(raised: list[int]) -> None:
-    # this process owns the lifeline here, so the system's SIGIO comes to this test
-    lifeline, kept = os.pipe()
-
-    def command(watch: ImportWatch | None) -> int:
-        os.close(kept)
-        time.sleep(5)
-        return 0
-
-    started = time.monotonic()
-    try:
-        code = _serve(command, None, signal.pthread_sigmask(signal.SIG_BLOCK, ()), lifeline)
-    finally:
-        os.close(lifeline)
-
-    assert raised == [signal.SIGTERM]
-    assert code == 128 + signal.SIGTERM
-    assert time.monotonic() - started < 1
-
-
 def test_with_another_thread_the_command_s_process_starts_fresh_and_is_watched(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -476,3 +375,14 @@ def test_a_signal_that_writes_a_core_is_said_and_not_raised_again(
     assert code == 128 + number
     name = signal.Signals(number).name
     assert capsys.readouterr().err == f"pyct's process was killed by {name}\n"
+
+
+def test_a_sigkill_after_a_sigterm_the_watcher_got_is_the_sigterm_s(
+    raised: list[int], capsys: pytest.CaptureFixture[str]
+) -> None:
+    # the guard ends by SIGKILL what the SIGTERM could not, during the import too
+    code = _ending(Waited(signal=signal.SIGKILL, code=None), MODULE, [signal.SIGTERM])
+
+    assert raised == [signal.SIGTERM]
+    assert code == 128 + signal.SIGTERM
+    assert capsys.readouterr().err == ""

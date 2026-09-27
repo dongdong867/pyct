@@ -128,6 +128,7 @@
     {"set": "v2", "module": "targets.load.ends_its_process_at_import", "left_out": "ends its process at import by design"},
     {"set": "v2", "module": "targets.load.exits_at_import", "left_out": "exits at import by design"},
     {"set": "v2", "module": "targets.load.exits_cleanly_at_import", "left_out": "exits at import by design"},
+    {"set": "v2", "module": "targets.load.hangs_in_c_at_import", "left_out": "spends minutes in one C call at import, by design"},
     {"set": "v2", "module": "targets.load.interrupted_at_import", "left_out": "raises KeyboardInterrupt at import by design"},
     {"set": "v2", "module": "targets.load.slow_import", "left_out": "takes thirty seconds to import, then ends its process, by design"},
     {"set": "v2", "module": "targets.load.slow_inputs", "left_out": "sleeps in every input by design"},

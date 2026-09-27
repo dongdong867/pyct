@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.run.launch import STOP_GRACE
+from pyct.run.guard import STOP_GRACE
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
     is_running,
@@ -35,6 +35,7 @@ SEGFAULT = "targets.isolate.segfault::fault"
 SWALLOWS_AT_IMPORT = "targets.load.swallows_stops_at_import::f"
 SWALLOWS_IN_A_CALL = "targets.load.swallows_stops_in_a_call::f"
 TELLS_ITS_PATH = "targets.load.tells_its_path::f"
+HANGS_IN_C_AT_IMPORT = "targets.load.hangs_in_c_at_import::f"
 # how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
 SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
 # how soon after the signal every process of the run must have ended
@@ -323,3 +324,37 @@ def test_a_sigkill_to_pyct_ends_a_fresh_pyct_process_and_its_input(tmp_path: Pat
 
         assert not is_running(child)
         assert group_ended(process.pid)
+
+
+# pyct's process in one long C call runs no Python handler, and still ends on a SIGTERM
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param((HANGS_IN_C_AT_IMPORT, '{"x": 0}'), id="at-import"),
+        pytest.param((C_HANG, '{"x": 0}', "--in-process"), id="in-a-call"),
+    ],
+)
+def test_a_sigterm_ends_pyct_s_process_in_c_code(argv: tuple[str, ...], tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with in_a_session(pid_file, *argv) as process:
+        pid_written_to(pid_file, process)
+        sent = time.monotonic()
+        os.kill(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)
+        took = time.monotonic() - sent
+
+        assert process.returncode == -signal.SIGTERM
+        assert took < SWALLOWED_ENDED_WITHIN, took
+        assert group_ended(process.pid)
+
+
+# the watcher killed while pyct's process is in one long C call: that process ends too
+def test_a_sigkill_to_pyct_ends_its_process_in_c_code(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with in_a_session(pid_file, HANGS_IN_C_AT_IMPORT, '{"x": 0}') as process:
+        importing = pid_written_to(pid_file, process)
+        os.kill(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+
+        assert group_ended(process.pid, within=SWALLOWED_ENDED_WITHIN)
+        assert not is_running(importing)
