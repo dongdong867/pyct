@@ -459,7 +459,7 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     compares = {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__"}
     searches = {"__contains__", "startswith", "endswith", "count"}
     positions = {"find", "index", "rfind", "rindex"}
-    pieces = {"__getitem__", "__add__", "replace", "removeprefix", "removesuffix"}
+    pieces = {"__getitem__", "__add__", "join", "replace", "removeprefix", "removesuffix"}
     checks = {"isdigit", "isdecimal", "isnumeric", "isalpha", "isalnum", "isspace", "isupper"}
     checks |= {"islower", "isascii", "isprintable", "istitle", "isidentifier"}
     cases = {"upper", "lower", "capitalize", "title", "swapcase", "casefold"}

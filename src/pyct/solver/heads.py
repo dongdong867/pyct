@@ -24,7 +24,7 @@ from pyct.solver.positions import (
 )
 from pyct.solver.recased import TO_DECLARE
 from pyct.solver.spans import equal, unequal, within, without
-from pyct.solver.splits import SPLITS
+from pyct.solver.splits import COUNTED, SPLITS
 from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
@@ -98,6 +98,8 @@ RESULTS: Mapping[str, type | None] = {
     # a split builds a list, which SMT-LIB has no sort for here: its term is the string it splits,
     # and only its pieces are read, each through `[]`
     **dict.fromkeys(SPLITS, list),
+    # whether a split has no more pieces than a join of it reads
+    COUNTED: bool,
 }
 
 # Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one
@@ -250,6 +252,9 @@ BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
 # form sees a position's sign and cuts a padding to its width. An index and a slice also take
 # a tracked position, as its Int term
 POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced, **PADDINGS}
+
+# the heads whose operands a form of that head reads whatever their type
+READ_BY_A_FORM = frozenset({*CHECKS, *POSITIONED, *SPLITS, *TO_DECLARE})
 
 # the heads whose positions may be tracked: an index and a slice here, and each search and
 # replace in `FORMS` by the operand its positions start at, past the string and what it looks

@@ -22,5 +22,7 @@ _ROWS: dict[type, type] = {
     ConcolicList: list,
     ConcolicRange: range,
 }
+# each tracked class, which a router asks of a plain value's items before it hands them to Python
+TRACKED_CLASSES = frozenset(_ROWS)
 values.BASES.update(_ROWS)
 values.BASES_BY_ID.update({id(tracked): base for tracked, base in _ROWS.items()})

@@ -177,6 +177,12 @@ BASES_BY_ID: dict[int, type] = {}
 _EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
 
 
+def base_value(kind: type) -> object:
+    """A plain value of a base type, as Python's own ``kind`` builds one: from nothing, or from
+    0 for a range. What Python says of it names its type in Python's words."""
+    return kind(*_EMPTY.get(kind, ()))
+
+
 def _base_class(self: object) -> type:
     """The class a tracked value reports: its base type, as Python's own value reads it."""
     return BASES[type(self)]
@@ -186,8 +192,7 @@ def _assigned_class(self: object, kind: object) -> None:
     """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
     error, in its words, as it refuses every class for an int, float, str, bool, list or range.
     """
-    base = BASES[type(self)]
-    own(setattr, base(*_EMPTY.get(base, ())), "__class__", kind)
+    own(setattr, base_value(BASES[type(self)]), "__class__", kind)
 
 
 # a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it

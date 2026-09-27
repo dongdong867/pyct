@@ -39,7 +39,8 @@ import types
 from collections.abc import Callable
 from typing import Any, cast
 
-from pyct.core import bound, ranges, str_literals, strs
+from pyct.core import bound, ranges, str_joins, str_literals, strs
+from pyct.core.bases import TRACKED_CLASSES
 from pyct.core.bools import ConcolicBool
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
@@ -249,6 +250,31 @@ def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: o
     return receiver_method(*args, **kwargs)
 
 
+def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: object) -> Any:
+    """A call written ``"text".join(...)``, on a str literal or a name bound only to str
+    literals, as ``receiver_method(...)``.
+
+    Given one argument, it joins as a tracked separator holding the
+    literal's text joins (`str_joins.joined`), so a tracked list, or a
+    tracked value among the items, makes the answer tracked. A plain list or
+    tuple that holds no tracked value is the method's own, as is any other
+    call, through `method`. Only the types of the method, its receiver, the
+    argument and a plain argument's items are read.
+    """
+    plain = not kwargs and len(args) == 1 and type(args[0]) in _SEQUENCES
+    if plain and TRACKED_CLASSES.isdisjoint(map(type, cast("list[object]", args[0]))):
+        return receiver_method(*args)
+    receiver = getattr(receiver_method, "__self__", None)
+    written = type(receiver_method) is types.BuiltinMethodType and type(receiver) is str
+    if kwargs or len(args) != 1 or not written:
+        return method(receiver_method, *args, **kwargs)
+    return str_joins.joined(cast(str, receiver), args[0], ConcolicStr)
+
+
+# what str's own join reads as it is, without walking it, and so does a join here
+_SEQUENCES = (list, tuple)
+
+
 def _on_text(
     receiver_method: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
 ) -> Any:
@@ -273,6 +299,7 @@ PASSING: frozenset[types.CodeType] = (
             _tracked_in,
             call,
             method,
+            join,
             _on_text,
             Searched.__contains__,
             Identity.__contains__,

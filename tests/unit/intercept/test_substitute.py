@@ -299,6 +299,7 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_handed__": "handed",
         "__pyct_call__": "call",
         "__pyct_method__": "method",
+        "__pyct_join__": "join",
     }
     assert all(hasattr(substitutes, function) for function in BOUND.values())
 
