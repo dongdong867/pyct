@@ -35,6 +35,15 @@
 {"set": "realworld", "target": "werkzeug.http::parse_dict_header", "seed": {"value": "realm=\"test\", nonce=\"abc123\", qop=\"auth\""}, "status": "differs", "only_legacy": [366, 369, 370], "only_v2": []}
 {"set": "realworld", "target": "werkzeug.http::parse_range_header", "seed": {"value": "bytes=0-499, 500-999"}, "status": "differs", "only_legacy": [811, 813, 815, 816, 818, 829], "only_v2": []}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
+{"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.floats.arithmetic::count", "seed": {"x": 0.0, "y": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8]}
+{"set": "v2", "target": "targets.floats.is_integer::whole", "seed": {"x": 2.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.floats.literals::count", "seed": {"x": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.floats.nan_beside_finite::count", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.floats.nan_or_infinity::kind", "seed": {"x": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.floats.rounding_exact::hit", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.floats.truth_test::tell", "seed": {"x": 1.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ints.compare_deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.constant_power::root", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ints.counted_up::count_up", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}
