@@ -25,10 +25,11 @@ by a signal the watcher got too, that ending is the signal's, not the
 import's, so the watcher ends the same way.
 
 The command's process ends on a SIGTERM as on a Ctrl-C: it ends its
-input's process and cvc5 on the way out, then ends by the SIGTERM. Its
-guard, a small process it starts first (see ``guard``), sends it that
-SIGTERM once the watcher is gone, however the watcher went, so a SIGKILL
-sent to the pid the shell got still ends the whole run. When target code
+input's process and cvc5 on the way out, then ends by the SIGTERM. The
+watcher's guard, a small process the watcher starts as its own child
+(see ``guard``), sends it that SIGTERM once the watcher is gone, however
+the watcher went, so a SIGKILL sent to the pid the shell got still ends
+the whole run while the guard runs. When target code
 keeps the command's process from acting on a SIGTERM, by one long call in
 C or by catching the stop, the guard ends it by SIGKILL about
 ``STOP_GRACE`` later.
@@ -44,6 +45,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Generator, Iterable, Sequence
+from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.run.child import flush_streams
@@ -63,8 +65,7 @@ CTRL_C_GRACE = 0.5
 # the signals the watcher notes; they are held from before the fork until it does
 _NOTED = _PASSED_ON | {signal.SIGINT}
 
-# names the page's descriptor, and the lifeline's the guard reads, to a command's process
-# started fresh
+# names the page's descriptor to a command's process started fresh
 _HANDED = "PYCT_WATCHED_BY"
 # what a command's process started fresh runs: this process's import path, which holds the pyct
 # this process runs, and then that pyct, as ``python -m pyct``; so the target's import path is
@@ -111,7 +112,8 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     that could start a thread. A thread already running, such as one a
     host's ``sitecustomize`` started, makes a fork unsafe, so the command's
     process then starts as a fresh interpreter that runs the same command
-    line and finds the page and the lifeline through ``_HANDED``.
+    line and finds the page through ``_HANDED``. Either way this process
+    then starts the guard (see ``guard``), as a child of its own.
     """
     handed = os.environ.pop(_HANDED, None)
     if handed is not None:
@@ -122,18 +124,31 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     try:
         watch = ImportWatch.for_command_line(argv)
         lifeline, kept = os.pipe()
-        pid = _spawned(watch, lifeline, argv, held) if threaded else os.fork()
+        pid = _spawned(watch, argv, held) if threaded else os.fork()
     except OSError:
-        return _serve(command, None, held, None)
+        return _serve(command, None, held)
     # coverage.py cannot see these lines: they run in the child, in a frame begun before the fork
     if pid == 0:  # pragma: no cover
+        # pyct's process holds no end of the lifeline, so the guard reads its end of file
+        # once the watcher is gone, and no guard is a child of pyct's process
         os.close(kept)
-        return _serve(command, watch, held, lifeline)
+        os.close(lifeline)
+        return _serve(command, watch, held)
+    child = Child(pid)
+    watching = _Lifeline(kept=kept, guard=guard(lifeline, pid))
     os.close(lifeline)
-    return _watch(Child(pid), watch, held, kept, threaded)
+    return _watch(child, watch, held, watching, threaded)
 
 
-def _spawned(watch: ImportWatch, lifeline: int, argv: Sequence[str], held: Iterable[int]) -> int:
+@dataclass(frozen=True)
+class _Lifeline:
+    """The watcher's end of the lifeline, and the guard reading the other end, if it started."""
+
+    kept: int
+    guard: Child | None
+
+
+def _spawned(watch: ImportWatch, argv: Sequence[str], held: Iterable[int]) -> int:
     """Start the command's process as a fresh interpreter, and return its pid.
 
     It runs the pyct this process runs, with this interpreter's flags and
@@ -143,38 +158,33 @@ def _spawned(watch: ImportWatch, lifeline: int, argv: Sequence[str], held: Itera
     standard streams are this process's own, and it starts with ``held``
     as its mask.
     """
-    for fd in (watch.fd, lifeline):
-        os.set_inheritable(fd, True)
+    os.set_inheritable(watch.fd, True)
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
     fresh = [sys.executable, *flags, "-P", "-c", _BOOT, json.dumps(sys.path), *argv]
-    environment = {**os.environ, _HANDED: f"{watch.fd},{lifeline}"}
+    environment = {**os.environ, _HANDED: str(watch.fd)}
     return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
 
 
 def _serve_handed(command: Command, handed: str) -> int:
-    """Serve as a command's process started fresh, on the descriptors ``handed`` names.
+    """Serve as a command's process started fresh, on the page's descriptor ``handed`` names.
 
-    Its mask came with its start. The descriptors stop being inherited
-    here, so the processes it starts in turn do not hold them.
+    Its mask came with its start. The descriptor stops being inherited
+    here, so the processes it starts in turn do not hold it.
     """
-    page, lifeline = (int(fd) for fd in handed.split(","))
-    for fd in (page, lifeline):
-        os.set_inheritable(fd, False)
+    page = int(handed)
+    os.set_inheritable(page, False)
     held = signal.pthread_sigmask(signal.SIG_BLOCK, ())
-    return _serve(command, ImportWatch(page), held, lifeline)
+    return _serve(command, ImportWatch(page), held)
 
 
-def _serve(
-    command: Command, watch: ImportWatch | None, held: Iterable[int], lifeline: int | None
-) -> int:
-    """Run ``command`` as the command's process, which stops on a SIGTERM, guarded when watched.
+def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int:
+    """Run ``command`` as the command's process, which stops on a SIGTERM.
 
     The SIGTERM raises ``Stopped`` wherever the process is, as a Ctrl-C
     raises KeyboardInterrupt, so the input's process and cvc5 are ended on
-    the way out, and then the process ends by SIGTERM. When the watcher
-    gave a lifeline, the guard starts first, on it (see ``guard``); this
-    process ends and reaps the guard on every ending of its own.
+    the way out, and then the process ends by SIGTERM. When target code
+    keeps the handler from running, the watcher's guard ends the process.
 
     The handler goes in before the mask becomes ``held``. A forked command's
     process has SIGTERM blocked from before the fork until then, so none
@@ -182,14 +192,7 @@ def _serve(
     need not block SIGTERM, so a SIGTERM before its handler takes the
     default action and ends it, as a stop would.
     """
-    guarded = None if lifeline is None else guard(lifeline)
-    if lifeline is not None:
-        os.close(lifeline)
-    try:
-        code = _stoppable(command, watch, held)
-    finally:
-        if guarded is not None:
-            guarded.end()
+    code = _stoppable(command, watch, held)
     return _end_by(signal.SIGTERM) if code is None else code
 
 
@@ -220,19 +223,25 @@ def _stop(_number: int, _frame: object) -> NoReturn:
     stop()
 
 
-def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int, threaded: bool) -> int:
+def _watch(
+    child: Child, watch: ImportWatch, held: Iterable[int], lifeline: _Lifeline, threaded: bool
+) -> int:
     """Wait for the command's process to end, then end as it did or say which import ended it.
 
-    ``kept`` is the lifeline's write end, which the guard reads the other
-    end of, closed once the command's process is gone.
+    Once the command's process is gone, this process ends and reaps the
+    guard, then closes its end of the lifeline. A guard that has waited out
+    its grace in the moment between the reap and its own end sends its
+    SIGKILL to a pid no process holds yet.
     """
     signaled: list[int] = []
     try:
-        with _noting(signaled, child, held, kept):
+        with _noting(signaled, child, held, lifeline.kept):
             waited = _waited(child, threaded)
     finally:
         child.end()
-        os.close(kept)
+        if lifeline.guard is not None:
+            lifeline.guard.end()
+        os.close(lifeline.kept)
     return _ending(waited, watch.module(), signaled)
 
 

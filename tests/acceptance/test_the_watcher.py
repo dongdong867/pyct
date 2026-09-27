@@ -37,6 +37,9 @@ SWALLOWS_IN_A_CALL = "targets.load.swallows_stops_in_a_call::f"
 TELLS_ITS_PATH = "targets.load.tells_its_path::f"
 HANGS_IN_C_AT_IMPORT = "targets.load.hangs_in_c_at_import::f"
 CATCHES_ONE_STOP = "targets.load.catches_one_stop_at_import::f"
+FORKS_WORKERS = "targets.load.forks_workers::f"
+REAPS_ALL_AT_IMPORT = "targets.load.reaps_all_at_import::f"
+IGNORES_SIGCHLD = "targets.load.ignores_sigchld::f"
 # how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
 SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
 # how soon after the signal every process of the run must have ended
@@ -377,3 +380,40 @@ def test_a_ctrl_c_during_the_grace_leaves_the_guard_to_end_the_run(
         assert process.returncode == -signal.SIGTERM
         assert took < SWALLOWED_ENDED_WITHIN, took
         assert group_ended(process.pid)
+
+
+def run_briefly(*argv: str) -> subprocess.CompletedProcess[str]:
+    """``pyct run *argv`` with 10 seconds to end in, so a hang fails the test soon."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    return subprocess.run(
+        [sys.executable, "-P", "-m", "pyct", "run", *argv],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+
+
+# target code in pyct's process sees no child of pyct's: it can wait for every child it has
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param((FORKS_WORKERS, '{"x": 0}', "--in-process"), id="reaps-in-a-call"),
+        pytest.param((REAPS_ALL_AT_IMPORT, '{"x": 0}'), id="reaps-at-import"),
+        pytest.param((IGNORES_SIGCHLD, '{"x": 0}', "--in-process"), id="ignores-sigchld"),
+    ],
+)
+def test_target_code_that_waits_for_every_child_runs_as_it_did(argv: tuple[str, ...]) -> None:
+    result = run_briefly(*argv)
+
+    assert result.returncode == 0, result.stderr
+    assert "stopped" in json.loads(result.stdout.splitlines()[-1])
+
+
+# with SIGCHLD ignored, pyct's own wait for a forked input fails as it did, and does not hang
+def test_a_target_that_ignores_sigchld_does_not_hang_pyct() -> None:
+    result = run_briefly(IGNORES_SIGCHLD, '{"x": 0}')
+
+    assert result.returncode is not None
