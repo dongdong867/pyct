@@ -77,6 +77,14 @@ UNTAUGHT: dict[str, tuple[Callable[[int], object], str]] = {
 REFLECTED = "def probe(b):\n    return 7 // b\n"
 DIVIDE = "def probe(a, b):\n    return a % b\n"
 DIVMOD = "def probe(a, b):\n    return divmod(a, b)\n"
+# divmod with the bool on either side: the probe's arguments, the two nodes, the values, and
+# whether the bool is the divisor, the one side that forks
+BOOL_DIVMODS: dict[
+    str, tuple[Callable[[object], tuple[object, ...]], list[object], tuple[int, int], bool]
+] = {
+    "divmod(b, 2)": (lambda b: (b, 2), [["//", ABOVE, 2], ["%", ABOVE, 2]], (0, 1), False),
+    "divmod(10, b)": (lambda b: (10, b), [["//", 10, ABOVE], ["%", 10, ABOVE]], (10, 0), True),
+}
 DIVISION_SITE = Site(file="<probe>", line=2, col=11)
 
 
@@ -252,6 +260,28 @@ def test_an_int_divided_by_a_bool_forks_on_its_condition() -> None:
     assert sink == [Branch(expression=ABOVE, taken=True, site=DIVISION_SITE)]
     assert isinstance(result, tuple)
     assert [part.expression for part in result] == [["//", "x", ABOVE], ["%", "x", ABOVE]]
+
+
+@pytest.mark.parametrize(
+    ("arguments", "nodes", "answer", "divisor"), BOOL_DIVMODS.values(), ids=list(BOOL_DIVMODS)
+)
+def test_divmod_with_a_bool_divides_the_int_it_is(
+    arguments: Callable[[object], tuple[object, ...]],
+    nodes: list[object],
+    answer: tuple[int, int],
+    divisor: bool,
+) -> None:
+    sink: list[SinkItem] = []
+    above, _ = _conditions(sink)
+
+    result = _probe(DIVMOD)(*arguments(above))
+
+    assert isinstance(result, tuple)
+    assert json.dumps([part.expression for part in result]) == json.dumps(nodes)
+    assert tuple(int.__int__(part) for part in result) == answer
+    # only a tracked divisor forks, and a bool forks on its own condition
+    fork = Branch(expression=ABOVE, taken=True, site=DIVISION_SITE)
+    assert sink == ([fork] if divisor else [])
 
 
 def test_a_division_by_a_false_bool_raises_with_its_fork_recorded() -> None:
