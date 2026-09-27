@@ -1,9 +1,11 @@
 """A condition used as a value: a Bool term, read as the Int 1 or 0 where a number is needed."""
 
+from collections.abc import Callable
+
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.cvc5 import Sat, solve
+from pyct.solver.cvc5 import Sat, Unsat, solve
 from pyct.solver.render import render
 
 SITE = Site(file="m.py", line=2, col=7)
@@ -54,6 +56,82 @@ def test_a_division_by_a_bool_divides_by_1_or_0() -> None:
         f"(assert (= (ite (or (> {divisor} 0) (= (mod 10 {divisor}) 0))"
         f" (div 10 {divisor}) (- (div 10 {divisor}) 1)) 10))",
     ]
+
+
+# a division form on two bools: the condition, and the term the form writes. Each bool is read
+# by the form as the number it is, defined once as the Bool it is
+BOTH = ("(ite e!0 1 0)", "(ite e!1 1 0)")
+AGREES = f"(or (> {BOTH[1]} 0) (= (mod {BOTH[0]} {BOTH[1]}) 0))"
+FORMS_ON_TWO_BOOLS: dict[str, tuple[Expression, str]] = {
+    "//": (
+        ["==", ["//", ABOVE, BELOW], 1],
+        f"(= (ite {AGREES} (div {BOTH[0]} {BOTH[1]}) (- (div {BOTH[0]} {BOTH[1]}) 1)) 1)",
+    ),
+    "%": (
+        ["==", ["%", ABOVE, BELOW], 0],
+        f"(= (ite {AGREES} (mod {BOTH[0]} {BOTH[1]}) (+ (mod {BOTH[0]} {BOTH[1]}) {BOTH[1]})) 0)",
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("expression", "term"), FORMS_ON_TWO_BOOLS.values(), ids=list(FORMS_ON_TWO_BOOLS)
+)
+def test_a_division_of_two_bools_divides_their_numbers(expression: Expression, term: str) -> None:
+    text = render((Branch(expression=expression, taken=True, site=SITE),), INTS)
+
+    assert text.splitlines()[3:6] == [
+        "(define-fun e!0 () Bool (> x 0))",
+        "(define-fun e!1 () Bool (> y 0))",
+        f"(assert {term})",
+    ]
+
+
+FLOORED: Expression = ["==", ["//", ABOVE, BELOW], 1]
+REMAINDER: Expression = ["==", ["%", ABOVE, BELOW], 0]
+
+
+def _floored(x: int, y: int) -> bool:
+    return (x > 0) // (y > 0) == 1
+
+
+def _remainder(x: int, y: int) -> bool:
+    return (x > 0) % (y > 0) == 0
+
+
+@pytest.mark.parametrize(
+    ("expression", "taken", "python"),
+    [
+        pytest.param(FLOORED, True, _floored, id="// taken"),
+        pytest.param(FLOORED, False, _floored, id="// not taken"),
+        pytest.param(REMAINDER, True, _remainder, id="% taken"),
+    ],
+)
+def test_cvc5_divides_two_bools_past_the_divisors_fork_as_python_does(
+    expression: Expression, taken: bool, python: Callable[[int, int], bool]
+) -> None:
+    # core records the divisor's own condition, taken, before it divides
+    prefix = (
+        Branch(expression=BELOW, taken=True, site=SITE),
+        Branch(expression=expression, taken=taken, site=SITE),
+    )
+
+    answer = solve(prefix, INTS, 10.0)
+
+    assert isinstance(answer, Sat), answer
+    x, y = (answer.model.get(name, 0) for name in ("x", "y"))
+    assert isinstance(x, int) and isinstance(y, int)
+    assert y > 0 and python(x, y) is taken
+
+
+def test_cvc5_finds_no_bool_left_over_from_a_true_divisor() -> None:
+    # a bool modulo a true bool is always 0, in Python and in the program render writes
+    prefix = (
+        Branch(expression=BELOW, taken=True, site=SITE),
+        Branch(expression=REMAINDER, taken=False, site=SITE),
+    )
+
+    assert isinstance(solve(prefix, INTS, 10.0), Unsat)
 
 
 def test_a_bool_held_twice_is_defined_once_as_a_bool() -> None:
