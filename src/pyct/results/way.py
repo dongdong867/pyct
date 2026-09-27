@@ -88,6 +88,7 @@ class Flow:
         self._order = {n: at for at, n in enumerate(_postorder(graph.successors, graph.entry))}
         self._idom = _dominators(graph.successors, graph.entry, self._order)
         self._normal = frozenset(_postorder(graph.normal, graph.entry))
+        self._after: dict[int, frozenset[int]] = {}
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
@@ -158,12 +159,39 @@ class Flow:
         holders = self._graph.blocks_of(line)
         return bool(holders) and not any(block in self._normal for block in holders)
 
-    def last_yield(self, nodes: frozenset[int]) -> int | None:
-        """The line of the yield in the latest of ``nodes`` that holds one, or None."""
-        held = [node for node in nodes if node in self._graph.yields and node in self._order]
-        if not held:
-            return None
-        return self._graph.yields[min(held, key=self._order.__getitem__)]
+    def yield_lines(self) -> frozenset[int]:
+        """The lines that hold a yield: a ``yield``, a ``yield from`` or an ``await``."""
+        return frozenset(self._graph.yields.values())
+
+    def after(self, line: int) -> frozenset[int]:
+        """The lines a run can go on to once it has run ``line``."""
+        if line not in self._after:
+            starts = [
+                each for block in self._holders(line) for each in self._graph.successors[block]
+            ]
+            held = self._graph.held
+            reached = _postorder(self._graph.successors, *starts)
+            self._after[line] = frozenset(at for node in reached for at in held.get(node, ()))
+        return self._after[line]
+
+    def straight(self, start: int, line: int) -> bool:
+        """Whether a run that ran ``start`` goes on to ``line`` with no condition and no raise
+        between them, so only a raise or an ending could keep it from the line.
+
+        From every block that holds ``start``: a line such as a ternary's holds
+        the blocks on both sides of its test, and a run in the first may not
+        have gone on at all.
+        """
+        graph = self._graph
+        plain = [
+            [each for each in following if each not in graph.steps]
+            for following in graph.successors
+        ]
+        ends = set(self._holders(line))
+        holders = self._holders(start)
+        return bool(holders) and all(
+            ends.intersection(_postorder(plain, *plain[block])) for block in holders
+        )
 
     def raises_toward(self, line: int) -> frozenset[int]:
         """The raise nodes entered from a block ``line`` can still be reached from."""
@@ -230,9 +258,13 @@ class _Graph:
         for index, block in enumerate(blocks):
             for target, step in exits(block, blocks, index, splits):
                 builder.join(index, builder.block_at(target), step)
+        for start, covered in handler_ranges(code, blocks):
+            if blocks[builder.block_at(start)][0].name == "END_ASYNC_FOR":
+                builder.ends_an_async_for(start, covered)
         normal = [list(each) for each in builder.successors]
         for start, covered in handler_ranges(code, blocks):
-            builder.raise_into(start, covered)
+            if blocks[builder.block_at(start)][0].name != "END_ASYNC_FOR":
+                builder.raise_into(start, covered)
         normal += [[] for _ in range(len(builder.successors) - len(normal))]
         yields = {
             index: op.line
@@ -308,6 +340,20 @@ class _Builder:
         into = self.node()
         self.steps[into] = Step(StepKind.HANDLER, first or 0, 0, True)
         self.raises = (*self.raises, into)
+        self.successors[into].append(target)
+        for offset in covered:
+            self.successors[self.block_at(offset)].append(into)
+
+    def ends_an_async_for(self, start: int, covered: Iterable[int]) -> None:
+        """An ``async for``'s end: the loop running out, the false side of its step.
+
+        Python ends the loop by a raise into its END_ASYNC_FOR block; the side is
+        the loop's own, at the iterable's column as a plain ``for``'s is.
+        """
+        target = self.block_at(start)
+        ending = self.blocks[target][0]
+        into = self.node()
+        self.steps[into] = Step(StepKind.CONDITION, ending.line or 0, ending.col or 0, False)
         self.successors[into].append(target)
         for offset in covered:
             self.successors[self.block_at(offset)].append(into)

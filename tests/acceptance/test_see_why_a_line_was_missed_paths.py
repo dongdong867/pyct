@@ -212,3 +212,86 @@ def test_a_generator_its_caller_stopped_asking_is_suspended_at_its_yield() -> No
     }
     why = f"why 3, 4 in {file}: suspended at the yield on {file}:2"
     assert why in result.stderr.splitlines()
+
+
+# see-why-a-line-was-missed-says-inputs-ended-before-a-line
+def test_a_generator_that_raised_past_its_yield_ended_before_the_line() -> None:
+    target, file = spec("raised_past", "raised_past")
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    # the caller asked again, and `{}["k"]` raised on line 3: the generator went on past line 2
+    assert entry_for(result.stdout, 4) == {"file": file, "lines": [4], "reason": "ended before"}
+
+
+# see-why-a-line-was-missed-says-a-generator-was-left-suspended
+@pytest.mark.parametrize(
+    ("module", "function", "line", "at"),
+    [("at_await", "at_await", 6, 5), ("via_yield_from", "via_yield_from", 8, 7)],
+    ids=["await", "yield from"],
+)
+def test_a_frame_left_inside_an_await_or_a_yield_from_is_suspended_there(
+    module: str, function: str, line: int, at: int
+) -> None:
+    target, file = spec(module, function)
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    assert entry_for(result.stdout, line) == {
+        "file": file,
+        "lines": [line],
+        "reason": "suspended",
+        "yield": {"file": file, "line": at},
+    }
+
+
+# see-why-a-line-was-missed-says-a-plain-condition-recorded-no-fork
+def test_the_line_after_an_async_for_waits_on_the_loop_running_out() -> None:
+    target, file = spec("async_for", "async_for")
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    # the loop's end is a handler in the compiled code, but it is the loop's own false side
+    assert cause(entry_for(result.stdout, 12)) == {
+        "reason": "no fork",
+        "condition": {"file": file, "line": 10, "col": 19, "side": False},
+    }
+
+
+# the async and generator shapes a run leaves part way, each with the cause its lines read
+SHAPES = [
+    ("async_with", 13, {"reason": "not taken", "line": 12}),
+    ("async_gen", 23, {"reason": "suspended", "yield": 22}),
+    ("yield_in_finally", 41, {"reason": "suspended", "yield": 40}),
+    ("await_in_comprehension", 59, {"reason": "not called"}),
+]
+
+
+# see-why-a-line-was-missed-accounts-for-every-uncovered-line-once
+@pytest.mark.parametrize(("function", "line", "expected"), SHAPES, ids=[row[0] for row in SHAPES])
+def test_async_and_generator_shapes_left_part_way_each_read_their_cause(
+    function: str, line: int, expected: dict[str, object]
+) -> None:
+    target, _ = spec("async_shapes", function)
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    entry = entry_for(result.stdout, line)
+    assert entry["reason"] == expected["reason"]
+    if "line" in expected:
+        assert entry["condition"]["line"] == expected["line"]  # type: ignore[index]
+    if "yield" in expected:
+        assert entry["yield"]["line"] == expected["yield"]  # type: ignore[index]
+
+
+def test_a_generator_expression_a_caller_stops_asking_leaves_no_line_behind() -> None:
+    target, _ = spec("async_shapes", "genexpr")
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    assert 55 not in summary_line(result.stdout)["uncovered"][spec("async_shapes", "")[1]]  # type: ignore[index]

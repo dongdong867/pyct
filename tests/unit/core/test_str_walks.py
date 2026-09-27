@@ -1,8 +1,6 @@
 """A walk over a tracked str: one fork a pass at the line where the walk runs, and each
 character a tracked str, as indexing hands it out, with no long-enough fork of its own."""
 
-from unittest.mock import ANY
-
 import pytest
 
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem, Site
@@ -159,4 +157,4 @@ def test_list_asks_for_the_length_first_as_python_does() -> None:
     _walked("listed", _tracked("ab", sink))
 
     # list sizes itself by `__len__` before it walks, and pyct has not taught `len(s)`
-    assert sink[0] == Downgrade(name="__len__", site=ANY)
+    assert sink[0] == Downgrade(name="__len__", site=Site(file="<probe>", line=11, col=11))

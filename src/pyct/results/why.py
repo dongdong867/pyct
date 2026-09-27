@@ -233,18 +233,46 @@ class _Walk:
     def _suspended(self, line: int) -> int | None:
         """The line of the yield an input was left at on its way to the line, if one was.
 
-        The input reached a yield from which the line could still be reached,
-        did not end, and never came back: its caller stopped asking for values.
+        The input did not end, and the last line it ran toward the line holds a
+        yield: its frame stopped there and never came back, because its caller
+        stopped asking for values.
         """
-        frontier = self._frontier(line)
-        toward = self.flow.toward(line)
-        for each, marked in zip(self.seen.inputs, self._marks, strict=True):
-            if each.failed or (frontier is not None and frontier not in marked):
-                continue
-            at = self.flow.last_yield(marked & toward)
-            if at is not None:
-                return at
-        return None
+        yields = self.flow.yield_lines()
+        found = [
+            last
+            for each in self.seen.inputs
+            if not each.failed
+            for last in self._last_lines(each, line)
+            if last in yields
+        ]
+        return max(found, default=None)
+
+    def _raised_out(self, line: int) -> bool:
+        """Whether an input's frame left the function by a raise its caller caught.
+
+        The input did not fail, and the last line it ran toward the line goes on
+        to the line with no condition between: only a raise out of the frame, or
+        a yield it stayed at, kept it from the line.
+        """
+        yields = self.flow.yield_lines()
+        return any(
+            True
+            for each in self.seen.inputs
+            if not each.failed
+            for last in self._last_lines(each, line)
+            if last not in yields and self.flow.straight(last, line)
+        )
+
+    def _last_lines(self, each: _Input, line: int) -> list[int]:
+        """The lines an input ran toward the line that no later line it ran came after."""
+        ran = [at for at in each.lines if at != line and line in self.flow.after(at)]
+        return [
+            at
+            for at in ran
+            if not any(
+                other in self.flow.after(at) and at not in self.flow.after(other) for other in ran
+            )
+        ]
 
     def _frontier(self, line: int) -> int | None:
         """The deepest node on the line's way some input is shown to have passed."""
@@ -289,7 +317,7 @@ class _Walk:
 
         It failed, or it raised on the way to the line, even when the function
         caught the raise and went on: a raise entered from a block the line can
-        still be reached from.
+        still be reached from, or a raise out of the frame its caller caught.
         """
         frontier = self._frontier(line)
         away = self.flow.raises_toward(line)
@@ -298,7 +326,7 @@ class _Walk:
                 continue
             if each.failed or marked & away:
                 return True
-        return False
+        return self._raised_out(line)
 
     @functools.cached_property
     def _marks(self) -> list[frozenset[int]]:

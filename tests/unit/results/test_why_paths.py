@@ -276,23 +276,41 @@ def test_a_generator_that_failed_past_its_yield_ended_before_the_line(tmp_path: 
     assert entries[-1] == WhyEntry(file=file, lines=(3, 4), reason=Reason.ENDED_BEFORE)
 
 
+def test_a_raise_out_of_a_frame_its_caller_caught_ended_the_input(tmp_path: Path) -> None:
+    source = """\
+    def f(x):
+        y = int(x)
+        return y
+    """
+    file = module(tmp_path, source)
+    # line 2 ran and line 3 did not, yet the input did not fail: line 2 raised out of the frame,
+    # and the frame's caller caught it
+    walked = [Walked(forks=(), failed=False, lines=frozenset({2}))]
+
+    assert why(file, ({3}, {2}), walked) == (
+        WhyEntry(file=file, lines=(3,), reason=Reason.ENDED_BEFORE),
+    )
+
+
 def test_facts_no_cause_explains_are_logged_as_such(
     tmp_path: Path, caplog: pytest.LogCaptureFixture
 ) -> None:
     source = """\
     def f(x):
-        y = 1
-        return y
+        try:
+            y = 1
+        finally:
+            z = 2
+        return z
     """
     file = module(tmp_path, source)
-    # line 2 ran, no input ended, and nothing stands between line 2 and line 3: facts no run
-    # of this code gives, so no cause explains them and the log says so
-    walked = [Walked(forks=(), failed=False, lines=frozenset({2}))]
+    # the finally body ran with the try body before it never run: facts no run of this code
+    # gives, so no cause explains them and the log says so
+    walked = [Walked(forks=(), failed=False, lines=frozenset({5, 6}))]
 
     with caplog.at_level(logging.WARNING, logger="pyct.results.why"):
-        (entry,) = why(file, ({3}, {2}), walked)
+        (entry,) = why(file, ({3}, {5, 6}), walked)
 
     assert entry.reason is Reason.ENDED_BEFORE
-    assert caplog.messages == [
-        f"no cause explains line 3 of {file}; it is put down as ended before"
-    ]
+    said = f"no cause explains line 3 of {file}; it is put down as ended before"
+    assert caplog.messages == [said]
