@@ -228,7 +228,7 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "next(iter(s))": (lambda s: next(iter(s)), "__iter__"),
 }
 
-# what stays str's own and records nothing: a dict key, a debugger's read, pickling, the size
+# str's own, recording nothing: a dict key, a debugger's read, `__getnewargs__`, the size
 KEPT_CALLS: dict[str, Callable[[str], object]] = {
     "hash(s)": hash,
     "repr(s)": repr,

@@ -66,7 +66,8 @@ def plain(value: object, kind: type) -> object:
     ``kind``'s own ``__getnewargs__`` answers what the value is rebuilt from,
     as pickle rebuilds a subclass of it, and reads the value without calling
     any method a concolic type overrides, so nothing is recorded. ``kind``
-    then builds its own value from that.
+    then builds its own value from that, so a compare's answer, which int
+    reads as 1 or 0, comes back a bool.
     """
     return kind(*kind.__getnewargs__(value))
 
@@ -106,6 +107,40 @@ def downgraded(
         return own(plain, self, base) if result is self else result
 
     return downgrade
+
+
+# what pickle is handed for a value: the type that rebuilds it, and what that type is called with
+type Pickled = tuple[type, tuple[object]]
+
+
+def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]:
+    """A tracked value's ``__reduce_ex__`` and ``__reduce__``: its plain value, loading as ``kind``.
+
+    pickle asks a tracked value for ``__reduce_ex__`` at every protocol, so
+    no pickle rebuilds a concolic type through a ``__new__`` that needs an
+    expression and a sink, and no pickle holds the sink. A pickle can load in
+    another process or a later input, where the condition does not apply, so
+    writing one is a downgrade named by the method Python called, and the
+    value that was pickled keeps its condition (pickle-holds-the-plain-value).
+    Each takes the arguments Python's own does: one protocol, and none. The
+    copy module asks for ``__copy__`` and ``__deepcopy__`` first, so a copy
+    stays the value itself.
+    """
+
+    def reduce_ex(self: _Sinked, protocol: int, /) -> Pickled:
+        # every protocol writes the same
+        return _written(self, own(plain, self, kind), "__reduce_ex__")
+
+    def reduce(self: _Sinked, /) -> Pickled:
+        return _written(self, own(plain, self, kind), "__reduce__")
+
+    return reduce_ex, reduce
+
+
+def _written(value: _Sinked, held: object, name: str) -> Pickled:
+    """Record writing a pickle as a downgrade, and answer with its plain value and type."""
+    value.sink.append(Downgrade(name=name))
+    return type(held), (held,)
 
 
 def _called_on_a_value(member: object) -> bool:
