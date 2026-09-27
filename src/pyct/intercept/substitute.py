@@ -1,6 +1,7 @@
-"""The compares pyct substitutes where the target writes them.
+"""The operations pyct substitutes where the target writes them.
 
-Three shapes, each a compare with one operator:
+The compares with `is` and `in` are here, in three shapes, each a compare
+with one operator:
 
 - ``a is True``, ``a is not False``, ``True is a``: `is` or `is not` with
   the constant True or False on one side;
@@ -25,13 +26,18 @@ Positions follow the compiled code, not the source text. The call takes the
 compare's whole position, which is where CPython puts the compare's own
 instruction and the jump that tests it, even under a folded ``not``. The
 name sits on the line where the left operand's first instruction does
-(`positions.first`), so it adds no line: a plain name, since CPython moves
+(`positions.Parts.named`), so it adds no line: a plain name, since CPython moves
 a method call's own instruction to its attribute's line. A container
 display beside `in` is compiled as CPython compiles it there: a list
 becomes a tuple, and a list or set of constants one constant at the
 display's position. A set or dict display whose elements or keys are all
 constants also hands over those constants, in the order written, each once,
 as the display holds them.
+
+The operators a plain number on the left may hand to a tracked value are
+`operators`', and the calls of a conversion or of a method str has are
+`calls`'. Each rule takes the node the walk meets, and a node no rule takes
+stays as written.
 
 Annotations are left alone: under ``from __future__ import annotations``
 Python keeps one as its text, which the seed checks read.
@@ -41,7 +47,8 @@ from __future__ import annotations
 
 import ast
 
-from pyct.intercept.positions import constants, first, statement_start
+from pyct.intercept import calls, operators
+from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
 _NAMES: dict[type[ast.cmpop], str] = {
@@ -50,12 +57,14 @@ _NAMES: dict[type[ast.cmpop], str] = {
     ast.In: "__pyct_in__",
     ast.NotIn: "__pyct_not_in__",
 }
-# the function of pyct.core.substitutes each of those names is bound to
+# the function of pyct.core.substitutes each name any rule calls is bound to
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
     "__pyct_in__": "in_",
     "__pyct_not_in__": "not_in",
+    **operators.BOUND,
+    **calls.BOUND,
 }
 _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.Is: ast.IsNot,
@@ -80,15 +89,19 @@ _ANNOTATIONS: dict[type[ast.AST], str] = {
 
 
 def substitute(tree: ast.Module) -> ast.Module:
-    """Replace every compare of the three shapes in the tree, in place, and return the tree.
+    """Replace every operation a rule takes in the tree, in place, and return the tree.
 
     The walk keeps its own stack rather than recursing, so a deeply nested
     expression, such as a long chain of `+`, needs no deeper Python stack
-    than a shallow one. A tree with a substitution binds the names it calls.
+    than a shallow one. Which parts may fold is worked out once, before the
+    walk. A tree with a substitution binds the names it calls, and only
+    those, so a module's import costs one name per kind of operation it
+    substitutes.
     """
+    parts = Parts(tree)
     pending: list[ast.AST] = [tree]
     classes: list[ast.ClassDef] = []
-    substituted = False
+    called: set[str] = set()
     while pending:
         node = pending.pop()
         if isinstance(node, ast.ClassDef):
@@ -98,29 +111,29 @@ def substitute(tree: ast.Module) -> ast.Module:
             if field == skipped:
                 continue
             if isinstance(value, list):
-                value[:] = [_visited(item, pending) for item in value]
+                value[:] = [_visited(item, pending, parts) for item in value]
             elif isinstance(value, ast.AST):
-                setattr(node, field, _visited(value, pending))
-        substituted = substituted or _calls_a_substitute(node)
-    if substituted:
-        _bind(tree, classes)
+                setattr(node, field, _visited(value, pending, parts))
+        if isinstance(node, ast.Name) and node.id in BOUND:
+            called.add(node.id)
+    if called:
+        _bind(tree, classes, [name for name in BOUND if name in called])
     return tree
 
 
-def _visited(node: object, pending: list[ast.AST]) -> object:
+def _visited(node: object, pending: list[ast.AST], parts: Parts) -> object:
     """The node, or the call that replaces it, queued so the walk goes on inside it."""
     if not isinstance(node, ast.AST):
         return node
-    replacement = _replacement(node) or node
+    replacement = (
+        _compared(node, parts) or operators.replaced(node, parts) or calls.replaced(node, parts)
+    )
+    replacement = replacement or node
     pending.append(replacement)
     return replacement
 
 
-def _calls_a_substitute(node: ast.AST) -> bool:
-    return isinstance(node, ast.Name) and node.id in BOUND
-
-
-def _replacement(node: ast.AST) -> ast.Call | None:
+def _compared(node: ast.AST, parts: Parts) -> ast.Call | None:
     """The call that replaces a compare of the three shapes, or None for any other node."""
     folded = _folded(node)
     if folded is None:
@@ -129,7 +142,7 @@ def _replacement(node: ast.AST) -> ast.Call | None:
     left, right = compare.left, compare.comparators[0]
     if operator in (ast.Is, ast.IsNot) and not (_is_bool(left) or _is_bool(right)):
         return None
-    function = _function(_NAMES[operator], left)
+    function = parts.named(_NAMES[operator], left)
     arguments = [left, right] if operator in (ast.Is, ast.IsNot) else [left, *_container(right)]
     return ast.copy_location(ast.Call(func=function, args=arguments, keywords=[]), compare)
 
@@ -154,19 +167,6 @@ def _folded(node: ast.AST) -> tuple[ast.Compare, type[ast.cmpop]] | None:
 def _is_bool(node: ast.expr) -> bool:
     """Whether the node is the constant True or False itself, not a value equal to one."""
     return isinstance(node, ast.Constant) and (node.value is True or node.value is False)
-
-
-def _function(name: str, left: ast.expr) -> ast.Name:
-    """The function's name, placed where the left operand's first instruction is."""
-    start = first(left)
-    return ast.Name(
-        id=name,
-        ctx=ast.Load(),
-        lineno=start.lineno,
-        col_offset=start.col_offset,
-        end_lineno=start.lineno,
-        end_col_offset=start.col_offset,
-    )
 
 
 def _container(display: ast.expr) -> list[ast.expr]:
@@ -212,7 +212,7 @@ def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) 
     return ast.copy_location(ast.Constant(value=value), display)  # pyrefly: ignore[bad-argument-type]
 
 
-def _bind(tree: ast.Module, classes: list[ast.ClassDef]) -> None:
+def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> None:
     """Import the names into the module, and declare them global in every class body.
 
     The import goes before the module's first statement that runs code, at
@@ -225,21 +225,19 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef]) -> None:
     for index in range(start, len(body)):
         found = statement_start(body[:start], body[index])
         if found is not None:
-            body.insert(index, _imported(*found))
+            body.insert(index, _imported(names, *found))
             break
     for owner in classes:
         place = _after_preamble(owner.body, module=False)
         where = owner.body[min(place, len(owner.body) - 1)]
-        declared = ast.Global(names=list(BOUND))
+        declared = ast.Global(names=names)
         owner.body.insert(place, _at(declared, where.lineno, where.col_offset))
 
 
-def _imported(line: int, column: int) -> ast.ImportFrom:
+def _imported(names: list[str], line: int, column: int) -> ast.ImportFrom:
     """``from pyct.core.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
-    names = [
-        _at(ast.alias(name=function, asname=name), line, column) for name, function in BOUND.items()
-    ]
-    return _at(ast.ImportFrom(module=_SUBSTITUTES, names=names, level=0), line, column)
+    aliases = [_at(ast.alias(name=BOUND[name], asname=name), line, column) for name in names]
+    return _at(ast.ImportFrom(module=_SUBSTITUTES, names=aliases, level=0), line, column)
 
 
 def _after_preamble(body: list[ast.stmt], *, module: bool) -> int:
