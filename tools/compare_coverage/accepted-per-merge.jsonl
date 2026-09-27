@@ -14,6 +14,7 @@
 {"set": "v2", "target": "targets.bools.hashed_membership::pick", "seed": {"s": "none", "n": 0}, "status": "differs", "only_legacy": [11], "only_v2": [8]}
 {"set": "v2", "target": "targets.bools.hundred::within", "seed": {"n": -1}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.bools.identity::check", "seed": {"flag": false, "x": 0}, "status": "differs", "only_legacy": [5], "only_v2": [3, 6, 8]}
+{"set": "v2", "target": "targets.bools.two_flags::same", "seed": {"flag": true, "other": true}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.flip.order::order", "seed": {"s": "a", "t": "b"}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.arithmetic::count", "seed": {"x": 0.0, "y": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8]}
