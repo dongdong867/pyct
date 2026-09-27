@@ -2,6 +2,8 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
 [--solver-timeout SECONDS] [--in-process]``
+
+``pyct sweep PACKAGE --list``
 """
 
 from __future__ import annotations
@@ -37,11 +39,14 @@ from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
+from pyct.sweep.listing import PackageImportError, list_package
+from pyct.sweep.rows import closing, row_line, summary_line, told
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
 )
+SWEEP_USAGE = "pyct sweep PACKAGE --list"
 
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -66,6 +71,14 @@ class RunCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     in_process: bool = False
+
+
+@dataclass(frozen=True)
+class SweepCommand:
+    """What ``pyct sweep`` was asked for: the package, and whether only to list its entries."""
+
+    package: str
+    list_only: bool = False
 
 
 def entry() -> int:
@@ -109,6 +122,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
+        if isinstance(command, SweepCommand):
+            return _sweep(command)
         target, seed, limits = _checked(command, watch)
         result = run(
             target,
@@ -120,7 +135,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, SolverAnswerError, TargetError) as error:
+    except (SolverMissingError, SolverAnswerError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
@@ -146,6 +161,24 @@ def _checked(
     check_seed_types(target, seed)
     locate()
     return target, seed, limits
+
+
+def _sweep(command: SweepCommand) -> int:
+    """List the package's entries: each row on stdout with its stderr line, then the summary.
+
+    Running the entries is not built yet, so ``--list`` is required.
+    """
+    if not command.list_only:
+        raise UsageError(f"pyct sweep runs no entry yet; pass --list\nusage: {SWEEP_USAGE}")
+    rows = list_package(command.package)
+    for row in rows:
+        _line(row_line(row))
+        said = told(row)
+        if said is not None:
+            print(said, file=sys.stderr, flush=True)
+    print(closing(command.package, rows), end="", file=sys.stderr, flush=True)
+    _line(summary_line(command.package, rows))
+    return 0
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
@@ -184,10 +217,13 @@ def _is_a_bug(failure: Failure | None) -> bool:
     return failure is not None and failure.kind is FailureKind.PYCT_BUG
 
 
-def parse_command(argv: Sequence[str]) -> RunCommand:
+def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``."""
-    parser = _Parser(prog="pyct", usage=USAGE)
+    parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
+    sweep_parser = commands.add_parser("sweep", usage=SWEEP_USAGE)
+    sweep_parser.add_argument("package", metavar="PACKAGE")
+    sweep_parser.add_argument("--list", dest="list_only", action="store_true")
     run_parser = commands.add_parser("run", usage=USAGE)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
@@ -197,6 +233,8 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
     namespace = parser.parse_args(argv)
+    if namespace.command == "sweep":
+        return SweepCommand(package=namespace.package, list_only=namespace.list_only)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
@@ -356,4 +394,4 @@ class _Parser(argparse.ArgumentParser):
     """An argparse parser that raises UsageError instead of exiting."""
 
     def error(self, message: str) -> NoReturn:
-        raise UsageError(f"{message}\nusage: {USAGE}")
+        raise UsageError(f"{message}\nusage: {self.usage}")

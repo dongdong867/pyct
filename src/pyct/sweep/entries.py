@@ -1,0 +1,208 @@
+"""The entries one swept module holds, each named by the module whose file holds its code.
+
+``pyct run`` counts the lines of the module it names, so an entry is named
+by the module whose file holds its code, under a name that module gives it
+(sweep-names-an-entry-by-the-file-that-holds-its-code). A function that
+``dateutil/parser/__init__.py`` re-exports from ``._parser`` is
+``dateutil.parser._parser::parse``, and a function several modules export is
+one entry.
+
+A public name is one in ``__all__``, or, with no ``__all__``, one without a
+leading underscore. It holds an entry when it holds a function, looked at
+through ``__wrapped__``, or a class, whose code is in a ``.py`` file of a
+module of the swept package. A class is an entry when its constructor is
+Python code, since ``pyct run MODULE::Class`` calls it. Each method a class's
+own body defines under a public name is listed too, and skipped until
+``pyct run`` can call one.
+"""
+
+import inspect
+import os
+import sys
+from collections.abc import Mapping
+from dataclasses import dataclass
+from types import ModuleType
+
+from pyct.sweep.seeds import NoSeedError, seed_of
+
+METHOD = "pyct run cannot call a method yet"
+GENERATED = "generated code"
+
+# the attributes whose Python code makes a class's constructor Python code
+CONSTRUCTORS = ("__init__", "__new__")
+
+
+@dataclass(frozen=True)
+class Entry:
+    """One entry: its module and name, and its seed, or the reason it is skipped."""
+
+    module: str
+    name: str
+    seed: Mapping[str, object] | None = None
+    skip: str | None = None
+
+
+def entries_in(module: ModuleType, package: str) -> list[Entry]:
+    """Every entry the public names of ``module``, a module of ``package``, hold."""
+    found = _Package(package)
+    return [entry for name in public_names(module) for entry in found.entries(module, name)]
+
+
+def public_names(module: ModuleType) -> list[str]:
+    """The names in ``__all__`` when the module defines it, else every name without ``_``."""
+    listed = getattr(module, "__all__", None)
+    if isinstance(listed, list | tuple):
+        return [name for name in listed if isinstance(name, str)]
+    return [name for name in vars(module) if not name.startswith("_")]
+
+
+class _Package:
+    """The swept package as its modules stand now: which file is which module's, and which
+    names each module gives the functions and classes it holds."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.files = _files(name)
+        self.holders: dict[str, dict[int, list[str]]] = {}
+
+    def entries(self, module: ModuleType, name: str) -> list[Entry]:
+        """The entries the public name ``name`` of ``module`` holds: none, one, or a class's."""
+        try:
+            value = getattr(module, name)
+        except Exception:
+            return []
+        if isinstance(value, type):
+            return self._class_entries(value, module.__name__, name)
+        target = function_of(value)
+        if target is None:
+            return []
+        return self._function_entries(target, module.__name__, name)
+
+    def _function_entries(self, target: object, found_in: str, found_as: str) -> list[Entry]:
+        file = _code_file(target)
+        if file is None:
+            owner = getattr(target, "__module__", None)
+            generated = isinstance(owner, str) and _within(owner, self.name)
+            return [Entry(found_in, found_as, skip=GENERATED)] if generated else []
+        home = self.files.get(os.path.realpath(file))
+        if home is None:
+            return []
+        name = self._name_in(home, target)
+        if name is None:
+            return [_unnamed(home, found_in, found_as)]
+        return [seeded(home, name, vars(sys.modules[home])[name])]
+
+    def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
+        file = _class_file(cls)
+        home = None if file is None else self.files.get(os.path.realpath(file))
+        constructed = _python_constructor(cls)
+        methods = own_methods(cls)
+        if home is None or not (constructed or methods):
+            return []
+        name = self._name_in(home, cls)
+        if name is None:
+            return [_unnamed(home, found_in, found_as)]
+        rows = [Entry(home, f"{name}.{method}", skip=METHOD) for method in methods]
+        return [seeded(home, name, cls), *rows] if constructed else rows
+
+    def _name_in(self, home: str, target: object) -> str | None:
+        """The name ``home`` gives ``target``: its own name when that holds it, else the first."""
+        if home not in self.holders:
+            self.holders[home] = _holders(sys.modules[home])
+        names = self.holders[home].get(id(target), [])
+        own = getattr(target, "__name__", None)
+        if own in names:
+            return own
+        return min(names, default=None)
+
+
+def _unnamed(home: str, found_in: str, found_as: str) -> Entry:
+    """Code whose home module holds it under no name, as a factory's function: skipped, named
+    where it was found."""
+    return Entry(found_in, found_as, skip=f"no name in {home} holds it")
+
+
+def seeded(module: str, name: str, value: object) -> Entry:
+    """The entry with the seed sweep gives ``value``, or skipped with the reason it has none."""
+    try:
+        return Entry(module, name, seed=seed_of(value))  # pyrefly: ignore[bad-argument-type]
+    except NoSeedError as error:
+        return Entry(module, name, skip=str(error))
+
+
+def function_of(value: object) -> object | None:
+    """The Python function ``value`` is, or wraps through ``__wrapped__``, or None.
+
+    A staticmethod or classmethod is read at its function. ``inspect.unwrap``
+    raises on a wrapper loop, which is no function either.
+    """
+    if isinstance(value, staticmethod | classmethod):
+        value = value.__func__
+    if not callable(value):
+        return None
+    try:
+        target = inspect.unwrap(value)
+    except Exception:
+        return None
+    return target if inspect.isfunction(target) else None
+
+
+def own_methods(cls: type) -> list[str]:
+    """The public names the class's own body gives a function, static and class methods too."""
+    return [
+        name
+        for name, value in vars(cls).items()
+        if not name.startswith("_") and function_of(value) is not None
+    ]
+
+
+def _python_constructor(cls: type) -> bool:
+    """Whether the ``__init__`` or ``__new__`` the class takes is Python code, generated or not."""
+    return any(function_of(getattr(cls, name, None)) is not None for name in CONSTRUCTORS)
+
+
+def _class_file(cls: type) -> str | None:
+    """The file that holds the class's code: that of a function its own body defines, else
+    that of the module ``__module__`` names, which a library may have rewritten."""
+    prefix = f"{cls.__qualname__}."
+    for value in list(vars(cls).values()):
+        target = function_of(value)
+        file = _code_file(target)
+        if file is not None and getattr(target, "__qualname__", "").startswith(prefix):
+            return file
+    file = getattr(sys.modules.get(cls.__module__), "__file__", None)
+    return file if isinstance(file, str) else None
+
+
+def _code_file(target: object) -> str | None:
+    """The source file a function's code was compiled from, or None when there is none."""
+    code = getattr(target, "__code__", None)
+    file = getattr(code, "co_filename", None)
+    return file if isinstance(file, str) and os.path.isfile(file) else None
+
+
+def _files(package: str) -> dict[str, str]:
+    """Each ``.py`` file of an imported module of ``package``, by real path, to its module.
+
+    Modules are read in name order, so a file two names import is the first name's.
+    """
+    files: dict[str, str] = {}
+    for name, module in sorted(list(sys.modules.items()), key=lambda item: item[0]):
+        file = getattr(module, "__file__", None)
+        if _within(name, package) and isinstance(file, str) and file.endswith(".py"):
+            files.setdefault(os.path.realpath(file), name)
+    return files
+
+
+def _holders(module: ModuleType) -> dict[int, list[str]]:
+    """The names ``module`` gives each class and each function, by the object's identity."""
+    held: dict[int, list[str]] = {}
+    for name, value in list(vars(module).items()):
+        target = value if isinstance(value, type) else function_of(value)
+        if target is not None:
+            held.setdefault(id(target), []).append(name)
+    return held
+
+
+def _within(name: str, package: str) -> bool:
+    return name == package or name.startswith(f"{package}.")
