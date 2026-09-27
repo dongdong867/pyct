@@ -7,7 +7,8 @@ import signal
 import time
 from typing import NoReturn
 
-from pyct.run.journal import RECORDS, JournalWriter
+from pyct.core.branch import Branch, Expression, Site
+from pyct.run.journal import RECORDS, JournalWriter, read
 
 # how long the reader looks at the two words while the writer writes them
 SAMPLING = 1.0
@@ -70,3 +71,35 @@ def zeros_seen(words: memoryview) -> int:
             if words[0] == 0 or words[COUNT_AT] == 0:
                 zeros += 1
     return zeros
+
+
+def test_what_a_fork_keeps_crosses_the_journal_beside_it() -> None:
+    buffer = bytearray(1 << 16)
+    config: list[Expression] = ["len", "config"]
+    kept = Branch(
+        expression=[">", config, 0],
+        taken=True,
+        site=Site("m.py", 2, 4),
+        holds=["walked", "config", "'a'"],
+    )
+    plain = Branch(expression=["!=", config, 0], taken=False, site=Site("m.py", 3, 4))
+
+    writer = JournalWriter(buffer)
+    writer.fork(kept)
+    writer.fork(plain)
+    branches = read(buffer).branches
+
+    assert branches == (kept, plain)
+    assert [branch.holds for branch in branches] == [["walked", "config", "'a'"], None]
+
+
+def test_a_fork_with_more_than_one_fact_beside_it_is_unreadable() -> None:
+    buffer = bytearray(1 << 16)
+    writer = JournalWriter(buffer)
+    writer.fork(Branch(expression="x", taken=True, site=Site("m.py", 2, 4), holds="y"))
+    at = buffer.index(b'"y"')
+    buffer[at : at + 3] = b"1,2"
+
+    reading = read(buffer)
+
+    assert reading.branches == () and reading.problem is not None

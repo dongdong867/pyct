@@ -47,6 +47,13 @@ class Tracked:
     size, and ``tracked`` that a fork looks a tracked key up in it: then each of the input's
     keys is named after the path's own, since a tracked key may equal any of them, and
     ``asked`` holds the keys a fork names itself.
+
+    What a walk read at its place holds too (see ``core.dict_reads.placed``): ``walked``
+    holds the input's keys a walk from the first read, and ``last`` those a walk from the last
+    read; ``own`` says a walk from the first read one of the target's own keys. A place matters
+    only where a fork names the key there, by the value under it or by looking it up: a key no
+    fork names can stand anywhere, and another key in its place changes no fork (see
+    ``_in_place``).
     """
 
     name: str
@@ -57,6 +64,9 @@ class Tracked:
     counted: bool = False
     tracked: bool = False
     asked: frozenset[object] = frozenset()
+    walked: set[object] = field(default_factory=set)
+    last: set[object] = field(default_factory=set)
+    own: bool = False
 
     def constant(self, part: str) -> str:
         return f"|{self.symbol}.{part}|"
@@ -119,6 +129,7 @@ class DictTerms(Keyed):
         # whether the first ask holds each dict's other keys and makes none up
         self.keep = True
         self.extra: dict[str, str] = {}
+        self.functions: dict[str, str] = {}
         self.facts: dict[str, None] = {}
         # each value constant a dict declared, and what the answer names it by: a leaf's name,
         # or the dict and the key it is the value under
@@ -158,11 +169,26 @@ class DictTerms(Keyed):
                     seen.add(id(part))
                     self._note(part)
                     stack.extend(reversed(part[1:]))
+        for fork in prefix:
+            if isinstance(fork.holds, list):
+                self._placed(fork.holds)
         for found in self.dicts.values():
             found.asked = frozenset(found.named)
             if found.tracked:
                 for key in found.shape.keys:
                     found.named.setdefault(key, len(found.named))
+
+    def _placed(self, holds: list[Expression]) -> None:
+        """Note which key a walk read at its place: ``["walked", A, k]`` from the first,
+        ``["last", A, k]`` from the last, ``["exactly", A]`` at the target's own key."""
+        head, part, *key = holds
+        found = self.of(part)
+        if found is None:
+            return
+        found.own = found.own or head == "exactly"
+        literal = literal_key(key[0]) if key else MISSING
+        if literal is not MISSING and literal in found.places:
+            (found.walked if head == "walked" else found.last).add(literal)
 
     def _note(self, part: list[Expression]) -> None:
         head = part[0]
@@ -245,7 +271,8 @@ class DictTerms(Keyed):
         return self.read_under(found, container, (term, typed), kind)
 
     def declarations(self) -> list[str]:
-        """What the dicts declare: each size, each count, each key's presence, each value."""
+        """What the dicts declare: each size, each count, each key's presence, each value, and
+        then each function a tracked key's lookup calls, which reads them."""
         lines: list[str] = []
         for found in self.dicts.values():
             lines += [
@@ -253,7 +280,8 @@ class DictTerms(Keyed):
             ]
             if found.sized:
                 lines += [f"(declare-const {found.constant(part)} Int)" for part in _COUNTS]
-        return lines + [f"(declare-const {name} {sort})" for name, sort in self.extra.items()]
+        lines += [f"(declare-const {name} {sort})" for name, sort in self.extra.items()]
+        return lines + list(self.functions.values())
 
     def assertions(self) -> list[str]:
         """What the dicts assert: each size's equation and its bounds, the keys the path reads,
@@ -267,6 +295,7 @@ class DictTerms(Keyed):
             lines += [f"(assert (not {self.present(found, key)}))" for key in unread]
             if found.sized:
                 lines += self._sized(found)
+            lines += self._in_place(found)
         strings = [longest_string(name) for name, sort in self.extra.items() if sort == "String"]
         return lines + strings + list(self.facts)
 
@@ -284,6 +313,36 @@ class DictTerms(Keyed):
             lines += [f"(assert (= {kept} {others}))", f"(assert (= {made} 0))"]
             unasked = [key for key in found.named if key in found.places and key not in found.asked]
             lines += [f"(assert {self.present(found, key)})" for key in unasked]
+        return lines
+
+    def _in_place(self, found: Tracked) -> list[str]:
+        """What keeps each key a walk read at its place, where another key there would change a
+        fork: where a fork names a key, by the value under it or by looking it up.
+
+        From the first, the input's keys stay up to the last walked key a fork names; past the
+        target's own key, they all stay and none is added, where a fork names a walked key. From
+        the last, where a fork names any of the dict's keys, since whichever key moves into the
+        place read, a named key added after it or one before it, is the one handed out: the key
+        read stays and none is added. A key no fork names is held by the count kept from the
+        first reaching past it.
+        """
+        places, unnamed, named_by_forks = found.places, found.unnamed, found.asked
+        walked = [places[key] for key in found.walked if key in named_by_forks]
+        whole = found.own and bool(walked)
+        through = len(places) - 1 if whole else max(walked, default=-1)
+        from_last = bool(found.last) and bool(named_by_forks)
+        last = sorted(found.last, key=lambda key: places[key]) if from_last else []
+        keep = [key for key in places if places[key] <= through] + last
+        named = dict.fromkeys(key for key in keep if key in found.named)
+        lines = [f"(assert {self.present(found, key)})" for key in named]
+        order = {key: at for at, key in enumerate(unnamed)}
+        reach = max((order[key] + 1 for key in keep if key in order), default=0)
+        if reach and found.sized:
+            lines.append(f"(assert (>= {found.constant('kept')} {reach}))")
+        if whole or last:
+            added = [key for key in found.named if key not in places]
+            lines += [f"(assert (not {self.present(found, key)}))" for key in added]
+            lines += [f"(assert (= {found.constant('made')} 0))"] if found.sized else []
         return lines
 
     @property

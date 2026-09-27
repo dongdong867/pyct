@@ -37,6 +37,8 @@ class DictState(dict):
     sink: BranchSink
     settled: dict[object, bool]
     changed: dict[object, bool]
+    # how many keys the dict holds past the argument's own: each change's, kept as it happens
+    grown: int
     shadow: dict[object, object]
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
@@ -53,6 +55,7 @@ class DictState(dict):
         made.sink = sink
         made.settled = {}
         made.changed = {}
+        made.grown = 0
         made.shadow = dict(items)
         made.walked_at = None
         return made
@@ -68,9 +71,9 @@ class DictState(dict):
 
     def size_term(self) -> Expression:
         """The size as a fork writes it: the argument's size, plus the keys the target added
-        and less the keys it removed, each settled before it changed."""
+        and less the keys it removed."""
         measured: Expression = ["len", self.expression]
-        grown = sum(int(held) - int(self.settled[key]) for key, held in self.changed.items())
+        grown = self.grown
         if grown == 0:
             return measured
         return ["+", measured, grown] if grown > 0 else ["-", measured, -grown]
@@ -121,14 +124,18 @@ class DictState(dict):
         made = type(self).made(items, self.expression, self.sink)
         made.settled = self.settled
         made.changed = dict(self.changed)
+        made.grown = self.grown
         return made
 
     def noted(self, key: object, value: object) -> None:
-        """Note a change the dict's own method made: the key now holds ``value``."""
+        """Note a change the dict's own method made: the key now holds ``value``. The shadow
+        still says whether it held the key before, which is how the size grew."""
+        self.grown += key not in self.shadow
         self.shadow[key] = value
         self.changed[key] = True
 
     def dropped(self, key: object) -> None:
         """Note a removal the dict's own method made."""
+        self.grown -= key in self.shadow
         self.shadow.pop(key, None)
         self.changed[key] = False

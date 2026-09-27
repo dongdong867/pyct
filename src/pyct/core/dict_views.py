@@ -24,6 +24,10 @@ from pyct.core.values import own
 # not the target's path: the view's repr and the object plumbing
 _KEPT = ("__repr__", "__getattribute__", "__init__", "__sizeof__", "__new__")
 
+# a view inherits these from object, so reading what Python's view defines never reaches them,
+# and `print(config.keys())` drops the condition as `print(config)` does
+_INHERITED = ("__str__", "__format__")
+
 
 class _View:
     """What the three views share: the dict they read, its size, and Python's own view."""
@@ -147,6 +151,7 @@ def _derive(cls: type[_View], registered: type) -> None:
     """Downgrade every method of Python's own view that the class body has not taught."""
     python = type(cls.python({}))
     names = {name for name, member in vars(python).items() if _called_on_a_value(member)}
+    names |= set(_INHERITED)
     for name in sorted(names - set(vars(cls)) - set(vars(_View)) - set(_KEPT)):
         setattr(cls, name, _derived(name, cls.python))
     registered.register(cls)

@@ -426,13 +426,18 @@ def test_access_name_reads_each_step_once_given_what_it_already_named() -> None:
 
 def test_an_int_key_json_wrote_is_read_back_as_an_int_under_an_int_key_annotation() -> None:
     checks = {"c": Items(dict, Items(dict, str, int), int), "p": Items(dict, str)}
-    seed = Seed.of({"c": {"3": {"-4": "a", "04": "b", "x": "c"}}, "p": {"3": "d"}}, checks)
+    seed = Seed.of(
+        {"c": {"3": {"-4": "a", "04": "b", "x": "c", "-0": "e"}}, "p": {"3": "d"}}, checks
+    )
 
-    assert seed.args == {"c": {3: {-4: "a", "04": "b", "x": "c"}}, "p": {"3": "d"}}
+    # JSON never writes -0 for an int key, so "-0" stays a str rather than land on 0
+    assert seed.args == {"c": {3: {-4: "a", "04": "b", "x": "c", "-0": "e"}}, "p": {"3": "d"}}
     assert seed.leaves == {
         '["[]", ["[]", "c", 3], -4]': str,
         '["[]", ["[]", "c", 3], "\'04\'"]': str,
         '["[]", ["[]", "c", 3], "\'x\'"]': str,
+        '["[]", ["[]", "c", 3], "\'-0\'"]': str,
         '["[]", "p", "\'3\'"]': str,
     }
-    assert seed.dicts["c"].added is int and seed.dicts["p"].added is str
+    assert seed.dicts["c"].adds(4) and not seed.dicts["c"].adds("4") and seed.dicts["c"].adds("x")
+    assert seed.dicts["p"].adds("4") and not seed.dicts["p"].adds(4)

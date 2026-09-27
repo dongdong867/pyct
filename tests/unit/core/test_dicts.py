@@ -189,7 +189,7 @@ def test_python_s_len_is_a_downgrade_but_for_a_walk_s_own_guess() -> None:
     assert downgrades(sink) == ["__len__", "__len__"]
 
 
-def test_a_walk_forks_on_each_key_and_settles_the_keys_it_hands_out() -> None:
+def test_a_walk_forks_on_each_key_and_settles_none_of_them() -> None:
     config, sink = tracked({"a": 0, "b": "x"})
 
     pairs = list(config.items())
@@ -199,12 +199,40 @@ def test_a_walk_forks_on_each_key_and_settles_the_keys_it_hands_out() -> None:
         ["[]", "config", "'a'"],
         ["[]", "config", "'b'"],
     ]
+    # a walk is not a lookup: the first lookup after it records whether its key is there
     assert config["a"] == 0 and "b" in config
     assert forks(sink) == [
         ([">", ["len", "config"], 0], True),
         ([">", ["len", "config"], 1], True),
         ([">", ["len", "config"], 2], False),
+        (["in", "'a'", "config"], True),
         (["==", ["[]", "config", "'a'"], 0], True),
+        (["in", "'b'", "config"], True),
+    ]
+
+
+def test_a_walk_s_fork_keeps_the_key_it_read_at_its_place() -> None:
+    config, sink = tracked({"a": 0, "b": 1})
+    config["n"] = 2
+
+    assert list(config) == ["a", "b", "n"]
+    assert list(reversed(config)) == ["n", "b", "a"]
+    assert config.popitem() == ("n", 2)
+    assert config.popitem() == ("b", 1)
+
+    assert [item.holds for item in sink if isinstance(item, Branch)] == [
+        None,  # the store's lookup of n
+        ["walked", "config", "'a'"],
+        ["walked", "config", "'b'"],
+        ["exactly", "config"],  # the target's own key: the argument holds only its own keys
+        None,  # the walk's end
+        None,  # from the end, the target's own key
+        ["last", "config", "'b'"],
+        ["last", "config", "'a'"],
+        None,
+        None,  # popitem of the target's own key
+        ["last", "config", "'b'"],
+        None,  # the test's own compare of the value popped
     ]
 
 

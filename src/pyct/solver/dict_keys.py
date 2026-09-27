@@ -86,6 +86,8 @@ class Keyed:
     extra: dict[str, str]
     valued: dict[str, tuple[str, object]]
     facts: dict[str, None]
+    # each function a tracked key's lookup or read calls, by name, as the program defines it
+    functions: dict[str, str]
 
     def hold(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""
@@ -95,18 +97,32 @@ class Keyed:
         """Whether the dict holds a key the path names: its `Bool`."""
         return found.constant(f"in.{found.named[key]}")
 
-    def _equals(self, found: Tracked, term: str, key: object) -> str:
-        """Whether a tracked key equals a key and the dict holds it: every key a tracked key
-        may equal is named, the input's among them (see ``DictTerms.learn``)."""
-        return f"(and (= {term} {key_term(key)}) {self.present(found, key)})"
+    def _equals(self, found: Tracked, key: object) -> str:
+        """Whether the function's argument ``k`` equals a key the dict holds: every key a
+        tracked key may equal is named, the input's among them (see ``DictTerms.learn``)."""
+        return f"(and (= k {key_term(key)}) {self.present(found, key)})"
+
+    def _function(self, name: str, typed: type | None, result: str, body: str) -> str:
+        """A function of one key of that type, defined once, and its name."""
+        if name not in self.functions:
+            sort = SORTS.get(typed, "Int") if typed is not None else "Int"
+            self.functions[name] = f"(define-fun {name} ((k {sort})) {result} {body})"
+        return name
 
     def equals_a_key(self, found: Tracked, term: str, typed: type | None) -> str:
-        """Whether a tracked key equals a key the dict holds, a made-up one among them."""
-        options = [self._equals(found, term, key) for key in found.candidates(typed)]
-        if typed is str and found.shape.makes_up:
-            taken = {*found.shape.keys, *found.named}
-            options.append(made_up_match(term, taken, found.constant("made")))
-        return f"(or false {' '.join(options)})"
+        """Whether a tracked key equals a key the dict holds, a made-up one among them.
+
+        The keys are written once, in a function each lookup calls, so a path's program grows
+        with its keys and its lookups, not with the one times the other.
+        """
+        name = found.constant(f"has.{_sort_word(typed)}")
+        if name not in self.functions:
+            options = [self._equals(found, key) for key in found.candidates(typed)]
+            if typed is str and found.shape.makes_up:
+                taken = {*found.shape.keys, *found.named}
+                options.append(made_up_match("k", taken, found.constant("made")))
+            self._function(name, typed, "Bool", f"(or false {' '.join(options)})")
+        return f"({name} {term})"
 
     def read_under(
         self, found: Tracked, container: Expression, keyed: tuple[str, type | None], kind: str
@@ -114,17 +130,25 @@ class Keyed:
         """The value under whichever key a tracked key equals, of the kind the read hands out.
 
         A key whose value is of another kind is one the tracked key does not equal on this
-        path; a made-up key holds the one value declared for made-up keys.
+        path; a made-up key holds the one value declared for made-up keys. Both are written
+        once, as functions each read calls.
         """
         term, typed = keyed
-        read = self._declared(found, f"made.{kind}", kind, (found.name, MADE))
-        for key in reversed(found.candidates(typed)):
-            here = self._equals(found, term, key)
-            if found.kind_under(key) != kind:
-                self.hold(f"(not {here})")
-                continue
-            read = f"(ite {here} {self.value_under(found, container, key, kind)} {read})"
-        return read
+        word = f"{_sort_word(typed)}.{kind}"
+        fits, read = found.constant(f"fits.{word}"), found.constant(f"read.{word}")
+        if read not in self.functions:
+            body = self._declared(found, f"made.{kind}", kind, (found.name, MADE))
+            others: list[str] = []
+            for key in reversed(found.candidates(typed)):
+                if found.kind_under(key) != kind:
+                    others.append(f"(not {self._equals(found, key)})")
+                    continue
+                value = self.value_under(found, container, key, kind)
+                body = f"(ite {self._equals(found, key)} {value} {body})"
+            self._function(fits, typed, "Bool", f"(and true {' '.join(others)})")
+            self._function(read, typed, SORTS[_TYPES[kind]], body)
+        self.hold(f"({fits} {term})")
+        return f"({read} {term})"
 
     def value_under(self, found: Tracked, container: Expression, key: object, kind: str) -> str:
         """The value under a key: the input's own value's constant, when the path names it, or
@@ -143,3 +167,8 @@ class Keyed:
             self.extra[name] = SORTS[_TYPES[kind]]
             self.valued[name] = answer
         return name
+
+
+def _sort_word(typed: type | None) -> str:
+    """The word a function's name carries for the type of key it takes."""
+    return "str" if typed is str else "int"

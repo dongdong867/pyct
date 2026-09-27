@@ -30,6 +30,7 @@ def plan(forks: tuple[Branch, ...], path: int = 0) -> Plan | None:
     if not forks:
         return None
     last = forks[-1]
-    flipped = dataclasses.replace(last, taken=not last.taken)
+    # what the input kept once the fork went its way does not hold on the other side
+    flipped = dataclasses.replace(last, taken=not last.taken, holds=None)
     aim = Aim(site=last.site, position=len(forks) - 1)
     return Plan(prefix=(*forks[:-1], flipped), aim=aim, path=path)

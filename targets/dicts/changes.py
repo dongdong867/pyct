@@ -92,8 +92,10 @@ def items(config):
 
 
 def reversed_keys(config):
+    # the last item's value, read from the end: a lookup of a key a walk read would be a fork
+    # whose other side no input takes
     c = config.copy()
-    for k in reversed(c):
-        if c[k] > 5:
-            return 1
+    _, v = next(reversed(c.items()))
+    if v > 5:
+        return 1
     return 0

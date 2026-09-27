@@ -1,6 +1,7 @@
 """What an annotation asks of a seed value, and every value in a seed that contradicts it."""
 
 import json
+import re
 import types
 import typing
 from collections.abc import Iterable, Mapping
@@ -11,6 +12,20 @@ PLAIN: tuple[type, ...] = (str, int, float, bool)
 
 # the kind of None, which a union of plain types may hold beside them: JSON's null
 NONE = type(None)
+
+# an int key as JSON writes it: the text an input's line holds for a dict's int key
+_INT_TEXT = re.compile(r"0|-?[1-9][0-9]*")
+
+
+def int_keys(check: "Check | None") -> bool:
+    """Whether a dict's annotation names int keys, which the seed binding reads its keys as."""
+    return isinstance(check, Items) and check.kind is dict and check.keys is int
+
+
+def reads_as_int(key: object) -> bool:
+    """Whether a key is the text JSON writes for an int, which a ``dict[int, X]`` reads back as
+    the int."""
+    return type(key) is str and _INT_TEXT.fullmatch(key) is not None
 
 
 @dataclass(frozen=True)

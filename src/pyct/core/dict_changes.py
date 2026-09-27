@@ -19,8 +19,8 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade
-from pyct.core.dict_reads import found, present, settled_as, value, written_key
-from pyct.core.dict_state import DictState
+from pyct.core.dict_reads import LAST, found, is_tracked, placed, present, value, written_key
+from pyct.core.dict_state import MISSING, DictState
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
@@ -71,20 +71,31 @@ def holds_key(self: DictState, key: object, name: str) -> bool:
     return self.holds(name, plain(key))
 
 
-def as_python(self: DictState, key: object, name: str, change: Callable[[], object]) -> object:
+def as_python(
+    self: DictState, key: object, name: str, change: Callable[[], object], *, named: bool = False
+) -> object:
     """A change under a key pyct does not follow: Python's own, and a downgrade named ``name``,
-    with whether the key was there noted from the dict itself, so the size stays the dict's."""
+    with whether the key was there noted from the dict itself, so the size stays the dict's.
+    ``named`` says the call's own lookup already named it, so the call is named once."""
     bare = plain(key)
     held = own(dict.__contains__, self, bare)
     answer = own(change)
-    self.sink.append(Downgrade(name=name))
+    if not named:
+        self.sink.append(Downgrade(name=name))
     if bare not in self.changed:
         self.settled.setdefault(bare, held)
     return answer
 
 
-def store(self: DictState, key: object, stored: object, name: str) -> None:
-    """``config[key] = value``, and each store `setdefault`, `update` and `|` make."""
+def looked_up_as_python(self: DictState, key: object) -> bool:
+    """Whether a lookup of ``key`` names its call as a downgrade: a tracked key into a dict the
+    target changed, which no expression writes whole."""
+    return is_tracked(key) and bool(self.changed)
+
+
+def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
+    """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
+    says the call's own lookup already named it (see ``as_python``)."""
     bare = plain(key)
     if not holds_key(self, key, name):
         own(dict.__setitem__, self, key, stored)
@@ -97,7 +108,7 @@ def store(self: DictState, key: object, stored: object, name: str) -> None:
         present(self, key, name)
         own(dict.__setitem__, self, key, stored)
     else:
-        as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored))
+        as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named)
     self.noted(bare, stored)
 
 
@@ -112,6 +123,7 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
         return own(dict.pop, self, key, *default)
     if written_key(key) is None:
         return _removed_as_python(self, key, name, default)
+    named = looked_up_as_python(self, key)
     if not found(self, key, name):
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
@@ -119,7 +131,7 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     if follows(key):
         own(dict.__delitem__, self, bare)
     else:
-        as_python(self, key, name, lambda: dict.__delitem__(self, bare))
+        as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
     self.dropped(bare)
     return handed
 
@@ -140,13 +152,12 @@ def last_item(self: DictState) -> tuple[object, object]:
     its last key and value, handed out as a walk from the end hands them."""
     if not self.holds("popitem"):
         return own(dict.popitem, self)
-    if not forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0, "popitem"):
+    key = next(reversed(dict.keys(self)), MISSING)
+    pin = None if key is MISSING else placed(self, key, LAST)
+    if not forked(self.sink, ["!=", self.size_term(), 0], key is not MISSING, "popitem", pin):
         return own(dict.popitem, self)
-    key = next(reversed(dict.keys(self)))
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
-    if key not in self.changed and written_key(key) is not None:
-        self.settled.setdefault(settled_as(key), True)
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
     self.dropped(key)
@@ -163,9 +174,10 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
         if not held:
             self.noted(key, default)
         return answer
+    named = looked_up_as_python(self, key)
     if found(self, key, "setdefault"):
         return value(self, key)
-    store(self, key, default, "setdefault")
+    store(self, key, default, "setdefault", named=named)
     return default
 
 
@@ -218,4 +230,5 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
         if not held:
             made.changed[plain(key)] = True
+            made.grown += 1
     return made

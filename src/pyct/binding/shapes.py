@@ -16,7 +16,7 @@ from __future__ import annotations
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 
-from pyct.binding.annotations import NONE, Check, Items, OneOf
+from pyct.binding.annotations import NONE, Check, Items, OneOf, int_keys, reads_as_int
 from pyct.core.list_state import kind_of
 
 # the kinds an added item takes from an annotation's item type, when the items do not say
@@ -151,26 +151,28 @@ class DictShape:
     solver adds (dict-keys-named-held-or-made-up).
 
     ``fill`` is the kind of a value the solver adds under a key a fork names or one pyct makes
-    up. ``added`` is the type of a key the solver may add: an input's line writes a key as a
-    JSON string, and ``--args`` reads it back as its annotation's key type, so an int key is
-    added only under a ``dict[int, X]`` annotation, a str key under any other that names no key
-    type but str, and none under one that names another. Only a dict whose keys are all strs
-    gets made-up keys.
+    up. ``int_keys`` says its annotation is ``dict[int, X]``, whose keys ``--args`` reads back as
+    ints: an input's line writes a key as JSON text, so the solver adds an int key only there,
+    and there no str key that reads as an int (see ``adds``). Only a dict whose keys are all
+    strs gets made-up keys.
     """
 
     keys: tuple[object, ...]
     kinds: tuple[str, ...]
     fill: str = "none"
-    added: type | None = str
+    int_keys: bool = False
 
     @property
     def makes_up(self) -> bool:
-        """Whether the solver may add made-up keys: str keys, and the dict's keys all strs."""
-        return self.added is str and all(type(key) is str for key in self.keys)
+        """Whether the solver may add made-up keys: the dict's keys are all strs."""
+        return all(type(key) is str for key in self.keys)
 
     def adds(self, key: object) -> bool:
-        """Whether the solver may add this key: one of the type an answer reads back."""
-        return self.added is not None and type(key) is self.added
+        """Whether the solver may add this key: one an answer's line reads back as itself
+        through ``--args``."""
+        if type(key) is int:
+            return self.int_keys
+        return type(key) is str and not (self.int_keys and reads_as_int(key))
 
 
 def dict_shaped(items: dict[object, object], check: Check | None) -> DictShape:
@@ -179,14 +181,8 @@ def dict_shaped(items: dict[object, object], check: Check | None) -> DictShape:
     each = check.each if isinstance(check, Items) and check.kind is dict else None
     kinds = tuple(kind_of(value) for value in dict.values(items))
     fill = kinds[0] if kinds and kinds.count(kinds[0]) == len(kinds) else annotated(each)
-    return DictShape(keys=tuple(dict.keys(items)), kinds=kinds, fill=fill, added=_added(check))
-
-
-def _added(check: Check | None) -> type | None:
-    """The type of a key the solver may add under a dict's annotation: str, but under one that
-    names int keys, and none under one that names any other key type."""
-    keys = check.keys if isinstance(check, Items) and check.kind is dict else str
-    return keys if keys is str or keys is int else None
+    keys = tuple(dict.keys(items))
+    return DictShape(keys=keys, kinds=kinds, fill=fill, int_keys=int_keys(check))
 
 
 @dataclass(frozen=True)

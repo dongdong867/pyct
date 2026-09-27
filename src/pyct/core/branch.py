@@ -40,13 +40,17 @@ class Branch:
     """One fork: the condition, the side the run took, and the position.
 
     ``lost_as`` names the operation that took it, which a call that is over names its loss by
-    when a value it kept records one (see ``execution.tally``). It is no part of the fork.
+    when a value it kept records one (see ``execution.tally``). ``holds`` is a fact about the
+    input that holds once the fork went the way it went: which key a walk over a dict read at
+    its place (see ``core.dict_reads``). The solver asserts it wherever a path keeps the fork,
+    and drops it where the path flips it. Neither is part of the fork, and neither is printed.
     """
 
     expression: Expression
     taken: bool
     site: Site
     lost_as: str = field(default="__bool__", compare=False)
+    holds: Expression = field(default=None, compare=False)
 
 
 @dataclass(frozen=True)

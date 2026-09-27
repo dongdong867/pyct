@@ -7,13 +7,12 @@ which values are tracked, what each is named, or which lists and dicts are track
 from __future__ import annotations
 
 import copy
-import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol, TypeGuard
 
-from pyct.binding.annotations import Check, Items
+from pyct.binding.annotations import Check, Items, int_keys, reads_as_int
 from pyct.core.branch import Expression
 
 
@@ -232,10 +231,6 @@ def _each(check: Check | None, kind: type) -> Check | None:
     return check.each if isinstance(check, Items) and check.kind is kind else None
 
 
-# an int key as JSON writes it: the text an input's line holds for a key the solver added
-_INT_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)")
-
-
 def keyed(value: dict[object, object], check: Check | None) -> dict[object, object]:
     """A dict's items, each key read back as its annotation's key type says.
 
@@ -244,15 +239,14 @@ def keyed(value: dict[object, object], check: Check | None) -> dict[object, obje
     ``--args`` is the same input. A key written any other way, or under any other annotation,
     stays as it came.
     """
-    if not (isinstance(check, Items) and check.kind is dict and check.keys is int):
+    if not int_keys(check):
         return dict(value)
-    return {_int_key(key): item for key, item in dict.items(value)}
+    return {_read_back(key): item for key, item in dict.items(value)}
 
 
-def _int_key(key: object) -> object:
-    if type(key) is str and _INT_TEXT.fullmatch(key):
-        return int(key)
-    return key
+def _read_back(key: object) -> object:
+    """A key as a ``dict[int, X]`` reads it: the int an int's JSON text writes, else itself."""
+    return int(key) if isinstance(key, str) and reads_as_int(key) else key
 
 
 class _Unnamed(Enum):

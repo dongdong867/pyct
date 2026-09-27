@@ -4,12 +4,14 @@ operations pyct does not follow, each Python's own answer."""
 import copy
 import pickle
 import re
+import time
 from collections.abc import Callable, KeysView
 from typing import Any
 
 import pytest
 
 from pyct.core import bound
+from pyct.core.branch import Expression
 from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.dicts import ConcolicDict
 from pyct.core.ints import ConcolicInt
@@ -33,16 +35,8 @@ def test_a_change_under_a_tracked_key_is_python_s_own_and_the_dict_goes_on() -> 
     assert plain_dict(config) == {"a": 1}
     assert bool(config)
     assert forks(sink)[-1] == (["!=", ["len", "config"], 0], True)
-    # the lookup of a tracked key into a changed dict, and then the removal, are each named
-    assert downgrades(sink) == [
-        "__setitem__",
-        "setdefault",
-        "pop",
-        "pop",
-        "__setitem__",
-        "__delitem__",
-        "__delitem__",
-    ]
+    # each call is named once, its lookup and its change together
+    assert downgrades(sink) == ["__setitem__", "setdefault", "pop", "__setitem__", "__delitem__"]
 
 
 def test_a_key_of_another_kind_is_python_s_answer() -> None:
@@ -82,8 +76,10 @@ def test_a_key_python_cannot_hash_raises_python_s_own_error(
     program: Callable[[Any], object],
 ) -> None:
     config, _ = tracked({"a": 1})
+    with pytest.raises(TypeError) as python:
+        program({"a": 1})
 
-    with pytest.raises(TypeError, match="unhashable") as raised:
+    with pytest.raises(TypeError, match=re.escape(str(python.value))) as raised:
         program(config)
 
     assert raised_by_target(raised.value)
@@ -232,7 +228,11 @@ def test_a_view_s_truth_test_is_the_dict_s() -> None:
     assert not config.values()
 
     assert forks(sink) == [(["!=", ["len", "config"], 0], False)]
-    with pytest.raises(TypeError, match="unhashable"):
+    with pytest.raises(TypeError) as python:
+        hash({}.keys())
+    # Python names the view's own type, which a tracked dict's view is not
+    words = re.escape(str(python.value)).replace("dict_keys", ".+")
+    with pytest.raises(TypeError, match=words):
         hash(config.keys())
 
 
@@ -394,3 +394,62 @@ def test_every_method_of_a_view_is_taught_or_a_downgrade(view: type) -> None:
     methods = {name for name, member in vars(python).items() if callable(member)}
     taught = set(vars(view)) | set(vars(view.__mro__[1]))
     assert methods - taught <= {"__new__", "__getattribute__", "__sizeof__", "__hash__"}
+
+
+def test_setdefault_under_a_tracked_key_into_a_changed_dict_is_named_once() -> None:
+    config, sink = tracked({"a": 1})
+    config["n"] = 2
+    name = ConcolicStr("b", expression="name", sink=sink)
+
+    assert config.setdefault(name, 5) == 5
+
+    assert downgrades(sink) == ["setdefault"]
+    assert plain_dict(config) == {"a": 1, "n": 2, "b": 5}
+
+
+@pytest.mark.parametrize("view", ["keys", "values", "items"])
+def test_a_view_turned_into_text_is_named_as_the_dict_is(view: str) -> None:
+    config, sink = tracked({"a": 1})
+    python = getattr({"a": 1}, view)()
+    shown = getattr(config, view)()
+
+    assert str(shown) == str(python) and f"{shown}" == f"{python}"
+    # repr is the debugger's path, not the target's, and stays Python's as the dict's does
+    assert repr(shown) == repr(python)
+
+    assert downgrades(sink) == ["__str__", "__format__"]
+
+
+def test_the_size_term_follows_every_change_as_it_happens() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+    name = ConcolicStr("x", expression="name", sink=sink)
+
+    config["n"] = 1
+    config["a"] = 5
+    del config["b"]
+    config.pop("n")
+    config.setdefault("m", 0)
+    config.update(p=1, a=2)
+    config[name] = 3
+    config.popitem()
+    merged = {"q": 0, "a": 9} | config
+    copied = config.copy()
+    copied["r"] = 1
+
+    for made in (config, merged, copied):
+        grown = dict.__len__(made) - 2
+        written: Expression = ["len", "config"]
+        if grown:
+            written = ["+", written, grown] if grown > 0 else ["-", written, -grown]
+        assert made.size_term() == written, made
+
+
+def test_a_walk_after_many_stores_writes_its_size_at_once() -> None:
+    config, _ = tracked({"a": 1})
+    for n in range(10_000):
+        config[f"k{n}"] = n
+
+    started = time.monotonic()
+    assert sum(1 for _ in config) == 10_001
+    # the scan measured 6.96 s here when each fork summed every change
+    assert time.monotonic() - started < 2.0

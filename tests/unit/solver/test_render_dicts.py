@@ -160,10 +160,10 @@ def test_an_int_key_is_added_under_an_int_key_annotation_and_read_back_as_an_int
     [
         ({"config": {}}, 3, None),
         ({"config": {"a": 1}}, 3, None),
-        ({"config": {}}, "'a'", {"config": Items(dict, str, int)}),
-        ({"config": {}}, "'a'", {"config": Items(dict, None, float)}),
+        ({"config": {}}, "'5'", {"config": Items(dict, str, int)}),
+        ({"config": {}}, 3, {"config": Items(dict, None, float)}),
     ],
-    ids=["no annotation", "str keys", "str key under int keys", "another key type"],
+    ids=["no annotation", "str keys", "int text under int keys", "int under another key type"],
 )
 @needs_cvc5
 def test_no_key_is_added_that_an_answer_would_read_back_as_another(
@@ -175,10 +175,23 @@ def test_no_key_is_added_that_an_answer_would_read_back_as_another(
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
 
 
+@pytest.mark.parametrize("keys", [int, float])
 @needs_cvc5
-def test_no_key_is_made_up_under_an_int_key_annotation() -> None:
-    seed = Seed.of({"config": {}}, {"config": Items(dict, int, int)})
-    forks = (fork(["!=", ["len", "config"], 0]),)
+def test_a_str_key_a_fork_names_and_a_made_up_key_read_back_under_any_key_type(
+    keys: type,
+) -> None:
+    # `--args` reads an int key's text back as an int only, so "a" and "pyct1" stay strs
+    checks: dict[str, object] = {"config": Items(dict, int, keys)}
+    named = answered({"config": {}}, fork(["in", "'a'", "config"]), checks=checks)
+    counted = answered({"config": {}}, fork(["!=", ["len", "config"], 0]), checks=checks)
+
+    assert named["config"] == {"a": 0} and counted["config"] == {"pyct1": 0}
+
+
+@needs_cvc5
+def test_no_key_is_made_up_where_the_input_holds_an_int_key() -> None:
+    seed = Seed.of({"config": {"1": 1}}, {"config": Items(dict, int, int)})
+    forks = (fork(["==", ["len", "config"], 2]),)
 
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
 
@@ -286,3 +299,93 @@ def test_a_tracked_int_key_equals_an_int_key() -> None:
 
     config = solved["config"]
     assert solved["n"] == 1 and isinstance(config, dict) and config[1] > 7
+
+
+def kept(expression: Expression, holds: Expression, *, taken: bool = True) -> Branch:
+    """A fork that keeps what a walk read at its place."""
+    return Branch(expression=expression, taken=taken, site=SITE, holds=holds)
+
+
+@needs_cvc5
+def test_a_key_a_walk_read_first_stays_where_a_fork_names_it() -> None:
+    # `for k in config: config[k] > 1` read b second; its lookup names it, so a and b stay
+    forks = (
+        kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
+        kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
+        fork(["in", "'b'", "config"], taken=False),
+    )
+    seed = Seed.of({"config": {"a": 0, "b": 0, "c": 0}})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+
+
+@needs_cvc5
+def test_a_key_a_walk_read_first_may_go_where_no_fork_names_it() -> None:
+    solved = answered(
+        {"config": {"a": 0, "b": 0}},
+        kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
+        kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
+        fork([">", ["len", "config"], 2], taken=False),
+        fork(["in", "'z'", "config"]),
+    )
+
+    config = solved["config"]
+    assert isinstance(config, dict) and "z" in config and len(config) == 2
+
+
+@needs_cvc5
+def test_a_key_read_from_the_last_stays_last_where_a_fork_names_a_key() -> None:
+    # `key, value = config.popitem()` then `value > 5`, then `"a" in config`: an added a would
+    # be popped instead of b
+    forks = (
+        kept(["!=", ["len", "config"], 0], ["last", "config", "'b'"]),
+        fork([">", ["[]", "config", "'b'"], 5]),
+        fork(["in", "'a'", "config"]),
+    )
+    seed = Seed.of({"config": {"b": 9}})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+
+
+@needs_cvc5
+def test_past_the_target_s_own_key_the_input_s_keys_all_stay() -> None:
+    # `config["seen"] = 1`, then a walk over the values reads a's and then seen's
+    forks = (
+        fork(["in", "'seen'", "config"], taken=False),
+        kept([">", ["+", ["len", "config"], 1], 0], ["walked", "config", "'a'"]),
+        fork([">", ["[]", "config", "'a'"], 5], taken=False),
+        kept([">", ["+", ["len", "config"], 1], 1], ["exactly", "config"]),
+        fork([">", ["+", ["len", "config"], 1], 2]),
+    )
+    seed = Seed.of({"config": {"a": 0}})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+
+
+def test_a_place_on_a_dict_the_input_does_not_hold_or_by_a_key_no_fork_writes_is_no_fact() -> None:
+    text = program(
+        (
+            kept([">", ["len", "config"], 0], ["walked", "other", "'a'"]),
+            kept([">", ["len", "config"], 0], ["walked", "config", "name"]),
+            fork(["in", "'a'", "config"]),
+        ),
+        {},
+        _origin({"config": DictShape(("a",), ("int",))}),
+    ).text
+
+    assert "kept| 1" not in text and "other" not in text
+
+
+def test_a_tracked_key_s_lookups_write_the_dict_s_keys_once() -> None:
+    keys = {f"k{i}": 0 for i in range(500)}
+    seed = Seed.of({"prices": keys, "names": [f"k{i}" for i in range(100)]})
+
+    def written(lookups: int) -> int:
+        forks = tuple(fork(["in", ["[]", "names", at], "prices"]) for at in range(lookups)) + tuple(
+            fork([">", ["[]", "prices", ["[]", "names", at]], 5]) for at in range(lookups)
+        )
+        origin = Origin(shapes=seed.lists, dicts=seed.dicts, values=seed.values)
+        return len(program(forks, seed.leaves, origin).text)
+
+    # 100 lookups write the 500 keys once, as 10 lookups do: each writes a call, not the keys
+    assert written(100) < written(10) * 1.5

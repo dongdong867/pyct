@@ -10,6 +10,8 @@ changed is Python's own answer and a downgrade, since no expression writes the d
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
 and once more, taken false, where it ends, in insertion order. Each key it hands out is plain,
 and each value as the dict holds it: an argument's value tracked, the target's own as it is.
+A walk is not a lookup, so it settles nothing; each fork it records carries which key it read
+at its place (``placed``), so an answer keeps that key there, as a read keeps a list's item.
 """
 
 from __future__ import annotations
@@ -157,26 +159,53 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
     self.walked_at = caller(depth)
-    return _walked(self, iter(dict.keys(self)), pick, name)
+    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
     """A walk over the dict from its last key, forking as a walk from the first does."""
-    return _walked(self, reversed(dict.keys(self)), pick, name)
+    return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
 
 
-def _walked(self: DictState, keys: Iterator[object], pick: Pick, name: str) -> Iterator[object]:
+# the end a walk starts from, which says what keeps a key it reads at its place
+FIRST, LAST = "walked", "last"
+
+
+def placed(self: DictState, key: object, end: str) -> Expression:
+    """What keeps ``key`` where a walk from ``end`` read it, as the solver reads it, or None when
+    nothing needs to.
+
+    An answer lists the argument's keys in the input's order, then the keys a fork names, then
+    the made-up ones. From the first, the argument's key ``k`` stays in its place when the
+    input's keys up to it stay (`["walked", A, k]`), and the target's own key when the argument
+    holds exactly the input's keys (`["exactly", A]`), since an added key would come before it.
+    From the last, the argument's key stays last when it stays and no key is added after it
+    (`["last", A, k]`); the target's own keys come after the argument's, where no answer moves
+    them. A key no fork can write pins nothing.
+    """
+    written = written_key(key)
+    if written is None:
+        return None
+    own_key = self.changed.get(key) is True and self.settled.get(key) is False
+    if end == LAST:
+        return None if own_key else ["last", self.expression, written]
+    return ["exactly", self.expression] if own_key else ["walked", self.expression, written]
+
+
+def _walked(
+    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str]
+) -> Iterator[object]:
     """Each key in Python's own order: Python's own iterator raises where the dict changes size
     while it walks. A change made without the dict's methods turns the walk plain there."""
+    name, end = how
     at = 0
     while True:
         key = own(next, keys, MISSING)
         if not self.holds(name, *(() if key is MISSING else (key,))):
             break
-        if not forked(self.sink, [">", self.size_term(), at], key is not MISSING, name):
+        pin = None if key is MISSING else placed(self, key, end)
+        if not forked(self.sink, [">", self.size_term(), at], key is not MISSING, name, pin):
             return
-        if key not in self.changed and written_key(key) is not None:
-            self.settled.setdefault(settled_as(key), True)
         yield pick(self, key)
         at += 1
     while key is not MISSING:

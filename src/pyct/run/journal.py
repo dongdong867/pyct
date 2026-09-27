@@ -26,7 +26,8 @@ kind) and its payload, padded to 8 bytes:
   written out on every pass, so each list is written once, however many
   places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col]``, the expression a
-  leaf or ``[n]``.
+  leaf or ``[n]``, and a sixth item for a fork that carries what the input
+  keeps once it went this way (``Branch.holds``), written the same way.
 - downgrade: a native u64 count, then the name. A repeat of the last
   entry rewrites its count in place.
 - carry-on: the same, for a count past 1 the writer could not grow in place,
@@ -121,7 +122,10 @@ class JournalWriter:
         site = branch.site
         try:
             expression = self._written(branch.expression)
-            self._json(_FORK, [expression, branch.taken, site.file, site.line, site.col])
+            written = [expression, branch.taken, site.file, site.line, site.col]
+            if branch.holds is not None:
+                written.append(self._written(branch.holds))
+            self._json(_FORK, written)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:
             self._stop(_UNENCODABLE, f"could not keep a fork the input took: {error}")
@@ -364,10 +368,14 @@ class _Facts:
 
     def _fork(self, value: object) -> Branch:
         match value:
-            case [expression, bool() as taken, str() as file, int() as line, int() as col]:
+            case [expression, bool() as taken, str() as file, int() as line, int() as col, *kept]:
+                if len(kept) > 1:
+                    raise ValueError("a fork carries at most one fact beside it")
                 site = Site(file=file, line=line, col=col)
-                return Branch(expression=self._expression(expression), taken=taken, site=site)
-        raise ValueError("a fork is [expression, taken, file, line, col]")
+                holds = self._expression(kept[0]) if kept else None
+                expression = self._expression(expression)
+                return Branch(expression=expression, taken=taken, site=site, holds=holds)
+        raise ValueError("a fork is [expression, taken, file, line, col] and what it keeps")
 
     def _expression(self, value: object) -> Expression:
         """A leaf, or the one list a part number stands for, shared wherever it is named."""

@@ -81,6 +81,16 @@ def _update(self: DictState, *args: Any, **kwargs: Any) -> None:
     changes.update(self, "update", *args, **kwargs)
 
 
+def _merged(self: DictState, other: object) -> object:
+    """``config | other``: a tracked dict of the same argument, ``other``'s pairs stored in it."""
+    return changes.merged(self, other)
+
+
+def _merged_after(self: DictState, other: object) -> object:
+    """``other | config``: ``other``'s keys first, the dict's values winning."""
+    return changes.merged(self, other, reflected=True)
+
+
 def _ior(self: DictState, other: object) -> DictState:
     """``config |= other``: each pair stored in turn, as `update` stores them."""
     changes.update(self, "__ior__", other)
@@ -209,8 +219,8 @@ class ConcolicDict(DictState):
     copy = _taking(dict.copy, 0, 0, _copied)
     __copy__ = _copied
     __deepcopy__ = _deep_copied
-    __or__ = lambda self, other: changes.merged(self, other)  # pyrefly: ignore[bad-override]  # noqa: E731
-    __ror__ = lambda self, other: changes.merged(self, other, reflected=True)  # pyrefly: ignore[bad-override]  # noqa: E731
+    __or__ = _merged  # pyrefly: ignore[bad-override]
+    __ror__ = _merged_after  # pyrefly: ignore[bad-override]
     __reduce_ex__ = _pickled  # pyrefly: ignore[bad-override]
     fromkeys = built_plainly(dict, "fromkeys")
 
