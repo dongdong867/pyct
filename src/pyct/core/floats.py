@@ -15,7 +15,9 @@ answer: NotImplemented where float gives it, as for a str, and a downgrade
 named by the dunder where float answers, as for an int or a bool. Never
 NotImplemented where float answers: int's own methods answer
 NotImplemented for a float, so that would make `f < 3` a TypeError and
-`f == 2` False. An int meets a float in follow-floats-that-meet-ints.
+`f == 2` False. An int meets a float in follow-floats-that-meet-ints. A
+float subclass that defines a reflected operation otherwise than float is
+asked first, as Python asks it of a plain float.
 """
 
 from __future__ import annotations
@@ -101,8 +103,10 @@ def _operand(other: object) -> Expression | None:
 def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
     """float's own answer to one compare, followed for an operand of the float family.
 
-    Any other operand gets float's own answer and a downgrade named by the
-    compare's dunder (see the module docstring).
+    A float subclass that defines the reflected compare answers first (see
+    `_answered_first`). For any other operand, float's own answer comes with
+    a downgrade named by the compare's dunder, and float's NotImplemented,
+    for a str say, passes through with no downgrade.
     """
     followed = numbers.compare(op, getattr(float, name), _operand)
     downgrade = downgraded(float, name)
@@ -125,8 +129,11 @@ def _arithmetic(
     called on the right operand, so `10.0 - x` is ["-", 10.0, "x"]. A
     division records its zero fork before float's own call, as an int
     division does (``README.md › Rules › division``), so the input that
-    raises already lists the fork it died on. Any other operand gets
-    float's own answer and a downgrade named by the dunder.
+    raises already lists the fork it died on. A float subclass that
+    defines the reflected operation answers first (see `_answered_first`).
+    For any other operand, float's own answer comes with a downgrade named
+    by the dunder, and float's NotImplemented passes through with no
+    downgrade.
     """
     operation = getattr(float, name)
     downgrade = downgraded(float, name)
