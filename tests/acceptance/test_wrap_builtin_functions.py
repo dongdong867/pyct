@@ -261,3 +261,46 @@ def test_the_stderr_line_reads_each_call() -> None:
     lines = result.stderr.splitlines()
     assert f"fork {file}:2:7  len(c) == 1  taken" in lines
     assert f"fork {file}:2:7  ord(c) == 65  not taken" in lines
+
+
+WALKED = "targets.intercept.walked_codes"
+
+
+def pass_fork(position: int) -> list[object]:
+    """The fork a walk over `s` records for a pass: s has a character at ``position``."""
+    return [">", ["len", "s"], position]
+
+
+# intercept-builtin-functions-follows-ord-and-chr, on each character a walk hands out
+def test_follows_ord_on_a_walked_character() -> None:
+    # every longer string of low letters is one more path, so the budget ends the run
+    result = run_pyct(f"{WALKED}::high", '{"s": "a"}', "--budget", "3")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    first = ["[]", "s", 0]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(inputs[0])] == [
+        (pass_fork(0), True),
+        ([">", ["ord", first], 100], False),
+        (pass_fork(1), False),
+    ]
+    assert all(line["downgrades"] == [] for line in inputs)
+    high = [line for line in inputs[1:] if sides([line], [">", ["ord", first], 100]) == {True}]
+    assert high, inputs
+    assert all(ord(text(line, "s")[0]) > 100 for line in high)
+
+
+# intercept-builtin-functions-follows-len, inside and after a walk over the same string
+def test_follows_len_inside_and_after_a_walk() -> None:
+    result = run_pyct(f"{WALKED}::measured", '{"s": ""}', "--budget", "3")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    assert expressions(inputs[0]) == [pass_fork(0), ["==", ["len", "s"], 2]]
+    # the walk's passes and `len(s)` are one length term, so every fork is flipped by an
+    # input Python agrees takes the other side
+    two = [line for line in inputs if sides([line], ["==", ["len", "s"], 2]) == {True}]
+    assert two and all(len(text(line, "s")) == 2 for line in two), inputs
+    long = [line for line in inputs if sides([line], LONGER) == {True}]
+    assert long and all(len(text(line, "s")) > 3 for line in long), inputs
+    assert all(line["downgrades"] == [] for line in inputs)

@@ -95,3 +95,12 @@ def test_a_code_out_of_range_records_the_fork_it_fails_and_raises_as_python_does
     assert (ValueError, str(caught.value)) == python_raise(chr, value)
     assert raised_by_target(caught.value)
     assert [side for _, side in sides(sink)] == taken
+
+
+def test_the_code_of_a_character_read_at_a_position_records_no_length_fork() -> None:
+    sink: list[SinkItem] = []
+
+    code = codes.code(ConcolicStr("e", expression=["[]", "s", 0], sink=sink))
+
+    assert (int.__int__(code), code.expression) == (101, ["ord", ["[]", "s", 0]])
+    assert sink == []

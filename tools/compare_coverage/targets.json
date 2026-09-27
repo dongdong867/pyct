@@ -105,6 +105,8 @@
     {"set": "v2", "target": "targets.intercept.type_errors::in_set", "seed": {"items": [1]}},
     {"set": "v2", "target": "targets.intercept.type_errors::in_text", "seed": {"n": 1}},
     {"set": "v2", "target": "targets.intercept.type_names::f", "seed": {"x": 1, "s": "a"}},
+    {"set": "v2", "target": "targets.intercept.walked_codes::high", "seed": {"s": "a"}},
+    {"set": "v2", "target": "targets.intercept.walked_codes::measured", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.ints.abs_and_negation::place", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.ints.arithmetic_check::grade", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.ints.bit_check::parity", "seed": {"x": 1}},
