@@ -102,7 +102,7 @@ def _truth(test: Callable[[Any], bool], false: Expression) -> Callable[[Any], An
 
     def compute(value: ConcolicInt | ConcolicFloat | ConcolicStr) -> Any:
         expression = ["!=", value.expression, false]
-        return ConcolicBool(own(test, value), expression=expression, sink=value.sink)
+        return ConcolicBool.made(own(test, value), expression=expression, sink=value.sink)
 
     return compute
 

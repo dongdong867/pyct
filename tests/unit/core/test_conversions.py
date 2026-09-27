@@ -16,14 +16,14 @@ from tests.unit.core.test_substitutes import expressions
 
 
 def text(value: str, sink: list[SinkItem]) -> ConcolicStr:
-    return ConcolicStr(value, expression="s", sink=sink)
+    return ConcolicStr.made(value, expression="s", sink=sink)
 
 
 def test_a_conversion_to_the_type_a_value_is_is_the_value_itself() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
-    f = ConcolicFloat(2.5, expression="f", sink=sink)
-    b = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
+    f = ConcolicFloat.made(2.5, expression="f", sink=sink)
+    b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     assert bound.int_(n) is n
     assert bound.float_(f) is f
@@ -44,7 +44,7 @@ def test_a_tracked_bool_converts_to_the_number_it_is(
 ) -> None:
     sink: list[SinkItem] = []
 
-    result = convert(ConcolicBool(value, expression=[">", "x", 0], sink=sink))  # pyrefly: ignore
+    result = convert(ConcolicBool.made(value, expression=[">", "x", 0], sink=sink))  # pyrefly: ignore
 
     assert (type(result), repr(result), result.expression) == (
         ConcolicInt if isinstance(answer, int) else ConcolicFloat,
@@ -55,7 +55,7 @@ def test_a_tracked_bool_converts_to_the_number_it_is(
 
 
 def test_float_of_a_tracked_int_rounds_it_as_python_does() -> None:
-    result = bound.float_(ConcolicInt(2**53 + 1, expression="n", sink=[]))
+    result = bound.float_(ConcolicInt.made(2**53 + 1, expression="n", sink=[]))
 
     assert (type(result), repr(result), result.expression) == (  # pyrefly: ignore
         ConcolicFloat,
@@ -66,7 +66,7 @@ def test_float_of_a_tracked_int_rounds_it_as_python_does() -> None:
 
 def test_float_of_a_tracked_int_too_large_raises_python_s_error_as_the_target_s() -> None:
     with pytest.raises(OverflowError) as raised:
-        bound.float_(ConcolicInt(10**400, expression="n", sink=[]))
+        bound.float_(ConcolicInt.made(10**400, expression="n", sink=[]))
 
     assert raised_by_target(raised.value)
 
@@ -74,7 +74,7 @@ def test_float_of_a_tracked_int_too_large_raises_python_s_error_as_the_target_s(
 def test_int_of_a_tracked_float_cuts_it_toward_zero_after_its_finite_fork() -> None:
     sink: list[SinkItem] = []
 
-    result = bound.int_(ConcolicFloat(-2.5, expression="f", sink=sink))
+    result = bound.int_(ConcolicFloat.made(-2.5, expression="f", sink=sink))
 
     assert (type(result), repr(result), result.expression) == (  # pyrefly: ignore
         ConcolicInt,
@@ -100,7 +100,7 @@ def test_int_of_a_float_python_cannot_convert_raises_past_its_fork(
     sink: list[SinkItem] = []
 
     with pytest.raises(error) as raised:
-        bound.int_(ConcolicFloat(value, expression="f", sink=sink))
+        bound.int_(ConcolicFloat.made(value, expression="f", sink=sink))
 
     assert str(raised.value) == _message(int, value)
     assert raised_by_target(raised.value)
@@ -167,7 +167,7 @@ def test_bool_of_a_tracked_value_holds_its_truth_untested(
 ) -> None:
     sink: list[SinkItem] = []
 
-    result = bound.bool_(kind(value, expression="x", sink=sink))
+    result = bound.bool_(kind.made(value, "x", sink))  # pyrefly: ignore[missing-attribute]
 
     assert (type(result), repr(result), result.expression) == (  # pyrefly: ignore
         ConcolicBool,

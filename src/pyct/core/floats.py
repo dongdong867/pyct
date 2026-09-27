@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import (
     REPORTED_CLASS,
-    built,
+    as_base,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -303,9 +303,16 @@ class ConcolicFloat(float):
     fromhex = built_plainly(float, "fromhex")  # pyrefly: ignore[bad-override]
     __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> ConcolicFloat:
-        # built by pyct with `expression=` and `sink=`; called any other way, float's plain value
-        return built(cls, float, args, kwargs)
+    # the class called with a value is float's own, a plain float; pyct builds a tracked one
+    __new__ = as_base
+
+    @classmethod
+    def made(cls, value: float, expression: Expression, sink: BranchSink) -> Self:
+        """A tracked float of this value and form: how pyct builds one."""
+        made = float.__new__(cls, value)
+        made.expression = expression
+        made.sink = sink
+        return made
 
     def __bool__(self) -> bool:
         # zero is the one value on the other side: 0.0 and -0.0 both, and NaN is true

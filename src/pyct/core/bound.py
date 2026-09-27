@@ -37,7 +37,7 @@ from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
-from pyct.core.values import BASES
+from pyct.core.values import BASES_BY_ID
 
 # Python's own three, captured before this module defines its own under the same names. A target
 # that replaces one in `builtins` later changes what its modules find by the name (see
@@ -159,18 +159,18 @@ def map_(*args: object, **kwargs: object) -> Any:
     return map(converter, *args[1:], **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
-def type_(*args: object, **kwargs: object) -> Any:
+def type_(value: object, /) -> Any:
     """Python's `type` where the code writes it with one argument: a tracked value's base type.
 
     `type` reads the real class, which for a tracked value is pyct's, so the
-    table of base types answers for it (`pyct.core.bases`). It reads the
-    class and never the value, so it records nothing. Any other call is
-    Python's own `type`.
+    table of base types answers for it (`pyct.core.bases`), by the class's
+    identity alone, so no class's own code runs here. It reads the class and
+    never the value, so it records nothing. Any other value's class is
+    Python's own answer. Interception hands it exactly one argument, never
+    unpacked, as `type(v)` is written (`pyct.intercept.calls`).
     """
-    if _LEN(args) == 1 and not kwargs:
-        kind = type(args[0])
-        return BASES.get(kind, kind)
-    return type(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
+    kind = type(value)
+    return BASES_BY_ID.get(id(kind), kind)
 
 
 # what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `type(...)`, or a

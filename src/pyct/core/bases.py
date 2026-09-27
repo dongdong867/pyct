@@ -12,12 +12,13 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 
-values.BASES.update(
-    {
-        ConcolicInt: int,
-        ConcolicFloat: float,
-        ConcolicStr: str,
-        ConcolicBool: bool,
-        ConcolicList: list,
-    }
-)
+# the table: each tracked class, and the base type it reports
+_ROWS: dict[type, type] = {
+    ConcolicInt: int,
+    ConcolicFloat: float,
+    ConcolicStr: str,
+    ConcolicBool: bool,
+    ConcolicList: list,
+}
+values.BASES.update(_ROWS)
+values.BASES_BY_ID.update({id(tracked): base for tracked, base in _ROWS.items()})

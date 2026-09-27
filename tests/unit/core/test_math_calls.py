@@ -22,7 +22,7 @@ def called(function: Callable[..., object]) -> Callable[..., Any]:
 
 
 def tracked(value: float, sink: list[SinkItem], name: str = "x") -> ConcolicFloat:
-    return ConcolicFloat(value, expression=name, sink=sink)
+    return ConcolicFloat.made(value, expression=name, sink=sink)
 
 
 # the plain value each named operand below holds
@@ -37,9 +37,9 @@ def operands(names: tuple[Any, ...], sink: list[SinkItem]) -> tuple[list[Any], l
     values: dict[str, Any] = {
         "x": tracked(1.5, sink),
         "y": tracked(-0.0, sink, "y"),
-        "n": ConcolicInt(4, expression="n", sink=sink),
-        "b": ConcolicBool(True, expression=[">", "n", 0], sink=sink),
-        "s": ConcolicStr("a", expression="s", sink=sink),
+        "n": ConcolicInt.made(4, expression="n", sink=sink),
+        "b": ConcolicBool.made(True, expression=[">", "n", 0], sink=sink),
+        "s": ConcolicStr.made("a", expression="s", sink=sink),
     }
     written = [values.get(name, name) if isinstance(name, str) else name for name in names]
     plain = [PLAIN.get(name, name) if isinstance(name, str) else name for name in names]
@@ -106,7 +106,7 @@ def test_sqrt_below_zero_raises_python_s_error_past_its_fork(value: float) -> No
 def test_a_tracked_int_is_read_as_the_double_python_converts_it_to() -> None:
     sink: list[SinkItem] = []
 
-    result = called(math.sqrt)(ConcolicInt(2**53 + 1, expression="n", sink=sink))
+    result = called(math.sqrt)(ConcolicInt.made(2**53 + 1, expression="n", sink=sink))
 
     assert (type(result), repr(result)) == (ConcolicFloat, repr(math.sqrt(2**53 + 1)))
     assert result.expression == ["sqrt", "n"]
@@ -122,7 +122,7 @@ def test_a_tracked_int_too_large_for_a_double_raises_python_s_error_before_any_f
     sink: list[SinkItem] = []
 
     with pytest.raises(OverflowError) as raised:
-        called(function)(ConcolicInt(value, expression="n", sink=sink))
+        called(function)(ConcolicInt.made(value, expression="n", sink=sink))
 
     assert str(raised.value) == _message(function, value)
     assert raised_by_target(raised.value)
@@ -134,7 +134,9 @@ def test_copysign_converts_each_int_before_it_reads_either() -> None:
     sink: list[SinkItem] = []
 
     with pytest.raises(OverflowError) as raised:
-        called(math.copysign)(tracked(1.0, sink), ConcolicInt(10**400, expression="n", sink=sink))
+        called(math.copysign)(
+            tracked(1.0, sink), ConcolicInt.made(10**400, expression="n", sink=sink)
+        )
 
     assert str(raised.value) == _message(math.copysign, 1.0, 10**400)
     assert sink == []

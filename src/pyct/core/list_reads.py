@@ -69,9 +69,9 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     value = plain(item)
     expression: Expression = ["[]", self.expression, written]
     if isinstance(value, str):
-        return ConcolicStr(value, expression=expression, sink=self.sink)
+        return ConcolicStr.made(value, expression=expression, sink=self.sink)
     assert isinstance(value, int)
-    return ConcolicInt(value, expression=expression, sink=self.sink)
+    return ConcolicInt.made(value, expression=expression, sink=self.sink)
 
 
 def length(self: ListState) -> int:
@@ -85,7 +85,7 @@ def length(self: ListState) -> int:
     """
     if not self.holds("__len__"):
         return self.length()
-    return ConcolicInt(self.length(), expression=["len", self.expression], sink=self.sink)
+    return ConcolicInt.made(self.length(), expression=["len", self.expression], sink=self.sink)
 
 
 def _named(self: ListState, row: ListState, written: Expression) -> None:

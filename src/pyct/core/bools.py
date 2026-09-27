@@ -9,14 +9,14 @@ Python type, so this module never names the tracked int.
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Self
 
 from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import INT_KEPT, compare, promoted
 from pyct.core.values import (
     REPORTED_CLASS,
-    built,
+    as_base,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -66,7 +66,7 @@ def _logical(
             return downgrade(self, other)
         sides = [form, self.expression] if reflected else [self.expression, form]
         answer = bool(own(operation, self, other))
-        return ConcolicBool(answer, expression=[op, *sides], sink=self.sink)
+        return ConcolicBool.made(answer, expression=[op, *sides], sink=self.sink)
 
     return compute
 
@@ -166,9 +166,16 @@ class ConcolicBool(int):
         int, "__format__", calling=_formatted, first=texts.alone(__str__)
     )
 
-    def __new__(cls, *args: Any, **kwargs: Any) -> ConcolicBool:
-        # built by pyct with `expression=` and `sink=`; called any other way, bool's plain value
-        return built(cls, int, args, kwargs)
+    # the class called with a value is bool's own, a plain bool; pyct builds a tracked one
+    __new__ = as_base
+
+    @classmethod
+    def made(cls, value: bool, expression: Expression, sink: BranchSink) -> Self:
+        """A tracked bool of this value and form: how pyct builds one."""
+        made = int.__new__(cls, value)
+        made.expression = expression
+        made.sink = sink
+        return made
 
     def __bool__(self) -> bool:
         return forked(self.sink, self.expression, own(int.__bool__, self))

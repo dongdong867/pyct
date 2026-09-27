@@ -4,25 +4,26 @@ called outside pyct's construction (tracked-values-report-their-base-type-as-the
 import copy
 import functools
 import pickle
+from typing import Any
 
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
-from pyct.core.values import BASES, raised_by_target
+from pyct.core.values import BASES, BASES_BY_ID, raised_by_target
 
 
 def tracked_values(sink: list[SinkItem]) -> list[tuple[object, type]]:
     """One tracked value of each tracked type, beside the base type Python's own value has."""
     return [
-        (ConcolicInt(1, expression="n", sink=sink), int),
-        (ConcolicFloat(2.5, expression="r", sink=sink), float),
-        (ConcolicStr("a", expression="s", sink=sink), str),
-        (ConcolicBool(True, expression="b", sink=sink), bool),
+        (ConcolicInt.made(1, "n", sink), int),
+        (ConcolicFloat.made(2.5, "r", sink), float),
+        (ConcolicStr.made("a", "s", sink), str),
+        (ConcolicBool.made(True, "b", sink), bool),
         (ConcolicList.made([1], "xs", sink), list),
     ]
 
@@ -35,6 +36,7 @@ def test_the_table_holds_each_tracked_class_and_its_base_type() -> None:
         ConcolicBool: bool,
         ConcolicList: list,
     } == BASES
+    assert {id(tracked): base for tracked, base in BASES.items()} == BASES_BY_ID
 
 
 def test_a_tracked_value_reports_its_base_type_as_its_class() -> None:
@@ -52,8 +54,8 @@ def test_a_tracked_value_reports_its_base_type_as_its_class() -> None:
 
 def test_a_tracked_bool_is_a_bool_and_a_tracked_int_is_not() -> None:
     sink: list[SinkItem] = []
-    flag = ConcolicBool(True, expression="b", sink=sink)
-    n = ConcolicInt(1, expression="n", sink=sink)
+    flag = ConcolicBool.made(True, "b", sink)
+    n = ConcolicInt.made(1, "n", sink)
 
     assert isinstance(flag, bool) and isinstance(flag, int)
     assert isinstance(flag, (str, bool)) and issubclass(flag.__class__, bool)
@@ -71,8 +73,8 @@ def test_singledispatch_picks_the_handler_of_the_base_type() -> None:
     kind.register(bool, lambda value: "bool")
     sink: list[SinkItem] = []
 
-    assert kind(ConcolicBool(True, expression="b", sink=sink)) == "bool"
-    assert kind(ConcolicInt(1, expression="n", sink=sink)) == "int"
+    assert kind(ConcolicBool.made(True, "b", sink)) == "bool"
+    assert kind(ConcolicInt.made(1, "n", sink)) == "int"
 
 
 def test_the_class_itself_is_still_a_class() -> None:
@@ -116,6 +118,7 @@ def test_a_tracked_class_called_with_keywords_builds_as_its_base_type_does() -> 
         (ConcolicInt, ("abc",), {}),
         (ConcolicFloat, ("abc",), {}),
         (ConcolicInt, (1,), {"expression": "n"}),
+        (ConcolicStr, ("a",), {"expression": "s", "sink": []}),
         (ConcolicList, (5,), {}),
     ],
 )
@@ -135,7 +138,7 @@ def test_a_tracked_class_raises_what_its_base_type_raises(
 
 def test_pyct_still_builds_a_tracked_value() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, "n", sink)
 
     assert type(n) is ConcolicInt
     assert n.expression == "n" and n.sink is sink
@@ -149,3 +152,33 @@ def test_a_copy_is_the_value_itself_and_a_pickle_the_plain_value() -> None:
             assert copy.copy(value) is value and copy.deepcopy(value) is value
         loaded = pickle.loads(pickle.dumps(value))
         assert type(loaded) is base and loaded == value
+
+
+class _Listed(list):
+    pass
+
+
+class _Numbered(int):
+    pass
+
+
+@pytest.mark.parametrize("kind", [_Numbered, int, str, _Listed, 5])
+def test_assigning_the_class_raises_what_python_raises_for_the_plain_value(kind: Any) -> None:
+    sink: list[SinkItem] = []
+
+    for value, base in tracked_values(sink):
+        plain = base()
+        try:
+            plain.__class__ = kind
+        except TypeError as error:
+            with pytest.raises(TypeError) as raised:
+                value.__class__ = kind
+            assert str(raised.value) == str(error)
+            assert raised_by_target(raised.value)
+        else:
+            # Python takes a list subclass laid out as list is, for the plain list and the
+            # tracked one alike
+            value.__class__ = kind
+            assert type(value) is type(plain) is kind
+            # the list is no longer tracked, and the line names what lost it
+            assert sink == [Downgrade(name="__class__")]

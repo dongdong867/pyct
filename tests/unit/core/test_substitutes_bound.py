@@ -41,14 +41,14 @@ def outcome(function: Callable[..., object], call: Call) -> tuple[str, object]:
         (len, (("a", "b"), {})),
         (len, ((), {"obj": "a"})),
         (len, (("a",), {"x": 1})),
-        (len, ((ConcolicInt(5, expression="n", sink=[]),), {})),
-        (len, ((ConcolicFloat(0.5, expression="f", sink=[]),), {})),
+        (len, ((ConcolicInt.made(5, expression="n", sink=[]),), {})),
+        (len, ((ConcolicFloat.made(0.5, expression="f", sink=[]),), {})),
         (ord, (("a",), {})),
         (ord, (("ab",), {})),
         (ord, ((b"a",), {})),
         (ord, ((97,), {})),
         (ord, ((), {"c": "a"})),
-        (ord, ((ConcolicInt(5, expression="n", sink=[]),), {})),
+        (ord, ((ConcolicInt.made(5, expression="n", sink=[]),), {})),
         (chr, ((98,), {})),
         (chr, ((-1,), {})),
         (chr, ((1114112,), {})),
@@ -56,7 +56,7 @@ def outcome(function: Callable[..., object], call: Call) -> tuple[str, object]:
         (chr, ((True,), {})),
         (chr, ((2**70,), {})),
         (chr, ((), {"i": 98})),
-        (chr, ((ConcolicStr("a", expression="s", sink=[]),), {})),
+        (chr, ((ConcolicStr.made("a", expression="s", sink=[]),), {})),
     ],
 )
 def test_a_bound_builtin_is_python_s_own_on_every_other_call(
@@ -82,7 +82,7 @@ def test_a_bound_len_asks_the_value_s_own_len_once_as_python_does() -> None:
 def test_a_bound_len_on_a_tracked_string_is_its_tracked_length() -> None:
     sink: list[SinkItem] = []
 
-    size = len_(ConcolicStr("abcd", expression="s", sink=sink))
+    size = len_(ConcolicStr.made("abcd", expression="s", sink=sink))
 
     assert type(size) is ConcolicInt
     assert size.expression == ["len", "s"]
@@ -91,7 +91,7 @@ def test_a_bound_len_on_a_tracked_string_is_its_tracked_length() -> None:
 
 def test_a_bound_len_through_map_measures_each_item() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("ab", expression="s", sink=sink)
+    s = ConcolicStr.made("ab", expression="s", sink=sink)
 
     sizes = list(map(len_, [s, "xyz"]))
 
@@ -103,8 +103,8 @@ def test_a_bound_len_through_map_measures_each_item() -> None:
 def test_bound_ord_and_chr_on_tracked_values_are_core_s() -> None:
     sink: list[SinkItem] = []
 
-    code = ord_(ConcolicStr("a", expression="c", sink=sink))
-    character = chr_(ConcolicInt(98, expression="n", sink=sink))
+    code = ord_(ConcolicStr.made("a", expression="c", sink=sink))
+    character = chr_(ConcolicInt.made(98, expression="n", sink=sink))
 
     assert isinstance(code, ConcolicInt) and isinstance(character, ConcolicStr)
     assert (int.__int__(code), code.expression) == (97, ["ord", "c"])
@@ -136,7 +136,7 @@ def test_a_bound_builtin_calls_python_s_own_when_builtins_holds_another(
     for each, (own_python, _) in BOUND.items():
         monkeypatch.setattr(builtins, each, replaced if each == name else own_python)
     answer = outcome(bound, ((argument,), {}))
-    tracked = outcome(bound, ((ConcolicStr("a", expression="s", sink=[]),), {}))
+    tracked = outcome(bound, ((ConcolicStr.made("a", expression="s", sink=[]),), {}))
     monkeypatch.undo()
 
     # a module that found the bound function keeps it, as plain Python keeps the builtin it
@@ -181,15 +181,49 @@ def test_the_type_router_is_python_s_type_on_a_plain_value(value: object) -> Non
     assert bound_module.type_(value) is type(value)
 
 
-def test_the_type_router_hands_any_other_call_to_python() -> None:
-    made = bound_module.type_("C", (), {"k": 1})
+class _Unhashable(type):
+    """A metaclass that defines `==` alone, so its classes cannot be hashed."""
 
-    assert isinstance(made, type) and made.__name__ == "C"
-    with pytest.raises(TypeError) as plain:
-        type(1, 2)  # pyrefly: ignore[no-matching-overload]
-    with pytest.raises(TypeError) as raised:
-        bound_module.type_(1, 2)
-    assert str(raised.value) == str(plain.value)
+    def __eq__(cls, other: object) -> bool:
+        return cls is other
+
+    __hash__ = None  # pyrefly: ignore[bad-override]
+
+
+class _Tagged(metaclass=_Unhashable):
+    pass
+
+
+# each hash a class of `_Counted` was asked for
+_HASHED: list[type] = []
+
+
+class _Counted(type):
+    """A metaclass whose own `__hash__` notes each call, as target code in it would run."""
+
+    def __hash__(cls) -> int:
+        _HASHED.append(cls)
+        return id(cls)
+
+
+class _Noted(metaclass=_Counted):
+    pass
+
+
+def test_the_type_router_reads_an_unhashable_class_as_python_does() -> None:
+    with pytest.raises(TypeError):
+        hash(_Tagged)
+    tagged = _Tagged()
+
+    assert bound_module.type_(tagged) is type(tagged) is _Tagged
+
+
+def test_the_type_router_runs_no_code_of_the_class() -> None:
+    _HASHED.clear()
+    noted = _Noted()
+
+    assert bound_module.type_(noted) is type(noted) is _Noted
+    assert _HASHED == []
 
 
 def test_a_call_written_type_reaches_the_router() -> None:

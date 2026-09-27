@@ -139,8 +139,8 @@ def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]
     """A tracked value's ``__reduce_ex__`` and ``__reduce__``: its plain value, loading as ``kind``.
 
     pickle asks a tracked value for ``__reduce_ex__`` at every protocol, so
-    no pickle rebuilds a concolic type through a ``__new__`` that needs an
-    expression and a sink, and no pickle holds the sink. A pickle can load in
+    no pickle rebuilds a concolic type, whose class called with a value
+    builds a plain one, and no pickle holds the sink. A pickle can load in
     another process or a later input, where the condition does not apply, so
     writing one is a downgrade named by the method Python called, and the
     value that was pickled keeps its condition (pickle-holds-the-plain-value).
@@ -169,9 +169,12 @@ def _written(value: _Sinked, held: object, name: str) -> Pickled:
 # written by `pyct.core.bases` once every tracked class exists. A tracked value reports its row
 # as its class, and its class called outside pyct's construction builds that type's value
 BASES: dict[type, type] = {}
+# the same rows by the tracked class's identity, for code that meets any class, as the `type`
+# router does: reading a class's identity runs none of its code, where hashing it may
+BASES_BY_ID: dict[int, type] = {}
 
-# the keywords pyct builds a tracked scalar with, and nothing else (see `built`)
-_PYCT_BUILT = frozenset({"expression", "sink"})
+# object's own `__class__`, which each tracked class's hides
+_OBJECT_CLASS = object.__dict__["__class__"]
 
 
 def _base_class(self: object) -> type:
@@ -179,12 +182,25 @@ def _base_class(self: object) -> type:
     return BASES[type(self)]
 
 
+def _assigned_class(self: _Sinked, kind: object) -> None:
+    """`v.__class__ = kind`: made on a plain value of the base type first, so a class Python
+    refuses for it raises Python's own error, in its words, and then on the value itself.
+
+    Python refuses every class for an int, float, str or bool; a list takes a
+    subclass of list that is laid out as it is, and is no longer tracked
+    after it, so the change is a downgrade named `__class__`.
+    """
+    own(setattr, BASES[type(self)](), "__class__", kind)
+    own(_OBJECT_CLASS.__set__, self, kind)
+    self.sink.append(Downgrade(name="__class__"))
+
+
 # a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
 # when the real type does not match, and `functools.singledispatch` and a class pattern read it,
 # so each answers as for the plain value (tracked-values-report-their-base-type-as-their-class).
 # It reads the class and never the value, so it records nothing. `type(v)` still reads the real
 # class, which is how pyct tells a tracked value apart
-REPORTED_CLASS = property(_base_class)
+REPORTED_CLASS = property(_base_class, _assigned_class)
 
 
 def as_base(cls: type, /, *args: object, **kwargs: object) -> Any:
@@ -195,22 +211,6 @@ def as_base(cls: type, /, *args: object, **kwargs: object) -> Any:
     arguments, or its raise.
     """
     return own(BASES[cls], *args, **kwargs)
-
-
-def built(cls: type, parent: type, args: tuple[object, ...], kwargs: dict[str, Any]) -> Any:
-    """What a tracked scalar class's ``__new__`` builds: a tracked value when pyct builds one,
-    and otherwise its base type's plain value (`as_base`).
-
-    pyct builds a tracked value with the value and ``expression=`` and
-    ``sink=`` alone. ``parent`` is the class the tracked one extends, which
-    for a tracked bool is int, since bool cannot be subclassed.
-    """
-    if kwargs.keys() != _PYCT_BUILT:
-        return as_base(cls, *args, **kwargs)
-    made = parent.__new__(cls, *args)
-    made.expression = kwargs["expression"]
-    made.sink = kwargs["sink"]
-    return made
 
 
 def built_plainly(kind: type, name: str) -> Any:
