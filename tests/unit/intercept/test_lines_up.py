@@ -1,13 +1,8 @@
 """Every substituted module lines up with the module as written.
 
 intercept-builtin-functions-lines-up-each-substituted-module-with-the-original. Each file of
-the corpus is compiled as written and as pyct substitutes it, and each pair of code objects
-must have the same lines, the same steps from one line to the next, and the same conditional
-jumps, each copy counted, at the same position with the same target line and the same kind. A
-line start is where ``sys.monitoring`` fires a line event, so these are the lines a run covers
-and the order it covers them in. The one change of kind allowed is a fused None test, which a
-substituted `is None` link makes a truth test on the same outcome (see `jump_kind`). No other
-instruction is compared: substitution changes them.
+the corpus is compiled as written and as pyct substitutes it, and the two must line up as
+`tests.unit.intercept.lines_up` reads them: the same lines, steps and conditional jumps.
 
 The corpus is v2's own targets, modules of the standard library, and a sample of real
 libraries: two whole, and the core of a large one with its tests, whose asserts spread one
@@ -20,7 +15,6 @@ import importlib.util
 import sysconfig
 import types
 import warnings
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -28,6 +22,15 @@ import pytest
 from pyct.intercept.compiled import substituted_code
 from pyct.intercept.substitute import substitute
 from tests.acceptance.harness import REPO_ROOT
+from tests.unit.intercept.lines_up import (
+    code_objects,
+    conditional_jumps,
+    jump_kind,
+    layout,
+    line_starts,
+    lined_up,
+    negations,
+)
 
 STDLIB = Path(sysconfig.get_paths()["stdlib"])
 
@@ -48,10 +51,6 @@ CORPUS: dict[str, tuple[str | None, str]] = {
     "sympy.core": ("sympy", "core"),
 }
 
-type Layout = tuple[
-    str, frozenset[int], frozenset[tuple[int | None, int]], list[tuple[object, int | None, str]]
-]
-
 
 def files_of(group: str) -> list[Path]:
     """The corpus group's Python files, or a skip when its library is not installed."""
@@ -66,159 +65,6 @@ def files_of(group: str) -> list[Path]:
     return [root] if root.is_file() else sorted(root.rglob("*.py"))
 
 
-def code_objects(code: types.CodeType) -> Iterator[types.CodeType]:
-    yield code
-    for constant in code.co_consts:
-        if isinstance(constant, types.CodeType):
-            yield from code_objects(constant)
-
-
-def line_starts(code: types.CodeType) -> list[tuple[int, bool]]:
-    """Each instruction after RESUME that starts a line, or that a jump lands on, with its line."""
-    starts: list[tuple[int, bool]] = []
-    previous: int | None = None
-    resumed = False
-    for step in dis.get_instructions(code):
-        line = step.positions.lineno if step.positions else None
-        if resumed and line is not None and (line != previous or step.is_jump_target):
-            starts.append((line, step.is_jump_target))
-        resumed = resumed or step.opname == "RESUME"
-        previous = line
-    return starts
-
-
-# how control leaves an instruction without falling through to the next one
-_NO_FALLTHROUGH = frozenset(
-    {
-        "RETURN_VALUE",
-        "RETURN_CONST",
-        "RAISE_VARARGS",
-        "RERAISE",
-        "JUMP_FORWARD",
-        "JUMP_BACKWARD",
-        "JUMP_BACKWARD_NO_INTERRUPT",
-    }
-)
-_JUMPS = frozenset(dis.hasjrel) | frozenset(dis.hasjabs)
-
-
-def _successors(steps: list[dis.Instruction]) -> list[list[int]]:
-    """The indexes control can go to from each instruction: the next one, and a jump's target."""
-    at = {step.offset: index for index, step in enumerate(steps)}
-    found: list[list[int]] = []
-    for index, step in enumerate(steps):
-        after = [] if step.opname in _NO_FALLTHROUGH else [index + 1]
-        if step.opcode in _JUMPS and isinstance(step.argval, int) and step.argval in at:
-            after.append(at[step.argval])
-        found.append([each for each in after if each < len(steps)])
-    return found
-
-
-def _line(step: dis.Instruction) -> int | None:
-    """An instruction's line, or None for RESUME and an instruction with no line of its own."""
-    if step.opname == "RESUME" or step.positions is None:
-        return None
-    return step.positions.lineno
-
-
-def line_order(code: types.CodeType) -> frozenset[tuple[int | None, int]]:
-    """Which line can run right after which: each step from one line to another along the code.
-
-    A line start is where ``sys.monitoring`` fires a line event, so these
-    steps are the orders a run covers lines in, on every path. CPython copies
-    a short block that ends a function, such as its last ``return``, into
-    each branch that reaches it, and a longer one it jumps to instead; both
-    take the same steps, so two codes that differ only there line up. The
-    first line is a step from None, from RESUME, and an instruction with no
-    line of its own passes control on without a step.
-    """
-    steps = [step for step in dis.get_instructions(code) if step.opname != "CACHE"]
-    successors = _successors(steps)
-    order: set[tuple[int | None, int]] = set()
-    for index, step in enumerate(steps):
-        start = _line(step)
-        if start is None and step.opname != "RESUME":
-            continue
-        pending, seen = list(successors[index]), set()
-        while pending:
-            after = pending.pop()
-            if after not in seen:
-                seen.add(after)
-                reached = _line(steps[after])
-                if reached is None:
-                    pending.extend(successors[after])
-                elif reached != start:
-                    order.add((start, reached))
-    return frozenset(order)
-
-
-# the jumps a substituted `is None` link turns into, and what may sit between its test and jump
-_TRUTH_TESTS = frozenset({"POP_JUMP_IF_TRUE", "POP_JUMP_IF_FALSE"})
-_BETWEEN = frozenset({"SWAP", "COPY", "NOP", "CACHE", "EXTENDED_ARG"})
-# the steps that search `__pyct_identity__(None)`, as a substituted `is None` link compiles
-_NONE_LINK = ("__pyct_identity__", None, "CALL", "CONTAINS_OP")
-
-
-def jump_kind(opname: str, none_link: int | None) -> str:
-    """A conditional jump's kind, a truth test on a substituted `is None` link read as the None
-    test it stands for.
-
-    ``none_link`` is the argument of the `CONTAINS_OP` right before the jump
-    when it searches `__pyct_identity__(None)`, and None for any other jump.
-    `x in __pyct_identity__(None)` is true exactly when `x` is None, and
-    `not in` exactly when it is not. So `POP_JUMP_IF_TRUE` after `in`, or
-    `POP_JUMP_IF_FALSE` after `not in`, jumps when `x` is None, as
-    `POP_JUMP_IF_NONE` does, and the other two as `POP_JUMP_IF_NOT_NONE`.
-    Every other jump keeps its own kind, so a flipped outcome differs.
-    """
-    if opname not in _TRUTH_TESTS or none_link is None:
-        return opname
-    jumps_on_none = (none_link == 0) == (opname == "POP_JUMP_IF_TRUE")
-    return "POP_JUMP_IF_NONE" if jumps_on_none else "POP_JUMP_IF_NOT_NONE"
-
-
-def _none_link(steps: list[dis.Instruction], jump: int) -> int | None:
-    """The `CONTAINS_OP` argument of a substituted `is None` link the jump tests, or None."""
-    if jump < 4:
-        return None
-    name, constant, call, contains = steps[jump - 4 : jump]
-    shape = (name.argval, constant.argval, call.opname, contains.opname)
-    loaded = name.opname.startswith("LOAD_") and constant.opname == "LOAD_CONST"
-    return contains.arg if loaded and shape == _NONE_LINK else None
-
-
-def conditional_jumps(code: types.CodeType) -> list[tuple[object, int | None, str]]:
-    """Each conditional jump's position, the line it jumps to and its kind, every copy kept.
-
-    CPython writes a loop's test twice, at its top and its end, so two copies
-    of one jump are two entries, and a code that drops one differs.
-    """
-    every = list(dis.get_instructions(code))
-    lines = {step.offset: _line(step) for step in every}
-    steps = [step for step in every if step.opname not in _BETWEEN]
-    return sorted(
-        (
-            (step.positions, lines.get(step.argval), jump_kind(step.opname, _none_link(steps, at)))
-            for at, step in enumerate(steps)
-            if step.opname.startswith("POP_JUMP_IF")
-        ),
-        key=repr,
-    )
-
-
-def layout(code: types.CodeType) -> list[Layout]:
-    """What a line tracer and a branch read off each code object: name, lines, steps, jumps."""
-    return [
-        (
-            each.co_name,
-            frozenset(line for _, _, line in each.co_lines() if line),
-            line_order(each),
-            conditional_jumps(each),
-        )
-        for each in code_objects(code)
-    ]
-
-
 def compared(path: Path) -> tuple[bool, bool] | None:
     """Whether the file lines up, and whether pyct substituted anything in it; None if it does
     not compile as written."""
@@ -230,8 +76,9 @@ def compared(path: Path) -> tuple[bool, bool] | None:
         except SyntaxError:
             return None
         substituted = substituted_code(source, str(path))
-    changed = ast.dump(ast.parse(source)) != ast.dump(substitute(ast.parse(source)))
-    return layout(written) == layout(substituted), changed
+    tree = substitute(ast.parse(source))
+    changed = ast.dump(ast.parse(source)) != ast.dump(tree)
+    return layout(written) == layout(substituted, negations(tree)), changed
 
 
 @pytest.mark.parametrize("group", CORPUS)
@@ -333,21 +180,17 @@ CALLS_AND_OPERATORS_SPREAD_OUT = [
 @pytest.mark.parametrize("shape", CALLS_AND_OPERATORS_SPREAD_OUT)
 def test_a_call_or_operator_spread_over_lines_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
-    written = compile(source, "<f>", "exec")
     tree = substitute(ast.parse(source))
-    substituted = compile(tree, "<f>", "exec")
 
     assert ast.dump(tree) != ast.dump(ast.parse(source)), shape
-    assert layout(written) == layout(substituted)
+    assert lined_up(source, "<f>")
 
 
 @pytest.mark.parametrize("shape", SPREAD_OUT)
 def test_a_compare_whose_left_side_spans_lines_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
-    written = compile(source, "<f>", "exec")
-    substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
 
-    assert layout(written) == layout(substituted)
+    assert lined_up(source, "<f>")
 
 
 # modules whose first statement's first instruction is not at the statement's own start, each
@@ -367,20 +210,17 @@ FIRST_STATEMENTS = [
 @pytest.mark.parametrize("first", FIRST_STATEMENTS)
 def test_a_module_whose_first_statement_starts_late_lines_up(first: str) -> None:
     source = first + "\ny = a in b\n"
-    written = compile(source, "<m>", "exec")
-    substituted = compile(substitute(ast.parse(source)), "<m>", "exec")
 
-    assert layout(written) == layout(substituted)
+    assert lined_up(source, "<m>")
 
 
 def test_a_compare_whose_left_side_runs_on_a_later_line_lines_up() -> None:
     # `assert (` then the operand on the next line: the operand's first instruction is on the
     # later line, where the call's name goes too, so the compare's own line does not start first
     source = "def f(x):\n    assert (\n        x + 1).bit_length() is True\n"
-    written = compile(source, "<f>", "exec")
     substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
 
-    assert layout(written) == layout(substituted)
+    assert lined_up(source, "<f>")
     (function,) = [each for each in substituted.co_consts if isinstance(each, types.CodeType)]
     assert line_starts(function)[:2] == [(3, False), (2, False)]
 
@@ -438,10 +278,8 @@ def test_a_fused_none_test_that_becomes_a_truth_test_lines_up_and_nothing_wider(
 )
 def test_a_substituted_none_test_keeps_its_outcome(test: str) -> None:
     source = f"def f(flag: bool):\n    if {test}:\n        return 1\n    return 2\n"
-    written = compile(source, "<f>", "exec")
-    substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
 
-    assert layout(written) == layout(substituted)
+    assert lined_up(source, "<f>")
 
 
 def test_a_flipped_outcome_or_a_dropped_copy_is_a_difference() -> None:
@@ -453,8 +291,42 @@ def test_a_flipped_outcome_or_a_dropped_copy_is_a_difference() -> None:
     assert jump_kind("POP_JUMP_IF_TRUE", 1) != "POP_JUMP_IF_NONE"
     assert jump_kind("POP_JUMP_IF_FALSE", None) == "POP_JUMP_IF_FALSE"
     assert jump_kind("POP_JUMP_IF_NOT_NONE", None) != jump_kind("POP_JUMP_IF_NONE", None)
-    # a loop's test is written twice, and both copies count
-    loop = compile("def f(x):\n    while x is not None:\n        x = g()\n", "<f>", "exec")
-    (inner,) = [each for each in loop.co_consts if isinstance(each, types.CodeType)]
+    # a finally body is written twice, and both copies count
+    source = "def f(x):\n try:\n  g()\n finally:\n  if x is not None:\n   h()\n"
+    code = compile(source, "<f>", "exec")
+    (inner,) = [each for each in code.co_consts if isinstance(each, types.CodeType)]
     jumps = conditional_jumps(inner)
     assert len(jumps) == 2 and jumps[0] == jumps[1]
+
+
+# a `not` over a compare pyct substitutes, in each place a truth test reads it
+NEGATED_TESTS = [
+    "if not x in c:\n    pass",
+    "if not x is True:\n    pass",
+    "if not (x in c):\n    pass",
+    "if not not x in c:\n    pass",
+    "if x not in c:\n    pass",
+    "if a and not x in c:\n    pass",
+    "while not x is False:\n    break",
+    "assert not x in c",
+    "y = [v for v in w if not v in c]",
+]
+
+
+@pytest.mark.parametrize("shape", NEGATED_TESTS)
+def test_a_negated_compare_pyct_substitutes_lines_up(shape: str) -> None:
+    source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
+
+    assert lined_up(source, "<f>")
+
+
+def test_a_negated_test_read_on_its_outcome_still_differs_when_the_outcome_flips() -> None:
+    # after `not in`, or pyct's call for it, a truth test reads as the other one after `in`
+    assert jump_kind("POP_JUMP_IF_FALSE", None, negated=True) == "POP_JUMP_IF_TRUE"
+    assert jump_kind("POP_JUMP_IF_TRUE", None, negated=True) == "POP_JUMP_IF_FALSE"
+    assert jump_kind("POP_JUMP_IF_NONE", None, negated=True) == "POP_JUMP_IF_NONE"
+    # `x in c` where `not x in c` was, at the same column: the same jump on the other outcome
+    negated = "def f():\n    if not x in c:\n        return 1\n"
+    tree = substitute(ast.parse(negated))
+    plain = compile(negated.replace("not x", "    x"), "<f>", "exec")
+    assert layout(plain) != layout(compile(tree, "<f>", "exec"), negations(tree))

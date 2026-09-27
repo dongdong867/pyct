@@ -5,21 +5,30 @@ it calls sits on the line of the left operand's first instruction. That is
 the part of the operand evaluated first: the left of an operator, the object
 of an attribute or a subscript, the test of a conditional. A part CPython
 folds to one constant, or builds before its first element, is its own first.
-These rules follow CPython 3.12's code generator (`CHECKED_ON`); the
-lines-up check in the suite holds them to it.
+These rules follow the code generator of each release in `CHECKED_ON`,
+keyed on the running release where two differ; the lines-up check in the
+suite holds them to it on each.
 """
 
 from __future__ import annotations
 
 import ast
 import dis
+import sys
 import warnings
 
 from pyct.intercept.constants import Constants, literal_names
 
 # the Python releases whose code generator these rules were checked against, by the suite's
 # lines-up check. Substitution acts on these alone
-CHECKED_ON: frozenset[tuple[int, int]] = frozenset({(3, 12)})
+CHECKED_ON: frozenset[tuple[int, int]] = frozenset({(3, 12), (3, 13), (3, 14)})
+
+# where CPython pushes the NULL of a call it does not compile as a method call: before the
+# callee, at the callee's own position, through 3.12; after it from 3.13
+_NULL_BEFORE_CALLEE = sys.version_info < (3, 13)
+# whether CPython loads a dict display's constant keys as one tuple after its values, as
+# BUILD_CONST_KEY_MAP takes them: through 3.13. From 3.14 it loads each key before its value
+_CONSTANT_KEYS_AFTER_VALUES = sys.version_info < (3, 14)
 
 # CPython's STACK_USE_GUIDELINE: a call or a display with more parts than this is built in steps
 _STACK_GUIDELINE = 30
@@ -67,9 +76,11 @@ class Parts:
                 break
             passed.append(node)
             if isinstance(node, ast.Call) and not _method_call(node):
-                # CPython pushes the call's NULL at the callee's own position, before the callee
+                # the call's NULL at the callee's own position, or after 3.12 the callee's first
                 node = node.func
-                break
+                if _NULL_BEFORE_CALLEE:
+                    break
+                continue
             part = _evaluated_first(node, self.foldable)
             if part is None:
                 break
@@ -164,7 +175,8 @@ def _first_entry(display: ast.Dict) -> ast.expr | None:
 
     CPython builds the entries before the first `**` in one step, of at
     most 17; a step of 16 or more, or a display that opens with `**` or
-    holds nothing, starts by building the dict.
+    holds nothing, starts by building the dict. Through 3.13 a step of
+    constant keys loads them last, as one tuple.
     """
     keys: list[ast.expr] = []
     for key in display.keys[: _STACK_GUIDELINE // 2 + 2]:
@@ -173,7 +185,7 @@ def _first_entry(display: ast.Dict) -> ast.expr | None:
         keys.append(key)
     if not keys or 2 * len(keys) > _STACK_GUIDELINE:
         return None
-    if len(keys) > 1 and constants(keys, display) is not None:
+    if _CONSTANT_KEYS_AFTER_VALUES and len(keys) > 1 and constants(keys, display) is not None:
         return display.values[0]
     return keys[0]
 

@@ -8,8 +8,10 @@ with one operator:
   bools alone (`constants`), and no other constant, so ``a is None`` and
   ``a is b`` stay Python's own;
 - ``a in b`` and ``a not in b``;
-- ``not`` over one of those, folded into the other operator as CPython's
-  optimizer folds it, so ``not (a in b)`` is ``a not in b``.
+- ``not`` over one of those, folded into the other operator as CPython
+  3.12 folds it, so ``not (a in b)`` is ``a not in b`` on every release.
+  CPython 3.14 keeps `in` where a test reads it and jumps the other way,
+  on the same outcome, at the same position.
 
 Each becomes a call of a function of `pyct.core.substitutes` through a
 dunder name, ``__pyct_in__(a, b)`` say. The operands are the compare's own
