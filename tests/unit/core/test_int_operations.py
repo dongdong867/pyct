@@ -321,6 +321,22 @@ def test_text_joined_around_an_int_is_plain_and_records_nothing() -> None:
     assert sink == []
 
 
+# the `%` forms that write the text themselves: `%d` and its kin read the int without calling it,
+# and a width or a precision pads or cuts the text `__str__` hands back into a new plain str
+PERCENT_PLAIN = ["%d", "%i", "%x", "%o", "%c", "%r", "%5s", "%.1s", "n=%s"]
+
+
+@pytest.mark.parametrize("form", PERCENT_PLAIN)
+def test_a_percent_form_that_writes_the_text_itself_is_plain_and_silent(form: str) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(65, expression="x", sink=sink)
+
+    text = form % x
+
+    assert (text, type(text)) == (form % 65, str)
+    assert sink == []
+
+
 @pytest.mark.parametrize("spec", ["d", "05d", "x", ">4", ","])
 def test_a_format_spec_is_a_downgrade_named_format(spec: str) -> None:
     sink: list[SinkItem] = []

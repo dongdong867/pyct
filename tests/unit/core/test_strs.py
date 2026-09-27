@@ -298,6 +298,17 @@ TEXT_ALONE: dict[str, Callable[[str], object]] = {
 }
 
 
+def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    # Python asks a str subclass on the right for its `__rmod__` first, and that one is untaught
+    text = "%s" % s  # noqa: UP031
+
+    assert (text, type(text)) == ("abc", str)
+    assert sink == [Downgrade(name="__rmod__")]
+
+
 @pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
 def test_a_str_alone_turned_into_text_is_the_value_itself(call: Callable[[str], object]) -> None:
     sink: list[SinkItem] = []
