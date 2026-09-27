@@ -69,10 +69,8 @@ _NOT_DIGITS = _characters(_SPACES + "_+-")
 def _digits(term: str) -> str:
     """The digits of an int Python reads, without its spaces, underscores and sign.
 
-    One pass takes out every such character, the same string a pass for each kind leaves. It is
-    a speed-up alone, which no test holds: cvc5 answers 2 to 10 times faster, a version's
-    `patch > 9999` ask in 1.4 s where four passes took 4.6 s, and no row covers fewer lines
-    with four.
+    One pass takes out every such character: the same string a pass for each kind leaves,
+    which cvc5 answers faster (decision int-text-digits-in-one-pass-and-a-character-as-a-digit).
     """
     return f'(str.replace_re_all {term} {_NOT_DIGITS} "")'
 
