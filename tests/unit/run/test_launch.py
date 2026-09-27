@@ -17,7 +17,15 @@ import pytest
 
 from pyct.run import launch as launch_module
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import STOP_GRACE, Stopped, _ending, _serve, _Stops, launch
+from pyct.run.launch import (
+    CTRL_C_GRACE,
+    STOP_GRACE,
+    Stopped,
+    _ending,
+    _serve,
+    _Stops,
+    launch,
+)
 from pyct.run.process import Waited
 
 MODULE = "some.module"
@@ -305,11 +313,12 @@ def test_a_sigint_the_watcher_got_alone_goes_on_after_a_grace(
 ) -> None:
     started = time.monotonic()
     code = launch(signaled_while_importing(signal.SIGINT, outlasts_the_grace), ARGV)
+    took = time.monotonic() - started
 
-    # the command's process got no SIGINT of its own, so the watcher's reached it
+    # the command's process got no SIGINT of its own, so the watcher's reached it, late
     assert raised == [signal.SIGINT]
     assert code == 128 + signal.SIGINT
-    assert time.monotonic() - started < 2
+    assert CTRL_C_GRACE <= took < CTRL_C_GRACE + 1, took
     assert capsys.readouterr().err == ""
 
 
@@ -317,10 +326,13 @@ def test_a_sigint_the_watcher_got_alone_goes_on_after_a_grace(
 def test_a_signal_that_ends_a_process_goes_on_at_once(
     number: int, signaled_while_importing: Signaled, raised: list[int]
 ) -> None:
+    started = time.monotonic()
     code = launch(signaled_while_importing(number, outlasts_the_grace), ARGV)
+    took = time.monotonic() - started
 
     assert raised == [number]
     assert code == 128 + number
+    assert took < CTRL_C_GRACE, took
 
 
 def test_the_command_runs_in_this_process_when_no_other_can_start(
