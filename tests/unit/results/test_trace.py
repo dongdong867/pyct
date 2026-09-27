@@ -152,7 +152,12 @@ INFIX: dict[str, tuple[Expression, str]] = {
     # a float literal as repr writes it
     "float-exponent": (["<", "x", 1e-05], "x < 1e-05"),
     "float-whole": (["!=", "x", 2.0], "x != 2.0"),
-    "float-infinity": ([">", "x", math.inf], "x > inf"),
+    # an infinity as the call that makes it, which Python reads back
+    "float-infinity": ([">", "x", math.inf], "x > float('inf')"),
+    "float-minus-infinity": ([">", "x", -math.inf], "x > -float('inf')"),
+    "float-nan": (["!=", "x", math.nan], "x != float('nan')"),
+    # a minus infinity binds as a unary minus, so it needs parentheses as the base of `**`
+    "minus-infinity-as-a-base": (["**", -math.inf, "x"], "(-float('inf')) ** x"),
     "method-with-no-argument": (["is_integer", "x"], "x.is_integer()"),
     "method-with-no-argument-on-a-condition": (
         ["is_integer", ["/", "x", "y"]],

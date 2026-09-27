@@ -2,6 +2,7 @@
 
 import json
 import keyword
+import math
 from collections.abc import Mapping, Sequence
 from typing import TypeGuard
 
@@ -161,8 +162,8 @@ def _ended(failure: Failure | None) -> list[str]:
 # a part as the fork line writes it, and how tightly it binds as an operand, as `_BINARY` ranks
 type _Text = tuple[str, int]
 
-# how tightly Python's grammar binds what the fork line writes, loosest first. A head that is
-# neither an operator nor a name, which core does not record, is written `op a` and binds
+# how tightly Python's grammar binds what the fork line writes, loosest first. A keyword
+# head on one operand, such as `not`, which core does not record, is written `not a` and binds
 # looser than everything
 _UNRANKED = 0
 _COMPARES = 1
@@ -189,9 +190,10 @@ _UNARY_OPERATORS = ("-", "+", "~")
 def _infix(expression: Expression) -> str:
     """The condition the way a person writes it, whatever the operator is.
 
-    Operator first is how the expression is stored, so one operand reads
-    ``op a`` and the rest read as ``a op b``, joined by the operator, but for
-    what Python writes around its operands (see `_around`). Each part is
+    Operator first is how the expression is stored. A unary operator reads
+    ``-a`` (see `_prefixed`), a function or a method reads as Python calls it,
+    and an index or a slice as Python writes it (see `_around`). Two operands
+    or more read as ``a op b``, joined by the operator. Each part is
     written after its operands, on a stack of its own rather than Python's,
     so a condition nested past Python's recursion limit is written too.
     """
@@ -212,8 +214,14 @@ def _infix(expression: Expression) -> str:
 
 
 def _leaf(leaf: Expression) -> _Text:
-    """A name or a literal as the line writes it. A negative number binds as a unary minus."""
+    """A name or a literal as the line writes it. A negative number binds as a unary minus.
+
+    A float Python writes as `nan` or `inf` is written as the call that makes it, so the line
+    still reads as Python.
+    """
     text = leaf if isinstance(leaf, str) else repr(leaf)
+    if isinstance(leaf, float) and not math.isfinite(leaf):
+        text = f"-float('{-leaf!r}')" if leaf < 0 else f"float('{leaf!r}')"
     return text, _UNARY if text.startswith("-") else _ALONE
 
 
@@ -236,8 +244,8 @@ def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
 def _prefixed(operator: Expression, operand: _Text) -> _Text:
     """A condition on one operand: a unary operator against it, `-x`, binding as Python's does.
 
-    Two minuses read ``--x``, as Python reads them. A head that is not an
-    operator keeps ``op a``, and binds looser than any operator.
+    Two minuses read ``--x``, as Python reads them. A keyword head, such as
+    ``not``, keeps ``not a``, and binds looser than any operator.
     """
     if operator in _UNARY_OPERATORS:
         return f"{operator}{_operand(operand, _UNARY)}", _UNARY
@@ -300,8 +308,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
 def _is_a_name(head: Expression) -> TypeGuard[str]:
     """Whether a head names a function or a method, rather than an operator.
 
-    A name is an identifier that is not a keyword, so ``in`` and ``not`` stay
-    operators Python writes beside their operands.
+    A name is an identifier that is not a keyword, so a keyword head, such as
+    ``in`` or ``not``, is written beside its operands instead.
     """
     return isinstance(head, str) and head.isidentifier() and not keyword.iskeyword(head)
 

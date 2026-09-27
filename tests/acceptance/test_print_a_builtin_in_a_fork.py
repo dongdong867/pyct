@@ -22,7 +22,8 @@ def seed_conditions(stderr: str) -> list[str]:
     """
     lines = stderr.splitlines()
     seed = lines[: next(i for i, line in enumerate(lines) if line.startswith("ended "))]
-    return [line.split("  ")[1] for line in seed if line.startswith("fork ")]
+    # the site and the side hold no two spaces, so a condition that holds them, `'  '`, stays whole
+    return [line.split("  ", 1)[1].rsplit("  ", 1)[0] for line in seed if line.startswith("fork ")]
 
 
 # print-a-builtin-in-a-fork-as-python-calls-it-prints-a-builtin-as-a-call
