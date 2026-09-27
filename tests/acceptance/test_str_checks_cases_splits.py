@@ -230,7 +230,8 @@ def test_reports_a_slow_encoding_as_a_miss(tmp_path: Path) -> None:
     assert summary_line(result.stdout)["stopped"] == "budget spent"
 
 
-# follow-strings-records-an-untaught-method-as-a-downgrade, for an rsplit pyct does not encode
+# beside follow-strings-records-an-untaught-method-as-a-downgrade, not a criterion of its own:
+# an rsplit pyct does not encode adds only its downgrade
 def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() -> None:
     result = run_pyct(TRACKED_RSPLIT, '{"s": "xabyab", "t": "aba"}')
 
