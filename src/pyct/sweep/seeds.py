@@ -21,7 +21,6 @@ is agreed, the check the run makes agrees too.
 
 import copy
 import inspect
-import math
 import types
 import typing
 from collections.abc import Callable
@@ -32,8 +31,9 @@ from pyct.binding.resolve import checked_annotations, resolved
 # the values a parameter with no default is tried with, in order
 VALUES: tuple[object, ...] = (0, 0.0, [], {}, "", False, None)
 
-# what JSON carries as it stands, matched by exact type so a subclass is not taken for one
-PLAIN = (bool, int, str)
+# what JSON carries as it stands, matched by exact type so a subclass is not taken for one; a
+# float includes NaN and the infinities, which Python's json writes and pyct run reads
+PLAIN = (bool, int, float, str)
 
 # the parameters a seed never names
 GATHERING = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
@@ -68,17 +68,13 @@ def seed_of(fn: Callable[..., object]) -> dict[str, object]:
 
 
 def carried(value: object) -> bool:
-    """Whether seed JSON carries ``value`` as it is: null, a bool, an int, a finite float, a
-    str, or a list or a str-keyed dict of such values. A container met twice is not carried."""
+    """Whether seed JSON carries ``value`` as it is: null, a bool, an int, a float, a str, or a
+    list or a str-keyed dict of such values. A container met twice is not carried."""
     pending = [value]
     seen: set[int] = set()
     while pending:
         item = pending.pop()
         if item is None or type(item) in PLAIN:
-            continue
-        if type(item) is float:
-            if not math.isfinite(item):
-                return False
             continue
         if id(item) in seen or not _container(item):
             return False

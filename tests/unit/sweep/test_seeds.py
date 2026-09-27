@@ -1,6 +1,7 @@
 import enum
 import inspect
 import json
+import math
 import typing
 from collections.abc import Callable
 from typing import Annotated, Literal, NewType, TypeVar
@@ -60,6 +61,14 @@ def test_a_default_json_carries_stays_and_any_other_is_left_out() -> None:
 
 def test_a_default_is_checked_against_a_text_annotation() -> None:
     assert as_json(seed_of(seeds_as_text.with_defaults)) == as_json(DEFAULTS)
+
+
+def test_a_default_that_is_no_finite_float_stays_as_pythons_json_writes_it() -> None:
+    def bounded(x, low=-math.inf, high=math.inf, missing=math.nan) -> None:
+        return None
+
+    written = '{"x": 0, "low": -Infinity, "high": Infinity, "missing": NaN}'
+    assert as_json(seed_of(bounded)) == written
 
 
 def test_a_positional_only_and_a_keyword_only_parameter_are_both_named() -> None:
@@ -159,7 +168,18 @@ def test_a_class_is_seeded_at_its_constructor() -> None:
 
 @pytest.mark.parametrize(
     "value",
-    [None, True, 1, 1.5, "a", [1, [2.5, None]], {"a": {"b": [True]}}],
+    [
+        None,
+        True,
+        1,
+        1.5,
+        float("inf"),
+        float("-inf"),
+        float("nan"),
+        "a",
+        [1, [2.5, None]],
+        {"a": {"b": [True]}},
+    ],
 )
 def test_json_carries(value: object) -> None:
     assert carried(value)
@@ -174,8 +194,6 @@ def _holds_itself() -> list[object]:
 @pytest.mark.parametrize(
     "value",
     [
-        pytest.param(float("nan"), id="nan"),
-        pytest.param(float("inf"), id="infinity"),
         pytest.param((1, 2), id="tuple"),
         pytest.param({1: "a"}, id="int key"),
         pytest.param(Level.LOW, id="int subclass"),
