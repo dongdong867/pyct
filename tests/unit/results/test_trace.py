@@ -84,6 +84,7 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "replace": (["replace", "s", "'a'", "'b'"], "s.replace('a', 'b')"),
     "cut-part": (["==", ["...", 5000], "'abc'"], "...(5000 nodes) == 'abc'"),
     "piece-of-a-cut-part": (["[]", ["...", 12], 0], "...(12 nodes)[0]"),
+    "uncounted-cut-part": (["==", ["...", None], "'abc'"], "...(? nodes) == 'abc'"),
 }
 
 

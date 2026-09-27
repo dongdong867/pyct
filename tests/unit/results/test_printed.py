@@ -1,5 +1,6 @@
 """The cap on a printed expression: whole up to the limit, past it the top with cut parts."""
 
+import random
 import time
 import tracemalloc
 
@@ -126,19 +127,30 @@ def _distinct(expression: Expression) -> int:
     return nodes
 
 
-def _cut_from(written: Expression, expression: Expression) -> list[tuple[int, Expression]]:
-    """Each cut part's N, beside the part of the expression it stands in for."""
-    found: list[tuple[int, Expression]] = []
+def _counts_from(
+    written: Expression, expression: Expression
+) -> list[tuple[int | None, Expression]]:
+    """Each cut part's N, None where it was left uncounted, beside the part it stands in for."""
+    found: list[tuple[int | None, Expression]] = []
     stack = [(written, expression)]
     while stack:
         shown, part = stack.pop()
         if isinstance(shown, list) and shown[0] == CUT:
             count = shown[1]
-            assert isinstance(count, int)
+            assert count is None or isinstance(count, int)
             found.append((count, part))
         elif isinstance(shown, list):
             assert isinstance(part, list) and shown[0] == part[0]
             stack.extend(zip(shown[1:], part[1:], strict=True))
+    return found
+
+
+def _cut_from(written: Expression, expression: Expression) -> list[tuple[int, Expression]]:
+    """Each cut part's N, beside the part of the expression it stands in for, every one counted."""
+    found: list[tuple[int, Expression]] = []
+    for count, part in _counts_from(written, expression):
+        assert isinstance(count, int)
+        found.append((count, part))
     return found
 
 
@@ -288,3 +300,98 @@ def test_forks_that_gather_many_pieces_are_counted_in_little_memory(
     # number, it grew with their square for pieces of s, 20 MB here. Kept from its own lowest
     # number, it still did for pieces of s[1:], whose one list is numbered first, 17 MB here
     assert peak < 12_000_000
+
+
+def _compared_then_gathered(characters: int, compares: int) -> list[Branch]:
+    """`c = s[i]`, compared with ``compares`` more letters after `"x"`, then `t = t + c`, for
+    each i, and a last fork on t: an escaper, or a tokenizer, that gathers what it read.
+
+    In a walk of every fork, each piece's compares sit between it and the next piece.
+    """
+    term: Expression = "''"
+    forks: list[Branch] = []
+    for i in range(characters):
+        piece: Expression = ["[]", "s", i]
+        forks.append(Branch(expression=[">", ["len", "s"], i], taken=True, site=Site("m.py", 2, 7)))
+        letters = ["'x'", *(repr(chr(97 + k % 26) * (1 + k // 26)) for k in range(compares))]
+        forks += [
+            Branch(expression=["==", piece, letter], taken=False, site=Site("m.py", 3, 7))
+            for letter in letters
+        ]
+        term = ["+", term, piece]
+    forks.append(Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7)))
+    return forks
+
+
+def test_pieces_compared_many_times_then_gathered_are_counted_quickly() -> None:
+    forks = _compared_then_gathered(16_000, 30)
+
+    start = time.perf_counter()
+    written = printed_forks(forks)
+    spent = time.perf_counter() - start
+
+    # counted only below the part the last fork cuts, where the pieces sit side by side; counted
+    # over every fork, the compares between the pieces made each join walk every piece before
+    # it, which took 30 s here
+    cuts = _cut_from(written[-1], forks[-1].expression)
+    assert cuts
+    assert all(count == _distinct(part) for count, part in cuts)
+    assert spent < 5.0
+
+
+def _joined_strings(pieces: list[Expression]) -> Expression:
+    """The pieces joined in order into one string, starting from an empty one."""
+    term: Expression = "''"
+    for piece in pieces:
+        term = ["+", term, piece]
+    return term
+
+
+def _orthogonal_vectors(vectors: int, width: int, forks: int) -> list[Branch]:
+    """Orthogonal vectors as strings: b_j is s[j], each of ``width`` columns joins the b_j with
+    its bit set, and each a_i joins the columns of its own bits. Each fork tests a sum of its
+    share of the a_i, so the a_i are what the line cuts.
+
+    What an a_i reaches holds every b_j not orthogonal to it, so counting each exactly is as
+    hard as finding two orthogonal vectors.
+    """
+    rng = random.Random(0)
+    pieces: list[Expression] = [["[]", "s", j] for j in range(vectors)]
+    columns = [
+        _joined_strings([piece for piece in pieces if rng.random() < 0.5]) for _ in range(width)
+    ]
+    shown: list[Branch] = []
+    for _ in range(forks):
+        parts = [
+            _joined_strings([c for c in columns if rng.random() < 0.5])
+            for _ in range(vectors // forks)
+        ]
+        while len(parts) > 1:
+            parts = [
+                ["+", *parts[i : i + 2]] if i + 1 < len(parts) else parts[i]
+                for i in range(0, len(parts), 2)
+            ]
+        shown.append(
+            Branch(expression=["==", parts[0], "'x'"], taken=False, site=Site("m.py", 3, 7))
+        )
+    return shown
+
+
+def test_counting_the_orthogonal_vectors_shape_stops_at_its_limit() -> None:
+    forks = _orthogonal_vectors(2048, 40, 4)
+
+    start = time.perf_counter()
+    written = printed_forks(forks)
+    spent = time.perf_counter() - start
+
+    # the count stops at its limit of steps: the parts it counted are exact, and the rest print
+    # no count, so the line still takes a bounded time
+    counts = [
+        pair
+        for shown, fork in zip(written, forks, strict=True)
+        for pair in _counts_from(shown, fork.expression)
+    ]
+    counted = [(count, part) for count, part in counts if count is not None]
+    assert counted and len(counted) < len(counts)
+    assert all(count == _distinct(part) for count, part in counted[:10])
+    assert spent < 3.0

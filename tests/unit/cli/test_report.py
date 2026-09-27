@@ -103,3 +103,24 @@ def test_report_cuts_the_forks_once_for_both_lines(
     assert captured.out == render(record, COVERAGE) + "\n"
     assert captured.err == render_trace(record, COVERAGE)
     assert " nodes)" in captured.err
+
+
+def test_report_writes_a_part_left_uncounted_as_null_and_a_question_mark(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # with no steps to count in, every part the line cuts is left uncounted
+    monkeypatch.setattr("pyct.results.printed.COUNTING_STEPS", 0)
+    term: Expression = "s"
+    for _ in range(40):
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    _report(record, COVERAGE)
+
+    captured = capsys.readouterr()
+    assert '["...", null]' in captured.out
+    assert '["...", 1' not in captured.out
+    fork_line = captured.err.splitlines()[1]
+    assert "...(? nodes)" in fork_line
+    assert "None" not in fork_line

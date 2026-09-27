@@ -209,13 +209,14 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out.
     A builtin in `_CALLED` reads ``len(s)``, and a named head with arguments
     reads as Python calls a method, ``a.name(b)``. A part cut from a long
-    expression reads ``...(N nodes)``. Each binds tighter than any operator,
-    so none needs parentheses of its own.
+    expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
+    ``null``. Each binds tighter than any operator, so none needs parentheses
+    of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
     if head == CUT:
-        return f"...({texts[0]} nodes)"
+        return f"...({'?' if expression[1] is None else texts[0]} nodes)"
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
