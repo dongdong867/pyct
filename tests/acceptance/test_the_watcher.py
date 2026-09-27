@@ -419,7 +419,8 @@ def test_target_code_that_waits_for_every_child_runs_as_it_did(argv: tuple[str, 
 def test_a_target_that_ignores_sigchld_does_not_hang_pyct() -> None:
     result = run_briefly(IGNORES_SIGCHLD, '{"x": 0}')
 
-    assert result.returncode is not None
+    assert result.returncode == 1
+    assert "ChildProcessError" in result.stderr
 
 
 # a host may put a path object on sys.path; import skips it, and so does pyct's fresh start
