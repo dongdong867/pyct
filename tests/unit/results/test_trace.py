@@ -96,7 +96,9 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "uncounted-cut-part": (["==", ["...", None], "'abc'"], "...(? nodes) == 'abc'"),
     "bool-literal": ([">", ["+", "x", True], 5], "x + True > 5"),
     "looser-operand": (["*", ["+", "x", 1], 2], "(x + 1) * 2"),
-    "operand-of-the-same-binding": (["-", ["-", "x", 1], 2], "(x - 1) - 2"),
+    "left-operand-of-the-same-binding": (["-", ["-", "x", 1], 2], "x - 1 - 2"),
+    "right-operand-of-the-same-binding": (["-", "x", ["-", 1, 2]], "x - (1 - 2)"),
+    "chain-of-sums": ([">", ["+", ["+", "x", "y"], "z"], 10], "x + y + z > 10"),
     "compare-of-compares": (["==", [">", "x", 0], [">", "y", 0]], "(x > 0) == (y > 0)"),
     "count-of-compares": (
         ["==", ["+", [">", "x", 0], [">", "y", 0]], 2],
@@ -104,8 +106,21 @@ INFIX: dict[str, tuple[Expression, str]] = {
     ),
     "and-of-compares": (["&", [">", "x", 0], [">", "y", 0]], "(x > 0) & (y > 0)"),
     "and-inside-a-compare": (["==", ["&", "a", "b"], True], "a & b == True"),
-    "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "(- x) + 1"),
-    "power-under-a-unary-minus": (["-", ["**", "x", 2]], "- (x ** 2)"),
+    "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "- x + 1"),
+    "unary-minus-inside-a-compare": (["<", ["-", "x"], -3], "- x < -3"),
+    "power-under-a-unary-minus": (["-", ["**", "x", 2]], "- x ** 2"),
+    "unary-minus-under-a-power": (["**", ["-", "x"], 2], "(- x) ** 2"),
+    "negative-base-of-a-power": (["**", -2, "x"], "(-2) ** x"),
+    "unary-minus-exponent": (["**", "x", ["-", "y"]], "x ** - y"),
+    "power-of-a-power": (["**", ["**", "x", "y"], 2], "(x ** y) ** 2"),
+    "power-exponent": (["**", "x", ["**", "y", 2]], "x ** y ** 2"),
+    "sum-under-a-unary-minus": (["-", ["+", "x", 1]], "- (x + 1)"),
+    "compare-in-a-sum": (["+", [">", "x", 0], 1], "(x > 0) + 1"),
+    "sum-of-a-count": (
+        ["==", ["+", ["+", 0, [">", "x", 5]], [">", "y", 5]], 0],
+        "0 + (x > 5) + (y > 5) == 0",
+    ),
+    "method-on-a-negative-number": (["find", -1, "'x'"], "(-1).find('x')"),
     "operator-the-table-does-not-rank": (["@", ["+", "x", 1], "y"], "(x + 1) @ y"),
 }
 
@@ -395,8 +410,9 @@ def test_render_trace_writes_a_string_built_over_five_thousand_passes() -> None:
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # the top of the string is kept, one pass to a pair of parentheses, over the cut part
+    # the top of the string is kept over the cut part, each pass one more sum, as Python reads a
+    # chain of them from the left
     assert re.fullmatch(
-        r"fork m\.py:5:7  \(+\.\.\.\(\d+ nodes\)( \+ ' '\))+\.startswith\('ok'\)  not taken",
+        r"fork m\.py:5:7  \(\.\.\.\(\d+ nodes\)( \+ ' ')+\)\.startswith\('ok'\)  not taken",
         lines[1],
     )
