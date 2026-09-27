@@ -91,10 +91,15 @@ def _reason(error: BaseException) -> str:
     is not one of inspect's own refusals, such as a ``KeyError`` or a
     ``SystemExit`` from the target's code, is named before it, as
     ``SystemExit: 0``. A message with no such line gives the type's name
-    alone. So the refusal stays one line on stderr.
+    alone, and so does one that cannot be read, since its ``__str__`` raises.
+    So the refusal stays one line on stderr.
     """
-    lines = [line for line in str(error).splitlines() if line.strip()]
     named = type(error).__name__
+    try:
+        message = str(error)
+    except Exception:
+        return named
+    lines = [line for line in message.splitlines() if line.strip()]
     if not lines:
         return named
     return lines[0] if type(error) in _INSPECT_S_OWN else f"{named}: {lines[0]}"

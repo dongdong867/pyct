@@ -125,6 +125,7 @@ def test_load_target_refuses_a_target_whose_signature_python_cannot_read(name: s
         pytest.param("two_line_message", "first line", id="two-lines"),
         pytest.param("blank_first_line", "after a blank line", id="a-blank-first-line"),
         pytest.param("exits_while_read", "SystemExit: 0", id="an-exit"),
+        pytest.param("unprintable", "UnprintableError", id="a-message-that-raises"),
     ],
 )
 def test_load_target_gives_one_line_that_is_never_empty(name: str, reason: str) -> None:

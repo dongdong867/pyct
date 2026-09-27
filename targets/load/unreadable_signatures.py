@@ -68,3 +68,13 @@ no_message = _Raises(RuntimeError())
 two_line_message = _Raises(ValueError("first line\nsecond line"))
 blank_first_line = _Raises(ValueError("\nafter a blank line"))
 exits_while_read = _Raises(SystemExit(0))
+
+
+class UnprintableError(Exception):
+    """An exception whose message cannot be read: its __str__ raises."""
+
+    def __str__(self) -> str:
+        raise RuntimeError("no text for this exception")
+
+
+unprintable = _Raises(UnprintableError())
