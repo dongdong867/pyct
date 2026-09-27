@@ -19,13 +19,6 @@ TAUGHT_COMPARES: dict[str, tuple[Callable[[float], object], bool]] = {
     "!=": (lambda x: x != 2.5, False),
 }
 
-# an operand float answers but pyct does not encode, and the dunder its compare runs: a bool
-# meets a float in follow-booleans-and-chained-compares
-NOT_ENCODED: dict[str, tuple[Callable[[float], object], str]] = {
-    "x == True": (lambda x: x == True, "__eq__"),  # noqa: E712 - the target's spelling
-    "x < False": (lambda x: x < False, "__lt__"),
-}
-
 # a compare with an int, plain or tracked, and the node it builds: Python compares the two
 # numbers, and render converts the int as Python does
 WITH_INTS: dict[str, tuple[Callable[[float], object], list[object]]] = {
@@ -99,21 +92,6 @@ def test_a_float_of_the_targets_own_is_a_plain_float_leaf() -> None:
     assert isinstance(result.expression, list)
     assert result.expression == ["<", "x", 4.0]
     assert type(result.expression[2]) is float
-
-
-@pytest.mark.parametrize(("call", "name"), NOT_ENCODED.values(), ids=list(NOT_ENCODED))
-def test_an_operand_float_answers_but_pyct_does_not_encode_is_a_downgrade(
-    call: Callable[[float], object], name: str
-) -> None:
-    sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
-
-    result = call(x)
-
-    # float's own answer, where NotImplemented would hand the compare to int, which has none
-    assert type(result) is bool
-    assert result is call(2.5)
-    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize(("call", "expression"), WITH_INTS.values(), ids=list(WITH_INTS))

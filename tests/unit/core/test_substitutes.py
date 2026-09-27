@@ -50,6 +50,28 @@ def test_a_tracked_bool_against_true_or_false_answers_as_the_bool_it_stands_for(
     assert expressions(sink) == [([">", "x", 5], value)]
 
 
+@pytest.mark.parametrize(("left", "right"), [(True, True), (True, False), (False, False)])
+def test_two_tracked_bools_are_identical_when_they_are_equal(left: bool, right: bool) -> None:
+    sink: list[SinkItem] = []
+    flag = ConcolicBool(left, expression="flag", sink=sink)
+    other = ConcolicBool(right, expression="other", sink=sink)
+
+    # a bool is one of two singletons, so two bools are the same object when they are equal
+    assert is_(flag, other) is (left is right)
+    assert is_not(flag, other) is (left is not right)
+    assert expressions(sink) == [(["==", "flag", "other"], left is right)] * 2
+
+
+def test_a_plain_bool_held_by_a_name_meets_a_tracked_bool_as_the_constant_does() -> None:
+    sink: list[SinkItem] = []
+    flag = ConcolicBool(True, expression="flag", sink=sink)
+    held = True
+
+    assert is_(held, flag) is True
+    assert is_(flag, 1) is False
+    assert expressions(sink) == [("flag", True)]
+
+
 def test_identity_with_any_other_operand_is_pythons_own_and_records_nothing() -> None:
     sink: list[SinkItem] = []
     b = tracked_bool(True, sink)
@@ -180,9 +202,9 @@ def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_writt
     # an int element meets the float as `x == 2` does, a compare it follows
     assert in_(x, frozenset({2}), (2,)) is False
     assert expressions(sink)[-1] == (["==", "x", 2], False)
-    # a bool beside a float is float's own answer, a downgrade named by the compare
+    # a bool beside a float is the double 1.0 or 0.0, a compare it follows too
     assert in_(x, frozenset({True}), (True,)) is False
-    assert expressions(sink)[-1] == "__eq__"
+    assert expressions(sink)[-1] == (["==", "x", True], False)
 
 
 def test_a_tracked_int_in_a_literal_display_of_floats_meets_each_as_python_does() -> None:
@@ -328,4 +350,11 @@ def test_the_passing_frames_are_the_routers() -> None:
         "bool_",
         "map_",
         "itself",
+        # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a
+        # link hands on to the next
+        "__contains__",
+        "forward",
     }
+    assert {
+        code.co_qualname for code in PASSING if code.co_name in ("__contains__", "forward")
+    } == {"Searched.__contains__", "Identity.__contains__", "_forwarded.<locals>.forward"}

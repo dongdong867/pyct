@@ -16,12 +16,12 @@ before any value is built; a result whose type nothing entered raises
 The registry is two functions: `enter(base, cls)` and `tracked(value,
 expression, sink)`. `operand` is the int family's rule, a tracked int's and
 a tracked bool's: it takes an int or a bool alone, as int's own operations
-do. `promoted` widens it for a tracked int, which meets a float as Python's
-int does, and `int_beside_float` is how a float reads an int. `compare`,
-`arithmetic`, `division` and `divmod_of` serve every number type and read
-the other side by the rule their caller passes, the int family's by default.
-`itself`, `ratio` and `attribute` serve the plain names whose answer is the
-value itself, such as `x.conjugate()` and `x.real`.
+do, and it is how a float reads an int or a bool too. `promoted` widens it
+for a tracked int or bool, which meets a float as Python's int does.
+`compare`, `arithmetic`, `division` and `divmod_of` serve every number type
+and read the other side by the rule their caller passes, the int family's
+by default. `itself`, `ratio` and `attribute` serve the plain names whose
+answer is the value itself, such as `x.conjugate()` and `x.real`.
 """
 
 from __future__ import annotations
@@ -121,27 +121,17 @@ def operand(other: object) -> Expression | None:
 
 
 def plain_int(value: object) -> object:
-    """A tracked int as the plain int it holds, and any other value as itself.
+    """A tracked int or bool as the plain int it holds, and any other value as itself.
 
-    float's own operation takes an int this way. CPython compares a float
-    with an int wider than 48 bits by calling the int's own methods, so a
-    tracked int handed to it would record forks and downgrades the target
-    never wrote; the plain int has the same value and records nothing.
+    float's own operation takes an int this way, and a bool is the int 1 or
+    0 to it. CPython compares a float with an int wider than 48 bits by
+    calling the int's own methods, so a tracked int handed to it would
+    record forks and downgrades the target never wrote; the plain int has
+    the same value and records nothing.
     """
-    tracked_int = _TRACKED.get(int)
-    return int.__index__(cast(int, value)) if type(value) is tracked_int else value
-
-
-def int_beside_float(other: object) -> Expression | None:
-    """How a float reads an int on the other side, or None for one it does not take.
-
-    A tracked int reads as its expression and a plain int as itself, as the
-    int family reads them. A bool, plain or tracked, is None: a bool beside
-    a float is float's own answer (follow-booleans-and-chained-compares).
-    """
-    if isinstance(other, bool) or type(other) is _TRACKED.get(bool):
-        return None
-    return operand(other)
+    if type(value) in (_TRACKED.get(int), _TRACKED.get(bool)):
+        return int.__index__(cast(int, value))
+    return value
 
 
 # the compares Python asks the right operand for, swapped, when the left one answers
@@ -248,10 +238,11 @@ type Rule = Callable[[object], Expression | None]
 def promoted(operation: Callable[..., object]) -> tuple[Callable[..., object], Rule]:
     """int's own operation widened to a float on the other side, and the rule that reads it.
 
-    Python's int answers NotImplemented for a float, and the float's own
-    mirrored operation answers instead, the int converted as Python converts
-    it. So the answer here is that one: `n + 0.5` is `float.__radd__(0.5, n)`,
-    on the int's plain value (see `plain_int`).
+    A tracked int and a tracked bool both take it, as Python's int and bool
+    both meet a float. Python's int answers NotImplemented for a float, and
+    the float's own mirrored operation answers instead, the int converted as
+    Python converts it. So the answer here is that one: `n + 0.5` is
+    `float.__radd__(0.5, n)`, on the int's plain value (see `plain_int`).
     The rule reads a tracked float as its expression, and any other float as
     a literal of its plain value. A float subclass that defines the mirrored
     operation otherwise than float is neither: the answer and the rule are
