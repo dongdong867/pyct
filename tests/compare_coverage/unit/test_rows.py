@@ -261,3 +261,13 @@ def test_the_pinned_version_loaded_from_elsewhere_fails_naming_both_paths(tmp_pa
     assert row.v2 is not None
     assert row.v2.failure == f"loaded {shadow.file}, the entry names {named}"
     assert row.v2.covered == ()
+
+
+def test_a_copy_with_other_line_endings_is_the_same_file(tmp_path: Path) -> None:
+    # CRLF lines number the same as LF lines, so the own lines are that copy's lines too
+    v2_folder, legacy_folder = copies(tmp_path, "one\ntwo\n", "one\r\ntwo\r\n")
+    reports = Reports(v2=in_folder(v2_folder, 2, 3), legacy=in_folder(legacy_folder, 2, 3))
+
+    row = compared_row(LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports)
+
+    assert row.status is Status.SAME

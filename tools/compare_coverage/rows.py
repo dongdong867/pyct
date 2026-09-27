@@ -199,7 +199,7 @@ def _same_copy(view: SideView, file: Path | None, body_file: Path | None) -> Sid
     not the file the own lines come from.
 
     Each side loads the module under its own copy of the library, at the same path in it, so
-    the two copies are the same file when their contents are.
+    the two copies are the same file when their contents are, whatever their line endings.
     """
     if view.failure is not None or file is None or body_file is None or file == body_file:
         return view
@@ -210,7 +210,8 @@ def _same_copy(view: SideView, file: Path | None, body_file: Path | None) -> Sid
 
 
 def _digest(file: Path) -> str:
-    return hashlib.sha256(file.read_bytes()).hexdigest()
+    """The file's contents as a hash, CRLF line endings read as LF, as Python numbers lines."""
+    return hashlib.sha256(file.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
 
 
 def _library_failure(library: Library, installed: Installed | None, module: str) -> str | None:
