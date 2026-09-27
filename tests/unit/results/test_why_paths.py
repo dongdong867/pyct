@@ -1,7 +1,6 @@
 """Why a line was missed where paths join, raises are caught, and nothing shows a side."""
 
 import logging
-import time
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -337,25 +336,35 @@ def _long_generator(tmp_path: Path, tests: int) -> tuple[str, frozenset[int], li
     return file, frozenset(range(yield_line + 1, yield_line + 22)), walked
 
 
-def _timed(tmp_path: Path, tests: int) -> float:
+def _work(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tests: int) -> int:
+    """How many nodes the analysis marks, and how many times it starts a mark, on one size."""
     file, uncovered, walked = _long_generator(tmp_path, tests)
     covered = frozenset().union(*(each.lines for each in walked))
-    started = time.perf_counter()
+    counted = [0]
+    mark_up = Flow._mark_up
+
+    def counting(flow: Flow, node: int | None, found: set[int]) -> None:
+        before = len(found)
+        mark_up(flow, node, found)
+        counted[0] += 1 + len(found) - before
+
+    monkeypatch.setattr(Flow, "_mark_up", counting)
     entries = why(file, (set(uncovered), set(covered)), walked)
-    spent = time.perf_counter() - started
     assert [(entry.reason, entry.lines) for entry in entries] == [
         (Reason.SUSPENDED, tuple(sorted(uncovered)))
     ]
-    return spent
+    return counted[0]
 
 
-def test_a_long_generator_s_causes_grow_near_linearly(tmp_path: Path) -> None:
+def test_a_long_generator_s_causes_grow_near_linearly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # twice the ifs is twice the lines and twice the inputs, so linear in lines times inputs
-    # is four times the work; the walk this replaced grew about seven times per doubling
-    small, middle, large = (_timed(tmp_path, tests) for tests in (100, 200, 400))
+    # is four times the work; a walk up the whole dominator chain per line grew about eight times
+    small, middle, large = (_work(tmp_path, monkeypatch, tests) for tests in (100, 200, 400))
 
-    assert middle / small < 5.5, (small, middle, large)
-    assert large / middle < 5.5, (small, middle, large)
+    assert middle / small < 5.0, (small, middle, large)
+    assert large / middle < 5.0, (small, middle, large)
 
 
 def test_inputs_that_took_one_path_are_worked_out_once(

@@ -16,14 +16,18 @@ from __future__ import annotations
 
 import functools
 import types
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
-from pyct.results.graphs import dominators, intersect, postorder, strictly_after
-
-# CPython's flag on a function's code; a module and a class body run without it
-_OPTIMIZED = 0x1
+from pyct.results.graphs import (
+    OutOfTimeError,
+    dominators,
+    intersect,
+    never,
+    postorder,
+    strictly_after,
+)
 
 
 @dataclass(frozen=True)
@@ -40,41 +44,6 @@ class Place:
 type Fork = tuple[int, int, bool, bool]
 
 
-def owners(module: types.CodeType) -> dict[int, types.CodeType | None]:
-    """Each line of a module, and the code that runs it: None when the module's import does.
-
-    The import runs the module's own code and each class body in it, so a
-    ``def`` line, a decorator, and a class's attributes are the import's. A
-    line two functions hold, such as an inner ``def`` line, is the outer
-    one's: it runs when the outer function does.
-    """
-    held: dict[int, types.CodeType | None] = {}
-    at_import, functions = _split_by_when(module)
-    for code in at_import:
-        held.update(dict.fromkeys(_lines(code)))
-    for code in functions:
-        for line in _lines(code):
-            held.setdefault(line, code)
-    return held
-
-
-def _split_by_when(module: types.CodeType) -> tuple[list[types.CodeType], list[types.CodeType]]:
-    """The codes the import runs, and every other code, outermost first."""
-    at_import: list[types.CodeType] = []
-    functions: list[types.CodeType] = []
-    stack: list[tuple[types.CodeType, bool]] = [(module, True)]
-    while stack:
-        code, import_runs_it = stack.pop()
-        (at_import if import_runs_it else functions).append(code)
-        inner = [c for c in code.co_consts if isinstance(c, types.CodeType)]
-        stack.extend((c, import_runs_it and not c.co_flags & _OPTIMIZED) for c in reversed(inner))
-    return at_import, functions
-
-
-def _lines(code: types.CodeType) -> set[int]:
-    return {line for _, _, line in code.co_lines() if line}
-
-
 class Flow:
     """One function's blocks, sides and raises, with who dominates whom.
 
@@ -83,11 +52,17 @@ class Flow:
     condition whose true side goes on to the next instruction.
     """
 
-    def __init__(self, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> None:
+    def __init__(
+        self,
+        code: types.CodeType,
+        raising: frozenset[tuple[int, int]],
+        late: Callable[[], bool] = never,
+    ) -> None:
         graph = _Graph.of(code, raising)
         self._graph = graph
+        self._late = late
         self._order = {n: at for at, n in enumerate(postorder(graph.successors, graph.entry))}
-        self._idom = dominators(graph.successors, graph.entry, self._order)
+        self._idom = dominators(graph.successors, graph.entry, self._order, late)
         self._normal = frozenset(postorder(graph.normal, graph.entry))
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
@@ -123,6 +98,8 @@ class Flow:
         """
         found: set[int] = set()
         for line in set(lines):
+            if self._late():
+                raise OutOfTimeError
             self._mark_up(self._meet_of(self._holders(line)), found)
         for fork in set(forks):
             self._mark_up(self._meet_of(self._graph.forked(fork)), found)
@@ -141,15 +118,28 @@ class Flow:
         return self.marked(self._graph.lines(), ())
 
     @functools.cached_property
-    def _by_forks(self) -> dict[int, set[tuple[int, int, bool]]]:
-        """Each node, and the tests whose forks could prove a run passed it."""
-        proving: dict[int, set[tuple[int, int, bool]]] = {}
-        sides = self._graph.steps.items()
-        for node, step in [(n, s) for n, s in sides if s.kind is StepKind.CONDITION]:
-            # a side no run can reach proves nothing
-            for each in self._up(node) if node in self._idom else ():
-                proving.setdefault(each, set()).add((step.line, step.col, step.raising))
-        return proving
+    def _by_forks(self) -> dict[int, frozenset[tuple[int, int, bool]]]:
+        """Each node, and up to two of the tests whose forks could prove a run passed it.
+
+        A test's fork proves every node that dominates its side, so a node's
+        tests are those in its part of the dominator tree. Two are enough to
+        tell whether one other than a given test is among them. One pass up
+        the tree: a node's descendants finish before it in the flow's
+        postorder, since whatever dominates a node is on every way to it.
+        """
+        steps = self._graph.steps
+        held: dict[int, set[tuple[int, int, bool]]] = {}
+        for at, node in enumerate(sorted(self._idom, key=self._order.__getitem__)):
+            if at % 1024 == 0 and self._late():
+                raise OutOfTimeError
+            tests = held.setdefault(node, set())
+            step = steps.get(node)
+            if step is not None and step.kind is StepKind.CONDITION and len(tests) < 2:
+                tests.add((step.line, step.col, step.raising))
+            parent = self._idom[node]
+            if parent != node:
+                _keep_two(held.setdefault(parent, set()), tests)
+        return {node: frozenset(tests) for node, tests in held.items()}
 
     def knowable(self, place: Place) -> bool:
         """Whether a run could show it took this side, when the side's own test forks nowhere.
@@ -160,7 +150,7 @@ class Flow:
         """
         step = place.step
         own = (step.line, step.col, step.raising)
-        others = self._by_forks.get(place.node, set()) - {own}
+        others = self._by_forks.get(place.node, frozenset()) - {own}
         return place.node in self._by_lines or bool(others)
 
     def only_in_handlers(self, line: int) -> bool:
@@ -325,6 +315,14 @@ class Flow:
     def _tested_before(self, node: int) -> tuple[int, int]:
         """Test order: the node a side leaves, earliest first, then the side's own number."""
         return (-self._order[self._idom[node]], node)
+
+
+def _keep_two(into: set[tuple[int, int, bool]], tests: set[tuple[int, int, bool]]) -> None:
+    """Add ``tests`` to ``into`` until it holds two different ones."""
+    for test in tests:
+        if len(into) >= 2:
+            return
+        into.add(test)
 
 
 @dataclass(frozen=True)

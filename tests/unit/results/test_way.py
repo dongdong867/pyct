@@ -5,7 +5,8 @@ import types
 
 import pytest
 
-from pyct.results.way import Flow, Step, StepKind, owners
+from pyct.results.blocks import owners
+from pyct.results.way import Flow, Step, StepKind
 
 
 def code_of(source: str, name: str = "f") -> types.CodeType:

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import functools
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 
 def strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]) -> int:
@@ -34,10 +34,23 @@ def postorder(successors: list[list[int]], *roots: int) -> list[int]:
     return order
 
 
-def dominators(successors: list[list[int]], root: int, number: dict[int, int]) -> dict[int, int]:
+class OutOfTimeError(Exception):
+    """The run's stop came while a step whose cost grows with the function was running."""
+
+
+def never() -> bool:
+    """A stop that never comes: the check for a run with no deadline."""
+    return False
+
+
+def dominators(
+    successors: list[list[int]], root: int, number: dict[int, int], late: Callable[[], bool] = never
+) -> dict[int, int]:
     """Each reachable node's immediate dominator, the root its own (Cooper, Harvey and Kennedy).
 
     ``number`` is each reachable node's place in the postorder from ``root``.
+    ``late`` is asked before each pass over the nodes, which is how the
+    work grows with the function.
     """
     order = sorted(number, key=number.__getitem__)
     predecessors: dict[int, list[int]] = {node: [] for node in order}
@@ -47,6 +60,8 @@ def dominators(successors: list[list[int]], root: int, number: dict[int, int]) -
     idom = {root: root}
     changed = True
     while changed:
+        if late():
+            raise OutOfTimeError
         changed = False
         for node in reversed(order[:-1]):
             known = [each for each in predecessors[node] if each in idom]

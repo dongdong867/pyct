@@ -101,3 +101,27 @@ def test_not_worked_out_reads_as_the_deadline_s() -> None:
 
     assert why_json(entry) == {"file": "m.py", "lines": [4, 5], "reason": "not worked out"}
     assert why_line(entry) == "why 4, 5 in m.py: not worked out before the deadline"
+
+
+def _joined(tmp_path: Path, tests: int) -> tuple[str, frozenset[int], frozenset[int]]:
+    """``tests`` ifs, each on two plain conditions joined by `or`, none taken: the file, the
+    lines left (every if's body), and the lines one input covered."""
+    ifs = "".join(f"    if v == {k} or v == {-k - 1}:\n        y += {k}\n" for k in range(tests))
+    file = tmp_path / f"joined{tests}.py"
+    file.write_text(f"def f(x):\n    v = x ^ 0\n    y = 0\n{ifs}    return y\n")
+    bodies = frozenset(range(5, 5 + 2 * tests, 2))
+    covered = frozenset({2, 3, 4 + 2 * tests}) | frozenset(range(4, 4 + 2 * tests, 2))
+    return str(file), bodies, covered
+
+
+def test_one_line_s_work_on_a_long_function_still_stops_near_the_stop(tmp_path: Path) -> None:
+    file, bodies, covered = _joined(tmp_path, 3000)
+    walked = [Walked(forks=(), failed=False, lines=covered)]
+    stop_at = why_module.clock() + 0.2
+
+    entries = explain(file, bodies, covered, Run(walked, {}, stop_at=stop_at))
+    ended = why_module.clock()
+
+    # every line is in one entry however far the analysis got, and it ended near the stop
+    assert sorted(line for entry in entries for line in entry.lines) == sorted(bodies)
+    assert ended - stop_at < 0.5, ended - stop_at

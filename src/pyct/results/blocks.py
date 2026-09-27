@@ -187,3 +187,42 @@ def _test_exits(block: list[Op], jump: int, after: int) -> Iterator[Exit]:
             yield target, Step(StepKind.HANDLER, last.line or 0, 0, True) if side else None
         else:
             yield target, Step(StepKind.CONDITION, last.line or 0, last.col or 0, side)
+
+
+# CPython's flag on a function's code; a module and a class body run without it
+_OPTIMIZED = 0x1
+
+
+def owners(module: types.CodeType) -> dict[int, types.CodeType | None]:
+    """Each line of a module, and the code that runs it: None when the module's import does.
+
+    The import runs the module's own code and each class body in it, so a
+    ``def`` line, a decorator, and a class's attributes are the import's. A
+    line two functions hold, such as an inner ``def`` line, is the outer
+    one's: it runs when the outer function does.
+    """
+    held: dict[int, types.CodeType | None] = {}
+    at_import, functions = _split_by_when(module)
+    for code in at_import:
+        held.update(dict.fromkeys(_lines(code)))
+    for code in functions:
+        for line in _lines(code):
+            held.setdefault(line, code)
+    return held
+
+
+def _split_by_when(module: types.CodeType) -> tuple[list[types.CodeType], list[types.CodeType]]:
+    """The codes the import runs, and every other code, outermost first."""
+    at_import: list[types.CodeType] = []
+    functions: list[types.CodeType] = []
+    stack: list[tuple[types.CodeType, bool]] = [(module, True)]
+    while stack:
+        code, import_runs_it = stack.pop()
+        (at_import if import_runs_it else functions).append(code)
+        inner = [c for c in code.co_consts if isinstance(c, types.CodeType)]
+        stack.extend((c, import_runs_it and not c.co_flags & _OPTIMIZED) for c in reversed(inner))
+    return at_import, functions
+
+
+def _lines(code: types.CodeType) -> set[int]:
+    return {line for _, _, line in code.co_lines() if line}

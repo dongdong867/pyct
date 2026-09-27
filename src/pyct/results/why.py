@@ -17,8 +17,10 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.core.branch import Branch, ForkSite, Site
+from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
-from pyct.results.way import Flow, Fork, Place, Step, StepKind, owners
+from pyct.results.graphs import OutOfTimeError
+from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
 
@@ -106,10 +108,6 @@ class Run:
         return self.stop_at is not None and clock() > self.stop_at
 
 
-class _OutOfTimeError(Exception):
-    """The stop came while a line's cause was being worked out."""
-
-
 def explain(
     file: str, uncovered: frozenset[int], covered: frozenset[int], run: Run
 ) -> tuple[WhyEntry, ...]:
@@ -127,9 +125,9 @@ def explain(
     for at, line in enumerate(lines):
         try:
             if run.late():
-                raise _OutOfTimeError
+                raise OutOfTimeError
             cause = seen.cause(line)
-        except _OutOfTimeError:
+        except OutOfTimeError:
             by_cause[WhyEntry(file, (), Reason.NOT_WORKED_OUT)] = lines[at:]
             break
         by_cause.setdefault(cause, []).append(line)
@@ -215,7 +213,7 @@ class _Walk:
     def of(cls, seen: _Seen, code: types.CodeType) -> _Walk:
         forks = [fork for each in seen.inputs for fork in each.forks]
         raising = frozenset((line, col) for line, col, _, is_raising in forks if is_raising)
-        flow = Flow(code, raising)
+        flow = Flow(code, raising, late=seen.run.late)
         passed = flow.marked(seen.covered, forks)
         forked = frozenset((line, col, is_raising) for line, col, _, is_raising in forks)
         return cls(seen, flow, passed, forked)
@@ -369,7 +367,7 @@ class _Walk:
         for each in self.seen.inputs:
             # the one step whose count grows with the run's inputs
             if self.seen.run.late():
-                raise _OutOfTimeError
+                raise OutOfTimeError
             marks.append(self.flow.marked(each.lines, each.forks))
         return marks
 
