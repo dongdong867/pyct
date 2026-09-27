@@ -246,10 +246,6 @@ def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
     assert len(render(record, coverage).encode()) < 1_000_000
 
 
-# the string a gathering loop takes its pieces of: a parameter, and a string the target made
-GATHERED_FROM: dict[str, Expression] = {"s": "s", "s[1:]": ["[:]", "s", 1, None]}
-
-
 def test_counting_cut_short_leaves_a_count_out_rather_than_wrong(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -278,6 +274,10 @@ def test_counting_cut_short_leaves_a_count_out_rather_than_wrong(
     # a part the steps ran out on has no count, never a part of one
     assert wrong == []
     assert 0 < cut_short < 400
+
+
+# the string a gathering loop takes its pieces of: a parameter, and a string the target made
+GATHERED_FROM: dict[str, Expression] = {"s": "s", "s[1:]": ["[:]", "s", 1, None]}
 
 
 def _gathered(characters: int, string: Expression) -> list[Branch]:
