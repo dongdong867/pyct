@@ -1,14 +1,15 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
-`bool` and `map`: pyct's own routers, one table for all of them (`_FOLLOWED`).
+`bool`, `map` and `type`: pyct's own routers, one table for all of them (`_FOLLOWED`).
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
-`float(...)`, `bool(...)` or `map(...)` the router `CALLED` holds for the
-builtin, since a type name is never bound. Python makes the answers of the
-builtins plain, or calls no method of the value at all; here a tracked
-value that core follows through one of them gets core's tracked answer, and
-every other call, keywords and any count of arguments included, is Python's
-own. `map` with a conversion first maps pyct's router for it.
+`float(...)`, `bool(...)`, `map(...)` or `type(...)` the router `CALLED`
+holds for the builtin, since a type name is never bound. Python makes the
+answers of the builtins plain, or calls no method of the value at all, and
+`type` reads pyct's class; here a tracked value that core follows through
+one of them gets core's answer, and every other call, keywords and any
+count of arguments included, is Python's own. `map` with a conversion
+first maps pyct's router for it.
 
 Each bound function carries the name, text and signature of Python's own,
 and lives in this module under that name, so pickle saves and loads it by
@@ -35,6 +36,7 @@ from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
+from pyct.core.values import BASES
 
 # Python's own three, captured before this module defines its own under the same names. A target
 # that replaces one in `builtins` later changes what its modules find by the name (see
@@ -156,9 +158,23 @@ def map_(*args: object, **kwargs: object) -> Any:
     return map(converter, *args[1:], **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
-# what a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls in place of
-# Python's own builtin, by the builtin's identity (see `pyct.core.substitutes.call`)
-CALLED: Mapping[int, Callable[..., object]] = {**_CONVERTERS, id(map): map_}
+def type_(*args: object, **kwargs: object) -> Any:
+    """Python's `type` where the code writes it with one argument: a tracked value's base type.
+
+    `type` reads the real class, which for a tracked value is pyct's, so the
+    table of base types answers for it (`pyct.core.bases`). It reads the
+    class and never the value, so it records nothing. Any other call is
+    Python's own `type`.
+    """
+    if _LEN(args) == 1 and not kwargs:
+        kind = type(args[0])
+        return BASES.get(kind, kind)
+    return type(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
+
+
+# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `type(...)` calls in
+# place of Python's own builtin, by the builtin's identity (see `pyct.core.substitutes.call`)
+CALLED: Mapping[int, Callable[..., object]] = {**_CONVERTERS, id(map): map_, id(type): type_}
 
 
 def _dressed(bound: Callable[..., object], python: Callable[..., object]) -> None:
@@ -185,5 +201,5 @@ for _python, _bound in BOUND.values():
 # `chr` or a conversion, or from the target's own `__len__` or `__int__`, is the target's
 PASSING: frozenset[types.CodeType] = frozenset(
     function.__code__
-    for function in (len, ord, chr, _routed, int_, float_, bool_, map_, conversions.itself)
+    for function in (len, ord, chr, _routed, int_, float_, bool_, map_, type_, conversions.itself)
 )

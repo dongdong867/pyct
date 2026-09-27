@@ -15,6 +15,8 @@ from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import INT_KEPT, compare, promoted
 from pyct.core.values import (
+    REPORTED_CLASS,
+    built,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -92,6 +94,8 @@ class ConcolicBool(int):
 
     expression: Expression
     sink: BranchSink
+    # the base type, as `isinstance`, singledispatch and a class pattern read it
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
 
     # a compare or an arithmetic operation reads the bool as the int 1 or 0, as a tracked int
     # teaches it, and meets a float as that int does (see `numbers.promoted`). int promises a
@@ -162,11 +166,9 @@ class ConcolicBool(int):
         int, "__format__", calling=_formatted, first=texts.alone(__str__)
     )
 
-    def __new__(cls, value: bool, *, expression: Expression, sink: BranchSink) -> ConcolicBool:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
+    def __new__(cls, *args: Any, **kwargs: Any) -> ConcolicBool:
+        # built by pyct with `expression=` and `sink=`; called any other way, bool's plain value
+        return built(cls, int, args, kwargs)
 
     def __bool__(self) -> bool:
         return forked(self.sink, self.expression, own(int.__bool__, self))

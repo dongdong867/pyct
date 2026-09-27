@@ -1,8 +1,9 @@
-"""The calls pyct substitutes where the target writes them: conversions and a str's methods.
+"""The calls pyct substitutes where the target writes them: conversions, `type`, a str's methods.
 
 - A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
-  dot as in `builtins.int(...)`, and a call written `map(...)` with one of
-  those three first, becomes ``__pyct_call__(int)(...)``: the callee is
+  dot as in `builtins.int(...)`, a call written `map(...)` with one of
+  those three first, and a call written `type(...)` with one argument
+  alone, becomes ``__pyct_call__(int)(...)``: the callee is
   handed to pyct, which hands back pyct's router when it is Python's own
   builtin and the callee itself otherwise, and that is called with the
   arguments as written. So a name the target binds to its own keeps the
@@ -91,4 +92,7 @@ def _conversion(call: ast.Call) -> bool:
     spelled = _spelled(call.func)
     if spelled in _CONVERSIONS:
         return True
+    if spelled == "type":
+        # `type` with three arguments builds a class, which pyct leaves to Python
+        return len(call.args) == 1 and not call.keywords
     return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS

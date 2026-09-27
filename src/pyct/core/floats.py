@@ -29,6 +29,8 @@ from typing import Any
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import (
+    REPORTED_CLASS,
+    built,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -248,6 +250,8 @@ class ConcolicFloat(float):
 
     expression: Expression
     sink: BranchSink
+    # the base type, as `isinstance`, singledispatch and a class pattern read it
+    __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
 
     # Python swaps the operands of a reflected compare itself, so `2.5 < x` runs
     # `x.__gt__(2.5)` and prints [">", "x", 2.5]; nothing here has to reflect anything.
@@ -299,11 +303,9 @@ class ConcolicFloat(float):
     fromhex = built_plainly(float, "fromhex")  # pyrefly: ignore[bad-override]
     __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
 
-    def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> ConcolicFloat:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
+    def __new__(cls, *args: Any, **kwargs: Any) -> ConcolicFloat:
+        # built by pyct with `expression=` and `sink=`; called any other way, float's plain value
+        return built(cls, float, args, kwargs)
 
     def __bool__(self) -> bool:
         # zero is the one value on the other side: 0.0 and -0.0 both, and NaN is true

@@ -13,6 +13,7 @@ from pyct.core.branch import Branch, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
+from tests.unit.core.test_bases import tracked_values
 
 len_, ord_, chr_ = (BOUND[name][1] for name in ("len", "ord", "chr"))
 
@@ -165,3 +166,31 @@ def test_a_bound_builtin_pickles_by_reference_as_python_s_does(name: str) -> Non
     assert pickle.loads(pickle.dumps(bound)) is bound
     assert pickle.loads(pickle.dumps({"f": [bound]})) == {"f": [bound]}
     assert pickle.loads(pickle.dumps(python)) is python
+
+
+def test_the_type_router_answers_the_base_type_of_a_tracked_value() -> None:
+    sink: list[SinkItem] = []
+
+    for value, base in tracked_values(sink):
+        assert bound_module.type_(value) is base
+    assert sink == []
+
+
+@pytest.mark.parametrize("value", [1, True, "a", [1], None, ConcolicInt, int])
+def test_the_type_router_is_python_s_type_on_a_plain_value(value: object) -> None:
+    assert bound_module.type_(value) is type(value)
+
+
+def test_the_type_router_hands_any_other_call_to_python() -> None:
+    made = bound_module.type_("C", (), {"k": 1})
+
+    assert isinstance(made, type) and made.__name__ == "C"
+    with pytest.raises(TypeError) as plain:
+        type(1, 2)  # pyrefly: ignore[no-matching-overload]
+    with pytest.raises(TypeError) as raised:
+        bound_module.type_(1, 2)
+    assert str(raised.value) == str(plain.value)
+
+
+def test_a_call_written_type_reaches_the_router() -> None:
+    assert bound_module.CALLED[id(type)] is bound_module.type_

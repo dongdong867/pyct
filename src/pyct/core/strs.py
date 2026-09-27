@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
-from pyct.core import numbers, texts
+from pyct.core import numbers, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.ints import ConcolicInt
@@ -383,6 +384,8 @@ class ConcolicStr(str):
 
     expression: Expression
     sink: BranchSink
+    # the base type, as `isinstance`, singledispatch and a class pattern read it
+    __class__ = values.REPORTED_CLASS  # pyrefly: ignore[bad-override]
     # set by `one_character` alone: a value any other operation makes may have any length
     single: bool = False
 
@@ -473,11 +476,9 @@ class ConcolicStr(str):
 
     __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
 
-    def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
-        self = super().__new__(cls, value)
-        self.expression = expression
-        self.sink = sink
-        return self
+    def __new__(cls, *args: Any, **kwargs: Any) -> ConcolicStr:
+        # built by pyct with `expression=` and `sink=`; called any other way, str's plain value
+        return values.built(cls, str, args, kwargs)
 
     def __bool__(self) -> bool:
         # str has no __bool__ and Python falls to __len__; this one comes first. The empty

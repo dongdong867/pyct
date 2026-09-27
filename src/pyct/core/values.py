@@ -165,6 +165,54 @@ def _written(value: _Sinked, held: object, name: str) -> Pickled:
     return type(held), (held,)
 
 
+# each tracked class and the base type Python's own value has: the one table of them, its rows
+# written by `pyct.core.bases` once every tracked class exists. A tracked value reports its row
+# as its class, and its class called outside pyct's construction builds that type's value
+BASES: dict[type, type] = {}
+
+# the keywords pyct builds a tracked scalar with, and nothing else (see `built`)
+_PYCT_BUILT = frozenset({"expression", "sink"})
+
+
+def _base_class(self: object) -> type:
+    """The class a tracked value reports: its base type, as Python's own value reads it."""
+    return BASES[type(self)]
+
+
+# a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
+# when the real type does not match, and `functools.singledispatch` and a class pattern read it,
+# so each answers as for the plain value (tracked-values-report-their-base-type-as-their-class).
+# It reads the class and never the value, so it records nothing. `type(v)` still reads the real
+# class, which is how pyct tells a tracked value apart
+REPORTED_CLASS = property(_base_class)
+
+
+def as_base(cls: type, /, *args: object, **kwargs: object) -> Any:
+    """A tracked class called outside pyct's construction: its base type's own plain value.
+
+    Code that calls the class a value reports, as `type(v)(5)` does outside
+    the target's package, gets what the base type builds from the same
+    arguments, or its raise.
+    """
+    return own(BASES[cls], *args, **kwargs)
+
+
+def built(cls: type, parent: type, args: tuple[object, ...], kwargs: dict[str, Any]) -> Any:
+    """What a tracked scalar class's ``__new__`` builds: a tracked value when pyct builds one,
+    and otherwise its base type's plain value (`as_base`).
+
+    pyct builds a tracked value with the value and ``expression=`` and
+    ``sink=`` alone. ``parent`` is the class the tracked one extends, which
+    for a tracked bool is int, since bool cannot be subclassed.
+    """
+    if kwargs.keys() != _PYCT_BUILT:
+        return as_base(cls, *args, **kwargs)
+    made = parent.__new__(cls, *args)
+    made.expression = kwargs["expression"]
+    made.sink = kwargs["sink"]
+    return made
+
+
 def built_plainly(kind: type, name: str) -> Any:
     """A classmethod of ``kind`` reached through a tracked value: ``kind``'s own answer, plain.
 
