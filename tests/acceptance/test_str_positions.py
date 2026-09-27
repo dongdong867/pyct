@@ -222,20 +222,27 @@ def test_keeps_the_other_forms_downgrades() -> None:
     assert seed["forks"] == []
 
 
-def test_a_position_int_makes_of_a_float_is_a_named_downgrade() -> None:
-    result = run_pyct(FLOAT_POSITION, '{"s": "abc", "x": 2.0}')
+# intercept-builtin-functions-follows-int-of-a-float: the position `int(x)` makes of a tracked
+# float is a tracked int, after the float's finite fork
+def test_a_position_int_makes_of_a_float_is_a_tracked_int() -> None:
+    result = run_pyct(FLOAT_POSITION, "--solver-timeout", "2", '{"s": "abc", "x": 2.0}')
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    # int() of a tracked float is float's own answer, named, so the index is a plain one
-    downgrades = seed["downgrades"]
-    assert isinstance(downgrades, list), seed
-    assert [entry["name"] for entry in downgrades] == ["__int__"]
+    assert seed["downgrades"] == []
+    position = ["int", ["//", "x", 2]]
     assert [fork["expression"] for fork in forks_of(seed)] == [
-        [">", ["len", "s"], 1],
-        ["==", ["[]", "s", 1], "'z'"],
+        ["isfinite", ["//", "x", 2]],
+        [">", ["len", "s"], position],
+        [">=", ["len", "s"], ["-", position]],
+        ["==", ["[]", "s", position], "'z'"],
     ]
-    assert any_line(result.stdout, lambda line: text(line, "s")[1] == "z")
+    # the solver may change x as well as s, so the character it aims at need not be the second
+    hit = ["==", ["[]", "s", position], "'z'"]
+    assert any_line(
+        result.stdout,
+        lambda line: any(f["expression"] == hit and f["taken"] for f in forks_of(line)),
+    )
 
 
 def test_the_code_of_a_tracked_index_needs_no_length_fork() -> None:
