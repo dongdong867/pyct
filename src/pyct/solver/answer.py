@@ -11,14 +11,13 @@ from pyct.solver.arrays import ArrayModelError, value_line
 # ((f (fp #b0 #b10000000000 #b0100...))) or ((b true)). A name may come in bars, ((|x| 5)),
 # which SMT-LIB reads as the same name. A string value holds no bare quote, only a doubled one,
 # so its closing quote is the first lone one. A double's value is its three fields, which
-# `floats.decode` reads, and a truth value is `true` or `false`
+# `floats.decode` reads
 VALUE_LINE = re.compile(
     r"\(\(\|?(?P<name>[^\s()|]+)\|? "
     r'(?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*"|\(fp [^()]*\)|true|false)\)\)'
 )
-
-# the truth values cvc5 writes, by their text
-_TRUTHS = {"true": True, "false": False}
+# how SMT-LIB writes each value of the Bool sort
+_BOOLS = {"true": True, "false": False}
 
 
 @dataclass(frozen=True)
@@ -59,7 +58,7 @@ class SolverAnswerError(Exception):
 
 
 def model_from(lines: Iterable[str]) -> dict[str, object]:
-    """The values cvc5 printed, as a name and an int, a str, a float, a bool or an array each.
+    """The values cvc5 printed, as a name and an int, a bool, a str, a float or an array each.
 
     A line pyct cannot read is an error rather than a skip: a model missing
     one of its leaves would quietly become the seed's value again.
@@ -82,11 +81,11 @@ def _value(line: str) -> tuple[str, object]:
         raise _unreadable(line) from error
 
 
-def _read(value: str) -> int | str | float | bool:
-    """A value in quotes is a string, one in three fields a double, `true` or `false` a truth
-    value, and any other an int."""
-    if value in _TRUTHS:
-        return _TRUTHS[value]
+def _read(value: str) -> int | str | float:
+    """A value in quotes is a string, one in three fields a double, `true` or `false` a bool,
+    and any other an int."""
+    if value in _BOOLS:
+        return _BOOLS[value]
     if value.startswith('"'):
         return strings.decode(value)
     if value.startswith("(fp "):

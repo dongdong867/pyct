@@ -180,3 +180,63 @@ def test_cvc5_answers_a_bool_used_as_a_number_as_python_does(
     model = {"x": 0, "y": 0, **answer.model}
     assert callable(holds)
     assert holds(model["x"], model["y"]) is True
+
+
+# a bool parameter: its leaf, and the term render asserts for a condition on it
+FLAG_LEAVES: dict[str, type] = {"flag": bool, "x": int, "f": float}
+FLAG_WRITTEN: dict[str, tuple[Expression, str]] = {
+    "the parameter alone": ("flag", "|arg.flag|"),
+    "the parameter in a sum": (
+        [">", ["+", "flag", "x"], 5],
+        "(> (+ (ite |arg.flag| 1 0) |arg.x|) 5)",
+    ),
+    "the parameter equal to an int": (["==", "flag", 1], "(= (ite |arg.flag| 1 0) 1)"),
+    "the parameter and a condition": (["&", "flag", ABOVE], "(and |arg.flag| (> |arg.x| 0))"),
+}
+
+
+@pytest.mark.parametrize(("expression", "term"), FLAG_WRITTEN.values(), ids=list(FLAG_WRITTEN))
+def test_a_bool_parameter_is_a_bool_leaf(expression: Expression, term: str) -> None:
+    text = render((Branch(expression=expression, taken=True, site=SITE),), FLAG_LEAVES)
+
+    assert "(declare-const |arg.flag| Bool)" in text.splitlines()
+    assert _assertion_in(text) == f"(assert {term})"
+
+
+def test_a_bool_parameter_is_the_double_1_or_0_beside_a_float() -> None:
+    expression: Expression = [">", ["*", "flag", 2.5], "f"]
+
+    text = render((Branch(expression=expression, taken=True, site=SITE),), FLAG_LEAVES)
+
+    assert "(ite |arg.flag| 1 0)" in _assertion_in(text)
+
+
+def test_the_solver_flips_a_bool_parameter() -> None:
+    prefix = (Branch(expression="flag", taken=True, site=SITE),)
+
+    answer = solve(prefix, {"flag": bool}, timeout=10.0)
+
+    assert answer == Sat(model={"flag": True})
+    assert isinstance(answer, Sat)
+    assert type(answer.model["flag"]) is bool
+
+
+def test_the_solver_reads_a_bool_parameter_as_1_or_0_in_a_sum() -> None:
+    expression: Expression = [">", ["+", "flag", "x"], 5]
+    prefix = (Branch(expression=expression, taken=True, site=SITE),)
+
+    answer = solve(prefix, {"flag": bool, "x": int}, timeout=10.0)
+
+    assert isinstance(answer, Sat)
+    flag, x = answer.model["flag"], answer.model["x"]
+    assert isinstance(flag, bool) and isinstance(x, int)
+    assert flag + x > 5
+
+
+def test_a_bool_parameter_true_and_false_at_once_is_unsat() -> None:
+    prefix = (
+        Branch(expression="flag", taken=True, site=SITE),
+        Branch(expression="flag", taken=False, site=SITE),
+    )
+
+    assert solve(prefix, {"flag": bool}, timeout=10.0) == Unsat()

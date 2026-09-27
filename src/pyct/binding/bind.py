@@ -8,6 +8,7 @@ from typing import TypeGuard
 from pyct.binding.annotations import Check, Items
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
@@ -18,14 +19,14 @@ from pyct.core.strs import ConcolicStr
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, and every float argument, its access
-    and the sink, and every list the walk names its form.
+    """Give every int and str in the seed, at any depth, and every float and bool argument,
+    its access and the sink, and every list the walk names its form.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
     <key>]`` per step, so ``config["server"]["port"]`` is
-    ``["[]", ["[]", "config", "'server'"], "'port'"]``. A bool is an int to
-    Python but not a number to bind: it has no ``<`` worth tracking. A list the
+    ``["[]", ["[]", "config", "'server'"], "'port'"]``. The seed decides the
+    type: JSON ``true`` is a tracked bool whatever the annotation says. A list the
     walk names is a tracked list whose form is its access, so its length and
     its changes are followed too, and a dict the walk names is a tracked dict
     of that access, so its keys and its changes are.
@@ -62,6 +63,8 @@ class _Tracker:
             return ConcolicStr(value, expression=place.access, sink=self.sink)
         if isinstance(value, float):
             return ConcolicFloat(value, expression=place.access, sink=self.sink)
+        if isinstance(value, bool):
+            return ConcolicBool(value, expression=place.access, sink=self.sink)
         return ConcolicInt(value, expression=place.access, sink=self.sink)
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:

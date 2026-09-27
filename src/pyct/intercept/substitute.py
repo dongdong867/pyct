@@ -3,8 +3,10 @@
 The compares with `is` and `in` are here, in three shapes, each a compare
 with one operator:
 
-- ``a is True``, ``a is not False``, ``True is a``: `is` or `is not` with
-  the constant True or False on one side;
+- ``a is True``, ``a is not False``, ``True is a``, ``flag is b``: `is` or
+  `is not` with True or False on one side, or a name the module binds to
+  bools alone (`constants`), and no other constant, so ``a is None`` and
+  ``a is b`` stay Python's own;
 - ``a in b`` and ``a not in b``;
 - ``not`` over one of those, folded into the other operator as CPython's
   optimizer folds it, so ``not (a in b)`` is ``a not in b``.
@@ -13,6 +15,17 @@ Each becomes a call of a function of `pyct.core.substitutes` through a
 dunder name, ``__pyct_in__(a, b)`` say. The operands are the compare's own
 nodes, moved into the call and never copied, so each is evaluated once and
 in Python's order: the left, then the right, then the test.
+
+A chained compare keeps its own shape, because CPython holds each operand
+on its stack for the next link. An `in` or `not in` link searches its
+container through ``__pyct_searched__(b)``, and an `is` or `is not` link
+the rule above takes becomes an `in` or `not in` on
+``__pyct_identity__(b)``: both are Python's own `in`, which asks the
+container, so the link is answered by pyct at the chain's own position.
+The next link meets what the call made as its left operand, so an `is`
+link there becomes an `in` on ``__pyct_identity__`` whatever its right,
+and a compare runs on the operand the call holds
+(interception-chain-links-searched-through-a-container).
 
 The module binds those names itself, in an import placed before its first
 statement that runs code, after its docstring and its ``__future__``
@@ -32,7 +45,8 @@ display beside `in` is compiled as CPython compiles it there: a list
 becomes a tuple, and a list or set of constants one constant at the
 display's position. A set or dict display whose elements or keys are all
 constants also hands over those constants, in the order written, each once,
-as the display holds them.
+as the display holds them, when there are at most `SEARCHED_MOST`: a larger
+display is searched as any large set is.
 
 The operators a plain number on the left may hand to a tracked value are
 `operators`', and the calls of a conversion or of a method str has are
@@ -47,6 +61,7 @@ from __future__ import annotations
 
 import ast
 
+from pyct.core.hashed import SEARCHED_MOST
 from pyct.intercept import calls, operators
 from pyct.intercept.positions import Parts, constants, statement_start
 
@@ -57,15 +72,22 @@ _NAMES: dict[type[ast.cmpop], str] = {
     ast.In: "__pyct_in__",
     ast.NotIn: "__pyct_not_in__",
 }
+# the name a chain's `in` link searches through, and the one an `is` link's right side becomes
+_SEARCHED = "__pyct_searched__"
+_IDENTITY = "__pyct_identity__"
 # the function of pyct.core.substitutes each name any rule calls is bound to
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
     "__pyct_in__": "in_",
     "__pyct_not_in__": "not_in",
+    _SEARCHED: "Searched",
+    _IDENTITY: "Identity",
     **operators.BOUND,
     **calls.BOUND,
 }
+# the operator an `is` link becomes on pyct's identity
+_AS_IN: dict[type[ast.cmpop], type[ast.cmpop]] = {ast.Is: ast.In, ast.IsNot: ast.NotIn}
 _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.Is: ast.IsNot,
     ast.IsNot: ast.Is,
@@ -75,9 +97,6 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
 
 # the module the bound names come from
 _SUBSTITUTES = "pyct.core.substitutes"
-
-# the largest display whose constants are handed over; a larger one is Python's own lookup
-WRITTEN_MOST = 100
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -133,18 +152,90 @@ def _visited(node: object, pending: list[ast.AST], parts: Parts) -> object:
     return replacement
 
 
-def _compared(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a compare of the three shapes, or None for any other node."""
+def _compared(node: ast.AST, parts: Parts) -> ast.expr | None:
+    """The call that replaces a compare of the three shapes, the chain that replaces a chained
+    compare with a link to search, or None for any other node."""
+    if isinstance(node, ast.Compare) and len(node.ops) > 1:
+        return _chain(node, parts)
     folded = _folded(node)
     if folded is None:
         return None
     compare, operator = folded
     left, right = compare.left, compare.comparators[0]
-    if operator in (ast.Is, ast.IsNot) and not (_is_bool(left) or _is_bool(right)):
+    if operator in (ast.Is, ast.IsNot) and not _pyct_s_identity(left, right, parts):
         return None
     function = parts.named(_NAMES[operator], left)
     arguments = [left, right] if operator in (ast.Is, ast.IsNot) else [left, *_container(right)]
     return ast.copy_location(ast.Call(func=function, args=arguments, keywords=[]), compare)
+
+
+def _chain(compare: ast.Compare, parts: Parts) -> ast.Compare | None:
+    """The chain with each link to search handed to pyct, or None when it has none."""
+    ops, comparators = list(compare.ops), list(compare.comparators)
+    lefts = [compare.left, *compare.comparators[:-1]]
+    held = False
+    for index, (operator, right) in enumerate(zip(compare.ops, compare.comparators, strict=True)):
+        # an `is` link is pyct's after a link pyct took, whose call's operand the chain hands on
+        # as its left, and where `_pyct_s_identity` says
+        ours = held or _pyct_s_identity(lefts[index], right, parts)
+        link = _link(operator, right, parts, last=index == len(ops) - 1, identity=ours)
+        if link is not None:
+            ops[index], comparators[index] = link
+        held = link is not None
+    if comparators == compare.comparators:
+        return None
+    chain = ast.Compare(left=compare.left, ops=ops, comparators=comparators)
+    return ast.copy_location(chain, compare)
+
+
+def _link(
+    operator: ast.cmpop, right: ast.expr, parts: Parts, *, last: bool, identity: bool
+) -> tuple[ast.cmpop, ast.Call] | None:
+    """One link's operator and the container it searches, or None for a link left to Python.
+
+    ``identity`` says an `is` link is pyct's: its left is a call's operand,
+    which the link before handed on, or `_pyct_s_identity` takes it. Only
+    the last link's container is compiled as CPython compiles it beside
+    `in`, since CPython folds the display of that link alone. An `is` link
+    pyct takes before an `is` against None turns the jump CPython fuses
+    with that `is`, `POP_JUMP_IF_NONE` say, into a plain `POP_JUMP_IF_FALSE`
+    on the same outcome, which the lines-up check allows.
+    """
+    if isinstance(operator, ast.In | ast.NotIn):
+        return operator, _called(_SEARCHED, _container(right, folded=last), right, parts)
+    if isinstance(operator, ast.Is | ast.IsNot) and identity:
+        return _AS_IN[type(operator)](), _called(_IDENTITY, [right], right, parts)
+    return None
+
+
+def _called(name: str, arguments: list[ast.expr], operand: ast.expr, parts: Parts) -> ast.Call:
+    """A call of the name on the arguments, where the operand it stands for was.
+
+    The name sits where the first argument's first instruction does, as the
+    operand's first instruction was: a display CPython folds to a constant
+    has its own.
+    """
+    call = ast.Call(func=parts.named(name, arguments[0]), args=arguments, keywords=[])
+    return ast.copy_location(call, operand)
+
+
+def _pyct_s_identity(left: ast.expr, right: ast.expr, parts: Parts) -> bool:
+    """Whether an `is` between the two is pyct's: True or False on a side, or a name the module
+    binds to bools alone (`constants`), with no other constant on either side.
+
+    Any other `is` is Python's own, so plain identity code runs as fast as
+    written; two tracked bools that no such name holds answer by identity.
+    """
+    if _other_constant(left) or _other_constant(right):
+        return False
+    held = parts.constants.holds_a_bool
+    return _is_bool(left) or _is_bool(right) or held(left) or held(right)
+
+
+def _other_constant(node: ast.expr) -> bool:
+    """Whether the node is a constant other than True and False, as `None` is: Python's own
+    identity answers an `is` against it."""
+    return isinstance(node, ast.Constant) and not _is_bool(node)
 
 
 def _folded(node: ast.AST) -> tuple[ast.Compare, type[ast.cmpop]] | None:
@@ -169,18 +260,23 @@ def _is_bool(node: ast.expr) -> bool:
     return isinstance(node, ast.Constant) and (node.value is True or node.value is False)
 
 
-def _container(display: ast.expr) -> list[ast.expr]:
-    """The container as CPython compiles it beside `in`, then any constants it was written with."""
-    if isinstance(display, ast.List) and not _starred(display.elts):
-        folded = constants(display.elts, display)
-        if folded is None:
+def _container(display: ast.expr, *, folded: bool = True) -> list[ast.expr]:
+    """The container as CPython compiles it beside `in`, then any constants it was written with.
+
+    A display CPython does not fold stays as written, and a set still hands
+    over its constants.
+    """
+    if folded and isinstance(display, ast.List) and not _starred(display.elts):
+        elements = constants(display.elts, display)
+        if elements is None:
             return [ast.copy_location(ast.Tuple(elts=display.elts, ctx=ast.Load()), display)]
-        return [_constant(folded, display)]
+        return [_constant(elements, display)]
     if isinstance(display, ast.Set):
-        folded = constants(display.elts, display)
-        if folded is None:
+        elements = constants(display.elts, display)
+        if elements is None:
             return [display]
-        return [_constant(frozenset(folded), display), *_written(folded, display)]
+        held = _constant(frozenset(elements), display) if folded else display
+        return [held, *_written(elements, display)]
     if isinstance(display, ast.Dict):
         # a key of None is a `**` unpacking, whose keys the display does not write
         keys = [key for key in display.keys if key is not None]
@@ -203,7 +299,7 @@ def _written(folded: tuple[object, ...] | None, display: ast.expr) -> list[ast.e
         return []
     held: set[object] = set()
     kept = [element for element in folded if not (element in held or held.add(element))]
-    return [] if len(kept) > WRITTEN_MOST else [_constant(tuple(kept), display)]
+    return [] if len(kept) > SEARCHED_MOST else [_constant(tuple(kept), display)]
 
 
 def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) -> ast.expr:

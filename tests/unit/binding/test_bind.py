@@ -9,6 +9,7 @@ import pytest
 
 from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed, access_name, bind, leaf_name, leaves
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
@@ -29,10 +30,18 @@ def test_an_int_becomes_a_concolic_int_named_after_its_parameter() -> None:
     assert bound.sink is sink
 
 
-def test_a_bool_is_not_an_int_to_bind() -> None:
-    args = bind({"flag": True}, [])
+def test_a_bool_becomes_a_concolic_bool_named_after_its_parameter() -> None:
+    sink: list[SinkItem] = []
 
-    assert args["flag"] is True
+    args = bind({"flag": True, "off": False}, sink)
+
+    bound = args["flag"]
+    assert isinstance(bound, ConcolicBool)
+    assert repr(bound) == "True"
+    assert bound.expression == "flag"
+    assert bound.sink is sink
+    assert isinstance(args["off"], ConcolicBool)
+    assert repr(args["off"]) == "False"
 
 
 def test_a_str_becomes_a_concolic_str_named_after_its_parameter() -> None:
@@ -102,6 +111,7 @@ def test_binding_leaves_the_seed_alone() -> None:
 def test_leaves_names_the_type_of_every_argument_bind_would_wrap() -> None:
     assert leaves({"x": 3, "flag": True, "name": "a", "f": 1.5, "n": None}) == {
         "x": int,
+        "flag": bool,
         "name": str,
         "f": float,
     }

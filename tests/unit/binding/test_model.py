@@ -71,7 +71,7 @@ def test_a_seed_holds_the_leaves_bind_tracks_in_it() -> None:
     seed = Seed.of({"items": [1, "a"], "config": {"k": 2}, "flag": True})
 
     # an item of a tracked list is the list's; a value in a dict is a leaf of its own
-    assert seed.leaves == {json.dumps(["[]", "config", "'k'"]): int}
+    assert seed.leaves == {json.dumps(["[]", "config", "'k'"]): int, "flag": bool}
     assert seed.lists == {"items": ListShape(kinds=("int", "str"), fill="none")}
 
 
