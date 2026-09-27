@@ -5,6 +5,7 @@ import time
 
 import pytest
 
+from pyct.intercept.compiled import SubstitutionError, substituted_code
 from pyct.intercept.substitute import BOUND, WRITTEN_MOST, substitute
 
 # the import a module with a substitution starts with
@@ -182,17 +183,15 @@ def test_every_class_body_declares_the_names_global_after_its_docstring() -> Non
     assert isinstance(inner, ast.ClassDef) and isinstance(inner.body[0], ast.Global)
 
 
-@pytest.mark.parametrize(
-    "binding", ["__pyct_in__ = len", "__pyct_in__: object = len", "def __pyct_in__(a, b): ..."]
-)
-def test_a_class_body_that_binds_a_substituted_name_keeps_it_and_its_compares(
-    binding: str,
-) -> None:
-    source = f"class A:\n    {binding}\n    y = 1 in (1,)\n    z = x is True\n"
+def test_the_bound_names_are_reserved_in_a_class_body() -> None:
+    # a class body declares them global, so a class that binds one binds the module's name
+    source = "class A:\n    __pyct_in__ = len\n    z = x is True\n"
     namespace: dict[str, object] = {"x": True}
 
     exec(compile(substitute(ast.parse(source)), "<a>", "exec"), namespace)
 
-    held = namespace["A"]
-    assert (held.y, held.z, held.__pyct_in__ is not None) == (True, True, True)  # pyrefly: ignore
-    assert "__pyct_in__" not in namespace or namespace["__pyct_in__"] is not len
+    assert namespace["__pyct_in__"] is len
+    assert namespace["A"].z is True  # pyrefly: ignore[missing-attribute]
+    # one annotated in a class body cannot be global, so the module does not load
+    with pytest.raises(SubstitutionError, match="can't be global"):
+        substituted_code(b"class A:\n    __pyct_in__: object = len\n    y = 1 in (1,)\n", "a.py")
