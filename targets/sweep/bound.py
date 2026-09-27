@@ -1,5 +1,5 @@
 """A sweep fixture: public names that hold bound methods of module-level instances, as the
-standard library's random module exposes randint."""
+standard library's random module exposes randint; wrap's code is outside the package."""
 
 import textwrap
 

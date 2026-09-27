@@ -181,9 +181,10 @@ class _Package:
     def _bound_entries(self, method: MethodType, found_in: str, found_as: str) -> list[Entry]:
         """A bound method a public name holds, as ``random`` exposes ``randint``. ``pyct run``
         calls it through that name, so it is named by the module that exposes it, when its
-        function's code is in the package; otherwise it is skipped, saying so."""
+        function's code is in the package; otherwise it is no entry, as any name from
+        outside the package."""
         if self._home_of(_code_file(function_of(method.__func__))) is None:
-            return [Entry(found_in, found_as, skip=f"a bound method of code outside {self.name}")]
+            return []
         return [seeded(found_in, found_as, method)]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
