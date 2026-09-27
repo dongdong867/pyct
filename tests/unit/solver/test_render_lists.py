@@ -426,6 +426,15 @@ def test_an_unsat_without_the_hold_is_trusted_only_unsettled(
     assert cvc5_module._loosened(((), {}), Origin()) == answer
 
 
+@pytest.mark.parametrize("unwritten", [Timeout(), Unknown()])
+def test_a_loosened_program_that_cannot_be_written_is_what_writing_it_gave(
+    monkeypatch: pytest.MonkeyPatch, unwritten: object
+) -> None:
+    monkeypatch.setattr(cvc5_module, "_written", lambda path, origin, finite: (unwritten, origin))
+
+    assert cvc5_module._loosened(((), {}), Origin()) == unwritten
+
+
 def test_an_unsat_under_settled_clamps_asks_the_unsettled_program(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -440,7 +449,8 @@ def test_an_unsat_under_settled_clamps_asks_the_unsettled_program(
 
     monkeypatch.setattr(cvc5_module, "_solved", solved)
 
-    assert solve((), {}, 5.0) == Sat({})
-    assert [origin.steps for origin in asked] == [cvc5_module.READ_STEPS, None]
-    # the unsettled program's reads share 2,000 steps for each second left
-    assert asked[0].most is None and asked[1].most is not None and 9_800 < asked[1].most <= 10_000
+    assert solve((), {}, 10.0) == Sat({})
+    # one read takes 100 steps a second of the limit; the unsettled program's reads share 2,000
+    # a second of the limit, however long the settled ask took
+    assert [origin.steps for origin in asked] == [1_000, None]
+    assert [origin.most for origin in asked] == [None, 20_000]

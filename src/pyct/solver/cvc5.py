@@ -41,8 +41,9 @@ LONGEST_WAIT_SECONDS = 2_147_483.0
 STEPS_PER_SECOND = 100
 
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
-# second left of the solve. Each cut of a list at open clamps doubles them: ten cuts take about
-# 10,000 and twelve about 41,000, so with 10 s left ten are asked and twelve given up at once
+# second of the solve's limit, so a path's outcome never turns on how long the first ask took.
+# Each cut of a list at open clamps doubles them: ten cuts take about 10,000 and eleven about
+# 20,500, so at the 10 s default ten are asked and eleven given up at once
 UNSETTLED_STEPS_PER_SECOND = 2_000
 
 # how often a read that runs long settles the clamps it went through before every clamp settles
@@ -83,7 +84,8 @@ def solve(
     clamps it went through settled as the input had them (see ``_written``). An unsat answer
     to that settled program asks the unsettled one in what is left of the limit, and only an
     unsat to that is an ``Unsat()``; an unsettled program whose reads together run past
-    ``UNSETTLED_STEPS_PER_SECOND`` for each second left is given up as an ``Unknown()``.
+    ``UNSETTLED_STEPS_PER_SECOND`` for each second of ``timeout`` is given up as an
+    ``Unknown()``.
 
     A program that holds a repeated list's length, or a bound some form is exact inside, as a
     float floor division's, answers the target's own inputs when it is sat. An unsat to it asks
@@ -108,8 +110,7 @@ def solve(
     answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
-        most = int((until - monotonic()) * UNSETTLED_STEPS_PER_SECOND)
-        origin = replace(origin, steps=None, most=max(most, 0))
+        origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin)
