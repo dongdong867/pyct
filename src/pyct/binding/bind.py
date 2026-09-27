@@ -9,6 +9,7 @@ from pyct.binding.annotations import Check, Items
 from pyct.binding.shapes import ListShape, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import kinds_of
 from pyct.core.lists import ConcolicList
@@ -16,8 +17,8 @@ from pyct.core.strs import ConcolicStr
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, its access and the sink, and every
-    list the walk names its form.
+    """Give every int and str in the seed, at any depth, and every float argument, its access
+    and the sink, and every list the walk names its form.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
@@ -51,9 +52,11 @@ class _Tracker:
         self.sink = sink
         self.lists: list[ConcolicList] = []
 
-    def scalar(self, value: int | str, place: Place) -> object:
+    def scalar(self, value: int | float | str, place: Place) -> object:
         if isinstance(value, str):
             return ConcolicStr(value, expression=place.access, sink=self.sink)
+        if isinstance(value, float):
+            return ConcolicFloat(value, expression=place.access, sink=self.sink)
         return ConcolicInt(value, expression=place.access, sink=self.sink)
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
@@ -103,7 +106,7 @@ class Noted:
         # position it is a row of, and what its annotation asks of each item
         self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
 
-    def scalar(self, value: int | str, place: Place) -> object:
+    def scalar(self, value: int | float | str, place: Place) -> object:
         return self.noted(value, place)
 
     def noted(self, value: object, place: Place) -> object:

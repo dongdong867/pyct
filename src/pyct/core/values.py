@@ -12,18 +12,20 @@ from typing import Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
-# the mark that says a raise came out of the base type's own operation. The call that made it
+# the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
 _TARGET_RAISE = "__pyct_target_raise__"
 
 
 def own[T](operation: Callable[..., T], /, *args: object, **kwargs: object) -> T:
-    """The base type's own answer, with a raise out of it marked as the target's.
+    """The answer of a call pyct makes for the target, a raise out of it marked as the target's.
 
     Every call pyct makes into the base type goes through here, taught
-    operation and downgrade alike. A raise under one of them is the target's
-    program failing, not a pyct bug. Only an ``Exception`` is one: a deadline
-    and a keyboard interrupt land here too, and neither is the operation's.
+    operation and downgrade alike, and so do the reads and compiles of the
+    target's own files that pyct makes in Python's place as it imports them.
+    A raise under one of them is the target's program failing, not a pyct
+    bug. Only an ``Exception`` is one: a deadline and a keyboard interrupt
+    land here too, and neither is the operation's.
     """
     try:
         return operation(*args, **kwargs)
@@ -33,7 +35,7 @@ def own[T](operation: Callable[..., T], /, *args: object, **kwargs: object) -> T
 
 
 def raised_by_target(error: BaseException) -> bool:
-    """Whether this raise came out of the base type's own operation."""
+    """Whether this raise came out of a call pyct made for the target, through `own`."""
     return getattr(error, _TARGET_RAISE, False) is True
 
 
@@ -61,38 +63,106 @@ def copy_as_itself[T](value: T, memo: object = None) -> T:
     return value
 
 
+def plain(value: object, kind: type) -> object:
+    """The value as Python's own ``kind`` holds it: the same text or number, with no condition.
+
+    ``kind``'s own ``__getnewargs__`` answers what the value is rebuilt from,
+    as pickle rebuilds a subclass of it, and reads the value without calling
+    any method a concolic type overrides, so nothing is recorded. ``kind``
+    then builds its own value from that, so a compare's answer, which int
+    reads as 1 or 0, comes back a bool.
+    """
+    return kind(*kind.__getnewargs__(value))
+
+
 class _Sinked(Protocol):
     """A value with a sink: all a downgrade needs of the type it is set on."""
 
     sink: BranchSink
 
 
+# what a type may answer before its base type's own operation, given the operation's name, the
+# tracked value and the one argument: an answer, or NotImplemented to go on to the base type's
+type First = Callable[[str, object, object], object]
+
+
 def downgraded(
-    base: type, name: str, *, calling: Callable[..., object] | None = None
+    base: type,
+    name: str,
+    *,
+    calling: Callable[..., object] | None = None,
+    first: First | None = None,
 ) -> Callable[..., object]:
     """The base type's own operation, and a note in the sink that the condition was lost.
 
-    The arguments reach the base type's operation as the target wrote them,
-    keywords too, so the operation takes and refuses what it would take and
-    refuse on a plain value. The note comes after the call, so an operation
-    that raises records nothing and the raise stays the target's.
-    ``NotImplemented`` is not an answer either: the other operand's reflected
-    method gets its turn, and only a real result is a lost condition.
+    The arguments reach the operation as the target wrote them, keywords
+    too, so it takes and refuses what it would take and refuse on a plain
+    value. The note comes after the call, so an operation that raises
+    records nothing and the raise stays the target's. ``NotImplemented`` is
+    not an answer either: the other operand's reflected method gets its
+    turn, and only a real result is a lost condition. A result that is the
+    receiver itself, as str's `%`, `format` and `__format__` can give, comes
+    back as the receiver's plain value.
+
     ``calling`` is how the base type answers when its method by that name
     is not the answer: str has no `__radd__`, and its reflected
     concatenation is its `__add__` the other way round; a tracked bool
-    formats as the bool it is, where int's `__format__` writes a number.
-    The downgrade is still named ``name``.
+    formats as the bool it is, where int's `__format__` writes a number; and
+    a split runs on plain values, so that none of its pieces is tracked.
+    Such a replacement may turn its arguments into plain values, and it is
+    what takes and refuses them. The downgrade is still named ``name``.
+    ``first`` answers a call on one argument before the base type does,
+    when it has an answer, and that answer comes back with no downgrade of
+    pyct's own.
     """
     operation = getattr(base, name) if calling is None else calling
 
     def downgrade(self: _Sinked, /, *args: object, **kwargs: object) -> object:
+        if first is not None and len(args) == 1 and not kwargs:
+            answer = first(name, self, args[0])
+            if answer is not NotImplemented:
+                return answer
         result = own(operation, self, *args, **kwargs)
-        if result is not NotImplemented:
-            self.sink.append(Downgrade(name=name))
-        return result
+        if result is NotImplemented:
+            return result
+        self.sink.append(Downgrade(name=name))
+        return own(plain, self, base) if result is self else result
 
     return downgrade
+
+
+# what pickle is handed for a value: the type that rebuilds it, and what that type is called with
+type Pickled = tuple[type, tuple[object]]
+
+
+def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]:
+    """A tracked value's ``__reduce_ex__`` and ``__reduce__``: its plain value, loading as ``kind``.
+
+    pickle asks a tracked value for ``__reduce_ex__`` at every protocol, so
+    no pickle rebuilds a concolic type through a ``__new__`` that needs an
+    expression and a sink, and no pickle holds the sink. A pickle can load in
+    another process or a later input, where the condition does not apply, so
+    writing one is a downgrade named by the method Python called, and the
+    value that was pickled keeps its condition (pickle-holds-the-plain-value).
+    Each takes the arguments Python's own does: one protocol, and none. The
+    copy module asks for ``__copy__`` and ``__deepcopy__`` first, so a copy
+    stays the value itself.
+    """
+
+    def reduce_ex(self: _Sinked, protocol: int, /) -> Pickled:
+        # every protocol writes the same
+        return _written(self, own(plain, self, kind), "__reduce_ex__")
+
+    def reduce(self: _Sinked, /) -> Pickled:
+        return _written(self, own(plain, self, kind), "__reduce__")
+
+    return reduce_ex, reduce
+
+
+def _written(value: _Sinked, held: object, name: str) -> Pickled:
+    """Record writing a pickle as a downgrade, and answer with its plain value and type."""
+    value.sink.append(Downgrade(name=name))
+    return type(held), (held,)
 
 
 def _called_on_a_value(member: object) -> bool:
@@ -103,7 +173,12 @@ def _called_on_a_value(member: object) -> bool:
 
 
 def downgrade_the_rest(
-    cls: type, base: type, *, kept: tuple[str, ...], inherited: tuple[str, ...]
+    cls: type,
+    base: type,
+    *,
+    kept: tuple[str, ...],
+    inherited: tuple[str, ...],
+    first: First | None = None,
 ) -> None:
     """Downgrade every method of the base type the concolic type has not taught.
 
@@ -114,9 +189,10 @@ def downgrade_the_rest(
     and the rest never take a tracked value as their receiver, so none of
     them can lose a condition. A name the base type inherits is reached
     only by naming it, and a kept name the base type does not define is
-    simply not there to wrap.
+    simply not there to wrap. ``first`` is handed to each downgrade (see
+    `downgraded`).
     """
     candidates = {name for name, member in vars(base).items() if _called_on_a_value(member)}
     candidates |= set(inherited)
     for name in sorted(candidates - set(vars(cls)) - set(kept)):
-        setattr(cls, name, downgraded(base, name))
+        setattr(cls, name, downgraded(base, name, first=first))

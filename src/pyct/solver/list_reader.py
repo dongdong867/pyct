@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pyct.solver.list_terms import (
     FALSE,
@@ -61,7 +61,15 @@ class RenderTimeError(Exception):
 
 
 class RenderTooLargeError(Exception):
-    """A read ran past its steps: it goes through a list cut at clamps the path leaves open."""
+    """A read ran past its steps: it goes through a list cut at clamps the path leaves open.
+
+    ``passed`` holds the list parts the read went through, by their place in the order they
+    were built: the ones whose clamps a writing that settles them should settle.
+    """
+
+    def __init__(self, message: str, passed: frozenset[int] = frozenset()) -> None:
+        super().__init__(message)
+        self.passed = passed
 
 
 # a term written once in the program, by its text and its sort, and the name it goes by
@@ -82,8 +90,9 @@ class Context:
     define: Define
     sorts: Mapping[str, str]
     until: float | None
-    # the steps one read may take, None for no limit
+    # the steps one read may take, None for no limit, and the pieces a read went through
     steps: int | None = None
+    visited: set[int] = field(default_factory=set)
 
 
 def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
@@ -145,6 +154,7 @@ class _Reader:
         """One piece at one position: a read already written, one that ends here, or the
         pieces it goes on into, put together once they are read."""
         key = (id(piece), position.text(), self.kind)
+        self.context.visited.add(id(piece))
         if key in self.memo:
             done.append(self.memo[key])
             return

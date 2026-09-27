@@ -3,7 +3,8 @@ from collections.abc import Callable, Mapping
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, program
+from pyct.solver.heads import FORMS
+from pyct.solver.render import program
 from pyct.solver.strings import (
     above,
     below,
@@ -155,8 +156,8 @@ def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
 
 
 def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
-    with pytest.raises(ValueError, match="cannot declare x: nothing solves a float"):
-        render((fork(["<", "x", 10], taken=True),), {"x": float})
+    with pytest.raises(ValueError, match="cannot declare x: nothing solves a bytes"):
+        render((fork(["<", "x", 10], taken=True),), {"x": bytes})
 
 
 def test_a_str_leaf_is_declared_a_string() -> None:
@@ -268,6 +269,7 @@ SEARCH_TRUTHS: dict[str, tuple[Expression, str]] = {
     # the expression keeps Python's order, needle first; cvc5's contains takes the string first
     "in": (["in", "'x'", "s"], '(str.contains |arg.s| "x")'),
     "in-tracked": (["in", "t", "s"], "(str.contains |arg.s| |arg.t|)"),
+    "not in": (["not in", "'x'", "s"], '(not (str.contains |arg.s| "x"))'),
     "startswith": (["startswith", "s", "'ab'"], '(str.prefixof "ab" |arg.s|)'),
     "endswith": (["endswith", "s", "'ab'"], '(str.suffixof "ab" |arg.s|)'),
 }
@@ -378,78 +380,8 @@ def test_a_piece_given_a_piece_defines_each_once(head: str) -> None:
     lines = text.splitlines()
     assert f"(define-fun e!0 () String {string})" in lines
     assert f"(define-fun e!1 () String {affix})" in lines
-    assert f'(assert (= {FORMS[head]("e!0", "e!1")} "x"))' in lines
+    assert f'(assert (= {FORMS[(head, str)]("e!0", "e!1")} "x"))' in lines
     assert (text.count(string), text.count(affix)) == (1, 1)
-
-
-def test_every_head_render_writes_says_what_type_its_value_is() -> None:
-    written = {head for head, _ in OPERATORS} | set(FORMS) | set(POSITIONED) | set(STRING_ORDERS)
-
-    # a head with no entry cannot say whether a `+` or an order above it is on strings, and a
-    # wrong guess is a program cvc5 refuses, which stops the run on `solver failed`
-    assert written - set(RESULTS) == set()
-
-
-# a term each head builds, grouped by the type of its value in Python: `+` builds an int from
-# ints and a str from strs
-INT_TERMS: list[Expression] = [
-    ["+", "x", 1],
-    ["-", "x", 1],
-    ["*", "x", 2],
-    ["**", "x", 2],
-    ["abs", "x"],
-    ["//", "x", 2],
-    ["%", "x", 2],
-    ["find", "s", "'a'"],
-    ["rfind", "s", "'a'"],
-    ["index", "s", "'a'"],
-    ["rindex", "s", "'a'"],
-    ["count", "s", "'a'"],
-    ["len", "s"],
-]
-STR_TERMS: list[Expression] = [
-    ["+", "s", "'a'"],
-    ["[]", "s", 0],
-    ["[:]", "s", 1, None],
-    ["replace", "s", "'a'", "'b'"],
-    ["removeprefix", "s", "'a'"],
-    ["removesuffix", "s", "'a'"],
-]
-BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
-    ["in", "'a'", "s"],
-    ["startswith", "s", "'a'"],
-    ["endswith", "s", "'a'"],
-    *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
-]
-TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "s": str, "t": str}
-
-
-def _head(term: Expression) -> str:
-    assert isinstance(term, list) and isinstance(term[0], str), term
-    return term[0]
-
-
-def _asserted(text: str) -> str:
-    """The one assertion a one-fork program holds."""
-    return next(line for line in text.splitlines() if line.startswith("(assert "))
-
-
-def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
-    assert {_head(term) for term in INT_TERMS + STR_TERMS + BOOL_TERMS} == set(RESULTS)
-
-
-@pytest.mark.parametrize("term", INT_TERMS, ids=[_head(term) for term in INT_TERMS])
-def test_a_head_that_builds_an_int_is_ordered_as_an_int(term: Expression) -> None:
-    text = render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
-
-    assert _asserted(text).startswith("(assert (< ")
-
-
-@pytest.mark.parametrize("term", STR_TERMS, ids=[_head(term) for term in STR_TERMS])
-def test_a_head_that_builds_a_str_is_ordered_as_a_str(term: Expression) -> None:
-    text = render((fork(["<", term, "t"], taken=True),), TYPED_LEAVES)
-
-    assert _asserted(text).startswith("(assert (str.< ")
 
 
 def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:

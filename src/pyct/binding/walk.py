@@ -31,8 +31,8 @@ class Place:
 class Visitor(Protocol):
     """What one kind of walk makes of the values it tracks and the lists it tracks whole."""
 
-    def scalar(self, value: int | str, place: Place) -> object:
-        """What stands where a tracked int or str was."""
+    def scalar(self, value: int | float | str, place: Place) -> object:
+        """What stands where a tracked int, str or float was."""
         ...
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
@@ -40,8 +40,14 @@ class Visitor(Protocol):
         ...
 
 
-def binds(value: object) -> TypeGuard[int | str]:
-    """Whether bind tracks this value: the one rule the walk reads."""
+def binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
+    """Whether bind tracks this value at this access: the one rule the walk reads.
+
+    A float is tracked as an argument's own value. One inside a dict or a
+    list passes through plain until run-with-nested-arguments follows it.
+    """
+    if isinstance(value, float):
+        return isinstance(access, str)
     return isinstance(value, int | str) and not isinstance(value, bool)
 
 
@@ -115,7 +121,7 @@ class Walk:
         values queued. A value with no access is never tracked, and neither is
         anything under it.
         """
-        if access is not None and binds(value):
+        if access is not None and binds(value, access):
             return self._visitor.scalar(value, place)
         if type(value) in _ATOMIC:
             return value

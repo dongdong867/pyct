@@ -15,7 +15,7 @@ at a plain index, `counts[0] += 1` thirty times, is a row of pieces a read goes 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
@@ -27,7 +27,7 @@ from pyct.solver.list_kinds import (
     TrackedList,
     measured,
 )
-from pyct.solver.list_reader import Context, Memo, read
+from pyct.solver.list_reader import Context, Memo, RenderTooLargeError, read
 from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import (
     FALSE,
@@ -76,13 +76,23 @@ READ_STEPS = 512
 
 @dataclass(frozen=True)
 class Origin:
-    """The input whose path this is: each leaf's value, and whether a clamp the path leaves
-    open goes the way it went there (see ``list_slices``)."""
+    """The input whose path this is: each tracked list with its shape, each leaf's value, and
+    how the program is written for it.
 
-    values: Mapping[str, object]
-    settle: bool = False
-    # whether a list the target repeats holds the answer's lengths (see ``_repeated``)
+    ``settle`` names the list parts whose clamps, where the path leaves them open, go the way
+    they went there (see ``list_slices``), and ``everywhere`` settles every one. ``hold`` says
+    whether a list the target repeats holds the answer's lengths (see ``_repeated``).
+    ``steps`` is the most steps one read takes before its program is written again settled,
+    None for no limit, and ``until`` the monotonic instant writing must end by.
+    """
+
+    shapes: Mapping[str, ListShape] = field(default_factory=dict)
+    values: Mapping[str, object] = field(default_factory=dict)
+    settle: frozenset[int] = frozenset()
+    everywhere: bool = False
     hold: bool = True
+    steps: int | None = READ_STEPS
+    until: float | None = None
 
 
 class UnencodedError(ValueError):
@@ -95,14 +105,14 @@ class ListTerms(ListTyping, Slices):
 
     ``named`` gives the written term of a part a piece reads, a leaf's constant or a defined
     part's name, as often as it is read. ``definitions`` is render's own list, so a term
-    defined here comes before any that reads it. ``until`` is the instant writing must end by.
+    defined here comes before any that reads it. ``source`` is the input whose path this is (see
+    ``start_from``), with the instant writing must end by.
     """
 
     def __init__(self, shapes: Mapping[str, ListShape], symbols: Mapping[str, str]) -> None:
         ListTyping.__init__(self, shapes)
         Slices.__init__(self)
         self.symbols = symbols
-        self.until: float | None = None
         self.pieces: dict[int, Piece] = {}
         self.leaves: dict[str, Stored] = {}
         # each list part the path builds, in the order render made its piece
@@ -117,8 +127,9 @@ class ListTerms(ListTyping, Slices):
         # how long each list part is at least on the path, by the path's forks on it
         self.facts: dict[int, int] = {}
         self.memo: Memo = {}
-        self.steps: int | None = READ_STEPS
-        self.hold = True
+        # the input whose path this is, and how the program is written for it
+        self.source = Origin()
+        self.places: dict[int, int] = {}
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
 
@@ -180,13 +191,16 @@ class ListTerms(ListTyping, Slices):
             items = [(self._item_term(part), self.item_kind(part)) for part in operands]
             piece = Shown(Lin(len(items)), kinds.kinds, kinds.every, items=items)
         elif head == "[:]":
-            piece = self.window(self.piece(operands[0]), operands[1:], kinds)
+            settle = self.source.everywhere or len(self.built) in self.source.settle
+            piece = self.window(self.piece(operands[0]), operands[1:], kinds, settle=settle)
         elif head == "+":
             left, right = (self.piece(operand) for operand in operands)
             piece = Joined(left.length.plus(right.length), kinds.kinds, kinds.every, [left, right])
         else:
             piece = self._repeated(operands, kinds)
         self.pieces[id(node)] = piece
+        # a part is known across the writings of one path by its place in the order it is built
+        self.places[id(piece)] = len(self.built)
         self.built.append(node)
         self._apply_fact(node, piece)
 
@@ -202,7 +216,12 @@ class ListTerms(ListTyping, Slices):
             # display writes: no fork reads it, so it has no term
             return ""
         position = self.position(rest[0], piece)
-        found = read(piece, position, item, self._context())
+        context = self._context()
+        try:
+            found = read(piece, position, item, context)
+        except RenderTooLargeError as error:
+            passed = {self.places[at] for at in context.visited if at in self.places}
+            raise RenderTooLargeError(str(error), frozenset(passed)) from error
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
@@ -213,18 +232,24 @@ class ListTerms(ListTyping, Slices):
         return found.value
 
     def start_from(self, origin: Origin, constants: Mapping[str, str]) -> None:
-        """Take the values of the input whose path this is, each int leaf by its constant, and
-        whether clamps settle as they went there, with no limit on the reads then."""
+        """Take the values of the input whose path this is, each int leaf by its constant, which
+        list parts settle their clamps as they went there, and how long a read may run."""
         for name, constant in constants.items():
             value = origin.values.get(name)
             if type(value) is int:
                 self.origin[constant] = value
-        self.settle = origin.settle
-        self.hold = origin.hold
-        self.steps = None if origin.settle else READ_STEPS
+        self.source = origin
 
     def _context(self) -> Context:
-        return Context(self.least, self.memo, self._define_read, ITEM_SORTS, self.until, self.steps)
+        return Context(
+            self.least,
+            self.memo,
+            self._define_read,
+            ITEM_SORTS,
+            self.source.until,
+            self.source.steps,
+            set(),
+        )
 
     def _define_read(self, text: str, sort: str) -> str:
         """A read written once, as ``(define-fun r!N () Sort ...)``, and named wherever read."""
@@ -329,7 +354,7 @@ class ListTerms(ListTyping, Slices):
         """
         times = max(next(part for part in operands if isinstance(part, int)), 0)
         listed = self.piece(next(part for part in operands if not isinstance(part, int)))
-        if times > 1 and self.hold:
+        if times > 1 and self.source.hold:
             longest = max(self.origin_of(listed.length) or 0, MOST_ITEMS // times)
             self.capped.append(f"(assert (<= {listed.length.text()} {longest}))")
         return Repeated(listed.length.times(times), kinds.kinds, kinds.every, base=listed)

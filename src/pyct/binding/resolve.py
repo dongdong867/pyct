@@ -1,11 +1,9 @@
-"""What each parameter's annotation asks of a value, resolved where its text was written.
+"""An annotation stored as text, read in every module whose names it could have been written in.
 
-The seed check refuses a seed that contradicts an annotation, and the solver reads a list's
-annotation for the kind of an item it adds to a list with none to go by (``shapes``). Both read
-the annotations resolved here.
+``pyct run``'s seed checks and ``pyct sweep``'s seeds both read text
+annotations here, in the same modules and by the same agreement rule. Each
+says what it makes of an annotation, and agreement is on that.
 """
-
-from __future__ import annotations
 
 import functools
 import inspect
@@ -15,7 +13,9 @@ from collections.abc import Callable
 from pyct.binding.annotations import Check, check_of
 
 
-def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
+def checked_annotations(
+    signature: inspect.Signature, fn: Callable[..., object]
+) -> dict[str, Check]:
     """The parameters whose annotation asks something of the seed, and what it asks.
 
     What an annotation asks, and which annotations ask nothing, is
@@ -33,34 +33,36 @@ def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
     parameter and no other. An annotation that asks nothing, such as
     ``str | None`` or a class, is not kept.
 
-    The parameters come from the signature, the same source ``check_seed_fits``
-    reads, so a class target is read at its ``__init__``.
+    The parameters come from ``signature``, the one the caller already read
+    for ``fn``, the same one the seed's fit check reads, so a class target is
+    read at its ``__init__`` and the signature is not read again.
     """
     hints: dict[str, Check] = {}
-    for name, parameter in inspect.signature(fn).parameters.items():
+    for name, parameter in signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        check = _resolved(parameter.annotation, fn)
+        check = resolved(parameter.annotation, fn, check_of)
         if check is not None:
             hints[name] = check
     return hints
 
 
-def _resolved(annotation: object, fn: Callable[..., object]) -> Check | None:
-    """What the annotation asks, or what every module that knows its text reads it as asking.
+def resolved[T](annotation: object, fn: object, read: Callable[[object], T]) -> T | None:
+    """What ``read`` makes of the annotation, or of what every module that knows its text names.
 
-    A namespace whose eval raises does not know the name and says nothing.
-    The answer stands only when something resolved it and everything that
-    did asks the same; a disagreement is no annotation, as any failure is.
-    Two modules can build two ``list[int]`` objects from one text, so they
-    agree on what the text asks rather than on the object.
+    A namespace whose eval, or whose ``read``, raises does not know the name
+    and says nothing. The answer stands only when something resolved it and
+    everything that did reads the same; a disagreement is no answer, as any
+    failure is. Two modules can build two ``list[int]`` objects from one
+    text, so they agree on what ``read`` makes of the text rather than on the
+    object.
     """
     if not isinstance(annotation, str):
-        return check_of(annotation)
-    answers: list[Check | None] = []
+        return read(annotation)
+    answers: list[T] = []
     for names in _namespaces(fn):
         try:
-            answers.append(check_of(eval(annotation, names)))
+            answers.append(read(eval(annotation, names)))
         except Exception:
             continue
     if not answers or any(answer != answers[0] for answer in answers):

@@ -229,8 +229,11 @@ def _leaf(value: object) -> object:
 
 
 def _is_leaf(value: object) -> TypeGuard[Expression]:
-    """A name or literal, a number, a truth value, or null: every leaf an expression holds. A
-    float is a number too: a list display holds one as itself."""
+    """A name or literal, a number, a truth value, or null: every leaf an expression holds.
+
+    A float crosses as the double it is: json writes NaN and the infinities
+    as ``NaN`` and ``Infinity``, and -0.0 with its sign, and reads each back.
+    """
     return value is None or isinstance(value, str | int | float)
 
 

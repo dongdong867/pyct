@@ -12,3 +12,4 @@ def swaps(pair):
     if pair[0] > 5:
         return "big"
     return "small"
+

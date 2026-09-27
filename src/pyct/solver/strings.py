@@ -37,7 +37,7 @@ multiple of it.
 
 import re
 
-from pyct.core.strs import LAST_CHARACTER
+from pyct.core.str_operands import LAST_CHARACTER
 
 # the printable ASCII characters, space to tilde: each is written as itself, but for the double
 # quote and the backslash
@@ -126,6 +126,11 @@ def contains(sub: str, term: str) -> str:
     return f"(str.contains {term} {sub})"
 
 
+def not_contains(sub: str, term: str) -> str:
+    """``sub not in s``: the negation of `contains`, the needle first."""
+    return f"(not {contains(sub, term)})"
+
+
 def first_index(term: str, sub: str) -> str:
     """``s.find(sub)``: where sub first starts in s, or -1.
 
@@ -156,7 +161,7 @@ def last_index(term: str, sub: str) -> str:
     """
     first = first_index(term, sub)
     reversed_first = f"(str.indexof {_reversed(term)} {_reversed(sub)} 0)"
-    back = f"(- (- {_length(term)} {_length(sub)}) {reversed_first})"
+    back = f"(- (- {length(term)} {length(sub)}) {reversed_first})"
     return f"(ite (str.contains {term} {sub}) (ite (< {back} {first}) {first} {back}) (- 1))"
 
 
@@ -172,9 +177,9 @@ def occurrences(term: str, sub: str) -> str:
     occurs ``len(s) + 1`` times, as Python counts it.
     """
     removed = f'(str.replace_all {_reversed(term)} {_reversed(sub)} "")'
-    counted = f"(div (- {_length(term)} (str.len {removed})) {_length(sub)})"
+    counted = f"(div (- {length(term)} (str.len {removed})) {length(sub)})"
     return (
-        f'(ite (= {sub} "") (+ {_length(term)} 1)'
+        f'(ite (= {sub} "") (+ {length(term)} 1)'
         f" (ite (str.contains {term} {sub}) (ite (< {counted} 1) 1 {counted}) 0))"
     )
 
@@ -204,13 +209,13 @@ def sliced(term: str, start: int | None, stop: int | None) -> str:
     else:
         back = _counted(term, start)
         low = f"(ite (< {back} 0) 0 {back})"
-    high = _length(term) if stop is None else _counted(term, stop)
+    high = length(term) if stop is None else _counted(term, stop)
     return f"(str.substr {term} {low} (- {high} {low}))"
 
 
 def _counted(term: str, position: int) -> str:
     """A position counted from the start of the term: a negative one counts back from the end."""
-    return str(position) if position >= 0 else f"(- {_length(term)} {-position})"
+    return str(position) if position >= 0 else f"(- {length(term)} {-position})"
 
 
 def replaced(term: str, old: str, new: str) -> str:
@@ -224,13 +229,13 @@ def replaced(term: str, old: str, new: str) -> str:
 
 def without_prefix(term: str, prefix: str) -> str:
     """``s.removeprefix(prefix)``: s past the prefix when s starts with it, else s itself."""
-    rest = f"(str.substr {term} {_length(prefix)} (- {_length(term)} {_length(prefix)}))"
+    rest = f"(str.substr {term} {length(prefix)} (- {length(term)} {length(prefix)}))"
     return f"(ite (str.prefixof {prefix} {term}) {rest} {term})"
 
 
 def without_suffix(term: str, suffix: str) -> str:
     """``s.removesuffix(suffix)``: s up to the suffix when s ends with it, else s itself."""
-    rest = f"(str.substr {term} 0 (- {_length(term)} {_length(suffix)}))"
+    rest = f"(str.substr {term} 0 (- {length(term)} {length(suffix)}))"
     return f"(ite (str.suffixof {suffix} {term}) {rest} {term})"
 
 
@@ -246,7 +251,7 @@ def _reversed(term: str) -> str:
     return f"(str.rev {term})"
 
 
-def _length(term: str) -> str:
+def length(term: str) -> str:
     """A string term's length. A literal's is counted here, as its reversal is."""
     return str(len(decode(term))) if _is_literal(term) else f"(str.len {term})"
 

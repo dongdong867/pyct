@@ -2,6 +2,6 @@
 
 import sys
 
-from pyct.cli import main
+from pyct.cli import entry
 
-sys.exit(main())
+sys.exit(entry())

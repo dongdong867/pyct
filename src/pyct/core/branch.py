@@ -12,7 +12,8 @@ from pathlib import Path
 from typing import Protocol
 
 # a condition, operator first. A leaf is a parameter's name or the access that reaches a value
-# inside one: ["<", "x", 10], [">", ["[]", "items", 0], 5]. None is a slice's missing bound,
+# inside one: ["<", "x", 10], [">", ["[]", "items", 0], 5]. A float literal is the exact double
+# the target held, NaN, the infinities and -0.0 included. None is a slice's missing bound,
 # ["[:]", "s", 2, None], and prints as null
 type Expression = list[Expression] | str | int | float | bool | None
 

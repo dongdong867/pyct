@@ -191,11 +191,6 @@ def test_an_answer_with_a_length_that_is_not_a_number_is_unreadable() -> None:
         written.read({"arg.items.len": "x"})
 
 
-def test_a_float_a_display_holds_is_never_written() -> None:
-    with pytest.raises(ValueError, match="nothing solves a float yet"):
-        program((fork(["==", "x", 1.5]),), {"x": int}, {})
-
-
 def test_terms_that_hold_or_fail_fold_where_they_are_written() -> None:
     assert either(FALSE, "p") == "p" and either("p", FALSE) == "p"
     assert either("p", "q") == "(or p q)" and either(TRUE, "q") == TRUE
@@ -254,7 +249,8 @@ def test_writing_a_long_read_stops_at_the_solves_deadline() -> None:
     forks = (fork(["==", ["[]", appended, "i"], 7]),)
 
     with pytest.raises(RenderTimeError):
-        program(forks, {"i": int}, {"items": ListShape(("int",), fill="int")}, time.monotonic())
+        shapes = {"items": ListShape(("int",), fill="int")}
+        program(forks, {"i": int}, Origin(shapes=shapes, until=time.monotonic()))
 
 
 def test_a_solve_whose_program_outlives_its_limit_is_a_timeout() -> None:
@@ -317,7 +313,8 @@ def test_a_list_changed_at_slices_or_a_tracked_index_many_times_renders_in_a_row
     seed, path = _changed(change, 24)
 
     started = time.perf_counter()
-    text = program(path, seed.leaves, seed.lists, None, Origin(seed.values, settle=True)).text
+    settled = Origin(shapes=seed.lists, values=seed.values, everywhere=True, steps=None)
+    text = program(path, seed.leaves, settled).text
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
     spent = time.perf_counter() - started
 
@@ -418,7 +415,29 @@ def test_a_list_inside_at_a_position_the_model_does_not_name_is_left_out() -> No
     assert set(read) == {"grid"}
 
 
-def test_an_unsat_answer_under_clamps_settled_as_the_input_had_them_is_unknown() -> None:
-    narrowed = Program(text="", names_by_symbol={}, narrowed=True)
+@pytest.mark.parametrize(("narrowed", "answer"), [(True, Unknown()), (False, Unsat())])
+def test_an_unsat_without_the_hold_is_trusted_only_unsettled(
+    monkeypatch: pytest.MonkeyPatch, narrowed: bool, answer: object
+) -> None:
+    written = Program(text="", names_by_symbol={}, narrowed=narrowed)
+    monkeypatch.setattr(cvc5_module, "_solved", lambda path, origin: (Unsat(), written))
 
-    assert cvc5_module._unheld(narrowed, ((), {}, {}), time.monotonic() + 1, {}) == Unknown()
+    assert cvc5_module._unheld(((), {}), Origin()) == answer
+
+
+def test_an_unsat_under_settled_clamps_asks_the_unsettled_program(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    asked: list[Origin] = []
+    replies = iter(
+        [(Unsat(), Program(text="", names_by_symbol={}, narrowed=True)), (Sat({}), None)]
+    )
+
+    def solved(path: object, origin: Origin) -> object:
+        asked.append(origin)
+        return next(replies)
+
+    monkeypatch.setattr(cvc5_module, "_solved", solved)
+
+    assert solve((), {}, 5.0) == Sat({})
+    assert [origin.steps for origin in asked] == [cvc5_module.READ_STEPS, None]

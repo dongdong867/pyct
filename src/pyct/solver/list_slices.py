@@ -7,7 +7,7 @@ wherever it is read.
 
 A list cut at slices again and again, `items[1:2] = [x]` in a loop say, reads each version of
 itself at two positions that differ by such a clamp, so a read of it doubles with each cut.
-When ``settle`` is set, each clamp the input whose path this is settles goes the way it went
+When a slice settles, each clamp of it the input whose path this is settles goes the way it went
 there: the program asserts the input's side of each (`len(items) >= 2`) and the clamp is the
 bound as written, so the cuts read through in a row. Those assertions narrow the answers the
 solver may give, which is why an unsat answer under them is only an unknown (see
@@ -44,9 +44,12 @@ class Slices:
         self.written: dict[str, str] = {}
         self.positions: dict[int, Expression] = {}
 
-    def window(self, base: Piece, bounds: list[Expression], kinds: Kinds) -> Window:
+    def window(
+        self, base: Piece, bounds: list[Expression], kinds: Kinds, *, settle: bool = False
+    ) -> Window:
         """A slice of ``base``, clamped to it as Python clamps it; a step of -1 runs back from
-        its start."""
+        its start. With ``settle``, a clamp the path leaves open goes the way the input went."""
+        self.settle = settle
         size = base.length
         start_bound, stop_bound = (self._bound(part) for part in bounds[:2])
         if len(bounds) > 2 and bounds[2] == -1:

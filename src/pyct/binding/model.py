@@ -44,7 +44,7 @@ class _Applied(Noted):
         # finds its own
         self.input_shapes: dict[int, ListShape] = {}
 
-    def scalar(self, value: int | str, place: Place) -> object:
+    def scalar(self, value: int | float | str, place: Place) -> object:
         # an item of a list is placed with the list's answer already in it
         answered = value if place.in_list else self.model.get(leaf_name(place.access), value)
         return self.noted(answered, place)

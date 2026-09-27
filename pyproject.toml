@@ -9,7 +9,7 @@ authors = [
 dependencies = []
 
 [project.scripts]
-pyct = "pyct.cli:main"
+pyct = "pyct.cli:entry"
 
 [dependency-groups]
 dev = [
@@ -113,10 +113,11 @@ name = "Layers"
 type = "layers"
 layers = [
   "pyct.cli",
-  "(pyct.sweep)",
+  "pyct.sweep",
   "(pyct.llm)",
   "pyct.run",
   "(pyct.rewrite)",
+  "pyct.intercept",
   "pyct.solver",
   "pyct.branches",
   "pyct.execution",

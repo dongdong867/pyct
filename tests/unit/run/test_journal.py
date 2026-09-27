@@ -247,6 +247,33 @@ def test_a_piece_reads_back_with_its_missing_bound_and_its_shared_string() -> No
     assert last[1] is first[1]
 
 
+def test_pieces_of_a_split_read_back_with_its_null_its_flag_and_its_shared_split() -> None:
+    buffer = journal()
+    writer = JournalWriter(buffer)
+    # `parts = s.split(None, 1)` then `parts[0] + parts[1]`, and `s.splitlines(True)[0]`
+    split: Expression = ["split", "s", None, 1]
+    both: Expression = ["+", ["[]", split, 0], ["[]", split, 1]]
+    lines: Expression = ["[]", ["splitlines", "s", True], 0]
+    forks = [
+        Branch(expression=["==", both, "'ab'"], taken=False, site=SITE),
+        Branch(expression=["==", lines, "'a\\n'"], taken=True, site=SITE),
+    ]
+
+    for fork in forks:
+        writer.fork(fork)
+
+    read_back = read(buffer).branches
+    assert list(read_back) == forks
+    compared = read_back[0].expression
+    assert isinstance(compared, list) and isinstance(compared[1], list)
+    first, second = compared[1][1], compared[1][2]
+    assert isinstance(first, list) and isinstance(second, list)
+    assert first[1] is second[1]
+    line = read_back[1].expression
+    assert isinstance(line, list) and isinstance(line[1], list) and isinstance(line[1][1], list)
+    assert line[1][1][2] is True
+
+
 def test_a_part_two_forks_share_is_one_part_in_both() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
@@ -266,6 +293,7 @@ def test_a_leaf_of_no_kind_an_expression_holds_stops_the_journal() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
 
+    # a float is a leaf now (test_journal_floats.py); a complex number is none
     writer.fork(Branch(expression=["<", "x", 1j], taken=True, site=SITE))  # type: ignore[list-item]
 
     reading = read(buffer)

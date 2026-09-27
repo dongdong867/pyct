@@ -164,9 +164,9 @@ def slow_program(monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:
     """Writing the program takes ``seconds``, as a path through a long list's changes may."""
     written = cvc5_module.program
 
-    def slow(*args: Any) -> Any:
+    def slow(*args: Any, **kwargs: Any) -> Any:
         time.sleep(seconds)
-        return written(*args)
+        return written(*args, **kwargs)
 
     monkeypatch.setattr(cvc5_module, "program", slow)
 

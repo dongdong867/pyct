@@ -10,7 +10,7 @@ from typing import assert_never
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.binding.resolved import checked_annotations
+from pyct.binding.resolve import checked_annotations
 from pyct.branches.compare import compare
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
@@ -159,7 +159,7 @@ def run(
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())
     bounds = Bounds.of(limits)
-    copied = Seed.of(seed, checked_annotations(target.fn))
+    copied = Seed.of(seed, checked_annotations(target.signature, target.fn))
     looped = _inputs(inputs, copied, bounds, _Told(scope=scope, tell=tell))
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(

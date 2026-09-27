@@ -18,6 +18,7 @@ env/
 
 # Tool caches and reports
 .pytest_cache/
+.pyct_cache/
 .ruff_cache/
 .pyrefly_cache/
 .mypy_cache/

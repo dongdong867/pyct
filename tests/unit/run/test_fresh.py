@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from pyct.execution.execute import ExecutionContext, execute
+from pyct.intercept.hook import Interception, intercepting
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import fresh
 from pyct.run.fresh import _journal, _request, fresh_for, in_a_fresh_interpreter, main
@@ -18,6 +19,7 @@ from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import load_target
 
 ONE_CHECK = "targets.flip.one_check::classify"
+IDENTITY = "targets.intercept.identity::check"
 TERMINATES = "targets.isolate.terminates::stop"
 SWALLOWS_ALARM = "targets.isolate.swallows_alarm::swallow"
 BASE_RAISES = "targets.isolate.base_raises::stop"
@@ -42,6 +44,25 @@ def test_a_fresh_interpreter_runs_the_call_as_pyct_s_process_would() -> None:
     fresh = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
 
     assert fresh == execute(ctx, {"x": 3})
+
+
+def test_a_fresh_interpreter_opens_the_interception_pyct_s_process_holds(
+    tmp_path: Path,
+) -> None:
+    held = Interception(module="targets.intercept.identity", cache=tmp_path)
+    target = load_target(IDENTITY)
+    fresh_run = fresh_for(target.spec, target.file)
+
+    plain = in_a_fresh_interpreter(fresh_run, {"x": 10}, None)
+    with intercepting(held):
+        substituted = in_a_fresh_interpreter(fresh_run, {"x": 10}, None)
+
+    # as written, `big is True` is False on a tracked bool and records nothing
+    assert [branch.expression for branch in plain.branches] == []
+    assert [(branch.expression, branch.taken) for branch in substituted.branches] == [
+        ([">", "x", 5], True)
+    ]
+    assert 4 in substituted.lines and 4 not in plain.lines
 
 
 def test_a_fresh_interpreter_ends_the_way_its_call_did() -> None:

@@ -23,9 +23,15 @@ COVERAGE_STARTUP = ("COVERAGE_PROCESS_CONFIG", "COVERAGE_PROCESS_START")
 
 
 def run_pyct(
-    *argv: str, path: str | None = None, timeout: float = 30
+    *argv: str,
+    path: str | None = None,
+    cwd: Path = REPO_ROOT,
+    unset: tuple[str, ...] = (),
+    timeout: float = 30,
 ) -> subprocess.CompletedProcess[str]:
-    """Spawn ``pyct run`` with the given argv. ``path`` replaces the child's ``PATH``.
+    """Spawn ``pyct run`` with the given argv from ``cwd``. ``path`` replaces the child's ``PATH``.
+
+    ``unset`` names more variables the child does not inherit.
 
     ``timeout`` is the seconds the child gets before the test fails, for a run whose own budget
     is longer than the usual 30.
@@ -35,13 +41,13 @@ def run_pyct(
     ``tests/unit/deadline_fires.py`` says. So that run leaves coverage.py out.
     """
     budget = any(arg == "--budget" or arg.startswith("--budget=") for arg in argv)
-    unset = {"PYTHONPATH", *(COVERAGE_STARTUP if budget else ())}
-    env = {k: v for k, v in os.environ.items() if k not in unset}
+    left_out = {"PYTHONPATH", *unset, *(COVERAGE_STARTUP if budget else ())}
+    env = {k: v for k, v in os.environ.items() if k not in left_out}
     if path is not None:
         env["PATH"] = path
     return subprocess.run(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,

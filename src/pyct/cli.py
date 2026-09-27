@@ -2,11 +2,14 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
 [--solver-timeout SECONDS] [--in-process]``
+
+``pyct sweep PACKAGE --list``
 """
 
 from __future__ import annotations
 
 import argparse
+import functools
 import inspect
 import json
 import math
@@ -18,27 +21,33 @@ from typing import NoReturn
 from pyct.binding.annotations import contradictions
 from pyct.binding.bind import access_name, leaves
 from pyct.binding.call import call_arguments, positional_only
-from pyct.binding.resolved import checked_annotations
+from pyct.binding.resolve import checked_annotations
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
+from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
+from pyct.run.launch import launch
 from pyct.run.run import Tell, run
-from pyct.run.target import Target, TargetError, load_target
+from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
+from pyct.sweep.listing import PackageImportError, list_package
+from pyct.sweep.rows import closing, row_line, summary_line, told
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
 )
+SWEEP_USAGE = "pyct sweep PACKAGE --list"
 
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -65,7 +74,27 @@ class RunCommand:
     in_process: bool = False
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+@dataclass(frozen=True)
+class SweepCommand:
+    """What ``pyct sweep`` was asked for: the package, and whether only to list its entries."""
+
+    package: str
+    list_only: bool = False
+
+
+def entry() -> int:
+    """The command line as the shell starts it: ``main`` in a process of its own, watched here.
+
+    A target whose import ends its process, by ``os._exit`` or a signal,
+    ends the process ``main`` runs in, so the process the shell started
+    outlives it to say so (see ``pyct.run.launch``). Tests call ``main`` in
+    their own process instead.
+    """
+    argv = sys.argv[1:]
+    return launch(functools.partial(main, argv), argv)
+
+
+def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) -> int:
     """Run the command line and return the exit code.
 
     0: the lines were printed. 1: cvc5 is missing or crashed, the target
@@ -79,29 +108,39 @@ def main(argv: Sequence[str] | None = None) -> int:
     stdout after it: the readable text comes first, as it does for every
     input.
 
+    The target's package is substituted from its import to the run's end,
+    in this process and in every input's (``pyct.intercept``).
+
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, import, seed present, seed fits, seed types, cvc5.
+    solver timeout, import and signature, seed present, seed fits, seed
+    types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
     about the machine. The import comes before the three seed checks because
     they all read the loaded target: its parameters, and the annotations on
     them.
+
+    While the target imports, ``watch`` names its module for the process
+    that watches this one, when ``entry`` started one.
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
-        target, seed, limits = _checked(command)
-        result = run(
-            target,
-            seed,
-            limits=limits,
-            isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
-            tell=Tell(report=_report, missed=_missed),
-        )
+        if isinstance(command, SweepCommand):
+            return _sweep(command)
+        with interception(command.spec):
+            target, seed, limits = _checked(command, watch)
+            result = run(
+                target,
+                seed,
+                limits=limits,
+                isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
+                tell=Tell(report=_report, missed=_missed),
+            )
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, SolverAnswerError, TargetError) as error:
+    except (SolverMissingError, SolverAnswerError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
@@ -109,7 +148,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     return _exit_code(result)
 
 
-def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]:
+def _checked(
+    command: RunCommand, watch: ImportWatch | None
+) -> tuple[Target, Mapping[str, object], Limits]:
     """Every check before the run, in the order ``main`` gives. Each raises what main reports."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
@@ -118,13 +159,31 @@ def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
     )
-    target = load_target(command.spec)
+    target = load_target(command.spec, watch)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed_fits(target.signature, seed)
     check_seed_types(target, seed)
     locate()
     return target, seed, limits
+
+
+def _sweep(command: SweepCommand) -> int:
+    """List the package's entries: each row on stdout with its stderr line, then the summary.
+
+    Running the entries is not built yet, so ``--list`` is required.
+    """
+    if not command.list_only:
+        raise UsageError(f"pyct sweep runs no entry yet; pass --list\nusage: {SWEEP_USAGE}")
+    rows = list_package(command.package)
+    for row in rows:
+        _line(row_line(row))
+        said = told(row)
+        if said is not None:
+            print(said, file=sys.stderr, flush=True)
+    print(closing(command.package, rows), end="", file=sys.stderr, flush=True)
+    _line(summary_line(command.package, rows))
+    return 0
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
@@ -163,11 +222,14 @@ def _is_a_bug(failure: Failure | None) -> bool:
     return failure is not None and failure.kind is FailureKind.PYCT_BUG
 
 
-def parse_command(argv: Sequence[str]) -> RunCommand:
+def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``."""
-    parser = _Parser(prog="pyct", usage=USAGE)
+    parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
-    run_parser = commands.add_parser("run", usage=USAGE)
+    sweep_parser = commands.add_parser("sweep", usage=SWEEP_USAGE)
+    sweep_parser.add_argument("package", metavar="PACKAGE")
+    sweep_parser.add_argument("--list", dest="list_only", action="store_true")
+    run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
@@ -176,6 +238,8 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
     namespace = parser.parse_args(argv)
+    if namespace.command == "sweep":
+        return SweepCommand(package=namespace.package, list_only=namespace.list_only)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
@@ -317,7 +381,7 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
 
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
     """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target.fn), seed)
+    lines = contradictions(checked_annotations(target.signature, target.fn), seed)
     if lines:
         raise UsageError("\n".join(lines))
 
@@ -335,4 +399,4 @@ class _Parser(argparse.ArgumentParser):
     """An argparse parser that raises UsageError instead of exiting."""
 
     def error(self, message: str) -> NoReturn:
-        raise UsageError(f"{message}\nusage: {USAGE}")
+        raise UsageError(f"{message}\nusage: {self.usage}")

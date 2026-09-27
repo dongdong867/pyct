@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core import numbers, strs, values
+from pyct.core import numbers, str_cases, str_splits, strs, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
@@ -217,8 +217,8 @@ def test_the_truth_test_answers_with_a_real_bool() -> None:
 # A method is named by its own name and an operator by its dunder
 DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "s.encode()": (lambda s: s.encode(), "encode"),
-    "s.upper()": (lambda s: s.upper(), "upper"),
-    "s.split()": (lambda s: s.split(), "split"),
+    "s.rpartition('b')": (lambda s: s.rpartition("b"), "rpartition"),
+    "s.translate({})": (lambda s: s.translate({}), "translate"),
     "len(s)": (len, "__len__"),
     "str(s)": (str, "__str__"),
     "s[::-1]": (lambda s: s[::-1], "__getitem__"),
@@ -228,7 +228,7 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "next(iter(s))": (lambda s: next(iter(s)), "__iter__"),
 }
 
-# what stays str's own and records nothing: a dict key, a debugger's read, pickling, the size
+# str's own, recording nothing: a dict key, a debugger's read, `__getnewargs__`, the size
 KEPT_CALLS: dict[str, Callable[[str], object]] = {
     "hash(s)": hash,
     "repr(s)": repr,
@@ -311,8 +311,53 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     assert sink == []
 
 
-# a keyword each downgraded str method takes: the call, and the name its downgrade carries. The
-# value has two commas, a tab, a newline and a field, so each keyword changes str's answer
+# the downgrades str's own method answers with s itself when there is nothing to fill in, or
+# a format spec changes nothing: the call, and the name its downgrade carries
+NOTHING_TO_FILL: dict[str, tuple[Callable[[str], object], str]] = {
+    "s % ()": (lambda s: s % (), "__mod__"),
+    "s % {}": (lambda s: s % {}, "__mod__"),
+    "s % []": (lambda s: s % [], "__mod__"),
+    "s.format()": (lambda s: s.format(), "format"),
+    's.format("q")': (lambda s: s.format("q"), "format"),
+    "s.format_map({})": (lambda s: s.format_map({}), "format_map"),
+    'format(s, "s")': (lambda s: format(s, "s"), "__format__"),
+    'f"{s:<3}"': (lambda s: f"{s:<3}", "__format__"),
+}
+
+
+@pytest.mark.parametrize(("call", "name"), NOTHING_TO_FILL.values(), ids=list(NOTHING_TO_FILL))
+def test_a_downgrade_str_answers_with_s_itself_hands_back_a_plain_str(
+    call: Callable[[str], object], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    result = call(s)
+
+    # the text Python gives, carrying nothing, while s itself keeps its condition
+    assert type(result) is str
+    assert result == "abc"
+    assert sink == [Downgrade(name=name)]
+    assert s.expression == "s"
+
+
+def test_a_raise_inside_strs_own_mod_is_the_targets_and_records_nothing() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("a%", expression="s", sink=sink)
+
+    with pytest.raises(ValueError) as plain:
+        str.__mod__("a%", ())
+    with pytest.raises(ValueError) as raised:
+        s % ()
+
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
+# a keyword each str method takes, taught or not, where pyct encodes no keyword: the call, and
+# the name its downgrade carries. The value has two commas, a tab, a newline and a field, so
+# each keyword changes str's answer
 KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     's.split(sep=",")': (lambda s: s.split(sep=","), "split"),
     's.split(",", maxsplit=1)': (lambda s: s.split(",", maxsplit=1), "split"),
@@ -325,7 +370,7 @@ KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
 
 
 @pytest.mark.parametrize(("call", "name"), KEYWORD_CALLS.values(), ids=list(KEYWORD_CALLS))
-def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
+def test_a_keyword_where_pyct_encodes_none_is_strs_own_and_a_downgrade(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
@@ -397,21 +442,30 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     searches = {"__contains__", "startswith", "endswith", "count"}
     positions = {"find", "index", "rfind", "rindex"}
     pieces = {"__getitem__", "__add__", "replace", "removeprefix", "removesuffix"}
+    checks = {"isdigit", "isdecimal", "isnumeric", "isalpha", "isalnum", "isspace", "isupper"}
+    checks |= {"islower", "isascii", "isprintable", "istitle", "isidentifier"}
+    cases = {"upper", "lower", "capitalize", "title", "swapcase", "casefold"}
+    cases |= {"strip", "lstrip", "rstrip", "zfill", "center", "ljust", "rjust"}
+    splits = {"split", "rsplit", "partition", "splitlines"}
     kept = {"__hash__", "__repr__", "__getnewargs__", "__sizeof__"}
+    taught = compares | searches | positions | pieces | checks | cases | splits
 
     # whatever str defines on the Python that runs this, the only methods left unwrapped are
-    # the six compares, the searches and the pieces taught above, and the four str keeps
-    assert methods - _derived_downgrades() == compares | searches | positions | pieces | kept
+    # the compares, searches, pieces, checks, cases and splits taught above, and the four str
+    # keeps
+    assert methods - _derived_downgrades() == taught | kept
     assert _derived_downgrades().isdisjoint(strs._KEPT)
 
 
 def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None:
     # a call into str written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicStr's methods, operators and plain names alike, are written in three files: its
-    # own, numbers for the compare closures and values for the downgrade closures, so the scan
-    # covers all three. A compare or a search in strs hands the call to a closure it holds, so
-    # what a function holds counts as what it calls
-    files = {strs.__file__, numbers.__file__, values.__file__}
+    # ConcolicStr's methods, operators and plain names alike, are written in five files: its
+    # own, numbers for the compare closures, values for the downgrade closures, and str_cases
+    # and str_splits for the checks, cases and splits, so the scan covers all five. A compare
+    # or a search in strs hands the call to a closure it holds, so what a function holds counts
+    # as what it calls
+    files = {strs.__file__, numbers.__file__, values.__file__, str_cases.__file__}
+    files.add(str_splits.__file__)
     written_here = written_in(ConcolicStr, files)
 
     # the scan read the taught compares, the truth test and the searches, and a derived plain
@@ -419,6 +473,6 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     assert {"__lt__", "__le__", "__gt__", "__ge__", "__eq__", "__ne__", "__bool__"} <= (
         written_here.keys()
     )
-    assert {"find", "encode"} <= written_here.keys()
+    assert {"find", "encode", "isdigit", "upper", "split"} <= written_here.keys()
     # these hand the value itself back and never call str, so they have nothing to guard
     assert without_the_helper(ConcolicStr, files) == {"__copy__", "__deepcopy__"}

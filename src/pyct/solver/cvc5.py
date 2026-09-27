@@ -3,17 +3,17 @@
 import logging
 import math
 import subprocess
-import time
 from collections.abc import Mapping
+from dataclasses import replace
+from time import monotonic
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
-from pyct.solver.declared import Program
 from pyct.solver.list_reader import RenderTimeError, RenderTooLargeError
-from pyct.solver.lists import Origin, UnencodedError
+from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
-from pyct.solver.render import program
+from pyct.solver.render import FINITE, Program, float_leaves, program
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,16 @@ GRACE_SECONDS = 1.0
 # the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
 LONGEST_WAIT_SECONDS = 2_147_483.0
 
+# the steps a read may take per second of the solve's limit before its program is written
+# again with clamps settled; never fewer than READ_STEPS
+STEPS_PER_SECOND = 100
+
+# how often a read that runs long settles the clamps it went through before every clamp settles
+SETTLE_ROUNDS = 4
+
+# the path a solve asks about: its forks, and the leaves of the input it extends
+type _Path = tuple[tuple[Branch, ...], Mapping[str, type]]
+
 
 def solve(
     prefix: tuple[Branch, ...],
@@ -48,7 +58,7 @@ def solve(
     gets, writing the program included.
 
     ``leaves``, ``lists`` and ``values`` are what the input whose path it extends holds: each
-    int and str the solver may change, each tracked list with its shape, and each leaf's value.
+    leaf the solver may change, each tracked list with its shape, and each leaf's value.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
@@ -59,9 +69,19 @@ def solve(
     is a ``Timeout()``, and an ``unknown`` for any other reason stays an
     ``Unknown()``. A cvc5 still running ``GRACE_SECONDS`` past the limit is
     stopped by pyct, and that is a ``Timeout()`` as well. A limit longer than Python can wait,
-    about 24 days, is cut to what it can. An unsat answer to a program that holds the answer
-    to more than the path (``Program.narrowed``) says only that no answer was found: it is an
-    ``Unknown()``.
+    about 24 days, is cut to what it can. Each ask after the first gets what the ones before
+    left of ``timeout``, so all stay inside the one limit, and one with nothing left is a
+    ``Timeout()`` without starting cvc5.
+
+    A read through a list cut again and again at clamps the path leaves open doubles with each
+    cut. One that runs past its steps, more the longer the limit, is written again with the
+    clamps it went through settled as the input had them (see ``_written``). An unsat answer
+    to that settled program asks the unsettled one in what is left of the limit, and only an
+    unsat to that is an ``Unsat()``. An unsat to a program that holds a repeated list's length
+    asks again without the hold (see ``_unheld``).
+
+    A prefix that names a float leaf is asked first with each such leaf held
+    finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -70,46 +90,128 @@ def solve(
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    until = time.monotonic() + timeout
-    path = (prefix, leaves, lists)
-    written = _written(path, until, Origin(values or {}))
-    if not isinstance(written, Program):
-        return written
-    answer = _in_time(written, until)
-    if isinstance(answer, Unsat) and (written.narrowed or written.held):
-        return _unheld(written, path, until, values or {})
+    timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
+    until = monotonic() + timeout
+    steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
+    origin = Origin(shapes=lists or {}, values=values or {}, steps=steps, until=until)
+    path = (prefix, leaves)
+    answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat) and written is not None and written.narrowed:
+        logger.debug("unsat with clamps settled as the input had them: asking unsettled")
+        origin = replace(origin, steps=None)
+        answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat) and written is not None and written.held:
+        return _unheld(path, origin)
     return answer
 
 
-def _in_time(written: Program, until: float) -> Answer:
-    """What cvc5 answers in what is left of the solve's limit once the program is written."""
-    left = until - time.monotonic()
-    return Timeout() if left <= 0 else _asked(written, left)
+def _unheld(path: _Path, origin: Origin) -> Answer:
+    """An unsat answer to a program that holds a repeated list's length to more than the path.
 
-
-# the path a solve asks about: its forks, and the leaves and lists of the input it extends
-type _Path = tuple[tuple[Branch, ...], Mapping[str, type], Mapping[str, ListShape] | None]
-
-
-def _unheld(written: Program, path: _Path, until: float, values: Mapping[str, object]) -> Answer:
-    """An unsat answer to a program that holds the answer to more than the path.
-
-    Clamps settled as the input had them leave it unknown. A repeated list's hold is let go and
-    the path asked again: unsat still is unsat, and any other answer, one that would make the
-    target build a list past the hold, is an unknown miss.
+    The hold is let go and the path asked again: an unsat to that unsettled program still is
+    unsat, and any other answer, one that would make the target build a list past the hold or
+    one found with clamps settled, is an unknown miss.
     """
-    if written.narrowed:
-        logger.debug("cvc5 found no answer with the clamps settled as the input had them")
+    answer, written = _solved(path, replace(origin, hold=False))
+    unsettled = written is not None and not written.narrowed
+    return answer if isinstance(answer, Unsat) and unsettled else Unknown()
+
+
+def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
+    """What cvc5 answers the path written from ``origin``, and the program it answered, None
+    when none was written."""
+    finite = float_leaves(*path, origin.shapes)
+    written, origin = _written(path, origin, finite)
+    if not isinstance(written, Program):
+        return written, None
+    return _finite_first(path, origin, written, finite), written
+
+
+def _written(
+    path: _Path, origin: Origin, finite: frozenset[str]
+) -> tuple[Program | Timeout | Unknown, Origin]:
+    """The program for the path, and the origin it was written from.
+
+    A read that runs past ``origin.steps`` goes through a list cut again and again at clamps the
+    path does not settle: it is written again with the clamps of each list part it went through
+    settled as the input had them, round after round, and at the last every clamp settles and
+    the read runs as long as it takes.
+    """
+    for _ in range(SETTLE_ROUNDS):
+        try:
+            return _write(path, origin, finite), origin
+        except RenderTooLargeError as error:
+            if error.passed <= origin.settle:
+                break
+            logger.debug("writing the path again with %d list parts settled", len(error.passed))
+            origin = replace(origin, settle=origin.settle | error.passed)
+    origin = replace(origin, everywhere=True, steps=None)
+    return _write(path, origin, finite), origin
+
+
+def _write(
+    path: _Path, origin: Origin, finite: frozenset[str], *, cores: bool = False
+) -> Program | Timeout | Unknown:
+    """The program for the path, written by the origin's instant.
+
+    A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is, and
+    a path with a read nothing on it types is an ``Unknown()``, a miss rather than a crash.
+    """
+    try:
+        return program(*path, origin, finite=finite, cores=cores)
+    except RenderTimeError:
+        logger.warning("writing the program for cvc5 ran past the time limit")
+        return Timeout()
+    except UnencodedError as error:
+        logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
-    free = _written(path, until, Origin(values, hold=False))
-    again = _in_time(free, until) if isinstance(free, Program) else free
-    return again if isinstance(again, Unsat) else Unknown()
 
 
-def _asked(written: Program, timeout: float) -> Answer:
-    """What cvc5 answers the program within ``timeout`` seconds."""
+def _finite_first(path: _Path, origin: Origin, written: Program, finite: frozenset[str]) -> Answer:
+    """What cvc5 answers the program, each float leaf in ``finite`` held finite at first.
+
+    Only an ``Unsat`` asks again: once with the same leaves held and cvc5 asked for its unsat
+    core, which says which of them the unsat rests on, and then with those leaves free and the
+    rest still held. That repeats until an ask answers otherwise or the core names no held
+    leaf. So a leaf may be NaN or an infinity only once an unsat that held it finite names it
+    in its core. One core may name several leaves where freeing any one of them would do, and
+    each is freed. The core costs its ask time only after an unsat, since asking for it slows
+    some sat answers.
+    """
+    answer, _ = _ask_by(written, origin.until)
+    while finite and isinstance(answer, Unsat):
+        cored = _write(path, origin, finite, cores=True)
+        if not isinstance(cored, Program):
+            return cored
+        answer, core = _ask_by(cored, origin.until)
+        freed = finite & core
+        if not isinstance(answer, Unsat) or not freed:
+            return answer
+        finite -= freed
+        freer = _write(path, origin, finite)
+        if not isinstance(freer, Program):
+            return freer
+        answer, _ = _ask_by(freer, origin.until)
+    return answer
+
+
+def _ask_by(written: Program, until: float | None) -> tuple[Answer, frozenset[str]]:
+    """One ask with what is left before ``until``, a ``Timeout()`` with nothing left."""
+    assert until is not None
+    left = until - monotonic()
+    if left <= 0:
+        logger.debug("no time left to ask cvc5")
+        return Timeout(), frozenset()
+    return _ask(written, left)
+
+
+def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
+    """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds.
+
+    Also the leaves an unsat answer's core holds finite, when the program
+    held any.
+    """
     text = written.text + WHY
-    timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
     try:
@@ -123,7 +225,7 @@ def _asked(written: Program, timeout: float) -> Answer:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        return Timeout()
+        return Timeout(), frozenset()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Sat):
         # cvc5 answered by the constants the program declared; the run reads leaves by name
@@ -132,31 +234,19 @@ def _asked(written: Program, timeout: float) -> Answer:
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
-    return answer
+    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
 
 
-def _written(path: _Path, until: float, origin: Origin) -> Program | Timeout | Unknown:
-    """The program for the path, written by ``until``.
+def _core(stdout: str, written: Program) -> frozenset[str]:
+    """The leaves an unsat answer's dumped core holds finite, by their names.
 
-    A read that runs long goes through a list cut again and again at clamps the path does not
-    settle: it is written again with each clamp settled as the input had it (``Origin``). A
-    program that outlives the solve's limit is a ``Timeout()``, as a solve that does is, and a
-    path with a read nothing on it types is an ``Unknown()``, a miss rather than a crash.
+    cvc5 prints the core right after the answer, its assertion names on one
+    line or one per line; every other line after an unsat is a refusal that
+    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
     """
-    prefix, leaves, lists = path
-    try:
-        try:
-            return program(prefix, leaves, lists, until, origin)
-        except RenderTooLargeError:
-            logger.debug("writing the path again with its clamps settled as the input had them")
-            settled = Origin(origin.values, settle=True, hold=origin.hold)
-            return program(prefix, leaves, lists, until, settled)
-    except RenderTimeError:
-        logger.warning("writing the program for cvc5 ran past the time limit")
-        return Timeout()
-    except UnencodedError as error:
-        logger.warning("pyct cannot write the path for cvc5: %s", error)
-        return Unknown()
+    words = stdout.replace("(", " ").replace(")", " ").split()
+    symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
+    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
 
 
 def _argv(timeout: float) -> list[str]:

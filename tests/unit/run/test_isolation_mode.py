@@ -1,5 +1,6 @@
 """Where a run's inputs run: forked while pyct's process runs one thread, else fresh."""
 
+import contextlib
 import dataclasses
 import inspect
 import logging
@@ -11,8 +12,9 @@ from pathlib import Path
 
 import pytest
 
-from pyct.run import isolation
+from pyct.run import isolation, process
 from pyct.run.isolation import Inputs, Isolation
+from pyct.run.process import Stopped
 from pyct.run.target import Target, load_target
 from tests.unit.another_thread import another_thread
 
@@ -237,3 +239,41 @@ def test_every_input_draws_from_random_as_the_target_s_import_left_it(where: Iso
     forks = [inputs({"x": x}, None).branches[0].expression for x in (0, 50, 99)]
 
     assert forks == [[">", "x", first_draw]] * 3
+
+
+@pytest.mark.parametrize("where", list(Isolation))
+def test_no_input_starts_once_pyct_s_process_was_told_to_stop(
+    where: Isolation, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a stop target code caught, and went on from
+    monkeypatch.setattr(process, "_stop_asked", True)
+    inputs = Inputs(one_check(), where)
+
+    with pytest.raises(Stopped):
+        inputs({"x": 0}, None)
+    assert inputs.ran == []
+
+
+def catches_a_stop(x: int) -> int:
+    """Target code that catches the stop, as one under ``except BaseException`` does."""
+    with contextlib.suppress(Stopped):
+        process.stop()
+    return x
+
+
+def test_an_in_process_call_that_catches_a_stop_is_refused_as_it_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(process, "_stop_asked", False)
+    target = Target(
+        spec="m::catches_a_stop",
+        fn=catches_a_stop,
+        file=__file__,
+        signature=inspect.signature(catches_a_stop),
+    )
+    inputs = Inputs(target, Isolation.IN_PROCESS)
+
+    # the call ran, but its line is not written and no solve follows it
+    with pytest.raises(Stopped):
+        inputs({"x": 0}, None)
+    assert inputs.ran == [Isolation.IN_PROCESS]

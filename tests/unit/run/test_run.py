@@ -107,7 +107,7 @@ def limits_given(monkeypatch: pytest.MonkeyPatch, limits: Limits) -> list[float]
     """The time limit each solve got, over a run whose one fork the solver misses."""
     given: list[float] = []
 
-    def unknown(prefix: object, names: object, timeout: float, lists: object = None) -> Answer:
+    def unknown(prefix: object, names: object, timeout: float, *_: object) -> Answer:
         given.append(timeout)
         return Unknown()
 

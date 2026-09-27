@@ -285,7 +285,7 @@ def test_the_object_plumbing_on_a_concolic_int_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # pickling and the interpreter's own reads are not the target's path
+    # `__getnewargs__` and the interpreter's own reads are not the target's path
     assert x.__getnewargs__() == (3,)
     assert x.__sizeof__() == (3).__sizeof__()
     assert x.__getattribute__("real") == 3

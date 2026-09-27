@@ -16,11 +16,9 @@ from pyct.binding.shapes import ListAnswer, ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node
+from pyct.solver.heads import SORTS
 from pyct.solver.list_answers import list_answers
 from pyct.solver.lists import ListTerms, TrackedList
-
-# the sort of every type pyct binds. Nothing else reaches a solver yet.
-SORTS: Mapping[type, str] = {int: "Int", str: "String"}
 
 # what opens a string literal in an expression: repr writes one in either quote, and a
 # parameter name holds neither

@@ -13,7 +13,7 @@ INDEX = "|arg.i|"
 NONE = Kinds(frozenset(), frozenset())
 
 
-def slices(*, settle: bool, n: int = 3, i: int = 1) -> Slices:
+def slices(*, settle: bool = False, n: int = 3, i: int = 1) -> Slices:
     """Slices of a list the input held ``n`` items of, with a tracked ``i`` it held as ``i``."""
     made = Slices()
     made.named = lambda part: INDEX if part == "i" else "e!7"
@@ -71,9 +71,9 @@ def test_a_bound_nested_too_deep_is_a_term_of_its_own() -> None:
 def test_a_clamp_the_path_leaves_open_goes_the_way_the_input_went(
     bounds: list[Expression], start: Lin, length: Lin, held: list[str]
 ) -> None:
-    made = slices(settle=True)
+    made = slices()
 
-    window = made.window(base(), bounds, NONE)
+    window = made.window(base(), bounds, NONE, settle=True)
 
     assert (window.start, window.length) == (start, length)
     assert list(made.regime) == held
@@ -89,29 +89,29 @@ def test_a_clamp_the_path_leaves_open_goes_the_way_the_input_went(
     ],
 )
 def test_a_backward_clamp_goes_the_way_the_input_went(bounds: list[Expression], start: Lin) -> None:
-    made = slices(settle=True)
+    made = slices()
 
-    window = made.window(base(), bounds, NONE)
+    window = made.window(base(), bounds, NONE, settle=True)
 
     assert window.start == start and window.step == -1
     assert made.regime
 
 
 def test_a_slice_length_the_input_had_below_zero_is_none() -> None:
-    made = slices(settle=True, i=3)
+    made = slices(i=3)
 
     # i:1 on the input is 3:1, an empty slice, and the length goes that way
-    window = made.window(base(), ["i", 1], NONE)
+    window = made.window(base(), ["i", 1], NONE, settle=True)
 
     assert window.length == Lin()
     assert "(assert (not (<= 0 (+ (* (- 1) |arg.i|) 1))))" in made.regime
 
 
 def test_a_clamp_whose_input_value_is_not_known_is_written_as_a_term() -> None:
-    made = slices(settle=True)
+    made = slices()
     made.named = lambda part: "e!7"
 
-    window = made.window(base(), [["abs", "i"], None], NONE)
+    window = made.window(base(), [["abs", "i"], None], NONE, settle=True)
 
     assert window.start == Lin.of("p!0") and not made.regime
 
