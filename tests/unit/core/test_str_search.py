@@ -2,6 +2,7 @@
 forms it leaves to str as a downgrade."""
 
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -162,7 +163,12 @@ def test_a_raising_search_records_the_in_fork_at_the_call_before_its_answer(
     assert result.expression == [name, "s", "'b'"]
     assert int.__index__(result) == answer
     assert sink == [
-        Branch(expression=["in", "'b'", "s"], taken=True, site=Site(file="<probe>", line=2, col=11))
+        Branch(
+            expression=["in", "'b'", "s"],
+            taken=True,
+            site=Site(file="<probe>", line=2, col=11),
+            raising=True,
+        )
     ]
 
 
@@ -179,7 +185,10 @@ def test_a_raising_search_of_a_missing_substring_raises_as_the_targets_after_its
     assert raised_by_target(raised.value)
     assert sink == [
         Branch(
-            expression=["in", "'x'", "s"], taken=False, site=Site(file="<probe>", line=2, col=11)
+            expression=["in", "'x'", "s"],
+            taken=False,
+            site=Site(file="<probe>", line=2, col=11),
+            raising=True,
         )
     ]
 
@@ -217,7 +226,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
     # str's own answer, plain, and the line names the method
     assert result == call("abcb")
     assert not isinstance(result, ConcolicBool | ConcolicInt)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 # a taught search given what str refuses: the call, and the error str raises for it

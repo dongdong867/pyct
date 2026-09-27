@@ -33,7 +33,8 @@ def code(c: ConcolicStr) -> ConcolicInt:
     then leaves the plan, as `ord(chr(n))` does either way.
     """
     if not c.single:
-        forked(c.sink, ["==", ["len", c.expression], 1], own(str.__len__, c) == 1)
+        one = own(str.__len__, c) == 1
+        forked(c.sink, ["==", ["len", c.expression], 1], one, raising=True)
     return ConcolicInt.made(own(_ORD, c), expression=["ord", c.expression], sink=c.sink)
 
 
@@ -45,6 +46,6 @@ def character(n: ConcolicInt) -> ConcolicStr:
     `chr` raises its ValueError.
     """
     value = own(int.__index__, n)
-    if forked(n.sink, [">=", n.expression, 0], value >= 0):
-        forked(n.sink, ["<=", n.expression, LAST_CODE], value <= LAST_CODE)
+    if forked(n.sink, [">=", n.expression, 0], value >= 0, raising=True):
+        forked(n.sink, ["<=", n.expression, LAST_CODE], value <= LAST_CODE, raising=True)
     return one_character(own(_CHR, n), ["chr", n.expression], n.sink)

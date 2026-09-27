@@ -7,6 +7,7 @@ downgrade named by the method, or a classmethod that answers as the base type's 
 
 import types
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -120,7 +121,7 @@ def test_an_int_downgrades_the_rest_by_name(name: str, call: Callable[[int], obj
 
     assert answer == call(3)
     assert type(answer) is type(call(3))
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize(
@@ -247,7 +248,7 @@ def test_a_bool_downgrades_what_an_int_does(name: str, call: Callable[[int], obj
     b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     assert call(b) == call(True)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize("read", [lambda f: f.real, lambda f: f.conjugate()], ids=["real", "conj"])

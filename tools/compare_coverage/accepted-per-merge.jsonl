@@ -6,6 +6,10 @@
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_case_fold::in_lower_set", "seed": {"x": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
 {"set": "v2", "target": "targets.bools.before_none::check", "seed": {"flag": true, "other": false}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.bools.bool_methods::g", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [67, 68]}
+{"set": "v2", "target": "targets.bools.bool_methods::inner", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [79, 80]}
+{"set": "v2", "target": "targets.bools.bool_methods::picked", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [85, 86]}
+{"set": "v2", "target": "targets.bools.bool_methods::spread", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [98, 99]}
 {"set": "v2", "target": "targets.bools.bools_and_floats::mix", "seed": {"f": 0.0, "flag": false}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.bools.chain_links::band", "seed": {"x": 0, "flag": false}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
@@ -150,3 +154,4 @@
 {"set": "v2", "target": "targets.types.read::other_answers", "seed": {"n": 1, "flag": true}, "status": "differs", "only_legacy": [], "only_v2": [71]}
 {"set": "v2", "target": "targets.types.read::range_type", "seed": {"n": 2}, "status": "differs", "only_legacy": [107], "only_v2": [99, 106]}
 {"set": "v2", "target": "targets.types.read::rebuilt", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [52]}
+{"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}

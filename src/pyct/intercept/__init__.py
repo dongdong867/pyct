@@ -7,7 +7,9 @@ tracked value keeps its condition through `is True`, `in`, a call written
 `int(...)`, `float(...)` or `bool(...)`, a str literal's method given a
 tracked str, an operator with a float or bool literal on the left, each
 also where the code writes a name bound only to such a literal
-(`pyct.intercept.constants`), and the three builtins. It is mechanical and
+(`pyct.intercept.constants`), the value a `return` in a `__bool__` method
+gives back, which CPython takes only as an exact bool, and the three
+builtins. It is mechanical and
 fixed, one to one, and not a rewrite; the LLM source rewrite of the next
 paper is `pyct.rewrite`, which may hand its source to the same loader.
 

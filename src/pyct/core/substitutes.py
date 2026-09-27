@@ -1,5 +1,6 @@
-"""What intercepted code calls: `is`, `in`, conversions, a str literal's method and an operator
-with a float or bool literal on the left, or a name bound only to one, and `len`, `ord`, `chr`.
+"""What intercepted code calls: `is`, `in`, conversions, a str literal's method, an operator
+with a float or bool literal on the left, or a name bound only to one, the value a `__bool__`
+method returns, and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes an operation the target writes with a call of
 one of these functions, through a name it binds in the module, such as
@@ -9,7 +10,8 @@ truth before the target sees it, copies a conversion's answer into a plain
 number, never calls a method of a tracked str handed to a str literal's
 method, and lets a float or bool on the left answer an operator before a
 tracked int on the right is asked, so a tracked value would lose its
-condition in each. Here a tracked value answers as it stands for, and any
+condition in each; and it refuses a tracked bool returned from `__bool__`,
+where the target would stop. Here a tracked value answers as it stands for, and any
 other operand gets Python's own answer and Python's own exception. Inside
 a chained compare, where each operand is evaluated once on Python's stack,
 the link keeps Python's own `in` and searches a container of this module's,
@@ -285,6 +287,21 @@ def _on_text(
     return receiver_method(*args, **kwargs)
 
 
+def truth(value: object, /) -> object:
+    """The value a `return` in a `__bool__` method written in a class body hands back.
+
+    CPython takes only an exact bool from `__bool__`, and a tracked bool is
+    an int, so it is tested for truth here, which records its fork where
+    the `return` runs, as `if value:` there would, and comes back the real
+    bool it stands for. Any other value, a tracked int included, is handed
+    back as it is, so Python raises its own TypeError for one that is not a
+    bool. Only the value's type is read.
+    """
+    if type(value) is ConcolicBool:
+        return bool(value)
+    return value
+
+
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord`, `chr` or a conversion, or from the target's own `__contains__`, `__len__` or
 # `__int__`, is the target's
@@ -301,6 +318,7 @@ PASSING: frozenset[types.CodeType] = (
             method,
             join,
             _on_text,
+            truth,
             Searched.__contains__,
             Identity.__contains__,
             # the one code object all six forwarded compares share

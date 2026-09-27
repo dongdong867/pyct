@@ -5,6 +5,7 @@ import math
 from collections import Counter, OrderedDict
 from decimal import Decimal
 from enum import IntEnum, StrEnum
+from unittest.mock import ANY
 
 import pytest
 
@@ -86,7 +87,7 @@ def test_past_a_hundred_elements_python_answers_and_the_loss_is_named(
     assert in_(n, held) is answer
     assert not_in(n, held) is not answer
     # Python's own lookup reads the plain value, so even a match records no fork
-    assert sink == [Downgrade(name="__contains__")] * 2
+    assert sink == [Downgrade(name="__contains__", site=ANY)] * 2
 
 
 def test_an_element_pyct_does_not_compare_leaves_the_answer_to_python_and_names_the_loss() -> None:
@@ -97,7 +98,7 @@ def test_an_element_pyct_does_not_compare_leaves_the_answer_to_python_and_names_
     # element of such a container, and says so
     assert in_(n, {Decimal(1), 7}) is True
     assert not_in(n, {Decimal(2), 7}) is True
-    assert sink == [Downgrade(name="__contains__")] * 2
+    assert sink == [Downgrade(name="__contains__", site=ANY)] * 2
 
 
 class Raising:
@@ -297,4 +298,4 @@ def test_a_subclass_that_hashes_otherwise_leaves_the_answer_to_python() -> None:
     # its `==` may no longer agree with its hash, so pyct compares nothing and names the loss
     assert in_(n, {Odd(1)}) is (1 in {Odd(1)})
     assert in_(s, {Loud("a")}) is True
-    assert sink == [Downgrade(name="__contains__")] * 2
+    assert sink == [Downgrade(name="__contains__", site=ANY)] * 2

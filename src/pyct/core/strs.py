@@ -7,7 +7,7 @@ from typing import Self
 
 from pyct.core import numbers, str_joins, texts, values
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Downgrade, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
@@ -152,21 +152,20 @@ def _search(
 def _found(self: ConcolicStr, name: str, forms: list[Expression], args: tuple[object, ...]) -> None:
     """The fork a search takes on its way to a raise, taken when it finds sub.
 
-    Without a position it is `["in", sub, s]`. From a position it is the
-    search it mirrors, `["!=", ["find", s, sub, *positions], -1]`: Python
-    raises exactly where that answers -1, an empty sub past the end
-    included, where `in` on the slice would say found. It goes in before
-    str's own call, the way a division records its zero fork
-    (``README.md › Rules › forks``): a missing sub raises ValueError out of
-    that call, and the raising input's line already lists the fork, taken
-    false. On every path past it sub is found.
+    Without a position it is `["in", sub, s]`. From a position it is the search it mirrors,
+    `["!=", ["find", s, sub, *positions], -1]`: Python raises exactly where that answers -1, an
+    empty sub past the end included, where `in` on the slice would say found. It goes in before
+    str's own call, the way a division records its zero fork (``README.md › Rules › forks``): a
+    missing sub raises ValueError out of that call, and the raising input's line already lists
+    the fork, taken false. On every path past it sub is found.
     """
     if len(forms) == 1:
-        forked(self.sink, ["in", forms[0], self.expression], own(str.__contains__, self, args[0]))
+        found = own(str.__contains__, self, args[0])
+        forked(self.sink, ["in", forms[0], self.expression], found, raising=True)
         return
     mirror = _MIRRORS[name]
     found = own(getattr(str, mirror), self, *args) != -1
-    forked(self.sink, ["!=", [mirror, self.expression, *forms], -1], found)
+    forked(self.sink, ["!=", [mirror, self.expression, *forms], -1], found, raising=True)
 
 
 _CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
@@ -234,7 +233,7 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
     found = own(str.__contains__, text, sub)
     answer = found if head == "in" else not found
     if not _within_cvc5(text):
-        sub.sink.append(Downgrade(name="__contains__"))
+        sub.sink.append(Downgrade(name="__contains__", site=caller_site()))
         return answer
     expression = [head, sub.expression, _operand(text)]
     return ConcolicBool.made(answer, expression=expression, sink=sub.sink)

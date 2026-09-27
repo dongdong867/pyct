@@ -16,6 +16,7 @@ from pyct.results.record import (
     RunResult,
     SolverCounts,
 )
+from pyct.results.why_render import why_json
 
 
 def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None = None) -> str:
@@ -55,6 +56,7 @@ def render_summary(result: RunResult) -> str:
         "covered": _numbers(result.coverage.covered),
         "total": dict(result.coverage.total),
         "uncovered": _numbers(result.coverage.uncovered),
+        "why_uncovered": [why_json(entry) for entry in result.why_uncovered],
         "environment": _environment(result.environment),
     }
     return json.dumps(payload)
@@ -108,8 +110,15 @@ def _aim(aim: Aim | None) -> dict[str, object] | None:
 
 
 def _downgrade(entry: DowngradeCount) -> dict[str, object]:
-    """One method or dunder that dropped the condition, and how many calls in a row did."""
-    return {"name": entry.name, "count": entry.count}
+    """One method or dunder that dropped the condition, how many calls in a row did, and where."""
+    site = entry.site
+    return {
+        "name": entry.name,
+        "count": entry.count,
+        "file": site.file,
+        "line": site.line,
+        "col": site.col,
+    }
 
 
 def _failure(failure: Failure | None) -> dict[str, str] | None:

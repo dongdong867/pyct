@@ -1,5 +1,6 @@
 import math
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -170,4 +171,4 @@ def test_a_float_subclass_with_its_own_reflected_compare_answers_first() -> None
     assert (x < Gauge(1.0)) == "gauge >"
     assert (x == Gauge(1.0)) == "gauge =="
     # each answer is plain, so x's condition is lost there and each compare is named
-    assert sink == [Downgrade(name="__lt__"), Downgrade(name="__eq__")]
+    assert sink == [Downgrade(name="__lt__", site=ANY), Downgrade(name="__eq__", site=ANY)]

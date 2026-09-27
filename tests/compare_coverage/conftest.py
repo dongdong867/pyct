@@ -6,18 +6,19 @@ adapter and the real v2 side run against it, so a difference or a legacy failure
 needs is exact, and does not move when a follow story closes a gap.
 
 ``legacy_checkout`` is a real checkout of ``main`` with its own environment, made once per
-session: ``git archive main`` into pytest's temporary folder, then ``uv sync`` with the
-``realworld`` and ``library`` extras and this interpreter's Python release. When
-``PYCT_LEGACY_CHECKOUT`` names a checkout, that one is used instead.
+session, however many workers a parallel run has: ``git archive main`` into pytest's temporary
+folder, then ``uv sync`` with the ``realworld`` and ``library`` extras and this interpreter's
+Python release. When ``PYCT_LEGACY_CHECKOUT`` names a checkout, that one is used instead.
 """
 
+import fcntl
 import json
 import os
 import platform
 import shutil
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -82,9 +83,30 @@ def legacy_checkout(tmp_path_factory: pytest.TempPathFactory) -> Path:
     given = os.environ.get("PYCT_LEGACY_CHECKOUT")
     if given:
         return Path(given)
-    checkout = tmp_path_factory.mktemp("legacy")
+    # the session's temporary folder; a parallel run's workers each have one inside it
+    folder = tmp_path_factory.getbasetemp()
+    if os.environ.get("PYTEST_XDIST_WORKER"):
+        folder = folder.parent
     # the checkout's own environment, not this one: uv would warn and ignore it anyway
-    build_legacy_checkout(checkout, {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"})
+    environment = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
+    return built_once(folder / "legacy", lambda path: build_legacy_checkout(path, environment))
+
+
+def built_once(checkout: Path, build: Callable[[Path], None]) -> Path:
+    """``checkout``, built by the first process that asks for it and reused by the rest.
+
+    A lock beside it makes the others wait while one builds, and a marker beside it says the
+    build finished. A build that failed leaves no marker, so the next process starts it again in
+    an empty folder.
+    """
+    done = checkout.with_name(f"{checkout.name}.done")
+    with checkout.with_name(f"{checkout.name}.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if not done.exists():
+            shutil.rmtree(checkout, ignore_errors=True)
+            checkout.mkdir()
+            build(checkout)
+            done.touch()
     return checkout
 
 

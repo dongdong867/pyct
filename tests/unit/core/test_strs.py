@@ -2,6 +2,7 @@ import copy
 import dataclasses
 import types
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -149,7 +150,7 @@ def test_a_literal_past_the_last_character_is_strs_own_compare_and_a_downgrade(
     result = call(s)
 
     assert result is answer
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_literal_up_to_the_last_character_is_followed() -> None:
@@ -247,7 +248,7 @@ def test_an_untaught_operation_is_strs_own_and_a_downgrade(
     # str's own answer, plain: nothing in it carries the condition on
     assert result == call("abc")
     assert not isinstance(result, ConcolicStr | ConcolicBool)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize("call", KEPT_CALLS.values(), ids=list(KEPT_CALLS))
@@ -306,7 +307,7 @@ def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
     text = "%s" % s  # noqa: UP031
 
     assert (text, type(text)) == ("abc", str)
-    assert sink == [Downgrade(name="__rmod__")]
+    assert sink == [Downgrade(name="__rmod__", site=ANY)]
 
 
 @pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
@@ -355,7 +356,7 @@ def test_a_downgrade_str_answers_with_s_itself_hands_back_a_plain_str(
     # the text Python gives, carrying nothing, while s itself keeps its condition
     assert type(result) is str
     assert result == "abc"
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
     assert s.expression == "s"
 
 
@@ -396,7 +397,7 @@ def test_a_keyword_where_pyct_encodes_none_is_strs_own_and_a_downgrade(
 
     # the keyword reaches str's own method as the target wrote it
     assert call(s) == call("a,b\t{x},c\n")
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_keyword_named_like_pycts_own_parameters_reaches_strs_own_method() -> None:
@@ -406,7 +407,7 @@ def test_a_keyword_named_like_pycts_own_parameters_reaches_strs_own_method() -> 
     # self and operation are the names pyct's wrappers give the receiver and the method; a
     # target keyword of either name still reaches str's own format as the target wrote it
     assert s.format(self=1, operation=2) == "1-2"  # pyrefly: ignore[no-matching-overload]
-    assert sink == [Downgrade(name="format")]
+    assert sink == [Downgrade(name="format", site=ANY)]
 
 
 # a keyword str's own method refuses: one encode names nowhere, and one to a taught search,
