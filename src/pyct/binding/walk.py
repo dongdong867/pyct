@@ -7,6 +7,7 @@ which values are tracked, what each is named, or which lists and dicts are track
 from __future__ import annotations
 
 import copy
+import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import Enum
@@ -140,7 +141,7 @@ class Walk:
         elif access is None or id(value) in self._named:
             return made
         else:
-            items = list(value) if isinstance(value, list) else dict(value)
+            items = list(value) if isinstance(value, list) else keyed(value, place.check)
         if access is not None:
             self._named.add(id(value))
         self._later(_items(value, items, access, made, place.check))
@@ -156,9 +157,10 @@ class Walk:
         elif isinstance(value, list):
             made, items = [None] * len(value), list(value)
         elif access is not None:
-            made, items = self._visitor.mapped(value, place)
+            made, items = self._visitor.mapped(keyed(value, place.check), place)
         else:
-            made, items = dict.fromkeys(value), dict(value)
+            items = keyed(value, place.check)
+            made = dict.fromkeys(items)
         self._copies[id(value)] = made
         self._kept.append(value)
         return made, items
@@ -228,6 +230,29 @@ def _items(
 def _each(check: Check | None, kind: type) -> Check | None:
     """What a list or dict annotation asks of each of its items, when it is that kind."""
     return check.each if isinstance(check, Items) and check.kind is kind else None
+
+
+# an int key as JSON writes it: the text an input's line holds for a key the solver added
+_INT_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)")
+
+
+def keyed(value: dict[object, object], check: Check | None) -> dict[object, object]:
+    """A dict's items, each key read back as its annotation's key type says.
+
+    JSON keys are always strings, so an int key an input's line wrote as ``"3"`` is read back
+    as ``3`` under a ``dict[int, X]`` annotation, and the line's ``args`` given back through
+    ``--args`` is the same input. A key written any other way, or under any other annotation,
+    stays as it came.
+    """
+    if not (isinstance(check, Items) and check.kind is dict and check.keys is int):
+        return dict(value)
+    return {_int_key(key): item for key, item in dict.items(value)}
+
+
+def _int_key(key: object) -> object:
+    if type(key) is str and _INT_TEXT.fullmatch(key):
+        return int(key)
+    return key
 
 
 class _Unnamed(Enum):

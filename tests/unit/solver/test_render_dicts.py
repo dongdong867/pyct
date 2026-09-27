@@ -147,10 +147,40 @@ def test_a_tracked_key_may_equal_a_made_up_key_skipping_the_texts_taken() -> Non
 
 
 @needs_cvc5
-def test_an_int_key_a_fork_names_is_added() -> None:
-    solved = answered({"config": {}}, fork(["in", 3, "config"]))
+def test_an_int_key_is_added_under_an_int_key_annotation_and_read_back_as_an_int() -> None:
+    solved = answered(
+        {"config": {"1": "a"}}, fork(["in", 3, "config"]), checks={"config": Items(dict, str, int)}
+    )
 
-    assert solved["config"] == {3: None}
+    assert solved["config"] == {1: "a", 3: ""}
+
+
+@pytest.mark.parametrize(
+    ("args", "key", "checks"),
+    [
+        ({"config": {}}, 3, None),
+        ({"config": {"a": 1}}, 3, None),
+        ({"config": {}}, "'a'", {"config": Items(dict, str, int)}),
+        ({"config": {}}, "'a'", {"config": Items(dict, None, float)}),
+    ],
+    ids=["no annotation", "str keys", "str key under int keys", "another key type"],
+)
+@needs_cvc5
+def test_no_key_is_added_that_an_answer_would_read_back_as_another(
+    args: dict[str, object], key: Expression, checks: dict[str, object] | None
+) -> None:
+    seed = Seed.of(args, checks)  # pyrefly: ignore[bad-argument-type]
+    forks = (fork(["in", key, "config"]),)
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+
+
+@needs_cvc5
+def test_no_key_is_made_up_under_an_int_key_annotation() -> None:
+    seed = Seed.of({"config": {}}, {"config": Items(dict, int, int)})
+    forks = (fork(["!=", ["len", "config"], 0]),)
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
 
 
 @needs_cvc5

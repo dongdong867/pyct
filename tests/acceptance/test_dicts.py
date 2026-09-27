@@ -10,7 +10,7 @@ import json
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 from tests.acceptance.test_lists import (
     answered_every_fork,
     args_of,
@@ -40,6 +40,7 @@ ALIKE = "targets.dicts.alike::check"
 MISSING_KEY = "targets.dicts.missing_key::check"
 MISSING_KEY_FILE = str(DICTS / "missing_key.py")
 LENGTH = "targets.dicts.length::check"
+INT_KEYS = "targets.dicts.int_keys"
 LENGTH_FILE = str(DICTS / "length.py")
 
 # a walk over a dict has no limit on its passes, so a run over a target that walks one ends when
@@ -256,3 +257,32 @@ def test_len_of_a_dict_is_its_size() -> None:
     assert (3, [">", ["+", ["len", "config"], 1], 2], False) in listed(lines[0])
     assert fork_line(result.stderr, LENGTH_FILE, 3, "len(config) + 1 > 2", False)
     assert any(len(dict_of(line, "config")) >= 2 for line in solved(lines)), lines
+
+
+# follow-dicts-as-they-change: an int key the solver adds under a `dict[int, X]` annotation reads
+# back through `--args` as the same int key, and the same path
+def test_an_int_key_reads_back_as_the_same_input() -> None:
+    result = run_pyct(f"{INT_KEYS}::annotated", '{"config": {}}')
+
+    assert result.returncode == 0, result.stderr
+    lines = solved(input_lines(result.stdout))
+    assert any("3" in dict_of(line, "config") for line in lines), lines
+    for line in lines:
+        again = run_pyct(f"{INT_KEYS}::annotated", "--args", json.dumps(args_of(line)))
+        assert again.returncode == 0, again.stderr
+        (seeded,) = input_lines(again.stdout)[:1]
+        assert args_of(seeded) == args_of(line)
+        assert listed(seeded) == listed(line)
+
+
+# follow-dicts-as-they-change: where no annotation says a dict's keys are ints, the solver adds
+# no int key, since `--args` would read it back as a str
+def test_no_int_key_is_added_where_nothing_says_the_keys_are_ints() -> None:
+    result = run_pyct(f"{INT_KEYS}::unannotated", '{"config": {}}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert listed(lines[0]) == [(10, ["in", 3, "config"], False)]
+    assert [dict_of(line, "config") for line in lines] == [{}]
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list) and [miss["why"] for miss in misses] == ["unsat"], misses

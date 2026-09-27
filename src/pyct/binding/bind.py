@@ -150,9 +150,7 @@ class Noted:
     def mapped(
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
-        check = place.check
-        each = check.each if isinstance(check, Items) and check.kind is dict else None
-        self.dicts[leaf_name(place.access)] = dict_shaped(value, each)
+        self.dicts[leaf_name(place.access)] = dict_shaped(value, place.check)
         return dict.fromkeys(value), dict(value)
 
     def shapes(self) -> dict[str, ListShape]:

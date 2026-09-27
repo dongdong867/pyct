@@ -261,6 +261,10 @@ class DictTerms(Keyed):
         lines: list[str] = []
         for found in self.dicts.values():
             lines += [f"(assert {self.present(found, key)})" for key in found.held]
+            # a key of a type an answer cannot read back is one the solver does not add
+            unread = [key for key in found.named if key not in found.places]
+            unread = [key for key in unread if not found.shape.adds(key)]
+            lines += [f"(assert (not {self.present(found, key)}))" for key in unread]
             if found.sized:
                 lines += self._sized(found)
         strings = [longest_string(name) for name, sort in self.extra.items() if sort == "String"]

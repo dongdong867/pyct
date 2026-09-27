@@ -151,25 +151,42 @@ class DictShape:
     solver adds (dict-keys-named-held-or-made-up).
 
     ``fill`` is the kind of a value the solver adds under a key a fork names or one pyct makes
-    up. Only a dict whose keys are all strs gets made-up keys.
+    up. ``added`` is the type of a key the solver may add: an input's line writes a key as a
+    JSON string, and ``--args`` reads it back as its annotation's key type, so an int key is
+    added only under a ``dict[int, X]`` annotation, a str key under any other that names no key
+    type but str, and none under one that names another. Only a dict whose keys are all strs
+    gets made-up keys.
     """
 
     keys: tuple[object, ...]
     kinds: tuple[str, ...]
     fill: str = "none"
+    added: type | None = str
 
     @property
     def makes_up(self) -> bool:
-        """Whether the solver may add made-up keys: the dict's keys are all strs."""
-        return all(type(key) is str for key in self.keys)
+        """Whether the solver may add made-up keys: str keys, and the dict's keys all strs."""
+        return self.added is str and all(type(key) is str for key in self.keys)
+
+    def adds(self, key: object) -> bool:
+        """Whether the solver may add this key: one of the type an answer reads back."""
+        return self.added is not None and type(key) is self.added
 
 
 def dict_shaped(items: dict[object, object], check: Check | None) -> DictShape:
-    """The shape of a dict of the input. ``check`` is what the dict's annotation asks of each
-    value, when it has one."""
+    """The shape of a dict of the input. ``check`` is what the dict's own annotation asks of
+    it, when it has one."""
+    each = check.each if isinstance(check, Items) and check.kind is dict else None
     kinds = tuple(kind_of(value) for value in dict.values(items))
-    fill = kinds[0] if kinds and kinds.count(kinds[0]) == len(kinds) else annotated(check)
-    return DictShape(keys=tuple(dict.keys(items)), kinds=kinds, fill=fill)
+    fill = kinds[0] if kinds and kinds.count(kinds[0]) == len(kinds) else annotated(each)
+    return DictShape(keys=tuple(dict.keys(items)), kinds=kinds, fill=fill, added=_added(check))
+
+
+def _added(check: Check | None) -> type | None:
+    """The type of a key the solver may add under a dict's annotation: str, but under one that
+    names int keys, and none under one that names any other key type."""
+    keys = check.keys if isinstance(check, Items) and check.kind is dict else str
+    return keys if keys is str or keys is int else None
 
 
 @dataclass(frozen=True)

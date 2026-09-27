@@ -7,7 +7,8 @@ from dataclasses import dataclass
 
 import pytest
 
-from pyct.binding.bind import access_name, bind, leaf_name, leaves
+from pyct.binding.annotations import Items
+from pyct.binding.bind import Seed, access_name, bind, leaf_name, leaves
 from pyct.core.branch import Expression, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
@@ -421,3 +422,17 @@ def test_access_name_reads_each_step_once_given_what_it_already_named() -> None:
     assert access_name(["[]", not_one, 0], known) is None
     assert access_name(["[]", ["[]", not_one, 0], 1], known) is None
     assert access_name("x", known) is None
+
+
+def test_an_int_key_json_wrote_is_read_back_as_an_int_under_an_int_key_annotation() -> None:
+    checks = {"c": Items(dict, Items(dict, str, int), int), "p": Items(dict, str)}
+    seed = Seed.of({"c": {"3": {"-4": "a", "04": "b", "x": "c"}}, "p": {"3": "d"}}, checks)
+
+    assert seed.args == {"c": {3: {-4: "a", "04": "b", "x": "c"}}, "p": {"3": "d"}}
+    assert seed.leaves == {
+        '["[]", ["[]", "c", 3], -4]': str,
+        '["[]", ["[]", "c", 3], "\'04\'"]': str,
+        '["[]", ["[]", "c", 3], "\'x\'"]': str,
+        '["[]", "p", "\'3\'"]': str,
+    }
+    assert seed.dicts["c"].added is int and seed.dicts["p"].added is str
