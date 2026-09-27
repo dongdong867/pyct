@@ -18,7 +18,6 @@ DICT_VALUES_FILE = str(REPO_ROOT / "targets" / "nested" / "dict_values.py")
 TWO_ITEMS = "targets.nested.two_items::classify"
 LOOPS = "targets.nested.loops::count"
 POSITIONAL_ONLY = "targets.nested.positional_only::check"
-KEEPS_SHAPE = "targets.nested.keeps_shape::check"
 KEY_LIKE_INDEX = "targets.nested.key_like_index::compare"
 KEY_LIKE_INDEX_FILE = str(REPO_ROOT / "targets" / "nested" / "key_like_index.py")
 STRING_IN_LIST = "targets.nested.string_in_list::check"
@@ -137,13 +136,14 @@ def test_flips_two_values_inside_a_list() -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
+    # every item is an int, as the seed's are: the solver changes values and lengths, never kinds
     pairs = [items_of(line) for line in lines]
-    # every line's items holds two ints, so the comparisons below compare numbers
-    assert all(len(pair) == 2 and all(type(v) is int for v in pair) for pair in pairs), pairs
+    assert all(type(v) is int for pair in pairs for v in pair), pairs
     answers = [items_of(line) for line in solved(lines)]
-    assert any(number(first) > 100 for first, _ in answers), answers
-    assert any(number(second) < -50 for _, second in answers), answers
-    assert any(first == second for first, second in answers), answers
+    assert any(answer and number(answer[0]) > 100 for answer in answers), answers
+    pairs = [answer[:2] for answer in answers if len(answer) >= 2]
+    assert any(number(second) < -50 for _, second in pairs), answers
+    assert any(first == second for first, second in pairs), answers
     # two values in one argument are two unknowns, each named by its index
     last = ["==", ["[]", "items", 0], ["[]", "items", 1]]
     assert forks_of(lines[0])[-1]["expression"] == last
@@ -151,24 +151,25 @@ def test_flips_two_values_inside_a_list() -> None:
 
 # run-with-nested-arguments-loops-over-a-list-and-a-dict
 def test_loops_over_a_list_and_a_dict() -> None:
-    result = run_pyct(LOOPS, '{"items": [0, 20, 5], "limits": {"a": 1, "b": 2}}')
+    # a walk over a list has no limit on its passes, so the run ends when inputs stop covering
+    # new lines
+    seed = '{"items": [0, 20, 5], "limits": {"a": 1, "b": 2}}'
+    result = run_pyct(LOOPS, seed, "--plateau", "10")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    # each pass of a loop records the fork on its own item, at the line that tests it
-    expected = [
-        (4, [">", ["[]", "items", 0], 10]),
-        (4, [">", ["[]", "items", 1], 10]),
-        (4, [">", ["[]", "items", 2], 10]),
-        (7, ["<", ["[]", "limits", "'a'"], 0]),
-        (7, ["<", ["[]", "limits", "'b'"], 0]),
-    ]
-    assert [(fork["line"], fork["expression"]) for fork in forks_of(lines[0])] == expected
+    # each pass of a loop records the fork on its own item, at the line that tests it, and the
+    # walk over the list one fork a pass on its length (follow-lists-and-dicts-as-they-change)
+    passes = [(3, [">", ["len", "items"], j]) for j in range(4)]
+    items = [(4, [">", ["[]", "items", j], 10]) for j in range(3)]
+    values = [(7, ["<", ["[]", "limits", "'a'"], 0]), (7, ["<", ["[]", "limits", "'b'"], 0])]
+    forks = [(fork["line"], fork["expression"]) for fork in forks_of(lines[0])]
+    assert [fork for fork in forks if fork[0] != 3] == items + values
+    assert [fork for fork in forks if fork[0] == 3] == passes
     sides = sides_of(lines)
-    for _, expression in expected:
+    for _, expression in items + values:
         assert {(json.dumps(expression), True), (json.dumps(expression), False)} <= sides
     for line in lines:
-        assert len(items_of(line)) == 3, line
         limits = args_of(line)["limits"]
         assert isinstance(limits, dict) and list(limits) == ["a", "b"], line
 
@@ -195,21 +196,6 @@ def test_holds_no_accepted_difference_for_the_nested_fixtures() -> None:
     assert [record for record in records if record["target"] in LEGACY_NESTED] == []
 
 
-# run-with-nested-arguments-keeps-the-shape
-def test_keeps_the_shape() -> None:
-    result = run_pyct(KEEPS_SHAPE, '{"items": [0], "config": {}, "note": null}')
-
-    assert result.returncode == 0, result.stderr
-    lines = input_lines(result.stdout)
-    # the length, a key test and a null are plain: the solver never changes the shape
-    assert [fork["expression"] for fork in forks_of(lines[0])] == [[">", ["[]", "items", 0], 0]]
-    assert lines[0]["downgrades"] == []
-    for line in lines:
-        args = args_of(line)
-        assert len(items_of(line)) == 1, line
-        assert (args["config"], args["note"]) == ({}, None), line
-
-
 # run-with-nested-arguments-quotes-a-key-that-looks-like-an-index
 def test_quotes_a_key_that_looks_like_an_index() -> None:
     result = run_pyct(KEY_LIKE_INDEX, json.dumps({"d": {"0": 1, "it's": 2}}))
@@ -232,12 +218,14 @@ def test_indexes_a_string_inside_a_list() -> None:
     seed = lines[0]
     long_enough = [">", ["len", ["[]", "items", 0]], 2]
     assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [
-        (long_enough, False)
+        ([">", ["len", "items"], 0], True),
+        (long_enough, False),
     ]
     failure = seed["failure"]
     assert isinstance(failure, dict) and failure["kind"] == "target_raised", seed
     assert "IndexError" in str(failure["detail"]), seed
-    firsts = [str(items_of(line)[0]) for line in solved(lines)]
+    # the solver may also empty the list, which the index before the string's then raises on
+    firsts = [str(items_of(line)[0]) for line in solved(lines) if items_of(line)]
     assert any(len(first) >= 3 for first in firsts), firsts
     assert any(len(first) >= 3 and first[2] == "x" for first in firsts), firsts
 
@@ -250,12 +238,14 @@ def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    # the target appends to items and writes a key into config; no later input sees either
+    # the target appends None to items and writes a key into config; no later input sees either
     assert [line["failure"] for line in lines] == [None] * len(lines)
     for line in lines:
-        assert len(items_of(line)) == 1, line
+        assert None not in items_of(line), line
         assert args_of(line)["config"] == {}, line
-    assert any(number(items_of(line)[0]) > 5 for line in solved(lines)), lines
+    # an answer may empty items, which the flip of its length check asks for
+    firsts = [items_of(line)[:1] for line in solved(lines)]
+    assert any(first and number(first[0]) > 5 for first in firsts), lines
 
 
 # run-with-nested-arguments-leaves-other-annotations-unchecked

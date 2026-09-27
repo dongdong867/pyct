@@ -27,10 +27,14 @@ def run_pyct(
     path: str | None = None,
     cwd: Path = REPO_ROOT,
     unset: tuple[str, ...] = (),
+    timeout: float = 30,
 ) -> subprocess.CompletedProcess[str]:
     """Spawn ``pyct run`` with the given argv from ``cwd``. ``path`` replaces the child's ``PATH``.
 
     ``unset`` names more variables the child does not inherit.
+
+    ``timeout`` is the seconds the child gets before the test fails, for a run whose own budget
+    is longer than the usual 30.
 
     A run given ``--budget SECONDS`` or ``--budget=SECONDS`` arms pyct's deadline, and the
     deadline firing inside coverage.py's tracer hangs the child, as
@@ -50,7 +54,7 @@ def run_pyct(
         check=False,
         # the timeout test spawns a target that never returns, so a broken
         # budget has to fail the test instead of hanging the suite
-        timeout=30,
+        timeout=timeout,
     )
 
 

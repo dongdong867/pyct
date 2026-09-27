@@ -7,7 +7,7 @@ import os
 import sys
 import types
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -37,11 +37,16 @@ class Site:
 
 @dataclass(frozen=True)
 class Branch:
-    """One fork: the condition, the side the run took, and the position."""
+    """One fork: the condition, the side the run took, and the position.
+
+    ``lost_as`` names the operation that took it, which a call that is over names its loss by
+    when a value it kept records one (see ``execution.tally``). It is no part of the fork.
+    """
 
     expression: Expression
     taken: bool
     site: Site
+    lost_as: str = field(default="__bool__", compare=False)
 
 
 @dataclass(frozen=True)

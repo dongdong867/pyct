@@ -43,11 +43,11 @@ class Rescan:
 
     def next(self) -> Plan | None:
         for new_side_only in (True, False):
-            for forks in self.paths:
+            for index, forks in enumerate(self.paths):
                 for at in reversed(range(len(forks))):
                     if self._open(forks, at) and (not new_side_only or self._new_side(forks[at])):
                         self.aimed.add(self._key(forks, at))
-                        return plan(forks[: at + 1])
+                        return plan(forks[: at + 1], index)
         return None
 
     def _key(self, forks: tuple[Branch, ...], at: int) -> tuple[tuple[Side, ...], Site]:
