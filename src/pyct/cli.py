@@ -355,7 +355,7 @@ def checked_annotations(target: Target) -> dict[str, Check]:
 
     The parameters come from the target's signature as the loader read it,
     the same one ``check_seed_fits`` reads, so a class target is read at
-    its ``__init__`` and Python reads the signature once.
+    its ``__init__`` and the seed checks do not read the signature again.
     """
     hints: dict[str, Check] = {}
     for name, parameter in target.signature.parameters.items():
