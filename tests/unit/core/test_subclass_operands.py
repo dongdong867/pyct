@@ -7,6 +7,7 @@ target's object would run the target's own methods inside pyct and write what th
 from collections.abc import Callable
 from enum import IntEnum, IntFlag
 from typing import Any
+from unittest.mock import ANY
 
 import pytest
 
@@ -192,7 +193,7 @@ def test_an_int_subclass_answers_its_reflected_operation_first_as_python_asks_it
     expected = operation(7, Rev(3))
     assert result == expected and type(result) is type(expected)
     # the answer is the subclass's own and plain, so the condition is lost and named
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_tracked_answer_from_an_int_subclass_is_no_downgrade() -> None:
@@ -215,7 +216,7 @@ def test_an_int_flag_answers_with_its_own_flag_as_python_does() -> None:
     expected = 7 | Flag.A
     assert result == expected and type(result) is type(expected)
     # IntFlag's own `|` runs `1 | n`, a downgrade of its own, and hands back a plain flag
-    assert sink == [Downgrade(name="__ror__"), Downgrade(name="__or__")]
+    assert sink == [Downgrade(name="__ror__", site=ANY), Downgrade(name="__or__", site=ANY)]
 
 
 def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() -> None:
@@ -313,7 +314,7 @@ def test_a_float_subclass_answers_beside_a_tracked_int_as_python_asks_it(
 
     assert result == operation(7, Dial(2.0))
     # the answer is the subclass's own and plain, so the condition is lost and named
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_tracked_answer_from_a_float_subclass_beside_a_tracked_int_is_no_downgrade() -> None:

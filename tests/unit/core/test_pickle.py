@@ -8,6 +8,7 @@ import copy
 import pickle
 from collections.abc import Callable
 from multiprocessing.reduction import ForkingPickler
+from unittest.mock import ANY
 
 import pytest
 
@@ -39,7 +40,7 @@ def test_a_round_trip_loads_the_plain_value_at_every_protocol(
     # Python's own type and value, carrying nothing: an int, a bool, a str and a float
     assert type(loaded) is type(plain)
     assert loaded == plain
-    assert sink == [Downgrade(name="__reduce_ex__")]
+    assert sink == [Downgrade(name="__reduce_ex__", site=ANY)]
 
 
 @pytest.mark.parametrize(("make", "plain"), TRACKED.values(), ids=list(TRACKED))
@@ -54,7 +55,7 @@ def test_multiprocessing_pickles_the_plain_value(
 
     assert type(loaded) is type(plain)
     assert loaded == plain
-    assert sink == [Downgrade(name="__reduce_ex__")]
+    assert sink == [Downgrade(name="__reduce_ex__", site=ANY)]
 
 
 def test_each_tracked_value_in_a_container_is_one_downgrade() -> None:
@@ -68,7 +69,7 @@ def test_each_tracked_value_in_a_container_is_one_downgrade() -> None:
 
     assert loaded == {"n": 3, "s": "ab", "k": 1, "all": [3, True, ("ab",)]}
     assert [type(item) for item in loaded["all"]] == [int, bool, tuple]
-    assert sink == [Downgrade(name="__reduce_ex__")] * 3
+    assert sink == [Downgrade(name="__reduce_ex__", site=ANY)] * 3
 
 
 def test_the_pickled_value_keeps_its_condition() -> None:
@@ -111,7 +112,7 @@ def test_reduce_called_by_its_own_name_is_a_downgrade_by_that_name(
     assert rebuilt is type(plain)
     assert type(held) is type(plain)
     assert held == plain
-    assert sink == [Downgrade(name="__reduce__")]
+    assert sink == [Downgrade(name="__reduce__", site=ANY)]
 
 
 @pytest.mark.parametrize("copied", [copy.copy, copy.deepcopy], ids=["copy", "deepcopy"])

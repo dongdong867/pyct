@@ -97,16 +97,17 @@ def test_render_lists_the_downgrades_in_order_with_their_counts() -> None:
         forks=(),
         covered_lines=frozenset(),
         downgrades=(
-            DowngradeCount(name="__abs__", count=3),
-            DowngradeCount(name="__add__", count=1),
+            DowngradeCount(name="__abs__", count=3, site=Site(file="m.py", line=4, col=8)),
+            DowngradeCount(name="__add__", count=1, site=Site(file="n.py", line=2, col=11)),
         ),
     )
 
     payload = json.loads(render(record, COVERAGE))
 
+    # each entry says where its calls were made, a fork's site written the same way
     assert payload["downgrades"] == [
-        {"name": "__abs__", "count": 3},
-        {"name": "__add__", "count": 1},
+        {"name": "__abs__", "count": 3, "file": "m.py", "line": 4, "col": 8},
+        {"name": "__add__", "count": 1, "file": "n.py", "line": 2, "col": 11},
     ]
 
 
@@ -205,6 +206,7 @@ def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
         "covered",
         "total",
         "uncovered",
+        "why_uncovered",
         "environment",
     ]
 

@@ -123,3 +123,13 @@ def test_the_code_of_any_other_string_records_its_length_fork_whatever_its_shape
         codes.code(ConcolicStr.made("ab", expression=expression, sink=sink))
 
     assert sides(sink) == [(["==", ["len", expression], 1], False)]
+
+
+def test_ord_and_chr_mark_their_forks_as_the_operation_s_before_a_raise() -> None:
+    sink: list[SinkItem] = []
+
+    codes.code(ConcolicStr.made("a", expression="c", sink=sink))
+    codes.character(ConcolicInt.made(122, expression="n", sink=sink))
+
+    # each fork says whether Python's own ord or chr will raise, so a test beside it is another
+    assert [item.raising for item in sink if isinstance(item, Branch)] == [True, True, True]

@@ -32,12 +32,16 @@ def plain_index(key: object) -> int | None:
 
 
 def long_enough(self: ListState, index: int, name: str = "__getitem__") -> bool:
-    """Record whether the list holds a plain ``index``, and answer it."""
+    """Record whether the list holds a plain ``index``, and answer it.
+
+    Every operation that asks raises IndexError when the list does not hold
+    it, so the fork is the operation's before a raise.
+    """
     measured: Expression = ["len", self.expression]
     length = self.length()
     if index >= 0:
-        return forked(self.sink, [">", measured, index], length > index, name)
-    return forked(self.sink, [">=", measured, -index], length >= -index, name)
+        return forked(self.sink, [">", measured, index], length > index, name, raising=True)
+    return forked(self.sink, [">=", measured, -index], length >= -index, name, raising=True)
 
 
 def tracked_long_enough(self: ListState, index: ConcolicInt, name: str = "__getitem__") -> bool:
@@ -45,9 +49,11 @@ def tracked_long_enough(self: ListState, index: ConcolicInt, name: str = "__geti
     measured: Expression = ["len", self.expression]
     value = int.__int__(index)
     length = self.length()
-    if not forked(self.sink, [">", measured, index.expression], length > value, name):
+    if not forked(self.sink, [">", measured, index.expression], length > value, name, raising=True):
         return False
-    return forked(self.sink, [">=", measured, ["-", index.expression]], length >= -value, name)
+    return forked(
+        self.sink, [">=", measured, ["-", index.expression]], length >= -value, name, raising=True
+    )
 
 
 def handed(self: ListState, position: int, written: Expression, name: str) -> object:

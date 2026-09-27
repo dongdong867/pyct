@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from pyct.core.branch import Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.record import DowngradeCount
 
@@ -21,9 +22,11 @@ def test_a_value_an_earlier_call_kept_names_its_loss_on_the_later_call() -> None
     # check, then the truth test
     assert first.downgrades == ()
     assert later.branches == ()
+    # both at the target's `if _KEPT[0][0] > 5:`, where the lost forks were taken
+    at = Site(file=str(KEEPS), line=7, col=7)
     assert later.downgrades == (
-        DowngradeCount(name="__getitem__", count=1),
-        DowngradeCount(name="__bool__", count=1),
+        DowngradeCount(name="__getitem__", count=1, site=at),
+        DowngradeCount(name="__bool__", count=1, site=at),
     )
 
 

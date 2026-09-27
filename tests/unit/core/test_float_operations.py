@@ -1,5 +1,6 @@
 import math
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -95,7 +96,9 @@ def test_a_tracked_divisor_records_its_zero_fork_before_the_division() -> None:
 
     assert isinstance(result, ConcolicFloat)
     assert result.expression == ["/", "x", "y"]
-    assert sink == [Branch(expression=["!=", "y", 0.0], taken=True, site=DIVISION_SITE)]
+    assert sink == [
+        Branch(expression=["!=", "y", 0.0], taken=True, site=DIVISION_SITE, raising=True)
+    ]
 
 
 def test_a_tracked_divisor_on_the_right_of_a_plain_float_records_its_zero_fork() -> None:
@@ -106,7 +109,9 @@ def test_a_tracked_divisor_on_the_right_of_a_plain_float_records_its_zero_fork()
 
     assert isinstance(result, ConcolicFloat)
     assert result.expression == ["/", 7.0, "y"]
-    assert sink == [Branch(expression=["!=", "y", 0.0], taken=True, site=DIVISION_SITE)]
+    assert sink == [
+        Branch(expression=["!=", "y", 0.0], taken=True, site=DIVISION_SITE, raising=True)
+    ]
 
 
 @pytest.mark.parametrize("zero", [0.0, -0.0])
@@ -119,7 +124,9 @@ def test_a_zero_divisor_raises_as_the_target_after_its_fork(zero: float) -> None
         _probe(DIVIDE)(x, y)
 
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=["!=", "y", 0.0], taken=False, site=DIVISION_SITE)]
+    assert sink == [
+        Branch(expression=["!=", "y", 0.0], taken=False, site=DIVISION_SITE, raising=True)
+    ]
 
 
 def test_a_plain_zero_divisor_raises_as_the_target_with_no_fork() -> None:
@@ -210,7 +217,7 @@ def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
     # so a plain 2.5 gets the subclass's answer, and so does the tracked one
     assert call(x) == call(2.5)
     # the answer is plain, so x's condition is lost there and the operation is named
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
 import platform
 import time
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import assert_never
 
 from pyct.binding.bind import Seed
@@ -17,6 +18,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
+from pyct.core.branch import ForkSite
 from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Scope, no_gain
 from pyct.results.record import (
@@ -115,11 +117,16 @@ class Ran:
 
 @dataclass(frozen=True)
 class Attempt:
-    """What one pass of the loop produced: an input, or a miss, or the reason to stop."""
+    """What one pass of the loop produced: an input, or a miss, or the reason to stop.
+
+    ``unrun`` is the site of a fork the pass picked and then stopped before it
+    ran an input for: the pick spends the fork, so only the pass knows it.
+    """
 
     stop: Stop | None = None
     ran: Ran | None = None
     miss: Miss | None = None
+    unrun: ForkSite | None = None
 
     @property
     def record(self) -> InputRecord | None:
@@ -129,11 +136,15 @@ class Attempt:
 
 @dataclass(frozen=True)
 class Loop:
-    """The inputs that ran, the seed's first, what the solver missed, and why they stopped."""
+    """The inputs that ran, the seed's first, what the solver missed, and why they stopped.
+
+    ``untried`` counts the forks the run never tried at each site.
+    """
 
     records: tuple[InputRecord, ...]
     misses: tuple[Miss, ...]
     stop: Stop
+    untried: Mapping[ForkSite, int] = field(default_factory=dict)
 
 
 def run(
@@ -169,6 +180,8 @@ def run(
         stopped=looped.stop,
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,
+        untried=looped.untried,
+        deadline=bounds.until,
     )
 
 
@@ -188,7 +201,7 @@ def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
         return Loop((), (), _could_not_start(error))
     told.record(seeded)
     looped = _loop(call, copied, seeded, bounds, told)
-    return Loop((seeded, *looped.records), looped.misses, looped.stop)
+    return dataclasses.replace(looped, records=(seeded, *looped.records))
 
 
 def _could_not_start(error: InputStartError) -> Stop:
@@ -241,7 +254,7 @@ def _loop(
         _let_go(inputs, tree.oldest)
         attempt = _attempt(call, inputs, tree, bounds, covered)
         if attempt.stop is not None:
-            return Loop(tuple(records), tuple(misses), attempt.stop)
+            return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
         if attempt.miss is not None:
             misses.append(attempt.miss)
             told.miss(attempt.miss)
@@ -283,23 +296,33 @@ def _attempt(
     wanted = tree.next()
     if wanted is None:
         return Attempt(stop=Stop(StopKind.NO_FORK))
+    unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
-        return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
+        return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
     origin = inputs[wanted.path]
     limit = _solve_limit(bounds, left)
     answer = solve(wanted.prefix, origin.leaves, limit, origin.lists, origin.values)
     if isinstance(answer, Timeout):
         tree.timed_out()
     if isinstance(answer, Error):
-        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
+        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail), unrun=unrun)
     if not isinstance(answer, Sat):
-        return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
+        return Attempt(miss=Miss(wanted.aim.site, _why(answer), wanted.aim.raising))
     solved = apply(origin, answer.model)
     try:
         record = _record_of(solved.args, call(solved.args, bounds.until), wanted)
     except InputStartError as error:
-        return Attempt(stop=_could_not_start(error))
+        return Attempt(stop=_could_not_start(error), unrun=unrun)
     return Attempt(ran=Ran(record, solved))
+
+
+def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
+    """How many forks the run never tried at each site: the open ones, and one picked but not
+    run."""
+    counts = tree.untried()
+    if attempt.unrun is not None:
+        counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
+    return counts
 
 
 def _let_go(inputs: dict[int, Seed], oldest: int) -> None:

@@ -7,6 +7,7 @@ import itertools
 import pickle
 import random
 from collections.abc import Sequence
+from unittest.mock import ANY
 
 import pytest
 
@@ -58,8 +59,11 @@ def _range(*args: object) -> ConcolicRange:
     return built
 
 
-def _fork(expression: Expression, taken: bool, line: int = 3, col: int = 13) -> Branch:
-    return Branch(expression=expression, taken=taken, site=Site(file="<probe>", line=line, col=col))
+def _fork(
+    expression: Expression, taken: bool, line: int = 3, col: int = 13, *, raising: bool = False
+) -> Branch:
+    site = Site(file="<probe>", line=line, col=col)
+    return Branch(expression=expression, taken=taken, site=site, raising=raising)
 
 
 def _forms(handed: object) -> list[Expression]:
@@ -118,7 +122,8 @@ def test_a_tracked_step_records_its_forks_where_the_range_is_built() -> None:
     # the first element depends on no tracked value: it is 0, and its pass records no fork
     assert _forms(handed) == [0, "k", ["*", 2, "k"]]
     assert sink == [
-        _fork(["!=", "k", 0], True, line=14, col=11),
+        # Python raises on a zero step, so its fork is the one before a raise
+        _fork(["!=", "k", 0], True, line=14, col=11, raising=True),
         _fork([">", "k", 0], True, line=14, col=11),
         _fork([">", 10, "k"], True),
         _fork([">", 10, ["*", 2, "k"]], True),
@@ -151,7 +156,7 @@ def test_a_zero_step_records_its_fork_and_raises_python_s_value_error() -> None:
         range(0, 10, 0)
     assert str(raised.value) == str(plain.value)
     assert raised_by_target(raised.value)
-    assert sink == [_fork(["!=", "k", 0], False, line=14, col=11)]
+    assert sink == [_fork(["!=", "k", 0], False, line=14, col=11, raising=True)]
 
 
 @pytest.mark.parametrize(
@@ -272,7 +277,10 @@ def test_an_item_that_is_not_an_int_is_range_s_answer_and_a_downgrade() -> None:
 
     assert (1.0 in r) is True
     assert ranges.not_contains(r, "a") is True
-    assert sink == [Downgrade(name="__contains__"), Downgrade(name="__contains__")]
+    assert sink == [
+        Downgrade(name="__contains__", site=ANY),
+        Downgrade(name="__contains__", site=ANY),
+    ]
 
 
 def test_python_s_own_in_tests_the_answer_where_it_runs() -> None:
@@ -292,7 +300,7 @@ def test_every_untaught_operation_is_range_s_answer_and_a_downgrade() -> None:
 
     assert answers == [3, 0, [2, 1, 0], 1, 1, True]
     assert sink == [
-        Downgrade(name=name)
+        Downgrade(name=name, site=ANY)
         for name in ("__len__", "__getitem__", "__reversed__", "count", "index", "__bool__")
     ]
 
@@ -450,7 +458,7 @@ def test_a_copy_is_the_range_itself_and_a_pickle_holds_python_s() -> None:
     assert copy.copy(r) is r and copy.deepcopy(r) is r
     for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
         assert pickle.loads(pickle.dumps(r, protocol)) == range(3)
-    assert sink == [Downgrade(name="__reduce_ex__")] * (pickle.HIGHEST_PROTOCOL + 1)
+    assert sink == [Downgrade(name="__reduce_ex__", site=ANY)] * (pickle.HIGHEST_PROTOCOL + 1)
 
 
 def test_the_attributes_are_the_arguments_the_target_passed() -> None:

@@ -9,7 +9,14 @@ import pickle
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, one_line, run_pyct, second_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    downgrade,
+    first_line,
+    one_line,
+    run_pyct,
+    second_line,
+)
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_strs import forks_of, number
 
@@ -32,7 +39,7 @@ def test_hands_back_the_plain_value() -> None:
     seed = one_line(result.stdout)
     assert seed["failure"] is None
     assert seed["forks"] == []
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__reduce_ex__", 1, "targets/ints/pickled.py:6:28")]
     assert ROUND_TRIP_SMALL in covered_in(seed, PICKLED_FILE)
 
 
@@ -43,7 +50,7 @@ def test_keeps_the_pickled_value_tracked() -> None:
     assert result.returncode == 0, result.stderr
     seed, solved = first_line(result.stdout), second_line(result.stdout)
     assert forks_of(seed) == [{**AFTER_THE_PICKLE, "taken": False}]
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__reduce_ex__", 1, "targets/ints/pickled.py:13:4")]
     assert number(solved, "n") > 10
     assert forks_of(solved) == [{**AFTER_THE_PICKLE, "taken": True}]
 
@@ -57,8 +64,10 @@ def test_loads_each_type_as_python_would() -> None:
     assert seed["failure"] is None
     # an int, a bool and a str, each Python's own, so every check holds
     assert set(UNDER_EACH_TYPE) <= set(covered_in(seed, PICKLED_FILE))
-    # one call for each of the three values, one after another, so one entry counts them
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": 3}]
+    # one call for each of the three values, each at a site of its own, so an entry each
+    assert seed["downgrades"] == [
+        downgrade("__reduce_ex__", 1, f"targets/ints/pickled.py:{line}:21") for line in (20, 21, 22)
+    ]
 
 
 # survive-a-pickle-round-trip-pickles-the-same-at-every-protocol
@@ -71,7 +80,9 @@ def test_pickles_the_same_at_every_protocol() -> None:
     assert seed["forks"] == []
     # one call for each protocol from 0 up, and nothing else lost the condition
     protocols = pickle.HIGHEST_PROTOCOL + 1
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": protocols}]
+    assert seed["downgrades"] == [
+        downgrade("__reduce_ex__", protocols, "targets/ints/pickled.py:36:32")
+    ]
 
 
 # survive-a-pickle-round-trip-counts-each-tracked-value-in-a-container
@@ -83,7 +94,7 @@ def test_counts_each_tracked_value_in_a_container() -> None:
     assert seed["failure"] is None
     assert seed["forks"] == []
     # n and s are written, and the plain 1 beside them loses nothing
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": 2}]
+    assert seed["downgrades"] == [downgrade("__reduce_ex__", 2, "targets/ints/pickled.py:43:24")]
 
 
 # survive-a-pickle-round-trip-leaves-a-copy-the-value-itself
