@@ -136,7 +136,7 @@ class _Walk:
         self._at_leaf = at_leaf
         # each copy by the identity of the seed's value, which is kept alive beside it so its
         # identity is not reused, and the containers whose copies a path names. The copies are
-        # deepcopy's memo too, which it keeps its own values alive in
+        # what deepcopy finds before it copies a value again
         self._copies: dict[int, Any] = {}
         self._kept: list[object] = []
         self._named: set[int] = set()
@@ -185,12 +185,39 @@ class _Walk:
 
         deepcopy runs any ``__deepcopy__`` or pickling hook a value brings,
         and one may refuse, a lock say: that value reaches the target as it
-        came.
+        came. deepcopy records a copy before it fills it, so it copies into a
+        scratch memo over the walk's own, and only a copy that finishes joins
+        the walk's: a refused one leaves no half-made copy behind.
         """
+        scratch = _Scratch(self._copies)
         try:
-            return copy.deepcopy(value, self._copies)
+            copied = copy.deepcopy(value, scratch)
         except Exception:
             return value
+        # deepcopy keeps what it copied alive in a list under the memo's own identity, which the
+        # scratch memo gives up when it goes, so the walk keeps them instead
+        self._kept.extend(scratch.pop(id(scratch), []))
+        self._copies.update(scratch)
+        return copied
+
+
+class _Scratch(dict[int, Any]):
+    """deepcopy's memo for one copy: what it copies now, read over what the walk already has.
+
+    deepcopy looks a value up with ``get``, and a tuple's copy with an
+    index, and records each copy by setting it. So this dict holds only the
+    new copies, and the walk's stay as they were until the copy finishes.
+    """
+
+    def __init__(self, under: Mapping[int, Any]) -> None:
+        super().__init__()
+        self._under = under
+
+    def get(self, key: int, default: Any = None) -> Any:
+        return super().get(key, self._under.get(key, default))
+
+    def __missing__(self, key: int) -> Any:
+        return self._under[key]
 
 
 def _items(

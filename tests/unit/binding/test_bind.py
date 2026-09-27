@@ -277,3 +277,29 @@ def test_a_list_reached_first_under_a_float_key_is_still_named_by_its_key() -> N
     assert isinstance(d["k"][0], ConcolicInt)
     assert d["k"][0].expression == ["[]", ["[]", "d", "'k'"], 0]
     assert leaves(seed) == {json.dumps(["[]", ["[]", "d", "'k'"], 0]): int}
+
+
+def test_a_copy_that_fails_part_way_leaves_nothing_half_made_behind() -> None:
+    # deepcopy records a list's copy before it copies the items, and the lock refuses
+    x: list[object] = [threading.Lock(), 0]
+
+    assert leaves({"t": (x,), "a": x}) == {json.dumps(["[]", "a", 1]): int}
+
+
+def test_a_value_whose_copy_failed_reaches_the_target_whole() -> None:
+    y: list[object] = [threading.Lock(), 0]
+
+    args = bind({"t": (y,), "u": (y, 1)}, [])
+
+    assert args["t"] == (y,) and args["u"] == (y, 1)
+    u = args["u"]
+    assert isinstance(u, tuple) and u[0] is y and len(y) == 2
+
+
+def test_a_tuple_copied_once_is_the_same_copy_wherever_the_seed_reaches_it() -> None:
+    shared: tuple[list[int], ...] = ([0],)
+
+    args = bind({"t": shared, "u": [shared]}, [])
+
+    u = args["u"]
+    assert isinstance(u, list) and u[0] is args["t"] and args["t"] is not shared
