@@ -311,6 +311,50 @@ def test_a_raise_under_an_untaught_method_is_the_targets_and_records_nothing() -
     assert sink == []
 
 
+# the downgrades str's own method answers with s itself when there is nothing to fill in, or
+# a format spec changes nothing: the call, and the name its downgrade carries
+NOTHING_TO_FILL: dict[str, tuple[Callable[[str], object], str]] = {
+    "s % ()": (lambda s: s % (), "__mod__"),
+    "s % {}": (lambda s: s % {}, "__mod__"),
+    "s % []": (lambda s: s % [], "__mod__"),
+    "s.format()": (lambda s: s.format(), "format"),
+    's.format("q")': (lambda s: s.format("q"), "format"),
+    "s.format_map({})": (lambda s: s.format_map({}), "format_map"),
+    'format(s, "s")': (lambda s: format(s, "s"), "__format__"),
+    'f"{s:<3}"': (lambda s: f"{s:<3}", "__format__"),
+}
+
+
+@pytest.mark.parametrize(("call", "name"), NOTHING_TO_FILL.values(), ids=list(NOTHING_TO_FILL))
+def test_a_downgrade_str_answers_with_s_itself_hands_back_a_plain_str(
+    call: Callable[[str], object], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("abc", expression="s", sink=sink)
+
+    result = call(s)
+
+    # the text Python gives, carrying nothing, while s itself keeps its condition
+    assert type(result) is str
+    assert result == "abc"
+    assert sink == [Downgrade(name=name)]
+    assert s.expression == "s"
+
+
+def test_a_raise_inside_strs_own_mod_is_the_targets_and_records_nothing() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("a%", expression="s", sink=sink)
+
+    with pytest.raises(ValueError) as plain:
+        str.__mod__("a%", ())
+    with pytest.raises(ValueError) as raised:
+        s % ()
+
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
+
+
 # a keyword each downgraded str method takes: the call, and the name its downgrade carries. The
 # value has two commas, a tab, a newline and a field, so each keyword changes str's answer
 KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
