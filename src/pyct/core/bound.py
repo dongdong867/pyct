@@ -183,5 +183,6 @@ for _python, _bound in BOUND.values():
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
 # `chr` or a conversion, or from the target's own `__len__` or `__int__`, is the target's
 PASSING: frozenset[types.CodeType] = frozenset(
-    function.__code__ for function in (len, ord, chr, _routed, int_, float_, bool_, map_)
+    function.__code__
+    for function in (len, ord, chr, _routed, int_, float_, bool_, map_, conversions.itself)
 )

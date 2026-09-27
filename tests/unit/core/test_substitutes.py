@@ -315,4 +315,5 @@ def test_the_passing_frames_are_the_routers() -> None:
         "float_",
         "bool_",
         "map_",
+        "itself",
     }
