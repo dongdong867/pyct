@@ -4,11 +4,14 @@ methods.
 - A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
   bare or after a dot as in `builtins.int(...)`, and a call written
   `map(...)` with one of the first three first, becomes
-  ``__pyct_call__(int)(...)``: the callee is
-  handed to pyct, which hands back pyct's router when it is Python's own
-  builtin and the callee itself otherwise, and that is called with the
-  arguments as written. So a name the target binds to its own keeps the
-  target's meaning, and its function runs with no frame of pyct's above it.
+  ``__pyct_call__(int)(...)``: the callee is handed to pyct, which hands
+  back pyct's router when it is Python's own builtin and the callee itself
+  otherwise, and that is called with the arguments as written. So a name
+  the target binds to its own keeps the target's meaning, and its function
+  runs with no frame of pyct's above it. A `range(...)` whose arguments are
+  all int literals, as `range(3)` or `range(0, 10, 2)`, stays as written:
+  no run can make it tracked, and a plain range is searched with one fork
+  all the same (`pyct.core.substitutes.in_`).
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
@@ -30,8 +33,6 @@ from pyct.intercept.positions import Parts
 
 # the names whose calls are conversions pyct follows, which a `map` may also hand its items to
 _CONVERSIONS = frozenset({"int", "float", "bool"})
-# the names whose calls pyct hands its router: the conversions, and `range`
-_CALLED = _CONVERSIONS | {"range"}
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
 
@@ -93,9 +94,18 @@ def _spelled(node: ast.expr) -> str | None:
 
 
 def _called(call: ast.Call) -> bool:
-    """Whether a call is one pyct hands its router: a conversion, `range`, or a map of a
-    conversion."""
+    """Whether a call is one pyct hands its router: a conversion, `range` with an argument that
+    is not an int literal, or a map of a conversion."""
     spelled = _spelled(call.func)
-    if spelled in _CALLED:
+    if spelled == "range":
+        return not all(_int_literal(arg) for arg in call.args)
+    if spelled in _CONVERSIONS:
         return True
     return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS
+
+
+def _int_literal(node: ast.expr) -> bool:
+    """Whether an argument is an int literal, `3` or `-3`, which no run can make tracked."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        node = node.operand
+    return isinstance(node, ast.Constant) and type(node.value) is int
