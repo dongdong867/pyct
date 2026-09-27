@@ -168,42 +168,47 @@ def test_a_stop_a_finalizer_swallowed_comes_again(
     assert armed() == 0
 
 
-# stop after stop landing right around the block's end, under the default handler, which a
-# signal delivered after the handler is restored would end the process with
+# stop after stop landing around the block's end, under the previous handler the test names,
+# which a signal delivered after the handler is restored would reach. "near" ends each block
+# within 50 µs of its stop instant; "sent" ends it 5 to 9 ms after, where the watcher's signal
+# lands, so the stop comes on the way out
 RACE = """\
-import random, signal, sys, time
+import random, signal, sys, threading, time
 from pyct.results.graphs import OutOfTimeError
 from pyct.results.stopping import stopping
 
 ran = [0]
 previous = signal.SIG_DFL if sys.argv[1] == "default" else (lambda *_: ran.__setitem__(0, 1))
+late = (-50e-6, 50e-6) if sys.argv[2] == "near" else (5e-3, 9e-3)
 signal.signal(signal.SIGALRM, previous)
 until = time.monotonic() + {seconds}
 blocks = 0
 while time.monotonic() < until:
     blocks += 1
-    work = random.uniform(0, 200e-6)
+    stop_at = time.monotonic() + random.uniform(0, 200e-6)
     try:
-        with stopping(time.monotonic() + work + random.uniform(-50e-6, 50e-6), time.monotonic):
-            end = time.monotonic() + work
+        with stopping(stop_at, time.monotonic):
+            end = stop_at + random.uniform(*late)
             while time.monotonic() < end:
                 pass
     except OutOfTimeError:
         pass
-    assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
+    # after every block: the watcher is gone and the handler is back
+    assert threading.active_count() == 1, threading.enumerate()
     assert signal.getsignal(signal.SIGALRM) is previous
 assert not ran[0], "the previous handler ran for the stop's signal"
 print(blocks)
 """
 
 
+@pytest.mark.parametrize("window", ["near", "sent"])
 @pytest.mark.parametrize("previous", ["default", "counting"])
-def test_no_stop_outlives_its_block(previous: str) -> None:
+def test_no_stop_outlives_its_block(previous: str, window: str) -> None:
     # coverage stays out: a signal in its tracer can hang the process (deadline_fires.py)
     env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")}
 
     finished = subprocess.run(
-        [sys.executable, "-c", RACE.format(seconds=3), previous],
+        [sys.executable, "-c", RACE.format(seconds=3), previous, window],
         capture_output=True,
         text=True,
         env=env,
@@ -213,4 +218,28 @@ def test_no_stop_outlives_its_block(previous: str) -> None:
 
     # a SIGALRM that arrives once the default handler is back ends the process by SIGALRM
     assert finished.returncode == 0, (finished.returncode, finished.stderr[-2000:])
-    assert int(finished.stdout) > 1000
+    assert int(finished.stdout) > 100
+
+
+def test_a_ctrl_c_on_the_way_out_still_finishes_the_way_out_and_reaches_the_caller(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    handler = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
+    restore = signal.signal
+    landed = [False]
+
+    def interrupted(number: int, action: object) -> object:
+        # a Ctrl-C that lands the first time the way out puts the handler back
+        if not landed[0] and action is handler:
+            landed[0] = True
+            raise KeyboardInterrupt
+        return restore(number, action)  # pyrefly: ignore[bad-argument-type]
+
+    monkeypatch.setattr(signal, "signal", interrupted)
+    with pytest.raises(KeyboardInterrupt), stopping(time.monotonic() + 60, time.monotonic):
+        pass
+
+    assert landed[0]
+    assert threading.active_count() == threads
+    assert restore(signal.SIGALRM, handler) is handler

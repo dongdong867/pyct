@@ -48,8 +48,16 @@ class _Stop:
     """One armed stop: whether it may still raise, and what tells its watcher to end."""
 
     armed: bool = True
-    lock: threading.Lock = field(default_factory=threading.Lock)
     done: threading.Event = field(default_factory=threading.Event)
+
+
+@dataclass
+class _Restore:
+    """What the way out puts back: the thread's signal mask, and SIGALRM's handler once the
+    stop has replaced it."""
+
+    mask: set[signal.Signals | int]
+    previous: list[Previous] = field(default_factory=list)
 
 
 @contextmanager
@@ -58,20 +66,25 @@ def stopping(stop_at: float | None, now: Callable[[], float]) -> Iterator[None]:
     every ``_AGAIN`` seconds until the block ends, since a finalizer can swallow one.
 
     The watcher is stopped and the previous handler restored on the way out,
-    however the block ends. It fires only while the block runs: a signal that
-    lands on the way out raises nothing, and none comes after it.
+    however the block ends, and whatever lands on the way: a stop that lands
+    there raises nothing, none comes after it, and an interrupt that lands
+    there, a Ctrl-C say, reaches the caller once the way out is done.
     """
     if stop_at is None or not _free():
         yield
         return
     stop = _Stop()
-    previous = signal.signal(signal.SIGALRM, _handler(stop))
+    restore = _Restore(set(signal.pthread_sigmask(signal.SIG_BLOCK, set())))
     watcher = threading.Thread(target=_watch, args=(stop, stop_at - now()), daemon=True)
     try:
+        restore.previous.append(signal.signal(signal.SIGALRM, _handler(stop)))
         watcher.start()
         yield
     finally:
-        _disarm(stop, watcher, previous)
+        # first, and before any call, whose entry may run a handler: from here on a stop
+        # raises nothing
+        stop.armed = False
+        _way_out(stop, watcher, restore)
 
 
 def _free() -> bool:
@@ -83,35 +96,49 @@ def _free() -> bool:
 def _watch(stop: _Stop, wait: float) -> None:
     """Send SIGALRM to the main thread after ``wait`` seconds, then every ``_AGAIN``, while armed.
 
-    The lock makes each send and the way out's disarm one step each: once the
-    way out holds it, no send is under way and none follows.
+    The way out clears ``armed`` before it ends the watcher, and a send it
+    races lands on a handler that raises nothing; once it has joined the
+    watcher, no send is under way and none follows.
     """
     main = threading.main_thread().ident
     assert main is not None
-    while not stop.done.wait(max(wait, 0)):
-        with stop.lock:
-            if not stop.armed:
-                return
-            signal.pthread_kill(main, signal.SIGALRM)
+    while not stop.done.wait(max(wait, 0)) and stop.armed:
+        signal.pthread_kill(main, signal.SIGALRM)
         wait = _AGAIN
 
 
-def _disarm(stop: _Stop, watcher: threading.Thread, previous: Previous) -> None:
-    """Stop the watcher and put ``previous`` back, with no SIGALRM of the stop's after it."""
-    with stop.lock:
-        stop.armed = False
+def _way_out(stop: _Stop, watcher: threading.Thread, restore: _Restore) -> None:
+    """Disarm until it is done, however often something lands in it, then pass on the first
+    thing that did: a Ctrl-C there still reaches the caller."""
+    landed: list[BaseException] = []
+    while True:
+        try:
+            _disarm(stop, watcher, restore)
+        except BaseException as interrupt:  # noqa: BLE001 - passed on once the way out is done
+            landed.append(interrupt)
+            continue
+        break
+    if landed:
+        raise landed[0]
+
+
+def _disarm(stop: _Stop, watcher: threading.Thread, restore: _Restore) -> None:
+    """Stop the watcher and put SIGALRM's handler and the mask back, with no SIGALRM of the
+    stop's after it. Every step can run again: the way out repeats it when something lands."""
     stop.done.set()
-    watcher.join()
-    blocked = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+    if watcher.ident is not None:
+        watcher.join()
+    signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
     try:
         if signal.SIGALRM in signal.sigpending():
             signal.sigwait({signal.SIGALRM})
         # a signal delivered before the block may wait for Python to run a handler: give it
         # the stop's, which raises nothing now, before the previous one is back
         time.sleep(0)
-        signal.signal(signal.SIGALRM, previous)
+        if restore.previous:
+            signal.signal(signal.SIGALRM, restore.previous[0])
     finally:
-        signal.pthread_sigmask(signal.SIG_SETMASK, blocked)
+        signal.pthread_sigmask(signal.SIG_SETMASK, restore.mask)
 
 
 def _handler(stop: _Stop) -> Callable[[int, types.FrameType | None], None]:
