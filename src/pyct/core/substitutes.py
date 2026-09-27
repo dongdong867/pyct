@@ -1,4 +1,4 @@
-"""What substituted code calls: `is` and `in` where the target wrote them.
+"""What intercepted code calls: `is` and `in` where the target wrote them, and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes a compare the target writes with a call of one
 of these functions, through a name it binds in the module, such as
@@ -9,6 +9,12 @@ condition in both. Here a tracked value
 answers as it stands for, and any other operand gets Python's own answer
 and Python's own exception.
 
+It also binds `len`, `ord` and `chr` in the module's builtins to the three
+functions `BOUND` names. Python makes their answers plain, or calls no
+method of the value at all; here a tracked value that core follows through
+one of them gets core's tracked answer, and every other call, keywords and
+any count of arguments included, is Python's own.
+
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
 blame reads through its frame (`PASSING`): a raise under it is the target's
@@ -18,8 +24,10 @@ unless one of core's own frames sits below.
 from __future__ import annotations
 
 import types
+from collections.abc import Callable, Mapping
+from typing import Any
 
-from pyct.core import strs
+from pyct.core import codes, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -100,8 +108,52 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
     return item not in container  # pyrefly: ignore[not-iterable]
 
 
-# the frames blame reads through: a raise under one of them, from Python's own `in` or from
-# the target's own `__contains__`, is the target's
+# the tracked values core follows through each bound builtin, by their exact type, and the
+# function that follows them. A tracked value's `__len__` stays a downgrade, since Python's own
+# `len` makes its answer plain; pyct's asks core for the tracked length instead
+_FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]] = {
+    len: {ConcolicStr: strs.length},
+    ord: {ConcolicStr: codes.code},
+    chr: {ConcolicInt: codes.character},
+}
+
+
+def _routed(
+    python: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
+) -> object:
+    """Core's answer for one tracked argument core follows through `python`, else Python's call."""
+    if len(args) == 1 and not kwargs:
+        follow = _FOLLOWED[python].get(type(args[0]))
+        if follow is not None:
+            return follow(args[0])
+    return python(*args, **kwargs)
+
+
+def len_(*args: object, **kwargs: object) -> object:
+    """`len` where pyct binds it: a tracked string's length is a tracked int, `["len", s]`."""
+    return _routed(len, args, kwargs)
+
+
+def ord_(*args: object, **kwargs: object) -> object:
+    """`ord` where pyct binds it: a tracked string's code is a tracked int, `["ord", c]`."""
+    return _routed(ord, args, kwargs)
+
+
+def chr_(*args: object, **kwargs: object) -> object:
+    """`chr` where pyct binds it: a tracked int's character is a tracked string, `["chr", n]`."""
+    return _routed(chr, args, kwargs)
+
+
+# each builtin pyct binds in the target's modules, by name: Python's own, which a module's
+# builtins must still hold for pyct to bind it, and pyct's
+BOUND: Mapping[str, tuple[Callable[..., object], Callable[..., object]]] = {
+    "len": (len, len_),
+    "ord": (ord, ord_),
+    "chr": (chr, chr_),
+}
+
+# the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
+# `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
 PASSING: frozenset[types.CodeType] = frozenset(
-    function.__code__ for function in (is_, is_not, in_, not_in)
+    function.__code__ for function in (is_, is_not, in_, not_in, len_, ord_, chr_, _routed)
 )

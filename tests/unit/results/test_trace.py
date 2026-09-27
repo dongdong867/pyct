@@ -86,6 +86,9 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
     "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
     "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "code": (["==", ["ord", "c"], 65], "ord(c) == 65"),
+    "character": (["==", ["chr", "n"], "'z'"], "chr(n) == 'z'"),
+    "code-of-a-piece": (["ord", ["[]", "s", 0]], "ord(s[0])"),
     "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
     "method-on-a-piece": (
         ["removeprefix", ["[:]", "s", 1, None], "'x'"],

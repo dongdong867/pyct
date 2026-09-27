@@ -33,8 +33,9 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── run/          run(target, seed, *, limits, isolation, tell) -> RunResult.
 │   │                 Composition root for one run. isolation.py runs each input in a throwaway process
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
-│   ├── intercept/    the import hook: the target's package loads with `is True` and `in`
-│   │                 substituted by calls into core, kept in `.pyct_cache/` or `$PYCT_CACHE_DIR`
+│   ├── intercept/    builtin interception, one import hook: the target's package loads with
+│   │                 `is True` and `in` substituted by calls into core, kept in `.pyct_cache/`
+│   │                 or `$PYCT_CACHE_DIR`, and runs with `len`, `ord` and `chr` bound to core's
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue
@@ -62,8 +63,9 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 
 `core` is the runtime behavior of a concolic value. `intercept` makes the
 target's package call core where Python would not, through a fixed set of
-substitutions made as Python imports it. `rewrite` is the next paper's LLM
-source rewrite.
+substitutions made as Python imports it and the builtin functions it binds
+in each module's builtins. Neither is a rewrite: `rewrite` is the next
+paper's LLM source rewrite.
 
 ## Protocols
 

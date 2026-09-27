@@ -163,6 +163,17 @@ def not_contains(s: ConcolicStr, sub: object) -> object:
     return ConcolicBool(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
 
 
+def length(s: ConcolicStr) -> ConcolicInt:
+    """`len(s)` where pyct binds `len`: str's own length, carrying `["len", s]`.
+
+    Python's `len` makes what `__len__` hands back a plain int, so a
+    tracked string's `__len__` stays a downgrade; this is what pyct's own
+    `len` asks for instead (`substitutes.len_`). A length cannot fail, so
+    it records no fork.
+    """
+    return ConcolicInt(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
+
+
 def in_text(sub: ConcolicStr, text: str) -> object:
     """`sub in text` for a plain text: str's own answer, carrying `["in", sub, 'text']`.
 

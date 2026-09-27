@@ -255,7 +255,7 @@ def _least(level: int, *, right: bool) -> int:
 
 
 # the builtins a fork line writes as Python calls them: `len(s)`
-_CALLED = ("len",)
+_CALLED = ("len", "ord", "chr")
 
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:

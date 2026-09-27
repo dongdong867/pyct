@@ -67,6 +67,9 @@ RESULTS: Mapping[str, type | None] = {
     "rindex": int,
     "count": int,
     "len": int,
+    # a character's code and a code's character, where pyct binds `ord` and `chr`
+    "ord": int,
+    "chr": str,
     "[]": str,
     "[:]": str,
     "replace": str,
@@ -98,6 +101,10 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("!=", str): "distinct",
     ("+", str): "str.++",
     ("len", str): "str.len",
+    # cvc5 holds characters up to U+2FFFF: `str.from_code` of a code past it is the empty string,
+    # where Python's `chr` is one character, so a path through one may leave the plan
+    ("ord", str): "str.to_code",
+    ("chr", int): "str.from_code",
     ("==", bool): "=",
     ("!=", bool): "distinct",
     ("&", bool): "and",
