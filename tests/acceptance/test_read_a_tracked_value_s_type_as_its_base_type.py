@@ -236,4 +236,6 @@ def test_reads_a_dict_s_type_as_python_s(where: tuple[str, ...]) -> None:
     line = first_line(result.stdout)
     assert line["failure"] is None and line["forks"] == []
     assert line_of(READ_FILE, 'return "base"', "dict_pickled") in covered_in(line, str(READ_FILE))
-    assert [entry["name"] for entry in line["downgrades"]] == ["__reduce_ex__"]
+    downgrades = line["downgrades"]
+    assert isinstance(downgrades, list)
+    assert [entry["name"] for entry in downgrades] == ["__reduce_ex__"]
