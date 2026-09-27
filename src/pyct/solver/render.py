@@ -166,16 +166,16 @@ def _symbols(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str
 
 
 def _symbol(name: str, index: int) -> str:
-    """A leaf's symbol, written inside bars: ``arg.<name>`` for a parameter, else ``leaf.<n>``.
+    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
 
     The prefix keeps every symbol apart from the solver's own words, which
     a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
-    bars or not. A parameter's name is an identifier; each character past
-    ASCII is written as its UTF-8 bytes, ``%C3%A9`` for ``é``, so the program
-    stays ASCII. Any other leaf is ``leaf.<n>``, n its position among the
-    seed's leaves: a value inside an argument is named by its access, which
-    holds brackets, quotes, and any character a key holds, ``|`` and the
-    backslash among them, which not even a quoted symbol can.
+    bars or not. Each character past ASCII is written as its UTF-8 bytes,
+    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
+    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
+    argument is named by its access, which holds brackets, quotes, and any
+    character a key holds, ``|`` and the backslash among them, which not
+    even a quoted symbol can.
     """
     if not name.isidentifier():
         return f"leaf.{index}"
