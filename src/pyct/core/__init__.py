@@ -5,6 +5,6 @@ and an operation picks its answer's class there. Importing them here fills
 that table before any value is built, whichever core module a caller imports.
 """
 
-from pyct.core import bools, ints
+from pyct.core import bools, floats, ints
 
-__all__ = ["bools", "ints"]
+__all__ = ["bools", "floats", "ints"]

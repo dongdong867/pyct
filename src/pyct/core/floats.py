@@ -5,21 +5,25 @@ test, `+ - * /`, the unary operations and `is_integer` stay symbolic, and a
 copy is the value itself. `_KEPT` names what is left to float on purpose.
 `_INHERITED` names what float inherits rather than defines, which the
 derivation at the bottom of the file downgrades along with every other
-method float defines.
+method float defines. What each operation answers is tracked by the class
+numbers holds for its Python type, so this module names no other number's
+class (decision numbers-typed-by-python-result).
 
-An operand pyct does not encode, an int or a bool, is float's own answer and
-a downgrade named by the dunder, never NotImplemented as it is for
-`ConcolicInt`. int's own methods answer NotImplemented for a float, so a
-NotImplemented here would make `f < 3` a TypeError and `f == 2` False. Where
-float itself answers NotImplemented, for a str, the downgrade records nothing
-and Python goes on as it does for a plain float.
+A float's operations take the float family: a tracked float by its
+expression, a plain float as itself. Any other operand gets float's own
+answer: NotImplemented where float gives it, as for a str, and a downgrade
+named by the dunder where float answers, as for an int or a bool. Never
+NotImplemented where float answers: int's own methods answer
+NotImplemented for a float, so that would make `f < 3` a TypeError and
+`f == 2` False. An int meets a float in follow-floats-that-meet-ints.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
-from pyct.core.bools import ConcolicBool, compare
+from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
 
@@ -42,10 +46,11 @@ _INHERITED = ("__str__",)
 
 
 def _operand(other: object) -> Expression | None:
-    """The symbolic form of an operand pyct encodes beside a float, or None for any other.
+    """How a float reads the other side of an operation, or None for one it does not take.
 
-    A tracked float gives its expression, and any other float is a literal
-    of its plain value, so a float of the target's own prints as a float.
+    It takes the float family alone. A tracked float reads as its
+    expression, and any other float as a literal of its plain value, so a
+    float of the target's own prints as a float.
     """
     if isinstance(other, ConcolicFloat):
         return other.expression
@@ -55,12 +60,12 @@ def _operand(other: object) -> Expression | None:
 
 
 def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
-    """float's own answer to one compare, followed for an operand pyct encodes.
+    """float's own answer to one compare, followed for an operand of the float family.
 
-    Any other operand is float's own answer and a downgrade named by the
+    Any other operand gets float's own answer and a downgrade named by the
     compare's dunder (see the module docstring).
     """
-    followed = compare(op, getattr(float, name), _operand)
+    followed = numbers.compare(op, getattr(float, name), _operand)
     downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
@@ -68,17 +73,6 @@ def _compare(op: str, name: str) -> Callable[[ConcolicFloat, object], object]:
         return downgrade(self, other) if answer is NotImplemented else answer
 
     return compute
-
-
-def _zero_fork(divisor: object) -> None:
-    """The fork a tracked divisor takes on its way into a division: `["!=", divisor, 0.0]`.
-
-    Testing it for truth is what records it, so `ConcolicFloat.__bool__` and
-    `forked` stay the one place a fork is written. A plain divisor has
-    nothing to flip and records nothing.
-    """
-    if isinstance(divisor, ConcolicFloat):
-        bool(divisor)
 
 
 def _arithmetic(
@@ -90,8 +84,8 @@ def _arithmetic(
     called on the right operand, so `10.0 - x` is ["-", 10.0, "x"]. A
     division records its zero fork before float's own call, as an int
     division does (``README.md › Rules › division``), so the input that
-    raises already lists the fork it died on. Any other operand is float's
-    own answer and a downgrade named by the dunder.
+    raises already lists the fork it died on. Any other operand gets
+    float's own answer and a downgrade named by the dunder.
     """
     operation = getattr(float, name)
     downgrade = downgraded(float, name)
@@ -101,22 +95,9 @@ def _arithmetic(
         if form is None:
             return downgrade(self, other)
         if op == "/":
-            _zero_fork(self if reflected else other)
-        operands = [form, self.expression] if reflected else [self.expression, form]
-        return ConcolicFloat(
-            own(operation, self, other), expression=[op, *operands], sink=self.sink
-        )
-
-    return compute
-
-
-def _unary(
-    op: str, operation: Callable[[float], float]
-) -> Callable[[ConcolicFloat], ConcolicFloat]:
-    """float's own answer to one unary operation, under the head the builtin or operator has."""
-
-    def compute(self: ConcolicFloat) -> ConcolicFloat:
-        return ConcolicFloat(own(operation, self), expression=[op, self.expression], sink=self.sink)
+            numbers.zero_fork(self if reflected else other)
+        sides = [form, self.expression] if reflected else [self.expression, form]
+        return numbers.tracked(own(operation, self, other), [op, *sides], self.sink)
 
     return compute
 
@@ -126,14 +107,14 @@ def _itself(self: ConcolicFloat) -> ConcolicFloat:
     return self
 
 
-def _is_integer(self: ConcolicFloat, /, *args: object, **kwargs: object) -> ConcolicBool:
+def _is_integer(self: ConcolicFloat, /, *args: object, **kwargs: object) -> Any:
     """float's own `is_integer`, as a tracked bool carrying `["is_integer", x]`.
 
     The arguments reach float as the target wrote them, so a call with any
     raises float's own TypeError.
     """
     whole = own(float.is_integer, self, *args, **kwargs)
-    return ConcolicBool(whole, expression=["is_integer", self.expression], sink=self.sink)
+    return numbers.tracked(whole, ["is_integer", self.expression], self.sink)
 
 
 class ConcolicFloat(float):
@@ -150,7 +131,7 @@ class ConcolicFloat(float):
 
     # Python swaps the operands of a reflected compare itself, so `2.5 < x` runs
     # `x.__gt__(2.5)` and prints [">", "x", 2.5]; nothing here has to reflect anything.
-    # float promises a bool from each, and a ConcolicBool is an int that is not a bool,
+    # float promises a bool from each, and a tracked bool is an int that is not a bool,
     # because bool cannot be subclassed; the override breaks that promise on purpose
     __lt__ = _compare("<", "__lt__")  # pyrefly: ignore[bad-override]
     __le__ = _compare("<=", "__le__")  # pyrefly: ignore[bad-override]
@@ -163,8 +144,8 @@ class ConcolicFloat(float):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
 
-    # each takes any operand and hands one pyct does not encode to float, so its signature is
-    # not float's; the override breaks float's on purpose
+    # each takes any operand and hands one outside the float family to float, so its signature
+    # is not float's; the override breaks float's on purpose
     __add__ = _arithmetic("+", "__add__")  # pyrefly: ignore[bad-override]
     __radd__ = _arithmetic("+", "__radd__", reflected=True)  # pyrefly: ignore[bad-override]
     __sub__ = _arithmetic("-", "__sub__")  # pyrefly: ignore[bad-override]
@@ -173,11 +154,10 @@ class ConcolicFloat(float):
     __rmul__ = _arithmetic("*", "__rmul__", reflected=True)  # pyrefly: ignore[bad-override]
     __truediv__ = _arithmetic("/", "__truediv__")  # pyrefly: ignore[bad-override]
     __rtruediv__ = _arithmetic("/", "__rtruediv__", reflected=True)  # pyrefly: ignore[bad-override]
-    __neg__ = _unary("-", float.__neg__)
-    __abs__ = _unary("abs", float.__abs__)
+    __neg__ = numbers.unary("-", float.__neg__)
+    __abs__ = numbers.unary("abs", float.__abs__)
     __pos__ = _itself
-    # float promises a bool, and a ConcolicBool is an int that is not a bool
-    is_integer = _is_integer  # pyrefly: ignore[bad-override]
+    is_integer = _is_integer
 
     def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> ConcolicFloat:
         self = super().__new__(cls, value)
@@ -192,5 +172,7 @@ class ConcolicFloat(float):
 
 # the class body above is everything ConcolicFloat teaches. The rest of float, and the
 # `__str__` float inherits, differ only in the name they call and record, so the derivation
-# writes them
+# writes them. A float that Python computes, a sum or a quotient among them, is tracked as a
+# ConcolicFloat
 downgrade_the_rest(ConcolicFloat, float, kept=_KEPT, inherited=_INHERITED)
+numbers.enter(float, ConcolicFloat)

@@ -8,7 +8,8 @@ import pytest
 
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Expression, SinkItem
+from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, SinkItem
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 
 
@@ -54,11 +55,14 @@ def test_a_result_is_tracked_by_the_class_its_own_type_entered() -> None:
 
     number = numbers.tracked(3, ["+", "x", 1], sink)
     truth = numbers.tracked(True, [">", "x", 0], sink)
+    real = numbers.tracked(2.5, ["/", "f", 2.0], sink)
 
     assert type(number) is ConcolicInt
     assert type(truth) is ConcolicBool
+    assert type(real) is ConcolicFloat
     assert (number.expression, truth.expression) == (["+", "x", 1], [">", "x", 0])
-    assert number.sink is sink
+    assert real.expression == ["/", "f", 2.0]
+    assert number.sink is sink and real.sink is sink
 
 
 def test_a_type_nothing_entered_fails_where_it_is_tracked() -> None:
@@ -101,6 +105,45 @@ def test_an_int_leaves_a_tracked_number_outside_its_family_to_that_number() -> N
     assert sink == []
 
 
+# a tracked int against a tracked float, both ways, and the answer Python gives on the plain
+# values: 2**53 + 1 is no double, so an int read as a float first would answer the first two
+# wrong
+CROSSED: list[tuple[str, int, float, bool]] = [
+    (">", 2**53 + 1, 2.0**53, True),
+    ("==", 2**53 + 1, 2.0**53, False),
+    ("<", 5, 2.5, False),
+    (">=", 2, 2.5, False),
+    ("!=", 3, 3.0, False),
+]
+# the compare Python asks the float for when an int on the left answers NotImplemented
+MIRRORED = {">": "__lt__", "==": "__eq__", "<": "__gt__", ">=": "__le__", "!=": "__ne__"}
+
+
+@pytest.mark.parametrize(("op", "n", "f", "answer"), CROSSED, ids=[case[0] for case in CROSSED])
+def test_a_tracked_int_meets_a_tracked_float_with_pythons_own_answer(
+    op: str, n: int, f: float, answer: bool
+) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(n, expression="x", sink=sink)
+    y = ConcolicFloat(f, expression="y", sink=sink)
+
+    # int's side answers NotImplemented to a float, and the float answers as float does, with
+    # a downgrade, until follow-floats-that-meet-ints teaches the crossing
+    crossed = {">": x > y, "==": x == y, "<": x < y, ">=": x >= y, "!=": x != y}[op]
+
+    assert crossed is answer
+    assert numbers.operand(y) is None
+    assert Downgrade(name=MIRRORED[op]) in sink
+    # CPython compares a float with an int past 48 bits by its integral part, as an int, and
+    # that asks the tracked int: its fork is on x and a plain int, on the side Python took,
+    # never on y read as an int
+    conditions = [item.expression for item in sink if isinstance(item, Branch)]
+    assert all(
+        isinstance(condition, list) and condition[1] == "x" and type(condition[2]) is int
+        for condition in conditions
+    )
+
+
 def test_an_operand_reads_as_a_number_does() -> None:
     x = ConcolicInt(3, expression="x", sink=[])
 
@@ -118,7 +161,7 @@ TABLE_ALONE = textwrap.dedent(
     """
     from pyct.core.numbers import tracked
 
-    print(type(tracked(1, "x", [])).__name__, type(tracked(True, "x", [])).__name__)
+    print(*(type(tracked(value, "x", [])).__name__ for value in (1, True, 1.5)))
     """
 )
 
@@ -131,4 +174,4 @@ def test_the_table_is_full_whichever_core_module_is_imported_first() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "ConcolicInt ConcolicBool\n"
+    assert result.stdout == "ConcolicInt ConcolicBool ConcolicFloat\n"

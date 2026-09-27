@@ -4,9 +4,10 @@ import sys
 
 import pytest
 
-from pyct.core import bools, floats, values
+from pyct.core import floats, numbers, values
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
+from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicFloat leaves to float, written out because the derivation reads the
 # same sets the production code does: a name that slipped out of the taught set would run as
@@ -102,22 +103,16 @@ def test_a_downgrade_that_raises_is_the_targets_and_records_nothing() -> None:
 
 def test_every_operation_that_reaches_floats_own_goes_through_the_helper() -> None:
     # a call into float written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicFloat's dunders are written in three files: its own, bools for the compare
-    # closures and values for the downgrade closures, so the scan covers all three
-    written_here = {
-        name: code
-        for name, member in vars(ConcolicFloat).items()
-        if (code := getattr(member, "__code__", None)) is not None
-        and code.co_filename in {floats.__file__, bools.__file__, values.__file__}
-    }
-    # a closure that hands the call to bools' compare or to a downgrade closure reaches float
-    # through the helper as well, since each of those calls it
-    reaches_float = {"own", "followed", "downgrade"}
-    without_the_helper = {
-        name
-        for name, code in written_here.items()
-        if not reaches_float & (set(code.co_names) | set(code.co_freevars))
-    }
+    # ConcolicFloat's dunders are written in three files: its own, numbers for the compare and
+    # unary closures it shares with the other numbers, and values for the downgrade closures,
+    # so the scan covers all three. An operation hands the call to a closure it holds, so what
+    # a function holds counts
+    files = {floats.__file__, numbers.__file__, values.__file__}
 
+    # the scan read the compares, the arithmetic, the unary operations and a derived downgrade,
+    # so an empty answer is not an empty scan
+    assert {"__lt__", "__add__", "__neg__", "__pow__", "__bool__", "is_integer"} <= (
+        written_in(ConcolicFloat, files).keys()
+    )
     # these hand the value itself back and never call float, so they have nothing to guard
-    assert without_the_helper == {"__pos__", "__copy__", "__deepcopy__"}
+    assert without_the_helper(ConcolicFloat, files) == {"__pos__", "__copy__", "__deepcopy__"}
