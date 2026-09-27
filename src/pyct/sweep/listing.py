@@ -4,7 +4,7 @@ a module ends it or stalls it.
 The lister runs in a session of its own, so its process group holds every
 process a module's import started, and the whole group is killed once sweep
 is done with it, as the compare tool learned. Its facts come over a pipe,
-read with a limit: when no fact comes for ``GRACE`` seconds, the module it
+read with a limit: when no fact comes for the grace, the module it
 was importing gets a failed row and a new lister starts after it. Reading
 also watches for the lister's end, so a process a module left holding the
 pipe cannot keep sweep waiting.
@@ -20,15 +20,12 @@ import time
 from dataclasses import dataclass
 
 from pyct.run.process import how
-from pyct.sweep.process import stop_group, waited_of
+from pyct.sweep.process import Where, started, waited_of
 from pyct.sweep.rows import Row, Status
 
 # the lister, started with sweep's own interpreter; -P keeps a folder named pyct in the working
 # directory from standing in for pyct, and the lister puts that directory on the path itself
 LISTER: tuple[str, ...] = (sys.executable, "-P", "-m", "pyct.sweep.lister")
-
-# how long the lister may go with no fact: the limit on one module's import
-GRACE = 60.0
 
 # how often a wait for a fact looks at whether the lister has ended
 POLL = 0.05
@@ -50,9 +47,12 @@ class Heard:
 
 
 def list_package(
-    package: str, *, grace: float = GRACE, lister: tuple[str, ...] = LISTER
+    package: str, *, grace: float, lister: tuple[str, ...] = LISTER
 ) -> tuple[Row, ...]:
     """Every row of the package, one per module and entry name, in order.
+
+    ``grace`` is how long the lister may go with no fact: the limit on one
+    module's import (``SweepLimits.grace``).
 
     An entry several modules export is one row. Raises ``PackageImportError``
     when the package itself does not import, since then nothing is swept. A
@@ -79,17 +79,10 @@ def list_package(
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:
     """Start one lister, hear it out, and stop its whole process group."""
     argv = [*lister, package, *(() if after is None else ("--after", after))]
-    process = subprocess.Popen(
-        argv,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
-    try:
-        return _heard(_Lines(process), package, grace)
-    finally:
-        _stop(process)
+    with started(argv, Where(), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+        assert process.stdout is not None
+        with process.stdout:
+            return _heard(_Lines(process), package, grace)
 
 
 def _heard(lines: "_Lines", package: str, grace: float) -> Heard:
@@ -176,10 +169,3 @@ class _Lines:
             chunk = os.read(self.fd, CHUNK)
             self.buffer += chunk
             self.closed = not chunk
-
-
-def _stop(process: subprocess.Popen[bytes]) -> None:
-    """Kill the lister's whole process group, reap the lister, and close its pipe."""
-    stop_group(process)
-    if process.stdout is not None:
-        process.stdout.close()

@@ -4,9 +4,15 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from pyct.run.process import Waited
 from pyct.sweep.process import run_command, waited_of
+
+# a command that sleeps an hour
+SLEEPS = "import time\ntime.sleep(3600)\n"
 
 
 def python(script: str) -> list[str]:
@@ -119,3 +125,34 @@ def test_a_sighup_in_the_block_unwinds_it_and_ends_the_process_by_the_sighup() -
     )
 
     assert (finished.returncode, finished.stdout) == (-signal.SIGHUP, "unwound\n")
+
+
+def test_a_ctrl_c_as_a_command_starts_still_stops_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # the Ctrl-C comes just after the process starts, before sweep has recorded it
+    real = subprocess.Popen
+    children: list[subprocess.Popen[bytes]] = []
+
+    def popen(*args: Any, **options: Any) -> subprocess.Popen[bytes]:
+        children.append(real(*args, **options))
+        signal.raise_signal(signal.SIGINT)
+        return children[-1]
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            run_command(python(SLEEPS), cwd=tmp_path, env=dict(os.environ), limit=30)
+        assert children[0].returncode == -signal.SIGKILL
+    finally:
+        children[0].kill()
+        children[0].wait()
+
+
+def test_a_command_starts_with_no_signal_held_that_sweep_held_while_starting_it(
+    tmp_path: Path,
+) -> None:
+    script = "import signal\nprint(sorted(signal.pthread_sigmask(signal.SIG_BLOCK, [])))\n"
+    finished = run_command(python(script), cwd=tmp_path, env=dict(os.environ), limit=30)
+
+    assert finished.stdout == "[]\n"

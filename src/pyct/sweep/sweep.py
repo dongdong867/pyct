@@ -53,7 +53,7 @@ _TELL_NOTHING = SweepTell()
 _HERE = Programs()
 
 
-@dataclass
+@dataclass(frozen=True)
 class _Clock:
     """What is left of the total budget, from when the sweep began. None is no bound."""
 

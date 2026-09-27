@@ -11,6 +11,7 @@ since neither may import the other (sweep-keeps-its-own-process-runner).
 """
 
 import contextlib
+import functools
 import os
 import signal
 import subprocess
@@ -32,6 +33,19 @@ class Finished:
     stderr: str
 
 
+# the signals whose handler may end sweep part way: a Ctrl-C, a SIGTERM, which raises ``Stopped``
+# in the command's process, and a SIGHUP under ``hangup_stops_children``
+HELD = frozenset({signal.SIGINT, signal.SIGTERM, signal.SIGHUP})
+
+
+@dataclass(frozen=True)
+class Where:
+    """The working directory a command starts in and its environment; None is sweep's own."""
+
+    cwd: Path | None = None
+    env: Mapping[str, str] | None = None
+
+
 class _HangUpError(BaseException):
     """A SIGHUP, raised so what sweep started is stopped before sweep ends by it."""
 
@@ -46,20 +60,45 @@ def run_command(
     the group on its way out.
     """
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        with started(argv, Where(cwd, env), stdout=out, stderr=err) as process:
+            waited = _waited(process, limit)
+        return Finished(waited, _read(out), _read(err))
+
+
+@contextlib.contextmanager
+def started(
+    argv: Sequence[str], where: Where, *, stdout: int | IO[bytes], stderr: int | IO[bytes]
+) -> Generator[subprocess.Popen[bytes]]:
+    """``argv`` started in a session of its own, ``where`` says, with no input and its output
+    to ``stdout`` and ``stderr``, and its whole group stopped once the block ends, however it
+    ends.
+
+    Each signal in ``HELD`` is held from before the start until the process
+    is recorded here, and one that came meanwhile raises only then, so it
+    still finds the process to stop. The process starts with the mask sweep
+    had, not the one that holds them.
+    """
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, HELD)
+    unheld = functools.partial(signal.pthread_sigmask, signal.SIG_SETMASK, held)
+    try:
         process = subprocess.Popen(
             argv,
-            cwd=cwd,
-            env=env,
+            cwd=where.cwd,
+            env=where.env,
             stdin=subprocess.DEVNULL,
-            stdout=out,
-            stderr=err,
+            stdout=stdout,
+            stderr=stderr,
             start_new_session=True,
+            preexec_fn=unheld,
         )
-        try:
-            waited = _waited(process, limit)
-        finally:
-            stop_group(process)
-        return Finished(waited, _read(out), _read(err))
+    except BaseException:
+        unheld()
+        raise
+    try:
+        unheld()
+        yield process
+    finally:
+        stop_group(process)
 
 
 def _waited(process: subprocess.Popen[bytes], limit: float) -> Waited | None:

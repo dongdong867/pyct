@@ -144,3 +144,36 @@ def test_a_package_that_does_not_import_stops_the_sweep() -> None:
 
     with pytest.raises(PackageImportError):
         sweep("p", limits=LIMITS, programs=programs)
+
+
+def test_an_entry_whose_target_prints_a_line_like_a_summary_costs_only_its_row() -> None:
+    programs = Programs(lister=lister(entry("p.a", "stray"), entry("p.b", "h")), pyct=PYCT)
+    result = sweep("p", limits=LIMITS, programs=programs)
+
+    assert [(row.status, row.run is None) for row in result.rows] == [
+        (Status.FAILED, True),
+        (Status.RAN, False),
+    ]
+    assert result.covered == {"m.py": frozenset({2, 3})}
+
+
+def test_every_entry_keeps_its_substituted_code_in_one_cache_where_the_sweep_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("PYCT_CACHE_DIR", raising=False)
+    result = sweep("p", limits=LIMITS, programs=PROGRAMS)
+
+    caches = {row.run["cache"] for row in result.rows if row.run is not None}
+    assert caches == {str(tmp_path / ".pyct_cache")}
+
+
+def test_a_cache_folder_already_named_is_kept_and_named_from_where_the_sweep_runs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("PYCT_CACHE_DIR", "kept")
+    result = sweep("p", limits=LIMITS, programs=PROGRAMS)
+
+    caches = {row.run["cache"] for row in result.rows if row.run is not None}
+    assert caches == {str(tmp_path / "kept")}

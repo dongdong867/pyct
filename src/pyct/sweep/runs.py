@@ -10,9 +10,14 @@ entry with inputs it made up, so a file an entry writes by a relative path
 lands there instead of the person's project, and no entry sees another's
 files. The directory does not catch a write to any other path or a request
 an input sends. ``pyct run`` puts its working directory, the empty one,
-first on the path, so sweep's own working directory goes at the front of
-``PYTHONPATH``: the entry's module still imports from the file the listing
-found. The run otherwise gets the environment sweep got.
+first on the path, so the run starts through a boot that puts sweep's own
+working directory there too: the entry's module still imports from the file
+the listing found. ``PYCT_CACHE_DIR`` names the cache folder sweep would
+use, ``.pyct_cache`` in its own working directory unless the variable
+already names one, so every entry keeps its substituted code in the one
+cache rather than in a temporary directory deleted after it
+(interception-code-cached-for-this-user-where-pyct-runs). The run otherwise
+gets the environment sweep got.
 """
 
 import json
@@ -22,15 +27,30 @@ import tempfile
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
+from typing import TypeGuard
 
+from pyct.intercept.cache import CACHE_VARIABLE, cache_folder
 from pyct.run.process import how
 from pyct.sweep.process import Finished, run_command
 from pyct.sweep.result import SweepLimits
 from pyct.sweep.rows import Row, Status
 
-# pyct, started with sweep's own interpreter, so each run has sweep's Python; -P keeps a folder
-# named pyct in the entry's working directory from standing in for pyct
-PYCT: tuple[str, ...] = (sys.executable, "-P", "-m", "pyct")
+# what starts pyct, given the folder the entry's module imports from and then pyct's arguments:
+# pyct is imported before that folder joins the import path, so nothing in it, a pyct package
+# included, can stand in for pyct; pyct's own modules then come through pyct's own path. -P keeps
+# the entry's empty working directory off the path until pyct run puts it there
+_BOOT = (
+    "import runpy, sys; import pyct; sys.path.insert(0, sys.argv.pop(1)); "
+    "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
+)
+
+# pyct, started with sweep's own interpreter, so each run has sweep's Python
+PYCT: tuple[str, ...] = (sys.executable, "-P", "-c", _BOOT)
+
+# the keys of the summary line ``pyct run`` prints last (``pyct.results.jsonl.render_summary``)
+SUMMARY_KEYS = frozenset(
+    {"stopped", "inputs", "solver", "misses", "covered", "total", "uncovered", "environment"}
+)
 
 
 def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, ...] = PYCT) -> Row:
@@ -42,20 +62,15 @@ def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, 
     still going ``limits.grace`` seconds past its budget is stopped with
     every process it started.
     """
-    argv = [*pyct, "run", f"{row.module}::{row.name}", "--args", json.dumps(row.seed)]
+    here = os.getcwd()
+    argv = [*pyct, here, "run", f"{row.module}::{row.name}", "--args", json.dumps(row.seed)]
     argv += ["--budget", repr(budget), "--plateau", str(limits.plateau)]
     argv += ["--solver-timeout", repr(limits.solver_timeout)]
     with tempfile.TemporaryDirectory(prefix="pyct-sweep-") as directory:
         limit = budget + limits.grace
-        finished = run_command(argv, cwd=Path(directory), env=_environment(), limit=limit)
+        env = {**os.environ, CACHE_VARIABLE: str(cache_folder())}
+        finished = run_command(argv, cwd=Path(directory), env=env, limit=limit)
     return _outcome(row, finished, limits.grace)
-
-
-def _environment() -> dict[str, str]:
-    """Sweep's environment, with its working directory at the front of ``PYTHONPATH``."""
-    here = os.getcwd()
-    path = os.environ.get("PYTHONPATH")
-    return {**os.environ, "PYTHONPATH": os.pathsep.join([here, path]) if path else here}
 
 
 def _outcome(row: Row, finished: Finished, grace: float) -> Row:
@@ -74,18 +89,44 @@ def _outcome(row: Row, finished: Finished, grace: float) -> Row:
 
 
 def _summary(stdout: str) -> Mapping[str, object] | None:
-    """The last stdout line that carries ``stopped``: the summary line ``pyct run`` prints last.
+    """The last stdout line with the shape of the summary line ``pyct run`` prints last.
 
-    No input's line carries ``stopped``. A line a killed run cut short is no line.
+    The target's own prints reach the same stdout, and one may carry
+    ``stopped`` too, so a line counts only when it has every key the summary
+    has, and coverage in the summary's form. A line a killed run cut short
+    is no line.
     """
     for line in reversed(stdout.splitlines()):
         try:
             read = json.loads(line)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, RecursionError):
             continue
-        if isinstance(read, dict) and "stopped" in read:
+        if _is_summary(read):
             return read
     return None
+
+
+def _is_summary(read: object) -> TypeGuard[dict[str, object]]:
+    """Whether ``read`` has the summary line's keys, and its coverage as lines and counts by
+    file, which is all sweep reads of it."""
+    if not (isinstance(read, dict) and read.keys() >= SUMMARY_KEYS):
+        return False
+    covered, total = read["covered"], read["total"]
+    return (
+        isinstance(read["stopped"], str)
+        and isinstance(covered, dict)
+        and all(_are_lines(lines) for lines in covered.values())
+        and isinstance(total, dict)
+        and all(_is_count(count) for count in total.values())
+    )
+
+
+def _are_lines(lines: object) -> bool:
+    return isinstance(lines, list) and all(_is_count(line) for line in lines)
+
+
+def _is_count(number: object) -> bool:
+    return isinstance(number, int) and not isinstance(number, bool)
 
 
 def _last_line(stderr: str) -> str:

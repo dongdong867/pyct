@@ -328,7 +328,8 @@ def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
 
 
 def check_package(package: str) -> None:
-    """Refuse anything but a module name, each dotted part a name. A path is not a module."""
+    """Refuse a name with a part that is not a Python name, such as a path, and a file path given
+    for a module name, which ends in ``.py``, as ``pyct run`` refuses one."""
     if not all(part.isidentifier() for part in package.split(".")) or package.endswith(".py"):
         raise UsageError(f"PACKAGE must be a module name, got {package!r}")
 

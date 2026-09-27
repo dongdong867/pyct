@@ -47,18 +47,14 @@ def test_each_run_starts_in_a_fresh_empty_directory_deleted_after_it() -> None:
     assert not Path(str(first["cwd"])).exists()
 
 
-def test_the_working_directory_goes_first_on_the_import_path(
+def test_the_run_is_handed_the_working_directory_to_import_from(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("PYTHONPATH", raising=False)
-    alone = ran("ran").run
-    monkeypatch.setenv("PYTHONPATH", "elsewhere")
-    before = ran("ran").run
-    assert alone is not None and before is not None
+    run = ran("ran").run
+    assert run is not None
 
-    assert alone["path"] == str(tmp_path)
-    assert before["path"] == os.pathsep.join([str(tmp_path), "elsewhere"])
+    assert run["imports_from"] == os.getcwd()
 
 
 def test_a_run_that_exits_badly_fails_with_its_last_line_and_keeps_its_summary() -> None:
@@ -88,3 +84,11 @@ def test_a_run_still_going_past_its_budget_and_the_grace_is_stopped() -> None:
         "stopped 0.5 s past its budget",
         None,
     )
+
+
+@pytest.mark.parametrize(("name", "code"), [("stray", 1), ("stray_then_zero", 0)])
+def test_a_line_the_target_prints_with_stopped_is_no_summary(name: str, code: int) -> None:
+    row = ran(name)
+
+    assert (row.status, row.run) == (Status.FAILED, None)
+    assert row.reason == f"exit {code}: "

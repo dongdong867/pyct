@@ -57,15 +57,26 @@ def covered(row: dict[str, Any], path: Path) -> list[int]:
 
 
 def running(pid: int) -> bool:
+    """Whether the process still runs. A zombie, ended but not yet reaped, has ended: on macOS a
+    signal 0 still reaches it."""
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    return True
+    state = subprocess.run(
+        ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    return bool(state) and not state.startswith("Z")
 
 
 def gone(pids: Path) -> bool:
-    return not any(running(int(pid)) for pid in pids.read_text().split())
+    """Whether every process the pid file names has ended within a few seconds."""
+    deadline = time.monotonic() + 5
+    while any(running(int(pid)) for pid in pids.read_text().split()):
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.05)
+    return True
 
 
 def killed(pids: Path) -> None:
@@ -146,6 +157,40 @@ def test_runs_each_entry_in_a_fresh_directory(tmp_path: Path) -> None:
     assert covered(read, (start / "files.py").resolve()), read
     assert not (start / "out.txt").exists()
     assert not list(temporary.rglob("out.txt"))
+
+
+# sweep-a-package-runs-each-entry-in-a-fresh-directory: the entry's module still imports from the
+# file the listing found, and nothing in the sweep's folder stands in for pyct
+def test_a_pyct_package_in_the_sweeps_folder_does_not_stand_in_for_pyct(tmp_path: Path) -> None:
+    (tmp_path / "files.py").write_text(FILES)
+    (tmp_path / "pyct").mkdir()
+    (tmp_path / "pyct" / "__init__.py").write_text("import sys\nsys.exit('a stand-in for pyct')\n")
+    result = sweep("files", cwd=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    assert [row["status"] for row in rows(result.stdout)] == ["ran", "ran"], result.stdout
+
+
+# sweep-a-package-runs-each-entry-in-a-fresh-directory: the directory is the entry's alone, but
+# its substituted code goes to the one cache in the folder the sweep runs from
+def test_two_entries_share_one_cache(tmp_path: Path) -> None:
+    (tmp_path / "files.py").write_text(FILES)
+    env = {name: value for name, value in environment().items() if name != "PYCT_CACHE_DIR"}
+    result = subprocess.run(
+        [*SWEEP, "files"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert [row["status"] for row in rows(result.stdout)] == ["ran", "ran"]
+    # one entry per module path, so both runs kept files.py's code in the same place
+    kept = (tmp_path / ".pyct_cache" / "substituted").glob("*/*")
+    assert len(list(kept)) == 1
 
 
 # sweep-a-package-tells-people-on-stderr
