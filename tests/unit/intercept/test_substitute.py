@@ -141,7 +141,15 @@ def test_each_call_takes_the_compare_s_position_and_its_name_the_first_operand_s
 
 def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
     assert all(name.startswith("__") and name.endswith("__") for name in BOUND)
-    assert {"is_", "is_not", "in_", "not_in", "call", "method", "add", "lt"} <= set(BOUND.values())
+    assert BOUND == {
+        "__pyct_is__": "is_",
+        "__pyct_is_not__": "is_not",
+        "__pyct_in__": "in_",
+        "__pyct_not_in__": "not_in",
+        "__pyct_handed__": "handed",
+        "__pyct_call__": "call",
+        "__pyct_method__": "method",
+    }
     assert all(hasattr(substitutes, function) for function in BOUND.values())
 
 

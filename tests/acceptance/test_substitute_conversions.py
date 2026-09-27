@@ -237,16 +237,9 @@ def test_reads_float_text_as_python_does() -> None:
 
     assert result.returncode == 0, result.stderr
     solved = [line for line in input_lines(result.stdout)[1:] if line["mismatch_at"] is None]
-    assert 100000.0 in [reads_as_float(text(line, "s")) for line in solved], solved
-    # `math.isnan` reads a float without calling any of its methods, and the math functions
-    # are follow-builtins-and-conversions', so no fork asks for NaN there. Python's own NaN
-    # test, a value unequal to itself, asks it of the same encoding
-    nan = run_pyct(f"{TEXT_NUMBERS}::not_itself", '{"s": "1"}')
-
-    assert nan.returncode == 0, nan.stderr
-    solved = [line for line in input_lines(nan.stdout)[1:] if line["mismatch_at"] is None]
     readings = [reads_as_float(text(line, "s")) for line in solved]
     assert any(reading is not None and math.isnan(reading) for reading in readings), solved
+    assert 100000.0 in readings, solved
 
 
 # intercept-builtin-functions-reports-a-slow-conversion-as-a-miss

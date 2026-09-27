@@ -166,6 +166,17 @@ def not_contains(s: ConcolicStr, sub: object) -> object:
     return ConcolicBool(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
 
 
+def length(s: ConcolicStr) -> ConcolicInt:
+    """`len(s)` where pyct binds `len`: str's own length, carrying `["len", s]`.
+
+    Python's `len` makes what `__len__` hands back a plain int, so a
+    tracked string's `__len__` stays a downgrade; this is what pyct's own
+    `len` asks for instead (`pyct.core.bound.len`). A length cannot fail, so
+    it records no fork.
+    """
+    return ConcolicInt(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
+
+
 def in_text(sub: ConcolicStr, text: str) -> object:
     """`sub in text` for a plain text: str's own answer, carrying `["in", sub, 'text']`.
 
@@ -200,16 +211,18 @@ def on_text(method: types.BuiltinMethodType, /, *args: object, **kwargs: object)
     tracked str. The call runs as the method runs on a tracked str holding
     the plain one's text, with that text a literal in the expression:
     `"abc".find(s)` is `["find", "'abc'", "s"]`. A form pyct does not teach is
-    a downgrade named by the method, as it is for a tracked receiver. A text
-    holding a character past the last one cvc5 holds is Python's own answer,
+    a downgrade named by the method, as it is for a tracked receiver. A call
+    with a keyword, and a text holding a character past the last one cvc5
+    holds, are the method's own answer, or its own refusal in its own words,
     and a downgrade named by the method.
     """
     text = str.__str__(cast(str, method.__self__))
     name = method.__name__
     sink = next(arg.sink for arg in (*args, *kwargs.values()) if type(arg) is ConcolicStr)
     form = literal(text, ConcolicStr)
-    if form is None:
-        answer = own(method, *args, **kwargs)
+    if form is None or kwargs:
+        # through str, as the written call reaches it, so a refusal reads in its words
+        answer = own(getattr(str, name), text, *args, **kwargs)
         sink.append(Downgrade(name=name))
         return answer
     receiver = ConcolicStr(text, expression=form, sink=sink)
@@ -261,7 +274,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     if index is not None:
         _long_enough(self, index)
         expression = ["[]", self.expression, index]
-        return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+        return one_character(own(str.__getitem__, self, key), expression, self.sink)
     bounds = _bounds(key)
     if bounds is None:
         return _GETITEM_DOWNGRADE(self, key)
@@ -356,6 +369,14 @@ def _prepended(self: ConcolicStr, other: object) -> object:
     return ConcolicStr(own(_joined_after, self, other), expression=expression, sink=self.sink)
 
 
+def one_character(value: str, expression: Expression, sink: BranchSink) -> ConcolicStr:
+    """A tracked str that holds one character on every path that makes it: an index's, a walk's
+    or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
+    character = ConcolicStr(value, expression=expression, sink=sink)
+    character.single = True
+    return character
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
@@ -368,6 +389,8 @@ class ConcolicStr(str):
 
     expression: Expression
     sink: BranchSink
+    # set by `one_character` alone: a value any other operation makes may have any length
+    single: bool = False
 
     # Python swaps the operands of a reflected compare itself, so `"b" < s` runs
     # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.

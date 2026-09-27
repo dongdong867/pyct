@@ -67,31 +67,31 @@ PROGRAMS: dict[str, str] = {
     "int in class body": (
         "class Held(metaclass=Logging):\n    held = int(note('a', a))\nanswer = Held.held"
     ),
-    # a method str has, on whatever the receiver is
-    "find": "answer = note('a', a).find(note('b', b))",
-    "index": "answer = note('a', a).index(note('b', b))",
-    "startswith": "answer = note('a', a).startswith(note('b', b))",
-    "count": "answer = note('a', a).count(note('b', b))",
-    "split by keyword": "answer = note('a', a).split(sep=note('b', b))",
-    "join": "answer = note('a', a).join(note('b', b))",
+    # a str literal's method, given each operand
     "literal find": "answer = 'xyz'.find(note('b', b))",
-    "if startswith": (
-        "if note('a', a).startswith(note('b', b)):\n    answer = 'yes'\nelse:\n    answer = 'no'"
+    "literal index": "answer = 'xyz'.index(note('b', b))",
+    "literal startswith": "answer = 'xyz'.startswith(note('b', b))",
+    "literal count with a start": "answer = 'xyz'.count(note('b', b), 1)",
+    "literal count by keyword": "answer = 'xyz'.count(sub=note('b', b))",
+    "literal split by keyword": "answer = 'x,y'.split(sep=note('b', b))",
+    "literal join": "answer = ','.join(note('b', b))",
+    "literal format": "answer = '{}'.format(note('b', b))",
+    "if literal startswith": (
+        "if 'xyz'.startswith(note('b', b)):\n    answer = 'yes'\nelse:\n    answer = 'no'"
     ),
-    # every operator a plain number on the left may hand over
+    # every operator with a float or bool literal on the left
     **{
-        f"a {op} b": f"answer = note('a', a) {op} note('b', b)"
-        for op in ("+", "-", "*", "/", "//", "%", "<<", ">>", "&", "|", "^")
+        f"{left} {op} b": f"answer = {left} {op} note('b', b)"
+        for left in ("0.5", "True", "-2.5")
+        for op in ("+", "-", "*", "/", "//", "%", "**", "<<", ">>", "&", "|", "^")
     },
     **{
-        f"a {op} b": f"answer = note('a', a) {op} note('b', b)"
+        f"{left} {op} b": f"answer = {left} {op} note('b', b)"
+        for left in ("0.5", "False")
         for op in ("<", "<=", ">", ">=", "==", "!=")
     },
-    "a ** b": "answer = note('a', a) ** note('b', b)",
-    "if a < b": "if note('a', a) < note('b', b):\n    answer = 'yes'\nelse:\n    answer = 'no'",
-    "not a == b": "answer = not note('a', a) == note('b', b)",
-    "plain float left": "answer = 0.5 + note('b', b)",
-    "plain bool left": "answer = True == note('b', b)",
+    "if 0.5 < b": "if 0.5 < note('b', b):\n    answer = 'yes'\nelse:\n    answer = 'no'",
+    "not True == b": "answer = not True == note('b', b)",
 }
 
 
@@ -156,6 +156,10 @@ class Logged:
     def find(self, *args: object, **kwargs: object) -> object:
         self.log.append(("find", len(args), sorted(kwargs)))
         return -1
+
+    def __format__(self, spec: str) -> str:
+        self.log.append(("__format__", spec))
+        return "logged"
 
 
 class Asked(dict[str, object]):
@@ -222,6 +226,9 @@ class Raising:
 
     def find(self, *args: object) -> object:
         raise ValueError("find raised")
+
+    def __format__(self, spec: str) -> str:
+        raise ValueError("__format__ raised")
 
 
 # the plain operands: a value of each built-in type, a container of each kind, and a value that

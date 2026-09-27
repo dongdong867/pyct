@@ -1,4 +1,4 @@
-"""The import hook: the target's package loads with its compares substituted.
+"""The import hook: the target's package loads with its compares substituted and its builtins bound.
 
 The owner of a run opens `intercepting` before the target's import and
 keeps it open until the run ends: ``pyct run`` in its own process, and each
@@ -12,18 +12,20 @@ Nothing is set aside or put back: each module is imported once per
 process. A module of the package imported before the block opened stays as
 Python loaded it.
 
-The loader is Python's own source loader but for one step: it takes the
+The loader is Python's own source loader but for two steps. It takes the
 module's code from `pyct.intercept.cache`, substituted, never from
 ``__pycache__``, which it neither reads nor writes. The substituted code
 imports the names it calls itself, so it runs wherever Python runs it:
-imported, run by ``runpy``, or reloaded. The module's code runs as Python
-runs it, so a raise at import has no pyct frame under it, and
-``inspect.getsource``, tracebacks and package data read the file as written.
+imported, run by ``runpy``, or reloaded. And it runs the module with `len`,
+`ord` and `chr` bound in its builtins (`pyct.intercept.wrap`), on import and
+on a reload. The module's code runs as Python runs it, so a raise at import
+has no pyct frame under it, and ``inspect.getsource``, tracebacks and
+package data read the file as written.
 
 The positions of substituted code follow the code generator of the Python
 releases the suite checked them on (`positions.CHECKED_ON`). On any other
-release the block substitutes nothing and says so once, so a line table
-never drifts unseen.
+release the block substitutes and binds nothing and says so once, so a line
+table never drifts unseen.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from pyct.core.values import own
 from pyct.intercept.cache import cached
 from pyct.intercept.compiled import substituted_code
 from pyct.intercept.positions import CHECKED_ON
+from pyct.intercept.wrap import bound_builtins
 
 logger = logging.getLogger(__name__)
 
@@ -89,7 +92,7 @@ def intercepting(interception: Interception) -> Iterator[None]:
 @functools.cache
 def _unchecked(release: tuple[int, int]) -> None:
     logger.warning(
-        "pyct substitutes operations where the target writes them on Python %s only; "
+        "pyct intercepts builtins and the operations it substitutes on Python %s only; "
         "on %d.%d the target runs as written",
         ", ".join(f"{major}.{minor}" for major, minor in sorted(CHECKED_ON)),
         *release,
@@ -145,11 +148,17 @@ class _Finder:
 
 
 class _Loader(importlib.machinery.SourceFileLoader):
-    """Python's source loader, with the module's code substituted and kept in pyct's cache."""
+    """Python's source loader, with the module's code substituted and kept in pyct's cache, run
+    with `len`, `ord` and `chr` bound in its builtins."""
 
     def __init__(self, fullname: str, path: str, cache: Path) -> None:
         super().__init__(fullname, path)
         self.cache = cache
+
+    def exec_module(self, module: types.ModuleType) -> None:
+        """Run the module's code with its builtins bound (`pyct.intercept.wrap`), a reload too."""
+        vars(module)["__builtins__"] = bound_builtins()
+        super().exec_module(module)
 
     def get_code(self, fullname: str) -> types.CodeType:
         """The module's code, substituted, for the source file as it is now.

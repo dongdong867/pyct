@@ -38,6 +38,7 @@ INT_TERMS: list[Expression] = [
     ["rindex", "s", "'a'"],
     ["count", "s", "'a'"],
     ["len", "s"],
+    ["ord", "s"],
     *([head, "f"] for head in ("floor", "ceil", "trunc", "round")),
     ["int", "s"],
     ["int", "f"],
@@ -62,6 +63,7 @@ STR_TERMS: list[Expression] = [
     ["replace", "s", "'a'", "'b'"],
     ["removeprefix", "s", "'a'"],
     ["removesuffix", "s", "'a'"],
+    ["chr", "x"],
     *([head, "s"] for head in (*CASES, *TO_DECLARE)),
     *([head, "s", 3] for head in PADDINGS),
 ]

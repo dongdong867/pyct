@@ -1,21 +1,21 @@
-"""The calls pyct substitutes where the target writes them: conversions and a str's methods.
+"""The calls pyct substitutes where the target writes them: conversions and a str literal's methods.
 
 - A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
   dot as in `builtins.int(...)`, and a call written `map(...)` with one of
-  those three first, becomes ``__pyct_call__(int, ...)``. Which function
-  the name holds is read when the call runs, so a name the target binds to
-  its own keeps the target's meaning.
-- A call written ``receiver.name(...)`` with at least one argument, where
-  str has a method by that name, becomes ``__pyct_method__(receiver.name,
-  ...)``. Whether the receiver is a plain str is read when the call runs.
+  those three first, becomes ``__pyct_call__(int)(...)``: the callee is
+  handed to pyct, which hands back pyct's router when it is Python's own
+  builtin and the callee itself otherwise, and that is called with the
+  arguments as written. So a name the target binds to its own keeps the
+  target's meaning, and its function runs with no frame of pyct's above it.
+- A call written ``"text".name(...)``, a str literal's method, with at least
+  one argument, becomes ``__pyct_method__("text".name, ...)``.
 
-The callee is the call's own node, moved into the call as its first
-argument, and the arguments follow as written, so the callee is evaluated
-first, its attribute read once, then each argument in Python's order. A call
-whose arguments are written out is substituted: one with ``*`` or ``**``,
-or more than `_MOST_ARGUMENTS`, stays as written, and so does a method call
-whose name sits on a later line than the call starts, where CPython moves
-the call's own instruction to the name's line.
+The callee is the call's own node, moved into the new call, so it is
+evaluated first, its attribute read once, then each argument in Python's
+order. A call whose arguments are written out is substituted: one with
+``*`` or ``**``, or with more than `_MOST_ARGUMENTS`, stays as written, and
+so does a method call whose name sits on a later line than the call
+starts, where CPython moves the call's own instruction to the name's line.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from pyct.intercept.positions import Parts
 
 # the names whose calls are conversions pyct follows
 _CONVERSIONS = frozenset({"int", "float", "bool"})
-# every method a str has, which a plain str's own may be
+# every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
 
 BOUND: dict[str, str] = {"__pyct_call__": "call", "__pyct_method__": "method"}
@@ -37,17 +37,24 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion or a method str has, or None for any other node."""
+    """The call that replaces a conversion or a str literal's method, or None for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
     if _conversion(node):
-        name = "__pyct_call__"
-    elif isinstance(node.func, ast.Attribute) and node.func.attr in _TEXT_METHODS:
-        name = "__pyct_method__"
-    else:
-        return None
-    arguments = [node.func, *node.args]
-    call = ast.Call(func=parts.named(name, node), args=arguments, keywords=node.keywords)
+        return _curried(node, parts)
+    if _text_method(node.func):
+        callee = parts.named("__pyct_method__", node)
+        call = ast.Call(func=callee, args=[node.func, *node.args], keywords=node.keywords)
+        return ast.copy_location(call, node)
+    return None
+
+
+def _curried(node: ast.Call, parts: Parts) -> ast.Call:
+    """``__pyct_call__(callee)(...)``: pyct's call on the callee, at the callee's position."""
+    name = parts.named("__pyct_call__", node)
+    asked = ast.Call(func=name, args=[node.func], keywords=[])
+    asked = ast.copy_location(asked, name)
+    call = ast.Call(func=asked, args=node.args, keywords=node.keywords)
     return ast.copy_location(call, node)
 
 
@@ -59,6 +66,14 @@ def _written_out(call: ast.Call) -> bool:
     many = len(call.args) + len(call.keywords) > _MOST_ARGUMENTS
     moved = isinstance(call.func, ast.Attribute) and call.func.end_lineno != call.lineno
     return not (unpacked or many or moved) and bool(call.args or call.keywords)
+
+
+def _text_method(callee: ast.expr) -> bool:
+    """Whether a callee is a method str has, on a str literal."""
+    if not isinstance(callee, ast.Attribute) or callee.attr not in _TEXT_METHODS:
+        return False
+    receiver = callee.value
+    return isinstance(receiver, ast.Constant) and type(receiver.value) is str
 
 
 def _spelled(node: ast.expr) -> str | None:

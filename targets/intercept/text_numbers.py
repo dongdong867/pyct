@@ -1,6 +1,3 @@
-import math
-
-
 def thousand(s: str) -> str:
     if int(s) == 1000:
         return "thousand"
@@ -20,14 +17,9 @@ def twelve(s: str) -> str:
 
 
 def read_as_float(s: str) -> str:
-    if math.isnan(float(s)):
+    if float(s) != float(s):
         return "nan"
     if float(s) == 100000.0:
         return "hundred thousand"
     return "other"
 
-
-def not_itself(s: str) -> str:
-    if float(s) != float(s):
-        return "nan"
-    return "a number"
