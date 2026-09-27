@@ -122,33 +122,62 @@ def test_a_signal_after_the_import_ends_the_watcher_the_same_way(
 
 
 def signal_once_ready(ready: int, go: int, number: int) -> None:
-    """Send the main thread ``number`` once the command's process is ready, then let it go on."""
-    os.read(ready, 1)
+    """Send the main thread ``number`` once the command's process is ready, then let it go on.
+
+    An end of file on ``ready`` means the command's process never got ready,
+    and the test is over, so nothing is sent.
+    """
+    if os.read(ready, 1) != b"!":
+        return
     signal.pthread_kill(threading.main_thread().ident or 0, number)
     os.write(go, b"!")
 
 
-def signaled_while_importing(
-    number: int, ending: Callable[[], None]
-) -> Callable[[ImportWatch | None], int]:
-    """A command that, while importing, lets the watcher get ``number``, then ends by ``ending``.
+type Signaled = Callable[[int, Callable[[], None]], Callable[[ImportWatch | None], int]]
+
+
+@pytest.fixture
+def signaled_while_importing() -> Generator[Signaled]:
+    """Commands that, while importing, let the watcher get a signal, then end by ``ending``.
 
     A thread of this test sends the watcher the signal, aimed at the main
-    thread, where the watcher waits.
+    thread, where the watcher waits. Each pipe is closed and each thread
+    joined once the test ends: the write end the thread waits on goes
+    first, so a thread still waiting reads its end and stops.
     """
-    ready, running = os.pipe()
-    waiting, go = os.pipe()
-    sender = threading.Thread(target=signal_once_ready, args=(ready, go, number), daemon=True)
-    sender.start()
+    pipes: list[tuple[int, int]] = []
+    senders: list[threading.Thread] = []
 
-    def command(watch: ImportWatch | None) -> None:
-        assert watch is not None
-        with watch.importing(MODULE):
-            os.write(running, b"!")
-            os.read(waiting, 1)
-            ending()
+    def command_for(number: int, ending: Callable[[], None]) -> Callable[[ImportWatch | None], int]:
+        ready, running = os.pipe()
+        waiting, go = os.pipe()
+        pipes.extend([(ready, running), (waiting, go)])
+        sender = threading.Thread(target=signal_once_ready, args=(ready, go, number), daemon=True)
+        sender.start()
+        senders.append(sender)
 
-    return ending_in(command)
+        def command(watch: ImportWatch | None) -> None:
+            assert watch is not None
+            with watch.importing(MODULE):
+                os.write(running, b"!")
+                os.read(waiting, 1)
+                ending()
+
+        return ending_in(command)
+
+    yield command_for
+    close_and_join(pipes, senders)
+
+
+def close_and_join(pipes: list[tuple[int, int]], senders: list[threading.Thread]) -> None:
+    """Close each pipe's write end, join each sender, then close each read end."""
+    for _, write_end in pipes:
+        os.close(write_end)
+    for sender in senders:
+        sender.join(timeout=5)
+        assert not sender.is_alive()
+    for read_end, _ in pipes:
+        os.close(read_end)
 
 
 def dies_by_sigint() -> None:
@@ -162,7 +191,7 @@ def waits_for_sigterm() -> None:
 
 
 def test_a_ctrl_c_while_importing_ends_the_watcher_as_the_command_s_process_ended(
-    raised: list[int], capsys: pytest.CaptureFixture[str]
+    signaled_while_importing: Signaled, raised: list[int], capsys: pytest.CaptureFixture[str]
 ) -> None:
     # the terminal sends a Ctrl-C to both processes; each gets its own here
     code = launch(signaled_while_importing(signal.SIGINT, dies_by_sigint), ARGV)
@@ -177,7 +206,7 @@ def exits() -> None:
 
 
 def test_an_exit_while_importing_is_reported_though_the_watcher_got_a_signal(
-    capsys: pytest.CaptureFixture[str],
+    signaled_while_importing: Signaled, capsys: pytest.CaptureFixture[str]
 ) -> None:
     # the watcher notes the SIGINT, but the command's process ends by its own exit
     code = launch(signaled_while_importing(signal.SIGINT, exits), ARGV)
@@ -187,7 +216,7 @@ def test_an_exit_while_importing_is_reported_though_the_watcher_got_a_signal(
 
 
 def test_a_sigterm_to_the_watcher_goes_on_to_the_command_s_process(
-    raised: list[int], capsys: pytest.CaptureFixture[str]
+    signaled_while_importing: Signaled, raised: list[int], capsys: pytest.CaptureFixture[str]
 ) -> None:
     # the command's process waits for a signal only the watcher can pass on
     code = launch(signaled_while_importing(signal.SIGTERM, waits_for_sigterm), ARGV)
