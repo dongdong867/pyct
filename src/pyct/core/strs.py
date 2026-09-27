@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
@@ -147,6 +147,48 @@ def _contains(self: ConcolicStr, sub: object) -> object:
         return _CONTAINS_DOWNGRADE(self, sub)
     expression = ["in", form, self.expression]
     return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
+
+
+def not_contains(s: ConcolicStr, sub: object) -> object:
+    """str's own answer to `sub not in s`, carrying `["not in", sub, s]`.
+
+    `not in` is its own operator where pyct substitutes it: its answer is
+    the negation of `in`'s, handed back untested like a compare's, and its
+    fork reads `sub not in s`. A call in a form pyct does not encode is the
+    negation of str's own answer, with a `__contains__` downgrade.
+    """
+    form = _needle((sub,))
+    if form is None:
+        return not _CONTAINS_DOWNGRADE(s, sub)
+    expression = ["not in", form, s.expression]
+    return ConcolicBool(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
+
+
+def in_text(sub: ConcolicStr, text: str) -> object:
+    """`sub in text` for a plain text: str's own answer, carrying `["in", sub, 'text']`.
+
+    The plain text is a literal in the expression, written as repr writes
+    it, so the fork reads as it would on a tracked string holding that
+    text. A text holding a character past the last one cvc5 holds is str's
+    own answer, with a `__contains__` downgrade.
+    """
+    return _searched_in("in", sub, text)
+
+
+def not_in_text(sub: ConcolicStr, text: str) -> object:
+    """`sub not in text` for a plain text, carrying `["not in", sub, 'text']`, as `in_text` does."""
+    return _searched_in("not in", sub, text)
+
+
+def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
+    """str's own answer to `sub in text`, or its negation for `not in`, carrying the head."""
+    found = own(str.__contains__, text, sub)
+    answer = found if head == "in" else not found
+    if not _within_cvc5(text):
+        sub.sink.append(Downgrade(name="__contains__"))
+        return answer
+    expression = [head, sub.expression, _operand(text)]
+    return ConcolicBool(answer, expression=expression, sink=sub.sink)
 
 
 def _bounds(key: object) -> list[Expression] | None:
