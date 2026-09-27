@@ -1,23 +1,15 @@
-"""The rows a sweep prints, its summary line, and the lines it tells people on stderr.
+"""The rows a sweep prints, and the lines it tells people about each on stderr.
 
 stdout carries one JSON line per row, then the summary line; stderr is for
 people (output-stdout-data-stderr-log). Every row has the same six keys,
-null when empty. A tool tells the summary from a row by ``swept``.
+null when empty.
 """
 
 import json
-import platform
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
-
-# the limits each entry's pyct run gets with no flags, as the summary reports them
-LIMITS: Mapping[str, object] = {
-    "budget": 30.0,
-    "plateau": 5,
-    "solver_timeout": 10.0,
-    "total_budget": None,
-}
+from typing import cast
 
 
 class Status(StrEnum):
@@ -39,6 +31,8 @@ class Row:
     status: Status
     seed: Mapping[str, object] | None = None
     reason: str | None = None
+    # the entry's pyct run summary line, as it printed it
+    run: Mapping[str, object] | None = None
 
     @property
     def order(self) -> tuple[str, str]:
@@ -47,7 +41,7 @@ class Row:
 
 
 def row_line(row: Row) -> str:
-    """One row as its JSON line. ``run`` is null: no entry has run."""
+    """One row as its JSON line."""
     return json.dumps(
         {
             "module": row.module,
@@ -55,43 +49,43 @@ def row_line(row: Row) -> str:
             "status": row.status.value,
             "seed": row.seed,
             "reason": row.reason,
-            "run": None,
+            "run": row.run,
         }
     )
 
 
-def summary_line(package: str, rows: Sequence[Row]) -> str:
-    """The line that closes stdout for a sweep that listed its entries and ran none."""
-    counts = {status.value: _count(rows, status) for status in Status}
-    environment = {
-        "python": platform.python_version(),
-        "cvc5": None,
-        "platform": platform.platform(),
-    }
-    payload = {"swept": package, "stopped": "listed", **counts}
-    payload |= {"covered": {}, "total": {}, "limits": dict(LIMITS), "environment": environment}
-    return json.dumps(payload)
-
-
 def told(row: Row) -> str | None:
     """The stderr line after a row, or None for a listed one, which says nothing more."""
-    if row.status is Status.SKIPPED:
-        return f"skipped {row.module}::{row.name}: {row.reason}"
-    if row.status is Status.FAILED:
-        return f"failed {row.module}: {row.reason}"
-    return None
+    if row.status is Status.RAN:
+        return f"ran {_named(row)}: {_run_told(row.run or {})}"
+    if row.status is Status.LISTED:
+        return None
+    return f"{row.status.value} {_named(row)}: {row.reason}"
 
 
-def closing(package: str, rows: Sequence[Row]) -> str:
-    """The stderr lines that end a listing: what was found, the counts, and why it stopped."""
-    lines = [] if any(row.name is not None for row in rows) else [f"found no entries in {package}"]
-    listed, skipped, failed = (
-        _count(rows, s) for s in (Status.LISTED, Status.SKIPPED, Status.FAILED)
-    )
-    lines.append(f"listed {len(rows)} entries: {listed} listed, {skipped} skipped, {failed} failed")
-    lines.append("stopped: listed")
-    return "".join(f"{line}\n" for line in lines)
+def running(row: Row, number: int, count: int) -> str:
+    """The stderr line before an entry's run: the entry, its seed, and how far the sweep is."""
+    return f"running {_named(row)} {json.dumps(row.seed)} ({number} of {count})"
 
 
-def _count(rows: Sequence[Row], status: Status) -> int:
+def count(rows: Iterable[Row], status: Status) -> int:
+    """How many rows have ``status``."""
     return sum(1 for row in rows if row.status is status)
+
+
+def covered_and_total(
+    run: Mapping[str, object],
+) -> tuple[Mapping[str, list[int]], Mapping[str, int]]:
+    """The lines a run's summary line says it covered, and the line counts, for each file."""
+    return cast("Mapping[str, list[int]]", run["covered"]), cast("Mapping[str, int]", run["total"])
+
+
+def _run_told(run: Mapping[str, object]) -> str:
+    covered, total = covered_and_total(run)
+    lines = sum(len(lines) for lines in covered.values())
+    return f"covered {lines} of {sum(total.values())} lines, stopped: {run['stopped']}"
+
+
+def _named(row: Row) -> str:
+    """The entry as ``pyct run`` names it, or the module alone on a module's row."""
+    return row.module if row.name is None else f"{row.module}::{row.name}"

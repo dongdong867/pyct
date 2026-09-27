@@ -13,7 +13,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 - lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 2 kept, 0 broken.` Style, sizes, types, import layers, and the compare tool never importing pyct
 - format: `uv run ruff format src/ tests/ tools/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
-- sweep: `uv run pyct sweep PACKAGE --list` — one JSON line per entry, with its seed or why it is skipped, and per module that did not import or could not be read, then a summary line. Runs no entry and needs no cvc5
+- sweep: `uv run pyct sweep PACKAGE [--list]` — runs each entry as its own `pyct run` in a temporary directory, and prints one JSON line per entry and per module that did not import or could not be read, then a summary line. `--list` runs none and needs no cvc5
 - compare, per merge: `uv run python -m tools.compare_coverage --legacy DIR --set v2 --set fixtures --budget 5 --accepted tools/compare_coverage/accepted-per-merge.jsonl` — healthy: exit 0, every row `same`, `left out` or `accepted`. The file's first line records the 5 s limits it was made with. A change that closes or opens a gap reruns this with `--accept` and commits the file; a new file under `targets/` needs an entry in `tools/compare_coverage/targets.json`. DIR is a checkout of `main` with its own environment, its library extras included and on this checkout's Python release: `git worktree add DIR main && uv sync --project DIR --frozen --extra realworld --extra library --python X.Y.Z`, where X.Y.Z is what `uv run python -V` prints here
 - compare, full run on demand: `uv run python -m tools.compare_coverage --legacy DIR --accepted tools/compare_coverage/accepted-full.jsonl` — every set at the default 30 s budget, against a file of its own, since a file holds one set of limits and the checker refuses a file made with others. The sets beyond the per-merge two are legacy's `examples`, run in place in DIR, and the `realworld` and `library` entry points of installed libraries, which each side imports from its own environment at the version the entry pins; the `compare-coverage` dependency group installs them here. The `library` set's seeds are the ones legacy's discovery wrote, mostly `0`, so most of its rows stop at the first input and say little about parity until sweep supplies better seeds
 
@@ -27,8 +27,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 .
 ├── src/pyct/
 │   ├── cli.py        entry point
-│   ├── sweep/        a package's entries and their seeds, listed in a process of its own.
-│   │                 `pyct sweep`
+│   ├── sweep/        a package's entries and their seeds, listed in a process of its own,
+│   │                 and one `pyct run` process per entry. `pyct sweep`
 │   ├── llm/          the only LLM code. Implements the five provider protocols
 │   ├── run/          run(target, seed, *, limits, isolation, tell) -> RunResult.
 │   │                 Composition root for one run. isolation.py runs each input in a throwaway process
@@ -57,7 +57,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
     ├── strs/         the same for strings
     ├── floats/       the same for floats
     ├── nested/       values inside an argument: a dict's and a list's
-    └── sweep/        packages and modules `pyct sweep` lists
+    └── sweep/        packages and modules `pyct sweep` lists and runs
 ```
 
 `core` is the runtime behavior of a concolic value. `intercept` makes the

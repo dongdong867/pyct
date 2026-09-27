@@ -5,13 +5,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pytest
 
 from pyct.sweep.listing import PackageImportError, list_package
+from pyct.sweep.result import SweepLimits
 from pyct.sweep.rows import Row, Status
 from tests.acceptance.harness import REPO_ROOT
+
+# the grace a sweep gives the lister
+GRACE = SweepLimits().grace
 
 ROUGH = "targets.sweep.rough"
 STALL = "targets.sweep.stall"
@@ -38,7 +42,7 @@ def failed(module: str, ended: str) -> Row:
 
 
 def test_every_module_gets_its_row_whatever_its_import_did() -> None:
-    assert list_package(ROUGH) == (
+    assert list_package(ROUGH, grace=GRACE) == (
         failed(f"{ROUGH}.broken", "ValueError('boom')"),
         failed(f"{ROUGH}.crashes", "killed by SIGSEGV"),
         failed(f"{ROUGH}.exits", "exited with code 3"),
@@ -55,7 +59,7 @@ def test_a_name_that_raises_when_read_costs_its_module_a_row_and_nothing_more() 
     def unread(module: str) -> Row:
         return Row(module, None, Status.FAILED, reason=f"cannot read {module}::settings: {raised}")
 
-    assert list_package(UNREAD) == (
+    assert list_package(UNREAD, grace=GRACE) == (
         unread(UNREAD),
         Row(UNREAD, "home", Status.LISTED, seed={"n": 0}),
         unread(f"{UNREAD}.conf"),
@@ -75,7 +79,7 @@ def test_a_name_that_raises_when_read_costs_its_module_a_row_and_nothing_more() 
 
 def test_a_package_that_forwards_to_itself_is_walked_below() -> None:
     forwarded = "targets.sweep.forwarded"
-    assert list_package(forwarded) == (
+    assert list_package(forwarded, grace=GRACE) == (
         Row(f"{forwarded}.sub", "below", Status.LISTED, seed={"n": 0}),
     )
 
@@ -125,7 +129,7 @@ def test_an_entry_several_modules_give_is_one_row_and_rows_come_in_order() -> No
         "print('{\"done\": true}')\n"
     )
 
-    assert list_package("p", lister=stand_in(script)) == (
+    assert list_package("p", lister=stand_in(script), grace=GRACE) == (
         Row("p.a", "f", Status.SKIPPED, reason="no parameter to vary"),
         Row("p.b", "g", Status.LISTED, seed={"n": 0}),
     )
@@ -133,12 +137,16 @@ def test_an_entry_several_modules_give_is_one_row_and_rows_come_in_order() -> No
 
 def test_a_bound_method_two_modules_export_is_one_row_under_the_module_of_its_code() -> None:
     dice = "targets.sweep.dice"
-    assert list_package(dice) == (Row(f"{dice}.core", "roll", Status.LISTED, seed={"sides": 0}),)
+    assert list_package(dice, grace=GRACE) == (
+        Row(f"{dice}.core", "roll", Status.LISTED, seed={"sides": 0}),
+    )
 
 
 def test_a_bound_method_whose_code_module_exposes_it_not_is_one_row_under_the_first() -> None:
     relayed = "targets.sweep.relayed"
-    assert list_package(relayed) == (Row(relayed, "parse", Status.LISTED, seed={"text": ""}),)
+    assert list_package(relayed, grace=GRACE) == (
+        Row(relayed, "parse", Status.LISTED, seed={"text": ""}),
+    )
 
 
 def test_a_line_the_lister_ends_part_way_is_no_line() -> None:
@@ -146,7 +154,9 @@ def test_a_line_the_lister_ends_part_way_is_no_line() -> None:
         'sys.stdout.write(\'{"importing": "p.m"}\\n{"entry": \')\nsys.stdout.flush()\nsys.exit(4)\n'
     )
 
-    assert list_package("p", lister=stand_in(script)) == (failed("p.m", "exited with code 4"),)
+    assert list_package("p", lister=stand_in(script), grace=GRACE) == (
+        failed("p.m", "exited with code 4"),
+    )
 
 
 def test_a_process_left_holding_the_pipe_does_not_keep_sweep_waiting(tmp_path: Path) -> None:
@@ -178,7 +188,7 @@ def test_a_lister_that_closes_its_output_and_runs_on_is_stopped() -> None:
 
 def test_a_lister_that_ends_before_its_first_fact_fails_the_package() -> None:
     with pytest.raises(PackageImportError) as raised:
-        list_package("p", lister=stand_in("import sys\nsys.exit(1)\n"))
+        list_package("p", grace=GRACE, lister=stand_in("import sys\nsys.exit(1)\n"))
 
     assert str(raised.value) == "cannot import p: exited with code 1"
 
@@ -270,24 +280,21 @@ def test_a_sweep_started_under_nohup_outlives_the_sighup_and_ends_on_a_sigterm(
     assert gone(lister)
 
 
-def test_an_ignored_sighup_stays_ignored() -> None:
-    # under nohup the terminal's SIGHUP is ignored, and sweep must not start heeding it; a
-    # process of its own, so a sweep that did heed it ends that process and not the tests
-    lister = DONE_AFTER + (
-        "import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\nprint('{\"done\": true}')\n"
-    )
-    check = (
-        "import signal, sys\n"
-        "from pyct.sweep.listing import list_package\n"
-        f"rows = list_package('p', lister=(sys.executable, '-c', {lister!r}))\n"
-        "print(rows == (), signal.getsignal(signal.SIGHUP) is signal.SIG_IGN)\n"
-    )
-    finished = subprocess.run(
-        [sys.executable, "-c", WITH_SIGHUP.format(action="IGN"), "-c", check],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
+def test_a_ctrl_c_as_the_lister_starts_still_stops_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    # the Ctrl-C comes just after the lister starts, before sweep has recorded it
+    real = subprocess.Popen
+    children: list[subprocess.Popen[bytes]] = []
 
-    assert (finished.returncode, finished.stdout) == (0, "True True\n"), finished.stderr
+    def popen(*args: Any, **options: Any) -> subprocess.Popen[bytes]:
+        children.append(real(*args, **options))
+        signal.raise_signal(signal.SIGINT)
+        return children[-1]
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    try:
+        with pytest.raises(KeyboardInterrupt):
+            list_package("p", grace=GRACE, lister=stand_in("import time\ntime.sleep(3600)\n"))
+        assert children[0].returncode == -signal.SIGKILL
+    finally:
+        children[0].kill()
+        children[0].wait()
