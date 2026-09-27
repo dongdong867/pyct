@@ -12,11 +12,15 @@ one entry::
       ]
     }
 
-A set's ``origin`` says where its files live: ``v2`` is this checkout and ``legacy`` the
-legacy checkout. ``scan``, when given, is a folder under that root whose every Python file
-other than ``__init__.py`` needs an entry. An entry runs ``target``, ``MODULE::NAME``, with
-``seed``, the JSON object ``pyct run --args`` takes; an entry with ``left_out`` names a module
-and the reason nothing runs for it. Set, target and module names are data here, never code.
+A set's ``origin`` says where its files live: ``v2`` is this checkout, ``legacy`` the
+legacy checkout, and ``installed`` a library installed in each side's own environment.
+``scan``, when given, is a folder under a checkout whose every Python file other than
+``__init__.py`` needs an entry. An entry runs ``target``, ``MODULE::NAME``, with ``seed``, the
+JSON object ``pyct run --args`` takes; an entry with ``left_out`` names a module and the reason
+nothing runs for it. An entry of an ``installed`` set also names its ``library`` as
+``NAME==VERSION``: the distribution that provides the module and its pinned version, or
+``python`` and Python's version for the standard library. Set, target, module and library
+names are data here, never code.
 """
 
 import json
@@ -37,10 +41,26 @@ class SelectionError(Exception):
 
 
 class Origin(StrEnum):
-    """Where a set's files live: this checkout, or the legacy checkout."""
+    """Where a set's files live: this checkout, the legacy checkout, or an installed library."""
 
     V2 = "v2"
     LEGACY = "legacy"
+    INSTALLED = "installed"
+
+
+@dataclass(frozen=True)
+class Library:
+    """The distribution an installed entry's module comes from, and the version it pins."""
+
+    name: str
+    version: str
+
+    def __str__(self) -> str:
+        return f"{self.name}=={self.version}"
+
+    def matches(self, version: str) -> bool:
+        """True for the pinned version, or a release of it: ``3.12`` matches ``3.12.7``."""
+        return version == self.version or version.startswith(f"{self.version}.")
 
 
 @dataclass(frozen=True)
@@ -61,6 +81,7 @@ class Entry:
     name: str | None = None
     seed: Mapping[str, object] = field(default_factory=dict)
     left_out: str | None = None
+    library: Library | None = None
 
     @property
     def target(self) -> str | None:
@@ -142,24 +163,43 @@ def _set_spec(name: str, spec: object) -> SetSpec:
     scan = spec.get("scan") if isinstance(spec, dict) else None
     if scan is not None and not isinstance(scan, str):
         raise ListError(f"set {name}: scan must be a folder under the set's root")
+    if scan is not None and origin == Origin.INSTALLED:
+        raise ListError(f"set {name}: an installed set has no folder to scan")
     return SetSpec(name=name, origin=Origin(origin), scan=scan)
 
 
 def _entry(where: str, raw: object, sets: Mapping[str, SetSpec]) -> Entry:
     if not isinstance(raw, dict) or not isinstance(raw.get("set"), str) or raw["set"] not in sets:
         raise ListError(f"{where}: set must name a set of the list")
+    installed = sets[raw["set"]].origin is Origin.INSTALLED
     if "left_out" in raw:
-        return _left_out(where, raw)
+        return _left_out(where, raw, installed)
     target, seed = raw.get("target"), raw.get("seed")
     if not isinstance(target, str) or not _is_target(target):
         raise ListError(f"{where}: target must be MODULE::NAME, got {target!r}")
     if not isinstance(seed, dict):
         raise ListError(f"{where}: seed must be a JSON object, got {seed!r}")
     module, name = target.split("::")
-    return Entry(set=raw["set"], module=module, name=name, seed=seed)
+    library = _library(where, raw, installed)
+    return Entry(set=raw["set"], module=module, name=name, seed=seed, library=library)
 
 
-def _left_out(where: str, raw: dict[str, object]) -> Entry:
+def _library(where: str, raw: dict[str, object], installed: bool) -> Library | None:
+    """The ``NAME==VERSION`` an entry of an installed set names; any other entry names none."""
+    pin = raw.get("library")
+    if not installed:
+        if "library" in raw:
+            raise ListError(f"{where}: only an entry of an installed set names a library")
+        return None
+    name, separator, version = pin.partition("==") if isinstance(pin, str) else ("", "", "")
+    if not (separator and name and version):
+        raise ListError(f"{where}: library must be NAME==VERSION, got {pin!r}")
+    return Library(name=name, version=version)
+
+
+def _left_out(where: str, raw: dict[str, object], installed: bool) -> Entry:
+    if installed:
+        raise ListError(f"{where}: an installed set scans no folder, so it leaves no file out")
     module, reason = raw.get("module"), raw.get("left_out")
     if not isinstance(module, str) or not _is_module(module):
         raise ListError(f"{where}: module must be a dotted module name, got {module!r}")

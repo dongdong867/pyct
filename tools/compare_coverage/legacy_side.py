@@ -7,6 +7,7 @@ any target runs, ``probe`` checks that DIR's interpreter imports legacy's engine
 
 import json
 import math
+import platform
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,13 +23,16 @@ from tools.compare_coverage.sides import (
     optional_text,
     read_report,
     result_line,
+    with_library,
 )
 
 ADAPTER = Path(__file__).with_name("legacy_adapter.py")
 
+# the standard library entries pin python, so legacy's environment runs the checker's release
 RECIPE = (
-    "make one with: git worktree add DIR main && uv sync --project DIR --frozen, "
-    "then pass --legacy DIR"
+    "make one with: git worktree add DIR main && "
+    "uv sync --project DIR --frozen --extra realworld --extra library "
+    f"--python {platform.python_version()}, then pass --legacy DIR"
 )
 
 # importing legacy's engine takes a second or two; anything slower is not answering
@@ -74,9 +78,12 @@ class LegacySide:
             "root": str(request.root),
             "limits": self.given(request.limits),
         }
-        argv = (str(interpreter(self.checkout)), "-P", str(ADAPTER), json.dumps(payload))
+        python = str(interpreter(self.checkout))
+        argv = (python, "-P", str(ADAPTER), json.dumps(payload))
         finished = run_command(Command(argv, request.root, self.environment), request.wait)
-        return read_report(finished, "covered", _report)
+        return with_library(
+            read_report(finished, "covered", _report), python, request, self.environment
+        )
 
 
 def _report(line: dict[str, object]) -> SideReport:

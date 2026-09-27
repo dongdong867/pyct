@@ -45,6 +45,7 @@ def test_a_row_line_holds_every_field_of_the_row() -> None:
             "stopped": "no fork to flip",
             "inputs": 2,
             "failure": None,
+            "library": None,
         },
         "legacy": {
             "file": "/t.py",
@@ -52,10 +53,12 @@ def test_a_row_line_holds_every_field_of_the_row() -> None:
             "stopped": "exhausted",
             "inputs": 4,
             "failure": None,
+            "library": None,
         },
         "record": None,
         "change": None,
         "left_out": None,
+        "library": None,
     }
 
 
@@ -140,6 +143,20 @@ def test_a_table_line_for_a_file_names_the_file_and_the_reason() -> None:
     assert table_line(NOT_LISTED) == "fixtures  /u.py  not listed"
     assert table_line(left) == "v2  /b.py  left out  fails to import"
     assert table_line(only_v2).endswith("differs  only v2: 7, 8")
+
+
+def test_a_table_line_for_an_installed_entry_names_each_sides_version() -> None:
+    # a side with no version is one without the library, or one that did not say
+    missing = replace(V2, library=None)
+    row = replace(
+        DIFFERS, library="werkzeug==3.1.3", v2=missing, legacy=replace(LEGACY, library="3.1.3")
+    )
+
+    assert table_line(row).startswith(
+        "v2  m::f  v2 covered 2 of 3 (no fork to flip, 2 inputs, werkzeug ?)"
+        "  legacy covered 3 of 3 (exhausted, 4 inputs, werkzeug 3.1.3)"
+    )
+    assert json.loads(row_line(row))["legacy"]["library"] == "3.1.3"
 
 
 def test_the_totals_line_gives_every_count() -> None:

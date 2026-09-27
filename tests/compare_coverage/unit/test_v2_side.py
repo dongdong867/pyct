@@ -3,10 +3,12 @@
 import json
 import os
 import sys
+from dataclasses import replace
 from pathlib import Path
 
+from tools.compare_coverage.library_probe import installed
 from tools.compare_coverage.process import side_environment
-from tools.compare_coverage.sides import Limits, SideReport, SideRequest
+from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest, installed_of
 from tools.compare_coverage.v2_side import Stamp, V2Side
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -106,3 +108,28 @@ def test_a_summary_line_that_names_two_files_is_unreadable(tmp_path: Path) -> No
 
     assert report.failure is not None
     assert "covered must name the one file" in report.failure
+
+
+def test_the_side_reads_the_requested_library_as_pyct_run_would_find_it(tmp_path: Path) -> None:
+    side = fake_side(tmp_path, summary())
+
+    report = side.run(replace(request(), library="werkzeug"))
+
+    # werkzeug does not provide the one_check target the request names
+    assert report.library == installed_of(installed("werkzeug", "targets.flip.one_check"))
+    assert report.library is not None and not report.library.provides
+    assert report.library.version == "3.1.3"
+    assert side.run(request()).library is None
+
+
+def test_the_library_is_read_from_the_sides_working_directory_first(tmp_path: Path) -> None:
+    # pyct run puts its working directory first on the path, so a copy there is the one it has
+    root = tmp_path / "root"
+    metadata = root / "werkzeug-9.9.dist-info" / "METADATA"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("Metadata-Version: 2.1\nName: werkzeug\nVersion: 9.9\n")
+    side = fake_side(tmp_path, summary())
+
+    report = side.run(replace(request(), root=root, library="werkzeug"))
+
+    assert report.library == Installed(version="9.9", root=str(root), provides=False)
