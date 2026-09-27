@@ -39,6 +39,9 @@ INT_TERMS: list[Expression] = [
     ["count", "s", "'a'"],
     ["len", "s"],
     *([head, "f"] for head in ("floor", "ceil", "trunc", "round")),
+    ["int", "s"],
+    ["int", "f"],
+    ["int", ["<", "x", 1]],
 ]
 FLOAT_TERMS: list[Expression] = [
     ["+", "f", 1.5],
@@ -49,6 +52,8 @@ FLOAT_TERMS: list[Expression] = [
     ["abs", "f"],
     ["//", "f", 2.5],
     ["%", "f", 2.5],
+    ["float", "x"],
+    ["float", "s"],
 ]
 STR_TERMS: list[Expression] = [
     ["+", "s", "'a'"],
@@ -67,6 +72,8 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["endswith", "s", "'a'"],
     ["is_integer", "f"],
     ["isfinite", "f"],
+    ["isint", "s"],
+    ["isfloat", "s"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
     *([head, "s"] for head in CHECKS),
 ]

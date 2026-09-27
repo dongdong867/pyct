@@ -254,11 +254,11 @@ def _least(level: int, *, right: bool) -> int:
     return level + 1 if right else level
 
 
-# the functions a fork line writes as Python calls them, by head: `len(s)`, `round(x)`, and
-# the `math` roundings and finite check, `math.floor(x)`
+# the functions a fork line writes as Python calls them, by head: `len(s)`, `round(x)`, the
+# conversions `int(s)` and `float(n)`, whether a string reads as a number, `isint(s)`, and the
+# `math` roundings and finite check, `math.floor(x)`
 _CALLED: Mapping[str, str] = {
-    "len": "len",
-    "round": "round",
+    **{head: head for head in ("len", "round", "int", "float", "isint", "isfloat")},
     **{head: f"math.{head}" for head in ("floor", "ceil", "trunc", "isfinite")},
 }
 

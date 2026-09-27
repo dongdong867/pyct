@@ -8,7 +8,7 @@ operation SMT-LIB has no operator for by the form in `FORMS`, a piece by
 
 from collections.abc import Callable, Mapping
 
-from pyct.solver import floats
+from pyct.solver import floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.ints import floor_division, modulo
@@ -64,6 +64,11 @@ RESULTS: Mapping[str, type | None] = {
     "isfinite": bool,
     # a rounding answers an int, from a float
     **dict.fromkeys(("floor", "ceil", "trunc", "round"), int),
+    # `int` and `float` of a number or of the text Python reads, and whether it reads the text
+    "int": int,
+    "float": float,
+    "isint": bool,
+    "isfloat": bool,
     "find": int,
     "rfind": int,
     "index": int,
@@ -163,6 +168,14 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("ceil", float): floats.ceil,
     ("trunc", float): floats.trunc,
     ("round", float): floats.rounded,
+    # `int` of a bool reaches here as the int 1 or 0 it is, and adds nothing to it; `int` of a
+    # float cuts it toward zero past its finite fork, and `float` of an int or a bool rounds it
+    ("int", int): lambda term: term,
+    ("int", float): floats.trunc,
+    ("float", int): floats.from_int,
+    ("int", str): numerals.int_of,
+    ("isint", str): numerals.is_int,
+    ("isfloat", str): numerals.is_float,
     **{(head, str): form for head, form in CASES.items()},
 }
 
@@ -170,6 +183,7 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
 # Render holds the bound on the path (see `Program.bounded` in `solver/render.py`)
 BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
     ("//", float): floats.floor_division,
+    ("float", str): numerals.float_of,
 }
 
 # a string taken at positions or padded: the string arrives rendered, and each other operand as
