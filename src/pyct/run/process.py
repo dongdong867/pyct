@@ -21,7 +21,9 @@ process's status. A handler that raised could land after the wait had
 already reaped the process and lose its status.
 
 ``Child`` and ``how`` also serve the process the shell started, which
-watches the command's process the same way (see ``launch``).
+watches the command's process the same way (see ``launch``). The module
+also holds pyct's process-wide stop: ``Stopped``, which a SIGTERM raises,
+and the mark that refuses every input after it.
 """
 
 from __future__ import annotations
