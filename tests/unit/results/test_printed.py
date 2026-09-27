@@ -362,13 +362,13 @@ def test_pieces_compared_many_times_then_gathered_are_counted_quickly() -> None:
     written = printed_forks(forks)
     spent = time.perf_counter() - start
 
-    # counted only below the part the last fork cuts, where the pieces sit side by side; counted
-    # over every fork, the compares between the pieces made each join walk every piece before
-    # it, which took 30 s here
+    # counted only below the part the last fork cuts, where the pieces sit side by side, in about
+    # 1 s, or 3 s under coverage; counted over every fork, the compares between the pieces made
+    # each join walk every piece before it, which took 30 s here
     cuts = _cut_from(written[-1], forks[-1].expression)
     assert cuts
     assert all(count == _distinct(part) for count, part in cuts)
-    assert spent < 5.0
+    assert spent < 15.0
 
 
 def _joined_strings(pieces: list[Expression]) -> Expression:
@@ -417,7 +417,7 @@ def test_counting_the_orthogonal_vectors_shape_stops_at_its_limit() -> None:
     spent = time.perf_counter() - start
 
     # the count stops at its limit of steps: the parts it counted are exact, and the rest print
-    # no count, so the line still takes a bounded time
+    # no count, so the line still takes a bounded time, about 0.5 s, or 1.5 s under coverage
     counts = [
         pair
         for shown, fork in zip(written, forks, strict=True)
@@ -426,4 +426,4 @@ def test_counting_the_orthogonal_vectors_shape_stops_at_its_limit() -> None:
     counted = [(count, part) for count, part in counts if count is not None]
     assert counted and len(counted) < len(counts)
     assert all(count == _distinct(part) for count, part in counted[:10])
-    assert spent < 3.0
+    assert spent < 10.0
