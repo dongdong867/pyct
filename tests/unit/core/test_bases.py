@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
+from pyct.core.branch import SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -176,17 +176,10 @@ def test_assigning_the_class_raises_what_python_raises_for_the_plain_value(kind:
     for value, base in tracked_values(sink):
         # a plain value of the base type: range alone needs an argument
         plain = base(3) if base is range else base()
-        try:
+        with pytest.raises(TypeError) as plain_raise:
             plain.__class__ = kind
-        except TypeError as error:
-            with pytest.raises(TypeError) as raised:
-                value.__class__ = kind
-            assert str(raised.value) == str(error)
-            assert raised_by_target(raised.value)
-        else:
-            # Python takes a list subclass laid out as list is, for the plain list and the
-            # tracked one alike
+        with pytest.raises(TypeError) as raised:
             value.__class__ = kind
-            assert type(value) is type(plain) is kind
-            # the list is no longer tracked, and the line names what lost it
-            assert sink == [Downgrade(name="__class__")]
+        assert str(raised.value) == str(plain_raise.value)
+        assert raised_by_target(raised.value)
+    assert sink == []

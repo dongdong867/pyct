@@ -176,27 +176,18 @@ BASES_BY_ID: dict[int, type] = {}
 # what each base type is called with for a plain value of its own, when not with nothing
 _EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
 
-# object's own `__class__`, which each tracked class's hides
-_OBJECT_CLASS = object.__dict__["__class__"]
-
 
 def _base_class(self: object) -> type:
     """The class a tracked value reports: its base type, as Python's own value reads it."""
     return BASES[type(self)]
 
 
-def _assigned_class(self: _Sinked, kind: object) -> None:
-    """`v.__class__ = kind`: made on a plain value of the base type first, so a class Python
-    refuses for it raises Python's own error, in its words, and then on the value itself.
-
-    Python refuses every class for an int, float, str, bool or range; a list takes a
-    subclass of list that is laid out as it is, and is no longer tracked
-    after it, so the change is a downgrade named `__class__`.
+def _assigned_class(self: object, kind: object) -> None:
+    """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
+    error, in its words, as it refuses every class for an int, float, str, bool, list or range.
     """
     base = BASES[type(self)]
     own(setattr, base(*_EMPTY.get(base, ())), "__class__", kind)
-    own(_OBJECT_CLASS.__set__, self, kind)
-    self.sink.append(Downgrade(name="__class__"))
 
 
 # a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
