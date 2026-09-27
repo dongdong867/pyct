@@ -1,3 +1,4 @@
+import contextlib
 import os
 import signal
 import subprocess
@@ -195,13 +196,29 @@ def test_a_sigterm_ends_the_listing_as_a_ctrl_c_does_and_stops_the_lister(
             os.kill(int(pid), 0)
 
 
+# starts a command with SIGHUP at its default, whatever the test runner got, as under nohup
+WITH_SIGHUP = (
+    "import os, signal, sys\n"
+    "signal.signal(signal.SIGHUP, signal.SIG_{action})\n"
+    "os.execv(sys.executable, [sys.executable, *sys.argv[1:]])\n"
+)
+
+
+def killed(pids: Path) -> None:
+    """SIGKILL every process the pid file names that is still there, so a failure leaks none."""
+    for pid in pids.read_text().split() if pids.exists() else []:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(int(pid), signal.SIGKILL)
+
+
 def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
     # a closing terminal sends SIGHUP; the lister leads its own session and never gets it
     pids = tmp_path / "pids"
     env = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
     env["SWEEP_PIDS_FILE"] = str(pids)
     sweep = subprocess.Popen(
-        [sys.executable, "-P", "-m", "pyct", "sweep", STALL, "--list"],
+        [sys.executable, "-c", WITH_SIGHUP.format(action="DFL"), "-P", "-m", "pyct"]
+        + ["sweep", STALL, "--list"],
         cwd=REPO_ROOT,
         env=env,
         stdout=subprocess.DEVNULL,
@@ -210,26 +227,38 @@ def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> N
     try:
         while not (pids.exists() and pids.read_text().endswith("\n")):
             time.sleep(0.05)
+        alive = pids.read_text().split()
         sweep.send_signal(signal.SIGHUP)
         ended = sweep.wait(timeout=20)
     finally:
         sweep.kill()
+        killed(pids)
 
     # a shell reports it as exit 129
     assert ended == -signal.SIGHUP
-    for pid in pids.read_text().split():
+    for pid in alive:
         with pytest.raises(ProcessLookupError):
             os.kill(int(pid), 0)
 
 
 def test_an_ignored_sighup_stays_ignored() -> None:
-    # under nohup the terminal's SIGHUP is ignored, and sweep must not start heeding it
-    script = DONE_AFTER + (
+    # under nohup the terminal's SIGHUP is ignored, and sweep must not start heeding it; a
+    # process of its own, so a sweep that did heed it ends that process and not the tests
+    lister = DONE_AFTER + (
         "import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\nprint('{\"done\": true}')\n"
     )
-    previous = signal.signal(signal.SIGHUP, signal.SIG_IGN)
-    try:
-        assert list_package("p", lister=stand_in(script)) == ()
-        assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
-    finally:
-        signal.signal(signal.SIGHUP, previous)
+    check = (
+        "import signal, sys\n"
+        "from pyct.sweep.listing import list_package\n"
+        f"rows = list_package('p', lister=(sys.executable, '-c', {lister!r}))\n"
+        "print(rows == (), signal.getsignal(signal.SIGHUP) is signal.SIG_IGN)\n"
+    )
+    finished = subprocess.run(
+        [sys.executable, "-c", WITH_SIGHUP.format(action="IGN"), "-c", check],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+    assert (finished.returncode, finished.stdout) == (0, "True True\n"), finished.stderr
