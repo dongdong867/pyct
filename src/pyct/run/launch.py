@@ -26,14 +26,15 @@ import's, so the watcher ends the same way.
 The command's process ends on a SIGTERM as on a Ctrl-C: it ends its
 input's process and cvc5 on the way out, then ends by the SIGTERM. It
 ends the same way once the watcher is gone, however the watcher went, so
-a SIGKILL sent to the pid the shell got still ends the whole run.
+a SIGKILL sent to the pid the shell got still ends the whole run. Target
+code that catches the stop delays that end by ``STOP_GRACE`` at most: a
+backstop process ends the command's process then.
 """
 
 from __future__ import annotations
 
 import contextlib
 import fcntl
-import functools
 import os
 import signal
 import subprocess
@@ -41,6 +42,7 @@ import sys
 import time
 from collections.abc import Callable, Generator, Iterable, Sequence
 from pathlib import Path
+from typing import NoReturn
 
 from pyct.core.branch import PYCT_DIR
 from pyct.run.child import flush_streams
@@ -56,6 +58,14 @@ _PASSED_ON = frozenset(
 # how long the watcher keeps a SIGINT before it passes it on; a Ctrl-C from the terminal
 # reaches the command's process too and ends it well within this
 CTRL_C_GRACE = 0.5
+# how long the command's process has to end once it is told to stop, before it is ended
+# directly; target code that catches BaseException can catch the stop and go on
+STOP_GRACE = 1.0
+# what a stop's backstop runs: wait, then end its parent by SIGTERM if that is still its parent
+_BACKSTOP = (
+    "import os, sys, time; parent = int(sys.argv[1]); time.sleep(float(sys.argv[2])); "
+    f"os.getppid() == parent and os.kill(parent, {int(signal.SIGTERM)})"
+)
 # the signals the watcher notes; they are held from before the fork until it does
 _NOTED = _PASSED_ON | {signal.SIGINT}
 
@@ -171,43 +181,115 @@ def _serve(
 ) -> int:
     """Run ``command`` as the command's process, which stops on a SIGTERM or with its watcher.
 
-    Either raises ``Stopped`` wherever the process is, as a Ctrl-C raises
-    KeyboardInterrupt, so the input's process and cvc5 are ended on the way
-    out, and then the command's process ends by SIGTERM. The handlers go in
-    while SIGTERM is still held from before the fork; ``held`` is the mask
-    to put back. The watcher may be gone before the system could say so, so
-    the pipe is read once here too.
+    The handlers go in before ``held``, the mask to put back, is put back.
+    When the command's process was forked, that mask held SIGTERM from
+    before the fork, so none lands before its handler. The watcher may be
+    gone before the system could say so, so the pipe is read once here too.
     """
+    stops = _Stops(lifeline)
     try:
-        with _stops_on(lifeline):
+        with stops.handled():
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
-            if lifeline is not None:
-                _stop_if_alone(lifeline)
+            if stops.alone():
+                stops.stop()
             return command(watch)
     except Stopped:
+        stops.cancel()
         return _end_by(signal.SIGTERM)
 
 
-@contextlib.contextmanager
-def _stops_on(lifeline: int | None) -> Generator[None]:
-    """Raise ``Stopped`` on a SIGTERM, and once the watcher is gone, until the block ends.
+class _Stops:
+    """How the command's process stops: on a SIGTERM, and once the watcher is gone.
+
+    Either raises ``Stopped`` wherever the process is, as a Ctrl-C raises
+    KeyboardInterrupt, so the input's process and cvc5 are ended on the way
+    out, and then the command's process ends by SIGTERM. Target code that
+    catches BaseException can catch ``Stopped`` and go on, at its import or
+    in a call in this process, so a stop also makes SIGTERM take its default
+    action and starts a backstop: a small process of its own that sends
+    this one SIGTERM ``STOP_GRACE`` later. This process then ends even while
+    that code runs. The backstop is a process, not a thread, so this one
+    runs no thread it did not run before, and it keeps SIGALRM, which the
+    deadline and the kill timer use, to them. pyct ends the backstop when
+    it ends this process itself.
 
     ``lifeline`` is the read end of a pipe whose write end only the watcher
     holds, and never writes to, so the pipe reads an end of file once the
     watcher is gone, however it went, SIGKILL included. The system says so
     by SIGIO, whose handler reads the pipe itself, so no thread waits on it.
     """
-    handlers: dict[int, Callable[[int, object], None]] = {signal.SIGTERM: _stop}
-    if lifeline is not None:
-        handlers[signal.SIGIO] = functools.partial(_stop_if_alone, lifeline)
-    previous = {number: signal.signal(number, handler) for number, handler in handlers.items()}
+
+    def __init__(self, lifeline: int | None) -> None:
+        self.lifeline = lifeline
+        self.backstop: Child | None = None
+        self.stopped = False
+
+    @contextlib.contextmanager
+    def handled(self) -> Generator[None]:
+        """Stop on a SIGTERM, and on a SIGIO that says the watcher is gone, until the block ends."""
+        handlers: dict[int, Callable[[int, object], None]] = {signal.SIGTERM: self._on_sigterm}
+        if self.lifeline is not None:
+            handlers[signal.SIGIO] = self._on_sigio
+        previous = {number: signal.signal(number, handler) for number, handler in handlers.items()}
+        try:
+            if self.lifeline is not None:
+                _signal_at_end_of_file(self.lifeline)
+            yield
+        finally:
+            for number, handler in previous.items():
+                signal.signal(number, signal.SIG_DFL if handler is None else handler)
+
+    def alone(self) -> bool:
+        """Whether the lifeline reads an end of file: the watcher is gone.
+
+        A read that finds nothing yet raises BlockingIOError, and one on a
+        descriptor the target closed raises another OSError; neither says the
+        watcher is gone.
+        """
+        if self.lifeline is None:
+            return False
+        try:
+            return os.read(self.lifeline, 1) == b""
+        except OSError:
+            return False
+
+    def stop(self) -> NoReturn:
+        """Raise ``Stopped``, with SIGTERM at its default action and the backstop started once."""
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+        if not self.stopped:
+            self.stopped = True
+            self.backstop = _backstop()
+        raise Stopped
+
+    def cancel(self) -> None:
+        """End and reap the backstop, once pyct ends this process itself."""
+        if self.backstop is not None:
+            self.backstop.end()
+
+    def _on_sigterm(self, _number: int, _frame: object) -> None:
+        self.stop()
+
+    def _on_sigio(self, _number: int, _frame: object) -> None:
+        if self.alone():
+            self.stop()
+
+
+def _backstop() -> Child | None:
+    """Start the process that ends this one by SIGTERM ``STOP_GRACE`` from now, or None.
+
+    It is a Python run isolated and without site, so it starts in
+    milliseconds, and its standard streams are the null device, so it holds
+    none of this process's. It sends the SIGTERM only while this process is
+    still its parent: a process that ended some other way has given up its
+    pid, which may belong to another process by then. A backstop that cannot
+    start leaves the stop to the exception alone.
+    """
+    argv = [sys.executable, "-I", "-S", "-c", _BACKSTOP, str(os.getpid()), str(STOP_GRACE)]
+    null = [(os.POSIX_SPAWN_OPEN, fd, os.devnull, os.O_RDWR, 0) for fd in (0, 1, 2)]
     try:
-        if lifeline is not None:
-            _signal_at_end_of_file(lifeline)
-        yield
-    finally:
-        for number, handler in previous.items():
-            signal.signal(number, signal.SIG_DFL if handler is None else handler)
+        return Child(os.posix_spawn(sys.executable, argv, os.environ, file_actions=null))
+    except OSError:
+        return None
 
 
 def _signal_at_end_of_file(lifeline: int) -> None:
@@ -215,25 +297,6 @@ def _signal_at_end_of_file(lifeline: int) -> None:
     fcntl.fcntl(lifeline, fcntl.F_SETOWN, os.getpid())
     flags = fcntl.fcntl(lifeline, fcntl.F_GETFL)
     fcntl.fcntl(lifeline, fcntl.F_SETFL, flags | os.O_ASYNC | os.O_NONBLOCK)
-
-
-def _stop(_number: int, _frame: object) -> None:
-    raise Stopped
-
-
-def _stop_if_alone(lifeline: int, *_: object) -> None:
-    """Raise ``Stopped`` when ``lifeline`` reads an end of file: the watcher is gone.
-
-    A read that finds nothing yet raises BlockingIOError, and one on a
-    descriptor the target closed raises another OSError; neither says the
-    watcher is gone.
-    """
-    try:
-        gone = os.read(lifeline, 1) == b""
-    except OSError:
-        return
-    if gone:
-        raise Stopped
 
 
 def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int, threaded: bool) -> int:

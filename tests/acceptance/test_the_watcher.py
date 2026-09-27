@@ -15,6 +15,9 @@ from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
+import pytest
+
+from pyct.run.launch import STOP_GRACE
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
     is_running,
@@ -28,17 +31,22 @@ SLOW_IMPORT = "targets.load.slow_import::f"
 COUNTER = "targets.isolate.counter::count"
 CRASHES = "targets.load.crashes_at_import"
 SEGFAULT = "targets.isolate.segfault::fault"
+SWALLOWS_AT_IMPORT = "targets.load.swallows_stops_at_import::f"
+SWALLOWS_IN_A_CALL = "targets.load.swallows_stops_in_a_call::f"
+# how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
+SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
 # how soon after the signal every process of the run must have ended
 ENDED_WITHIN = 1.5
 
 
-def group_ended(group: int) -> bool:
-    """Whether no process of ``group`` is left, after a moment for the system to reap them.
+def group_ended(group: int, within: float = 1.0) -> bool:
+    """Whether no process of ``group`` is left ``within`` seconds, as the system reaps them.
 
     The system refuses to signal a group whose only processes are still
     exiting, so a refusal means to look again.
     """
-    for _ in range(20):
+    deadline = time.monotonic() + within
+    while time.monotonic() < deadline:
         with suppress(PermissionError):
             try:
                 os.killpg(group, 0)
@@ -206,3 +214,62 @@ def test_a_crash_after_the_import_is_said_and_not_repeated() -> None:
     # the exit a shell gives a process SIGSEGV ends, from a watcher that exits instead
     assert result.returncode == 128 + signal.SIGSEGV
     assert result.stderr.splitlines()[-1] == "pyct's process was killed by SIGSEGV"
+
+
+@contextmanager
+def in_a_session(pid_file: Path, *argv: str) -> Generator[subprocess.Popen[str]]:
+    """``pyct run *argv`` in a session of its own, asked to write its target's pid to ``pid_file``.
+
+    Whatever is left of the run is killed on the way out.
+    """
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYCT_TEST_PID_FILE"] = str(pid_file)
+    process = subprocess.Popen(
+        [sys.executable, "-P", "-m", "pyct", "run", *argv],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        yield process
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+
+
+# target code that catches BaseException catches the stop, and the run still ends
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param((SWALLOWS_AT_IMPORT, '{"x": 0}'), id="at-import"),
+        pytest.param((SWALLOWS_IN_A_CALL, '{"x": 0}', "--in-process"), id="in-a-call"),
+    ],
+)
+def test_a_sigterm_ends_a_run_whose_target_catches_the_stop(
+    argv: tuple[str, ...], tmp_path: Path
+) -> None:
+    pid_file = tmp_path / "pid"
+    with in_a_session(pid_file, *argv) as process:
+        pid_written_to(pid_file, process)
+        sent = time.monotonic()
+        os.kill(process.pid, signal.SIGTERM)
+        process.wait(timeout=10)
+        took = time.monotonic() - sent
+
+        assert process.returncode == -signal.SIGTERM
+        assert took < SWALLOWED_ENDED_WITHIN, took
+        assert group_ended(process.pid)
+
+
+def test_a_sigkill_to_pyct_ends_an_import_that_catches_the_stop(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    with in_a_session(pid_file, SWALLOWS_AT_IMPORT, '{"x": 0}') as process:
+        importing = pid_written_to(pid_file, process)
+        os.kill(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+
+        assert group_ended(process.pid, within=SWALLOWED_ENDED_WITHIN)
+        assert not is_running(importing)

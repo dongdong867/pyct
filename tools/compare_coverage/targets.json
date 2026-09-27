@@ -131,6 +131,8 @@
     {"set": "v2", "module": "targets.load.interrupted_at_import", "left_out": "raises KeyboardInterrupt at import by design"},
     {"set": "v2", "module": "targets.load.slow_import", "left_out": "takes thirty seconds to import, then ends its process, by design"},
     {"set": "v2", "module": "targets.load.slow_inputs", "left_out": "sleeps in every input by design"},
+    {"set": "v2", "module": "targets.load.swallows_stops_at_import", "left_out": "never finishes its import, catching every BaseException, by design"},
+    {"set": "v2", "module": "targets.load.swallows_stops_in_a_call", "left_out": "never returns, catching every BaseException, by design"},
     {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"café": "x"}},
     {"set": "v2", "target": "targets.names.solver_words::reserved", "seed": {"div": 0}},
     {"set": "v2", "target": "targets.nested.deep::check", "seed": {"config": {"a": {"a": 0}}}},
