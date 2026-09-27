@@ -31,10 +31,12 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
 
     result = run(target, {"xs": xs}, isolation=isolation)
 
-    assert [record.failure for record in result.records[:2]] == [None, None]
+    # the one input that fails is the one too short to read at 1
+    failures = [record.failure for record in result.records if record.failure is not None]
+    assert [failure.detail for failure in failures] == ["IndexError: list index out of range"]
     assert result.stopped.reason == "no fork to flip"
     # the answer that flips the item keeps the list holding itself
-    solved = result.records[1].args["xs"]
+    solved = next(record.args["xs"] for record in result.records[1:] if record.failure is None)
     assert isinstance(solved, list)
     assert isinstance(solved[0], int) and solved[0] > 5
     assert solved[1] is solved
@@ -159,7 +161,8 @@ def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
     run(target, {"items": [1, 2]}, isolation=Isolation.IN_PROCESS)
 
     assert len(held) > 2
-    assert all(min(kept) >= oldest for oldest, kept in held), held
+    # an input kept is one a later pick may still extend; none is kept once every fork is spent
+    assert all(min(kept, default=oldest) >= oldest for oldest, kept in held), held
 
 
 @pytest.mark.parametrize("isolation", EVERYWHERE)

@@ -243,7 +243,9 @@ def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
     for line in lines:
         assert None not in items_of(line), line
         assert args_of(line)["config"] == {}, line
-    assert any(number(items_of(line)[0]) > 5 for line in solved(lines)), lines
+    # an answer may empty items, which the flip of its length check asks for
+    firsts = [items_of(line)[:1] for line in solved(lines)]
+    assert any(first and number(first[0]) > 5 for first in firsts), lines
 
 
 # run-with-nested-arguments-leaves-other-annotations-unchecked

@@ -54,7 +54,9 @@
 {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.lists.reaches_an_index::check", "seed": {"items": [1, 2]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
+{"set": "v2", "target": "targets.lists.rows::check", "seed": {"grid": [[]]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.lists.thousands::gather", "seed": {"data": [1, 1, 1, 1, 1], "items": []}, "status": "differs", "only_legacy": [], "only_v2": [6, 8]}
+{"set": "v2", "target": "targets.loops.vowels::count_vowels", "seed": {"s": "xy"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [4], "only_v2": [8]}
 {"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]}
