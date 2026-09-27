@@ -75,8 +75,8 @@ def access_name(part: Expression) -> str | None:
     """The leaf name of a part of a condition that reads as an access, or None for any other.
 
     Only a list headed by one of the steps the walk takes can be an access,
-    so an operation is never written out to be compared. Whether the seed
-    holds that access is the caller's to ask.
+    so only such a list is written out as JSON to be looked up. Whether the
+    seed holds that access is the caller's to ask.
     """
     if isinstance(part, list) and part and isinstance(part[0], str) and part[0] in _STEPS:
         return leaf_name(part)
