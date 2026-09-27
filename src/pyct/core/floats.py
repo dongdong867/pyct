@@ -11,15 +11,13 @@ operation answers is tracked by the class numbers holds for its Python
 type, so this module names no other number's class, and a rounding answers
 a tracked int (decision numbers-typed-by-python-result).
 
-A float's operations take a float or an int, tracked or plain, as float's
-own do. A bool, and any other operand, gets float's own answer:
-NotImplemented where float gives it, as for a str, and a downgrade named by
-the dunder where float answers, as for a bool. Never NotImplemented where
-float answers: int's own methods answer NotImplemented for a float, so that
-would make `f < True` a TypeError. A float subclass that defines a
-reflected operation otherwise than float is asked first, as Python asks it
-of a plain float, and a plain answer from it is a downgrade named by the
-dunder.
+A float's operations take a float, an int or a bool, tracked or plain, as
+float's own do: a bool is the double 1.0 or 0.0. Those are every operand
+float's own operations answer, so any other gets float's NotImplemented, as
+a str does, and Python asks the other operand. A float subclass that
+defines a reflected operation otherwise than float is asked first, as
+Python asks it of a plain float, and a plain answer from it is a downgrade
+named by the dunder.
 """
 
 from __future__ import annotations
@@ -103,14 +101,14 @@ def _operand(other: object) -> Expression | None:
 
     A tracked float reads as its expression, and any other float as a
     literal of its plain value, so a float of the target's own prints as a
-    float. An int reads as an int does beside a float
-    (`numbers.int_beside_float`), and render converts it as Python does.
+    float. An int or a bool reads as the int family reads it
+    (`numbers.operand`), and render converts it as Python does.
     """
     if isinstance(other, ConcolicFloat):
         return other.expression
     if isinstance(other, float):
         return float.__float__(other)
-    return numbers.int_beside_float(other)
+    return numbers.operand(other)
 
 
 type Binary = Callable[[ConcolicFloat, object], object]
@@ -119,8 +117,8 @@ type Binary = Callable[[ConcolicFloat, object], object]
 def _own(name: str) -> Callable[[object, object], object]:
     """float's own operation by that name, taking an int operand by its plain value.
 
-    See `numbers.plain_int`: a tracked int handed to float's compare would
-    record what the target never wrote.
+    See `numbers.plain_int`: a tracked int or bool handed to float's compare
+    would record what the target never wrote.
     """
     operation = getattr(float, name)
 
@@ -134,17 +132,15 @@ def _followed(name: str, followed: Callable[..., object]) -> Binary:
     """An operation on two operands, followed for an operand `_operand` takes.
 
     A float subclass that defines the reflected operation answers first (see
-    `_answered_first`). For any other operand, float's own answer comes with
-    a downgrade named by the dunder, and float's NotImplemented, for a str
-    say, passes through with no downgrade.
+    `_answered_first`). Any other operand is one float's own operation does
+    not take either, so its NotImplemented, for a str say, passes through
+    with no downgrade.
     """
-    downgrade = downgraded(float, name)
 
     def compute(self: ConcolicFloat, other: object) -> object:
         if (first := _answered_first(name, self, other)) is not NotImplemented:
             return first
-        answer = followed(self, other)
-        return downgrade(self, other) if answer is NotImplemented else answer
+        return followed(self, other)
 
     return compute
 
