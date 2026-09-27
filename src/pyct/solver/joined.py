@@ -13,8 +13,8 @@ changes.
 
 from dataclasses import replace
 
-from pyct.core.branch import Branch, Expression
-from pyct.solver.dag import IsLeaf, Node, distinct
+from pyct.core.branch import Branch, Expression, IsLeaf
+from pyct.solver.dag import Node, distinct
 
 # a piece of a string: the string, and where the piece starts and stops, None for an end
 type _Span = tuple[Expression, int | None, int | None]

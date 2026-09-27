@@ -21,9 +21,9 @@ both print what `printed_forks` hands them, cut once for the two
 
 import math
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import Branch, Expression, IsLeaf
 
 # the most nodes a printed expression holds, as the line writes them
 LIMIT = 1000
@@ -43,10 +43,6 @@ _CUT_NODES = 2
 
 # a list of an expression, as the walk meets it
 type _Node = list[Expression]
-
-# whether a list is a leaf: the access that names a value inside an argument, which the line
-# writes whole, as the name that finds the value in its args, and counts as one node
-type IsLeaf = Callable[[Expression], bool]
 
 # a part still to open: the list the line holds for it, and the part itself. A part left cut
 # keeps the same pair, so its count can be written into the list once it is known

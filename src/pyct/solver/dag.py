@@ -7,16 +7,10 @@ with every pass of the loop that built it; walked by identity, each list is
 met once.
 """
 
-from collections.abc import Callable
-
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import Branch, Expression, IsLeaf
 
 # a list of the path, as the walk meets it
 type Node = list[Expression]
-
-# whether a part is one of the seed's leaves: a list that names a value inside an argument,
-# which the walk neither opens nor counts
-type IsLeaf = Callable[[Expression], bool]
 
 
 def distinct(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> tuple[list[Node], dict[int, int]]:

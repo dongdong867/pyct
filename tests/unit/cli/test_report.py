@@ -5,10 +5,10 @@ from collections.abc import Sequence
 import pytest
 
 from pyct.cli import _report
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Expression, IsLeaf, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
-from pyct.results.printed import IsLeaf, printed_forks
+from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 

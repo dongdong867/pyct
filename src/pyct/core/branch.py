@@ -6,6 +6,7 @@ import itertools
 import os
 import sys
 import types
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -14,6 +15,10 @@ from typing import Protocol
 # inside one: ["<", "x", 10], [">", ["[]", "items", 0], 5]. None is a slice's missing bound,
 # ["[:]", "s", 2, None], and prints as null
 type Expression = list[Expression] | str | int | bool | None
+
+# whether a list is a leaf: the access that names a value inside an argument, which a condition
+# names as a value, never opens as an operation, and counts as one node
+type IsLeaf = Callable[[Expression], bool]
 
 # pyct's own package directory: every frame inside it is pyct, not the target.
 # Unresolved, because a frame's co_filename is the unresolved __file__ it was compiled from.
