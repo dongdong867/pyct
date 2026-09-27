@@ -26,6 +26,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
+from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -36,7 +37,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import Tell, run
-from pyct.run.target import Target, TargetError, load_target
+from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 from pyct.sweep.listing import PackageImportError, list_package
@@ -107,6 +108,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     stdout after it: the readable text comes first, as it does for every
     input.
 
+    The target's package is substituted from its import to the run's end,
+    in this process and in every input's (``pyct.intercept``).
+
     Checks run in this order: target form, seed shape, budget, plateau,
     solver timeout, import and signature, seed present, seed fits, seed
     types, cvc5.
@@ -124,14 +128,15 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         command = parse_command(sys.argv[1:] if argv is None else argv)
         if isinstance(command, SweepCommand):
             return _sweep(command)
-        target, seed, limits = _checked(command, watch)
-        result = run(
-            target,
-            seed,
-            limits=limits,
-            isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
-            tell=Tell(report=_report, missed=_missed),
-        )
+        with interception(command.spec):
+            target, seed, limits = _checked(command, watch)
+            result = run(
+                target,
+                seed,
+                limits=limits,
+                isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
+                tell=Tell(report=_report, missed=_missed),
+            )
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
@@ -224,7 +229,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     sweep_parser = commands.add_parser("sweep", usage=SWEEP_USAGE)
     sweep_parser.add_argument("package", metavar="PACKAGE")
     sweep_parser.add_argument("--list", dest="list_only", action="store_true")
-    run_parser = commands.add_parser("run", usage=USAGE)
+    run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")
