@@ -197,14 +197,15 @@ def killed(pids: Path) -> None:
             os.kill(int(pid), signal.SIGKILL)
 
 
-def signaled(number: int, tmp_path: Path) -> tuple[int, list[str]]:
-    """How ``pyct sweep`` ended after signal ``number`` reached it while an import hangs, and
-    the lister's pid and its child's, which must be gone by then."""
+def signaled(numbers: list[int], tmp_path: Path, sighup: str = "DFL") -> tuple[int, list[str]]:
+    """How ``pyct sweep``, started with SIGHUP at ``SIG_<sighup>``, ended after each signal in
+    ``numbers`` reached it in turn while an import hangs, and the lister's pid and its
+    child's, which must be gone by then. A signal before the last must not end it."""
     pids = tmp_path / "pids"
     env = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
     env["SWEEP_PIDS_FILE"] = str(pids)
     sweep = subprocess.Popen(
-        [sys.executable, "-c", WITH_SIGHUP.format(action="DFL"), "-P", "-m", "pyct"]
+        [sys.executable, "-c", WITH_SIGHUP.format(action=sighup), "-P", "-m", "pyct"]
         + ["sweep", STALL, "--list"],
         cwd=REPO_ROOT,
         env=env,
@@ -215,7 +216,11 @@ def signaled(number: int, tmp_path: Path) -> tuple[int, list[str]]:
         while not (pids.exists() and pids.read_text().endswith("\n")):
             time.sleep(0.05)
         alive = pids.read_text().split()
-        sweep.send_signal(number)
+        for number in numbers[:-1]:
+            sweep.send_signal(number)
+            with pytest.raises(subprocess.TimeoutExpired):
+                sweep.wait(timeout=1)
+        sweep.send_signal(numbers[-1])
         ended = sweep.wait(timeout=20)
     finally:
         sweep.kill()
@@ -237,7 +242,7 @@ def _running(pid: int) -> bool:
 
 def test_a_sigterm_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
     # the command's process raises Stopped for it, and the listing stops its lister on the way
-    ended, lister = signaled(signal.SIGTERM, tmp_path)
+    ended, lister = signaled([signal.SIGTERM], tmp_path)
 
     assert ended == -signal.SIGTERM
     assert gone(lister)
@@ -245,10 +250,20 @@ def test_a_sigterm_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> 
 
 def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
     # a closing terminal sends SIGHUP; the lister leads its own session and never gets it
-    ended, lister = signaled(signal.SIGHUP, tmp_path)
+    ended, lister = signaled([signal.SIGHUP], tmp_path)
 
     # a shell reports it as exit 129
     assert ended == -signal.SIGHUP
+    assert gone(lister)
+
+
+def test_a_sweep_started_under_nohup_outlives_the_sighup_and_ends_on_a_sigterm(
+    tmp_path: Path,
+) -> None:
+    # the launcher passes the SIGHUP on, and the sweep, which got it ignored, goes on
+    ended, lister = signaled([signal.SIGHUP, signal.SIGTERM], tmp_path, sighup="IGN")
+
+    assert ended == -signal.SIGTERM
     assert gone(lister)
 
 
