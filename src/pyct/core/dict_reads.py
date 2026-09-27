@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterator
 
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import Branch, Downgrade, Expression, caller_site
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
@@ -59,7 +59,7 @@ def settled_as(key: object) -> object:
     return key
 
 
-def present(self: DictState, key: object, name: str) -> bool | None:
+def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
     """Whether the dict holds ``key``, recording the fork the first time the path asks.
 
     None when pyct does not follow this lookup, which the caller answers as Python does and
@@ -77,7 +77,15 @@ def present(self: DictState, key: object, name: str) -> bool | None:
     self.settled[known] = held
     given = self.shared.get(key) if type(key) in (str, int) else None
     written_given: Expression = None if given is None else ["given", given]
-    return forked(self.sink, ["in", written, self.expression], held, name, written_given)
+    fork = ["in", written, self.expression]
+    return recorded(self, Branch(fork, held, caller_site(), raising, name, written_given))
+
+
+def recorded(self: DictState, branch: Branch) -> bool:
+    """Record a fork that carries what the input keeps (see ``Branch.holds``), and answer with
+    the side it took."""
+    self.sink.append(branch)
+    return branch.taken
 
 
 def proven(self: DictState, key: object) -> bool:
@@ -122,20 +130,20 @@ def _copy(key: object) -> object:
     return key
 
 
-def found(self: DictState, key: object, name: str) -> bool:
+def found(self: DictState, key: object, name: str, *, raising: bool = False) -> bool:
     """Whether the dict holds ``key``, answered and recorded where pyct follows the lookup, and
     otherwise Python's answer, named ``name``: a key of another kind is Python's to hash."""
     if written_key(key) is None:
         answer = own(dict.__contains__, self, key)
         if self.expression is not None:
-            self.sink.append(Downgrade(name=name))
+            self.sink.append(Downgrade(name=name, site=caller_site()))
         return answer
     bare = plain(key)
     if not self.holds(name, bare):
         return dict.__contains__(self, bare)
-    answer = present(self, key, name)
+    answer = present(self, key, name, raising=raising)
     if answer is None:
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
         return dict.__contains__(self, bare)
     return answer
 
@@ -166,7 +174,7 @@ def looked_up(self: DictState, key: object, name: str, default: object = MISSING
     A key the dict does not hold raises KeyError where Python does, after its fork, or hands
     back the default.
     """
-    if not found(self, key, name):
+    if not found(self, key, name, raising=default is MISSING):
         if default is MISSING:
             return own(dict.__getitem__, self, plain(key))
         return default
@@ -253,7 +261,10 @@ def _walked(
         if not self.holds(name, *(() if key is MISSING else (key,))):
             break
         pin = None if key is MISSING else placed(self, key, end)
-        if not forked(self.sink, [">", self.size_term(), at], key is not MISSING, name, pin):
+        fork = Branch(
+            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, pin
+        )
+        if not recorded(self, fork):
             return
         handout(self, key, pin)
         yield pick(self, key)

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade
+from pyct.core.branch import Branch, Downgrade, caller_site
 from pyct.core.dict_reads import (
     POPPED,
     found,
@@ -26,6 +26,7 @@ from pyct.core.dict_reads import (
     is_tracked,
     placed,
     present,
+    recorded,
     value,
     written_key,
 )
@@ -34,7 +35,7 @@ from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
-from pyct.core.values import forked, own
+from pyct.core.values import own
 
 # the values an expression holds as they are, tracked or plain: JSON reads each back
 _HELD: tuple[type, ...] = (
@@ -90,7 +91,7 @@ def as_python(
     held = own(dict.__contains__, self, bare)
     answer = own(change)
     if not named:
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
         self.settled.setdefault(bare, held)
     return answer
@@ -133,7 +134,7 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     if written_key(key) is None:
         return _removed_as_python(self, key, name, default)
     named = looked_up_as_python(self, key)
-    if not found(self, key, name):
+    if not found(self, key, name, raising=not default):
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
     bare = plain(key)
@@ -163,7 +164,10 @@ def last_item(self: DictState) -> tuple[object, object]:
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
     pin = None if key is MISSING else placed(self, key, POPPED)
-    if not forked(self.sink, ["!=", self.size_term(), 0], key is not MISSING, "popitem", pin):
+    fork = Branch(
+        ["!=", self.size_term(), 0], key is not MISSING, caller_site(), True, "popitem", pin
+    )
+    if not recorded(self, fork):
         return own(dict.popitem, self)
     if not self.holds("popitem", key):
         return own(dict.popitem, self)

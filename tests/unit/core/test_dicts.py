@@ -278,3 +278,28 @@ def test_a_tracked_key_into_a_changed_dict_is_python_s_answer() -> None:
     assert config[name] == 1 and type(config[name]) is ConcolicInt
 
     assert downgrades(sink) == ["__contains__", "__getitem__", "__getitem__"]
+
+
+# see-why: a fork taken before KeyError is marked as the lookup's that may raise; a lookup with
+# a default, a test with `in` and a walk raise nothing
+RAISING: dict[str, tuple[Callable[[Any], object], bool]] = {
+    "index": (lambda d: d["a"], True),
+    "del": (lambda d: d.__delitem__("a"), True),
+    "pop": (lambda d: d.pop("a"), True),
+    "popitem": (lambda d: d.popitem(), True),
+    "get": (lambda d: d.get("a"), False),
+    "pop with a default": (lambda d: d.pop("a", 0), False),
+    "in": (lambda d: "a" in d, False),
+    "walk": (lambda d: list(d), False),
+}
+
+
+@pytest.mark.parametrize("program", RAISING, ids=list(RAISING))
+def test_marks_a_fork_before_key_error_as_raising(program: str) -> None:
+    config, sink = tracked({"a": 1})
+    run, raising = RAISING[program]
+
+    run(config)
+
+    marked = [item.raising for item in sink if isinstance(item, Branch)]
+    assert marked and marked[0] is raising and not any(marked[1:])

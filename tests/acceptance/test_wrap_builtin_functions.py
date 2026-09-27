@@ -7,7 +7,14 @@ the command line proves the binding holds where the target runs.
 
 import re
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    downgrade,
+    first_line,
+    input_lines,
+    run_pyct,
+    summary_line,
+)
 from tests.acceptance.test_bools import expressions, failure_of, sides
 from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_strs import text
@@ -156,7 +163,7 @@ def test_names_the_loss_through_the_builtins_module() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__len__", 1, "targets/intercept/builtins_len.py:5:7")]
     assert seed["forks"] == []
 
 
@@ -167,7 +174,7 @@ def test_leaves_other_packages_as_written() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__len__", 1, "targets/scope/measure/length.py:2:7")]
     assert seed["forks"] == []
 
 

@@ -1,9 +1,9 @@
 """Every path a run has taken, and the fork it aims at next."""
 
-from collections import deque
+from collections import Counter, deque
 
 from pyct.branches.plan import Plan, plan
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, ForkSite, Site
 
 # what tells one fork from another: the id of the fork before it, -1 at the root, then its own site
 type ForkKey = tuple[int, Site]
@@ -43,7 +43,9 @@ class Tree:
         self._ids: dict[tuple[int, Site, bool], int] = {}
         self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
-        self._sides: set[tuple[Site, bool]] = set()
+        # each side taken: its site, whether it is an operation's fork before a raise, and the
+        # side; a plain tuple, so a fork adds no object of its own
+        self._sides: set[tuple[Site, bool, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
         # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
         # forks sit together, so after a pick the rest of its path leads the queue. A side taken
@@ -72,7 +74,7 @@ class Tree:
             key = (parent, fork.site)
             parent = self._ids.setdefault((parent, fork.site, fork.taken), len(self._ids))
             keys.append(key)
-            self._sides.add((fork.site, fork.taken))
+            self._sides.add((fork.site, fork.raising, fork.taken))
         index = len(self._paths)
         self._paths.append((forks, tuple(keys)))
         self._new.extend(
@@ -200,8 +202,29 @@ class Tree:
         return depth
 
     def _new_side(self, fork: Branch) -> bool:
-        """Whether no input took the other side of this fork's site, whatever came before it."""
-        return (fork.site, not fork.taken) not in self._sides
+        """Whether no input took the other side of this fork's site, whatever came before it.
+
+        A site is told apart from an operation's fork at the same column, as an
+        index's in ``if s[0] == "q":``, so one never makes the other's side old.
+        """
+        return (fork.site, fork.raising, not fork.taken) not in self._sides
+
+    def untried(self) -> dict[ForkSite, int]:
+        """How many forks at each site are still open: no input aimed at them, no other side ran.
+
+        A fork that paths share is one fork, counted once. It is read when
+        the run stops, so a run that stopped early can say which forks it
+        never tried.
+        """
+        still_open = {
+            key: fork
+            for forks, keys in self._paths
+            for fork, key in zip(forks, keys, strict=True)
+            if self._open(key, fork.taken)
+        }
+        # counted by site and kind, so a site's ForkSite is made once, not once a fork
+        counts = Counter((fork.site, fork.raising) for fork in still_open.values())
+        return {ForkSite(site, raising): count for (site, raising), count in counts.items()}
 
     def _open(self, key: ForkKey, taken: bool) -> bool:
         """A fork no input aimed at, whose other side no input ran."""

@@ -1,12 +1,12 @@
 """The JSON lines other tools read from stdout: one per input, then one for the run."""
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import printed_forks
+from pyct.results.printed import PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -16,17 +16,16 @@ from pyct.results.record import (
     RunResult,
     SolverCounts,
 )
+from pyct.results.why_render import why_json
 
 
-def render(
-    record: InputRecord, coverage: Coverage, printed: Sequence[Expression] | None = None
-) -> str:
+def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None = None) -> str:
     """One line, no newline inside; line numbers sorted so the text is stable.
 
     ``printed`` is each fork's expression as `printed_forks` cut it, for a
     caller that cut them once for this line and the trace alike.
     """
-    expressions = printed_forks(record.forks) if printed is None else printed
+    expressions = (printed_forks(record.forks) if printed is None else printed).expressions
     payload = {
         "args": record.args,
         "forks": [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)],
@@ -57,6 +56,7 @@ def render_summary(result: RunResult) -> str:
         "covered": _numbers(result.coverage.covered),
         "total": dict(result.coverage.total),
         "uncovered": _numbers(result.coverage.uncovered),
+        "why_uncovered": [why_json(entry) for entry in result.why_uncovered],
         "environment": _environment(result.environment),
     }
     return json.dumps(payload)
@@ -110,8 +110,15 @@ def _aim(aim: Aim | None) -> dict[str, object] | None:
 
 
 def _downgrade(entry: DowngradeCount) -> dict[str, object]:
-    """One method or dunder that dropped the condition, and how many calls in a row did."""
-    return {"name": entry.name, "count": entry.count}
+    """One method or dunder that dropped the condition, how many calls in a row did, and where."""
+    site = entry.site
+    return {
+        "name": entry.name,
+        "count": entry.count,
+        "file": site.file,
+        "line": site.line,
+        "col": site.col,
+    }
 
 
 def _failure(failure: Failure | None) -> dict[str, str] | None:

@@ -6,10 +6,17 @@ they reach the tree and the solver's answers run, so only a real run through the
 proves it.
 """
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    downgrade,
+    first_line,
+    input_lines,
+    run_pyct,
+    summary_line,
+)
 from tests.acceptance.test_loops import covers
 from tests.acceptance.test_strs import forks_of, number, text
-from tests.acceptance.test_substitute_conversions import downgrade_names, forks_taken
+from tests.acceptance.test_substitute_conversions import forks_taken
 
 RANGES = REPO_ROOT / "targets" / "ranges"
 
@@ -168,7 +175,12 @@ def test_downgrades_an_untaught_range_operation() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert downgrade_names(seed) == [("__len__", 1), ("__getitem__", 1), ("__reversed__", 1)]
+    at = "targets/ranges/untaught.py"
+    assert seed["downgrades"] == [
+        downgrade("__len__", 1, f"{at}:3:4"),
+        downgrade("__getitem__", 1, f"{at}:4:4"),
+        downgrade("__reversed__", 1, f"{at}:5:4"),
+    ]
     assert at_lines(seed) == [
         (7, [">", "n", 0], True),
         (7, [">", "n", 1], True),

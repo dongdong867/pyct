@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Self
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Downgrade, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -148,13 +148,13 @@ class ListState(list):
             return False
         if self.current(*positions):
             return True
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
         return False
 
     def lose(self, name: str) -> None:
         """The list turns plain, and the line names the operation that lost it."""
         self.turn_plain()
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
 
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the items the arguments put here.

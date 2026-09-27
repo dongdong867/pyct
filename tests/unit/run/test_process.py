@@ -29,12 +29,14 @@ from pyct.run.process import (
 )
 from tests.unit.another_thread import another_thread
 
+SITE = Site(file="t.py", line=3, col=7)
+
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="t.py", line=2, col=7))
 RAISED = Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: x")
 FACTS = Reading(
     lines=frozenset({2, 3}),
     branches=(FORK,),
-    downgrades=(DowngradeCount(name="__abs__", count=2),),
+    downgrades=(DowngradeCount(name="__abs__", count=2, site=SITE),),
     started=True,
 )
 NOT_ENDED = FACTS

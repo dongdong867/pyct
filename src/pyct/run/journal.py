@@ -25,11 +25,13 @@ kind) and its payload, padded to 8 bytes:
   in many places, and a loop that doubles a value doubles the expression
   written out on every pass, so each list is written once, however many
   places hold it, and read back as one list in all of them.
-- fork: JSON ``[expression, taken, file, line, col]``, the expression a
-  leaf or ``[n]``, and a sixth item for a fork that carries what the input
-  keeps once it went this way (``Branch.holds``), written the same way.
-- downgrade: a native u64 count, then the name. A repeat of the last
-  entry rewrites its count in place.
+- fork: JSON ``[expression, taken, file, line, col, raising]``, the
+  expression a leaf or ``[n]``, and a seventh item for a fork that carries
+  what the input keeps once it went this way (``Branch.holds``), written the
+  same way.
+- downgrade: a native u64 count, the site's line and column as two i64,
+  then the name and the site's file, a NUL between them. A repeat of the
+  last entry rewrites its count in place.
 - carry-on: the same, for a count past 1 the writer could not grow in place,
   because the alarm cut its note of the last entry short. The reader joins
   it to the entry before when that one has its name.
@@ -89,6 +91,8 @@ RECORDS = _NOTE_AT + _NOTE_SIZE
 
 _HEAD = struct.Struct("<IB3x")
 _NUMBER = struct.Struct("<q")
+# a downgrade's count, then its site's line and column
+_COUNTED = struct.Struct("=Qqq")
 
 _LINE, _PART, _FORK, _DOWNGRADE, _END, _START, _CARRY_ON = 1, 2, 3, 4, 5, 6, 7
 _OPEN, _FULL, _UNENCODABLE = 0, 1, 2
@@ -110,9 +114,9 @@ class JournalWriter:
         self._words = memoryview(buffer)[: len(buffer) // _WORD.size * _WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
-        # where the last downgrade entry's count sits, and the name it counts
+        # where the last downgrade entry's count sits, and the name and site it counts
         self._count_at: int | None = None
-        self._count_name: str | None = None
+        self._counting: tuple[str, Site] | None = None
         # each list already written, by identity, with the list itself so its id stays its own
         self._parts: dict[int, tuple[int, list[Expression]]] = {}
         self._next_part = 0
@@ -122,10 +126,10 @@ class JournalWriter:
         site = branch.site
         try:
             expression = self._written(branch.expression)
-            written = [expression, branch.taken, site.file, site.line, site.col]
+            fork = [expression, branch.taken, site.file, site.line, site.col, branch.raising]
             if branch.holds is not None:
-                written.append(self._written(branch.holds))
-            self._json(_FORK, written)
+                fork.append(self._written(branch.holds))
+            self._json(_FORK, fork)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:
             self._stop(_UNENCODABLE, f"could not keep a fork the input took: {error}")
@@ -138,18 +142,19 @@ class JournalWriter:
         """Write a line the call reached for the first time."""
         self._record(_LINE, _NUMBER.pack(number))
 
-    def downgrade(self, name: str, count: int) -> None:
-        """Grow the last entry in place when it counts ``name``, or write a new entry."""
-        if count > 1 and self._count_name == name and self._count_at is not None:
+    def downgrade(self, name: str, site: Site, count: int) -> None:
+        """Grow the last entry in place when it counts ``name`` at ``site``, or write a new one."""
+        if count > 1 and self._counting == (name, site) and self._count_at is not None:
             if self._open:
                 self._words[self._count_at // _WORD.size] = count
             return
-        self._count_name = None
+        self._counting = None
         at = self._at
         kind = _DOWNGRADE if count == 1 else _CARRY_ON
-        if self._record(kind, _WORD.pack(count) + name.encode()):
+        head = _COUNTED.pack(count, site.line, site.col)
+        if self._record(kind, head + f"{name}\0{site.file}".encode(errors="surrogatepass")):
             self._count_at = at + _HEAD.size
-            self._count_name = name
+            self._counting = (name, site)
 
     def end(self, failure: Failure | None) -> None:
         """Write how the call ended. The reader takes it as the input's own ending."""
@@ -359,23 +364,35 @@ class _Facts:
         record's kind. A new entry after a lost one of another name is a plain
         downgrade record, and stays its own however far it grows.
         """
-        (count,) = _WORD.unpack_from(payload)
-        entry = DowngradeCount(payload[_WORD.size :].decode(), count)
-        if carries_on and self.downgrades and self.downgrades[-1].name == entry.name:
+        count, line, col = _COUNTED.unpack_from(payload)
+        name, file = payload[_COUNTED.size :].decode(errors="surrogatepass").split("\0")
+        entry = DowngradeCount(name, count, Site(file=file, line=line, col=col))
+        last = self.downgrades[-1] if self.downgrades else None
+        if carries_on and last is not None and (last.name, last.site) == (name, entry.site):
             self.downgrades[-1] = entry
         else:
             self.downgrades.append(entry)
 
     def _fork(self, value: object) -> Branch:
         match value:
-            case [expression, bool() as taken, str() as file, int() as line, int() as col, *kept]:
+            case [
+                expression,
+                bool() as taken,
+                str() as file,
+                int() as line,
+                int() as col,
+                bool() as raising,
+                *kept,
+            ]:
                 if len(kept) > 1:
                     raise ValueError("a fork carries at most one fact beside it")
                 site = Site(file=file, line=line, col=col)
                 holds = self._expression(kept[0]) if kept else None
                 expression = self._expression(expression)
-                return Branch(expression=expression, taken=taken, site=site, holds=holds)
-        raise ValueError("a fork is [expression, taken, file, line, col] and what it keeps")
+                return Branch(expression, taken, site, raising=raising, holds=holds)
+        raise ValueError(
+            "a fork is [expression, taken, file, line, col, raising] and what it keeps"
+        )
 
     def _expression(self, value: object) -> Expression:
         """A leaf, or the one list a part number stands for, shared wherever it is named."""

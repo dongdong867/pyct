@@ -11,6 +11,7 @@ from pathlib import Path
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     hanging_cvc5,
     input_lines,
@@ -240,7 +241,7 @@ def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() 
     # nothing to its line
     seed = first_line(result.stdout)
     assert seed["forks"] == []
-    assert seed["downgrades"] == [{"name": "rsplit", "count": 1}]
+    assert seed["downgrades"] == [downgrade("rsplit", 1, "targets/strs/tracked_rsplit.py:2:12")]
 
 
 # beside follow-strings-follows-the-split-family: an rsplit with a limit of 2,000

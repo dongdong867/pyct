@@ -8,6 +8,7 @@ accepted file reads that file.
 """
 
 import json
+import re
 
 import pytest
 
@@ -316,7 +317,8 @@ def test_follows_a_value_nested_past_the_recursion_limit() -> None:
 
     # each lookup records whether its key is there, and a line whose dict the solver emptied
     # raises there and covers nothing new, so the run ends when inputs stop covering lines.
-    # Each line prints its 2,000 forks, each cut at the node cap, which takes seconds a line
+    # Each access counts a node a step, so a line prints its forks until they fill the line's
+    # budget, and each later fork, `node > 5` last, as one cut part
     result = run_pyct(DEEP, json.dumps({"config": seed}), "--plateau", "1", timeout=90)
 
     assert result.returncode == 0, result.stderr[-2000:]
@@ -327,7 +329,10 @@ def test_follows_a_value_nested_past_the_recursion_limit() -> None:
         assert isinstance(node, dict)
         node = node["a"]
     assert isinstance(node, int) and node > 5 and lines[1]["failure"] is None
-    assert "config" + "['a']" * DEPTH + " > 5" in result.stderr
+    trace = result.stderr.split("\ncovered ")[0]
+    cut = re.search(r"cut the expressions of (\d+) forks, from position (\d+) on", trace)
+    assert cut is not None and int(cut[1]) + int(cut[2]) == DEPTH + 1, trace[-2000:]
+    assert trace.splitlines()[-2].endswith("deep.py:5:7  ...(3 nodes)  not taken")
 
 
 # a parameter named as one of the solver's own words, or past ASCII, is a leaf like any other

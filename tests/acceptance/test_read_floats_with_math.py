@@ -7,11 +7,11 @@ package as Python imports it, so only a run through the command line proves it.
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, input_lines, run_pyct
 from tests.acceptance.test_bools import sides
 from tests.acceptance.test_floats import expressions, failure_of, real, taken
 from tests.acceptance.test_ints import argument, forks_of
-from tests.acceptance.test_substitute_conversions import downgrade_names, no_line_lists
+from tests.acceptance.test_substitute_conversions import no_line_lists
 
 FLOATS = REPO_ROOT / "targets" / "floats"
 READS = "targets.floats.math_reads::read"
@@ -81,7 +81,12 @@ def test_downgrades_an_untaught_math_function() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert downgrade_names(seed) == [("exp", 1), ("log", 1), ("gcd", 1)]
+    at = "targets/floats/math_untaught.py"
+    assert seed["downgrades"] == [
+        downgrade("exp", 1, f"{at}:5:4"),
+        downgrade("log", 1, f"{at}:6:4"),
+        downgrade("gcd", 1, f"{at}:7:4"),
+    ]
     assert expressions(seed) == [[">", "x", 0.0]]
 
 

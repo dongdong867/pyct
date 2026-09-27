@@ -16,7 +16,7 @@ from typing import Any
 
 from pyct.core import dict_changes as changes
 from pyct.core import dict_reads as reads
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.list_compares import matches
@@ -176,14 +176,14 @@ def _size(self: DictState) -> int:
     it is a downgrade, but for the size a walk just started asks for (see `reads.hinted`). A
     `len(config)` in the target's package asks pyct's own `len`, which gives the size term."""
     if self.expression is not None and not reads.hinted(self):
-        self.sink.append(Downgrade(name="__len__"))
+        self.sink.append(Downgrade(name="__len__", site=caller_site()))
     return self.size()
 
 
 def _pickled(self: DictState, protocol: object) -> object:
     """A pickle of a tracked dict holds the plain dict: pickle-holds-the-plain-value."""
     if self.expression is not None:
-        self.sink.append(Downgrade(name="__reduce_ex__"))
+        self.sink.append(Downgrade(name="__reduce_ex__", site=caller_site()))
     return (dict, ({key: plain(value) for key, value in dict.items(self)},))
 
 

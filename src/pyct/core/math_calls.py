@@ -38,7 +38,7 @@ from typing import Any, cast
 
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Downgrade, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -106,7 +106,7 @@ def _all_read(args: tuple[object, ...], count: int) -> list[Read] | None:
 
 def _not_negative(sink: BranchSink, expression: Expression, value: float) -> None:
     """The fork `sqrt` takes before it runs, taken true when it does not raise, NaN included."""
-    forked(sink, ["not", ["<", expression, 0.0]], not value < 0.0)
+    forked(sink, ["not", ["<", expression, 0.0]], not value < 0.0, raising=True)
 
 
 def _followed(
@@ -188,7 +188,7 @@ def _tracked_call(
             return answer
     plain_args = [_plain(arg) for arg in args]
     answer = own(function, *plain_args, **{key: _plain(value) for key, value in kwargs.items()})
-    sink.append(Downgrade(name=function.__name__))
+    sink.append(Downgrade(name=function.__name__, site=caller_site()))
     return answer
 
 

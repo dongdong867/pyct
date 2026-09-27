@@ -3,13 +3,13 @@
 import json
 import keyword
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from typing import TypeGuard
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import CUT, printed_forks
+from pyct.results.printed import CUT, LINE_LIMIT, PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -19,19 +19,21 @@ from pyct.results.record import (
     SolverCounts,
     Stop,
 )
+from pyct.results.why_render import why_line
 
 
 def render_trace(
-    record: InputRecord, coverage: Coverage, printed: Sequence[Expression] | None = None
+    record: InputRecord, coverage: Coverage, printed: PrintedForks | None = None
 ) -> str:
     """One fact per line, each line ending in a newline: head, forks, coverage, end, losses.
 
     ``printed`` is each fork's expression as `printed_forks` cut it, for a
     caller that cut them once for the trace and the stdout line alike.
     """
-    expressions = printed_forks(record.forks) if printed is None else printed
+    shown = printed_forks(record.forks) if printed is None else printed
     lines = _head(record)
-    lines += [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)]
+    lines += [_fork(*pair) for pair in zip(record.forks, shown.expressions, strict=True)]
+    lines += _cut_forks(len(record.forks), shown.cut_from)
     lines += _coverage(coverage)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
@@ -71,6 +73,7 @@ def _summary(result: RunResult) -> list[str]:
     coverage = result.coverage
     lines = [*_coverage(coverage), _solver(result.solver)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
+    lines += [why_line(entry) for entry in result.why_uncovered]
     return lines
 
 
@@ -136,14 +139,25 @@ def _aim(aim: Aim) -> str:
 
 
 def _downgrade(entry: DowngradeCount) -> str:
-    """One call is its bare name; a run of them carries how many."""
-    return entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    """One call is its bare name; a run of them carries how many. Either says where."""
+    counted = entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    return f"{counted} at {_site(entry.site)}"
 
 
 def _fork(branch: Branch, expression: Expression) -> str:
     """Where it forked, what it tested, cut to the cap as the stdout line cuts it, and the side."""
     side = "taken" if branch.taken else "not taken"
     return f"fork {_site(branch.site)}  {_infix(expression)}  {side}"
+
+
+def _cut_forks(forks: int, cut_from: int | None) -> list[str]:
+    """Which forks the line cut to one part each, past its budget. A line within it says none."""
+    if cut_from is None:
+        return []
+    return [
+        f"cut the expressions of {forks - cut_from} forks, from position {cut_from} on,"
+        f" past the line's {LINE_LIMIT:,} nodes"
+    ]
 
 
 def _site(site: Site) -> str:
@@ -196,6 +210,8 @@ def _infix(expression: Expression) -> str:
     written after its operands, on a stack of its own rather than Python's,
     so a condition nested past Python's recursion limit is written too.
     """
+    if isinstance(expression, list) and expression[0] == CUT:
+        return _cut_part(expression[1])
     written: list[_Text] = []
     stack: list[tuple[Expression, bool]] = [(expression, False)]
     while stack:
@@ -317,7 +333,7 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "[,]":
         return f"[{', '.join(texts)}]"
     if head == CUT:
-        return f"...({'?' if expression[1] is None else texts[0]} nodes)"
+        return _cut_part(expression[1])
     if head == "()":
         return f"({texts[0]},)" if len(texts) == 1 else f"({', '.join(texts)})"
     if head == "[]" or head == "[:]":
@@ -329,6 +345,11 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head in _FUNCTIONS:
         return f"{_FUNCTIONS[head]}({', '.join(_arguments(head, texts))})"
     return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
+
+
+def _cut_part(count: Expression) -> str:
+    """A part cut from a long expression, with how many nodes it holds, ``?`` when uncounted."""
+    return f"...({'?' if count is None else count} nodes)"
 
 
 def _arguments(head: str, texts: list[str]) -> list[str]:

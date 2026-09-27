@@ -4,6 +4,7 @@ before it may raise, and the forms left to str as a downgrade."""
 import operator
 import sys
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -157,7 +158,7 @@ def test_an_index_records_whether_s_is_long_enough_before_it_indexes(
 
     result = _probe()(_tracked(sink=sink), index)
 
-    assert sink == [Branch(expression=fork, taken=taken, site=Site("<probe>", 2, 11))]
+    assert sink == [Branch(expression=fork, taken=taken, site=Site("<probe>", 2, 11), raising=True)]
     assert isinstance(result, ConcolicStr)
     assert result.expression == ["[]", "s", int(index)]
     assert str.__eq__(result, "abcb"[index]) is True
@@ -178,7 +179,7 @@ def test_an_index_past_the_end_records_its_fork_not_taken_and_raises_as_the_targ
 
     # the fork went in before str's own index raised, so the raising input's line lists it
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=fork, taken=False, site=Site("<probe>", 2, 11))]
+    assert sink == [Branch(expression=fork, taken=False, site=Site("<probe>", 2, 11), raising=True)]
 
 
 def test_the_empty_string_has_no_index_at_all() -> None:
@@ -236,7 +237,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
     # tracked int or bool as a position without asking it anything, so it records nothing
     assert result == call("abcb", 1)
     assert not isinstance(result, ConcolicStr | ConcolicBool)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
@@ -249,7 +250,7 @@ def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
     # every character, and a tracked old string may be empty
     assert result == "axcx"
     assert not isinstance(result, ConcolicStr)
-    assert sink == [Downgrade(name="replace")]
+    assert sink == [Downgrade(name="replace", site=ANY)]
 
 
 # a piece given what str refuses: the call, and the error str raises for it

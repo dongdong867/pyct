@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Self
 
-from pyct.core.branch import BranchSink, Downgrade, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.list_state import plain
 
 # what a key maps to where the dict holds no such key: apart from every value a dict holds
@@ -108,13 +108,13 @@ class DictState(dict):
             return False
         if self.current(*keys):
             return True
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
         return False
 
     def lose(self, name: str) -> None:
         """The dict turns plain, and the line names the operation that lost it."""
         self.turn_plain()
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
 
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the values the argument put here.

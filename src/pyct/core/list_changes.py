@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.values import own
+from pyct.core.values import forked, own
 
 # one change, made the same way on the items and on the shadow
 type Change = Callable[[list[object]], object]
@@ -186,7 +186,8 @@ def _pops(self: ListState, key: object, given: bool) -> bool:
     """The fork a pop records before Python may raise: not empty, or the index in range."""
     if given:
         return in_range(self, key, "pop")
-    return bool(self)
+    measured: Expression = ["!=", ["len", self.expression], 0]
+    return forked(self.sink, measured, self.length() != 0, "pop", raising=True)
 
 
 def remove(self: ListState, value: object, found: int | None) -> None:

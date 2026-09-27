@@ -1,15 +1,17 @@
 """What substituted code calls: each router's answer, and the fork it records, on tracked values."""
 
+from unittest.mock import ANY
+
 import pytest
 
 from pyct.core import bound
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_in
+from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_in, truth
 
 
 def expressions(sink: list[SinkItem]) -> list[object]:
@@ -127,10 +129,19 @@ def test_a_tracked_string_in_a_plain_one_carries_the_plain_one_as_a_literal() ->
 def test_a_tracked_string_in_a_plain_one_the_solver_cannot_hold_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr.made("b", expression="s", sink=sink)
+    # substituted code as the target's module holds it: each router called where the `in` was
+    namespace: dict[str, object] = {"in_": in_, "not_in": not_in}
+    source = 'def look(s):\n    return in_(s, "ab\\U00030000"), not_in(s, "ab\\U00030000")\n'
+    exec(compile(source, "<looked>", "exec"), namespace)
+    look = namespace["look"]
+    assert callable(look)
 
-    assert in_(s, "ab\U00030000") is True
-    assert not_in(s, "ab\U00030000") is False
-    assert sink == [Downgrade(name="__contains__"), Downgrade(name="__contains__")]
+    assert look(s) == (True, False)
+    # each downgrade names the target's call, not the router it went through
+    assert sink == [
+        Downgrade(name="__contains__", site=Site(file="<looked>", line=2, col=11)),
+        Downgrade(name="__contains__", site=Site(file="<looked>", line=2, col=35)),
+    ]
 
 
 def test_a_tracked_value_in_a_literal_display_is_searched_for_in_the_order_written() -> None:
@@ -323,7 +334,7 @@ def test_a_str_literal_s_method_in_a_form_pyct_does_not_teach_is_a_downgrade() -
     s = ConcolicStr.made("a", expression="s", sink=sink)
 
     assert method("abab".replace, s, "x", 2) == "xbxb"
-    assert sink == [Downgrade(name="replace")]
+    assert sink == [Downgrade(name="replace", site=ANY)]
 
 
 def test_a_keyword_call_is_the_method_s_own_and_a_downgrade() -> None:
@@ -331,7 +342,7 @@ def test_a_keyword_call_is_the_method_s_own_and_a_downgrade() -> None:
     s = ConcolicStr.made(",", expression="s", sink=sink)
 
     assert method("a,b".split, sep=s) == ["a", "b"]
-    assert sink == [Downgrade(name="split")]
+    assert sink == [Downgrade(name="split", site=ANY)]
 
 
 def test_a_keyword_call_the_method_refuses_raises_in_python_s_own_words() -> None:
@@ -352,7 +363,7 @@ def test_a_literal_past_what_cvc5_holds_is_python_s_answer_and_a_downgrade() -> 
     s = ConcolicStr.made("b", expression="s", sink=sink)
 
     assert method("\U00030000b".find, s) == 1
-    assert sink == [Downgrade(name="find")]
+    assert sink == [Downgrade(name="find", site=ANY)]
 
 
 def test_a_str_literal_s_index_records_its_in_fork_before_it_raises() -> None:
@@ -376,11 +387,37 @@ def test_any_other_method_call_is_the_method_s_own() -> None:
     assert sink == []
 
 
+@pytest.mark.parametrize("value", [True, False])
+def test_a_tracked_bool_a_bool_method_returns_is_tested_and_comes_back_a_real_bool(
+    value: bool,
+) -> None:
+    sink: list[SinkItem] = []
+
+    result = truth(tracked_bool(value, sink))
+
+    assert result is value
+    # its fork is recorded where the `return` runs, as `if b:` there records it
+    assert expressions(sink) == [([">", "x", 5], value)]
+
+
+def test_a_tracked_int_a_bool_method_returns_passes_through_untested() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt.made(1, expression="x", sink=sink)
+
+    assert truth(x) is x
+    assert sink == []
+
+
+@pytest.mark.parametrize("value", [True, False, 1, 0, None, "", [1], object()])
+def test_any_plain_value_a_bool_method_returns_passes_through(value: object) -> None:
+    assert truth(value) is value
+
+
 # the routers blame reads through: the substitutes', the handed operand's, the bound builtins'
 # and the conversions'
 _ROUTERS = {"is_", "is_not", "in_", "not_in", "call", "method", "_on_text", "_tracked_in"}
 _ROUTERS |= {"handed", "answer", "len", "ord", "chr", "_routed", "int_", "float_", "bool_"}
-_ROUTERS |= {"map_", "range_", "type_", "itself"}
+_ROUTERS |= {"map_", "range_", "type_", "itself", "truth"}
 
 
 def test_the_passing_frames_are_the_routers() -> None:

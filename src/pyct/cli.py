@@ -232,12 +232,16 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read.
 
     Both print each fork's expression cut to the cap, and it is cut once for both.
-    An access to one of the input's values is a name, written whole.
+    An access to one of the input's values is a name, written whole. A seed with
+    no value inside an argument has no access to name, and no part is asked.
     """
     names = leaves(record.args)
-    # each part's access, once: a path through a deep dict names every step of its chain
-    known: dict[int, str | None] = {}
-    printed = printed_forks(record.forks, lambda part: access_name(part, known) in names)
+    if names.keys() <= record.args.keys():
+        printed = printed_forks(record.forks)
+    else:
+        # each part's access, once: a path through a deep dict names every step of its chain
+        known: dict[int, str | None] = {}
+        printed = printed_forks(record.forks, lambda part: access_name(part, known) in names)
     print(render_trace(record, coverage, printed), end="", file=sys.stderr, flush=True)
     _line(render(record, coverage, printed))
 

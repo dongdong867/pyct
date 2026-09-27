@@ -6,11 +6,12 @@ downgrades derived for what a type has not taught.
 
 from __future__ import annotations
 
+import sys
 import types
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site, lost_at
 
 # the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
@@ -39,12 +40,18 @@ def raised_by_target(error: BaseException) -> bool:
     return getattr(error, _TARGET_RAISE, False) is True
 
 
+# set while pyct tests a value for truth on its way into an operation that may raise, so the
+# fork that test records is marked as that operation's
+_BEFORE_A_RAISE = [False]
+
+
 def forked(
     sink: BranchSink,
     expression: Expression,
     taken: bool,
     name: str = "__bool__",
-    holds: Expression = None,
+    *,
+    raising: bool = False,
 ) -> bool:
     """Record the fork a truth test just took, and answer with the side it took.
 
@@ -52,11 +59,25 @@ def forked(
     answer with a value that carries the condition; the condition goes to the
     sink here instead. One helper, so every type records it the same way.
     ``name`` is the operation that took it: a truth test, or a list's walk or index.
-    ``holds`` is what the input keeps once the fork went this way (see ``Branch``).
+    ``raising`` marks a fork taken before an operation that may raise.
     """
-    site = caller_site()
-    sink.append(Branch(expression=expression, taken=taken, site=site, lost_as=name, holds=holds))
+    marked = raising or _BEFORE_A_RAISE[0]
+    branch = Branch(expression, taken, caller_site(), raising=marked, lost_as=name)
+    sink.append(branch)
     return taken
+
+
+def before_a_raise(test: Callable[[], object]) -> None:
+    """Run ``test``, whose truth test is the fork an operation takes before it may raise.
+
+    The truth test goes through each type's own ``__bool__``, which records
+    the fork as any truth test does; this marks it as the operation's.
+    """
+    try:
+        _BEFORE_A_RAISE[0] = True
+        test()
+    finally:
+        _BEFORE_A_RAISE[0] = False
 
 
 def copy_as_itself[T](value: T, memo: object = None) -> T:
@@ -133,7 +154,8 @@ def downgraded(
         result = own(operation, self, *args, **kwargs)
         if result is NotImplemented:
             return result
-        self.sink.append(Downgrade(name=name))
+        # the call's own caller is where the walk for the site starts
+        self.sink.append(lost_at(name, sys._getframe(1)))
         return own(plain, self, base) if result is self else result
 
     return downgrade
@@ -169,7 +191,7 @@ def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]
 
 def _written(value: _Sinked, held: object, name: str) -> Pickled:
     """Record writing a pickle as a downgrade, and answer with its plain value and type."""
-    value.sink.append(Downgrade(name=name))
+    value.sink.append(Downgrade(name=name, site=caller_site()))
     return type(held), (held,)
 
 
