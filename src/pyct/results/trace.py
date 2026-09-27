@@ -168,7 +168,8 @@ _COMPARES = 1
 _UNARY = 8
 _POWER = 9
 # a name, a literal that is not negative, and a part Python writes around its operands stand
-# bare wherever they sit, as a receiver and as the base of `**` too
+# bare as any operand and as the base of `**`. Core puts a tracked value's expression where a
+# method's receiver goes, never a literal, which Python would not read after a bare int
 _ALONE = 10
 _BINARY: Mapping[str, int] = {
     **dict.fromkeys(("in", "not in", "is", "is not", "<", "<=", ">", ">=", "==", "!="), _COMPARES),
@@ -303,8 +304,9 @@ def _operand(written: _Text, least: int) -> str:
     """An operand, in parentheses unless it binds at least as tightly as its place needs.
 
     Only a name, a non-negative literal, and a condition Python writes around
-    its operands, ``s[0]`` or ``a.name(b)``, stand bare as a receiver or as
-    the base of ``**``.
+    its operands, ``s[0]`` or ``a.name(b)``, stand bare as the base of
+    ``**``. Only a name and such a condition stand bare as a receiver, which
+    is all core puts there.
     """
     text, binding = written
     return text if binding >= least else f"({text})"
