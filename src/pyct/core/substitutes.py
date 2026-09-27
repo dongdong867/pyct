@@ -15,15 +15,16 @@ a chained compare, where each operand is evaluated once on Python's stack,
 the link keeps Python's own `in` and searches a container of this module's,
 `Searched` or `Identity`, which asks the same functions.
 
-A call written `int(...)`, `float(...)`, `bool(...)` or `map(...)`, and a
-call of a `math` function through a name the module binds to it
-(`pyct.intercept.constants`), asks `call` for its callee first, and calls what it
-hands back: pyct's router for Python's own function, which `pyct.core.bound`
-holds beside the `len`, `ord` and `chr` it binds in the module's builtins,
-and the callee itself for anything else, so a function of the target's
-runs with no frame of pyct's above it. An operator's right side goes
-through `handed` (`pyct.core.handed`) before Python's own operator runs, so
-no frame of pyct's is above the target's own operator either.
+A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or
+`range(...)`, and a call of a `math` function through a name the module
+binds to it (`pyct.intercept.constants`), asks `call` for its callee first,
+and calls what it hands back: pyct's router for Python's own function,
+which `pyct.core.bound` holds beside the `len`, `ord` and `chr` it binds in
+the module's builtins, and the callee itself for anything else, so a
+function of the target's runs with no frame of pyct's above it. An
+operator's right side goes through `handed` (`pyct.core.handed`) before
+Python's own operator runs, so no frame of pyct's is above the target's own
+operator either.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -38,12 +39,16 @@ import types
 from collections.abc import Callable
 from typing import Any, cast
 
-from pyct.core import bound, str_literals, strs
+from pyct.core import bound, ranges, str_literals, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
-from pyct.core.hashed import hashed, looked_up, tracked
+from pyct.core.hashed import Tracked, hashed, looked_up, tracked
+from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
+
+# the tracked values a plain range is searched for with one fork, by their exact type
+_RANGE_ITEMS = frozenset(ranges.TRACKED_INTS)
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -82,17 +87,20 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     ``written`` holds the literal elements of a set, or the literal keys of
     a dict, in the order the display writes them: a tracked value is
     searched for there, one `==` fork per element tried (see `_searched`).
-    A tracked value in a set, a frozenset or a dict's keys is searched for
-    as `pyct.core.hashed` says. Anything else is Python's own `in`.
+    A tracked range, or a tracked int searched in a plain range, answers
+    with one condition untested (`pyct.core.ranges`), where Python alone
+    would compare a tracked int with every element in turn. A tracked value
+    in a set, a frozenset or a dict's keys is searched for as
+    `pyct.core.hashed` says. Anything else is Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.in_text(item, container)
-    if written is not None and tracked(item):
-        return _searched(item, written)
-    if tracked(item) and (kind := hashed(container)) is not None:
-        return looked_up(item, container, kind)
+    if type(container) is ConcolicRange:
+        return ranges.contains(container, item)
+    if tracked(item):
+        return _tracked_in(item, container, written)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
     return item in container  # pyrefly: ignore[not-iterable]
 
@@ -118,11 +126,26 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
         return strs.not_contains(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.not_in_text(item, container)
-    if written is not None and tracked(item):
-        return not _searched(item, written)
-    if tracked(item) and (kind := hashed(container)) is not None:
-        return not looked_up(item, container, kind)
+    if type(container) is ConcolicRange:
+        return ranges.not_contains(container, item)
+    if tracked(item):
+        if type(container) is range and type(item) in _RANGE_ITEMS:
+            return ranges.not_within(item, container)  # pyrefly: ignore[bad-argument-type]
+        return not _tracked_in(item, container, written)
     return item not in container  # pyrefly: ignore[not-iterable]
+
+
+def _tracked_in(item: Tracked, container: object, written: tuple[object, ...] | None) -> object:
+    """`item in container` for a tracked item a set or a dict can hold: one fork in a plain
+    range, one `==` fork per literal element of a display, a lookup in a hashed container, and
+    Python's own `in` for anything else."""
+    if type(container) is range and type(item) in _RANGE_ITEMS:
+        return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
+    if written is not None:
+        return _searched(item, written)
+    if (kind := hashed(container)) is not None:
+        return looked_up(item, container, kind)
+    return item in container  # pyrefly: ignore[not-iterable]
 
 
 def _forwarded(compare: Callable[[Any, Any], object]) -> Callable[[_Link, object], object]:
@@ -190,8 +213,8 @@ class Identity(_Link):
 
 
 def call(callee: object, /) -> Any:
-    """What a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls, and a
-    call of a `math` function through a name the module binds to it.
+    """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `range(...)`
+    calls, and a call of a `math` function through a name the module binds to it.
 
     ``callee`` is what the name the code wrote holds when the call runs.
     Python's own builtin gets pyct's router for it (`bound.CALLED`), and
@@ -247,6 +270,7 @@ PASSING: frozenset[types.CodeType] = (
             is_not,
             in_,
             not_in,
+            _tracked_in,
             call,
             method,
             _on_text,
