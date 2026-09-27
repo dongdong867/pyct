@@ -243,17 +243,17 @@ def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() 
     assert seed["downgrades"] == [{"name": "rsplit", "count": 1}]
 
 
-# beside follow-strings-reports-a-slow-encoding-as-a-miss: an rsplit with a limit of 2,000
-def test_an_rsplit_with_a_large_limit_ends_within_the_budget() -> None:
+# beside follow-strings-follows-the-split-family: an rsplit with a limit of 2,000
+def test_an_rsplit_with_a_large_limit_is_flipped_within_the_budget() -> None:
     started = time.perf_counter()
     result = run_pyct(LONG_RSPLIT, '{"s": "b,c"}', "--budget", "3")
     elapsed = time.perf_counter() - started
 
     assert result.returncode == 0, result.stderr
-    # render writes the 2,000 steps in a few hundredths of a second, so the budget bounds the
-    # run: cvc5 1.3.4 does not answer them in it, and pyct stops it a second past its limit
-    assert all(why in ("timeout", "unknown") for _, why in misses_of(result.stdout))
-    assert elapsed < 3 + 1 + 2, elapsed
+    # past the longest walk the piece is read as the split's, which renders and solves at once
+    assert misses_of(result.stdout) == [], result.stdout
+    assert any(text(line, "s").rsplit(",", 2000)[0] == "a" for line in input_lines(result.stdout))
+    assert elapsed < 3, elapsed
 
 
 # beside follow-strings-follows-the-split-family: a None separator and a flag cross from the
