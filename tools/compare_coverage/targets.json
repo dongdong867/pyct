@@ -109,6 +109,7 @@
     {"set": "v2", "target": "targets.intercept.plain::plain", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.intercept.plain_builtins::plain", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.positions::place", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.intercept.pooled::sizes", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.intercept.refusals::below_zero", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.refusals::crate", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.refusals::sized", "seed": {"n": 5}},

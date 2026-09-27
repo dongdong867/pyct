@@ -6,7 +6,9 @@ from pathlib import Path
 import pytest
 
 from pyct.core import strs
-from pyct.core.substitutes import chr_, len_, ord_
+from pyct.core.bound import chr as chr_
+from pyct.core.bound import len as len_
+from pyct.core.bound import ord as ord_
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import FailureKind
 

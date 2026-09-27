@@ -2,7 +2,7 @@
 
 Python's `ord` and `chr` call no method of the value they are given, so a
 tracked value's condition ends there unless the target's module calls
-pyct's own (`substitutes.ord_`, `substitutes.chr_`). Each raises on some
+pyct's own (`pyct.core.bound`). Each raises on some
 values, so each records the fork that decides it first, taken true when it
 does not raise, as a division records its zero fork (``README.md › Rules ›
 forks``). Python's own call then answers, or raises, marked as the target's.
@@ -27,8 +27,10 @@ def code(c: ConcolicStr) -> ConcolicInt:
     `ord` takes exactly one character, so `["==", ["len", c], 1]` goes in
     first; on any other length Python's own `ord` raises its TypeError. A
     character an index, a walk or `chr` made (`ConcolicStr.single`) is one
-    character on every path that reaches it, so it records no such fork,
-    which the solver could only answer unsat.
+    character on every path that reaches it, so it records no such fork.
+    The solver would answer its flip unsat, but for `chr` of a code past
+    U+2FFFF, the last character cvc5 holds, where it may answer an input that
+    then leaves the plan, as `ord(chr(n))` does either way.
     """
     if not c.single:
         forked(c.sink, ["==", ["len", c.expression], 1], own(str.__len__, c) == 1)

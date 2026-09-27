@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import substitutes
+from pyct.core import bound, substitutes
 from pyct.core.values import raised_by_target
 from pyct.intercept import hook
 from pyct.intercept.hook import Interception, current, intercepting
@@ -183,15 +183,15 @@ def test_a_module_in_scope_runs_with_len_ord_and_chr_bound_in_its_builtins(packa
 
     held = vars(sized)["__builtins__"]
     assert [held[name] for name in ("len", "ord", "chr")] == [
-        substitutes.len_,
-        substitutes.ord_,
-        substitutes.chr_,
+        bound.len,
+        bound.ord,
+        bound.chr,
     ]
     assert sized.size.__builtins__ is held
     # every other name is Python's own, the module lists none of the three, and builtins holds
     # Python's own still
-    assert {name: value for name, value in held.items() if name not in substitutes.BOUND} == {
-        name: value for name, value in vars(builtins).items() if name not in substitutes.BOUND
+    assert {name: value for name, value in held.items() if name not in bound.BOUND} == {
+        name: value for name, value in vars(builtins).items() if name not in bound.BOUND
     }
     assert not {"len", "ord", "chr"} & set(dir(sized))
     assert (builtins.len, builtins.ord, builtins.chr) == (len, ord, chr)
@@ -225,7 +225,7 @@ def test_a_module_in_scope_finds_what_builtins_holds_when_it_looks(
     assert sized.size("abc") == (3, 0, "b")
     assert sized.later() == "added"
     assert held["ord"] is replaced and held.get("ord") is replaced and "_" in held
-    assert held["len"] is substitutes.len_ and held.get("len") is substitutes.len_
+    assert held["len"] is bound.len and held.get("len") is bound.len
     assert held.get("no such name", "absent") == "absent" and "no such name" not in held
     with pytest.raises(KeyError):
         held["no such name"]
@@ -262,4 +262,4 @@ def test_a_reload_binds_the_builtins_again(package: Path) -> None:
     with intercepting(interception(package.parent)):
         reloaded = importlib.reload(sized)
 
-    assert reloaded.size.__builtins__["len"] is substitutes.len_
+    assert reloaded.size.__builtins__["len"] is bound.len

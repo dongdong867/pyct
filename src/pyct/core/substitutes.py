@@ -10,10 +10,7 @@ answers as it stands for, and any other operand gets Python's own answer
 and Python's own exception.
 
 It also binds `len`, `ord` and `chr` in the module's builtins to the three
-functions `BOUND` names. Python makes their answers plain, or calls no
-method of the value at all; here a tracked value that core follows through
-one of them gets core's tracked answer, and every other call, keywords and
-any count of arguments included, is Python's own.
+functions `pyct.core.bound` holds, routers of the same kind.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -23,12 +20,9 @@ unless one of core's own frames sits below.
 
 from __future__ import annotations
 
-import inspect
 import types
-from collections.abc import Callable, Mapping
-from typing import Any
 
-from pyct.core import codes, strs
+from pyct.core import bound, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -112,66 +106,8 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
 # the tracked values core follows through each bound builtin, by their exact type, and the
 # function that follows them. A tracked value's `__len__` stays a downgrade, since Python's own
 # `len` makes its answer plain; pyct's asks core for the tracked length instead
-# Python's own three, captured as this module loads: a target that replaces one in `builtins`
-# later changes what its modules find by the name (see `pyct.intercept.wrap`), not what a
-# bound function a module already holds calls, as with the builtin plain Python found
-_LEN, _ORD, _CHR = len, ord, chr
-
-_FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]] = {
-    _LEN: {ConcolicStr: strs.length},
-    _ORD: {ConcolicStr: codes.code},
-    _CHR: {ConcolicInt: codes.character},
-}
-
-
-def _routed(
-    python: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
-) -> object:
-    """Core's answer for one tracked argument core follows through `python`, else Python's call."""
-    if _LEN(args) == 1 and not kwargs:
-        follow = _FOLLOWED[python].get(type(args[0]))
-        if follow is not None:
-            return follow(args[0])
-    return python(*args, **kwargs)
-
-
-def len_(*args: object, **kwargs: object) -> object:
-    # `len` where pyct binds it: a tracked string's length is a tracked int, `["len", s]`. Its
-    # docstring is Python's own (see `_dressed`)
-    return _routed(_LEN, args, kwargs)
-
-
-def ord_(*args: object, **kwargs: object) -> object:
-    # `ord` where pyct binds it: a tracked string's code is a tracked int, `["ord", c]`
-    return _routed(_ORD, args, kwargs)
-
-
-def chr_(*args: object, **kwargs: object) -> object:
-    # `chr` where pyct binds it: a tracked int's character is a tracked string, `["chr", n]`
-    return _routed(_CHR, args, kwargs)
-
-
-def _dressed(bound: Callable[..., object], python: Callable[..., object]) -> None:
-    """Give a bound function the names, text and signature of Python's own, as target code reads
-    them: `len.__name__`, `help(len)` and `inspect.signature(len)` answer as they do in plain
-    Python. Its repr and its identity stay a function's."""
-    for name in ("__name__", "__qualname__", "__module__", "__doc__", "__text_signature__"):
-        setattr(bound, name, getattr(python, name))
-    bound.__signature__ = inspect.signature(python)  # pyrefly: ignore[missing-attribute]
-
-
-# each builtin pyct binds in the target's modules, by name: Python's own, which a module's
-# builtins must hold for pyct's to be found under the name, and pyct's
-BOUND: Mapping[str, tuple[Callable[..., object], Callable[..., object]]] = {
-    "len": (_LEN, len_),
-    "ord": (_ORD, ord_),
-    "chr": (_CHR, chr_),
-}
-for _python, _bound in BOUND.values():
-    _dressed(_bound, _python)
-
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
-PASSING: frozenset[types.CodeType] = frozenset(
-    function.__code__ for function in (is_, is_not, in_, not_in, len_, ord_, chr_, _routed)
+PASSING: frozenset[types.CodeType] = (
+    frozenset(function.__code__ for function in (is_, is_not, in_, not_in)) | bound.PASSING
 )

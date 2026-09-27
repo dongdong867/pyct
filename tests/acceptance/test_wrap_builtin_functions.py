@@ -346,3 +346,13 @@ def test_sees_names_put_in_builtins_after_the_import() -> None:
     seed = first_line(result.stdout)
     assert seed["failure"] is None, seed
     assert 9 in covered_of(seed, REPO_ROOT / "targets" / "translated" / "app.py")
+
+
+# intercept-builtin-functions-changes-no-plain-answer, with `len` handed to other processes
+def test_hands_len_to_a_process_pool_as_python_does() -> None:
+    result = run_pyct("targets.intercept.pooled::sizes", '{"s": "ab"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    assert seed["failure"] is None, seed
+    assert 9 in covered_of(seed, INTERCEPT / "pooled.py")

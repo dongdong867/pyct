@@ -5,7 +5,7 @@ mapping its ``__builtins__`` holds, which Python sets to the ``builtins``
 module's own dict when the module runs without one. The loader hands each
 module of the package a `LiveBuiltins` instead, which answers every name
 with what ``builtins`` holds when the name is looked up, but for the three
-names `pyct.core.substitutes.BOUND` names: while ``builtins`` holds
+names `pyct.core.bound.BOUND` names: while ``builtins`` holds
 Python's own under one of them, the module finds pyct's. So every call that
 finds the name in the module reaches pyct's, a direct call, one in a method
 or a nested function, and a function the module hands on, as in
@@ -17,31 +17,50 @@ as they are.
 
 Python looks a name up in a builtins mapping that is not exactly a dict
 through its ``__getitem__``, one Python call per builtin name the module
-reads. The mapping also holds a copy of every builtin, for the few lookups
-CPython makes straight into the dict, such as ``__import__`` for an
-``import`` statement; that copy is as ``builtins`` was when the module ran.
+reads: its global names, an ``import`` statement's ``__import__`` and a
+``class`` statement's ``__build_class__`` on CPython 3.12. Every method a
+dict has reads and writes ``builtins`` as it is now, as the module's
+``__builtins__`` does in plain Python, where it is ``builtins``' own dict. A
+copy of ``builtins`` it holds as well, kept in step with every write made
+through it, serves only C code that reads a dict's storage without its
+methods; a name added to ``builtins`` otherwise is missing from that copy.
 """
 
 from __future__ import annotations
 
 import builtins
+import copy
+from collections.abc import Iterable, Iterator
 
-from pyct.core.substitutes import BOUND
+from pyct.core.bound import BOUND
 
 _BUILTINS = vars(builtins)
+# dict's own, held here: a write may clear ``builtins``, and these must still run after it
+_CLEAR, _UPDATE = dict.clear, dict.update
 
 
 class LiveBuiltins(dict[str, object]):
     """A module's builtins: what ``builtins`` holds now, with pyct's `len`, `ord` and `chr`.
 
-    A write through the module's ``__builtins__`` reaches ``builtins``, as it
-    does in plain Python, where that mapping is ``builtins``' own dict.
+    Every read answers from ``builtins``, and every write, removal or clear
+    acts on it. A copy, by ``copy``, `copy.copy` or pickle, is a plain dict of
+    what a lookup finds now, as a copy of ``builtins``' own dict is a plain
+    dict.
     """
 
     __slots__ = ()
 
     def __init__(self) -> None:
         super().__init__(_BUILTINS)
+
+    def _synced(self) -> None:
+        """Keep the copy in step with ``builtins`` after a write through this mapping."""
+        _CLEAR(self)
+        _UPDATE(self, _BUILTINS)
+
+    def _now(self) -> dict[str, object]:
+        """What a lookup of each name finds now, as a plain dict in ``builtins``' order."""
+        return {name: self[name] for name in _BUILTINS}
 
     def __getitem__(self, name: str) -> object:
         value = _BUILTINS[name]
@@ -54,13 +73,91 @@ class LiveBuiltins(dict[str, object]):
     def __contains__(self, name: object) -> bool:
         return name in _BUILTINS
 
+    def __iter__(self) -> Iterator[str]:
+        return iter(_BUILTINS)
+
+    def __reversed__(self) -> Iterator[str]:
+        return reversed(_BUILTINS)
+
+    def __len__(self) -> int:
+        return len(_BUILTINS)
+
+    def keys(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
+        return self._now().keys()
+
+    def items(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
+        return self._now().items()
+
+    def values(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
+        return self._now().values()
+
+    def __eq__(self, other: object) -> bool:
+        return self._now() == other
+
+    def __ne__(self, other: object) -> bool:
+        return self._now() != other
+
+    __hash__ = None  # pyrefly: ignore[bad-override]
+
+    def __repr__(self) -> str:
+        return repr(self._now())
+
+    def __or__(self, other: dict[str, object]) -> dict[str, object]:  # pyrefly: ignore
+        return self._now().__or__(other)  # pyrefly: ignore[bad-return]
+
+    def __ror__(self, other: dict[str, object]) -> dict[str, object]:  # pyrefly: ignore
+        return self._now().__ror__(other)  # pyrefly: ignore[bad-return]
+
+    def copy(self) -> dict[str, object]:  # pyrefly: ignore[bad-override]
+        return self._now()
+
+    def __copy__(self) -> dict[str, object]:
+        return self._now()
+
+    def __deepcopy__(self, memo: dict[int, object]) -> dict[str, object]:
+        return copy.deepcopy(self._now(), memo)
+
+    def __reduce_ex__(self, protocol: object) -> tuple[type, tuple[dict[str, object]]]:
+        return (dict, (self._now(),))
+
+    @classmethod
+    def fromkeys(cls, keys: Iterable[str], value: object = None) -> dict[str, object]:  # pyrefly: ignore[bad-override]
+        return dict.fromkeys(keys, value)
+
     def __setitem__(self, name: str, value: object) -> None:
         _BUILTINS[name] = value
-        super().__setitem__(name, value)
+        self._synced()
 
     def __delitem__(self, name: str) -> None:
         del _BUILTINS[name]
-        super().pop(name, None)
+        self._synced()
+
+    def update(self, *args: object, **kwargs: object) -> None:  # pyrefly: ignore[bad-override]
+        _BUILTINS.update(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
+        self._synced()
+
+    def __ior__(self, other: object) -> LiveBuiltins:  # pyrefly: ignore[bad-override]
+        self.update(other)
+        return self
+
+    def setdefault(self, name: str, default: object = None) -> object:  # pyrefly: ignore
+        if name not in _BUILTINS:
+            self[name] = default
+        return self[name]
+
+    def pop(self, name: str, *default: object) -> object:  # pyrefly: ignore[bad-override]
+        value = _BUILTINS.pop(name, *default)
+        self._synced()
+        return value
+
+    def popitem(self) -> tuple[str, object]:
+        item = _BUILTINS.popitem()
+        self._synced()
+        return item
+
+    def clear(self) -> None:
+        _BUILTINS.clear()
+        self._synced()
 
 
 def bound_builtins() -> LiveBuiltins:

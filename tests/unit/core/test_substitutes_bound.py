@@ -2,15 +2,20 @@
 
 import builtins
 import inspect
+import pickle
 from collections.abc import Callable
 
 import pytest
 
+from pyct.core import bound as bound_module
+from pyct.core.bound import BOUND
 from pyct.core.branch import Branch, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import BOUND, PASSING, chr_, len_, ord_
+from pyct.core.substitutes import PASSING
+
+len_, ord_, chr_ = (BOUND[name][1] for name in ("len", "ord", "chr"))
 
 Call = tuple[tuple[object, ...], dict[str, object]]
 
@@ -121,9 +126,9 @@ def test_the_passing_frames_are_the_routers() -> None:
         "is_not",
         "in_",
         "not_in",
-        "len_",
-        "ord_",
-        "chr_",
+        "len",
+        "ord",
+        "chr",
         "_routed",
     }
 
@@ -158,8 +163,19 @@ def test_a_bound_builtin_calls_python_s_own_when_builtins_holds_another(
 def test_a_bound_builtin_looks_like_python_s_own(name: str) -> None:
     python, bound = BOUND[name]
 
-    assert (bound.__name__, bound.__qualname__, bound.__module__) == (name, name, "builtins")
+    # its module is its own, so pickle finds it by name as it finds Python's
+    assert (bound.__name__, bound.__qualname__, bound.__module__) == (name, name, "pyct.core.bound")
+    assert getattr(bound_module, name) is bound
     assert bound.__doc__ == python.__doc__
     text_signature = "__text_signature__"
     assert getattr(bound, text_signature, None) == getattr(python, text_signature)
     assert inspect.signature(bound) == inspect.signature(python)
+
+
+@pytest.mark.parametrize("name", ["len", "ord", "chr"])
+def test_a_bound_builtin_pickles_by_reference_as_python_s_does(name: str) -> None:
+    python, bound = BOUND[name]
+
+    assert pickle.loads(pickle.dumps(bound)) is bound
+    assert pickle.loads(pickle.dumps({"f": [bound]})) == {"f": [bound]}
+    assert pickle.loads(pickle.dumps(python)) is python

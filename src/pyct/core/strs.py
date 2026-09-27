@@ -169,7 +169,7 @@ def length(s: ConcolicStr) -> ConcolicInt:
 
     Python's `len` makes what `__len__` hands back a plain int, so a
     tracked string's `__len__` stays a downgrade; this is what pyct's own
-    `len` asks for instead (`substitutes.len_`). A length cannot fail, so
+    `len` asks for instead (`pyct.core.bound.len`). A length cannot fail, so
     it records no fork.
     """
     return ConcolicInt(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
