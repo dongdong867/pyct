@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from pyct.binding.bind import Seed
 from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
@@ -96,7 +97,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
-    attempt = _attempt(call, seed, tree, Bounds(until=time.monotonic() - 1), ())
+    attempt = _attempt(call, Seed.of(seed), tree, Bounds(until=time.monotonic() - 1), ())
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)

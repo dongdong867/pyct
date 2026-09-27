@@ -2,8 +2,11 @@
 
 import ast
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 
+from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
+from pyct.solver.answer import SolverAnswerError
 from pyct.solver.strings import (
     above,
     below,
@@ -89,38 +92,118 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
 }
 
 
-def render(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> str:
-    """The whole little program: what to declare, what to assert, what to ask.
+@dataclass(frozen=True)
+class _Leaves:
+    """The seed's leaves by name, with their types and the constant each mentioned one gets."""
+
+    kinds: Mapping[str, type]
+    constants: Mapping[str, str]
+
+    def named(self, part: Expression) -> str | None:
+        """The name of the leaf a part of a condition is, or None for a literal or an operation.
+
+        A parameter is its bare name. A value inside one is its access, which
+        reads as an operation does: only an access to one of the seed's own
+        leaves is a value, and any other is an operation on a tracked value.
+        Which steps an access takes is binding's to say (``access_name``).
+        """
+        if isinstance(part, str):
+            return None if _is_literal(part) else part
+        name = access_name(part)
+        return name if name in self.kinds else None
+
+    def kind(self, part: Expression) -> type | None:
+        """The type of the leaf a part is, or None for anything else."""
+        name = self.named(part)
+        return None if name is None else self.kinds.get(name)
+
+
+@dataclass(frozen=True)
+class Program:
+    """The SMT-LIB program for one path, and the leaf each constant it declares stands for.
+
+    ``names_by_symbol`` holds each leaf's name, keyed by its constant's
+    symbol without the bars, which is how a model names it back.
+    """
+
+    text: str
+    names_by_symbol: Mapping[str, str]
+
+    def read(self, model: Mapping[str, object]) -> dict[str, object]:
+        """A model cvc5 wrote by constant, named by the leaves the constants were declared for.
+
+        A symbol the program did not declare is ``SolverAnswerError``, as any
+        value line pyct cannot read is: a guess would hand back a wrong input.
+        """
+        unknown = [symbol for symbol in model if symbol not in self.names_by_symbol]
+        if unknown:
+            named = ", ".join(unknown)
+            raise SolverAnswerError(
+                f"cvc5 answered about names the program did not declare: {named}"
+            )
+        return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
+
+
+def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
+    """The program for a path, with the table that reads its answer back.
 
     Only the leaves the prefix mentions are declared, so the answer names
-    nothing the path did not depend on.
+    nothing the path did not depend on. ``leaves`` names each leaf as
+    ``pyct.binding`` does, and ``_symbol`` names its constant.
     """
-    mentioned = _mentioned(prefix, leaves)
+    symbols = _symbols(prefix, leaves)
+    constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
+    known = _Leaves(kinds=leaves, constants=constants)
+    declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     lines = ["(set-logic ALL)"]
-    lines += [f"(declare-const {name} {_sort(name, leaves[name])})" for name in mentioned]
-    lines += [_assertion(fork, leaves) for fork in prefix]
+    lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [_assertion(fork, known) for fork in prefix]
     lines.append("(check-sat)")
-    lines += [f"(get-value ({name}))" for name in mentioned]
-    return "\n".join(lines) + "\n"
+    lines += [f"(get-value ({constant}))" for constant, _ in declared]
+    text = "\n".join(lines) + "\n"
+    return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
 
 
-def _mentioned(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> list[str]:
-    """The leaves the prefix names, in the order the seed bound them."""
+def _symbols(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
+    """The symbol of each leaf the prefix names, in the order the seed bound them."""
+    known = _Leaves(kinds=leaves, constants={})
     named: set[str] = set()
     for fork in prefix:
-        named |= _names(fork.expression)
+        named |= _names(fork.expression, known)
     unknown = sorted(named - set(leaves))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return [name for name in leaves if name in named]
+    return {name: _symbol(name, index) for index, name in enumerate(leaves) if name in named}
 
 
-def _names(expression: Expression) -> set[str]:
-    """Every parameter name in a condition. A list leads with its operator, not a leaf."""
-    if isinstance(expression, str):
-        return set() if _is_literal(expression) else {expression}
+def _symbol(name: str, index: int) -> str:
+    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
+
+    The prefix keeps every symbol apart from the solver's own words, which
+    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
+    bars or not. Each character past ASCII is written as its UTF-8 bytes,
+    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
+    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
+    argument is named by its access, which holds brackets, quotes, and any
+    character a key holds, ``|`` and the backslash among them, which not
+    even a quoted symbol can.
+    """
+    if not name.isidentifier():
+        return f"leaf.{index}"
+    written = "".join(
+        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
+        for character in name
+    )
+    return f"arg.{written}"
+
+
+def _names(expression: Expression, leaves: _Leaves) -> set[str]:
+    """Every leaf a condition names. A list leads with its operator, not a leaf."""
+    name = leaves.named(expression)
+    if name is not None:
+        return {name}
     if isinstance(expression, list):
-        return {name for part in expression[1:] for name in _names(part)}
+        return {name for part in expression[1:] for name in _names(part, leaves)}
     return set()
 
 
@@ -131,20 +214,23 @@ def _sort(name: str, kind: type) -> str:
     return sort
 
 
-def _assertion(fork: Branch, leaves: Mapping[str, type]) -> str:
+def _assertion(fork: Branch, leaves: _Leaves) -> str:
     """The condition as the run met it: the side it took decides the negation."""
     condition = _expression(fork.expression, leaves)
     return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
 
-def _expression(expression: Expression, leaves: Mapping[str, type]) -> str:
+def _expression(expression: Expression, leaves: _Leaves) -> str:
     """One condition, operator first. A negative number is a subtraction from nothing."""
     if isinstance(expression, bool):
         return "true" if expression else "false"
     if isinstance(expression, int):
         return f"(- {-expression})" if expression < 0 else str(expression)
+    name = leaves.named(expression)
+    if name is not None:
+        return leaves.constants[name]
     if isinstance(expression, str):
-        return encode(_value(expression)) if _is_literal(expression) else expression
+        return encode(_value(expression))
     head, *operands = expression
     rendered = [_expression(part, leaves) for part in operands]
     form = FORMS.get(head) if isinstance(head, str) else None
@@ -155,15 +241,12 @@ def _expression(expression: Expression, leaves: Mapping[str, type]) -> str:
     return "({} {})".format(_operator(head), " ".join(rendered))
 
 
-def _on_strings(operands: list[Expression], leaves: Mapping[str, type]) -> bool:
-    """Whether a compare's operands are strings: a string literal, or a name bound to a str.
+def _on_strings(operands: list[Expression], leaves: _Leaves) -> bool:
+    """Whether a compare's operands are strings: a string literal, or a leaf bound to a str.
 
     Both operands of a compare are of one sort, so one string between them decides it.
     """
-    return any(
-        _literal(part) is not None or (isinstance(part, str) and leaves.get(part) is str)
-        for part in operands
-    )
+    return any(_literal(part) is not None or leaves.kind(part) is str for part in operands)
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:

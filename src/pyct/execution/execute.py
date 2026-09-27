@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import inspect
 import sys
 import types
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.binding.bind import bind
+from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, deadline
@@ -28,11 +30,16 @@ class ExecutionContext:
     KeyboardInterrupt, or another BaseException that is neither an Exception
     nor SystemExit, is a raise like any other and ends the call as one. In
     pyct's own process it may be the person's Ctrl-C, so it passes through.
+
+    ``positional`` is the parameters the call passes by position, read once
+    from the signature ``load_target`` took; with none, every value goes by
+    name.
     """
 
     fn: Callable[..., object]
     file: str
     alone: bool = False
+    positional: tuple[inspect.Parameter, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -98,13 +105,18 @@ class _Ending:
 
 
 def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | None) -> _Ending:
-    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read."""
+    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read.
+
+    A positional-only parameter is passed by position, as ``ctx.positional``
+    names it.
+    """
+    positional, keywords = call_arguments(ctx.positional, bound)
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
         with deadline(until):
             called = True
-            ctx.fn(**bound)
+            ctx.fn(*positional, **keywords)
     except caught as error:
         return _Ending(error=error, called=called)
     return _Ending(error=None, called=called)

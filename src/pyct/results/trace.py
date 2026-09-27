@@ -153,11 +153,15 @@ def _infix(expression: Expression) -> str:
 
     Operator first is how the expression is stored, so one operand reads
     ``op a`` and the rest read as ``a op b``, joined by the operator. A
-    named head with arguments reads as Python calls a method, ``a.name(b)``.
+    named head with arguments reads as Python calls a method, ``a.name(b)``,
+    and an index as Python writes one, ``a[k]``, the key as the expression
+    stores it: a string key in its Python quotes.
     """
     if not isinstance(expression, list):
         return expression if isinstance(expression, str) else repr(expression)
     operator, *operands = expression
+    if _is_index(expression):
+        return _indexed(expression)
     if _is_named_with_arguments(expression):
         receiver, *arguments = operands
         called = ", ".join(_infix(argument) for argument in arguments)
@@ -184,14 +188,36 @@ def _is_named_with_arguments(expression: list[Expression]) -> bool:
     )
 
 
+def _indexed(expression: list[Expression]) -> str:
+    """A chain of indexes as Python writes it, ``a[k][0]``, read down the chain in a loop.
+
+    An access to a value inside an argument is one index per step, as deep
+    as the seed goes, so the chain is not read one call per step.
+    """
+    keys: list[Expression] = []
+    container: Expression = expression
+    while isinstance(container, list) and _is_index(container):
+        keys.append(container[2])
+        container = container[1]
+    written = "".join(f"[{_infix(key)}]" for key in reversed(keys))
+    return f"{_operand(container)}{written}"
+
+
+def _is_index(expression: list[Expression]) -> bool:
+    """Whether a condition is an index or a key taken from a container: ``["[]", a, k]``."""
+    return expression[0] == "[]" and len(expression) == 3
+
+
 def _operand(expression: Expression) -> str:
     """A condition inside a condition gets parentheses; a leaf stands alone.
 
-    So does a named head with arguments, which reads ``a.name(b)``.
+    So do a named head with arguments, which reads ``a.name(b)``, and an
+    index, which reads ``a[k]``: both bind tighter than any operator.
     """
     written = _infix(expression)
-    return (
-        f"({written})"
-        if isinstance(expression, list) and not _is_named_with_arguments(expression)
-        else written
+    bare = (
+        not isinstance(expression, list)
+        or _is_named_with_arguments(expression)
+        or _is_index(expression)
     )
+    return written if bare else f"({written})"

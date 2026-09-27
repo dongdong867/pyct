@@ -8,7 +8,7 @@ from collections.abc import Mapping
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
-from pyct.solver.render import render
+from pyct.solver.render import program
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,8 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    text = render(prefix, leaves) + WHY
+    written = program(prefix, leaves)
+    text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
     logger.debug("asking cvc5 %s about:\n%s", argv, text)
@@ -70,6 +71,9 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         logger.warning("pyct stopped cvc5, which ran past its time limit")
         return Timeout()
     answer = _answer(finished.stdout, finished.stderr)
+    if isinstance(answer, Sat):
+        # cvc5 answered by the constants the program declared; the run reads leaves by name
+        answer = Sat(written.read(answer.model))
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:

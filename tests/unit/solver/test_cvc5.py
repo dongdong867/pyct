@@ -1,3 +1,4 @@
+import json
 import logging
 import shutil
 import time
@@ -6,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
+from pyct.solver.answer import Error, Sat, SolverAnswerError, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import GRACE_SECONDS, solve
 
 SITE = Site(file="m.py", line=2, col=7)
@@ -47,7 +48,7 @@ def ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: float = 10.0) 
 def test_a_solved_path_comes_back_with_its_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, out=f"sat\n((x 12))\n{NOT_UNKNOWN}")
+    fake_cvc5(tmp_path, out=f"sat\n((arg.x 12))\n{NOT_UNKNOWN}")
 
     assert ask(tmp_path, monkeypatch) == Sat({"x": 12})
 
@@ -220,3 +221,38 @@ def test_the_real_cvc5_says_when_it_ran_out_of_time() -> None:
     assert answer == Timeout()
     # cvc5 stopped itself at its limit; pyct's own stop would have taken the grace too
     assert time.monotonic() - started < 0.2 + GRACE_SECONDS, answer
+
+
+@pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
+def test_the_real_cvc5_answers_about_a_value_inside_by_its_access() -> None:
+    # a key holding the two characters no SMT-LIB symbol can, `|` and a backslash
+    access: Expression = ["[]", "d", repr("a|b\\c")]
+    name = json.dumps(access)
+
+    answer = solve((fork(["<", access, 1], taken=True),), {"x": int, name: int}, 10.0)
+
+    assert isinstance(answer, Sat)
+    assert list(answer.model) == [name]
+    value = answer.model[name]
+    assert isinstance(value, int) and value < 1
+
+
+@pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
+def test_the_real_cvc5_answers_about_parameters_named_as_its_own_words_or_past_ascii() -> None:
+    path = (fork([">", "div", 3], taken=True), fork(["==", "café", "'é'"], taken=True))
+
+    answer = solve(path, {"div": int, "café": str}, 10.0)
+
+    assert isinstance(answer, Sat)
+    assert answer.model["café"] == "é"
+    value = answer.model["div"]
+    assert isinstance(value, int) and value > 3
+
+
+def test_a_model_naming_what_was_not_declared_is_an_error_rather_than_a_guess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, out=f"sat\n((arg.y 12))\n{NOT_UNKNOWN}")
+
+    with pytest.raises(SolverAnswerError, match="arg.y"):
+        ask(tmp_path, monkeypatch)

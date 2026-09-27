@@ -16,6 +16,8 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
+from pyct.binding.annotations import Check, check_of, contradictions
+from pyct.binding.call import call_arguments, positional_only
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
@@ -35,6 +37,11 @@ USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
 )
+
+
+# how many levels past the seed's own depth the check writes: room for the line, its forks, one
+# fork, its condition, and a few operations the target applies to the value
+LINE_NESTING = 8
 
 
 class UsageError(Exception):
@@ -185,14 +192,51 @@ def check_spec(spec: str) -> None:
 
 
 def parse_seed(seed_text: str) -> Mapping[str, object]:
-    """The seed is a JSON object, one key per parameter."""
+    """The seed is a JSON object, one key per parameter, nested no deeper than a line can hold."""
     try:
         seed = json.loads(seed_text)
     except json.JSONDecodeError as error:
         raise UsageError(f"args must be a JSON object: {error}") from error
+    except RecursionError as error:
+        raise UsageError("args nest too deep for Python to read") from error
     if not isinstance(seed, dict):
         raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
+    _check_writable(seed)
     return seed
+
+
+def _check_writable(seed: Mapping[str, object]) -> None:
+    """Refuse a seed too deep for a line to hold a fork a few operations deep on its deepest value.
+
+    The line holds each fork on a value inside the seed a few levels below
+    the value, and Python's JSON writer stops at a depth of its own. So the
+    check writes a list nested ``LINE_NESTING`` levels past the seed before
+    any input runs, which allows for a few operations on the value.
+    """
+    depth = _depth(seed)
+    probe: list[object] = [0]
+    for _ in range(depth + LINE_NESTING - 1):
+        probe = [probe]
+    try:
+        json.dumps(probe)
+    except RecursionError as error:
+        raise UsageError(
+            f"args nest {depth} levels deep, too deep for pyct to write each input's line"
+        ) from error
+
+
+def _depth(value: object) -> int:
+    """How many objects and arrays deep a JSON value nests, read in a loop, not a call per level."""
+    deepest = 0
+    pending: list[tuple[object, int]] = [(value, 1)]
+    while pending:
+        item, level = pending.pop()
+        if isinstance(item, dict):
+            item = list(item.values())
+        if isinstance(item, list):
+            deepest = max(deepest, level)
+            pending.extend((child, level + 1) for child in item)
+    return deepest
 
 
 def parse_budget(budget_text: str | None) -> Budget:
@@ -248,9 +292,14 @@ def _positive_seconds(text: str, flag: str) -> float:
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
-    """Refuse a seed whose keys do not fit the parameters. Names only, not types."""
+    """Refuse a seed whose keys do not fit the parameters. Names only, not types.
+
+    A positional-only parameter is named too, and bound by position, as the
+    call will pass it.
+    """
+    positional, keywords = call_arguments(positional_only(signature), seed)
     try:
-        signature.bind(**seed)
+        signature.bind(*positional, **keywords)
     except TypeError as error:
         # bind names a missing parameter before an unexpected key, so name the keys too
         given = ", ".join(seed) or "nothing"
@@ -258,8 +307,11 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
 
 
-def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
-    """The parameters annotated with a bare ``str``, ``int``, ``float`` or ``bool``.
+def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
+    """The parameters whose annotation asks something of the seed, and what it asks.
+
+    What an annotation asks, and which annotations ask nothing, is
+    ``check_of``'s to say.
 
     Each annotation is resolved on its own, so one name that does not resolve
     costs that parameter alone rather than the whole function. An annotation
@@ -268,43 +320,42 @@ def plain_annotations(fn: Callable[..., object]) -> dict[str, type]:
     the target's, each wrapper's, and the one supplying an ``__init__``,
     ``__new__`` or ``__call__`` the target did not write itself, a base's or
     a metaclass's. It is kept only when every
-    module that knows the name gives the same type. A name no module
+    module that knows the name reads it as asking the same. A name no module
     resolves, or that two modules resolve differently, skips its own
-    parameter and no other. Anything else the annotation turns out to be,
-    ``str | None`` or ``list[int]`` or a class, is not one of the four and is
-    not kept. The four are matched by identity, so an annotation that merely
-    compares equal to ``str`` is not kept either.
+    parameter and no other. An annotation that asks nothing, such as
+    ``str | None`` or a class, is not kept.
 
     The parameters come from the signature, the same source ``check_seed_fits``
     reads, so a class target is read at its ``__init__``.
     """
-    hints: dict[str, type] = {}
+    hints: dict[str, Check] = {}
     for name, parameter in inspect.signature(fn).parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        resolved = _resolved(parameter.annotation, fn)
-        if resolved is str or resolved is int or resolved is float or resolved is bool:
-            hints[name] = resolved
+        check = _resolved(parameter.annotation, fn)
+        if check is not None:
+            hints[name] = check
     return hints
 
 
-def _resolved(annotation: object, fn: Callable[..., object]) -> object:
-    """The annotation itself, or the one type every module that knows its text names.
+def _resolved(annotation: object, fn: Callable[..., object]) -> Check | None:
+    """What the annotation asks, or what every module that knows its text reads it as asking.
 
     A namespace whose eval raises does not know the name and says nothing.
     The answer stands only when something resolved it and everything that
-    did landed on the same object; a disagreement is no annotation, as any
-    failure is.
+    did asks the same; a disagreement is no annotation, as any failure is.
+    Two modules can build two ``list[int]`` objects from one text, so they
+    agree on what the text asks rather than on the object.
     """
     if not isinstance(annotation, str):
-        return annotation
-    answers: list[object] = []
+        return check_of(annotation)
+    answers: list[Check | None] = []
     for names in _namespaces(fn):
         try:
-            answers.append(eval(annotation, names))
+            answers.append(check_of(eval(annotation, names)))
         except Exception:
             continue
-    if not answers or any(answer is not answers[0] for answer in answers):
+    if not answers or any(answer != answers[0] for answer in answers):
         return None
     return answers[0]
 
@@ -390,35 +441,9 @@ def _module_names(fn: object) -> list[dict[str, object]]:
     return [vars(module) for module in modules if module is not None]
 
 
-def contradictions(hints: Mapping[str, type], seed: Mapping[str, object]) -> list[str]:
-    """One line per seeded parameter whose value Python's own typing would not accept.
-
-    The lines come in the order of ``hints``, which is signature order. A
-    value passes when it is an instance of the annotated type, plus the one
-    allowance Python makes itself: an ``int`` stands in where a ``float`` is
-    asked for. ``bool`` being a subclass of ``int`` is Python's rule too, so
-    ``True`` passes ``int`` while ``1`` fails ``bool``. The value is spelled
-    as JSON because the seed was typed as JSON.
-    """
-    return [
-        _refusal(name, hint, seed[name])
-        for name, hint in hints.items()
-        if name in seed and not _accepts(hint, seed[name])
-    ]
-
-
-def _accepts(hint: type, value: object) -> bool:
-    return isinstance(value, hint) or (hint is float and isinstance(value, int))
-
-
-def _refusal(name: str, hint: type, value: object) -> str:
-    article = "an" if hint is int else "a"
-    return f"{name} must be {article} {hint.__name__}, got {json.dumps(value)}"
-
-
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
-    """Refuse a seed that contradicts a plain annotation, naming every one at once."""
-    lines = contradictions(plain_annotations(target.fn), seed)
+    """Refuse a seed that contradicts an annotation, naming every value at once."""
+    lines = contradictions(checked_annotations(target.fn), seed)
     if lines:
         raise UsageError("\n".join(lines))
 
