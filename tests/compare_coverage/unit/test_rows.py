@@ -141,19 +141,46 @@ def in_folder(folder: str, *lines: int, version: str | None = "3.1.3") -> SideRe
     )
 
 
-def test_each_side_loads_the_module_under_its_own_copy_of_the_library() -> None:
-    reports = Reports(v2=in_folder("/v2", 2, 3), legacy=in_folder("/legacy", 2, 3))
+def copies(tmp_path: Path, v2_text: str, legacy_text: str) -> tuple[str, str]:
+    """A v2 and a legacy copy of ``w/http.py``, each under its own folder."""
+    folders = (str(tmp_path / "v2"), str(tmp_path / "legacy"))
+    for folder, text in zip(folders, (v2_text, legacy_text), strict=True):
+        Path(folder, "w").mkdir(parents=True)
+        Path(folder, "w", "http.py").write_text(text)
+    return folders
+
+
+def test_each_side_loads_the_module_under_its_own_copy_of_the_library(tmp_path: Path) -> None:
+    v2_folder, legacy_folder = copies(tmp_path, "same\n", "same\n")
+    reports = Reports(v2=in_folder(v2_folder, 2, 3), legacy=in_folder(legacy_folder, 2, 3))
 
     files = installed_files("w.http", WERKZEUG, reports)
     row = compared_row(LIBRARY_ENTRY, files, BODY, reports)
 
-    assert files == Files(
-        body=Path("/v2/w/http.py"), v2=Path("/v2/w/http.py"), legacy=Path("/legacy/w/http.py")
-    )
+    v2_file, legacy_file = Path(v2_folder, "w", "http.py"), Path(legacy_folder, "w", "http.py")
+    assert files == Files(body=v2_file, v2=v2_file, legacy=legacy_file)
     assert row.status is Status.SAME
-    assert (row.file, row.library) == ("/v2/w/http.py", "werkzeug==3.1.3")
+    assert (row.file, row.library) == (str(v2_file), "werkzeug==3.1.3")
     assert row.v2 is not None and row.legacy is not None
     assert (row.v2.library, row.legacy.library) == ("3.1.3", "3.1.3")
+
+
+def test_a_copy_that_differs_from_the_one_the_lines_come_from_fails_naming_both(
+    tmp_path: Path,
+) -> None:
+    # both match the pin, but legacy's copy is not the same file, so its lines are not these
+    v2_folder, legacy_folder = copies(tmp_path, "one\n", "two\n")
+    reports = Reports(v2=in_folder(v2_folder, 2, 3), legacy=in_folder(legacy_folder, 2, 3))
+
+    row = compared_row(LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports)
+
+    v2_file, legacy_file = Path(v2_folder, "w", "http.py"), Path(legacy_folder, "w", "http.py")
+    assert row.status is Status.LEGACY_FAILED
+    assert row.legacy is not None
+    assert row.legacy.failure == (
+        f"loaded {legacy_file}, which differs from {v2_file}, the file the own lines come from"
+    )
+    assert row.legacy.covered == ()
 
 
 def test_a_side_with_another_version_fails_first_and_shows_no_lines() -> None:

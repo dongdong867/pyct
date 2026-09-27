@@ -10,8 +10,12 @@ An installed entry's file is in each side's own environment. A side fails first 
 the entry's library at another version, or not at all, and then shows no lines, since they
 are lines of another file. The file it should load is the module under the folder its copy
 of the library sits in, and the own lines are read from the first side with the pinned one.
+A side whose copy of that file has other contents fails too, naming both paths, since a
+version that matches the pin, such as a Python release under ``python==3.12``, can hold
+another file. Each side's view names the version it has.
 """
 
+import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -124,8 +128,8 @@ def unreadable_row(entry: Entry, file: Path, reason: str) -> Row:
 
 def compared_row(entry: Entry, files: Files, body: Body, reports: Reports) -> Row:
     """The row for an entry both sides ran."""
-    v2 = _view(reports.v2, files.v2, body, entry)
-    legacy = _view(reports.legacy, files.legacy, body, entry)
+    v2 = _same_copy(_view(reports.v2, files.v2, body, entry), files.v2, files.body)
+    legacy = _same_copy(_view(reports.legacy, files.legacy, body, entry), files.legacy, files.body)
     status = _status(v2, legacy)
     compared = status is Status.DIFFERS
     return Row(
@@ -187,6 +191,25 @@ def _view(report: SideReport, file: Path | None, body: Body, entry: Entry) -> Si
         failure=failure or report.failure or _file_failure(report, file, library),
         library=None if report.library is None else report.library.version,
     )
+
+
+def _same_copy(view: SideView, file: Path | None, body_file: Path | None) -> SideView:
+    """The side failed, naming both paths, when its copy of an installed library's file is
+    not the file the own lines come from.
+
+    Each side loads the module under its own copy of the library, at the same path in it, so
+    the two copies are the same file when their contents are.
+    """
+    if view.failure is not None or file is None or body_file is None or file == body_file:
+        return view
+    if _digest(file) == _digest(body_file):
+        return view
+    failure = f"loaded {file}, which differs from {body_file}, the file the own lines come from"
+    return replace(view, covered=(), failure=failure)
+
+
+def _digest(file: Path) -> str:
+    return hashlib.sha256(file.read_bytes()).hexdigest()
 
 
 def _library_failure(library: Library, installed: Installed | None, module: str) -> str | None:
