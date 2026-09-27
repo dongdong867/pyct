@@ -200,30 +200,50 @@ class Gauge(float):
     def __rmod__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
         return ("gauge %", float.__float__(other))
 
+    def __rpow__(self, other: float, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
+        return ("gauge **", float.__float__(other))
+
     def __rsub__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
         return NotImplemented
 
+    def __rmul__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
+        # the float on the left, handed back as it came: tracked under pyct
+        return other
 
-# an operation with a Gauge on the right, and what Python gives were the float on the left plain
-GAUGED: dict[str, tuple[Callable[[float], object], object]] = {
-    "x / g": (lambda x: x / Gauge(0.0), ("gauge /", 2.5)),
-    "x + g": (lambda x: x + Gauge(1.0), ("gauge +", 2.5)),
-    "x % g": (lambda x: x % Gauge(0.0), ("gauge %", 2.5)),
+
+# an operation with a Gauge on the right, and the operation a plain answer is named by
+GAUGED: dict[str, tuple[Callable[[float], object], str]] = {
+    "x / g": (lambda x: x / Gauge(0.0), "__truediv__"),
+    "x + g": (lambda x: x + Gauge(1.0), "__add__"),
+    "x % g": (lambda x: x % Gauge(0.0), "__mod__"),
+    # a power is one of float's derived downgrades, which ask the subclass first as well
+    "x ** g": (lambda x: x ** Gauge(2.0), "__pow__"),
 }
 
 
-@pytest.mark.parametrize(("call", "answer"), GAUGED.values(), ids=list(GAUGED))
+@pytest.mark.parametrize(("call", "name"), GAUGED.values(), ids=list(GAUGED))
 def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
-    call: Callable[[float], object], answer: object
+    call: Callable[[float], object], name: str
 ) -> None:
     sink: list[SinkItem] = []
     x = ConcolicFloat(2.5, expression="x", sink=sink)
 
     # Python asks a float subclass on the right first when it defines the reflected operation,
     # so a plain 2.5 gets the subclass's answer, and so does the tracked one
-    assert call(2.5) == answer
-    assert call(x) == answer
+    assert call(x) == call(2.5)
+    # the answer is plain, so x's condition is lost there and the operation is named
+    assert sink == [Downgrade(name=name)]
+
+
+def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(2.5, expression="x", sink=sink)
+
+    result = x * Gauge(1.0)
+
+    assert result is x
     assert sink == []
+    assert float.__float__(result) == 2.5 * Gauge(1.0)
 
 
 def test_a_float_subclass_that_hands_the_reflected_operation_back_gets_floats_answer() -> None:
