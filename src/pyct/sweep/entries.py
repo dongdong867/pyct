@@ -81,7 +81,7 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
         try:
             entries.extend(found.entries(module, found_in, name))
         except Exception as error:
-            if name not in _modules_below(module):
+            if name not in _submodule_names(module):
                 unread = unread or Unread(name, repr(error))
     return Reading(entries, unread)
 
@@ -104,7 +104,7 @@ def package_path(module: ModuleType) -> list[str] | None:
     return list(path) if isinstance(path, Iterable) else None
 
 
-def _modules_below(module: ModuleType) -> set[str]:
+def _submodule_names(module: ModuleType) -> set[str]:
     """The names of the modules one level below a package, or none for a plain module."""
     path = package_path(module)
     return set() if path is None else {found.name for found in pkgutil.iter_modules(path)}
