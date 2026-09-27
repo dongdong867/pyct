@@ -189,7 +189,8 @@ class _Program:
         for its operands."""
         for node in order:
             if (kind := self.types[id(node)]) in (tuple, range):
-                # no term of its own: a search reads a tuple's items, a membership a range's Ints
+                # no term of its own: a search reads a tuple's items, a membership or an equality
+                # a range's Ints
                 item_term = self.term if kind is tuple else partial(self._operand, kind=int)
                 self.tuples[id(node)] = tuple(item_term(item) for item in node[1:])
                 continue

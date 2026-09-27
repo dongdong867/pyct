@@ -95,10 +95,10 @@ class ConcolicRange:
             _form(bounds[1]),
             _form(bounds[2]),
         )
-        # the arguments the target passed, which an `in` fork writes as it passed them
+        # how many arguments the target passed, which an `in` or `==` fork writes as passed
         self.written = written
         self.sink = sink
-        # the call that started the last walk, until its size is asked (see `_hinted`)
+        # the call that started the last walk, until its size is asked (see `list_reads.hinted`)
         self.walked_at: tuple[int, int] | None = None
 
     def __iter__(self) -> Iterator[object]:

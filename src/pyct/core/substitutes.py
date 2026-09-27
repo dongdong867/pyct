@@ -45,8 +45,7 @@ from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
-# the tracked values a plain range is searched for with one fork, by their exact type, a set so
-# a plain item costs one lookup
+# the tracked values a plain range is searched for with one fork, by their exact type
 _RANGE_ITEMS = frozenset(ranges.TRACKED_INTS)
 
 

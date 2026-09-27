@@ -84,8 +84,8 @@ RESULTS: Mapping[str, type | None] = {
     # a tuple of prefixes or suffixes, which SMT-LIB has no sort for: only a search reads it,
     # each item a string term
     "()": tuple,
-    # a range's arguments, which SMT-LIB has no sort for either: only a membership reads it,
-    # each argument an Int term
+    # a range's arguments, which SMT-LIB has no sort for either: a membership and an equality of
+    # two ranges read them, each argument an Int term
     "range": range,
     **dict.fromkeys(CHECKS, bool),
     **dict.fromkeys([*CASES, *PADDINGS, *TO_DECLARE], str),
