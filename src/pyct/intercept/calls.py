@@ -1,19 +1,22 @@
-"""The calls pyct substitutes where the target writes them: conversions, `type`, `math`
-functions and a str's methods.
+"""The calls pyct substitutes where the target writes them: conversions, `range`, `type`,
+`math` functions and a str's methods.
 
-- A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
-  dot as in `builtins.int(...)`, a call written `map(...)` with one of
-  those three first, a call written `type(...)` with one argument alone,
-  and a call of a function of `math` that pyct routes
+- A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
+  bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
+  with one of the first three first, a call written `type(...)` with one
+  argument alone, and a call of a function of `math` that pyct routes
   (`pyct.core.math_calls.NAMES`) through a name the module binds to `math`
   or to that function alone, `math.sqrt(...)` or `root(...)` after `from
   math import sqrt as root` (`pyct.intercept.constants`), becomes
-  ``__pyct_call__(int)(...)``: the callee is
-  handed to pyct, which hands back pyct's router when it is Python's own
-  function and the callee itself otherwise, and that is called with the
-  arguments as written. So a name the target binds to its own keeps the
-  target's meaning, and its function runs with no frame of pyct's above it.
-  The `math` module itself is never changed.
+  ``__pyct_call__(int)(...)``: the callee is handed to pyct, which hands
+  back pyct's router when it is Python's own function and the callee itself
+  otherwise, and that is called with the arguments as written. So a name
+  the target binds to its own keeps the target's meaning, and its function
+  runs with no frame of pyct's above it. The `math` module itself is never
+  changed. A `range(...)` whose arguments are all int literals, as
+  `range(3)` or `range(0, 10, 2)`, stays as written: no run can make it
+  tracked, and a plain range is searched with one fork all the same
+  (`pyct.core.substitutes.in_`).
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
@@ -33,7 +36,7 @@ import ast
 
 from pyct.intercept.positions import Parts
 
-# the names whose calls are conversions pyct follows
+# the names whose calls are conversions pyct follows, which a `map` may also hand its items to
 _CONVERSIONS = frozenset({"int", "float", "bool"})
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
@@ -46,8 +49,8 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion, a `math` function or a str literal's method, or None
-    for any other."""
+    """The call that replaces a conversion, `range`, a `math` function or a str literal's
+    method, or None for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
     if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
@@ -96,12 +99,21 @@ def _spelled(node: ast.expr) -> str | None:
 
 
 def _asks_for_its_callee(call: ast.Call) -> bool:
-    """Whether a call is a conversion, a `map` of one or a one-argument `type`, whose callee pyct
-    asks for first."""
+    """Whether a call is a conversion, `range` with an argument that is not an int literal, a
+    `map` of a conversion or a one-argument `type`, whose callee pyct asks for first."""
     spelled = _spelled(call.func)
+    if spelled == "range":
+        return not all(_int_literal(arg) for arg in call.args)
     if spelled in _CONVERSIONS:
         return True
     if spelled == "type":
         # `type` with three arguments builds a class, which pyct leaves to Python
         return len(call.args) == 1 and not call.keywords
     return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS
+
+
+def _int_literal(node: ast.expr) -> bool:
+    """Whether an argument is an int literal, `3` or `-3`, which no run can make tracked."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        node = node.operand
+    return isinstance(node, ast.Constant) and type(node.value) is int

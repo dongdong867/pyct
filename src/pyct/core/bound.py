@@ -1,16 +1,17 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
-`bool`, `map` and `type`: pyct's own routers, one table for all of them (`_FOLLOWED`).
-`CALLED` also holds the router of each `math` function (`pyct.core.math_calls`).
+`bool`, `map`, `range` and `type`: pyct's own routers, one table for all of them
+(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`).
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
-`float(...)`, `bool(...)`, `map(...)` or `type(...)` the router `CALLED`
-holds for the builtin, since a type name is never bound. Python makes the
-answers of the builtins plain, or calls no method of the value at all, and
-`type` reads pyct's class; here a tracked value that core follows through
-one of them gets core's answer, and every other call, keywords and any
-count of arguments included, is Python's own. `map` with a conversion
-first maps pyct's router for it.
+`float(...)`, `bool(...)`, `map(...)`, `range(...)` or `type(...)` the
+router `CALLED` holds for the builtin, since a type name is never bound.
+Python makes the answers of the builtins plain, or calls no method of the
+value at all, and `type` reads pyct's class; here a tracked value that core
+follows through one of them gets core's answer, and every other call,
+keywords and any count of arguments included, is Python's own. `map` with a
+conversion first maps pyct's router for it, and `range` with a tracked int
+among its arguments is a tracked range.
 
 Each bound function carries the name, text and signature of Python's own,
 and lives in this module under that name, so pickle saves and loads it by
@@ -31,7 +32,7 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core import codes, conversions, list_reads, math_calls, strs
+from pyct.core import codes, conversions, list_reads, math_calls, ranges, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -46,9 +47,10 @@ from pyct.core.values import BASES_BY_ID
 _LEN, _ORD, _CHR = len, ord, chr
 
 # the tracked values core follows through each builtin, by their exact type, and the function
-# that follows them: the three bound in the module's builtins, and the conversions a call
-# written `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`)
-_FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]] = {
+# that follows them: the three bound in the module's builtins, the conversions a call written
+# `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`), and `range`, which
+# follows a tracked int in any of its arguments and is handed all of them
+_FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] = {
     _LEN: {ConcolicStr: strs.length, ConcolicList: list_reads.length},
     _ORD: {ConcolicStr: codes.code},
     _CHR: {ConcolicInt: codes.character},
@@ -70,6 +72,7 @@ _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]
         ConcolicFloat: conversions.bool_of_float,
         ConcolicStr: conversions.bool_of_text,
     },
+    range: {ConcolicInt: ranges.ranged, ConcolicBool: ranges.ranged},
 }
 
 
@@ -102,7 +105,7 @@ def chr(*args: object, **kwargs: object) -> object:
 
 # how each conversion follows each tracked type, read straight from `_FOLLOWED` so a
 # conversion of a plain value costs one lookup
-_INT, _FLOAT, _BOOL = _FOLLOWED[int], _FOLLOWED[float], _FOLLOWED[bool]
+_INT, _FLOAT, _BOOL, _RANGE = (_FOLLOWED[kind] for kind in (int, float, bool, range))
 
 
 def int_(*args: object, **kwargs: object) -> Any:
@@ -159,6 +162,20 @@ def map_(*args: object, **kwargs: object) -> Any:
     return map(converter, *args[1:], **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
+def range_(*args: object, **kwargs: object) -> Any:
+    """Python's `range` where the code writes it, a tracked range when an argument is a tracked
+    int (`pyct.core.ranges`).
+
+    Any other call is Python's own range, refusals included; a loop over it
+    runs at Python's own speed, since only the call comes here.
+    """
+    for arg in args:
+        follow = _RANGE.get(type(arg))
+        if follow is not None:
+            return follow(*args, **kwargs)
+    return range(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
+
+
 def type_(value: object, /) -> Any:
     """Python's `type` where the code writes it with one argument: a tracked value's base type.
 
@@ -173,12 +190,13 @@ def type_(value: object, /) -> Any:
     return BASES_BY_ID.get(id(kind), kind)
 
 
-# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `type(...)`, or a
-# call of a `math` function through a name the module binds to it, calls in place of Python's
-# own function, by its identity (see `pyct.core.substitutes.call`)
+# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
+# `type(...)`, or a call of a `math` function through a name the module binds to it, calls in
+# place of Python's own function, by its identity (see `pyct.core.substitutes.call`)
 CALLED: Mapping[int, Callable[..., object]] = {
     **_CONVERTERS,
     id(map): map_,
+    id(range): range_,
     id(type): type_,
     **math_calls.ROUTERS,
 }
@@ -205,7 +223,8 @@ for _python, _bound in BOUND.values():
     _dressed(_bound, _python)
 
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
-# `chr` or a conversion, or from the target's own `__len__` or `__int__`, is the target's
+# `chr`, a conversion, `range` or a `math` function, or from the target's own `__len__`,
+# `__int__` or `__index__`, is the target's
 PASSING: frozenset[types.CodeType] = (
     frozenset(
         function.__code__
@@ -218,6 +237,7 @@ PASSING: frozenset[types.CodeType] = (
             float_,
             bool_,
             map_,
+            range_,
             type_,
             conversions.itself,
         )
