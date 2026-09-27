@@ -12,6 +12,7 @@ from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
 from pyct.solver.joined import joined
+from pyct.solver.letters import Key, fixed_position, furthest_reads, held_lengths, spelled
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import above, below, encode
@@ -113,7 +114,7 @@ def program(
     constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
-    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
+    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, prefix)
     held = [name for name in constants if name in finite and leaves[name] is float]
     lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
     lines.append("(set-logic ALL)")
@@ -194,7 +195,13 @@ class _Program:
     number of distinct parts, not with the conditions written out.
     """
 
-    def __init__(self, leaves: _Leaves, order: list[Node], holders: dict[int, int]) -> None:
+    def __init__(
+        self,
+        leaves: _Leaves,
+        order: list[Node],
+        holders: dict[int, int],
+        prefix: tuple[Branch, ...],
+    ) -> None:
         self.leaves = leaves
         self.types: dict[int, type | None] = {}
         # each part's term, its defined name or the part written out, kept until every place
@@ -205,6 +212,11 @@ class _Program:
         self.facts: set[str] = set()
         for node in order:
             self.types[id(node)] = self._result(node)
+        # the strings read at fixed positions, each written once as its first letters (see
+        # `letters`), and the letters' names once written
+        self.furthest = furthest_reads(order, self._string)
+        self.held = held_lengths(prefix, self._string)
+        self.letters: dict[Key, list[str]] = {}
         read = self._read_by_forms(order)
         # each part comes after the parts it holds (see `distinct`), so their terms are written
         # before it, and no part waits on Python's stack for its operands
@@ -325,6 +337,8 @@ class _Program:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
                 return self._piece(term, positions)
+            if (letter := self._letter(node)) is not None:
+                return letter
             return positioned(self.term(term), *(_plain(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
@@ -375,6 +389,27 @@ class _Program:
         piece, there = SPLITS[str(split[0])](self.term(split), plain, index)
         self._hold(there)
         return piece
+
+    def _string(self, part: Expression) -> Key | None:
+        """What tells a string term from another: its leaf's name, or its part's id."""
+        if self.type_of(part) is not str or not (self.leaves.holds(part) or isinstance(part, list)):
+            return None
+        return ("leaf", self.leaves.named(part)) if self.leaves.holds(part) else id(part)
+
+    def _letter(self, node: Node) -> str | None:
+        """The letter an index at a fixed position reads, the string spelled out on its first
+        read (see `letters`); None for any other index."""
+        at = fixed_position(node)
+        string = None if at is None else self._string(node[1])
+        if at is None or string not in self.furthest:
+            return None
+        term = self.term(node[1])
+        if string not in self.letters:
+            count = len(self.letters)
+            names = [f"c!{count}!{k}" for k in range(self.furthest[string] + 1)]
+            self.letters[string] = names
+            self.definitions += spelled(term, names, f"r!{count}", self.held.get(string, 0))
+        return self.letters[string][at]
 
     def _hold(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""

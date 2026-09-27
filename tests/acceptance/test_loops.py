@@ -86,6 +86,22 @@ def test_walks_a_string() -> None:
     assert found and covers(found[0], FIND_X_FILE, 4), solved
 
 
+# follow-loops-and-ranges-walks-a-string
+def test_walks_a_string_of_forty_letters() -> None:
+    result = run_pyct(FIND_X, '{"s": "' + "a" * 40 + '"}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the solver answers the walk's forks inside its limit: an x at some letter, and the exit
+    # flipped for a longer string, each reaching its aim
+    found = [line for line in inputs[1:] if "x" in text(line, "s")]
+    assert found and covers(found[0], FIND_X_FILE, 4), [line["args"] for line in inputs]
+    exit_aim = {"file": FIND_X_FILE, "line": 2, "col": 13, "position": 80}
+    longer = [line for line in inputs[1:] if line["aim"] == exit_aim]
+    assert longer and longer[0]["mismatch_at"] is None, [line["aim"] for line in inputs]
+    assert len(text(longer[0], "s")) > 40
+
+
 # follow-loops-and-ranges-walks-a-string-wherever-it-is-iterated
 def test_walks_a_string_wherever_it_is_iterated() -> None:
     result = run_pyct(WALKS, '{"s": "xy", "t": "xy"}', "--budget", "10")
