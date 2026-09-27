@@ -253,25 +253,31 @@ def promoted(operation: Callable[..., object]) -> tuple[Callable[..., object], R
     it. So the answer here is that one: `n + 0.5` is `float.__radd__(0.5, n)`,
     on the int's plain value (see `plain_int`).
     The rule reads a tracked float as its expression, and any other float as
-    a literal of its plain value, but for a float subclass that defines the
-    mirrored operation otherwise than float: that is None, NotImplemented
-    here, and Python asks the subclass, as it would for a plain int.
+    a literal of its plain value. A float subclass that defines the mirrored
+    operation otherwise than float is neither: the answer and the rule are
+    NotImplemented and None, and Python asks the subclass, as it would for a
+    plain int. A tracked int has asked it already when it answers
+    (`answered_first`), so Python asks it again only once it has declined.
     """
     name = _mirrored(operation.__name__)
     mirror = getattr(float, name)
 
+    def floats_own(other: object) -> bool:
+        # a tracked float's mirror is followed, and float's own answers it
+        kind = type(other)
+        return kind is float or kind in _CLASSES or getattr(kind, name) is mirror
+
     def answer(self: object, other: object, /, *rest: object) -> object:
-        if isinstance(other, float):
-            return mirror(other, plain_int(self), *rest)
-        return operation(self, other, *rest)
+        if not isinstance(other, float):
+            return operation(self, other, *rest)
+        return mirror(other, plain_int(self), *rest) if floats_own(other) else NotImplemented
 
     def rule(other: object) -> Expression | None:
         if not isinstance(other, float):
             return operand(other)
         if type(other) in _CLASSES:
             return cast(Number, other).expression
-        own_mirror = type(other) is float or getattr(type(other), name) is mirror
-        return float.__float__(other) if own_mirror else None
+        return float.__float__(other) if floats_own(other) else None
 
     return answer, rule
 

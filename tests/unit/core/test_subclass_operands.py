@@ -336,3 +336,36 @@ def test_a_float_subclass_that_declines_beside_a_tracked_int_raises_as_python_do
     with pytest.raises(TypeError):
         n - Dial(2.0)
     assert sink == []
+
+
+class Coy(float):
+    """A float whose own reflected power hands the operation back."""
+
+    def __rpow__(self, other: object, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
+        return NotImplemented
+
+
+# the type name Python's message gives the int on the left, which pyct's names ConcolicInt
+# (name-int-in-a-tracked-int-s-type-error)
+PLAIN_INT_NAME = ("'int'", "'ConcolicInt'")
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [lambda n: n ** Coy(2.0), lambda n: pow(n, Dial(2.0), 5)],
+    ids=["declined-power", "three-argument-power"],
+)
+def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
+    operation: Callable[[Any], Any],
+) -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    with pytest.raises(TypeError) as plain:
+        operation(7)
+    with pytest.raises(TypeError) as raised:
+        operation(n)
+
+    # Python's own message, not float's, with only the left operand's type name apart
+    assert str(raised.value) == str(plain.value).replace(*PLAIN_INT_NAME, 1)
+    assert sink == []
