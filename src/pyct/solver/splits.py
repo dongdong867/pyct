@@ -159,9 +159,12 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
         return split_piece(term, operands, index)
     walk = _words_back(limit) if separator is None else _separators_back(separator, limit)
     bindings, count, pieces = walk
-    chosen = '""'
-    for at in reversed(range(len(pieces))):
-        chosen = f"(ite (= n! {index + at + 1}) {pieces[at]} {chosen})"
+    # there are at most limit + 1 pieces, so piece index is at most limit - index from the right
+    candidates = pieces[: len(pieces) - index]
+    opened = "".join(
+        f"(ite (= n! {index + at + 1}) {piece} " for at, piece in enumerate(candidates)
+    )
+    chosen = f'{opened}""{")" * len(candidates)}'
     bound = [("r!", f"(str.rev {term})"), *bindings, ("n!", count)]
     return _let(bound, chosen), _let(bound, f"(> n! {index})")
 
