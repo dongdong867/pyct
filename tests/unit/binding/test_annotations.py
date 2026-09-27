@@ -155,3 +155,14 @@ def test_contradictions_checks_the_kind_alone_when_the_items_ask_nothing() -> No
     assert contradictions({"cfg": Items(dict, None)}, {"cfg": [1]}) == [
         "cfg must be a dict, got [1]"
     ]
+
+
+def test_contradictions_writes_text_past_ascii_as_it_was_typed() -> None:
+    # the refusal is found on the command line that gave the seed, so é stays é
+    checks: dict[str, Check] = {"cfg": Items(dict, int), "items": Items(list, None), "s": str}
+
+    assert contradictions(checks, {"cfg": {"é": "ü"}, "items": {"é": 1}, "s": 5}) == [
+        "cfg['é'] must be an int, got \"ü\"",
+        'items must be a list, got {"é": 1}',
+        "s must be a str, got 5",
+    ]

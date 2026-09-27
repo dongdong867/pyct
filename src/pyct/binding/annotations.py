@@ -91,7 +91,8 @@ def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> l
     being a subclass of ``int`` is Python's rule too, so ``True`` passes
     ``int`` while ``1`` fails ``bool``. A value is named by the access that
     reaches it, as Python writes it, ``cfg['a'][1]``, and spelled as JSON
-    because the seed was typed as JSON.
+    because the seed was typed as JSON, text past ASCII as it was typed, so the
+    value can be found on the command line that gave it.
     """
     return [
         line
@@ -132,7 +133,7 @@ def _accepts(hint: type, value: object) -> bool:
 
 
 def _refusal(written: str, kinds: tuple[type, ...], value: object) -> str:
-    return f"{written} must be {_wanted(kinds)}, got {json.dumps(value)}"
+    return f"{written} must be {_wanted(kinds)}, got {json.dumps(value, ensure_ascii=False)}"
 
 
 def _wanted(kinds: tuple[type, ...]) -> str:
