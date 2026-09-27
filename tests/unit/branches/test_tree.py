@@ -40,14 +40,16 @@ def test_a_newer_path_waits_until_every_older_fork_was_aimed_at() -> None:
     tree.add((fork(2, taken=True), fork(3, taken=True)))
     tree.add((fork(4, taken=True), fork(5, taken=True)))
 
-    aims = [picked.aim for picked in iter(tree.next, None)]
+    picks = list(iter(tree.next, None))
 
-    assert aims == [
+    assert [picked.aim for picked in picks] == [
         Aim(site=fork(3, taken=True).site, position=1),
         Aim(site=fork(2, taken=True).site, position=0),
         Aim(site=fork(5, taken=True).site, position=1),
         Aim(site=fork(4, taken=True).site, position=0),
     ]
+    # each pick names the path it extends, whose input an answer starts from
+    assert [picked.path for picked in picks] == [0, 0, 1, 1]
 
 
 def test_a_path_added_after_a_pick_waits_behind_the_older_open_forks() -> None:

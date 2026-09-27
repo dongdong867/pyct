@@ -50,7 +50,9 @@ _ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
 
 # one value still to place: the value, and where it goes. The access is None under a key no
 # access can name. The slot is an index for a list, and for a dict the copy's own key
-type _Pending = tuple[object, Expression | None, dict[Any, object] | list[object], Any, Check | None]
+type _Pending = tuple[
+    object, Expression | None, dict[Any, object] | list[object], Any, Check | None
+]
 
 
 class Walk:

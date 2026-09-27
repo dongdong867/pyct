@@ -47,7 +47,8 @@ class Tree:
         self._paths.append((forks, tuple(keys)))
 
     def next(self) -> Plan | None:
-        """The path that takes the other side of the deepest open fork on the oldest path.
+        """The path that takes the other side of the deepest open fork on the oldest path, and
+        which path it extends, counted in the order ``add`` took them.
 
         Oldest path first, deepest fork first, by decision
         fork-order-oldest-path-deepest-first: every fork of a path is tried
@@ -65,7 +66,7 @@ class Tree:
             if depth >= 0:
                 self._aimed.add(keys[depth])
                 self._depth = depth - 1
-                return plan(forks[: depth + 1])
+                return plan(forks[: depth + 1], self._path)
             self._path += 1
             self._depth = None
         return None

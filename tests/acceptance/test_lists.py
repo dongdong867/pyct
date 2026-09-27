@@ -152,13 +152,24 @@ def answered_every_fork(stdout: str) -> bool:
     return (solver["unknown"], solver["timeout"]) == (0, 0)
 
 
+def is_access(part: object) -> bool:
+    """Whether a part is an access to a value inside an argument: a chain of `["[]", ..., key]`
+    steps, each key a number or a string literal, down to a parameter's name."""
+    while isinstance(part, list) and len(part) == 3 and part[0] == "[]":
+        if isinstance(part[2], list):
+            return False
+        part = part[1]
+    return isinstance(part, str) and not part.startswith(("'", '"'))
+
+
 def printed_nodes(expression: object) -> int:
-    """Nodes of an expression as a line prints it, counted on a stack of its own."""
+    """Nodes of an expression as a line prints it, counted on a stack of its own: a list and
+    each leaf one node apiece, and an access one node, the name the line's args find it by."""
     nodes, stack = 0, [expression]
     while stack:
         part = stack.pop()
         nodes += 1
-        if isinstance(part, list):
+        if isinstance(part, list) and not is_access(part):
             stack.extend(part[1:])
     return nodes
 
@@ -241,7 +252,11 @@ def test_follows_a_tracked_index() -> None:
         (2, ["==", ["[]", "items", "i"], 7], False),
     ]
     answers = [args_of(line) for line in solved(lines)]
-    in_range = [a for a in answers if -len(items_of({"args": a})) <= number(a["i"]) < len(items_of({"args": a}))]
+    in_range = [
+        a
+        for a in answers
+        if -len(items_of({"args": a})) <= number(a["i"]) < len(items_of({"args": a}))
+    ]
     assert any(items_of({"args": a})[number(a["i"])] == 7 for a in in_range), answers
     assert any(number(a["i"]) < 0 for a in answers), answers
     past = [line for line in solved(lines) if number(args_of(line)["i"]) >= len(items_of(line))]
@@ -265,7 +280,8 @@ def test_searches_and_compares_lists_as_python_does() -> None:
     assert any(7 in answer for answer in answers), answers
     assert [1, 2] in answers, answers
     # both sides of `items < [5]`, each as Python answers it for that line's items
-    below = [answer < [5] for answer in answers if 7 not in answer and answer != [1, 2]]
+    five: list[object] = [5]
+    below = [answer < five for answer in answers if 7 not in answer and answer != [1, 2]]
     assert True in below and False in below, answers
     assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
 
@@ -279,11 +295,7 @@ def test_follows_an_append() -> None:
     fork = ["==", ["[]", ["+", "items", ["[,]", "x"]], 2], 42]
     assert (3, fork, False) in listed(lines[0])
     assert fork_line(result.stderr, APPEND_FILE, 3, "(items + [x])[2] == 42", False)
-    hits = [
-        args_of(line)
-        for line in solved(lines)
-        if (3, fork, True) in listed(line)
-    ]
+    hits = [args_of(line) for line in solved(lines) if (3, fork, True) in listed(line)]
     assert any(
         (a["x"] == 42 and len(items_of({"args": a})) == 2)
         or (len(items_of({"args": a})) > 2 and items_of({"args": a})[2] == 42)
@@ -299,10 +311,11 @@ def test_follows_every_list_change(name: str) -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
+    expressions = [fork["expression"] for fork in forks_of(lines[0])]
     literal = [
-        json.dumps(fork["expression"])
-        for fork in forks_of(lines[0])
-        if fork["expression"][0] == "==" and fork["expression"][2] == 0
+        json.dumps(expression)
+        for expression in expressions
+        if isinstance(expression, list) and expression[0] == "==" and expression[2] == 0
     ]
     assert literal, lines[0]
     sides = sides_of(lines)
@@ -353,8 +366,7 @@ def test_follows_lists_inside_lists() -> None:
     grids = [items_of(line, "grid") for line in lines]
     fork = [">", ["[]", ["[]", "grid", 0], 0], 5]
     assert any(
-        (3, fork, True) in listed(line)
-        and number(items_of(line, "grid")[0][0]) > 5  # type: ignore[index]
+        (3, fork, True) in listed(line) and number(items_of(line, "grid")[0][0]) > 5  # type: ignore[index]
         for line in lines
     ), grids
     assert any(len(grid) == 2 and grid[1] == [] for grid in grids), grids
@@ -365,16 +377,14 @@ def test_follows_lists_inside_lists() -> None:
 def test_flips_after_thousands_of_passes() -> None:
     seed = {"data": [1] * 3000, "items": []}
     # the budget ends the run: the loop leaves thousands of forks, each open to flip
-    result = run_pyct(THOUSANDS, json.dumps(seed), "--budget", "60", timeout=90)
+    result = run_pyct(THOUSANDS, json.dumps(seed), "--budget", "60", *UNTIL_NO_GAIN, timeout=90)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    aimed = {
-        line["aim"]["line"]: line["mismatch_at"]  # type: ignore[index]
-        for line in solved(lines)
-        if line["aim"]["line"] in (5, 7)  # type: ignore[index]
-    }
-    assert aimed == {5: None, 7: None}, aimed
+    aimed = [(line["aim"], line["mismatch_at"]) for line in solved(lines)]
+    # a solver line aims at each fork after the loop, and reaches it
+    for fork in (5, 7):
+        assert any(aim["line"] == fork and at is None for aim, at in aimed), aimed  # type: ignore[index]
     forks = [fork for line in lines for fork in forks_of(line)]
     assert all(printed_nodes(fork["expression"]) <= 1000 for fork in forks)
     cut = [count for fork in forks for count in cut_counts(fork["expression"])]

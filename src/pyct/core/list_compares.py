@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import operator
 from collections.abc import Callable
+from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
@@ -19,7 +20,7 @@ from pyct.core.list_state import ListState
 from pyct.core.values import forked, own
 
 # Python's order on two lists, by the operator's head
-ORDERS: dict[str, Callable[[object, object], object]] = {
+ORDERS: dict[str, Callable[[Any, Any], Any]] = {
     "<": operator.lt,
     "<=": operator.le,
     ">": operator.gt,
@@ -73,9 +74,10 @@ class _Side:
         self.name = name
 
     def form(self) -> ListState | None:
-        """The side as a tracked list, while its form holds."""
+        """The side as a tracked list, while its form holds: its length checked each time, so
+        a change made without its methods turns it plain before a fork reads its form."""
         value = self.value
-        return value if isinstance(value, ListState) and value.expression is not None else None
+        return value if isinstance(value, ListState) and value.holds(self.name) else None
 
     def size(self) -> Expression:
         """The length as a compare writes it: `["len", form]` for a tracked list, else the int."""
@@ -85,7 +87,7 @@ class _Side:
     def has(self, at: int) -> bool:
         """Whether this side holds an item at ``at``, a fork when it is tracked."""
         tracked = self.form()
-        if tracked is not None and tracked.holds(self.name, at):
+        if tracked is not None:
             return more(tracked, at)
         return at < list.__len__(self.value)
 
@@ -120,7 +122,7 @@ def ordered(self: ListState, other: list[object], op: str) -> object:
         if not matches(mine, theirs):
             return own(ORDERS[op], mine, theirs)
         at += 1
-    answer = own(ORDERS[op], self.length(), list.__len__(other))
+    answer = bool(own(ORDERS[op], self.length(), list.__len__(other)))
     return ConcolicBool(answer, expression=[op, left.size(), right.size()], sink=self.sink)
 
 

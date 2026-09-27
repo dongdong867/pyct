@@ -51,6 +51,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 └── targets/          the programs pyct is pointed at, by the acceptance tests and the benchmark
     ├── ints/         a follow story's fixtures, under the type it follows
     ├── strs/         the same for strings. floats/ later
+    ├── lists/        the same for lists as they change. dicts/ next
     └── nested/       values inside an argument: a dict's and a list's
 ```
 

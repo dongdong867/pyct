@@ -14,6 +14,7 @@ from collections.abc import Mapping
 
 from pyct.binding.shapes import ArrayValue, ListAnswer
 from pyct.core.branch import Expression
+from pyct.solver.answer import SolverAnswerError
 from pyct.solver.lists import ListTerms
 
 # where an item of a list the path built came from: a list the seed names, the positions of the
@@ -30,6 +31,13 @@ def list_answers(lists: ListTerms, model: Mapping[str, object]) -> dict[str, Lis
     for name, positions in answering.lists():
         answers[_named(name, positions)] = answering.answer(name, positions, read)
     return answers
+
+
+def _count(value: object) -> int:
+    """A length or a count the answer holds, which cvc5 always writes as a number."""
+    if not isinstance(value, int):
+        raise SolverAnswerError(f"cvc5 answered a length that is not a number: {value!r}")
+    return value
 
 
 def _named(name: str, positions: tuple[int, ...]) -> str:
@@ -49,15 +57,20 @@ class _Answering:
         self.terms = lists
         self.model = model
         self.marks: dict[int, list[_Mark]] = {}
+        # the marks of each list the seed names, by name and the positions of a list inside it
+        self.stored: dict[tuple[str, tuple[int, ...]], list[_Mark]] = {}
 
     def lists(self) -> list[tuple[str, tuple[int, ...]]]:
         """Every list the program declared: each the seed names, and each inside one a part
         reads."""
         named = [(name, ()) for name in self.terms.symbols if self._declared(name, (), "len")]
-        return named + sorted(set(self.terms.stored.values()) - set(named))  # type: ignore[arg-type]
+        return named + sorted(set(self.terms.stored.values()) - set(named))
 
     def answer(
-        self, name: str, positions: tuple[int, ...], read: Mapping[tuple[str, tuple[int, ...]], set[int]]
+        self,
+        name: str,
+        positions: tuple[int, ...],
+        read: Mapping[tuple[str, tuple[int, ...]], set[int]],
     ) -> ListAnswer:
         """One list's length, arrays and the positions a fork read."""
         length = self._value(name, positions, "len")
@@ -67,7 +80,7 @@ class _Answering:
             if isinstance(array := self._value(name, positions, kind), ArrayValue)
         }
         found = read.get((name, positions), set())
-        return ListAnswer(length=int(length), arrays=arrays, read=frozenset(found))  # type: ignore[call-overload]
+        return ListAnswer(length=_count(length), arrays=arrays, read=frozenset(found))
 
     def read(self) -> dict[tuple[str, tuple[int, ...]], set[int]]:
         """The positions each read on the path took, by the list the seed names it came from."""
@@ -102,18 +115,23 @@ class _Answering:
         if head == "*":
             times = next(part for part in operands if type(part) is int)
             listed = next(part for part in operands if type(part) is not int)
-            return self._marks(listed) * times  # type: ignore[operator]
+            return self._marks(listed) * _count(times)
         bounds = [self._number(part) for part in operands[1:]]
         return self._marks(operands[0])[slice(*bounds)]
 
     def _stored(self, name: str, positions: tuple[int, ...]) -> list[_Mark]:
-        length = self._value(name, positions, "len")
-        return [(name, positions, at) for at in range(int(length))]  # type: ignore[call-overload]
+        """The marks of a list the seed names, or of a list inside one: made once, since a
+        walk over it reads every one."""
+        key = (name, positions)
+        if key not in self.stored:
+            length = self._value(name, positions, "len")
+            self.stored[key] = [(name, positions, at) for at in range(_count(length))]
+        return self.stored[key]
 
     def _number(self, part: Expression) -> int | None:
         """A position or a bound's value: a number as written, or the value cvc5 gave its term."""
-        if part is None or type(part) is int:
-            return part  # type: ignore[return-value]
+        if part is None or (isinstance(part, int) and not isinstance(part, bool)):
+            return part
         value = self.model.get(self.terms.named(part).strip("|"))
         return value if isinstance(value, int) else None
 

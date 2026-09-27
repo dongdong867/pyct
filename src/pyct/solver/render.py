@@ -182,6 +182,16 @@ def program(
     declared = [(constant, sort_of(name, leaves[name])) for name, constant in constants.items()]
     terms = ListTerms(shapes, {name: named[name] for name in named if name in shapes})
     body = _Program(Leaves(kinds=leaves, constants=constants, lists=shapes), order, holders, terms)
+    text = _text(prefix, body, declared)
+    by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
+    return Program(text=text, names_by_symbol=by_symbol, lists=terms if terms.declared else None)
+
+
+def _text(prefix: tuple[Branch, ...], body: "_Program", declared: list[tuple[str, str]]) -> str:
+    """The program's lines, in the order cvc5 reads them: each leaf and each list's parts
+    declared before any term on them, the definitions, what the lists and the path assert, and
+    what to ask for."""
+    terms = body.lists
     lines = ["(set-logic ALL)"]
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
     lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
@@ -191,9 +201,7 @@ def program(
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     lines += [f"(get-value ({name}))" for name in terms.asked()]
-    text = "\n".join(lines) + "\n"
-    by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
-    return Program(text=text, names_by_symbol=by_symbol, lists=terms if terms.declared else None)
+    return "\n".join(lines) + "\n"
 
 
 class _Program:
@@ -250,7 +258,7 @@ class _Program:
             return _leaf(expression)
         key = id(expression)
         self.unread[key] -= 1
-        return self.terms[key] if self.unread[key] else self.terms.pop(key)
+        return _read(self.terms[key] if self.unread[key] else self.terms.pop(key), expression)
 
     def _named(self, part: Expression) -> str:
         """A part's term as a list reads it: a leaf's constant, a literal, or a defined part's
@@ -258,7 +266,7 @@ class _Program:
         name = self.leaves.named(part)
         if name is not None:
             return self.leaves.constants[name]
-        return self.terms[id(part)] if isinstance(part, list) else _leaf(part)
+        return _read(self.terms[id(part)], part) if isinstance(part, list) else _leaf(part)
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
@@ -364,10 +372,21 @@ class _Program:
         return term
 
 
-def _leaf(leaf: str | int | bool | None) -> str:
+def _read(term: str, part: Expression) -> str:
+    """A part's term where a condition reads it. A tracked list and a read of an item no term
+    holds, a None or a list inside, write none: no condition core records reads one whole."""
+    if not term:
+        raise ValueError(f"pyct cannot render {part}: it is no value a condition reads")
+    return term
+
+
+def _leaf(leaf: str | int | float | bool | None) -> str:
     """A number, a truth value or a string literal. A negative number is a subtraction."""
     if leaf is None:
         raise ValueError("pyct cannot render a missing bound outside a slice")
+    if isinstance(leaf, float):
+        # a list display holds a float as itself, and no read of one reaches a fork yet
+        raise ValueError(f"pyct cannot render {leaf!r}: nothing solves a float yet")
     if isinstance(leaf, bool):
         return "true" if leaf else "false"
     if isinstance(leaf, int):

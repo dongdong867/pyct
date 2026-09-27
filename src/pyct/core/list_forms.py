@@ -39,35 +39,39 @@ class _Unwritten(Enum):
 UNWRITTEN = _Unwritten.VALUE
 
 
-def written(value: object, depth: int = 0) -> Expression | _Unwritten:
-    """The expression that stands for a value stored in a tracked list, or ``UNWRITTEN``."""
+def written(value: object, name: str, depth: int = 0) -> Expression | _Unwritten:
+    """The expression that stands for a value stored in a tracked list, or ``UNWRITTEN``.
+
+    A tracked list is its form while the form holds; ``name`` is the operation that reads it,
+    which a list changed without its methods names as it turns plain.
+    """
     if isinstance(value, ConcolicInt | ConcolicStr | ConcolicBool):
         return value.expression
-    if type(value) in _AS_THEMSELVES:
-        return value  # type: ignore[return-value]
+    if value is None or (isinstance(value, int | float) and type(value) in _AS_THEMSELVES):
+        return value
     if type(value) is str:
         return str.__repr__(value)
-    if isinstance(value, ListState) and value.expression is not None:
+    if isinstance(value, ListState) and value.holds(name):
         return value.expression
     if isinstance(value, list) and (type(value) is list or isinstance(value, ListState)):
-        return displayed(list.copy(value), depth + 1)
+        return displayed(list.copy(value), name, depth + 1)
     return UNWRITTEN
 
 
-def displayed(values: Iterable[object], depth: int = 0) -> Expression | _Unwritten:
+def displayed(values: Iterable[object], name: str, depth: int = 0) -> Expression | _Unwritten:
     """A list display of the values, ``["[,]", ...]``, or ``UNWRITTEN`` when one is not written."""
     if depth > _DEPTH:
         return UNWRITTEN
     items: list[Expression] = ["[,]"]
     for value in values:
-        form = written(value, depth)
+        form = written(value, name, depth)
         if form is UNWRITTEN:
             return UNWRITTEN
         items.append(form)
     return items
 
 
-def sliced(form: Expression, start: Expression, stop: Expression) -> Expression:
+def sliced(form: Expression, start: Expression, stop: Expression) -> list[Expression]:
     """``form[start:stop]``, a missing bound written None."""
     return ["[:]", form, start, stop]
 
@@ -86,7 +90,8 @@ def dropped(form: Expression, index: Expression) -> Expression:
 
 
 def put(form: Expression, index: Expression, item: Expression) -> Expression:
-    """The form with ``item`` in place of the one at ``index``: ``items[:i] + [x] + items[i:][1:]``."""
+    """The form with ``item`` in place of the one at ``index``:
+    ``items[:i] + [x] + items[i:][1:]``."""
     after = sliced(sliced(form, index, None), 1, None)
     return joined(sliced(form, None, index), ["[,]", item], after)
 
@@ -96,7 +101,9 @@ def placed(form: Expression, index: Expression, item: Expression) -> Expression:
     return joined(sliced(form, None, index), ["[,]", item], sliced(form, index, None))
 
 
-def spliced(form: Expression, bounds: tuple[Expression, Expression], middle: Expression | None) -> Expression:
+def spliced(
+    form: Expression, bounds: tuple[Expression, Expression], middle: Expression | None
+) -> Expression:
     """The form with ``[a:b]`` replaced by ``middle``, or deleted when it is None.
 
     ``items[:a] + ys + items[a:][len(items[a:b]):]``, a missing ``a`` written as 0: the part

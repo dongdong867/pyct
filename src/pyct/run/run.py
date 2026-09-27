@@ -105,14 +105,26 @@ class Bounds:
 
 
 @dataclass(frozen=True)
+class Ran:
+    """An input that ran: its record, and its arguments as the walk copied them, which a later
+    answer on its path starts from."""
+
+    record: InputRecord
+    seed: Seed
+
+
+@dataclass(frozen=True)
 class Attempt:
     """What one pass of the loop produced: an input, or a miss, or the reason to stop."""
 
     stop: Stop | None = None
-    record: InputRecord | None = None
+    ran: Ran | None = None
     miss: Miss | None = None
-    # the input as the walk copied it, which a later answer on its path starts from
-    seed: Seed | None = None
+
+    @property
+    def record(self) -> InputRecord | None:
+        """The record of the input that ran, if one did."""
+        return None if self.ran is None else self.ran.record
 
 
 @dataclass(frozen=True)
@@ -232,12 +244,13 @@ def _loop(
         if attempt.miss is not None:
             misses.append(attempt.miss)
             told.miss(attempt.miss)
-        if attempt.record is not None:
-            records.append(attempt.record)
-            covered.append(attempt.record.covered_lines & told.scope.lines)
-            tree.add(attempt.record.forks)
-            inputs.append(attempt.seed)  # type: ignore[arg-type]
-            told.record(attempt.record)
+        if attempt.ran is not None:
+            record = attempt.ran.record
+            records.append(record)
+            covered.append(record.covered_lines & told.scope.lines)
+            tree.add(record.forks)
+            inputs.append(attempt.ran.seed)
+            told.record(record)
 
 
 def _attempt(
@@ -283,7 +296,7 @@ def _attempt(
         record = _record_of(solved.args, call(solved.args, bounds.until), wanted)
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error))
-    return Attempt(record=record, seed=solved)
+    return Attempt(ran=Ran(record, solved))
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

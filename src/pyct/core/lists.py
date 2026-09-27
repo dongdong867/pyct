@@ -12,13 +12,14 @@ from __future__ import annotations
 import copy
 import operator
 from collections.abc import Callable
+from typing import Any
 
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
-from pyct.core.branch import Downgrade
+from pyct.core.branch import Downgrade, Expression
 from pyct.core.list_forms import sliced
-from pyct.core.list_state import ListState
+from pyct.core.list_state import ListState, plain, plain_items
 from pyct.core.values import downgrade_the_rest, downgraded, forked, own
 
 # not the target's path: `__repr__`, the object plumbing, and `__init__`, which a target calls
@@ -35,10 +36,10 @@ _OPERATORS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "g
 
 
 def _python(self: ListState, name: str, *args: object) -> object:
-    """list's own answer: a downgrade named ``name`` while the list has a form, else plain."""
+    """list's own answer, plain: a downgrade named ``name`` while the list has a form."""
     if self.expression is not None:
-        return downgraded(list, name)(self, *args)
-    return own(getattr(list, name), self, *args)
+        return plain_items(downgraded(list, name)(self, *args))
+    return plain_items(own(getattr(list, name), self, *args))
 
 
 def _slice(self: ListState, key: slice) -> object:
@@ -54,7 +55,7 @@ def _slice(self: ListState, key: slice) -> object:
         return self.derived(self.storage(), list(self.shadow), self.expression)
     form = sliced(self.expression, *bounds)
     if step is not None:
-        form = [*form, step]  # type: ignore[misc]
+        form = [*form, step]
     shadow = list.__getitem__(self.shadow, key)
     return self.derived(list.__getitem__(self, key), shadow, form)
 
@@ -165,10 +166,10 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
 
 
 def _python_joined(self: ListState, name: str, left: list[object], right: list[object]) -> object:
-    """Two lists joined as Python joins them, the loss named while the list has a form."""
+    """Two lists joined as Python joins them, plain, the loss named while the list has a form."""
     if self.expression is not None:
         self.sink.append(Downgrade(name=name))
-    return left + right
+    return plain_items(left + right)
 
 
 def _repeated(self: ListState, count: object, name: str, *, reflected: bool = False) -> object:
@@ -220,16 +221,16 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
         own(list.sort, self, *args, **kwargs)
         return
     items = list(reads.walk(self))
-    if self.expression is None:
-        own(list.sort, self, **kwargs)
-        return
-    key = kwargs.get("key")
-    keys = items if key is None else [own(key, item) for item in items]  # type: ignore[operator]
-    order = own(sorted, range(len(items)), key=keys.__getitem__, reverse=bool(kwargs.get("reverse")))
+    key: Any = kwargs.get("key")
+    keys: list[Any] = items if key is None else [own(key, item) for item in items]
+    placed: list[int] = own(
+        sorted, range(len(items)), key=keys.__getitem__, reverse=bool(kwargs.get("reverse"))
+    )
     storage, shadow = self.storage(), self.shadow
-    list.__setitem__(self, slice(None), [storage[at] for at in order])
-    self.shadow = [shadow[at] for at in order]
-    self.expression = ["[,]", *(["[]", self.expression, at] for at in order)]
+    list.__setitem__(self, slice(None), [storage[at] for at in placed])
+    self.shadow = [shadow[at] for at in placed]
+    shown: list[Expression] = ["[,]", *(["[]", self.expression, at] for at in placed)]
+    self.expression = shown
 
 
 def _truth(self: ListState) -> bool:
@@ -251,7 +252,7 @@ def _pickled(self: ListState, protocol: object) -> object:
     """A pickle of a tracked list holds the plain list: pickle-holds-the-plain-value."""
     if self.expression is not None:
         self.sink.append(Downgrade(name="__reduce_ex__"))
-    return (list, (self.storage(),))
+    return (list, ([plain(item) for item in self.storage()],))
 
 
 def _iadd(self: ListState, values: object) -> ListState:
@@ -290,7 +291,7 @@ class ConcolicList(ListState):
     __le__ = _compare("<=")  # pyrefly: ignore[bad-override]
     __gt__ = _compare(">")  # pyrefly: ignore[bad-override]
     __ge__ = _compare(">=")  # pyrefly: ignore[bad-override]
-    __hash__ = None  # type: ignore[assignment]
+    __hash__ = None
 
     # the lists it builds, each tracked with the form that builds it
     __add__ = lambda self, other: _joined(self, other, "__add__")  # pyrefly: ignore[bad-override]  # noqa: E731

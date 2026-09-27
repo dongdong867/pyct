@@ -120,6 +120,25 @@ class Joined(Piece):
     """Lists joined by `+`, or one repeated by `*`, in order."""
 
     parts: list[Piece] = field(default_factory=list)
+    _flat: list[Piece] | None = None
+
+    def flat(self) -> list[Piece]:
+        """The parts with every join inside run flat, in order, worked out once.
+
+        A list appended to in a loop is a join thousands deep; flat, a read runs along it as
+        one row of parts, on a stack of its own.
+        """
+        if self._flat is None:
+            flat: list[Piece] = []
+            stack: list[Piece] = list(reversed(self.parts))
+            while stack:
+                part = stack.pop()
+                if isinstance(part, Joined):
+                    stack.extend(reversed(part.parts if part._flat is None else part._flat))
+                else:
+                    flat.append(part)
+            self._flat = flat
+        return self._flat
 
 
 @dataclass
@@ -267,20 +286,23 @@ class _Reader:
             if here == FALSE:
                 continue
             term, item_kind = piece.items[at]
-            fits = term is not None and item_kind == self.kind
-            if fits:
-                value = term if value is None else ite(here, term, value)  # type: ignore[arg-type]
+            fits = False
+            if term is not None and item_kind == self.kind:
+                fits = True
+                value = term if value is None else ite(here, term, value)
             guard = ite(here, TRUE if fits else FALSE, guard)
         every = all(term is not None and kind == self.kind for term, kind in piece.items)
         return Read(value, TRUE if every else guard)
 
-    def _joined(self, piece: Joined, position: Lin) -> Read | tuple[list[str], list[tuple[Piece, Lin]]]:
+    def _joined(
+        self, piece: Joined, position: Lin
+    ) -> Read | tuple[list[str], list[tuple[Piece, Lin]]]:
         """Joined lists: the part the position lands in, each part a branch taken when the
         position is before its end, those it cannot reach left out."""
         conditions: list[str] = []
         parts: list[tuple[Piece, Lin]] = []
         offset = Lin()
-        for part in piece.parts:
+        for part in piece.flat():
             end = offset.plus(part.length)
             before_end = compare(position, end, self.nonnegative)
             if before_end != FALSE:

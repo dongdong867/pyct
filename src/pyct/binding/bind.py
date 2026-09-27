@@ -58,7 +58,7 @@ class _Tracker:
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         made = ConcolicList.made([None] * len(value), place.access, self.sink)
-        self.lists.append(made)  # type: ignore[arg-type]
+        self.lists.append(made)
         return made, list(value)
 
 
@@ -101,6 +101,10 @@ class Noted:
         self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
 
     def scalar(self, value: int | str, place: Place) -> object:
+        return self.noted(value, place)
+
+    def noted(self, value: object, place: Place) -> object:
+        """Note a tracked value by its name and type, and hand it back to go where it was."""
         name = leaf_name(place.access)
         self.named[name] = type(value)
         if not place.in_list:

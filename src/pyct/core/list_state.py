@@ -9,7 +9,8 @@ shadow behind, and the next operation that reads a position or the length sees i
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from typing import Any, Self
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression
@@ -47,6 +48,30 @@ def kinds_of(items: Iterable[object]) -> frozenset[str]:
     return frozenset(map(kind_of, items))
 
 
+# each tracked scalar's plain value, read from its base type so nothing is recorded
+_PLAIN: dict[type, Callable[[Any], object]] = {
+    ConcolicInt: int.__int__,
+    ConcolicStr: str.__str__,
+    ConcolicBool: int.__bool__,
+}
+
+
+def plain(value: object) -> object:
+    """A tracked int, str or bool as the plain value it is; any other value as it is."""
+    read = _PLAIN.get(type(value))
+    return value if read is None else read(value)
+
+
+def plain_items(value: object) -> object:
+    """A value a downgrade hands out, plain: a tracked scalar as its value, and a list Python
+    built, plain `list` and nothing else, with its scalars plain in place. A list inside keeps
+    its identity, since the target may change it where it sits."""
+    if type(value) is list:
+        list.__setitem__(value, slice(None), [plain(item) for item in value])
+        return value
+    return plain(value)
+
+
 def is_static(expression: Expression) -> bool:
     """Whether a list's form names an argument's list as it came: a parameter, or an access.
 
@@ -77,9 +102,7 @@ class ListState(list):
     walked_at: tuple[int, int] | None
 
     @classmethod
-    def made(
-        cls, items: list[object], expression: Expression | None, sink: BranchSink
-    ) -> ListState:
+    def made(cls, items: list[object], expression: Expression | None, sink: BranchSink) -> Self:
         """A tracked list of these items and this form, its shadow the items themselves."""
         made = cls.__new__(cls)
         list.extend(made, items)
@@ -108,11 +131,10 @@ class ListState(list):
             return False
         size = self.length()
         matches = size == len(self.shadow) and all(
-            not 0 <= at < size or list.__getitem__(self, at) is self.shadow[at]
-            for at in positions
+            not 0 <= at < size or list.__getitem__(self, at) is self.shadow[at] for at in positions
         )
         if not matches:
-            self.expression = None
+            self.turn_plain()
         return matches
 
     def holds(self, name: str, *positions: int) -> bool:
@@ -129,14 +151,25 @@ class ListState(list):
 
     def lose(self, name: str) -> None:
         """The list turns plain, and the line names the operation that lost it."""
-        self.expression = None
+        self.turn_plain()
         self.sink.append(Downgrade(name=name))
+
+    def turn_plain(self) -> None:
+        """Drop the form, and with it the conditions of the items the arguments put here.
+
+        The list is plain from now on, so what it holds is plain too: each tracked int, str
+        and bool is its value, and a list inside, tracked in its own right, stays where it is.
+        """
+        self.expression = None
+        list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
 
     def static(self) -> bool:
         """Whether the form names an argument's list as it came (see ``is_static``)."""
         return self.expression is not None and is_static(self.expression)
 
-    def derived(self, items: list[object], shadow: list[object], expression: Expression) -> ListState:
+    def derived(
+        self, items: list[object], shadow: list[object], expression: Expression
+    ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form."""
         made = type(self).made(items, expression, self.sink)
         made.shadow = shadow

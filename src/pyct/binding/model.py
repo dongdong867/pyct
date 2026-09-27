@@ -47,7 +47,7 @@ class _Applied(Noted):
     def scalar(self, value: int | str, place: Place) -> object:
         # an item of a list is placed with the list's answer already in it
         answered = value if place.in_list else self.model.get(leaf_name(place.access), value)
-        return super().scalar(answered, place)  # type: ignore[arg-type]
+        return self.noted(answered, place)
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         name = leaf_name(place.access)

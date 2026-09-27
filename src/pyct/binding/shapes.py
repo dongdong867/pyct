@@ -127,10 +127,10 @@ def resized(items: list[object], answer: ListAnswer, shape: ListShape) -> list[o
 
 def _item(items: list[object], answer: ListAnswer, shape: ListShape, at: int) -> object:
     kind = shape.kind_at(at)
-    if at < len(items) and (at not in answer.read or kind not in _ADDED):
+    array = answer.arrays.get(kind)
+    if at < len(items) and (at not in answer.read or array is None):
         return items[at]
     if kind in _ADDED:
-        array = answer.arrays.get(kind)
         return _ADDED[kind] if array is None else array.at(at)
     return _STARTS[kind]() if kind in _STARTS else None
 

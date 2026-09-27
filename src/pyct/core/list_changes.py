@@ -11,12 +11,22 @@ and the list is plain from then on.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import Any
 
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
-from pyct.core.list_forms import UNWRITTEN, displayed, dropped, joined, placed, put, spliced, written
+from pyct.core.list_forms import (
+    UNWRITTEN,
+    displayed,
+    dropped,
+    joined,
+    placed,
+    put,
+    spliced,
+    written,
+)
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
-from pyct.core.list_state import ListState, kind_of, kinds_of
+from pyct.core.list_state import ListState, kind_of, kinds_of, plain
 from pyct.core.values import own
 
 # one change, made the same way on the items and on the shadow
@@ -47,13 +57,19 @@ def in_range(self: ListState, key: object) -> bool:
     """Record whether the list holds the index ``key``, as the index's own kind records it."""
     if type(key) is ConcolicInt:
         return tracked_long_enough(self, key)
-    return long_enough(self, int.__int__(key))  # type: ignore[arg-type]
+    return long_enough(self, _number(key))
 
 
 def resolved(self: ListState, key: object) -> int:
     """The position an index in range reads: a negative one counts back from the end."""
-    index = int.__int__(key)  # type: ignore[arg-type]
+    index = _number(key)
     return index + self.length() if index < 0 else index
+
+
+def _number(key: object) -> int:
+    """The plain value of an index pyct follows, read from int itself so nothing is recorded."""
+    assert isinstance(key, int)
+    return int.__int__(key)
 
 
 def made(self: ListState, change: Change, form: Expression, kinds: frozenset[str]) -> object:
@@ -74,21 +90,19 @@ def unfollowed(self: ListState, name: str, change: Change) -> object:
     answer = own(change, self)
     if self.expression is not None:
         self.lose(name)
-    return answer
+    return plain(answer)
 
 
-def added(value: object, name: str) -> tuple[Expression, frozenset[str]] | None:
+def added(value: list[object], name: str) -> tuple[Expression, frozenset[str]] | None:
     """The form and the kinds of a list another list takes in: its own form, or a display.
 
-    None for a value that is not a list, or holds a value no expression holds. A tracked list
-    whose form no longer holds is read as the plain list it is, named by ``name``.
+    None for a list that holds a value no expression holds. A tracked list whose form no longer
+    holds is read as the plain list it is, named by ``name``.
     """
     if isinstance(value, ListState) and value.holds(name):
         return value.expression, value.kinds
-    if not isinstance(value, list):
-        return None
     items = list.copy(value)
-    form = displayed(items)
+    form = displayed(items, name)
     return None if form is UNWRITTEN else (form, kinds_of(items))
 
 
@@ -108,7 +122,7 @@ def taken_in(
 
 def append(self: ListState, value: object) -> None:
     """``items.append(x)``: the list becomes ``items + [x]``."""
-    form = written(value)
+    form = written(value, "append")
     change: Change = lambda items: list.append(items, value)  # noqa: E731
     if form is UNWRITTEN or not self.holds("append"):
         unfollowed(self, "append", change)
@@ -131,20 +145,20 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
     made(self, change, joined(self.expression, form), kinds)
 
 
-def insert(self: ListState, index: object, value: object) -> None:
+def insert(self: ListState, index: Any, value: object) -> None:
     """``items.insert(i, x)``: the list becomes ``items[:i] + [x] + items[i:]``.
 
     Insert clamps its position to the list, so it records no fork.
     """
-    at, form = position(index), written(value)
-    change: Change = lambda items: list.insert(items, index, value)  # type: ignore[arg-type]  # noqa: E731
+    at, form = position(index), written(value, "insert")
+    change: Change = lambda items: list.insert(items, index, value)  # noqa: E731
     if at is None or form is UNWRITTEN or not self.holds("insert"):
         unfollowed(self, "insert", change)
         return
     made(self, change, placed(self.expression, at, form), frozenset({kind_of(value)}))
 
 
-def pop(self: ListState, *args: object) -> object:
+def pop(self: ListState, *args: Any) -> object:
     """``items.pop()`` and ``items.pop(i)``, handing out the item as indexed.
 
     ``pop()`` records that the list is not empty, and ``pop(i)`` the index's long-enough fork,
@@ -158,7 +172,9 @@ def pop(self: ListState, *args: object) -> object:
         return own(list.pop, self, *args)
     at = resolved(self, key)
     item = handed(self, at, position(key), "pop")
-    form = ["[:]", self.expression, None, -1] if not args else dropped(self.expression, position(key))
+    form = (
+        ["[:]", self.expression, None, -1] if not args else dropped(self.expression, position(key))
+    )
     made(self, lambda items: list.pop(items, at), form, frozenset())
     return item
 
@@ -195,16 +211,16 @@ def reverse(self: ListState) -> None:
     made(self, list.reverse, ["[:]", self.expression, None, None, -1], frozenset())
 
 
-def repeat(self: ListState, count: object, name: str) -> None:
+def repeat(self: ListState, count: Any, name: str) -> None:
     """``items *= k`` with a plain int ``k``: the list becomes ``items * k``."""
-    change: Change = lambda items: list.__imul__(items, count)  # type: ignore[arg-type]  # noqa: E731
+    change: Change = lambda items: list.__imul__(items, count)  # noqa: E731
     if plain_index(count) is None or not self.holds(name):
         unfollowed(self, name, change)
         return
     made(self, change, ["*", self.expression, plain_index(count)], frozenset())
 
 
-def assign(self: ListState, key: object, value: object) -> None:
+def assign(self: ListState, key: Any, value: object) -> None:
     """``items[i] = x`` and ``items[a:b] = ys``.
 
     An index records its long-enough fork before Python may raise IndexError, and the list
@@ -214,8 +230,8 @@ def assign(self: ListState, key: object, value: object) -> None:
     if isinstance(key, slice):
         _assign_slice(self, key, value)
         return
-    change: Change = lambda items: list.__setitem__(items, key, value)  # type: ignore[arg-type]  # noqa: E731
-    form = written(value)
+    change: Change = lambda items: list.__setitem__(items, key, value)  # noqa: E731
+    form = written(value, "__setitem__")
     if form is UNWRITTEN or not follows(self, key) or not self.holds("__setitem__"):
         unfollowed(self, "__setitem__", change)
         return
@@ -235,13 +251,14 @@ def _assign_slice(self: ListState, key: slice, value: object) -> None:
     made(self, change, spliced(self.expression, bounds, form), kinds)
 
 
-def delete(self: ListState, key: object) -> None:
+def delete(self: ListState, key: Any) -> None:
     """``del items[i]`` and ``del items[a:b]``.
 
     An index records its long-enough fork before Python may raise IndexError, and the list
-    becomes ``items[:i] + items[i:][1:]``; a slice becomes ``items[:a] + items[a:][len(items[a:b]):]``.
+    becomes ``items[:i] + items[i:][1:]``; a slice becomes
+    ``items[:a] + items[a:][len(items[a:b]):]``.
     """
-    change: Change = lambda items: list.__delitem__(items, key)  # type: ignore[arg-type]  # noqa: E731
+    change: Change = lambda items: list.__delitem__(items, key)  # noqa: E731
     bounds = slice_bounds(key) if isinstance(key, slice) else None
     followed = bounds is not None or (not isinstance(key, slice) and follows(self, key))
     if not followed or not self.holds("__delitem__"):

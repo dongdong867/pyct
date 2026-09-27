@@ -14,28 +14,19 @@ it takes and once more, taken false, where it ends.
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 
 from pyct.core.branch import Downgrade, Expression
 from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import TRACKED, ListState, kind_of
+from pyct.core.list_state import TRACKED, ListState, kind_of, plain
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked
-
-# the type that tracks each kind of item a read hands out
-_TRACKED_TYPES: dict[str, type[ConcolicInt] | type[ConcolicStr]] = {
-    "int": ConcolicInt,
-    "str": ConcolicStr,
-}
-
-# the plain value of a tracked item, read from its base type so nothing is recorded
-_PLAIN: dict[str, Callable[[object], object]] = {"int": int.__int__, "str": str.__str__}
 
 
 def plain_index(key: object) -> int | None:
     """An index pyct writes as a number: a plain int, or a plain bool as the int it indexes with."""
     if type(key) is int or type(key) is bool:
-        return int.__int__(key)  # type: ignore[arg-type]
+        return int.__int__(key)
     return None
 
 
@@ -69,13 +60,16 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     kind = kind_of(item)
     if kind not in TRACKED:
         return item
-    plain = _PLAIN[kind](item)
+    value = plain(item)
     by_position = self.static() and type(written) is int and written >= 0
     if not by_position and self.kinds & TRACKED != {kind}:
         self.sink.append(Downgrade(name=name))
-        return plain
+        return value
     expression: Expression = ["[]", self.expression, written]
-    return _TRACKED_TYPES[kind](plain, expression=expression, sink=self.sink)
+    if isinstance(value, str):
+        return ConcolicStr(value, expression=expression, sink=self.sink)
+    assert isinstance(value, int)
+    return ConcolicInt(value, expression=expression, sink=self.sink)
 
 
 def more(self: ListState, at: int) -> bool:

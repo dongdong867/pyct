@@ -48,6 +48,9 @@ class Leaves:
     kinds: Mapping[str, type]
     constants: Mapping[str, str]
     lists: Mapping[str, ListShape] = field(default_factory=dict)
+    # what `named` answered for each list part, by its identity: a path reads each part many
+    # times, and an access is written out as JSON to be looked up
+    _names: dict[int, str | None] = field(default_factory=dict, compare=False)
 
     def named(self, part: Expression) -> str | None:
         """The name of the leaf a part of a condition is, or None for a literal or an operation.
@@ -60,8 +63,13 @@ class Leaves:
         """
         if isinstance(part, str):
             return None if is_literal(part) else part
-        name = access_name(part)
-        return name if name in self.kinds or name in self.lists else None
+        if not isinstance(part, list):
+            return None
+        if id(part) not in self._names:
+            name = access_name(part)
+            known = name in self.kinds or name in self.lists
+            self._names[id(part)] = name if known else None
+        return self._names[id(part)]
 
     def holds(self, part: Expression) -> bool:
         """Whether a part is one of the seed's leaves, which a condition names and never opens."""

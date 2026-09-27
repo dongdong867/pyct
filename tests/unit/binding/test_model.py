@@ -24,7 +24,7 @@ def test_an_empty_model_gives_back_the_seed() -> None:
 def test_applying_a_model_leaves_the_seed_alone() -> None:
     seed: dict[str, object] = {"x": 3}
 
-    apply(Seed.of(seed), {"x": 12}).args
+    apply(Seed.of(seed), {"x": 12})
 
     assert seed == {"x": 3}
 
@@ -32,7 +32,7 @@ def test_applying_a_model_leaves_the_seed_alone() -> None:
 def test_a_model_about_a_key_the_seed_does_not_have_is_an_error() -> None:
     # the solver answered about a leaf that does not exist; the name says which
     with pytest.raises(ValueError, match="z"):
-        apply(Seed.of({"x": 3}), {"z": 12}).args
+        apply(Seed.of({"x": 3}), {"z": 12})
 
 
 def test_the_model_writes_a_value_inside_at_its_access() -> None:
@@ -49,7 +49,7 @@ def test_the_model_writes_a_value_inside_at_its_access() -> None:
 
 def test_a_model_about_an_access_the_seed_does_not_have_is_an_error() -> None:
     with pytest.raises(ValueError, match="items"):
-        apply(Seed.of({"items": [1]}), {json.dumps(["[]", "items", 1]): 5}).args
+        apply(Seed.of({"items": [1]}), {json.dumps(["[]", "items", 1]): 5})
 
 
 def test_the_model_keeps_a_list_that_holds_itself_one_list() -> None:
