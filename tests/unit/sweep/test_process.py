@@ -156,3 +156,11 @@ def test_a_command_starts_with_no_signal_held_that_sweep_held_while_starting_it(
     finished = run_command(python(script), cwd=tmp_path, env=dict(os.environ), limit=30)
 
     assert finished.stdout == "[]\n"
+
+
+def test_a_command_that_cannot_start_raises_and_holds_no_signal_after(tmp_path: Path) -> None:
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, [])
+
+    with pytest.raises(FileNotFoundError):
+        run_command([str(tmp_path / "missing")], cwd=tmp_path, env=dict(os.environ), limit=30)
+    assert signal.pthread_sigmask(signal.SIG_BLOCK, []) == before
