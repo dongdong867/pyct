@@ -221,7 +221,7 @@ DOWNGRADED_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
     "s.translate({})": (lambda s: s.translate({}), "translate"),
     "len(s)": (len, "__len__"),
     "str(s)": (str, "__str__"),
-    "s[::-1]": (lambda s: s[::-1], "__getitem__"),
+    "s[::3]": (lambda s: s[::3], "__getitem__"),
     "s.expandtabs()": (lambda s: s.expandtabs(), "expandtabs"),
     "2 * s": (lambda s: 2 * s, "__rmul__"),
     "s * 2": (lambda s: s * 2, "__mul__"),

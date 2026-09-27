@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
+from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.list_kinds import (
     ITEM_SORTS,
     ITEM_TYPES,
@@ -48,9 +49,6 @@ from pyct.solver.list_terms import (
 )
 
 __all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
-
-# the longest list an answer holds, and the longest a list the target builds from one
-MOST_ITEMS = 1_000_000
 
 # how each fork on a list's length, taken or not, says how long the list is at least: by the
 # number it compares with

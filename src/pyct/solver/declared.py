@@ -15,10 +15,10 @@ from pyct.binding.shapes import ListAnswer, ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node
-from pyct.solver.heads import SORTS
 from pyct.solver.list_answers import list_answers
 from pyct.solver.lists import ListTerms, TrackedList
 from pyct.solver.literals import is_literal
+from pyct.solver.symbols import leaf_symbol
 
 
 @dataclass(frozen=True)
@@ -119,32 +119,4 @@ def symbols(prefix: tuple[Branch, ...], order: list[Node], seed: Leaves) -> dict
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
     every = [*seed.kinds, *seed.lists]
-    return {name: symbol(name, index) for index, name in enumerate(every) if name in named}
-
-
-def symbol(name: str, index: int) -> str:
-    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
-
-    The prefix keeps every symbol apart from the solver's own words, which
-    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
-    bars or not. Each character past ASCII is written as its UTF-8 bytes,
-    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
-    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
-    argument is named by its access, which holds brackets, quotes, and any
-    character a key holds, ``|`` and the backslash among them, which not
-    even a quoted symbol can.
-    """
-    if not name.isidentifier():
-        return f"leaf.{index}"
-    written = "".join(
-        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
-        for character in name
-    )
-    return f"arg.{written}"
-
-
-def sort_of(name: str, kind: type) -> str:
-    sort = SORTS.get(kind)
-    if sort is None:
-        raise ValueError(f"pyct cannot declare {name}: nothing solves a {kind.__name__} yet")
-    return sort
+    return {name: leaf_symbol(name, index) for index, name in enumerate(every) if name in named}
