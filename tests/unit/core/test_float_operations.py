@@ -184,8 +184,8 @@ def test_is_integer_given_an_argument_raises_as_the_target() -> None:
 
 class Gauge(float):
     """A float subclass of a library's own, as numpy.float64 is: it answers some reflected
-    operations itself, and hands one back to float. It reads the other side by float's own
-    `__float__`, as numpy reads a float's value, so a tracked float records nothing."""
+    operations itself, and hands one back to float. It reads the other side through float's
+    own method, so pyct records nothing of its own for the read."""
 
     def __rtruediv__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
         return ("gauge /", float.__float__(other))

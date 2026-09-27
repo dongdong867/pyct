@@ -105,8 +105,8 @@ def downgraded(
     concatenation is its `__add__` the other way round; a tracked bool
     formats as the bool it is, where int's `__format__` writes a number.
     The downgrade is still named ``name``. ``first`` answers a call on one
-    argument before the base type does, when it has an answer, and then
-    nothing is lost.
+    argument before the base type does, when it has an answer, and that
+    answer comes back with no downgrade of pyct's own.
     """
     operation = getattr(base, name) if calling is None else calling
 
