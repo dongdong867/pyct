@@ -9,7 +9,6 @@ import pytest
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
-from pyct.solver.render import render
 from pyct.solver.strings import (
     character,
     encode,
@@ -28,6 +27,7 @@ from tests.unit.solver.agreement import (
     heads_named,
     needs_cvc5,
 )
+from tests.unit.solver.test_render import render
 
 # the bounds a random slice picks from: missing, negative, and past either end of a string of
 # up to five characters
@@ -78,7 +78,7 @@ def test_a_search_or_an_order_writes_a_piece_once(condition: Expression) -> None
     text = render((Branch(expression=condition, taken=True, site=SITE),), {"s": str, "t": str})
 
     # the form reads the piece several times, and the program defines it once for all of them
-    assert text.count(sliced("s", 1, None)) == 1
+    assert text.count(sliced("|arg.s|", 1, None)) == 1
     assert text.count(sliced("e!0", 1, None)) == 1
     assert "e!1" in text.split("(assert ")[1]
 

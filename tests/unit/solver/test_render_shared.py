@@ -1,5 +1,6 @@
 """A path's conditions share their parts as Python holds them, and the program writes each once."""
 
+import json
 import random
 import time
 
@@ -7,7 +8,6 @@ from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Answer, Sat
 from pyct.solver.cvc5 import solve
 from pyct.solver.joined import joined
-from pyct.solver.render import render
 from pyct.solver.strings import below, sliced
 from tests.unit.solver.agreement import (
     PATH_LETTERS,
@@ -17,7 +17,11 @@ from tests.unit.solver.agreement import (
     python,
     takes,
 )
+from tests.unit.solver.test_render import render
 from tests.unit.solver.test_string_pieces import PYTHON_HEADS, UNFORKED_HEADS, piece_of
+
+# the constants the program declares for the parameters s and x
+S, X = "|arg.s|", "|arg.x|"
 
 # the letters the character-edit loop's string is compared with at the end
 LETTERS = "abcdefghijklmnopqrstuvwxyz" * 2
@@ -49,7 +53,7 @@ def test_a_part_held_twice_is_defined_once() -> None:
 
     text = render((fork(["==", ["+", part, part], "'bcbc'"], taken=True),), {"s": str})
 
-    assert f"(define-fun e!0 () String {sliced('s', 1, None)})" in text.splitlines()
+    assert f"(define-fun e!0 () String {sliced(S, 1, None)})" in text.splitlines()
     assert '(assert (= (str.++ e!0 e!0) "bcbc"))' in text.splitlines()
 
 
@@ -61,7 +65,7 @@ def test_a_part_two_forks_hold_is_defined_before_either() -> None:
         {"s": str},
     ).splitlines()
 
-    assert text.index('(define-fun e!0 () String (str.++ s "x"))') < text.index(
+    assert text.index(f'(define-fun e!0 () String (str.++ {S} "x"))') < text.index(
         '(assert (not (= e!0 "ax")))'
     )
     assert '(assert (distinct e!0 "bx"))' in text
@@ -71,7 +75,7 @@ def test_a_part_a_form_reads_is_named_though_held_once() -> None:
     # an order against a literal reads its string once for each letter
     text = render((fork(["<", ["[:]", "s", 1, 3], "'mn'"], taken=True),), {"s": str})
 
-    assert f"(define-fun e!0 () String {sliced('s', 1, 3)})" in text.splitlines()
+    assert f"(define-fun e!0 () String {sliced(S, 1, 3)})" in text.splitlines()
     assert f"(assert {below('e!0', 'mn', or_equal=False)})" in text.splitlines()
 
 
@@ -83,9 +87,9 @@ def _asserted(expression: Expression, leaves: dict[str, type]) -> str:
 
 # two pieces of one string side by side, and the one piece they are written as
 JOINS: dict[str, tuple[Expression, str]] = {
-    "s[:2] + s[2:]": (["+", ["[:]", "s", None, 2], ["[:]", "s", 2, None]], "s"),
-    "s[:1] + s[1]": (["+", ["[:]", "s", None, 1], ["[]", "s", 1]], sliced("s", None, 2)),
-    "s[1:3] + s[3:5]": (["+", ["[:]", "s", 1, 3], ["[:]", "s", 3, 5]], sliced("s", 1, 5)),
+    "s[:2] + s[2:]": (["+", ["[:]", "s", None, 2], ["[:]", "s", 2, None]], S),
+    "s[:1] + s[1]": (["+", ["[:]", "s", None, 1], ["[]", "s", 1]], sliced(S, None, 2)),
+    "s[1:3] + s[3:5]": (["+", ["[:]", "s", 1, 3], ["[:]", "s", 3, 5]], sliced(S, 1, 5)),
 }
 
 
@@ -98,8 +102,8 @@ def test_the_edit_loop_hands_the_solver_the_string_it_started_from() -> None:
     text = render(_edit_loop(18, "a" * 18), {"s": str}).splitlines()
 
     # every pass takes s apart and puts it back, so each fork reads s itself
-    assert '(assert (= s "abcdefghijklmnopqr"))' in text
-    assert "(assert (> (str.len s) 17))" in text
+    assert f'(assert (= {S} "abcdefghijklmnopqr"))' in text
+    assert f"(assert (> (str.len {S}) 17))" in text
     assert not any(line.startswith("(define-fun") for line in text)
 
 
@@ -140,7 +144,7 @@ def _pieces() -> list[Expression]:
 
 def _written(pair: Expression) -> Expression:
     """Two pieces side by side as the program writes them: the one piece they make, if any."""
-    (written,) = joined((fork(["==", pair, "''"], taken=True),))
+    (written,) = joined((fork(["==", pair, "''"], taken=True),), lambda _: False)
     assert isinstance(written.expression, list)
     return written.expression[1]
 
@@ -169,10 +173,33 @@ def test_a_join_means_in_python_what_its_two_pieces_meant() -> None:
     assert wrong == []
 
 
+# two strings inside a list, the leaves binding names by their accesses
+ITEMS: dict[str, type] = {
+    json.dumps(["[]", "items", 0]): str,
+    json.dumps(["[]", "items", 1]): str,
+}
+
+
+def test_two_strings_inside_a_list_are_joined_as_two_values() -> None:
+    first, second = ["[]", "items", 0], ["[]", "items", 1]
+
+    # each is a value the seed holds, not a piece of the list, so nothing makes them one piece
+    assert _asserted(["==", ["+", first, second], "'ab'"], ITEMS) == (
+        '(assert (= (str.++ |leaf.0| |leaf.1|) "ab"))'
+    )
+
+
+def test_two_pieces_of_a_string_inside_a_list_are_the_string() -> None:
+    string: Expression = ["[]", "items", 0]
+    pieces: Expression = ["+", ["[:]", string, None, 1], ["[:]", string, 1, None]]
+
+    assert _asserted(["==", pieces, "'ab'"], ITEMS) == '(assert (= |leaf.0| "ab"))'
+
+
 def test_a_sum_of_two_operations_on_ints_is_added_as_it_stands() -> None:
     expression: Expression = ["==", ["+", ["-", "x", 1], ["-", "x", 2]], 5]
 
-    assert _asserted(expression, {"x": int}) == "(assert (= (+ (- x 1) (- x 2)) 5))"
+    assert _asserted(expression, {"x": int}) == f"(assert (= (+ (- {X} 1) (- {X} 2)) 5))"
 
 
 def test_a_fork_on_a_bare_truth_value_holds_no_part() -> None:
@@ -188,7 +215,7 @@ def test_a_sum_built_over_five_thousand_passes_is_written_out() -> None:
 
     # nested far past Python's recursion limit, and held once, so written out where it stands
     assert _asserted(["==", term, 5], {"x": int}) == (
-        f"(assert (= {'(+ ' * 5000}x{' 1)' * 5000} 5))"
+        f"(assert (= {'(+ ' * 5000}{X}{' 1)' * 5000} 5))"
     )
 
 
@@ -201,7 +228,7 @@ def test_a_string_built_over_five_thousand_passes_is_defined_once() -> None:
 
     # a form reads the string, so it is defined, written out once down to s
     opened, closed = "(str.++ ", ' " ")'
-    assert f"(define-fun e!0 () String {opened * 5000}s{closed * 5000})" in text
+    assert f"(define-fun e!0 () String {opened * 5000}{S}{closed * 5000})" in text
 
 
 def _marked_loop(passes: int) -> tuple[Branch, ...]:

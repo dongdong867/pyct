@@ -206,7 +206,9 @@ _CALLED = ("len",)
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     """A condition Python writes around its operands, or None for one it writes between them.
 
-    An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out.
+    An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
+    and a key as the expression stores it, a string key in its Python quotes,
+    ``config['port']``.
     A builtin in `_CALLED` reads ``len(s)``, and a named head with arguments
     reads as Python calls a method, ``a.name(b)``. A part cut from a long
     expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is

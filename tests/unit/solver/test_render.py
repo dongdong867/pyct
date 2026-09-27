@@ -1,11 +1,9 @@
-import json
 from collections.abc import Callable, Mapping
 
 import pytest
 
-from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, render
+from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, program
 from pyct.solver.strings import (
     above,
     below,
@@ -124,7 +122,7 @@ def test_an_operation_with_a_number_on_its_left_is_written_on_ints() -> None:
     # core writes `10 - x` as the reflected subtraction, the number first
     text = render((fork(["==", ["-", 10, "x"], 3], taken=True),), {"x": int})
 
-    assert "(assert (= (- 10 x) 3))" in text.splitlines()
+    assert "(assert (= (- 10 |arg.x|) 3))" in text.splitlines()
 
 
 def test_an_operator_nothing_encodes_is_an_error() -> None:
@@ -298,19 +296,22 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
     ]
 
 
+# the constants the program declares for the parameters s, t and x
+S, T, X = "|arg.s|", "|arg.t|", "|arg.x|"
+
 # each piece as the expression carries it, and the term the program carries for it
 PIECES: dict[str, tuple[Expression, str]] = {
-    "index": (["[]", "s", 0], character("s", 0)),
+    "index": (["[]", "s", 0], character(S, 0)),
     # a negative index reaches its form as the number it is, not a subtraction already written
-    "negative-index": (["[]", "s", -1], character("s", -1)),
-    "slice": (["[:]", "s", 1, 3], sliced("s", 1, 3)),
-    "slice-missing-stop": (["[:]", "s", 2, None], sliced("s", 2, None)),
-    "slice-missing-start": (["[:]", "s", None, -1], sliced("s", None, -1)),
-    "plus": (["+", "s", "t"], "(str.++ s t)"),
-    "plus-literal-first": (["+", "'x'", "s"], '(str.++ "x" s)'),
-    "replace": (["replace", "s", "'a'", "t"], replaced("s", '"a"', "t")),
-    "removeprefix": (["removeprefix", "s", "'x'"], without_prefix("s", '"x"')),
-    "removesuffix": (["removesuffix", "s", "t"], without_suffix("s", "t")),
+    "negative-index": (["[]", "s", -1], character(S, -1)),
+    "slice": (["[:]", "s", 1, 3], sliced(S, 1, 3)),
+    "slice-missing-stop": (["[:]", "s", 2, None], sliced(S, 2, None)),
+    "slice-missing-start": (["[:]", "s", None, -1], sliced(S, None, -1)),
+    "plus": (["+", "s", "t"], f"(str.++ {S} {T})"),
+    "plus-literal-first": (["+", "'x'", "s"], f'(str.++ "x" {S})'),
+    "replace": (["replace", "s", "'a'", "t"], replaced(S, '"a"', T)),
+    "removeprefix": (["removeprefix", "s", "'x'"], without_prefix(S, '"x"')),
+    "removesuffix": (["removesuffix", "s", "t"], without_suffix(S, T)),
     # the piece the index reads is defined once and read by its name
     "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character("e!0", 0)),
 }
@@ -326,7 +327,7 @@ def test_a_piece_is_written_as_the_term_that_means_it(expression: Expression, te
 def test_the_length_of_a_string_is_cvc5s_own() -> None:
     text = render((fork([">", ["len", "s"], 3], taken=False),), {"s": str})
 
-    assert "(assert (not (> (str.len s) 3)))" in text.splitlines()
+    assert f"(assert (not (> (str.len {S}) 3)))" in text.splitlines()
 
 
 def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
@@ -338,8 +339,8 @@ def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
         {"s": str, "x": int},
     )
 
-    assert '(assert (= (str.++ s "a") "ba"))' in text.splitlines()
-    assert "(assert (< (+ x 1) 3))" in text.splitlines()
+    assert f'(assert (= (str.++ {S} "a") "ba"))' in text.splitlines()
+    assert f"(assert (< (+ {X} 1) 3))" in text.splitlines()
 
 
 def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
@@ -348,8 +349,8 @@ def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
         (fork([">=", ["[]", "s", 0], ["+", "t", "t"]], taken=True),), {"s": str, "t": str}
     ).splitlines()
 
-    assert f"(define-fun e!0 () String {character('s', 0)})" in text
-    assert "(define-fun e!1 () String (str.++ t t))" in text
+    assert f"(define-fun e!0 () String {character(S, 0)})" in text
+    assert f"(define-fun e!1 () String (str.++ {T} {T}))" in text
     assert "(assert (str.<= e!1 e!0))" in text
 
 
@@ -359,13 +360,13 @@ def test_a_plus_on_two_pieces_joins_strings() -> None:
 
     text = render((fork(["==", joined, "'bb'"], taken=True),), {"s": str})
 
-    both = f"{replaced('s', '"a"', '"b"')} {without_prefix('s', '"x"')}"
+    both = f"{replaced(S, '"a"', '"b"')} {without_prefix(S, '"x"')}"
     assert f'(assert (= (str.++ {both}) "bb"))' in text.splitlines()
 
 
 @pytest.mark.parametrize("head", ["removeprefix", "removesuffix"])
 def test_a_piece_given_a_piece_defines_each_once(head: str) -> None:
-    string, affix = sliced("s", 1, None), sliced("t", 1, None)
+    string, affix = sliced(S, 1, None), sliced(T, 1, None)
 
     text = render(
         (fork(["==", [head, ["[:]", "s", 1, None], ["[:]", "t", 1, None]], "'x'"], taken=True),),

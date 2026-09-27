@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.binding.annotations import Check, check_of, contradictions
+from pyct.binding.bind import access_name, leaves
 from pyct.binding.call import call_arguments, positional_only
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
@@ -130,8 +131,10 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
     """The trace a person reads first, then the one line tools read.
 
     Both print each fork's expression cut to the cap, and it is cut once for both.
+    An access to one of the input's values is a name, written whole.
     """
-    printed = printed_forks(record.forks)
+    names = leaves(record.args)
+    printed = printed_forks(record.forks, lambda part: access_name(part) in names)
     print(render_trace(record, coverage, printed), end="", file=sys.stderr, flush=True)
     _line(render(record, coverage, printed))
 

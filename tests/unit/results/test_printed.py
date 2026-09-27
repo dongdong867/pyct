@@ -212,6 +212,22 @@ def test_a_list_reached_through_two_operands_is_counted_once() -> None:
     assert written == [CUT, _distinct(expression)]
 
 
+def test_an_access_to_a_value_inside_an_argument_is_written_whole() -> None:
+    access: Expression = "config"
+    for _ in range(2000):
+        access = ["[]", access, "'a'"]
+    wide = _tree(2 * LIMIT)
+    fork = Branch(expression=["==", ["+", access, 1], wide], taken=True, site=Site("m.py", 5, 7))
+
+    (written,) = printed_forks([fork], lambda part: part is access)
+
+    # the access is the name the line's args find the value by, one node however deep, and the
+    # line cuts the rest of the condition around it
+    assert isinstance(written, list) and isinstance(written[1], list)
+    assert written[1][1] is access
+    assert _cut_from(written[2], wide)
+
+
 def _edit_loop(passes: int) -> list[Branch]:
     """`s = s[:i] + s[i] + s[i+1:]` for each i, each pass forking on `len(s) > i`, then `s == …`.
 

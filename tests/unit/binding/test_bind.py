@@ -265,6 +265,20 @@ def test_access_name_reads_only_a_step_the_walk_takes() -> None:
     assert access_name([]) is None
 
 
+def test_access_name_reads_a_chain_of_steps_down_to_a_name_only() -> None:
+    deep: object = "s"
+    for _ in range(5000):
+        deep = ["+", deep, "' '"]
+
+    # an index on a string a loop built holds the whole string: it is no access, and the check
+    # reads a step of it, not the string written out, nested past Python's recursion limit
+    assert access_name(["[]", deep, 0]) is None
+    assert access_name(["[]", ["[]", "config", "'a'"], "'b'"]) == json.dumps(
+        ["[]", ["[]", "config", "'a'"], "'b'"]
+    )
+    assert access_name(["[]", "items", ["+", "i", 1]]) is None
+
+
 def test_a_list_reached_first_under_a_float_key_is_still_named_by_its_key() -> None:
     shared = [0]
     seed: dict[str, object] = {"d": {1.5: shared, "k": shared}}

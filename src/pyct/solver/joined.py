@@ -14,35 +14,37 @@ changes.
 from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.dag import Node, distinct
+from pyct.solver.dag import IsLeaf, Node, distinct
 
 # a piece of a string: the string, and where the piece starts and stops, None for an end
 type _Span = tuple[Expression, int | None, int | None]
 
 
-def joined(prefix: tuple[Branch, ...]) -> tuple[Branch, ...]:
+def joined(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> tuple[Branch, ...]:
     """The path with every join of two adjacent pieces of one string written as one piece.
 
     Each distinct part is rewritten once, so a part held in many places is
-    still one part, and one that nothing joins is left as it is.
+    still one part, and one that nothing joins is left as it is. A leaf of
+    the seed is a value, not a piece, even when it is an item of a list.
     """
-    order, _ = distinct(prefix)
+    order, _ = distinct(prefix, is_leaf)
     written: dict[int, Expression] = {}
     for node in order:
-        written[id(node)] = _rejoined(node, written)
+        written[id(node)] = _rejoined(node, written, is_leaf)
     return tuple(
-        replace(fork, expression=written[id(fork.expression)])
+        replace(fork, expression=written.get(id(fork.expression), fork.expression))
         if isinstance(fork.expression, list)
         else fork
         for fork in prefix
     )
 
 
-def _rejoined(node: Node, written: dict[int, Expression]) -> Expression:
+def _rejoined(node: Node, written: dict[int, Expression], is_leaf: IsLeaf) -> Expression:
     """A part with its operands rewritten, and itself one piece if it joins two."""
     head, *operands = node
-    parts = [written[id(part)] if isinstance(part, list) else part for part in operands]
-    if head == "+" and len(parts) == 2 and (whole := _join(parts[0], parts[1])) is not None:
+    parts = [written.get(id(part), part) if isinstance(part, list) else part for part in operands]
+    pieces = len(parts) == 2 and not any(is_leaf(part) for part in parts)
+    if head == "+" and pieces and (whole := _join(parts[0], parts[1])) is not None:
         return whole
     if all(part is operand for part, operand in zip(parts, operands, strict=True)):
         return node

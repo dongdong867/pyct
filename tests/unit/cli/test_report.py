@@ -8,7 +8,7 @@ from pyct.cli import _report
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
-from pyct.results.printed import printed_forks
+from pyct.results.printed import IsLeaf, printed_forks
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 
@@ -70,9 +70,9 @@ def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPa
 def _count_cuts(monkeypatch: pytest.MonkeyPatch, calls: list[str], module: str) -> None:
     """Note each time ``module`` cuts a record's forks, by the module's name."""
 
-    def counted(forks: Sequence[Branch]) -> tuple[Expression, ...]:
+    def counted(forks: Sequence[Branch], *is_leaf: IsLeaf) -> tuple[Expression, ...]:
         calls.append(module)
-        return printed_forks(forks)
+        return printed_forks(forks, *is_leaf)
 
     monkeypatch.setattr(f"{module}.printed_forks", counted)
 

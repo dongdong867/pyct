@@ -7,7 +7,9 @@ the limit, the top of the expression is kept and each part cut from it is
 written ``["...", N]``, N being how many distinct nodes that part holds: a
 list the part reaches more than once counts once, with its leaves. So N
 stays near the number of operations that built the part, however often the
-part repeats written out. N is ``None``, ``null`` on the line, when the
+part repeats written out. An access that names a value inside an argument
+is a leaf, the name the line's args find the value by: one node, written
+whole and never cut. N is ``None``, ``null`` on the line, when the
 line's counting has spent `COUNTING_STEPS` before it is done: one budget of
 steps a line, which all of the line's cut parts share, so on a line with
 many cut parts a later one can have none. Only the printing is cut: the
@@ -18,7 +20,7 @@ both print what `printed_forks` hands them, cut once for the two
 
 import math
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from pyct.core.branch import Branch, Expression
 
@@ -40,6 +42,10 @@ _CUT_NODES = 2
 
 # a list of an expression, as the walk meets it
 type _Node = list[Expression]
+
+# whether a list is a leaf: the access that names a value inside an argument, which the line
+# writes whole, as the name that finds the value in its args, and counts as one node
+type IsLeaf = Callable[[Expression], bool]
 
 # a part still to open: the list the line holds for it, and the part itself. A part left cut
 # keeps the same pair, so its count can be written into the list once it is known
@@ -85,6 +91,11 @@ class _Steps:
         self.left -= steps
 
 
+def _no_leaf(_part: Expression) -> bool:
+    """No list is a leaf: every list is an operation, as when no seed says otherwise."""
+    return False
+
+
 def printed(expression: Expression) -> Expression:
     """The expression as a line prints it: whole within `LIMIT` nodes, else cut down to it.
 
@@ -93,22 +104,23 @@ def printed(expression: Expression) -> Expression:
     two pieces of itself doubles the expression written out on every pass,
     and it is counted without being written out.
     """
-    return _printed_all((expression,))[0]
+    return _printed_all((expression,), _no_leaf)[0]
 
 
-def printed_forks(forks: Sequence[Branch]) -> tuple[Expression, ...]:
+def printed_forks(forks: Sequence[Branch], is_leaf: IsLeaf = _no_leaf) -> tuple[Expression, ...]:
     """Each fork's expression as `printed` prints it, every list counted once for all the forks.
 
     A loop's forks each hold its string as that pass left it, so each holds
     the string of every fork before it. Counted fork by fork, a path would
     cost its length times its size; counted once, it costs its size. The
     forks keep their expressions, so each list keeps its identity while the
-    count is read.
+    count is read. A list ``is_leaf`` names is a leaf, written whole and
+    counted as one node.
     """
-    return _printed_all(tuple(fork.expression for fork in forks))
+    return _printed_all(tuple(fork.expression for fork in forks), is_leaf)
 
 
-def _printed_all(expressions: tuple[Expression, ...]) -> tuple[Expression, ...]:
+def _printed_all(expressions: tuple[Expression, ...], is_leaf: IsLeaf) -> tuple[Expression, ...]:
     """Each expression whole within `LIMIT` nodes, else cut down to it, all counted together.
 
     The cost, for L distinct lists holding E operands between them, F forks
@@ -120,17 +132,17 @@ def _printed_all(expressions: tuple[Expression, ...]) -> tuple[Expression, ...]:
     runs in less than about quadratic time; the limit on C is what bounds it.
     So a line costs O(L + E + F * `LIMIT` + C log C).
     """
-    written = _written(_walked(expressions, _Steps(math.inf))[0])
+    written = _written(_walked(expressions, _Steps(math.inf), is_leaf)[0])
     cuts: list[_Pending] = []
     shown = tuple(
         _cut(expression, written, cuts)
-        if isinstance(expression, list) and written[id(expression)] > LIMIT
+        if isinstance(expression, list) and written.get(id(expression), 1) > LIMIT
         else expression
         for expression in expressions
     )
     parts = tuple({id(part): part for _, part in cuts}.values())
     steps = _Steps(COUNTING_STEPS)
-    distinct = _counted(*_walked(parts, steps), steps)
+    distinct = _counted(*_walked(parts, steps, is_leaf), steps)
     for stand_in, part in cuts:
         stand_in[1] = distinct.get(id(part))
     return shown
@@ -172,7 +184,9 @@ def _opened(part: _Node, written: dict[int, int]) -> tuple[_Node, int, list[_Pen
     larger one is cut, and waits to be opened in turn, smallest first.
     """
     head, *operands = part
-    sizes = [written[id(operand)] if isinstance(operand, list) else 1 for operand in operands]
+    sizes = [
+        written.get(id(operand), 1) if isinstance(operand, list) else 1 for operand in operands
+    ]
     opened: list[Expression] = [head]
     pending: list[_Pending] = []
     for operand, size in zip(operands, sizes, strict=True):
@@ -187,9 +201,9 @@ def _opened(part: _Node, written: dict[int, int]) -> tuple[_Node, int, list[_Pen
 
 
 def _walked(
-    expressions: tuple[Expression, ...], steps: _Steps
+    expressions: tuple[Expression, ...], steps: _Steps, is_leaf: IsLeaf
 ) -> tuple[list[_Node], dict[int, int]]:
-    """Every distinct list the expressions hold, each after the lists it holds.
+    """Every distinct list the expressions hold, each after the lists it holds, leaves aside.
 
     Also how many places in those lists hold each list, keyed by its
     identity. Each list is walked once however many parts share it, and
@@ -200,7 +214,11 @@ def _walked(
     order: list[_Node] = []
     holders: dict[int, int] = {}
     seen: set[int] = set()
-    stack = [(part, False) for part in reversed(expressions) if isinstance(part, list)]
+    stack = [
+        (part, False)
+        for part in reversed(expressions)
+        if isinstance(part, list) and not is_leaf(part)
+    ]
     try:
         while stack:
             node, finished = stack.pop()
@@ -210,7 +228,7 @@ def _walked(
                 steps.spend(len(node))
                 seen.add(id(node))
                 stack.append((node, True))
-                held = [part for part in node[1:] if isinstance(part, list)]
+                held = [part for part in node[1:] if isinstance(part, list) and not is_leaf(part)]
                 for part in held:
                     holders[id(part)] = holders.get(id(part), 0) + 1
                 stack.extend((part, False) for part in held)
@@ -225,7 +243,7 @@ def _written(order: list[_Node]) -> dict[int, int]:
     written: dict[int, int] = {}
     for node in order:
         written[id(node)] = 1 + sum(
-            written[id(part)] if isinstance(part, list) else 1 for part in node[1:]
+            written.get(id(part), 1) if isinstance(part, list) else 1 for part in node[1:]
         )
     return written
 
@@ -260,10 +278,12 @@ def _reach(
 ) -> tuple[_Reach, int]:
     """What one list reaches, its own nodes numbered from ``first``, and the next free number.
 
-    Each list it holds has its reach read once, and let go at its last read.
+    Each list it holds has its reach read once, and let go at its last read. A
+    list the walk counted a holder of is one it walked; any other is a leaf,
+    one of the list's own nodes.
     """
     steps.spend(len(node))
-    held = [part for part in node[1:] if isinstance(part, list)]
+    held = [part for part in node[1:] if isinstance(part, list) and id(part) in unread]
     own = len(node) - len(held)
     reach: _Reach = ((first, (1 << own) - 1),)
     for part in held:
