@@ -234,12 +234,15 @@ def test_a_crash_after_the_import_is_said_and_not_repeated() -> None:
 
 
 @contextmanager
-def in_a_session(pid_file: Path, *argv: str) -> Generator[subprocess.Popen[str]]:
+def in_a_session(
+    pid_file: Path, *argv: str, env: dict[str, str] | None = None
+) -> Generator[subprocess.Popen[str]]:
     """``pyct run *argv`` in a session of its own, asked to write its target's pid to ``pid_file``.
 
+    ``env`` is the environment, this one's without PYTHONPATH when not given.
     Whatever is left of the run is killed on the way out.
     """
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env = dict(env or {k: v for k, v in os.environ.items() if k != "PYTHONPATH"})
     env["PYCT_TEST_PID_FILE"] = str(pid_file)
     process = subprocess.Popen(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
@@ -307,3 +310,16 @@ def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
         assert result.returncode == 0, result.stderr
         paths[thread] = json.loads(told.read_text())
     assert paths[True] == paths[False]
+
+
+# pyct's process started fresh gets the lifeline too: killing the watcher ends it and its input
+def test_a_sigkill_to_pyct_ends_a_fresh_pyct_process_and_its_input(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    env = site_in(tmp_path / "site", thread=True)
+    with in_a_session(pid_file, C_HANG, '{"x": 0}', env=env) as process:
+        child = pid_written_to(pid_file, process)
+        os.kill(process.pid, signal.SIGKILL)
+        process.wait(timeout=10)
+
+        assert not is_running(child)
+        assert group_ended(process.pid)
