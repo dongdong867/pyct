@@ -354,3 +354,13 @@ def test_flips_a_fork_on_a_parameter_named_past_ascii() -> None:
 
     assert result.returncode == 0, result.stderr
     assert [args_of(line)["café"] for line in solved(input_lines(result.stdout))] == ["é"]
+
+
+# run-with-nested-arguments: a seed nested past what a line can hold is refused before it runs
+def test_refuses_a_seed_too_deep_to_write_back() -> None:
+    result = run_pyct(DEEP, '{"config": ' + '{"a": ' * 9995 + "0" + "}" * 9996)
+
+    assert result.returncode == 2, result.stderr[-2000:]
+    assert result.stdout == ""
+    assert "too deep" in result.stderr
+    assert "Traceback" not in result.stderr

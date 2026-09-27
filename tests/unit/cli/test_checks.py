@@ -126,3 +126,18 @@ def test_parse_plateau_without_the_flag_is_no_plateau_stop() -> None:
 def test_parse_plateau_refuses_anything_but_a_whole_number_above_zero(text: str) -> None:
     with pytest.raises(UsageError, match="plateau must be a whole number above zero"):
         parse_plateau(text)
+
+
+def nested_text(depth: int) -> str:
+    """A seed whose one value nests ``depth`` objects deep, the seed's own object among them."""
+    return '{"a": ' * depth + "0" + "}" * depth
+
+
+def test_parse_seed_takes_a_seed_nested_thousands_deep() -> None:
+    assert parse_seed(nested_text(2000))
+
+
+@pytest.mark.parametrize("depth", [9996, 20000], ids=["too deep to write", "too deep to read"])
+def test_parse_seed_refuses_a_seed_nested_too_deep(depth: int) -> None:
+    with pytest.raises(UsageError, match="too deep"):
+        parse_seed(nested_text(depth))

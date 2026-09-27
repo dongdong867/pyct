@@ -39,6 +39,11 @@ USAGE = (
 )
 
 
+# how much deeper than a seed value an input's line nests a fork on it: the line, its forks, one
+# fork, its condition, and a few operations the target applies to the value
+LINE_NESTING = 8
+
+
 class UsageError(Exception):
     """The command line is wrong. Exit 2."""
 
@@ -187,14 +192,51 @@ def check_spec(spec: str) -> None:
 
 
 def parse_seed(seed_text: str) -> Mapping[str, object]:
-    """The seed is a JSON object, one key per parameter."""
+    """The seed is a JSON object, one key per parameter, nested no deeper than a line can hold."""
     try:
         seed = json.loads(seed_text)
     except json.JSONDecodeError as error:
         raise UsageError(f"args must be a JSON object: {error}") from error
+    except RecursionError as error:
+        raise UsageError("args nest too deep for Python to read") from error
     if not isinstance(seed, dict):
         raise UsageError(f"args must be a JSON object, got {type(seed).__name__}")
+    _check_writable(seed)
     return seed
+
+
+def _check_writable(seed: Mapping[str, object]) -> None:
+    """Refuse a seed nested deeper than Python can write an input's line for.
+
+    The line holds each fork on a value inside the seed a few levels below
+    the value, and Python's JSON writer stops at a depth of its own. So the
+    check writes a list nested ``LINE_NESTING`` levels past the seed, the way
+    the line would, before any input runs.
+    """
+    depth = _depth(seed)
+    probe: list[object] = [0]
+    for _ in range(depth + LINE_NESTING - 1):
+        probe = [probe]
+    try:
+        json.dumps(probe)
+    except RecursionError as error:
+        raise UsageError(
+            f"args nest {depth} levels deep, too deep for pyct to write each input's line"
+        ) from error
+
+
+def _depth(value: object) -> int:
+    """How many objects and arrays deep a JSON value nests, read in a loop, not a call per level."""
+    deepest = 0
+    pending: list[tuple[object, int]] = [(value, 1)]
+    while pending:
+        item, level = pending.pop()
+        if isinstance(item, dict):
+            item = list(item.values())
+        if isinstance(item, list):
+            deepest = max(deepest, level)
+            pending.extend((child, level + 1) for child in item)
+    return deepest
 
 
 def parse_budget(budget_text: str | None) -> Budget:
