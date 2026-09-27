@@ -64,16 +64,12 @@ def list_package(
         for row in heard.rows:
             kept.setdefault(row.order, row)
         if heard.stuck is None:
-            break
+            return tuple(sorted(kept.values(), key=lambda row: row.order))
         module, ended = heard.stuck
-        kept.setdefault((module, ""), _failed(module, ended))
         if module == package:
-            break
+            raise PackageImportError(_failed(module, ended).reason)
+        kept.setdefault((module, ""), _failed(module, ended))
         after = module
-    root = kept.get((package, ""))
-    if root is not None:
-        raise PackageImportError(root.reason)
-    return tuple(sorted(kept.values(), key=lambda row: row.order))
 
 
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:
@@ -101,14 +97,19 @@ def _heard(lines: "_Lines", package: str, grace: float) -> Heard:
         if "done" in fact:
             return Heard(rows, None)
         importing = fact.get("importing", importing)
+        if fact.get("failed") == package:
+            raise PackageImportError(_failed(package, fact["reason"]).reason)
         rows.extend(_rows_of(fact))
     return Heard(rows, (importing, lines.ending(grace)))
 
 
 def _rows_of(fact: dict[str, object]) -> list[Row]:
-    """The row a fact makes: a module that raised, or an entry. ``importing`` makes none."""
+    """The row a fact makes: a module whose import or reading raised, or an entry.
+    ``importing`` makes none."""
     if "failed" in fact:
         return [_failed(str(fact["failed"]), str(fact["reason"]))]
+    if "unread" in fact:
+        return [Row(str(fact["unread"]), None, Status.FAILED, reason=str(fact["reason"]))]
     entry = fact.get("entry")
     if not isinstance(entry, dict):
         return []

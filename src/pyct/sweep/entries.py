@@ -42,10 +42,33 @@ class Entry:
     skip: str | None = None
 
 
-def entries_in(module: ModuleType, package: str) -> list[Entry]:
-    """Every entry the public names of ``module``, a module of ``package``, hold."""
+@dataclass(frozen=True)
+class Reading:
+    """What reading one module found: its entries, and the first public name that raised."""
+
+    entries: list[Entry]
+    unread: str | None = None
+
+
+def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
+    """Every entry the public names of ``module``, the module ``found_in`` of ``package``, hold.
+
+    Reading a name can run the module's code, a lazy attribute or a
+    ``__class__`` property, and raise though the import did not. Such a name
+    holds no entry, and the first one is kept, with Python's own words, so
+    the module's row can say which name and why. The module is named as the
+    walk reached it, since an object a module put in its own place may have
+    no ``__name__``.
+    """
     found = _Package(package)
-    return [entry for name in public_names(module) for entry in found.entries(module, name)]
+    entries: list[Entry] = []
+    unread: str | None = None
+    for name in public_names(module):
+        try:
+            entries.extend(found.entries(module, found_in, name))
+        except Exception as error:
+            unread = unread or f"{found_in}::{name}: {error!r}"
+    return Reading(entries, unread)
 
 
 def public_names(module: ModuleType) -> list[str]:
@@ -65,18 +88,15 @@ class _Package:
         self.files = _files(name)
         self.holders: dict[str, dict[int, list[str]]] = {}
 
-    def entries(self, module: ModuleType, name: str) -> list[Entry]:
+    def entries(self, module: ModuleType, found_in: str, name: str) -> list[Entry]:
         """The entries the public name ``name`` of ``module`` holds: none, one, or a class's."""
-        try:
-            value = getattr(module, name)
-        except Exception:
-            return []
+        value = getattr(module, name)
         if isinstance(value, type):
-            return self._class_entries(value, module.__name__, name)
+            return self._class_entries(value, found_in, name)
         target = function_of(value)
         if target is None:
             return []
-        return self._function_entries(target, module.__name__, name)
+        return self._function_entries(target, found_in, name)
 
     def _function_entries(self, target: object, found_in: str, found_as: str) -> list[Entry]:
         file = _code_file(target)
@@ -191,8 +211,11 @@ def _files(package: str) -> dict[str, str]:
     """
     files: dict[str, str] = {}
     for name, module in sorted(list(sys.modules.items()), key=lambda item: item[0]):
-        file = getattr(module, "__file__", None)
-        if _within(name, package) and isinstance(file, str) and file.endswith(".py"):
+        # a module outside the package is never asked anything: a lazy one would load
+        if not _within(name, package):
+            continue
+        file = _attribute(module, "__file__")
+        if isinstance(file, str) and file.endswith(".py"):
             files.setdefault(os.path.realpath(file), name)
     return files
 
@@ -201,10 +224,27 @@ def _holders(module: ModuleType) -> dict[int, list[str]]:
     """The names ``module`` gives each class and each function, by the object's identity."""
     held: dict[int, list[str]] = {}
     for name, value in list(vars(module).items()):
-        target = value if isinstance(value, type) else function_of(value)
+        target = _held(value)
         if target is not None:
             held.setdefault(id(target), []).append(name)
     return held
+
+
+def _held(value: object) -> object | None:
+    """The class or function ``value`` is, or None, also when asking raises: a name another
+    module holds is no concern of the module being read."""
+    try:
+        return value if isinstance(value, type) else function_of(value)
+    except Exception:
+        return None
+
+
+def _attribute(holder: object, name: str) -> object | None:
+    """``holder``'s attribute ``name``, or None when it has none or reading it raises."""
+    try:
+        return getattr(holder, name, None)
+    except Exception:
+        return None
 
 
 def _within(name: str, package: str) -> bool:

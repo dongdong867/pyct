@@ -1,12 +1,30 @@
 import importlib
+import sys
+import types
 
-from pyct.sweep.entries import GENERATED, METHOD, Entry, entries_in, function_of, public_names
+import pytest
+
+from pyct.sweep.entries import (
+    GENERATED,
+    METHOD,
+    Entry,
+    Reading,
+    entries_in,
+    function_of,
+    public_names,
+)
 
 SWEEP = "targets.sweep"
 
 
+def read(module: str, package: str) -> Reading:
+    return entries_in(importlib.import_module(module), module, package)
+
+
 def entries(module: str, package: str) -> list[Entry]:
-    return entries_in(importlib.import_module(module), package)
+    reading = read(module, package)
+    assert reading.unread is None
+    return reading.entries
 
 
 def test_a_function_is_named_by_the_module_whose_file_holds_it() -> None:
@@ -65,7 +83,13 @@ def test_generated_code_and_code_no_name_holds_are_skipped_where_found() -> None
 
 def test_the_edges_of_what_a_name_holds() -> None:
     edges = "tests.unit.sweep.edges"
-    assert entries(edges, "tests.unit.sweep") == [
+    reading = read(edges, "tests.unit.sweep")
+
+    # the first public name that raised, in the words plain Python gives
+    with pytest.raises(AttributeError) as plain:
+        getattr(importlib.import_module(edges), "missing")  # noqa: B009 - a name __all__ lacks
+    assert reading.unread == f"{edges}::missing: {plain.value!r}"
+    assert reading.entries == [
         Entry(edges, "total", seed={"n": 0}),
         # an alias is the same entry, under the function's own name
         Entry(edges, "total", seed={"n": 0}),
@@ -96,3 +120,36 @@ def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
         Entry(module, "Span.length", skip=METHOD),
         Entry(module, "Box", seed={"width": 0, "label": "box"}),
     ]
+
+
+def test_a_name_that_raises_when_asked_its_class_is_unread_and_the_rest_are_read() -> None:
+    unread = f"{SWEEP}.unread"
+    reading = read(unread, unread)
+
+    raised = "RuntimeError('settings are not configured')"
+    assert reading == Reading(
+        [Entry(unread, "home", seed={"n": 0})], f"{unread}::settings: {raised}"
+    )
+
+
+class _LoadsWhenAsked(types.ModuleType):
+    """A module whose file, when asked, would load it; here the asking is noted, and raises."""
+
+    asked: list[str] = []
+
+    @property
+    def __file__(self) -> str:  # pyrefly: ignore[bad-override]
+        _LoadsWhenAsked.asked.append(self.__name__)
+        raise RuntimeError("loading failed")
+
+
+def test_only_a_module_of_the_package_is_asked_its_file_and_its_raise_costs_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shop = f"{SWEEP}.shop"
+    monkeypatch.setattr(_LoadsWhenAsked, "asked", [])
+    monkeypatch.setitem(sys.modules, "elsewhere", _LoadsWhenAsked("elsewhere"))
+    monkeypatch.setitem(sys.modules, f"{shop}.lazy", _LoadsWhenAsked(f"{shop}.lazy"))
+
+    assert [entry.name for entry in entries(shop, shop)] == ["parse_price", "total"]
+    assert _LoadsWhenAsked.asked == [f"{shop}.lazy"]

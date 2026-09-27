@@ -11,6 +11,7 @@ from tests.acceptance.harness import REPO_ROOT
 
 ROUGH = "targets.sweep.rough"
 STALL = "targets.sweep.stall"
+UNREAD = "targets.sweep.unread"
 
 # a lister stand-in answers --after with nothing left to list
 DONE_AFTER = (
@@ -41,6 +42,30 @@ def test_every_module_gets_its_row_whatever_its_import_did() -> None:
         Row(f"{ROUGH}.prices", "total", Status.LISTED, seed={"n": 0}),
         failed(f"{ROUGH}.quits", "SystemExit(0)"),
         Row(f"{ROUGH}.zeta", "last", Status.LISTED, seed={"n": 0}),
+    )
+
+
+def test_a_name_that_raises_when_read_costs_its_module_a_row_and_nothing_more() -> None:
+    raised = "RuntimeError('settings are not configured')"
+
+    def unread(module: str) -> Row:
+        return Row(module, None, Status.FAILED, reason=f"cannot read {module}::settings: {raised}")
+
+    assert list_package(UNREAD) == (
+        unread(UNREAD),
+        Row(UNREAD, "home", Status.LISTED, seed={"n": 0}),
+        unread(f"{UNREAD}.conf"),
+        Row(
+            f"{UNREAD}.lazy",
+            None,
+            Status.FAILED,
+            reason=f"cannot read {UNREAD}.lazy: RuntimeError("
+            "'__all__ is made on first use, and making it failed')",
+        ),
+        Row(f"{UNREAD}.swapped.inner", "deep", Status.LISTED, seed={"n": 0}),
+        unread(f"{UNREAD}.views"),
+        Row(f"{UNREAD}.views", "page", Status.LISTED, seed={"n": 0}),
+        Row(f"{UNREAD}.views.detail", "detail", Status.LISTED, seed={"n": 0}),
     )
 
 

@@ -23,6 +23,8 @@ process started:
 - ``{"failed": M, "reason": R}`` for an import that raised, ``SystemExit``
   included, ``R`` its repr;
 - ``{"entry": {"module", "name", "seed", "skip"}}`` for each entry M holds;
+- ``{"unread": M, "reason": R}`` when reading M raised though its import did
+  not, ``R`` the row's whole reason;
 - ``{"done": true}`` at the end.
 
 stdout is pointed at stderr before any import, so a module that prints
@@ -40,7 +42,7 @@ from dataclasses import asdict, dataclass
 from types import ModuleType
 from typing import TextIO
 
-from pyct.sweep.entries import entries_in
+from pyct.sweep.entries import Reading, entries_in
 
 # parts of a module name below the package that leave the module out of the walk
 LEFT_OUT = frozenset({"test", "tests"})
@@ -86,10 +88,21 @@ def _walk(name: str, walk: Walk) -> None:
     if module is None:
         return
     if after is None or name > after:
-        for entry in entries_in(module, walk.package):
-            _write(walk.out, {"entry": asdict(entry)})
-    for below in _modules_below(module):
+        _read(module, name, walk)
+    for below in _modules_below(module, name):
         _walk(below, walk)
+
+
+def _read(module: ModuleType, name: str, walk: Walk) -> None:
+    """Write the entries the module holds, and what could not be read, if anything."""
+    try:
+        reading = entries_in(module, name, walk.package)
+    except Exception as error:
+        reading = Reading([], f"{name}: {error!r}")
+    for entry in reading.entries:
+        _write(walk.out, {"entry": asdict(entry)})
+    if reading.unread is not None:
+        _write(walk.out, {"unread": name, "reason": f"cannot read {reading.unread}"})
 
 
 def _imported(name: str, out: TextIO) -> ModuleType | None:
@@ -102,12 +115,12 @@ def _imported(name: str, out: TextIO) -> ModuleType | None:
         return None
 
 
-def _modules_below(module: ModuleType) -> list[str]:
-    """The modules one level below a package that the walk takes, in name order."""
+def _modules_below(module: ModuleType, name: str) -> list[str]:
+    """The modules one level below the package ``name`` that the walk takes, in name order."""
     path = getattr(module, "__path__", None)
     if path is None:
         return []
-    names = sorted(found.name for found in pkgutil.iter_modules(path, f"{module.__name__}."))
+    names = sorted(found.name for found in pkgutil.iter_modules(path, f"{name}."))
     return [name for name in names if _walked(name.rpartition(".")[2])]
 
 
