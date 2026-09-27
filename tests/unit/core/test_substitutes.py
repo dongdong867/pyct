@@ -385,6 +385,7 @@ def test_the_passing_frames_are_the_routers() -> None:
         "call",
         "method",
         "_on_text",
+        "_tracked_in",
         "handed",
         "answer",
         "len",

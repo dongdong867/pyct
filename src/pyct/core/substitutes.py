@@ -41,7 +41,7 @@ from pyct.core import bound, ranges, str_literals, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
-from pyct.core.hashed import hashed, looked_up, tracked
+from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
@@ -98,12 +98,8 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
         return strs.in_text(item, container)
     if type(container) is ConcolicRange:
         return ranges.contains(container, item)
-    if type(container) is range and type(item) in _RANGE_ITEMS:
-        return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
-    if written is not None and tracked(item):
-        return _searched(item, written)
-    if tracked(item) and (kind := hashed(container)) is not None:
-        return looked_up(item, container, kind)
+    if tracked(item):
+        return _tracked_in(item, container, written)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
     return item in container  # pyrefly: ignore[not-iterable]
 
@@ -131,13 +127,24 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
         return strs.not_in_text(item, container)
     if type(container) is ConcolicRange:
         return ranges.not_contains(container, item)
-    if type(container) is range and type(item) in _RANGE_ITEMS:
-        return ranges.not_within(item, container)  # pyrefly: ignore[bad-argument-type]
-    if written is not None and tracked(item):
-        return not _searched(item, written)
-    if tracked(item) and (kind := hashed(container)) is not None:
-        return not looked_up(item, container, kind)
+    if tracked(item):
+        if type(container) is range and type(item) in _RANGE_ITEMS:
+            return ranges.not_within(item, container)  # pyrefly: ignore[bad-argument-type]
+        return not _tracked_in(item, container, written)
     return item not in container  # pyrefly: ignore[not-iterable]
+
+
+def _tracked_in(item: Tracked, container: object, written: tuple[object, ...] | None) -> object:
+    """`item in container` for a tracked item a set or a dict can hold: one fork in a plain
+    range, one `==` fork per literal element of a display, a lookup in a hashed container, and
+    Python's own `in` for anything else."""
+    if type(container) is range and type(item) in _RANGE_ITEMS:
+        return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
+    if written is not None:
+        return _searched(item, written)
+    if (kind := hashed(container)) is not None:
+        return looked_up(item, container, kind)
+    return item in container  # pyrefly: ignore[not-iterable]
 
 
 def _forwarded(compare: Callable[[Any, Any], object]) -> Callable[[_Link, object], object]:
@@ -262,6 +269,7 @@ PASSING: frozenset[types.CodeType] = (
             is_not,
             in_,
             not_in,
+            _tracked_in,
             call,
             method,
             _on_text,
