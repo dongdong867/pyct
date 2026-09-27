@@ -289,10 +289,12 @@ class ConcolicFloat(float):
     is_integer = _is_integer
     # float's plain names that hand back the value itself. `imag` stays float's own constant,
     # 0.0, and `as_integer_ratio` and `hex` are derived downgrades
-    real = property(_itself)  # pyrefly: ignore[bad-override]
+    real = numbers.attribute(float.real, _itself)  # pyrefly: ignore[bad-override]
     conjugate = numbers.itself(float.conjugate, _itself)
-    # float's own would build this class from the value alone
+    # float's own would build this class from the value alone. Every classmethod float defines
+    # is named here, since the derivation reads only methods called on a value
     fromhex = built_plainly(float, "fromhex")  # pyrefly: ignore[bad-override]
+    __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> ConcolicFloat:
         self = super().__new__(cls, value)

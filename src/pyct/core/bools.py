@@ -114,8 +114,8 @@ class ConcolicBool(int):
     # int's plain names that hand back the number itself answer the int the bool is, as `+b`
     # does. Its constants and its downgrades are int's, and its classmethod is bool's own, as
     # plain Python answers `True.from_bytes(...)` with a bool
-    real = property(_the_int)  # pyrefly: ignore[bad-override]
-    numerator = property(_the_int)  # pyrefly: ignore[bad-override]
+    real = numbers.attribute(int.real, _the_int)  # pyrefly: ignore[bad-override]
+    numerator = numbers.attribute(int.numerator, _the_int)  # pyrefly: ignore[bad-override]
     conjugate = numbers.itself(int.conjugate, _the_int)
     as_integer_ratio = numbers.ratio(_the_int)
     from_bytes = built_plainly(bool, "from_bytes")  # pyrefly: ignore[bad-override]

@@ -89,8 +89,8 @@ class ConcolicInt(int):
 
     # int's plain names that hand back the value itself, as `+x` does. `imag` and `denominator`
     # stay int's own constants, 0 and 1, and `is_integer` is kept; the rest are derived downgrades
-    real = property(_itself)  # pyrefly: ignore[bad-override]
-    numerator = property(_itself)  # pyrefly: ignore[bad-override]
+    real = numbers.attribute(int.real, _itself)  # pyrefly: ignore[bad-override]
+    numerator = numbers.attribute(int.numerator, _itself)  # pyrefly: ignore[bad-override]
     conjugate = numbers.itself(int.conjugate, _itself)
     as_integer_ratio = numbers.ratio(_itself)
     # int's own would build this class from the value alone

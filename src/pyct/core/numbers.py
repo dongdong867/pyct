@@ -20,8 +20,8 @@ do. `promoted` widens it for a tracked int, which meets a float as Python's
 int does, and `int_beside_float` is how a float reads an int. `compare`,
 `arithmetic`, `division` and `divmod_of` serve every number type and read
 the other side by the rule their caller passes, the int family's by default.
-`itself` and `ratio` serve the plain methods whose answer is the value itself,
-such as `x.conjugate()`.
+`itself`, `ratio` and `attribute` serve the plain names whose answer is the
+value itself, such as `x.conjugate()` and `x.real`.
 """
 
 from __future__ import annotations
@@ -377,3 +377,20 @@ def ratio(whole: Callable[[Any], object]) -> Callable[..., Any]:
         return whole(self), denominator
 
     return compute
+
+
+def attribute(descriptor: Any, whole: Callable[[Any], object]) -> property:
+    """An attribute whose value is the number itself, as `whole` hands it back.
+
+    `descriptor` is the base type's own, such as `int.real`. Setting or
+    deleting the attribute goes to it, so it raises the AttributeError
+    Python raises on a plain value, naming the base type.
+    """
+
+    def write(self: Number, value: object) -> None:
+        own(descriptor.__set__, self, value)
+
+    def remove(self: Number) -> None:
+        own(descriptor.__delete__, self)
+
+    return property(whole, write, remove)
