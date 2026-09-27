@@ -278,12 +278,14 @@ class _Program:
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
-        """The type an operation works on: its operands', a bool read as the int 1 or 0 but under
-        an operator bool has of its own, such as `&` or `==`, and a range's by its ints."""
+        """The type an operation works on: its operands', with a bool read as the int 1 or 0 but
+        under an operation bool has of its own, `&`, `==` or `str`, where it stays a bool, and a
+        membership in a range working on its ints."""
         kind = WORKS_ON.get(head) or self._operands_type(operands)
         if kind is range and head in MEMBERSHIPS:
             return int
-        return int if kind is bool and (head, bool) not in OPERATORS else kind
+        own = (head, bool) in OPERATORS or (head, bool) in FORMS
+        return int if kind is bool and not own else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
         """The parts a form reads: an operand of a form, a check, a piece, a split, a declared

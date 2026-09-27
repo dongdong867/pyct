@@ -68,6 +68,7 @@ STR_TERMS: list[Expression] = [
     ["removeprefix", "s", "'a'"],
     ["removesuffix", "s", "'a'"],
     ["chr", "x"],
+    ["str", "x"],
     *([head, "s"] for head in (*CASES, *TO_DECLARE)),
     *([head, "s", 3] for head in PADDINGS),
 ]
