@@ -20,6 +20,8 @@ BEFORE_A_LOOP_FILE = str(REPO_ROOT / "targets" / "loops" / "before_a_loop.py")
 COUNT_A = "targets.loops.count_a::count_as"
 COUNT_A_FILE = str(REPO_ROOT / "targets" / "loops" / "count_a.py")
 RAISES_ON_COMMA = "targets.loops.raises_on_comma::no_commas"
+VOWELS = "targets.loops.vowels::count_vowels"
+VOWELS_FILE = str(REPO_ROOT / "targets" / "loops" / "vowels.py")
 
 
 def pass_fork(position: int, name: str = "s") -> list[object]:
@@ -156,6 +158,25 @@ def test_flips_a_new_side_before_a_long_loop() -> None:
     assert second["aim"] == {"file": BEFORE_A_LOOP_FILE, "line": 2, "col": 7, "position": 0}
     assert number(second, "y") > 100
     assert covers(second, BEFORE_A_LOOP_FILE, 3)
+
+
+# follow-loops-and-ranges-counts-through-a-loop
+def test_counts_through_a_loop_with_in_on_each_character() -> None:
+    result = run_pyct(VOWELS, '{"s": "xy"}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the walk's pass forks at the `for` line, and each character's `in` a fork of its own at
+    # the `if` line, where the call-site substitution keeps its condition
+    assert [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(inputs[0])] == [
+        (3, pass_fork(0), True),
+        (4, ["in", ["[]", "s", 0], "'aeiou'"], False),
+        (3, pass_fork(1), True),
+        (4, ["in", ["[]", "s", 1], "'aeiou'"], False),
+        (3, pass_fork(2), False),
+    ]
+    many = [line for line in inputs[1:] if sum(c in "aeiou" for c in text(line, "s")) > 2]
+    assert many and covers(many[0], VOWELS_FILE, 7), [line["args"] for line in inputs]
 
 
 # follow-loops-and-ranges-counts-through-a-loop

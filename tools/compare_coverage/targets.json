@@ -161,6 +161,7 @@
     {"set": "v2", "target": "targets.loops.find_x::find_x", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.loops.raises_on_comma::no_commas", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.loops.walks::walk_both", "seed": {"s": "xy", "t": "xy"}},
+    {"set": "v2", "target": "targets.loops.vowels::count_vowels", "seed": {"s": "xy"}},
     {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"café": "x"}},
     {"set": "v2", "target": "targets.names.solver_words::reserved", "seed": {"div": 0}},
     {"set": "v2", "target": "targets.nested.deep::check", "seed": {"config": {"a": {"a": 0}}}},
