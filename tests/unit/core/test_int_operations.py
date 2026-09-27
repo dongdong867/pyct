@@ -74,21 +74,6 @@ DOWNGRADED_POWERS: dict[str, Callable[[int], object]] = {
     "past cvc5's bound": lambda x: x**67_108_864,
 }
 
-# int's plain members, the ones pyct wraps in nothing: each call is int's own answer. The four
-# attributes are read and never called; `from_bytes` is a classmethod and has its own test
-PLAIN_INT_MEMBERS: dict[str, Callable[[int], object]] = {
-    "as_integer_ratio": lambda x: x.as_integer_ratio(),
-    "bit_count": lambda x: x.bit_count(),
-    "bit_length": lambda x: x.bit_length(),
-    "conjugate": lambda x: x.conjugate(),
-    "denominator": lambda x: x.denominator,
-    "imag": lambda x: x.imag,
-    "is_integer": lambda x: x.is_integer(),
-    "numerator": lambda x: x.numerator,
-    "real": lambda x: x.real,
-    "to_bytes": lambda x: x.to_bytes(1),
-}
-
 
 def test_a_concolic_int_is_a_real_int() -> None:
     x = ConcolicInt(3, expression="x", sink=[])
@@ -290,32 +275,7 @@ def test_the_object_plumbing_on_a_concolic_int_records_nothing() -> None:
     # `__getnewargs__` and the interpreter's own reads are not the target's path
     assert x.__getnewargs__() == (3,)
     assert x.__sizeof__() == (3).__sizeof__()
-    assert x.__getattribute__("real") == 3
-
-    assert sink == []
-
-
-@pytest.mark.parametrize("call", PLAIN_INT_MEMBERS.values(), ids=list(PLAIN_INT_MEMBERS))
-def test_a_plain_int_member_gives_ints_own_answer_and_records_nothing(
-    call: Callable[[int], object],
-) -> None:
-    sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-
-    # each hands back a plain value, so `==` against int's own answer forks nothing
-    assert call(x) == call(3)
-    assert sink == []
-
-
-def test_int_from_bytes_on_a_concolic_int_records_nothing() -> None:
-    sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
-
-    # from_bytes is int's classmethod, so no tracked value reaches it as a receiver. Bound to
-    # the subclass it asks ConcolicInt for a value with no expression and no sink, and int's
-    # own TypeError comes back; whatever it answers, it records nothing
-    with pytest.raises(TypeError):
-        x.from_bytes(b"\x03")
+    assert x.__getattribute__("imag") == 0
 
     assert sink == []
 
@@ -399,10 +359,9 @@ def test_a_raise_that_is_not_the_operations_carries_no_mark() -> None:
 def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
-    to_bytes = values.downgraded(int, "to_bytes")
 
-    # no int downgrade takes a keyword today; to_bytes does, so the factory is built on it here
-    assert to_bytes(x, length=2, byteorder="big") == b"\x00\x03"
+    # to_bytes is a derived downgrade that takes keywords
+    assert x.to_bytes(length=2, byteorder="big") == b"\x00\x03"
     assert sink == [Downgrade(name="to_bytes")]
 
 

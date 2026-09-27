@@ -8,13 +8,16 @@ from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
+from pyct.solver.answer_size import longest_string
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import (
     BOUNDED,
     FORMS,
+    INDEXED,
     OPERATORS,
     POSITIONED,
+    POSITIONS_FROM,
     RESULTS,
     SORTS,
     STRING_ORDERS,
@@ -22,10 +25,10 @@ from pyct.solver.heads import (
 )
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
-from pyct.solver.literals import is_literal, leaf_term, literal_of, plain_operand
+from pyct.solver.literals import is_literal, leaf_term, plain_operand, string_order
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import above, below
+from pyct.solver.symbols import leaf_sort, leaf_symbol
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
@@ -110,7 +113,7 @@ def program(
     What to declare, what to define, what to assert, what to ask. Only the
     leaves the prefix mentions are declared, so the answer names nothing the
     path did not depend on. ``leaves`` names each leaf as ``pyct.binding``
-    does, and ``_symbol`` names its constant. Two pieces of one string side by
+    does, and ``leaf_symbol`` names its constant. Two pieces of one string side by
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
     assertions (see `_Program`). Each float leaf in ``finite`` that the
@@ -128,12 +131,13 @@ def program(
     symbols = _symbols(prefix, order, seed)
     constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
     # a leaf no sort declares is named before any term on it is written
-    declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
+    declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, prefix, bounded)
     held = [name for name in constants if name in finite and leaves[name] is float]
     lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
     lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
     lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if bounded]
     lines += [body.assertion(fork) for fork in prefix]
@@ -166,35 +170,9 @@ def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> di
     unknown = sorted(named - set(seed.kinds))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {name: _symbol(name, index) for index, name in enumerate(seed.kinds) if name in named}
-
-
-def _symbol(name: str, index: int) -> str:
-    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
-
-    The prefix keeps every symbol apart from the solver's own words, which
-    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
-    bars or not. Each character past ASCII is written as its UTF-8 bytes,
-    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
-    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
-    argument is named by its access, which holds brackets, quotes, and any
-    character a key holds, ``|`` and the backslash among them, which not
-    even a quoted symbol can.
-    """
-    if not name.isidentifier():
-        return f"leaf.{index}"
-    written = "".join(
-        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
-        for character in name
-    )
-    return f"arg.{written}"
-
-
-def _sort(name: str, kind: type) -> str:
-    sort = SORTS.get(kind)
-    if sort is None:
-        raise ValueError(f"pyct cannot declare {name}: nothing solves a {kind.__name__} yet")
-    return sort
+    return {
+        name: leaf_symbol(name, index) for index, name in enumerate(seed.kinds) if name in named
+    }
 
 
 class _Program:
@@ -228,6 +206,8 @@ class _Program:
         self.definitions: list[str] = []
         self.facts: set[str] = set()
         self.bounds: list[str] = []
+        # each tuple's item terms, read once as the tuple is reached
+        self.tuples: dict[int, tuple[str, ...]] = {}
         for node in order:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
@@ -237,6 +217,11 @@ class _Program:
         # each part comes after the parts it holds (see `distinct`), so their terms are written
         # before it, and no part waits on Python's stack for its operands
         for node in order:
+            if self.types[id(node)] is tuple:
+                # a tuple has no term of its own; a search reads its items' terms
+                # (`_operand_or_items`)
+                self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+                continue
             define = holders[id(node)] > 1 or id(node) in read
             self.terms[id(node)] = self._written(node, define=define)
 
@@ -384,11 +369,12 @@ class _Program:
                 return self._piece(term, positions)
             if (letter := self._letter(node)) is not None:
                 return letter
-            return positioned(self.term(term), *(plain_operand(part) for part in positions))
+            read = self._position if head in INDEXED else plain_operand
+            return positioned(self.term(term), *(read(part) for part in positions))
         kind = self._kind(head, operands)
-        rendered = [self._operand(part, kind) for part in operands]
         if (form := self._form(node)) is not None:
-            return form(*rendered)
+            return form(*self._rendered(head, operands, kind))
+        rendered = [self._operand(part, kind) for part in operands]
         if (declared := TO_DECLARE.get(head)) is not None:
             return self._declared(declared, *rendered)
         if (check := CHECKS.get(head)) is not None:
@@ -396,8 +382,28 @@ class _Program:
             self._hold(fact)
             return answer
         if head in STRING_ORDERS and kind is str:
-            return _string_order(head, operands, rendered)
+            return string_order(head, operands, rendered)
         return f"({_operator(head, kind)} {' '.join(rendered)})"
+
+    def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
+        """Each operand's term; past the operands a search or a replace reads as terms, each
+        position as `_position` reads it, and a tuple as its items' terms."""
+        first = POSITIONS_FROM.get(head, len(operands)) if kind is str else len(operands)
+        terms: list[object] = [self._operand_or_items(part, kind) for part in operands[:first]]
+        return terms + [self._position(part) for part in operands[first:]]
+
+    def _operand_or_items(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
+        """An operand's term, or a tuple's items' terms, which is all a tuple has."""
+        if isinstance(part, list) and self.type_of(part) is tuple:
+            return self.tuples[id(part)]
+        return self._operand(part, kind)
+
+    def _position(self, part: Expression) -> int | str | None:
+        """A position a form reads: a plain int or bool as the int, None for a missing one, and
+        a tracked one by its Int term."""
+        if part is None or isinstance(part, int):
+            return None if part is None else int(part)
+        return self.term(part)
 
     def _operand(self, part: Expression, kind: type | None) -> str:
         """An operand's term, where an operation on numbers reads a bool as the int 1 or 0, and
@@ -437,8 +443,8 @@ class _Program:
         (index,) = (plain_operand(part) for part in positions)
         if not isinstance(index, int):
             raise ValueError(f"pyct cannot render piece {index} of a split: core writes an int")
-        plain = tuple(plain_operand(part) for part in split[2:])
-        piece, there = SPLITS[str(split[0])](self.term(split), plain, index)
+        operands = tuple(plain_operand(part) for part in split[2:])
+        piece, there = SPLITS[str(split[0])](self.term(split), operands, index)
         self._hold(there)
         return piece
 
@@ -469,23 +475,6 @@ class _Program:
 def _read_by_a_form(head: Expression) -> bool:
     """Whether an operation's operands are read by a form of one head whatever their type."""
     return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
-
-
-def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
-    """An order on two strings as a less-than: against a literal, written letter by letter.
-
-    Between two tracked strings it is cvc5's own `str.<` or `str.<=`. cvc5's
-    order against a literal can run to any time limit where the letters are
-    answered at once: string-order-against-a-literal-letter-by-letter.
-    """
-    or_equal, swapped = STRING_ORDERS[head]
-    pairs = list(zip(operands, rendered, strict=True))
-    (low, low_term), (high, high_term) = reversed(pairs) if swapped else pairs
-    if (literal := literal_of(high)) is not None:
-        return below(low_term, literal, or_equal=or_equal)
-    if (literal := literal_of(low)) is not None:
-        return above(high_term, literal, or_equal=or_equal)
-    return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"
 
 
 def _operator(head: str, kind: type | None) -> str:

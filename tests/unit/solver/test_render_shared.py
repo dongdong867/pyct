@@ -80,9 +80,9 @@ def test_a_part_a_form_reads_is_named_though_held_once() -> None:
 
 
 def _asserted(expression: Expression, leaves: dict[str, type]) -> str:
-    """The one assertion a one-fork program holds."""
+    """The fork's assertion: the last a one-fork program holds, after each string's length."""
     text = render((fork(expression, taken=True),), leaves)
-    return next(line for line in text.splitlines() if line.startswith("(assert "))
+    return [line for line in text.splitlines() if line.startswith("(assert ")][-1]
 
 
 # two pieces of one string side by side, and the one piece they are written as

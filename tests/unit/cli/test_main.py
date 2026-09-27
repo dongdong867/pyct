@@ -78,8 +78,11 @@ def test_main_loads_the_target_before_it_checks_for_cvc5(
     assert "cvc5" not in captured.err
 
 
-def test_main_says_what_it_could_not_read_from_cvc5_without_a_traceback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_main_goes_on_past_an_answer_it_could_not_read_from_cvc5(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     let_pyct_run_in_process(monkeypatch)
     # a cvc5 that finds the input but puts a line pyct cannot read inside the model, which
@@ -95,20 +98,22 @@ def test_main_says_what_it_could_not_read_from_cvc5_without_a_traceback(
     script.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))
 
-    code = main(["run", TARGET, '{"x": 3}'])
+    with caplog.at_level("WARNING", logger="pyct.solver.cvc5"):
+        code = main(["run", TARGET, '{"x": 3}'])
 
-    assert code == 1
+    assert code == 0
     captured = capsys.readouterr()
-    # the seed's line was already printed, and pyct's break is one line rather than a traceback
-    assert len(captured.out.splitlines()) == 1
-    assert "cvc5 answered with a value line pyct cannot read" in captured.err
+    # the fork is a miss named unknown, and the run ends as it would on any miss
+    misses = summary_line(captured.out)["misses"]
+    assert isinstance(misses, list) and [miss["why"] for miss in misses] == ["unknown"]
+    assert "cvc5 answered with a value line pyct cannot read" in caplog.text
     assert "Traceback" not in captured.err
 
 
 def test_main_lets_a_value_error_of_its_own_escape_with_its_traceback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Only cvc5's unreadable answer is handled; a ValueError from pyct's own code is a bug."""
+    """Only the errors pyct names are handled; a ValueError from pyct's own code is a bug."""
 
     def broken_run(*args: object, **kwargs: object) -> None:
         raise ValueError("a pyct invariant broke")

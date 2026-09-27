@@ -1,11 +1,13 @@
 """How render reads a literal out of a condition, and writes one: a string literal's str, a plain
-operand, and the term of a number, a truth value or a string literal."""
+operand, the term of a number, a truth value or a string literal, and an order on strings,
+written letter by letter against a literal."""
 
 import ast
 
 from pyct.core.branch import Expression
 from pyct.solver import floats
-from pyct.solver.strings import encode
+from pyct.solver.heads import STRING_ORDERS
+from pyct.solver.strings import above, below, encode
 
 # what opens a string literal in an expression: repr writes one in either quote, and a
 # parameter name holds neither
@@ -57,3 +59,20 @@ def leaf_term(leaf: str | int | float | bool | None) -> str:
     if isinstance(leaf, float):
         return floats.literal(leaf)
     return encode(value(leaf))
+
+
+def string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
+    """An order on two strings as a less-than: against a literal, written letter by letter.
+
+    Between two tracked strings it is cvc5's own `str.<` or `str.<=`. cvc5's
+    order against a literal can run to any time limit where the letters are
+    answered at once: string-order-against-a-literal-letter-by-letter.
+    """
+    or_equal, swapped = STRING_ORDERS[head]
+    pairs = list(zip(operands, rendered, strict=True))
+    (low, low_term), (high, high_term) = reversed(pairs) if swapped else pairs
+    if (literal := literal_of(high)) is not None:
+        return below(low_term, literal, or_equal=or_equal)
+    if (literal := literal_of(low)) is not None:
+        return above(high_term, literal, or_equal=or_equal)
+    return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"

@@ -12,22 +12,19 @@ from pyct.solver import floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.ints import floor_division, modulo
-from pyct.solver.recased import TO_DECLARE
-from pyct.solver.splits import SPLITS
-from pyct.solver.strings import (
+from pyct.solver.positions import (
     character,
-    contains,
     ends_with,
     first_index,
     last_index,
-    not_contains,
     occurrences,
     replaced,
     sliced,
     starts_with,
-    without_prefix,
-    without_suffix,
 )
+from pyct.solver.recased import TO_DECLARE
+from pyct.solver.splits import SPLITS
+from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
 # name for the IEEE double, `(_ FloatingPoint 11 53)`
@@ -83,6 +80,9 @@ RESULTS: Mapping[str, type | None] = {
     "replace": str,
     "removeprefix": str,
     "removesuffix": str,
+    # a tuple of prefixes or suffixes, which SMT-LIB has no sort for: only a search reads it,
+    # each item a string term
+    "()": tuple,
     **dict.fromkeys(CHECKS, bool),
     **dict.fromkeys([*CASES, *PADDINGS, *TO_DECLARE], str),
     # a split builds a list, which SMT-LIB has no sort for here: its term is the string it splits,
@@ -147,8 +147,10 @@ STRING_ORDERS: Mapping[str, tuple[bool, bool]] = {
 
 # an operation SMT-LIB has no operator for, or spells in another order, written out as the form
 # that means it. Keyed by head and the type the operation works on, as `OPERATORS` is, so `//`
-# on ints and `//` on floats can each have their own. The operands arrive rendered, as many as
-# the expression holds and in its order, so a form only joins text.
+# on ints and `//` on floats can each have their own. The operands arrive as many as the
+# expression holds and in its order, each rendered, but for the positions `POSITIONS_FROM`
+# names, which arrive as a plain int, None or an Int term, and a tuple of needles, which
+# arrives as its items' terms.
 FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("//", int): floor_division,
     ("%", int): modulo,
@@ -159,8 +161,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("find", str): first_index,
     ("rfind", str): last_index,
     ("count", str): occurrences,
-    # index and rindex answer only past their `in` fork, where sub is in s and each is the
-    # find it mirrors
+    # index and rindex answer only past their found fork: `in` without a position, and the find
+    # or rfind each mirrors from one. Past it each is that find
     ("index", str): first_index,
     ("rindex", str): last_index,
     ("replace", str): replaced,
@@ -195,5 +197,15 @@ BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
 
 # a string taken at positions or padded: the string arrives rendered, and each other operand as
 # the plain value it is, an int, None for a slice's missing bound, or a literal's str, so the
-# form sees a position's sign and cuts a padding to its width
+# form sees a position's sign and cuts a padding to its width. An index and a slice also take
+# a tracked position, as its Int term
 POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced, **PADDINGS}
+
+# the heads whose positions may be tracked: an index and a slice here, and each search and
+# replace in `FORMS` by the operand its positions start at, past the string and what it looks
+# for or replaces. Each position arrives as `POSITIONED`'s do, or as a tracked one's Int term
+INDEXED = frozenset({"[]", "[:]"})
+POSITIONS_FROM: Mapping[str, int] = {
+    **dict.fromkeys(["find", "rfind", "index", "rindex", "count", "startswith", "endswith"], 2),
+    "replace": 3,
+}

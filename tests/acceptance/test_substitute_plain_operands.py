@@ -73,11 +73,11 @@ def test_follows_a_plain_bool_before_a_tracked_value() -> None:
 
 # intercept-builtin-functions-downgrades-an-untaught-form-on-a-plain-string
 def test_downgrades_an_untaught_form_on_a_plain_string() -> None:
-    result = run_pyct(f"{PLAIN_TEXT}::untaught", '{"s": "x"}')
+    result = run_pyct(f"{PLAIN_TEXT}::untaught", '{"s": "a"}')
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert downgrade_names(seed) == [("find", 1)]
+    assert downgrade_names(seed) == [("replace", 1)]
     assert forks_of(seed) == []
 
 
@@ -98,7 +98,7 @@ def test_finds_the_substring_a_plain_string_lacks() -> None:
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]
     assert [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [
-        (33, ["in", "s", "'abc'"], True)
+        (34, ["in", "s", "'abc'"], True)
     ]
     assert text(second, "s") not in "abc"
     assert forks_taken(second) == [(["in", "s", "'abc'"], False)]

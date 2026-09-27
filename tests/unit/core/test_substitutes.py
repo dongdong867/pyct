@@ -241,10 +241,10 @@ def test_a_str_literal_s_method_given_a_tracked_str_runs_on_a_tracked_str() -> N
 
 def test_a_str_literal_s_method_in_a_form_pyct_does_not_teach_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("x", expression="s", sink=sink)
+    s = ConcolicStr("a", expression="s", sink=sink)
 
-    assert method("abcx".find, s, 1) == 3
-    assert [item.name for item in sink if isinstance(item, Downgrade)] == ["find"]
+    assert method("abab".replace, s, "x", 2) == "xbxb"
+    assert sink == [Downgrade(name="replace")]
 
 
 def test_a_keyword_call_is_the_method_s_own_and_a_downgrade() -> None:

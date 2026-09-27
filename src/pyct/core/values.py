@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import Callable
-from typing import Protocol
+from typing import Any, Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
 
@@ -164,6 +164,24 @@ def _written(value: _Sinked, held: object, name: str) -> Pickled:
     return type(held), (held,)
 
 
+def built_plainly(kind: type, name: str) -> Any:
+    """A classmethod of ``kind`` reached through a tracked value: ``kind``'s own answer, plain.
+
+    ``kind``'s own classmethod builds the class it is reached through from
+    the value alone, and a concolic class also needs an expression and a
+    sink, so it is asked of ``kind`` itself: `x.from_bytes(...)` and
+    `type(x).from_bytes(...)` answer as `int.from_bytes(...)` does. It reads
+    the class and never the value, so it records nothing
+    (downgrades-class-body-taught-attributes-named).
+    """
+    operation = getattr(kind, name)
+
+    def build(cls: type, /, *args: object, **kwargs: object) -> object:
+        return own(operation, *args, **kwargs)
+
+    return classmethod(build)
+
+
 def _called_on_a_value(member: object) -> bool:
     """Whether a name a type defines is a method called on a value of it."""
     return isinstance(
@@ -184,12 +202,13 @@ def downgrade_the_rest(
     A type teaches what its class body defines and names what it keeps as
     the base type's; every other method the base type defines is a
     downgrade, worked out here once the class is built. Only a method
-    called on a value counts: a classmethod, a staticmethod, an attribute
-    and the rest never take a tracked value as their receiver, so none of
-    them can lose a condition. A name the base type inherits is reached
-    only by naming it, and a kept name the base type does not define is
-    simply not there to wrap. ``first`` is handed to each downgrade (see
-    `downgraded`).
+    called on a value counts: an attribute that reads the value and a
+    classmethod are named in the type's class body instead, and a
+    staticmethod never takes a tracked value as its receiver
+    (downgrades-class-body-taught-attributes-named). A name the base type
+    inherits is reached only by naming it, and a kept name the base type
+    does not define is simply not there to wrap. ``first`` is handed to
+    each downgrade (see `downgraded`).
     """
     candidates = {name for name, member in vars(base).items() if _called_on_a_value(member)}
     candidates |= set(inherited)
