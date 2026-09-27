@@ -1,4 +1,5 @@
-"""A raise from a search or a piece of a tracked str: execute reports it as the target's."""
+"""A raise from a search, a piece, a check, a change or a split of a tracked str: execute
+reports it as the target's."""
 
 from collections.abc import Callable
 from pathlib import Path
@@ -25,6 +26,12 @@ FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_
         pytest.param(lambda s: s["a"], id="index-str-refuses"),
         pytest.param(lambda s: s + 1, id="plus-str-refuses"),
         pytest.param(lambda s: s.replace(1, "x"), id="replace-str-refuses"),
+        pytest.param(
+            lambda s: s.isdigit(1),  # pyrefly: ignore[bad-argument-count]
+            id="check-str-refuses",
+        ),
+        pytest.param(lambda s: s.center(9, "**"), id="padding-fill-refused"),
+        pytest.param(lambda s: s.split(""), id="split-empty-separator"),
     ],
 )
 def test_execute_reports_a_raise_under_strs_own_operation_as_the_targets(

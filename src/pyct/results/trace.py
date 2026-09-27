@@ -1,5 +1,6 @@
 """The readable trace, the stderr half of what a run says: each input's lines, then how it ended."""
 
+import builtins
 import json
 import keyword
 from collections.abc import Mapping, Sequence
@@ -256,21 +257,17 @@ def _least(level: int, *, right: bool) -> int:
 # the builtins a fork line writes as Python calls them: `len(s)`
 _CALLED = ("len",)
 
-# the methods with no argument a fork line writes as Python calls them: `x.is_integer()`. A
-# named head on one operand is otherwise a builtin written before it, `abs x`
-_METHODS = ("is_integer",)
-
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     """A condition Python writes around its operands, or None for one it writes between them.
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A builtin in `_CALLED` reads ``len(s)``, a method in
-    `_METHODS` reads ``x.is_integer()``, and a named head with arguments reads
-    as Python calls a method, ``a.name(b)``. A part cut from a long expression
-    reads ``...(N nodes)``, and ``...(? nodes)`` when its count is ``null``.
-    Each binds tighter than any operator, so none needs parentheses of its own.
+    ``config['port']``. A builtin in `_CALLED` reads ``len(s)``, and a method
+    reads as Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()``
+    among them. A part cut from a long expression reads ``...(N nodes)``, and
+    ``...(? nodes)`` when its count is ``null``. Each binds tighter than any
+    operator, so none needs parentheses of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
@@ -282,25 +279,23 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         return f"{_operand(operands[0], _ALONE)}[{written}]"
     if head in _CALLED:
         return f"{head}({', '.join(texts)})"
-    if head in _METHODS or _is_named_with_arguments(expression):
+    if _is_a_method(expression):
         return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
     return None
 
 
-def _is_named_with_arguments(expression: list[Expression]) -> bool:
-    """Whether a condition is a named head on a receiver and at least one argument.
+def _is_a_method(expression: list[Expression]) -> bool:
+    """Whether a condition is a method called on a receiver, with or without arguments.
 
     A name is an identifier that is not a keyword, so ``in`` stays an
-    operator Python writes between its operands. A named head on one
-    operand, such as ``abs``, keeps the ``op a`` it always had.
+    operator Python writes between its operands. A builtin's name on one
+    operand, such as ``abs``, keeps the ``op a`` it always had, and any other
+    name on one operand is a method with no argument, ``s.upper()``.
     """
     head = expression[0]
-    return (
-        isinstance(head, str)
-        and head.isidentifier()
-        and not keyword.iskeyword(head)
-        and len(expression) > 2
-    )
+    if not isinstance(head, str) or not head.isidentifier() or keyword.iskeyword(head):
+        return False
+    return len(expression) > 2 or not hasattr(builtins, head)
 
 
 def _operand(written: _Text, least: int) -> str:

@@ -15,6 +15,7 @@ from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression, IsLeaf
 from pyct.solver.dag import Node, distinct
+from pyct.solver.splits import SPLITS
 
 # a piece of a string: the string, and where the piece starts and stops, None for an end
 type _Span = tuple[Expression, int | None, int | None]
@@ -68,6 +69,9 @@ def _join(left: Expression, right: Expression) -> Expression | None:
 def _span(part: Expression) -> _Span | None:
     """A piece of a string with no negative bound, as its string and its bounds, or None."""
     match part:
+        case ["[]", [str() as head, *_], _] if head in SPLITS:
+            # a piece of a split is a whole string, not a character of the list
+            return None
         case ["[]", term, int() as index] if _ahead(index):
             return term, index, index + 1
         case ["[:]", term, None | int() as start, None | int() as stop] if _ahead(start, stop):

@@ -8,13 +8,23 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
+from pyct.core.str_cases import changed, characters, check, width, width_and_fill
+from pyct.core.str_operands import literal, position, within_cvc5
+from pyct.core.str_splits import (
+    from_the_right,
+    line_ends,
+    one_separator,
+    separator_and_limit,
+    split_up,
+)
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
-# the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
-# the pieces it writes stay symbolic, and a copy is the value itself. The tuple here names what
-# is left to str on purpose, and the derivation at the bottom of the file downgrades every other
-# method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
-# itself, so nothing inherited needs naming.
+# the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches, the
+# pieces, the character checks, the case changes, strips and paddings, and the splits it writes
+# stay symbolic, and a copy is the value itself. The tuple here names what is left to str on
+# purpose, and the derivation at the bottom of the file downgrades every other method str
+# defines, plain methods and operators alike. str defines `__str__` and `__format__` itself, so
+# nothing inherited needs naming.
 
 # not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
 # once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
@@ -30,24 +40,17 @@ _KEPT = (
     "__sizeof__",
 )
 
-# the last character cvc5 holds: its strings run from U+0000 to here, and the solver writes
-# every one of them
-LAST_CHARACTER = 0x2FFFF
-
 
 def _operand(other: object) -> Expression | None:
     """The symbolic form of an operand str takes, or None for one it does not.
 
-    A tracked str gives its expression. Any other str is a literal of its
-    plain value, written as repr writes it, so a literal keeps its quotes and
-    reads apart from a parameter name.
+    A tracked str gives its expression. Any other str the solver holds is a
+    literal of its plain value, written as repr writes it (see `literal`), so
+    a literal keeps its quotes and reads apart from a parameter name.
     """
     if isinstance(other, ConcolicStr):
         return other.expression
-    if isinstance(other, str):
-        # str's own repr: a str of the target's own may print itself another way
-        return str.__repr__(other)
-    return None
+    return literal(other, ConcolicStr)
 
 
 def _within_cvc5(other: object) -> bool:
@@ -59,7 +62,7 @@ def _within_cvc5(other: object) -> bool:
     """
     if isinstance(other, ConcolicStr) or not isinstance(other, str):
         return True
-    return all(ord(character) <= LAST_CHARACTER for character in other)
+    return within_cvc5(other)
 
 
 def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
@@ -145,14 +148,6 @@ def _contains(self: ConcolicStr, sub: object) -> object:
     return ConcolicBool(own(str.__contains__, self, sub), expression=expression, sink=self.sink)
 
 
-def _position(value: object) -> int | None:
-    """A position pyct encodes, a plain int or a plain bool, as the int it indexes with.
-
-    Any other value is None.
-    """
-    return int(value) if isinstance(value, int) and type(value) in (int, bool) else None
-
-
 def _bounds(key: object) -> list[Expression] | None:
     """The start and the stop of a slice pyct encodes, a missing bound as None.
 
@@ -162,9 +157,9 @@ def _bounds(key: object) -> list[Expression] | None:
     if not isinstance(key, slice) or key.step is not None:
         return None
     ends = (key.start, key.stop)
-    if not all(end is None or _position(end) is not None for end in ends):
+    if not all(end is None or position(end) is not None for end in ends):
         return None
-    return [None if end is None else _position(end) for end in ends]
+    return [None if end is None else position(end) for end in ends]
 
 
 def _long_enough(self: ConcolicStr, index: int) -> None:
@@ -194,7 +189,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     slice clamps to the string, so it records no fork. A key in a form pyct
     does not encode is str's own answer and a `__getitem__` downgrade.
     """
-    index = _position(key)
+    index = position(key)
     if index is not None:
         _long_enough(self, index)
         expression = ["[]", self.expression, index]
@@ -206,7 +201,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
 
 
-def _one_str(args: tuple[object, ...]) -> list[Expression] | None:
+def _one_str(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """The operand of a piece that takes one str, in the form pyct encodes, or None."""
     form = _needle(args)
     return None if form is None else [form]
@@ -222,7 +217,7 @@ def _replaced_exactly(old: object) -> bool:
     return isinstance(old, str) and not isinstance(old, ConcolicStr) and str.__len__(old) > 0
 
 
-def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
+def _replacement(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """The old and the new string of a replace pyct encodes, or None.
 
     That replace takes two str arguments the solver reads as they are, and
@@ -234,29 +229,6 @@ def _replacement(args: tuple[object, ...]) -> list[Expression] | None:
     if not _replaced_exactly(old) or not isinstance(new, str):
         return None
     return [_operand(old), _operand(new)]
-
-
-def _piece(
-    name: str, operands: Callable[[tuple[object, ...]], list[Expression] | None]
-) -> Callable[..., object]:
-    """str's own answer to one method that builds a str, as a tracked str carrying
-    `[name, s, *operands]`.
-
-    A call in a form pyct does not encode, a keyword included, is str's own
-    answer and a downgrade named by the method (``README.md › Rules ›
-    downgrades``).
-    """
-    operation = getattr(str, name)
-    downgrade = downgraded(str, name)
-
-    def compute(self: ConcolicStr, /, *args: object, **kwargs: object) -> object:
-        forms = None if kwargs else operands(args)
-        if forms is None:
-            return downgrade(self, *args, **kwargs)
-        expression = [name, self.expression, *forms]
-        return ConcolicStr(own(operation, self, *args), expression=expression, sink=self.sink)
-
-    return compute
 
 
 def _reflected(self: ConcolicStr, other: object) -> object:
@@ -366,9 +338,45 @@ class ConcolicStr(str):
     __getitem__ = _item  # pyrefly: ignore[bad-override]
     __add__ = _appended  # pyrefly: ignore[bad-override]
     __radd__ = _prepended
-    replace = _piece("replace", _replacement)  # pyrefly: ignore[bad-override]
-    removeprefix = _piece("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
-    removesuffix = _piece("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
+    replace = changed("replace", _replacement)  # pyrefly: ignore[bad-override]
+    removeprefix = changed("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
+    removesuffix = changed("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
+
+    # a character check answers with a tracked bool, and a case change, a strip or a padding
+    # with a tracked str (see `str_cases`); each takes any arguments and hands a form it does
+    # not encode to str, so its signature is not str's; the override breaks str's on purpose
+    isdigit = check("isdigit")  # pyrefly: ignore[bad-override]
+    isdecimal = check("isdecimal")  # pyrefly: ignore[bad-override]
+    isnumeric = check("isnumeric")  # pyrefly: ignore[bad-override]
+    isalpha = check("isalpha")  # pyrefly: ignore[bad-override]
+    isalnum = check("isalnum")  # pyrefly: ignore[bad-override]
+    isspace = check("isspace")  # pyrefly: ignore[bad-override]
+    isupper = check("isupper")  # pyrefly: ignore[bad-override]
+    islower = check("islower")  # pyrefly: ignore[bad-override]
+    isascii = check("isascii")  # pyrefly: ignore[bad-override]
+    isprintable = check("isprintable")  # pyrefly: ignore[bad-override]
+    istitle = check("istitle")  # pyrefly: ignore[bad-override]
+    isidentifier = check("isidentifier")  # pyrefly: ignore[bad-override]
+    upper = changed("upper")  # pyrefly: ignore[bad-override]
+    lower = changed("lower")  # pyrefly: ignore[bad-override]
+    capitalize = changed("capitalize")  # pyrefly: ignore[bad-override]
+    title = changed("title")  # pyrefly: ignore[bad-override]
+    swapcase = changed("swapcase")  # pyrefly: ignore[bad-override]
+    casefold = changed("casefold")  # pyrefly: ignore[bad-override]
+    strip = changed("strip", characters)  # pyrefly: ignore[bad-override]
+    lstrip = changed("lstrip", characters)  # pyrefly: ignore[bad-override]
+    rstrip = changed("rstrip", characters)  # pyrefly: ignore[bad-override]
+    zfill = changed("zfill", width)  # pyrefly: ignore[bad-override]
+    center = changed("center", width_and_fill)  # pyrefly: ignore[bad-override]
+    ljust = changed("ljust", width_and_fill)  # pyrefly: ignore[bad-override]
+    rjust = changed("rjust", width_and_fill)  # pyrefly: ignore[bad-override]
+
+    # a split hands back str's own list or tuple, each piece a tracked str carrying its
+    # position in it (see `str_splits`)
+    split = split_up("split", separator_and_limit)  # pyrefly: ignore[bad-override]
+    rsplit = split_up("rsplit", from_the_right)  # pyrefly: ignore[bad-override]
+    partition = split_up("partition", one_separator)  # pyrefly: ignore[bad-override]
+    splitlines = split_up("splitlines", line_ends)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

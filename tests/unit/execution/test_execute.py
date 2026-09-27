@@ -347,7 +347,7 @@ def test_execute_reads_the_sink_before_it_writes_the_failure(
 
 
 def _downgrades_then_raises(v: str) -> None:
-    v.upper()
+    v.expandtabs()
     raise ValueError(v)
 
 
@@ -358,7 +358,7 @@ def test_execute_keeps_the_targets_downgrades_when_it_raises() -> None:
 
     # the target's own downgrade before the raise stays; writing the failure adds none
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: abc")
-    assert result.downgrades == (DowngradeCount(name="upper", count=1),)
+    assert result.downgrades == (DowngradeCount(name="expandtabs", count=1),)
 
 
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
