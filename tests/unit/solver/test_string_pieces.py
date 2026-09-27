@@ -80,7 +80,7 @@ def test_a_search_or_an_order_writes_a_piece_once(condition: Expression) -> None
     # the form reads the piece several times, and the program defines it once for all of them
     assert text.count(sliced("|arg.s|", 1, None)) == 1
     assert text.count(sliced("e!0", 1, None)) == 1
-    assert "e!1" in text.split("(assert ")[1]
+    assert "e!1" in text.split("(assert ")[-1]
 
 
 def _value(rng: random.Random, longest: int) -> str:
