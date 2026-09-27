@@ -42,8 +42,9 @@ def test_the_build_asks_uv_for_this_python(tmp_path: Path) -> None:
     assert args[args.index("--python") + 1] == platform.python_version()
 
 
-def test_processes_sharing_a_folder_build_the_checkout_once(tmp_path: Path) -> None:
-    # every worker of a parallel run asks for the checkout at once; the first builds it
+def test_threads_sharing_a_folder_build_the_checkout_once(tmp_path: Path) -> None:
+    # every worker of a parallel run asks for the checkout at once; the first builds it. Each call
+    # opens the lock file itself, and flock locks an opened file, so threads stand in for workers
     builds: list[Path] = []
 
     def build(checkout: Path) -> None:

@@ -1,6 +1,6 @@
 """The scheduling of a parallel run, ``-n N --dist loadgroup``: the ``serial`` tests run last.
 
-A test marked ``serial`` measures time against the machine's load, so it runs by itself. Every
+A test marked ``serial`` failed beside the other workers, so it runs apart from them. Every
 other test is scheduled as ``loadgroup`` does. Once only the ``serial`` group is left, each
 worker that asks for more work is shut down instead, and the last one still running takes the
 group when every other worker has left, then runs its tests one after another.

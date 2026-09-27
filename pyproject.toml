@@ -19,7 +19,8 @@ dev = [
   "pytest>=8.0",
   "pytest-cov>=7.1",
   "pytest-timeout>=2.3",
-  "pytest-xdist>=3.8",
+  # tests/serial_last.py overrides xdist's private scheduling; a new release needs checking
+  "pytest-xdist>=3.8,<3.9",
   "ruff>=0.12",
 ]
 # The libraries the compare tool's realworld and library sets run, at the versions legacy's
@@ -48,7 +49,8 @@ search-path = ["src", "."]
 
 [tool.pytest.ini_options]
 # -n N runs the suite in N workers, and loadgroup holds the tests marked serial back until
-# every other test is done; tests/serial_last.py. Without -n, the suite runs in one process
+# every other test is done; tests/serial_last.py. Without -n, or with -n 0, the suite runs in
+# one process; -p no:xdist cannot, since --dist is xdist's
 addopts = "-v --tb=short --dist loadgroup"
 testpaths = ["tests"]
 # a test still running after 60 seconds ends the run with every thread's stack, so a hang
@@ -61,7 +63,7 @@ timeout_method = "thread"
 filterwarnings = ['ignore:This process \(pid=\d+\) is multi-threaded:DeprecationWarning']
 markers = [
   "legacy: runs legacy's engine from a checkout of main, built once per session; -m 'not legacy' skips it",
-  "serial: measures time against the machine's load; a parallel run with --dist loadgroup runs it last, alone",
+  "serial: failed beside a parallel run's other workers; the run holds it back and runs it last, alone",
 ]
 
 # Measured when pytest runs with --cov: pyct, and the compare tool in tools/. The

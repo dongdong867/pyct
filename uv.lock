@@ -397,7 +397,7 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=7.1" },
     { name = "pytest-timeout", specifier = ">=2.3" },
-    { name = "pytest-xdist", specifier = ">=3.8" },
+    { name = "pytest-xdist", specifier = ">=3.8,<3.9" },
     { name = "ruff", specifier = ">=0.12" },
 ]
 
