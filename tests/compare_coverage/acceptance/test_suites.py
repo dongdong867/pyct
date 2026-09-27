@@ -204,3 +204,16 @@ def test_a_library_file_with_no_def_of_the_name_names_each_version_and_the_reaso
     # the library explains the other side first
     assert row["legacy"]["failure"] == "the entry pins werkzeug 3.1.3; this side has 0.1"
     assert code == 1
+
+
+def test_a_library_file_with_no_def_of_the_name_fails_both_pinned_sides(tmp_path: Path) -> None:
+    entry = library_entry("werkzeug.http::no_such_name", {}, Library("werkzeug", "3.1.3"))
+    echo = Sides(v2=EchoSide(), legacy=EchoSide())
+
+    code, (row,), _ = compare_on(a_run([entry], roots(tmp_path)), echo)
+
+    assert row["status"] == "both failed"
+    for side in ("v2", "legacy"):
+        assert row[side]["library"] == "3.1.3"
+        assert row[side]["failure"].endswith("has no top-level def or class named no_such_name")
+    assert code == 1
