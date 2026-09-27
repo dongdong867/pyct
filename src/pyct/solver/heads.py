@@ -146,6 +146,16 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("not", bool): "not",
 }
 
+
+def operator(head: str, kind: type | None) -> str:
+    """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
+    spelled = OPERATORS.get((head, kind)) if kind is not None else None
+    if spelled is None:
+        on = "anything" if kind is None else kind.__name__
+        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
+    return spelled
+
+
 # the type a head works on whatever its operands are: Python's `/` divides two ints as floats,
 # and a `math` function reads an int as the double Python converts it to
 WORKS_ON: Mapping[str, type] = {
@@ -219,6 +229,13 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("str", int): numerals.text_of_int,
     ("str", bool): numerals.text_of_bool,
     **{(head, str): form for head, form in CASES.items()},
+}
+
+# the forms of a head on one character of a string, `s[i]`, keyed by the head on str, which
+# render writes in place of `FORMS`' own for such an operand
+ON_A_CHARACTER: Mapping[str, Callable[[str], str]] = {
+    "int": numerals.int_of_character,
+    "isint": numerals.is_int_character,
 }
 
 # a form exact only inside a bound, which answers its term and the bound, keyed as `FORMS` is.

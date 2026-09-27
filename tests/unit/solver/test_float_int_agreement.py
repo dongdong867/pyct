@@ -25,6 +25,8 @@ DIVISION = [
     2.0**50 - 1.0,
     -(2.0**50),
     3.0 * 2.0**49,
+    2.0**53,
+    -(2.0**53 + 2.0),
 ]
 
 # ints whose conversion rounds: exact up to 2**53, then half to even, then past the largest
@@ -90,6 +92,27 @@ def test_cvc5_agrees_with_python_to_the_bit_on_floor_division_inside_its_bound()
     assert wrong == []
     # the doubles reach past the bound too, so a clean result is not a narrow one
     assert False in bounds
+
+
+@needs_cvc5
+def test_the_bound_a_program_holds_is_pythons_and_its_floor_finite_where_pythons_is() -> None:
+    pairs = _divided()
+    # without a term past the bound, as a program that holds the bound writes it
+    written = [floats.floor_division(literal(x), literal(y)) for x, y in pairs]
+
+    bounds = _values("Bool", [bound for _, bound in written])
+    finite = _values("Bool", [floats.finite(term) for term, _ in written])
+
+    assert bounds == [_inside(x, y) for x, y in pairs]
+    wrong = [
+        (x, y, said)
+        for (x, y), said, inside in zip(pairs, finite, bounds, strict=True)
+        if inside and said != math.isfinite(x // y)
+    ]
+    assert wrong == []
+    # both sides of the finite fork are reached inside the bound
+    sides = {math.isfinite(x // y) for (x, y), held in zip(pairs, bounds, strict=True) if held}
+    assert sides == {True, False}
 
 
 @needs_cvc5

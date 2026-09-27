@@ -25,7 +25,9 @@ class Rescan:
     side after the same prefix. A fork whose other side no input took
     anywhere comes first, oldest path first and deepest fork first, or
     shallowest first on a path a pick timed out on; then every other open
-    fork, oldest path first and deepest fork first.
+    fork, oldest path first and deepest fork first; each of those at a site
+    no pick timed out at. Last come the open forks at such a site, oldest
+    path first and deepest fork first.
     """
 
     def __init__(self) -> None:
@@ -34,7 +36,9 @@ class Rescan:
         self.aimed: set[tuple[tuple[Side, ...], Site]] = set()
         self.sides: set[Side] = set()
         self.picked: int | None = None
+        self.picked_site: Site | None = None
         self.turned: set[int] = set()
+        self.timed_out_at: set[Site] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
         self.paths.append(forks)
@@ -45,19 +49,26 @@ class Rescan:
             self.sides.add((fork.site, fork.taken))
 
     def next(self) -> Plan | None:
-        for new_side_only in (True, False):
+        for tier in ("new side", "open", "last"):
             for path, forks in enumerate(self.paths):
-                turned = new_side_only and path in self.turned
+                turned = tier == "new side" and path in self.turned
                 for at in range(len(forks)) if turned else reversed(range(len(forks))):
-                    if self._open(forks, at) and (not new_side_only or self._new_side(forks[at])):
+                    if self._open(forks, at) and self._in(tier, forks[at]):
                         self.aimed.add(self._key(forks, at))
-                        self.picked = path
+                        self.picked, self.picked_site = path, forks[at].site
                         return plan(forks[: at + 1], path)
         return None
 
     def timed_out(self) -> None:
+        if self.picked_site is not None:
+            self.timed_out_at.add(self.picked_site)
         if self.picked is not None:
             self.turned.add(self.picked)
+
+    def _in(self, tier: str, fork: Branch) -> bool:
+        if tier == "last":
+            return True
+        return fork.site not in self.timed_out_at and (tier == "open" or self._new_side(fork))
 
     def _key(self, forks: tuple[Branch, ...], at: int) -> tuple[tuple[Side, ...], Site]:
         return tuple((fork.site, fork.taken) for fork in forks[:at]), forks[at].site
@@ -88,10 +99,23 @@ def _after(rng: random.Random, picked: Plan) -> tuple[Branch, ...]:
     return (*picked.prefix[:kept], *_random_forks(rng, 4))
 
 
+def _picked_past(tree: Tree, last_oldest: int) -> tuple[Plan | None, int]:
+    """The tree's next pick, and the oldest path it could extend before the pick.
+
+    No pick extends a path the run has let go of, and a path let go never comes back.
+    """
+    oldest = tree.oldest
+    assert oldest >= last_oldest
+    picked = tree.next()
+    assert picked is None or picked.path >= oldest
+    return picked, oldest
+
+
 @pytest.mark.parametrize("seed", range(300))
 def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
     rng = random.Random(seed)
     tree, reference = Tree(), Rescan()
+    last_oldest = 0
     for _ in range(60):
         # a path from nowhere, an input that ran on a plan, or a plan the solver answered
         # nothing for, which adds no path
@@ -100,7 +124,7 @@ def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
             tree.add(path)
             reference.add(path)
             continue
-        picked = tree.next()
+        picked, last_oldest = _picked_past(tree, last_oldest)
         assert picked == reference.next()
         if picked is not None and rng.random() < 0.8:
             path = _after(rng, picked)

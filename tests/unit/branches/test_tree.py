@@ -151,6 +151,51 @@ def test_a_timeout_before_any_pick_changes_no_order() -> None:
     assert aims == [1, 0]
 
 
+def test_a_timeout_sends_every_other_fork_at_its_site_last() -> None:
+    """The helper's case: `int(s)` after `s.isdigit()` forks at one site on each call."""
+    tree = Tree()
+    tree.add(tuple(fork(line, taken=True) for line in (5, 9, 6, 9)))
+    first = tree.next()
+
+    tree.timed_out()
+    later = [picked.aim.position for picked in iter(tree.next, None)]
+
+    assert first is not None and first.aim.position == 3
+    # the new sides shallowest first, but for the one at the site that timed out, which is last
+    assert later == [0, 2, 1]
+
+
+def test_a_timeout_sends_a_fork_at_its_site_on_a_later_path_last() -> None:
+    tree = Tree()
+    tree.add((fork(5, taken=True), fork(9, taken=True)))
+    tree.next()
+    tree.timed_out()
+    tree.add((fork(5, taken=False), fork(7, taken=True), fork(9, taken=True), fork(8, taken=True)))
+
+    aims = [(picked.path, picked.aim.position) for picked in iter(tree.next, None)]
+
+    # the later path's new sides deepest first, but for the one at line 9, which is last
+    assert aims == [(1, 3), (1, 1), (1, 2)]
+
+
+def test_a_fork_waiting_for_the_last_picks_keeps_its_path_to_extend() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(9, taken=True)))
+    tree.add((fork(3, taken=True), fork(9, taken=True)))
+    tree.next()
+    tree.timed_out()
+    tree.next()
+    tree.next()
+
+    # the second path's fork at line 9 is open, and waits for the last picks
+    assert tree.oldest == 1
+    picked = tree.next()
+
+    assert picked is not None and (picked.path, picked.aim.position) == (1, 1)
+    assert tree.oldest == 2
+    assert tree.next() is None
+
+
 def test_a_fork_is_aimed_at_once() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True), fork(3, taken=True)))
