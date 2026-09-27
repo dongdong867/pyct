@@ -18,6 +18,6 @@ class _Dice:
 
 _dice = _Dice()
 roll = _dice.roll
-throw = roll
+cast = roll
 make = _Dice.make
 wrap = textwrap.TextWrapper().wrap
