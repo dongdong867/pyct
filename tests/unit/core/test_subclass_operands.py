@@ -5,12 +5,12 @@ target's object would run the target's own methods inside pyct and write what th
 """
 
 from collections.abc import Callable
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 from typing import Any
 
 import pytest
 
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 
@@ -20,10 +20,14 @@ def _refuse(*_args: object) -> Any:
 
 
 class Loud(int):
-    """An int whose own methods fail the test if anything calls them."""
+    """An int whose own methods fail the test if anything calls them.
+
+    It defines no operation Python would ask of it on the right of an int: those run where
+    Python runs them (see `Rev`).
+    """
 
     __repr__ = __str__ = __format__ = __int__ = __index__ = __float__ = _refuse
-    __lt__ = __gt__ = __le__ = __ge__ = __neg__ = __abs__ = _refuse
+    __neg__ = __abs__ = _refuse
 
 
 class Lying(int):
@@ -130,3 +134,137 @@ def test_a_plain_bool_operand_stays_the_literal_it_is() -> None:
 
     assert result.expression == ["+", "n", True]
     assert result.expression[2] is True
+
+
+class Rev(int):
+    """An int that defines its own reflected operations, which Python asks first on the right."""
+
+    def __gt__(self, other: int) -> bool:
+        return int.__lt__(self, other)
+
+    def __lt__(self, other: int) -> bool:
+        return int.__gt__(self, other)
+
+    def __radd__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
+        return "Rev's own sum"
+
+    def __rlshift__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
+        return "Rev's own shift"
+
+    def __rpow__(self, other: object, modulus: object = None) -> str:
+        return "Rev's own power"
+
+    def __rfloordiv__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        # the int on the left, handed back as it came: tracked under pyct
+        return other
+
+
+class Shy(int):
+    """An int whose own reflected sum hands the operation back."""
+
+    def __radd__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return NotImplemented
+
+
+class Flag(IntFlag):
+    A = 1
+
+
+# each operation Python asks an int subclass on the right for first, when its type defines it
+ASKED_FIRST: dict[str, tuple[Callable[[Any, Any], Any], str]] = {
+    "greater": (lambda n, other: n > other, "__gt__"),
+    "less": (lambda n, other: n < other, "__lt__"),
+    "sum": (lambda n, other: n + other, "__add__"),
+    "shift": (lambda n, other: n << other, "__lshift__"),
+    "power": (lambda n, other: n**other, "__pow__"),
+}
+
+
+@pytest.mark.parametrize(("operation", "name"), ASKED_FIRST.values(), ids=ASKED_FIRST.keys())
+def test_an_int_subclass_answers_its_reflected_operation_first_as_python_asks_it(
+    operation: Callable[[Any, Any], Any], name: str
+) -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = operation(n, Rev(3))
+
+    expected = operation(7, Rev(3))
+    assert result == expected and type(result) is type(expected)
+    # the answer is the subclass's own and plain, so the condition is lost and named
+    assert sink == [Downgrade(name=name)]
+
+
+def test_a_tracked_answer_from_an_int_subclass_is_no_downgrade() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = n // Rev(3)
+
+    assert result is n
+    assert sink == []
+    assert result == 7 // Rev(3)
+
+
+def test_an_int_flag_answers_with_its_own_flag_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = n | Flag.A
+
+    expected = 7 | Flag.A
+    assert result == expected and type(result) is type(expected)
+    # IntFlag's own `|` runs `1 | n`, a downgrade of its own, and hands back a plain flag
+    assert sink == [Downgrade(name="__ror__"), Downgrade(name="__or__")]
+
+
+def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+
+    result = n + Shy(2)
+
+    assert sink == []
+    assert result.expression == ["+", "n", 2]
+    assert result == 7 + Shy(2)
+
+
+def test_a_three_argument_power_asks_the_int_subclass_nothing() -> None:
+    n = ConcolicInt(7, expression="n", sink=[])
+
+    assert pow(n, Rev(2), 5) == pow(7, Rev(2), 5)
+
+
+def test_a_reflected_call_on_the_tracked_int_asks_the_int_subclass_nothing() -> None:
+    # Python has already asked the subclass on the left for `Rev(3) + n`, and int's own answered
+    n = ConcolicInt(7, expression="n", sink=[])
+
+    result = n.__radd__(Rev(3))
+
+    assert result.expression == ["+", 3, "n"]
+
+
+def test_a_tracked_bool_or_float_asks_an_int_subclass_nothing_as_python_does() -> None:
+    # Rev subclasses neither bool nor float, so Python asks the left operand first
+    sink: list[SinkItem] = []
+    n = ConcolicInt(7, expression="n", sink=sink)
+    f = ConcolicFloat(0.5, expression="f", sink=sink)
+
+    # each on a bool and a float, so the same lambdas give plain Python's answers
+    operations: list[Callable[[Any, Any], Any]] = [
+        lambda b, _: b + Rev(3),
+        lambda b, _: b > Rev(3),
+        lambda _, g: g < Rev(3),
+        lambda _, g: g + Rev(3),
+    ]
+
+    results = [operation(n > 0, f) for operation in operations]
+
+    assert sink == []
+    assert [result.expression for result in results] == [
+        ["+", [">", "n", 0], 3],
+        [">", [">", "n", 0], 3],
+        ["<", "f", 3],
+        ["+", "f", 3],
+    ]
+    assert results == [operation(True, 0.5) for operation in operations]

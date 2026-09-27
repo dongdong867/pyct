@@ -141,6 +141,7 @@
     {"set": "v2", "target": "targets.ints.own_subclass::level", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.ints.own_subclass::marked", "seed": {"x": -5}},
     {"set": "v2", "target": "targets.ints.own_subclass::named", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.ints.own_subclass::rev", "seed": {"x": -5}},
     {"set": "v2", "target": "targets.ints.own_subclass::touchy", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.ints.pickled::copied", "seed": {"n": 3}},
     {"set": "v2", "target": "targets.ints.pickled::each_type", "seed": {"n": 3, "s": "ab"}},

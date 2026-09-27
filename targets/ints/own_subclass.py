@@ -38,10 +38,6 @@ class Marked(int):
         _mark("__index__")
         return int.__index__(self)
 
-    def __lt__(self, other: object) -> bool:
-        _mark("__lt__")
-        return int.__lt__(self, other)  # pyrefly: ignore[bad-return]
-
     def __neg__(self) -> int:
         _mark("__neg__")
         return int.__neg__(self)
@@ -61,9 +57,17 @@ class Level(IntEnum):
     HIGH = 3
 
 
+class Rev(int):
+    """An int whose own order is reversed, which Python asks first when it is on the right."""
+
+    def __lt__(self, other: object) -> bool:
+        return int.__gt__(self, other)  # pyrefly: ignore[bad-return]
+
+
 NAMED = Named(3)
 MARKED = Marked(-3)
 TOUCHY = Touchy(3)
+REV = Rev(3)
 
 
 def named(x: int) -> str:
@@ -88,3 +92,9 @@ def level(x: int) -> str:
     if x + Level.HIGH > 5:
         return "high"
     return "low"
+
+
+def rev(x: int) -> str:
+    if x > REV:
+        return "big"
+    return "small"

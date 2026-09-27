@@ -7,15 +7,23 @@ the target's object as it was, so only a real run shows which methods ran and wh
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from targets.ints import own_subclass
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    input_lines,
+    run_pyct,
+    summary_line,
+)
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_strs import number
 
 OWN_SUBCLASS = "targets.ints.own_subclass"
 OWN_SUBCLASS_FILE = str(REPO_ROOT / "targets" / "ints" / "own_subclass.py")
-# the `return "big"` under named's fork, and the `return "high"` under level's
-BIG = 71
-HIGH = 89
+# the `return "big"` under named's fork, the `return "high"` under level's, and rev's `return "big"`
+BIG = 75
+HIGH = 93
+REV_BIG = 99
 # what each of Marked's own methods writes when it runs
 MARKER = "TARGET CODE"
 
@@ -76,3 +84,18 @@ def test_survives_a_repr_that_raises() -> None:
     assert fork_lines(result.stderr)[0] == "x > 3"
     assert any(number(line, "x") > 3 for line in solver_lines(result.stdout)), result.stdout
     assert "Traceback" not in result.stderr
+
+
+# the Bug's expected behavior: an int subclass's own reflected method answers first, as Python asks
+def test_asks_an_int_subclass_its_own_reflected_method_first() -> None:
+    result = run_pyct(f"{OWN_SUBCLASS}::rev", '{"x": -5}', "--in-process")
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    # Rev's own reversed `__lt__` answers `-5 > Rev(3)`, as it does in plain Python
+    assert own_subclass.rev(-5) == "big"
+    assert REV_BIG in covered_in(seed, OWN_SUBCLASS_FILE)
+    # its answer is a plain bool, so the condition is lost and the operation is named
+    assert seed["forks"] == []
+    assert seed["downgrades"] == [{"name": "__gt__", "count": 1}]
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"

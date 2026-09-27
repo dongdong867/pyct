@@ -29,7 +29,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
-from pyct.core.branch import BranchSink, Expression
+from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.values import downgraded, own
 
 # what a tracked int, and a tracked bool with it, leaves to int on purpose. A bool is the int 1
@@ -101,16 +101,17 @@ def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
 def operand(other: object) -> Expression | None:
     """How an int or a bool reads the other side of an operation, or None for one it does not take.
 
-    It takes the int family alone, as int's own operations do. A tracked int
-    or bool reads as its expression. A plain int reads as itself, and so
-    does a plain bool, the int 1 or 0, as the literal True or False. An int
-    of the target's own subclass, an IntEnum member say, reads as the plain
-    int it equals: pyct writes the expression later, and the object kept as
-    it is would run the target's own methods then. `int.__index__` is int's
-    own, so it reads the value without calling any method the subclass
-    defines. Any other value, a tracked number of another type included, is
-    None, so the operation answers NotImplemented and Python asks the other
-    operand.
+    It takes the int family alone. A tracked int or bool reads as its
+    expression. A plain int reads as itself, and so does a plain bool, the
+    int 1 or 0, as the literal True or False. An int of the target's own
+    subclass, an IntEnum member say, reads as the plain int it equals: pyct
+    writes the expression later, and the object kept as it is would run the
+    target's own methods then. `int.__index__` is int's own, so it reads the
+    value without calling any method the subclass defines. One whose own
+    reflected operation Python asks first is asked before this rule is read
+    (see `asked_first`). Any other value, a tracked number of another type
+    included, is None, so the operation answers NotImplemented and Python
+    asks the other operand.
     """
     if not isinstance(other, int):
         return None
@@ -160,6 +161,66 @@ def _mirrored(name: str) -> str:
     if name in _SWAPPED:
         return _SWAPPED[name]
     return f"__{name[3:]}" if name.startswith("__r") else f"__r{name[2:]}"
+
+
+# each operation int defines on two operands, and the reflected one Python asks an int subclass
+# on the right for first when that subclass defines it otherwise than int
+_REFLECTED = {
+    **_SWAPPED,
+    "__add__": "__radd__",
+    "__sub__": "__rsub__",
+    "__mul__": "__rmul__",
+    "__truediv__": "__rtruediv__",
+    "__floordiv__": "__rfloordiv__",
+    "__mod__": "__rmod__",
+    "__divmod__": "__rdivmod__",
+    "__pow__": "__rpow__",
+    "__lshift__": "__rlshift__",
+    "__rshift__": "__rrshift__",
+    "__and__": "__rand__",
+    "__or__": "__ror__",
+    "__xor__": "__rxor__",
+}
+
+
+def answered_first(name: str, self: object, other: object) -> object:
+    """What an int subclass on the right answers first, as Python asks it, or NotImplemented.
+
+    Python asks the right operand's reflected operation first when its type
+    is a subclass of the left one's that defines that operation otherwise:
+    `x > r` runs `type(r).__lt__` when the target's own class of `r`
+    defines one. A tracked int stands where the target's plain int would, so
+    pyct asks it too, before anything of int's runs, and its answer is the
+    answer. A plain answer has lost the tracked int's condition, so the
+    operation is named as a downgrade. A tracked bool or float asks nothing,
+    as Python's bool and float do not: an int subclass subclasses neither.
+    """
+    reflected = _REFLECTED.get(name)
+    kind = type(other)
+    if reflected is None or not isinstance(other, int) or kind in (int, bool, *_CLASSES):
+        return NotImplemented
+    operation = getattr(kind, reflected)
+    if operation is getattr(int, reflected):
+        return NotImplemented
+    answer = own(operation, other, self)
+    if answer is not NotImplemented and type(answer) not in _CLASSES:
+        cast(Number, self).sink.append(Downgrade(name=name))
+    return answer
+
+
+def asked_first(name: str, method: Callable[..., Any]) -> Callable[..., Any]:
+    """A tracked int's operation by that name, asked of an int subclass on the right first.
+
+    See `answered_first`. Python asks the right operand first only for a
+    call on one operand, so a three-argument `pow` goes to `method` alone.
+    """
+
+    def compute(self: object, other: object, /, *rest: object) -> Any:
+        if not rest and (answer := answered_first(name, self, other)) is not NotImplemented:
+            return answer
+        return method(self, other, *rest)
+
+    return compute
 
 
 type Rule = Callable[[object], Expression | None]
