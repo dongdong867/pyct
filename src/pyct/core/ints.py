@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, operand
+from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, promoted
 from pyct.core.values import copy_as_itself, downgrade_the_rest, forked, own, pickled
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
@@ -37,12 +37,14 @@ class ConcolicInt(int):
     # `x.__gt__(10)` and prints [">", "x", 10]; nothing here has to reflect anything.
     # int promises a bool from each, and a ConcolicBool is an int that is not a bool,
     # because bool cannot be subclassed; the override breaks that promise on purpose.
-    __lt__ = compare("<", int.__lt__, operand)
-    __le__ = compare("<=", int.__le__, operand)
-    __gt__ = compare(">", int.__gt__, operand)
-    __ge__ = compare(">=", int.__ge__, operand)
-    __eq__ = compare("==", int.__eq__, operand)
-    __ne__ = compare("!=", int.__ne__, operand)
+    # Each operation on two numbers meets a float as Python's int does, through float's own
+    # (see `numbers.promoted`), so `n < 2.5` is ["<", "n", 2.5] and `n + 0.5` a tracked float
+    __lt__ = compare("<", *promoted(int.__lt__))
+    __le__ = compare("<=", *promoted(int.__le__))
+    __gt__ = compare(">", *promoted(int.__gt__))
+    __ge__ = compare(">=", *promoted(int.__ge__))
+    __eq__ = compare("==", *promoted(int.__eq__))
+    __ne__ = compare("!=", *promoted(int.__ne__))
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = int.__hash__
     __copy__ = copy_as_itself
@@ -50,21 +52,25 @@ class ConcolicInt(int):
     # a pickle holds the plain value and loads as an int, and writing it is a downgrade
     __reduce_ex__, __reduce__ = pickled(int)
 
-    __add__ = numbers.arithmetic("+", int.__add__)
-    __radd__ = numbers.arithmetic("+", int.__radd__, reflected=True)
-    __sub__ = numbers.arithmetic("-", int.__sub__)
-    __rsub__ = numbers.arithmetic("-", int.__rsub__, reflected=True)
-    __mul__ = numbers.arithmetic("*", int.__mul__)
-    __rmul__ = numbers.arithmetic("*", int.__rmul__, reflected=True)
-    __floordiv__ = numbers.division("//", int.__floordiv__)
-    __rfloordiv__ = numbers.division("//", int.__rfloordiv__, reflected=True)
-    __mod__ = numbers.division("%", int.__mod__)
-    __rmod__ = numbers.division("%", int.__rmod__, reflected=True)
-    __divmod__ = numbers.divmod_of(int.__divmod__)
-    __rdivmod__ = numbers.divmod_of(int.__rdivmod__, reflected=True)
+    __add__ = numbers.arithmetic("+", *promoted(int.__add__))
+    __radd__ = numbers.arithmetic("+", *promoted(int.__radd__), reflected=True)
+    __sub__ = numbers.arithmetic("-", *promoted(int.__sub__))
+    __rsub__ = numbers.arithmetic("-", *promoted(int.__rsub__), reflected=True)
+    __mul__ = numbers.arithmetic("*", *promoted(int.__mul__))
+    __rmul__ = numbers.arithmetic("*", *promoted(int.__rmul__), reflected=True)
+    # `/` answers a float even on two ints, which numbers tracks as a tracked float
+    __truediv__ = numbers.division("/", *promoted(int.__truediv__))
+    __rtruediv__ = numbers.division("/", *promoted(int.__rtruediv__), reflected=True)
+    __floordiv__ = numbers.division("//", *promoted(int.__floordiv__))
+    __rfloordiv__ = numbers.division("//", *promoted(int.__rfloordiv__), reflected=True)
+    __mod__ = numbers.division("%", *promoted(int.__mod__))
+    __rmod__ = numbers.division("%", *promoted(int.__rmod__), reflected=True)
+    __divmod__ = numbers.divmod_of(*promoted(int.__divmod__))
+    __rdivmod__ = numbers.divmod_of(*promoted(int.__rdivmod__), reflected=True)
     __neg__ = numbers.unary("-", int.__neg__)
     __abs__ = numbers.unary("abs", int.__abs__)
-    __pow__ = numbers.power(int.__pow__)
+    # a float exponent is float's own answer, and a downgrade like any power it does not encode
+    __pow__ = numbers.power(promoted(int.__pow__)[0])
     __pos__ = _itself
     __index__ = _itself
     __trunc__ = _itself

@@ -10,7 +10,7 @@ from time import monotonic
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
-from pyct.solver.list_reader import RenderTimeError, RenderTooLargeError
+from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import FINITE, Program, float_leaves, program
@@ -39,6 +39,11 @@ LONGEST_WAIT_SECONDS = 2_147_483.0
 # the steps a read may take per second of the solve's limit before its program is written
 # again with clamps settled; never fewer than READ_STEPS
 STEPS_PER_SECOND = 100
+
+# the steps all reads of the unsettled program asked after a settled unsat may take together, per
+# second left of the solve. Each cut of a list at open clamps doubles them: ten cuts take about
+# 10,000 and twelve about 41,000, so with 10 s left ten are asked and twelve given up at once
+UNSETTLED_STEPS_PER_SECOND = 2_000
 
 # how often a read that runs long settles the clamps it went through before every clamp settles
 SETTLE_ROUNDS = 4
@@ -77,8 +82,13 @@ def solve(
     cut. One that runs past its steps, more the longer the limit, is written again with the
     clamps it went through settled as the input had them (see ``_written``). An unsat answer
     to that settled program asks the unsettled one in what is left of the limit, and only an
-    unsat to that is an ``Unsat()``. An unsat to a program that holds a repeated list's length
-    asks again without the hold (see ``_unheld``).
+    unsat to that is an ``Unsat()``; an unsettled program whose reads together run past
+    ``UNSETTLED_STEPS_PER_SECOND`` for each second left is given up as an ``Unknown()``.
+
+    A program that holds a repeated list's length, or a bound some form is exact inside, as a
+    float floor division's, answers the target's own inputs when it is sat. An unsat to it asks
+    once more with neither held (see ``_loosened``); decision
+    float-floor-division-a-real-floor-inside-a-bound.
 
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
@@ -98,23 +108,30 @@ def solve(
     answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
-        origin = replace(origin, steps=None)
+        most = int((until - monotonic()) * UNSETTLED_STEPS_PER_SECOND)
+        origin = replace(origin, steps=None, most=max(most, 0))
         answer, written = _solved(path, origin)
-    if isinstance(answer, Unsat) and written is not None and written.held:
-        return _unheld(path, origin)
+    if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
+        return _loosened(path, origin)
     return answer
 
 
-def _unheld(path: _Path, origin: Origin) -> Answer:
-    """An unsat answer to a program that holds a repeated list's length to more than the path.
+def _loosened(path: _Path, origin: Origin) -> Answer:
+    """An unsat answer to a program that holds a repeated list's length or a form's bound.
 
-    The hold is let go and the path asked again: an unsat to that unsettled program still is
-    unsat, and any other answer, one that would make the target build a list past the hold or
-    one found with clamps settled, is an unknown miss.
+    The path is asked once more with neither held and every double allowed, where each form
+    past its bound can be whatever Python gives there: an unsat to that unsettled program is
+    the path's, whatever core cvc5 picked. A model is an ``Unknown()``, since past a hold the
+    target would build a list too long, and past a bound it may not be Python's; so is a
+    program that settled its clamps. A timeout or a failure is what it is on any other ask.
     """
-    answer, written = _solved(path, replace(origin, hold=False))
-    unsettled = written is not None and not written.narrowed
-    return answer if isinstance(answer, Unsat) and unsettled else Unknown()
+    written, _ = _written(path, replace(origin, hold=False, bounded=False), frozenset())
+    if not isinstance(written, Program):
+        return written
+    if written.narrowed:
+        return Unknown()
+    answer, _ = _ask_by(written, origin.until)
+    return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
 
 
 def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
@@ -154,14 +171,18 @@ def _write(
 ) -> Program | Timeout | Unknown:
     """The program for the path, written by the origin's instant.
 
-    A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is, and
-    a path with a read nothing on it types is an ``Unknown()``, a miss rather than a crash.
+    A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is. A
+    path with a read nothing on it types, or one whose reads run past the steps the origin
+    gives them all, is an ``Unknown()``, a miss rather than a crash.
     """
     try:
         return program(*path, origin, finite=finite, cores=cores)
     except RenderTimeError:
         logger.warning("writing the program for cvc5 ran past the time limit")
         return Timeout()
+    except ProgramTooLargeError as error:
+        logger.debug("giving up the unsettled program: %s", error)
+        return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()

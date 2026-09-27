@@ -158,3 +158,25 @@ def two_lines(stdout: str) -> tuple[dict[str, object], dict[str, object]]:
     lines = input_lines(stdout)
     assert len(lines) == 2, stdout
     return lines[0], lines[1]
+
+
+def version_then_crashing_cvc5(tmp_path: Path) -> Path:
+    """A cvc5 that says its version at once and dies on every formula, for a ``PATH``.
+
+    pyct finds it, reports its version, and stops with ``solver failed`` at the first solve.
+    """
+    script = tmp_path / "cvc5"
+    script.write_text(
+        "#!/bin/sh\n"
+        # PATH is the tmp directory while the test runs, so the script says where its tools are
+        "PATH=/bin:/usr/bin\n"
+        'if [ "$1" = "--version" ]; then\n'
+        "    echo 'cvc5 1.3.4'\n"
+        "    exit 0\n"
+        "fi\n"
+        "cat > /dev/null\n"
+        f"echo '{CRASH_DETAIL}' >&2\n"
+        "exit 1\n"
+    )
+    script.chmod(0o755)
+    return script

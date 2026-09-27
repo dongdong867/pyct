@@ -9,54 +9,12 @@ import importlib
 import inspect
 import json
 import os
-import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT
-
-FIXTURES = "targets.sweep"
-
-
-def sweep(
-    *argv: str, env: dict[str, str] | None = None, timeout: float = 60
-) -> subprocess.CompletedProcess[str]:
-    """Spawn ``pyct sweep`` with ``argv``. ``env`` adds to or replaces the child's variables."""
-    child = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
-    child.update(env or {})
-    return subprocess.run(
-        [sys.executable, "-P", "-m", "pyct", "sweep", *argv],
-        cwd=REPO_ROOT,
-        env=child,
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=timeout,
-    )
-
-
-def rows(stdout: str) -> list[dict[str, object]]:
-    """The rows, without the summary line that closes stdout."""
-    lines = [json.loads(line) for line in stdout.splitlines()]
-    assert lines and "swept" in lines[-1], stdout
-    return lines[:-1]
-
-
-def summary(stdout: str) -> dict[str, object]:
-    return json.loads(stdout.splitlines()[-1])
-
-
-def row_named(stdout: str, module: str, name: str | None) -> dict[str, object]:
-    found = [row for row in rows(stdout) if row["module"] == module and row["name"] == name]
-    assert len(found) == 1, stdout
-    return found[0]
-
-
-def names(stdout: str) -> list[object]:
-    return [row["name"] for row in rows(stdout)]
+from tests.acceptance.sweeping import FIXTURES, names, row_named, rows, summary, sweep
 
 
 def error_of(call: Callable[[], object]) -> Exception:

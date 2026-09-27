@@ -89,10 +89,10 @@ def test_a_float_part_held_twice_is_defined_once_as_a_double() -> None:
     assert f"(assert (fp.eq (fp.add RNE e!0 e!0) {literal(8.0)}))" in lines
 
 
-@pytest.mark.parametrize("head", ["//", "%", "**"])
-def test_an_operation_on_doubles_nothing_encodes_is_an_error(head: str) -> None:
-    with pytest.raises(ValueError, match=re.escape(f"{head} on float")):
-        _lines(["==", [head, "x", 2.0], 1.0])
+def test_a_power_on_doubles_is_an_error_since_nothing_encodes_it() -> None:
+    # core keeps `**` on a float a downgrade: no solver operation gives CPython's pow to the bit
+    with pytest.raises(ValueError, match=re.escape("** on float")):
+        _lines(["==", ["**", "x", 2.0], 1.0])
 
 
 def _finite_lines(

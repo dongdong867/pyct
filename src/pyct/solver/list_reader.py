@@ -72,6 +72,23 @@ class RenderTooLargeError(Exception):
         self.passed = passed
 
 
+class ProgramTooLargeError(Exception):
+    """The reads of one program ran past the steps they share: a list cut again and again at
+    clamps no writing settles, read through every cut."""
+
+
+@dataclass
+class Shared:
+    """The steps every read of one program may still take together."""
+
+    left: int
+
+    def spend(self, steps: int) -> None:
+        self.left -= steps
+        if self.left < 0:
+            raise ProgramTooLargeError("the reads ran past the steps the program gives them")
+
+
 # a term written once in the program, by its text and its sort, and the name it goes by
 type Define = Callable[[str, str], str]
 
@@ -93,6 +110,8 @@ class Context:
     # the steps one read may take, None for no limit, and the pieces a read went through
     steps: int | None = None
     visited: set[int] = field(default_factory=set)
+    # the steps every read of the program may still take together, None for no limit
+    shared: Shared | None = None
 
 
 def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
@@ -139,12 +158,16 @@ class _Reader:
                 self._put_together(task, done)
             else:
                 self._step(task[0], task[1], tasks, done)
+        if self.context.shared is not None:
+            self.context.shared.spend(steps % _STEPS_PER_LOOK)
         return done[0]
 
     def _in_steps(self, steps: int) -> None:
         most = self.context.steps
         if most is not None and steps > most:
             raise RenderTooLargeError("a read ran past its steps")
+        if self.context.shared is not None:
+            self.context.shared.spend(_STEPS_PER_LOOK)
 
     def _in_time(self) -> None:
         if self.until is not None and time.monotonic() > self.until:

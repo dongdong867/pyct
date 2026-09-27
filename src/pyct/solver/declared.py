@@ -7,7 +7,6 @@ gets a symbol, and the answer names each back by it.
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -19,23 +18,7 @@ from pyct.solver.dag import Node
 from pyct.solver.heads import SORTS
 from pyct.solver.list_answers import list_answers
 from pyct.solver.lists import ListTerms, TrackedList
-
-# what opens a string literal in an expression: repr writes one in either quote, and a
-# parameter name holds neither
-_QUOTES = ("'", '"')
-
-
-def is_literal(leaf: str) -> bool:
-    """Whether a str leaf is a string literal, which opens with a quote, or a parameter name."""
-    return leaf.startswith(_QUOTES)
-
-
-def value_of(literal: str) -> str:
-    """The str a string literal, written as repr writes it, holds."""
-    value = ast.literal_eval(literal)
-    if not isinstance(value, str):
-        raise ValueError(f"pyct cannot render {literal}: it is not a string literal")
-    return value
+from pyct.solver.literals import is_literal
 
 
 @dataclass(frozen=True)
@@ -88,6 +71,10 @@ class Program:
     ``names_by_symbol`` holds each leaf's name, keyed by its constant's
     symbol without the bars, which is how a model names it back. ``lists`` is what the
     program declared for the lists the path reads, which reads their answers back.
+    ``bounded`` says a form in the program is exact only inside a bound, such as a float floor
+    division's: a program that holds the bound answers Python's inputs when sat, and only one
+    that leaves it out says unsat for every value Python could give past it (see
+    ``floats.floor_division``).
     """
 
     text: str
@@ -97,6 +84,7 @@ class Program:
     # had them, so unsat is only unknown; or a repeated list's length held
     narrowed: bool = False
     held: bool = False
+    bounded: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for,

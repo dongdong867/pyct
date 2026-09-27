@@ -261,8 +261,13 @@ def _least(level: int, *, right: bool) -> int:
     return level + 1 if right else level
 
 
-# the builtins a fork line writes as Python calls them: `len(s)`
-_CALLED = ("len",)
+# the functions a fork line writes as Python calls them, by head: `len(s)`, `round(x)`, and
+# the `math` roundings and finite check, `math.floor(x)`
+_CALLED: Mapping[str, str] = {
+    "len": "len",
+    "round": "round",
+    **{head: f"math.{head}" for head in ("floor", "ceil", "trunc", "isfinite")},
+}
 
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
@@ -270,11 +275,11 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A list display reads ``[x, 7]``. A builtin in `_CALLED` reads
-    ``len(s)``, and a method reads as Python calls it, ``a.name(b)`` or ``a.name()``,
-    ``x.is_integer()`` among them. A part cut from a long expression reads ``...(N nodes)``,
-    and ``...(? nodes)`` when its count is ``null``. Each binds tighter than any operator, so
-    none needs parentheses of its own.
+    ``config['port']``. A list display reads ``[x, 7]``. A function in `_CALLED` reads
+    ``len(s)`` or ``math.floor(x)``, and a method reads as Python calls it, ``a.name(b)`` or
+    ``a.name()``, ``x.is_integer()`` among them. A part cut from a long expression reads
+    ``...(N nodes)``, and ``...(? nodes)`` when its count is ``null``. Each binds tighter than
+    any operator, so none needs parentheses of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
@@ -286,8 +291,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
         return f"{_operand(operands[0], _ALONE)}[{written}]"
-    if head in _CALLED:
-        return f"{head}({', '.join(texts)})"
+    if isinstance(head, str) and head in _CALLED:
+        return f"{_CALLED[head]}({', '.join(texts)})"
     if _is_a_method(expression):
         return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
     return None

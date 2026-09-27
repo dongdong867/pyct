@@ -1,20 +1,31 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
 from collections.abc import Callable, Collection, Mapping
+from functools import partial
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
-from pyct.solver.declared import Leaves, Program, is_literal, sort_of, symbols, value_of
-from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
+from pyct.solver.declared import Leaves, Program, sort_of, symbols
+from pyct.solver.heads import (
+    BOUNDED,
+    FORMS,
+    OPERATORS,
+    POSITIONED,
+    RESULTS,
+    SORTS,
+    STRING_ORDERS,
+    WORKS_ON,
+)
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
 from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
+from pyct.solver.literals import leaf_term, literal_of, plain_operand
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import above, below, encode
+from pyct.solver.strings import above, below
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
@@ -45,10 +56,13 @@ def program(
     written as the one piece they make (see `joined`), and a part of the
     conditions written more than once is defined once before the assertions (see
     `_Program`). Each float leaf in ``finite`` that the prefix names is held to a
-    finite double. With ``cores``, each of those assertions is named for the
-    leaf's symbol and cvc5 is asked to dump the unsat core, so an unsat says
-    which of them it rests on; that slows some sat answers, so only a program
-    asked after an unsat does it.
+    finite double, and each bound a form is exact inside is held (see `Program`).
+    With ``cores``, each of those finite assertions is named for the leaf's
+    symbol and cvc5 is asked to dump the unsat core, so an unsat says which of
+    them it rests on; that slows some sat answers, so only a program asked after
+    an unsat does it. Without ``Origin.bounded`` the bounds are left out, and
+    each form past its bound is only what Python could give there (see
+    ``floats.floor_division``).
     """
     origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
     prefix, order, holders, named = _path(prefix, leaves, origin.shapes)
@@ -64,7 +78,14 @@ def program(
     text = _text(prefix, body, declared, finites, cores=bool(held and cores))
     by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
     listed = terms if terms.declared else None
-    return Program(text, by_symbol, listed, narrowed=terms.narrowed, held=terms.held)
+    return Program(
+        text,
+        by_symbol,
+        listed,
+        narrowed=terms.narrowed,
+        held=terms.held,
+        bounded=bool(body.bounds),
+    )
 
 
 def _path(
@@ -96,7 +117,7 @@ def _text(
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
     lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
     lines += finites
-    lines += body.definitions
+    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if body.bounded]
     lines += terms.assertions()
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
@@ -145,6 +166,8 @@ class _Program:
         lists: ListTerms,
     ) -> None:
         self.leaves = leaves
+        # whether each bound a form is exact inside is held (see `_bounded`)
+        self.bounded = lists.source.bounded
         self.types: dict[int, type | None] = {}
         # each part's term, its defined name or the part written out, kept until every place
         # that holds the part has read it: a chain held once keeps the text of its top alone
@@ -152,6 +175,7 @@ class _Program:
         self.unread = dict(holders)
         self.definitions: list[str] = []
         self.facts: set[str] = set()
+        self.bounds: list[str] = []
         # the lists the path reads: they read their parts by name, as often as they need, and
         # define what they write once in the program's own definitions
         self.lists = lists
@@ -183,7 +207,7 @@ class _Program:
         if name is not None:
             return self.leaves.constants[name]
         if not isinstance(expression, list):
-            return _leaf(expression)
+            return leaf_term(expression)
         key = id(expression)
         self.unread[key] -= 1
         return _read(self.terms[key] if self.unread[key] else self.terms.pop(key), expression)
@@ -194,7 +218,7 @@ class _Program:
         name = self.leaves.named(part)
         if name is not None:
             return self.leaves.constants[name]
-        return _read(self.terms[id(part)], part) if isinstance(part, list) else _leaf(part)
+        return _read(self.terms[id(part)], part) if isinstance(part, list) else leaf_term(part)
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
@@ -226,10 +250,14 @@ class _Program:
         """The type of an operation's operands, or None when none of them says.
 
         Python's own operators take two operands of one type here, so the
-        first that says decides it. A bool gives way to any other type, as
-        Python's bool meets an int as the int 1 or 0.
+        first that says decides it, but for two numbers: a float makes the
+        operation a float's, as Python converts an int that meets one. A bool
+        gives way to any other type, as Python's bool meets an int as the int
+        1 or 0.
         """
         kinds = [kind for part in operands if (kind := self.type_of(part))]
+        if float in kinds:
+            return float
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
@@ -238,6 +266,8 @@ class _Program:
         Two bools stay bools only under an operator bool has of its own, such
         as `&` or `==`; `+` or `<` on them works on the ints they are.
         """
+        if head in WORKS_ON:
+            return WORKS_ON[head]
         kind = self._operands_type(operands)
         return int if kind is bool and (head, bool) not in OPERATORS else kind
 
@@ -257,12 +287,35 @@ class _Program:
         return read
 
     def _form(self, node: Node) -> Callable[..., str] | None:
-        """The form that writes an operation on the type it works on, or None for an operator."""
+        """The form that writes an operation on the type it works on, or None for an operator.
+
+        A form exact only inside a bound writes its term, and its bound is held once.
+        """
         head, *operands = node
         if not isinstance(head, str):
             return None
         kind = self._kind(head, operands)
+        bounded = None if kind is None else BOUNDED.get((head, kind))
+        if bounded is not None:
+            return partial(self._bounded, bounded)
         return None if kind is None else FORMS.get((head, kind))
+
+    def _bounded(self, form: Callable[..., tuple[str, str]], *operands: str) -> str:
+        """A bounded form's term, and its bound noted once.
+
+        A program that holds its bounds writes the form exact everywhere; one
+        that leaves them out writes it past its bound as a double declared for
+        this term alone.
+        """
+        if self.bounded:
+            term, bound = form(*operands)
+        else:
+            past = f"e!{len(self.definitions)}"
+            self.definitions.append(f"(declare-const {past} Float64)")
+            term, bound = form(*operands, past)
+        if bound not in self.bounds:
+            self.bounds.append(bound)
+        return term
 
     def _orders_strings(self, node: Node) -> bool:
         head, *operands = node
@@ -302,7 +355,7 @@ class _Program:
                 return self._piece(term, positions)
             if (letter := self._letter(node)) is not None:
                 return letter
-            return positioned(self.term(term), *(_plain(part) for part in positions))
+            return positioned(self.term(term), *(plain_operand(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
         if (form := self._form(node)) is not None:
@@ -318,13 +371,20 @@ class _Program:
         return f"({_operator(head, kind)} {' '.join(rendered)})"
 
     def _operand(self, part: Expression, kind: type | None) -> str:
-        """An operand's term, where an operation on ints reads a bool as the int 1 or 0."""
-        if kind is int and isinstance(part, bool):
-            return "1" if part else "0"
-        term = self.term(part)
-        if kind is int and self.type_of(part) is bool:
-            return f"(ite {term} 1 0)"
-        return term
+        """An operand's term, where an operation on numbers reads a bool as the int 1 or 0, and
+        one on floats reads an int, a bool among them, as the double Python converts it to.
+
+        A bool reaches a float operation under `/` alone, which divides two ints as floats.
+        """
+        number = kind is int or kind is float
+        if number and isinstance(part, bool):
+            term, whole = ("1" if part else "0"), True
+        else:
+            term = self.term(part)
+            whole = number and self.type_of(part) in (int, bool)
+            if number and self.type_of(part) is bool:
+                term = f"(ite {term} 1 0)"
+        return floats.from_int(term) if kind is float and whole else term
 
     def _declared(self, declared: Callable[[str, str], Declared], term: str) -> str:
         """A value no term writes whole: a name declared in it, of the sort the form says, held
@@ -345,10 +405,10 @@ class _Program:
         The target took the piece out of the list Python built, so the piece
         is there on every input that follows the path this far.
         """
-        (index,) = (_plain(part) for part in positions)
+        (index,) = (plain_operand(part) for part in positions)
         if not isinstance(index, int):
             raise ValueError(f"pyct cannot render piece {index} of a split: core writes an int")
-        plain = tuple(_plain(part) for part in split[2:])
+        plain = tuple(plain_operand(part) for part in split[2:])
         piece, there = SPLITS[str(split[0])](self.term(split), plain, index)
         self._hold(there)
         return piece
@@ -390,35 +450,6 @@ def _read(term: str, part: Expression) -> str:
     return term
 
 
-def _leaf(leaf: str | int | float | bool | None) -> str:
-    """A number, a truth value or a string literal.
-
-    A negative int is a subtraction, and a float is its bit pattern, sign and all.
-    """
-    if leaf is None:
-        raise ValueError("pyct cannot render a missing bound outside a slice")
-    if isinstance(leaf, bool):
-        return "true" if leaf else "false"
-    if isinstance(leaf, int):
-        return f"(- {-leaf})" if leaf < 0 else str(leaf)
-    if isinstance(leaf, float):
-        return floats.literal(leaf)
-    return encode(value_of(leaf))
-
-
-def _plain(part: Expression) -> int | str | None:
-    """An operand a form takes as it is: an int or a bool, None for a slice's missing bound, or
-    a string literal's str. A name is not one."""
-    if part is None or isinstance(part, int):
-        return part
-    if isinstance(part, str) and is_literal(part):
-        return value_of(part)
-    raise ValueError(
-        f"pyct cannot render {part} as a position, a separator or a fill: core writes a plain "
-        "value there"
-    )
-
-
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
     """An order on two strings as a less-than: against a literal, written letter by letter.
 
@@ -429,16 +460,11 @@ def _string_order(head: str, operands: list[Expression], rendered: list[str]) ->
     or_equal, swapped = STRING_ORDERS[head]
     pairs = list(zip(operands, rendered, strict=True))
     (low, low_term), (high, high_term) = reversed(pairs) if swapped else pairs
-    if (literal := _literal(high)) is not None:
+    if (literal := literal_of(high)) is not None:
         return below(low_term, literal, or_equal=or_equal)
-    if (literal := _literal(low)) is not None:
+    if (literal := literal_of(low)) is not None:
         return above(high_term, literal, or_equal=or_equal)
     return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"
-
-
-def _literal(part: Expression) -> str | None:
-    """The value of an operand that is a string literal, or None for any other operand."""
-    return value_of(part) if isinstance(part, str) and is_literal(part) else None
 
 
 def _operator(head: str, kind: type | None) -> str:

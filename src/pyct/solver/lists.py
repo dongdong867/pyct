@@ -27,7 +27,7 @@ from pyct.solver.list_kinds import (
     TrackedList,
     measured,
 )
-from pyct.solver.list_reader import Context, Memo, RenderTooLargeError, read
+from pyct.solver.list_reader import Context, Memo, RenderTooLargeError, Shared, read
 from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import (
     FALSE,
@@ -81,9 +81,12 @@ class Origin:
 
     ``settle`` names the list parts whose clamps, where the path leaves them open, go the way
     they went there (see ``list_slices``), and ``everywhere`` settles every one. ``hold`` says
-    whether a list the target repeats holds the answer's lengths (see ``_repeated``).
+    whether a list the target repeats holds the answer's lengths (see ``_repeated``), and
+    ``bounded`` whether each bound a form is exact inside is held (see ``render._bounded``).
     ``steps`` is the most steps one read takes before its program is written again settled,
-    None for no limit, and ``until`` the monotonic instant writing must end by.
+    None for no limit; ``most`` the most all reads of the program take together before the
+    program is given up (``ProgramTooLargeError``), None for no limit; and ``until`` the
+    monotonic instant writing must end by.
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -91,7 +94,9 @@ class Origin:
     settle: frozenset[int] = frozenset()
     everywhere: bool = False
     hold: bool = True
+    bounded: bool = True
     steps: int | None = READ_STEPS
+    most: int | None = None
     until: float | None = None
 
 
@@ -129,6 +134,7 @@ class ListTerms(ListTyping, Slices):
         self.memo: Memo = {}
         # the input whose path this is, and how the program is written for it
         self.source = Origin()
+        self.shared: Shared | None = None
         self.places: dict[int, int] = {}
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
@@ -239,6 +245,7 @@ class ListTerms(ListTyping, Slices):
             if type(value) is int:
                 self.origin[constant] = value
         self.source = origin
+        self.shared = None if origin.most is None else Shared(origin.most)
 
     def _context(self) -> Context:
         return Context(
@@ -249,6 +256,7 @@ class ListTerms(ListTyping, Slices):
             self.source.until,
             self.source.steps,
             set(),
+            self.shared,
         )
 
     def _define_read(self, text: str, sort: str) -> str:
