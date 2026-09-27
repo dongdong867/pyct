@@ -1,8 +1,9 @@
-"""What a signal sent to pyct does, now that pyct's work runs in a process of its own.
+"""The process the shell started, which watches pyct's own process.
 
-The process the shell started watches that process, so these tests send their signals to
-the pid the shell got, as a person or a harness does, and check that the run and its input's
-process end as they did when that pid was pyct's own.
+The signal tests send their signals to the pid the shell got, as a person or a harness
+does, and check that the run and its input's process end as they did when that pid was
+pyct's own. The thread tests start a thread before pyct runs, as a host's instrumentation
+does from ``sitecustomize``.
 """
 
 import os
@@ -14,7 +15,7 @@ from collections.abc import Generator
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT
+from tests.acceptance.harness import REPO_ROOT, input_lines
 from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
     is_running,
     pid_written_to,
@@ -24,6 +25,8 @@ from tests.acceptance.test_run_a_target_in_a_throwaway_process import (
 C_HANG = "targets.isolate.c_hang::stall"
 SLOW_INPUTS = "targets.load.slow_inputs::f"
 SLOW_IMPORT = "targets.load.slow_import::f"
+COUNTER = "targets.isolate.counter::count"
+CRASHES = "targets.load.crashes_at_import"
 # how soon after the signal every process of the run must have ended
 ENDED_WITHIN = 1.5
 
@@ -147,3 +150,49 @@ def test_a_ctrl_c_during_an_import_ends_pyct_once(tmp_path: Path) -> None:
         assert process.returncode == -signal.SIGINT, stderr
         assert stderr.count("Traceback (most recent call last)") == 1, stderr
         assert "cannot import" not in stderr
+
+
+def with_a_thread_at_entry(tmp_path: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    """``pyct run`` in an interpreter that starts a thread before pyct runs.
+
+    Python's warnings are on, so a fork of a threaded process would say so.
+    """
+    (tmp_path / "sitecustomize.py").write_text(
+        "import threading, time\n"
+        "threading.Thread(target=time.sleep, args=(3600,), daemon=True).start()\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYTHONPATH"] = str(tmp_path)
+    env["PYTHONWARNINGS"] = "default"
+    return subprocess.run(
+        [sys.executable, "-P", "-m", "pyct", "run", *argv],
+        cwd=REPO_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+    )
+
+
+# a process that runs other threads is never forked: pyct's process starts fresh instead
+def test_a_thread_at_entry_forks_nothing(tmp_path: Path) -> None:
+    result = with_a_thread_at_entry(tmp_path, COUNTER, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert "multi-threaded" not in result.stderr
+    # pyct's own process runs the host's thread too, so its inputs start fresh, as they did
+    assert (
+        "each input runs in a fresh interpreter, because pyct's process runs other threads"
+        in result.stderr
+    )
+
+
+# pyct's process started fresh is still watched through its import
+def test_a_thread_at_entry_still_names_a_crash_at_import(tmp_path: Path) -> None:
+    result = with_a_thread_at_entry(tmp_path, f"{CRASHES}::f", '{"x": 1}')
+
+    assert result.stderr.splitlines() == [f"cannot import {CRASHES}: killed by SIGSEGV"]
+    assert result.stdout == ""
+    assert result.returncode == 1

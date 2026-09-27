@@ -14,6 +14,7 @@ from typing import NoReturn
 
 import pytest
 
+from pyct.run import launch as launch_module
 from pyct.run.import_watch import ImportWatch
 from pyct.run.launch import Stopped, _stop_if_alone, launch
 
@@ -39,6 +40,12 @@ def _handlers_kept() -> Generator[None]:
     yield
     for number, handler in kept.items():
         signal.signal(number, handler)
+
+
+@pytest.fixture(autouse=True)
+def _one_thread(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Count one thread, so the watcher forks, as it does outside the test runner's threads."""
+    monkeypatch.setattr(launch_module, "running", lambda: 1)
 
 
 @pytest.fixture
@@ -340,3 +347,18 @@ def test_the_lifeline_stops_the_command_s_process_once_the_watcher_is_gone() -> 
             _stop_if_alone(lifeline)
     finally:
         os.close(lifeline)
+
+
+def test_with_another_thread_the_command_s_process_starts_fresh_and_is_watched(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # a fresh command's process runs this command line itself, so the callable goes unused
+    monkeypatch.setattr(launch_module, "running", lambda: 2)
+    argv = ["run", "targets.load.crashes_at_import::f", '{"x": 1}']
+
+    code = launch(lambda watch: 0, argv)
+
+    assert code == 1
+    assert capsys.readouterr().err == (
+        "cannot import targets.load.crashes_at_import: killed by SIGSEGV\n"
+    )

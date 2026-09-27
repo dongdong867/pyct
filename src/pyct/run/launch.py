@@ -33,12 +33,17 @@ import fcntl
 import functools
 import os
 import signal
+import subprocess
 import sys
+import time
 from collections.abc import Callable, Generator, Iterable, Sequence
+from pathlib import Path
 
+from pyct.core.branch import PYCT_DIR
 from pyct.run.child import flush_streams
 from pyct.run.import_watch import ImportWatch
 from pyct.run.process import Child, Waited, how
+from pyct.run.threads import running
 
 # the signals the watcher passes on to the command's process as soon as it gets them: those
 # whose default action ends a process and that one process sends another to end it
@@ -50,6 +55,17 @@ _PASSED_ON = frozenset(
 CTRL_C_GRACE = 0.5
 # the signals the watcher notes; they are held from before the fork until it does
 _NOTED = _PASSED_ON | {signal.SIGINT}
+
+# names the page's and the lifeline's descriptors to a command's process started fresh
+_HANDED = "PYCT_WATCHED_BY"
+# what a command's process started fresh runs: the pyct this process runs, as ``python -m pyct``
+_BOOT = (
+    "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
+    "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
+)
+_PYCT_ROOT = str(Path(PYCT_DIR).parent)
+# how often a watcher that runs other threads looks whether the command's process has ended
+_LOOK_EVERY = 0.05
 
 # the command line's work, given the page when a watcher reads it; returns the exit code
 type Command = Callable[[ImportWatch | None], int]
@@ -70,24 +86,62 @@ def launch(command: Command, argv: Sequence[str]) -> int:
     through the interpreter's own exit, as pyct always has. This process
     returns the exit code it ends with, or ends by the command's signal.
     When no process can start, this one runs the command, unwatched.
+
+    The command's process is forked from this one before pyct does anything
+    that could start a thread. A thread already running, such as one a
+    host's ``sitecustomize`` started, makes a fork unsafe, so the command's
+    process then starts as a fresh interpreter that runs the same command
+    line and finds the page and the lifeline through ``_HANDED``.
     """
-    watch = ImportWatch(argv)
-    lifeline, kept = os.pipe()
+    handed = os.environ.pop(_HANDED, None)
+    if handed is not None:
+        return _serve_handed(command, handed)
+    threaded = running() > 1
     flush_streams()
     held = signal.pthread_sigmask(signal.SIG_BLOCK, _NOTED)
     try:
-        pid = os.fork()
+        watch = ImportWatch.for_command_line(argv)
+        lifeline, kept = os.pipe()
+        pid = _spawned(watch, lifeline, argv, held) if threaded else os.fork()
     except OSError:
-        pid = None
-    if pid:
-        os.close(lifeline)
-        return _watch(Child(pid), watch, held, kept)
-    os.close(kept)
-    if pid is None:
-        os.close(lifeline)
         return _serve(command, None, held, None)
-    # coverage.py cannot see this line: it runs in the child, in a frame begun before the fork
-    return _serve(command, watch, held, lifeline)  # pragma: no cover
+    # coverage.py cannot see these lines: they run in the child, in a frame begun before the fork
+    if pid == 0:  # pragma: no cover
+        os.close(kept)
+        return _serve(command, watch, held, lifeline)
+    os.close(lifeline)
+    return _watch(Child(pid), watch, held, kept, threaded)
+
+
+def _spawned(watch: ImportWatch, lifeline: int, argv: Sequence[str], held: Iterable[int]) -> int:
+    """Start the command's process as a fresh interpreter, and return its pid.
+
+    It runs the pyct this process runs, with this interpreter's flags, on
+    the same command line. ``-P`` keeps the working directory off the
+    import path while pyct boots, as for a fresh input's interpreter. Its
+    standard streams are this process's own, and it starts with ``held``
+    as its mask.
+    """
+    for fd in (watch.fd, lifeline):
+        os.set_inheritable(fd, True)
+    # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
+    flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
+    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, _PYCT_ROOT, *argv]
+    environment = {**os.environ, _HANDED: f"{watch.fd},{lifeline}"}
+    return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
+
+
+def _serve_handed(command: Command, handed: str) -> int:
+    """Serve as a command's process started fresh, on the descriptors ``handed`` names.
+
+    Its mask came with its start. The descriptors stop being inherited
+    here, so the processes it starts in turn do not hold them.
+    """
+    page, lifeline = (int(fd) for fd in handed.split(","))
+    for fd in (page, lifeline):
+        os.set_inheritable(fd, False)
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, ())
+    return _serve(command, ImportWatch(page), held, lifeline)
 
 
 def _serve(
@@ -160,7 +214,7 @@ def _stop_if_alone(lifeline: int, *_: object) -> None:
         raise Stopped
 
 
-def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int) -> int:
+def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int, threaded: bool) -> int:
     """Wait for the command's process to end, then end as it did or say which import ended it.
 
     ``kept`` is the lifeline's write end, closed once the command's process
@@ -169,11 +223,25 @@ def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int) -> 
     signaled: list[int] = []
     try:
         with _noting(signaled, child, held):
-            waited = child.wait()
+            waited = _waited(child, threaded)
     finally:
         child.end()
         os.close(kept)
     return _ending(waited, watch.module(), signaled)
+
+
+def _waited(child: Child, threaded: bool) -> Waited:
+    """Wait for ``child`` to end.
+
+    With another thread running, the system can hand that thread a signal
+    meant for this process, and a main thread blocked in its wait runs the
+    handler only once the wait ends. So a threaded watcher looks every
+    ``_LOOK_EVERY`` instead, and handles a signal between looks.
+    """
+    if threaded:
+        while not child.ended():
+            time.sleep(_LOOK_EVERY)
+    return child.wait()
 
 
 @contextlib.contextmanager

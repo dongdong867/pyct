@@ -143,6 +143,13 @@ class Child:
         self.status = status
         return Waited.of(status, killed=self.killed)
 
+    def ended(self) -> bool:
+        """Whether the process has ended, without waiting. One that has is reaped here.
+
+        Signal 0 sends nothing; it only asks whether the process is there.
+        """
+        return not self.send_if_running(0)
+
     def kill_if_running(self, *_: object) -> None:
         """Kill the process unless it has ended. The kill timer's handler: it never raises."""
         if self.send_if_running(signal.SIGKILL):

@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import contextlib
 import mmap
+import os
 import struct
+import tempfile
 from collections.abc import Generator, Sequence
 
 # the page starts with the length of the module name it holds, zero when it names none
@@ -18,14 +20,24 @@ _LENGTH = struct.Struct("<I")
 class ImportWatch:
     """The page on which the command's process names the module it is importing."""
 
-    def __init__(self, argv: Sequence[str]) -> None:
-        """A page every process forked from this one shares, with room for the whole ``argv``.
+    def __init__(self, fd: int) -> None:
+        """The page in the file ``fd`` opens, shared by every process that maps that file."""
+        self.fd = fd
+        self._page = mmap.mmap(fd, os.fstat(fd).st_size)
+
+    @classmethod
+    def for_command_line(cls, argv: Sequence[str]) -> ImportWatch:
+        """A new page, in an unlinked file, with room for the whole ``argv``.
 
         A module name is part of one argument, so any name the command line
-        gives fits.
+        gives fits. A file rather than anonymous memory, so a command's
+        process started as a fresh interpreter can map it too.
         """
         room = len("".join(argv).encode("utf-8", "surrogateescape"))
-        self._page = mmap.mmap(-1, _LENGTH.size + room)
+        fd, path = tempfile.mkstemp(prefix="pyct-import-")
+        os.unlink(path)
+        os.ftruncate(fd, _LENGTH.size + room)
+        return cls(fd)
 
     @contextlib.contextmanager
     def importing(self, module_name: str) -> Generator[None]:

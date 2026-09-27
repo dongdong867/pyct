@@ -76,7 +76,7 @@ def test_load_target_names_an_exit_at_import_by_its_repr(module: str, ending: st
 def test_load_target_names_the_module_on_the_watch_while_it_imports(
     module: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    watch = ImportWatch([f"{module}::classify"])
+    watch = ImportWatch.for_command_line([f"{module}::classify"])
     named: list[str | None] = []
     real_import = importlib.import_module
 
