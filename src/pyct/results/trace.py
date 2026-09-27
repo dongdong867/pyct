@@ -163,8 +163,7 @@ def _ended(failure: Failure | None) -> list[str]:
 type _Text = tuple[str, int]
 
 # how tightly Python's grammar binds what the fork line writes, loosest first. A keyword
-# head on one operand, such as `not`, which core does not record, is written `not a` and binds
-# looser than everything
+# head on one operand, such as `not`, is written `not a` and binds looser than everything
 _UNRANKED = 0
 _COMPARES = 1
 # a unary `-`, `+` or `~`, and a negative number, bind looser than `**` and tighter than `*`
@@ -244,12 +243,14 @@ def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
 def _prefixed(operator: Expression, operand: _Text) -> _Text:
     """A condition on one operand: a unary operator against it, `-x`, binding as Python's does.
 
-    Two minuses read ``--x``, as Python reads them. A keyword head, such as
-    ``not``, keeps ``not a``, and binds looser than any operator.
+    Two minuses read ``--x``, as Python reads them. A keyword head keeps
+    ``not a`` and binds looser than any operator; ``not`` binds looser than
+    a compare too, so ``not x < 0.0`` needs no parentheses, as in Python.
     """
     if operator in _UNARY_OPERATORS:
         return f"{operator}{_operand(operand, _UNARY)}", _UNARY
-    return f"{operator} {_operand(operand, _ALONE)}", _UNRANKED
+    least = _COMPARES if operator == "not" else _ALONE
+    return f"{operator} {_operand(operand, least)}", _UNRANKED
 
 
 def _least(level: int, *, right: bool) -> int:
@@ -269,17 +270,22 @@ def _least(level: int, *, right: bool) -> int:
 
 # the functions pyct follows, by head, and how the fork line spells the call: `abs(x)`,
 # `len(s)`, `ord(c)`, `chr(n)`, `round(x)`, the conversions `int(s)`, `float(n)` and `str(n)`,
-# whether a string reads as a number, `isint(s)`, and the `math` roundings and finite check as
-# Python spells them, `math.floor(x)`. A story that follows one more adds its head here. Any
-# other name is a method on its first operand, so a name Python uses for both, such as `format`
-# or `hex`, reads by what pyct follows rather than by what `builtins` holds
+# whether a string reads as a number, `isint(s)`, and the `math` functions as Python spells
+# them, `math.floor(x)`. A story that follows one more adds its head here. Any other name is a
+# method on its first operand, so a name Python uses for both, such as `format` or `hex`, reads
+# by what pyct follows rather than by what `builtins` holds
+_MATH = ("floor", "ceil", "trunc", "isfinite", "sqrt", "fabs", "copysign", "isnan", "isinf")
 _FUNCTIONS: Mapping[str, str] = {
     **{
         head: head
         for head in ("abs", "len", "ord", "chr", "round", "int", "float", "str", "isint", "isfloat")
     },
-    **{head: f"math.{head}" for head in ("floor", "ceil", "trunc", "isfinite")},
+    **{head: f"math.{head}" for head in (*_MATH, "isclose")},
 }
+
+# the operands a function takes by keyword only, from the position the first is at: the
+# expression writes isclose's tolerances after its two numbers
+_KEYWORDS: Mapping[str, tuple[int, tuple[str, ...]]] = {"isclose": (2, ("rel_tol", "abs_tol"))}
 
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
@@ -309,8 +315,16 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if not _is_a_name(head):
         return None
     if head in _FUNCTIONS:
-        return f"{_FUNCTIONS[head]}({', '.join(texts)})"
+        return f"{_FUNCTIONS[head]}({', '.join(_arguments(head, texts))})"
     return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
+
+
+def _arguments(head: str, texts: list[str]) -> list[str]:
+    """A function's operands as its call writes them, one it takes by keyword only as
+    ``name=value``."""
+    first, names = _KEYWORDS.get(head, (len(texts), ()))
+    keywords = [f"{name}={text}" for name, text in zip(names, texts[first:], strict=False)]
+    return texts[:first] + keywords
 
 
 def _is_a_name(head: Expression) -> TypeGuard[str]:
