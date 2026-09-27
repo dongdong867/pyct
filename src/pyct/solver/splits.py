@@ -179,8 +179,8 @@ def _unwalked(term: str, separator: str | None, limit: int, index: int) -> Piece
 
     The two agree on a string with no more separators than the limit, or
     fewer words, so the piece also asserts that the string is one: every
-    answer is then Python's. A string with more, which only a limit past
-    sixteen reaches, is not an answer, so a path that needs one is a miss.
+    answer is then Python's. A string with more is no answer, so a path that
+    needs one is a miss.
     """
     piece, there = split_piece(term, (separator,), index)
     if separator is None:

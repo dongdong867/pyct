@@ -18,7 +18,7 @@ from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import downgraded, own
 
 # the largest rsplit limit the solver walks one separator or word at a time. On cvc5 1.3.4 a
-# flipped piece solved in 0.6 to 1.3 s at 16, 2.3 to 6.2 s at 32, and ran past the 10 s limit
+# flipped piece solved in 0.5 to 1.5 s at 16, 2.3 to 6.2 s at 32, and ran past the 10 s limit
 # at 64. Past it, the solver reads an rsplit as the split with no limit, which it is on a string
 # with no more separators than the limit, or fewer words (see `solver/splits.py`)
 LONGEST_WALK = 16
