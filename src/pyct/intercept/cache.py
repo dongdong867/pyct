@@ -49,6 +49,12 @@ logger = logging.getLogger(__name__)
 CACHE_VARIABLE = "PYCT_CACHE_DIR"
 _DEFAULT = ".pyct_cache"
 
+# what `pyct run --help` says of the folder
+CACHE_HELP = (
+    "pyct keeps the target's substituted code in .pyct_cache/ in the folder it runs from, "
+    "or in the folder PYCT_CACHE_DIR names. Deleting it is always safe."
+)
+
 # what the folder holds for git: it ignores everything in it, itself included
 _IGNORE = "# made by pyct, which keeps its cache here\n*\n"
 

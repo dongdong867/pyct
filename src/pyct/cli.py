@@ -23,6 +23,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
+from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
@@ -40,13 +41,6 @@ from pyct.solver.locate import SolverMissingError, locate
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
-)
-
-
-# where `pyct run --help` says the target's substituted code is kept
-CACHE_HELP = (
-    "pyct keeps the target's substituted code in .pyct_cache/ in the folder it runs from, "
-    "or in the folder PYCT_CACHE_DIR names. Deleting it is always safe."
 )
 
 
