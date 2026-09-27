@@ -229,8 +229,12 @@ def test_a_raising_search_from_a_position_that_finds_nothing_raises_after_its_fo
     sink: list[SinkItem] = []
     n = _n(1 if name == "rindex" else 5, sink)
 
-    with pytest.raises(ValueError, match="substring not found") as raised:
+    with pytest.raises(ValueError) as plain:
+        getattr("abcb", name)(*args, int.__index__(n))
+    with pytest.raises(ValueError) as raised:
         _raising_probe(name)(_tracked(sink=sink), *args, n)
 
+    # Python's own sentence, as plain Python words it in this run
+    assert str(raised.value) == str(plain.value)
     assert raised_by_target(raised.value)
     assert sink == [Branch(expression=fork, taken=False, site=SITE)]

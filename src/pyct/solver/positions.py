@@ -6,9 +6,9 @@ A position arrives as a plain int, as the Int term of a tracked one, or as
 None where Python's is missing, so a form sees a plain position's sign and
 writes a tracked one's in the term. Each form reads a position as Python
 does: a negative one counts back from the end, and a slice or a search
-clamps it to the string. A form with only plain positions, or none, is the
-form strings.py writes, so a program without a tracked position reads as it
-did.
+clamps it to the string. An index, or a slice without a step, with only
+plain positions, and a search or a replace given no position or count, is
+the form strings.py writes.
 
 A search from a position looks in the part of the string between its start
 and its end, adjusted as CPython's ``ADJUST_INDICES`` adjusts them, and

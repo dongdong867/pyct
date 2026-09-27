@@ -135,8 +135,10 @@ STRING_ORDERS: Mapping[str, tuple[bool, bool]] = {
 
 # an operation SMT-LIB has no operator for, or spells in another order, written out as the form
 # that means it. Keyed by head and the type the operation works on, as `OPERATORS` is, so `//`
-# on ints and `//` on floats can each have their own. The operands arrive rendered, as many as
-# the expression holds and in its order, so a form only joins text.
+# on ints and `//` on floats can each have their own. The operands arrive as many as the
+# expression holds and in its order, each rendered, but for the positions `POSITIONS_FROM`
+# names, which arrive as a plain int, None or an Int term, and a tuple of needles, which
+# arrives as its items' terms.
 FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("//", int): floor_division,
     ("%", int): modulo,
@@ -147,8 +149,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("find", str): first_index,
     ("rfind", str): last_index,
     ("count", str): occurrences,
-    # index and rindex answer only past their `in` fork, where sub is in s and each is the
-    # find it mirrors
+    # index and rindex answer only past their found fork: `in` without a position, and the find
+    # or rfind each mirrors from one. Past it each is that find
     ("index", str): first_index,
     ("rindex", str): last_index,
     ("replace", str): replaced,

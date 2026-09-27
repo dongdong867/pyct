@@ -24,10 +24,9 @@ from pyct.solver.heads import (
 )
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
-from pyct.solver.literals import is_literal, leaf_term, literal_of, plain_operand
+from pyct.solver.literals import is_literal, leaf_term, plain_operand, string_order
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import above, below
 from pyct.solver.symbols import leaf_sort, leaf_symbol
 
 # the sort of a part defined once, by the type of its value
@@ -205,7 +204,7 @@ class _Program:
         self.definitions: list[str] = []
         self.facts: set[str] = set()
         self.bounds: list[str] = []
-        # each tuple's item terms, read once where the tuple is written (see `_written`)
+        # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -216,6 +215,10 @@ class _Program:
         # each part comes after the parts it holds (see `distinct`), so their terms are written
         # before it, and no part waits on Python's stack for its operands
         for node in order:
+            if self.types[id(node)] is tuple:
+                # a tuple has no term of its own: a search reads its items' terms (`_needle`)
+                self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+                continue
             define = holders[id(node)] > 1 or id(node) in read
             self.terms[id(node)] = self._written(node, define=define)
 
@@ -344,9 +347,6 @@ class _Program:
         kind = self.types[id(node)]
         if kind is list:
             return self.term(node[1])
-        if kind is tuple:
-            self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
-            return ""
         operation = self._operation(node)
         sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
@@ -379,18 +379,21 @@ class _Program:
             self._hold(fact)
             return answer
         if head in STRING_ORDERS and kind is str:
-            return _string_order(head, operands, rendered)
+            return string_order(head, operands, rendered)
         return f"({_operator(head, kind)} {' '.join(rendered)})"
 
     def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
         """Each operand's term; past the operands a search or a replace reads as terms, each
         position as `_position` reads it, and a tuple as its items' terms."""
         first = POSITIONS_FROM.get(head, len(operands)) if kind is str else len(operands)
-        terms: list[object] = [self._operand(part, kind) for part in operands[:first]]
-        needle = operands[1] if len(operands) > 1 else None
-        if isinstance(needle, list) and self.type_of(needle) is tuple:
-            terms[1] = self.tuples[id(needle)]
+        terms: list[object] = [self._needle(part, kind) for part in operands[:first]]
         return terms + [self._position(part) for part in operands[first:]]
+
+    def _needle(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
+        """An operand's term, or a tuple's items' terms, which is all a tuple has."""
+        if isinstance(part, list) and self.type_of(part) is tuple:
+            return self.tuples[id(part)]
+        return self._operand(part, kind)
 
     def _position(self, part: Expression) -> int | str | None:
         """A position a form reads: a plain int or bool as the int, None for a missing one, and
@@ -469,23 +472,6 @@ class _Program:
 def _read_by_a_form(head: Expression) -> bool:
     """Whether an operation's operands are read by a form of one head whatever their type."""
     return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
-
-
-def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
-    """An order on two strings as a less-than: against a literal, written letter by letter.
-
-    Between two tracked strings it is cvc5's own `str.<` or `str.<=`. cvc5's
-    order against a literal can run to any time limit where the letters are
-    answered at once: string-order-against-a-literal-letter-by-letter.
-    """
-    or_equal, swapped = STRING_ORDERS[head]
-    pairs = list(zip(operands, rendered, strict=True))
-    (low, low_term), (high, high_term) = reversed(pairs) if swapped else pairs
-    if (literal := literal_of(high)) is not None:
-        return below(low_term, literal, or_equal=or_equal)
-    if (literal := literal_of(low)) is not None:
-        return above(high_term, literal, or_equal=or_equal)
-    return f"({'str.<=' if or_equal else 'str.<'} {low_term} {high_term})"
 
 
 def _operator(head: str, kind: type | None) -> str:

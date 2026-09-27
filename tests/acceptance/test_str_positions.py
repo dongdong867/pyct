@@ -107,7 +107,9 @@ def test_follows_a_tracked_index() -> None:
     ]
     assert f"fork {TRACKED_INDEX_FILE}:2:7  len(s) > n  taken" in result.stderr.splitlines()
     assert no_downgrade(result.stdout)
-    assert any_line(result.stdout, lambda line: text(line, "s")[number(line, "n")] == "z")
+    # the input aimed at the compare, position 2 on the path, takes its other side
+    aimed = [line for line in solved(result.stdout) if aimed_at(line) == 2]
+    assert aimed and all(text(line, "s")[number(line, "n")] == "z" for line in aimed)
 
 
 # follow-positions-into-a-string-follows-a-search-from-a-tracked-position
