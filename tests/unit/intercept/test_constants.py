@@ -1,9 +1,13 @@
 """Which names a module binds to literals alone, which the rules read as they read a literal."""
 
 import ast
+import sys
+import types
+from typing import Any
 
 import pytest
 
+from pyct.intercept import constants
 from pyct.intercept.constants import literal_names
 from tests.unit.intercept.test_substitute import substituted
 
@@ -118,3 +122,33 @@ def test_a_read_in_a_method_s_or_a_lambda_s_body_is_not_in_the_class_s_scope() -
     loads = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "RATE"]
 
     assert [id(node) in found.in_class for node in loads] == [False, False]
+
+
+def _lines_run(source: str) -> int:
+    """How many lines of the constants module run to read the source: the work it does."""
+    tree = ast.parse(source)
+    counted = 0
+
+    def trace(frame: types.FrameType, event: str, arg: object) -> Any:
+        nonlocal counted
+        if frame.f_code.co_filename == constants.__file__:
+            counted += event == "line"
+            return trace
+        return None
+
+    sys.settrace(trace)
+    try:
+        literal_names(tree)
+    finally:
+        sys.settrace(None)
+    return counted
+
+
+def test_the_work_grows_with_a_class_body_as_it_does_with_any_body() -> None:
+    def class_of(statements: int) -> str:
+        return "class C:\n" + "".join(f"    a{n} = RATE\n" for n in range(statements))
+
+    small, large = _lines_run(class_of(200)), _lines_run(class_of(800))
+
+    # four times the statements, about four times the work: one pass, not one per statement
+    assert large < 4.5 * small

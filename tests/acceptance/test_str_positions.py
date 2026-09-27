@@ -225,6 +225,8 @@ def test_keeps_the_other_forms_downgrades() -> None:
 # intercept-builtin-functions-follows-int-of-a-float: the position `int(x)` makes of a tracked
 # float is a tracked int, after the float's finite fork
 def test_a_position_int_makes_of_a_float_is_a_tracked_int() -> None:
+    # the flip of the finite fork on `x // 2` takes about 12 s (solve-a-finite-floor-division-fast);
+    # a 2 s limit misses it and goes on to the index forks this test is about
     result = run_pyct(FLOAT_POSITION, "--solver-timeout", "2", '{"s": "abc", "x": 2.0}')
 
     assert result.returncode == 0, result.stderr

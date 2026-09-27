@@ -26,7 +26,7 @@ Positions follow the compiled code, not the source text. The call takes the
 compare's whole position, which is where CPython puts the compare's own
 instruction and the jump that tests it, even under a folded ``not``. The
 name sits on the line where the left operand's first instruction does
-(`positions.first`), so it adds no line: a plain name, since CPython moves
+(`positions.Parts.named`), so it adds no line: a plain name, since CPython moves
 a method call's own instruction to its attribute's line. A container
 display beside `in` is compiled as CPython compiles it there: a list
 becomes a tuple, and a list or set of constants one constant at the

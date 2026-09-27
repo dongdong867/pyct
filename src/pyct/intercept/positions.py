@@ -41,17 +41,6 @@ _FIRST_FIELDS: dict[type[ast.expr], str] = {
 _FOLDABLE = (ast.Constant, ast.BinOp, ast.UnaryOp, ast.Tuple, ast.Subscript)
 
 
-def first(node: ast.expr) -> ast.expr:
-    """The part of an expression whose line CPython gives the expression's first instruction.
-
-    Every part of an expression on one line is on that line, so the walk
-    goes down only while the part spans lines. Which parts may fold is
-    worked out once for the whole expression, so a long chain costs one
-    pass.
-    """
-    return Parts(node).first(node)
-
-
 class Parts:
     """What a walk over one tree works out once: which parts may fold, and where each part's
     first instruction is.

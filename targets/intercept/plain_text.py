@@ -18,7 +18,7 @@ def search(s: str) -> int:
 
 def untaught(s: str) -> str:
     # a replace count of two is a form pyct does not teach; a search's position is one it does
-    if "abab".replace(s, "x", 2) == "xbxb":
+    if "abab".replace(s, "x", 2) == "xx":
         return "found"
     return "other"
 

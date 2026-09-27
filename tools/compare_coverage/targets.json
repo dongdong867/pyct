@@ -133,7 +133,7 @@
     {"set": "v2", "target": "targets.intercept.plain_text::alone", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.intercept.plain_text::index", "seed": {"s": "b"}},
     {"set": "v2", "target": "targets.intercept.plain_text::search", "seed": {"s": "b"}},
-    {"set": "v2", "target": "targets.intercept.plain_text::untaught", "seed": {"s": "a"}},
+    {"set": "v2", "target": "targets.intercept.plain_text::untaught", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.intercept.pooled::sizes", "seed": {"s": "ab"}},
     {"set": "v2", "target": "targets.intercept.positions::place", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.recursion::deep_find", "seed": {"x": 4}},

@@ -56,30 +56,32 @@ def literal_names(tree: ast.AST) -> Constants:
         refused_all = refused_all or _star_import(node)
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and classed:
             in_class.add(id(node))
-        pending.extend(
-            (child, _in_class_scope(node, child, classed)) for child in ast.iter_child_nodes(node)
-        )
+        pending.extend(_scoped(node, classed))
     if refused_all:
         return Constants(kinds={}, in_class=frozenset(in_class))
     held = {name: frozenset(types) for name, types in kinds.items() if name not in refused}
     return Constants(kinds=held, in_class=frozenset(in_class))
 
 
-def _in_class_scope(parent: ast.AST, child: ast.AST, classed: bool) -> bool:
-    """Whether a child of a node runs in a class body's scope.
+def _scoped(parent: ast.AST, classed: bool) -> list[tuple[ast.AST, bool]]:
+    """Each child of a node, with whether it runs in a class body's scope.
 
     A class's body does. A function's or a lambda's body does not, while its
     decorators, defaults and annotations run where the function is written,
-    so they keep the parent's scope, as does everything else, a
-    comprehension inside a class body included.
+    so they keep the parent's scope, as does everything else. A comprehension
+    in a class body is treated as the class's scope throughout, though only
+    its first iterable runs there. The body is told apart by one set of its
+    statements, so each child costs one lookup.
     """
-    if isinstance(parent, ast.ClassDef):
-        return classed or any(child is statement for statement in parent.body)
-    if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
-        return classed and not any(child is statement for statement in parent.body)
+    children = list(ast.iter_child_nodes(parent))
+    if isinstance(parent, ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+        body = {id(statement) for statement in parent.body}
+        # a class's body runs in the class's scope, a function's in its own
+        in_body = isinstance(parent, ast.ClassDef)
+        return [(child, in_body if id(child) in body else classed) for child in children]
     if isinstance(parent, ast.Lambda):
-        return classed and child is not parent.body
-    return classed
+        return [(child, classed and child is not parent.body) for child in children]
+    return [(child, classed) for child in children]
 
 
 def _star_import(node: ast.AST) -> bool:
@@ -123,8 +125,8 @@ def _other_bindings(node: ast.AST) -> list[str]:
         return [node.id]
     if isinstance(node, ast.arg):
         return [node.arg]
-    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.TypeAlias):
-        return [node.name if isinstance(node.name, str) else node.name.id]
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+        return [node.name]
     if isinstance(node, ast.TypeVar | ast.ParamSpec | ast.TypeVarTuple):
         return [node.name]
     if isinstance(node, ast.alias):
