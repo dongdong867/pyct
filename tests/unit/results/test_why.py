@@ -484,3 +484,64 @@ def test_a_reaching_side_its_fork_shows_is_named_before_a_ternary_s(tmp_path: Pa
 
     assert entry.reason is Reason.NOT_TAKEN
     assert entry.condition == Condition(site=Site(file=file, line=3, col=7), side=True)
+
+
+def test_two_tests_at_one_site_take_their_own_sides(tmp_path: Path) -> None:
+    source = """\
+    def f(x):
+        if x < 5 < x:
+            return 1
+        return 2
+    """
+    file = module(tmp_path, source)
+    site = Site(file=file, line=2, col=7)
+    # `x < 5` taken, then `5 < x` not taken, both at 2:7
+    forks = (fork(file, 2, 7, taken=True), fork(file, 2, 7, taken=False))
+    walked = [Walked(forks, failed=False, lines=frozenset({2, 4}))]
+
+    (entry,) = why(file, ({3}, {2, 4}), walked, {ForkSite(site): Tries(unsat=1)})
+
+    assert entry.reason is Reason.NOT_TAKEN
+    assert entry.condition == Condition(site=site, side=True)
+    assert entry.tries == Tries(unsat=1)
+
+
+CAUGHT_IN_A_LOOP = """\
+TABLE = {"k": 1}
+
+
+def f(x):
+    total = 0
+    for i in range(2):
+        try:
+            v = TABLE["z"]
+            total += v
+        except KeyError:
+            continue
+    return total + x
+"""
+
+
+def test_a_raise_the_function_caught_before_the_line_ended_the_input(tmp_path: Path) -> None:
+    file = module(tmp_path, CAUGHT_IN_A_LOOP)
+    lines = frozenset({5, 6, 7, 8, 10, 11, 12})
+
+    entries = why(file, ({1, 4, 9}, lines), [Walked(forks=(), failed=False, lines=lines)])
+
+    assert entries[-1] == WhyEntry(file=file, lines=(9,), reason=Reason.ENDED_BEFORE)
+
+
+def test_an_input_that_neither_ended_nor_raised_is_never_said_to_have_ended(
+    tmp_path: Path,
+) -> None:
+    source = """\
+    def f(x):
+        y = 1 if x > 0 else 2
+        return y
+    """
+    file = module(tmp_path, source)
+
+    (entry,) = why(file, ({3}, {2}), [Walked(forks=(), failed=False, lines=frozenset({2}))])
+
+    # nothing shows which side the ternary took, and nothing ended: the ternary is named
+    assert entry.reason is Reason.NO_FORK

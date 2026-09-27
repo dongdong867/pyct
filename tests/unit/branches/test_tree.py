@@ -273,3 +273,20 @@ def test_a_test_and_an_operation_s_fork_at_one_column_are_counted_apart() -> Non
     tree.add((operation, test))
 
     assert tree.untried() == {test.where: 1, operation.where: 1}
+
+
+def test_an_operation_s_side_at_a_test_s_column_does_not_make_the_test_s_flip_old() -> None:
+    tree = Tree()
+    test = fork(2, taken=False)
+    # `if s[0] == "q":`: the index's long-enough fork, taken true, at the test's own column
+    index = Branch(expression=[">", "x", 0], taken=True, site=test.site, raising=True)
+    tree.add((index, test, fork(3, taken=True)))
+    # line 3's other side ran on another path: its fork here is still open, but not new
+    tree.add((fork(3, taken=False),))
+
+    picked = tree.next()
+
+    # the test's true side is new, whatever the index's fork took at that column, so it comes
+    # before line 3, which the oldest-path order would pick
+    assert picked is not None
+    assert (picked.aim.site, picked.aim.raising) == (test.site, False)

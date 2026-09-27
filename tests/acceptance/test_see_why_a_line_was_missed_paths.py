@@ -171,3 +171,26 @@ def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
     assert result.returncode == 0, result.stderr
     # the walk over s[:0] ends at once; its pass fork sits where the loop steps, at 3:13
     assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 13, True, unsat=1)
+
+
+# see-why-a-line-was-missed-names-the-side-no-input-took
+def test_two_tests_at_one_site_are_judged_by_the_side_each_took() -> None:
+    target, file = spec("chained", "chained")
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    # `x < 5 < x` tests twice at 2:7; the first test's true side proves nothing of the second's
+    assert cause(entry_for(result.stdout, 3)) == not_taken(file, 2, 7, True, unsat=1)
+
+
+# see-why-a-line-was-missed-says-inputs-ended-before-a-line
+def test_a_raise_the_function_caught_ends_the_input_before_the_line() -> None:
+    target, file = spec("caught_in_loop", "caught_in_loop")
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    # `TABLE["z"]` raises on every pass and `continue` goes on: the input raised before line 9
+    entry = entry_for(result.stdout, 9)
+    assert entry == {"file": file, "lines": [9], "reason": "ended before"}

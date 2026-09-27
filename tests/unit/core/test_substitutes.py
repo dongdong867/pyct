@@ -1,11 +1,9 @@
 """What substituted code calls: each router's answer, and the fork it records, on tracked values."""
 
-from unittest.mock import ANY
-
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -105,12 +103,18 @@ def test_a_tracked_string_in_a_plain_one_carries_the_plain_one_as_a_literal() ->
 def test_a_tracked_string_in_a_plain_one_the_solver_cannot_hold_is_a_downgrade() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr("b", expression="s", sink=sink)
+    # substituted code as the target's module holds it: each router called where the `in` was
+    namespace = {"in_": in_, "not_in": not_in}
+    source = 'def look(s):\n    return in_(s, "ab\\U00030000"), not_in(s, "ab\\U00030000")\n'
+    exec(compile(source, "<looked>", "exec"), namespace)
+    look = namespace["look"]
+    assert callable(look)
 
-    assert in_(s, "ab\U00030000") is True
-    assert not_in(s, "ab\U00030000") is False
+    assert look(s) == (True, False)
+    # each downgrade names the target's call, not the router it went through
     assert sink == [
-        Downgrade(name="__contains__", site=ANY),
-        Downgrade(name="__contains__", site=ANY),
+        Downgrade(name="__contains__", site=Site(file="<looked>", line=2, col=11)),
+        Downgrade(name="__contains__", site=Site(file="<looked>", line=2, col=35)),
     ]
 
 

@@ -16,7 +16,7 @@ from enum import StrEnum
 
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import compiled
-from pyct.results.way import Flow, Fork, Step, StepKind, owners
+from pyct.results.way import Flow, Fork, Place, Step, StepKind, owners
 
 
 class Reason(StrEnum):
@@ -190,12 +190,9 @@ class _Walk:
             return self._entry(Reason.HANDLER)
         if self._ended(line):
             return self._entry(Reason.ENDED_BEFORE)
-        # a side that joins again at once, as a ternary's, shows no run took it, so it is named
-        # only when nothing else explains the line
-        found = self._reaching(line, shown=False)
-        # otherwise no condition leads to the line and no input ended on the way: the run
-        # shows nothing more, and the line is put down to its inputs ending before it
-        return found or self._entry(Reason.ENDED_BEFORE)
+        # no input ended, so the line waits on a condition the run cannot show a side of, as a
+        # ternary's, which joins again at once: the first such on the way, else reaching it
+        return self._first_unshown(line)
 
     def _no_raise_reached(self, line: int) -> bool:
         """Whether the line is in an except block that no raise on its way reached."""
@@ -203,11 +200,35 @@ class _Walk:
         into = [place for place in places if place.step.kind is StepKind.HANDLER]
         return self.flow.only_in_handlers(line) and any(p.node not in self.passed for p in into)
 
+    def _first_unshown(self, line: int) -> WhyEntry:
+        """The first condition on the way no run shows it passed, else the first reaching side.
+
+        What is left when no side is shown untaken and no input ended: never
+        ``ended before``, which needs an input that ended.
+        """
+        conditions = [p for p in self.flow.places(line) if p.step.kind is StepKind.CONDITION]
+        unshown = [p for p in conditions if p.node not in self.passed]
+        reaching = [p for p in self.flow.reaching(line) if p.node not in self.passed]
+        place = next(iter([*unshown, *reaching, *conditions]), None)
+        if place is None:
+            # every run of the function reaches the line with no condition on the way, as a
+            # generator's body past a yield no consumer resumed: the line's run never ended
+            return self._entry(Reason.ENDED_BEFORE)
+        return self._named(place.step)
+
+    def _reached(self, place: Place) -> bool:
+        """Whether an input reached a condition: its block ran, or a fork was recorded there.
+
+        Two tests can share one site, as ``x < 5 < x`` does; a fork there proves
+        only what both share, so the fork itself says the second test ran.
+        """
+        return place.source in self.passed or self._forks_at(place.step)
+
     def _on_the_way(self, line: int) -> WhyEntry | None:
         for place in self.flow.places(line):
             if place.node in self.passed:
                 continue
-            if place.source not in self.passed:
+            if not self._reached(place):
                 return None
             if place.step.kind is StepKind.HANDLER:
                 return self._entry(Reason.HANDLER)
@@ -221,7 +242,7 @@ class _Walk:
         by a line or a fork only that side leads to.
         """
         for place in self.flow.reaching(line):
-            if place.node in self.passed or place.source not in self.passed:
+            if place.node in self.passed or not self._reached(place):
                 continue
             knowable = self._forks_at(place.step) or self.flow.knowable(place)
             if knowable == shown:
@@ -231,12 +252,13 @@ class _Walk:
     def _ended(self, line: int) -> bool:
         """Whether an input that went as far toward the line as any did ended there.
 
-        It failed, or a raise took it into a handler from which the line
-        cannot be reached.
+        It failed, or it raised on the way to the line, even when the function
+        caught the raise and went on: a raise entered from a block the line can
+        still be reached from.
         """
         chain = [node for node in self.flow.chain(line) if node in self.passed]
         frontier = chain[-1] if chain else None
-        away = self.flow.raises() - self.flow.toward(line)
+        away = self.flow.raises_toward(line)
         for each, marked in zip(self.seen.inputs, self._marks, strict=True):
             if frontier is not None and frontier not in marked:
                 continue

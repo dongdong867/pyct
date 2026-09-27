@@ -158,9 +158,11 @@ class Flow:
         holders = self._graph.blocks_of(line)
         return bool(holders) and not any(block in self._normal for block in holders)
 
-    def raises(self) -> frozenset[int]:
-        """The raise nodes: the way into each handler."""
-        return frozenset(self._graph.raises)
+    def raises_toward(self, line: int) -> frozenset[int]:
+        """The raise nodes entered from a block ``line`` can still be reached from."""
+        toward = self._toward(line)
+        before = self._graph.predecessors()
+        return frozenset(r for r in self._graph.raises if toward.intersection(before[r]))
 
     def toward(self, line: int) -> frozenset[int]:
         """The nodes from which ``line`` can still be reached."""

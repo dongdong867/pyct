@@ -39,7 +39,7 @@ class Tree:
         self._ids: dict[tuple[int, Site, bool], int] = {}
         self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
-        self._sides: set[tuple[Site, bool]] = set()
+        self._sides: set[tuple[ForkSite, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
         # fork first. A side taken never becomes new again, so a fork leaves for good
         self._new: deque[Place] = deque()
@@ -57,7 +57,7 @@ class Tree:
             key = (parent, fork.site)
             parent = self._ids.setdefault((parent, fork.site, fork.taken), len(self._ids))
             keys.append(key)
-            self._sides.add((fork.site, fork.taken))
+            self._sides.add((fork.where, fork.taken))
         index = len(self._paths)
         self._paths.append((forks, tuple(keys)))
         self._new.extend(
@@ -116,8 +116,12 @@ class Tree:
         return None
 
     def _new_side(self, fork: Branch) -> bool:
-        """Whether no input took the other side of this fork's site, whatever came before it."""
-        return (fork.site, not fork.taken) not in self._sides
+        """Whether no input took the other side of this fork's site, whatever came before it.
+
+        A site is told apart from an operation's fork at the same column, as an
+        index's in ``if s[0] == "q":``, so one never makes the other's side old.
+        """
+        return (fork.where, not fork.taken) not in self._sides
 
     def untried(self) -> dict[ForkSite, int]:
         """How many forks at each site are still open: no input aimed at them, no other side ran.
