@@ -14,6 +14,7 @@ from pyct.solver.heads import (
     BOUNDED,
     FORMS,
     INDEXED,
+    ON_A_CHARACTER,
     OPERATORS,
     POSITIONED,
     POSITIONS_FROM,
@@ -21,6 +22,7 @@ from pyct.solver.heads import (
     SORTS,
     STRING_ORDERS,
     WORKS_ON,
+    operator,
 )
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
@@ -313,7 +315,13 @@ class _Program:
         bounded = None if kind is None else BOUNDED.get((head, kind))
         if bounded is not None:
             return partial(self._bounded, bounded)
+        if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
+            return ON_A_CHARACTER[head]
         return None if kind is None else FORMS.get((head, kind))
+
+    def _character(self, part: Expression) -> bool:
+        """Whether a part is one character of a string, as `s[i]` hands it out."""
+        return isinstance(part, list) and part[0] == "[]" and self.type_of(part[1]) is str
 
     def _bounded(self, form: Callable[..., tuple[str, str]], *operands: str) -> str:
         """A bounded form's term, and its bound noted once.
@@ -385,7 +393,7 @@ class _Program:
             return answer
         if head in STRING_ORDERS and kind is str:
             return string_order(head, operands, rendered)
-        return f"({_operator(head, kind)} {' '.join(rendered)})"
+        return f"({operator(head, kind)} {' '.join(rendered)})"
 
     def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
         """Each operand's term; past the operands a search or a replace reads as terms, each
@@ -485,12 +493,3 @@ def _read(term: str, part: Expression) -> str:
     if not term:
         raise UnencodedError(f"pyct cannot render {part}: it is no value a condition reads")
     return term
-
-
-def _operator(head: str, kind: type | None) -> str:
-    """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
-    operator = OPERATORS.get((head, kind)) if kind is not None else None
-    if operator is None:
-        on = "anything" if kind is None else kind.__name__
-        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
-    return operator
