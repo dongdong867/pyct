@@ -34,8 +34,12 @@ def postorder(successors: list[list[int]], *roots: int) -> list[int]:
     return order
 
 
-class OutOfTimeError(Exception):
-    """The run's stop came while a step whose cost grows with the function was running."""
+class OutOfTimeError(BaseException):
+    """The run's stop came while the cause analysis was running.
+
+    A BaseException, not an Exception, so no ``except Exception`` on the way
+    can swallow it.
+    """
 
 
 def never() -> bool:

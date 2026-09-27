@@ -437,6 +437,7 @@
     {"set": "v2", "target": "targets.why.not_tried::two", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "target": "targets.why.plain::big", "seed": {"x": 3}},
     {"set": "v2", "target": "targets.why.plain_and::guarded", "seed": {"x": 1}},
+    {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}},
     {"set": "v2", "target": "targets.why.raised_past::raised_past", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.shared_site::divided", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.shared_site::first_differs", "seed": {"s": "ab"}},

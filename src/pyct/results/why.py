@@ -20,6 +20,7 @@ from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError
+from pyct.results.stopping import stopping
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -119,20 +120,40 @@ def explain(
     """
     if not uncovered:
         return ()
-    seen = _Seen.of(file, covered, run)
-    by_cause: dict[WhyEntry, list[int]] = {}
     lines = sorted(uncovered)
-    for at, line in enumerate(lines):
-        try:
-            if run.late():
-                raise OutOfTimeError
-            cause = seen.cause(line)
-        except OutOfTimeError:
-            by_cause[WhyEntry(file, (), Reason.NOT_WORKED_OUT)] = lines[at:]
-            break
-        by_cause.setdefault(cause, []).append(line)
-    entries = [_with_lines(cause, lines) for cause, lines in by_cause.items()]
+    by_cause: dict[WhyEntry, list[int]] = {}
+    try:
+        with stopping(run.stop_at, clock):
+            _work_out(file, lines, covered, run, by_cause)
+    except OutOfTimeError:
+        pass
+    # a line is placed once its cause is known; whatever the stop left is not worked out
+    placed = {line for held in by_cause.values() for line in held}
+    left = [line for line in lines if line not in placed]
+    if left:
+        by_cause[WhyEntry(file, (), Reason.NOT_WORKED_OUT)] = left
+    entries = [_with_lines(cause, held) for cause, held in by_cause.items() if held]
     return tuple(sorted(entries, key=lambda entry: entry.lines[0]))
+
+
+def _work_out(
+    file: str,
+    lines: list[int],
+    covered: frozenset[int],
+    run: Run,
+    by_cause: dict[WhyEntry, list[int]],
+) -> None:
+    """Work out each line's cause into ``by_cause``, until the stop comes.
+
+    The stop comes as ``OutOfTimeError``, from the timer anywhere or from a
+    step's own clock check where no timer could be armed.
+    """
+    seen = _Seen.of(file, covered, run)
+    for line in lines:
+        if run.late():
+            raise OutOfTimeError
+        cause = seen.cause(line)
+        by_cause.setdefault(cause, []).append(line)
 
 
 def _with_lines(cause: WhyEntry, lines: list[int]) -> WhyEntry:

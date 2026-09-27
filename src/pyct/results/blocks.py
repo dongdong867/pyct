@@ -7,6 +7,7 @@ which blocks each handler's range covers.
 
 from __future__ import annotations
 
+import bisect
 import dis
 import types
 from collections.abc import Iterator
@@ -84,9 +85,13 @@ def blocks_of_code(
 
 def handler_ranges(code: types.CodeType, blocks: list[list[Op]]) -> Iterator[tuple[int, list[int]]]:
     """Each handler's first offset, and the first offset of every block its ranges cover."""
+    starts = [block[0].offset for block in blocks]
     covered: dict[int, list[int]] = {}
     for entry in _table(code):
-        inside = [block[0].offset for block in blocks if entry.start <= block[0].offset < entry.end]
+        # the blocks are in offset order, so each range is one slice of them
+        inside = starts[
+            bisect.bisect_left(starts, entry.start) : bisect.bisect_left(starts, entry.end)
+        ]
         covered.setdefault(entry.target, []).extend(inside)
     yield from covered.items()
 

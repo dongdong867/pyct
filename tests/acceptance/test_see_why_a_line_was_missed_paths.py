@@ -338,6 +338,8 @@ def test_a_generator_paused_at_a_yield_in_a_loop_is_suspended_and_one_that_raise
 
 
 # see-why-a-line-was-missed-stops-at-the-deadline
+# the stop's timer fires in this process, so coverage is paused for the test
+@pytest.mark.no_cover
 def test_the_lines_left_when_the_deadline_comes_are_not_worked_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -366,3 +368,15 @@ def test_a_run_with_no_budget_works_out_every_line(monkeypatch: pytest.MonkeyPat
     result = run(load_target(target), {"x": 1}, isolation=Isolation.IN_PROCESS)
 
     assert "not worked out" not in {entry.reason.value for entry in result.why_uncovered}
+
+
+# see-why-a-line-was-missed-puts-the-lines-after-a-raising-operation-on-its-fork
+def test_the_line_after_popping_an_empty_list_waits_on_its_not_empty_fork() -> None:
+    target, file = spec("pop_empty", "pop_empty")
+
+    result = run_pyct(target, '{"items": []}')
+
+    assert result.returncode == 0, result.stderr
+    # pop checks the list is not empty before Python may raise, as pop(0) and items[0] do; past
+    # `if items:` the list is empty, so that check is never true
+    assert cause(entry_for(result.stdout, 5)) == not_taken(file, 4, 8, True, unsat=1)
