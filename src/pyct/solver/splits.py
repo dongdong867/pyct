@@ -40,9 +40,8 @@ def _let(bindings: list[tuple[str, str]], body: str) -> str:
     Each name holds ``!``, which no Python name does, and a name is only
     read inside its own ``let``.
     """
-    for name, term in reversed(bindings):
-        body = f"(let (({name} {term})) {body})"
-    return body
+    opened = "".join(f"(let (({name} {term})) " for name, term in bindings)
+    return f"{opened}{body}{')' * len(bindings)}"
 
 
 def _all(conditions: list[str]) -> str:
@@ -148,29 +147,61 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
 
     With no limit, the pieces are the split's own: core hands on no
     separator that overlaps itself, whose separators a split from each end
-    finds apart. With a limit, piece ``j`` from the right is piece ``j`` of the
-    reversed string split by the reversed separator, reversed; piece
-    ``index`` from the left is the one as far from the last piece there is.
+    finds apart. With a limit, the reversed string is walked once, from its
+    start, for as many separators or words as the limit allows: piece ``j``
+    from the right is the reversed piece ``j`` of that walk, and piece
+    ``index`` from the left is the one ``index`` from the first piece there
+    is. Each step names what the one before found, so the term grows with
+    the limit, not with its square.
     """
     separator, limit = _separator_and_limit(operands)
     if limit < 0:
         return split_piece(term, operands, index)
-    back = [_mirrored("r!0", separator, limit, at) for at in range(limit + 1)]
-    piece = back[0][0]
-    for last in range(index + 1, limit + 1):
-        piece = f"(ite {back[last][1]} {back[last - index][0]} {piece})"
-    bound = [("r!0", f"(str.rev {term})")]
-    there = back[index][1]
-    return _let(bound, piece), there if there == "true" else _let(bound, there)
+    walk = _words_back(limit) if separator is None else _separators_back(separator, limit)
+    bindings, count, pieces = walk
+    chosen = '""'
+    for at in reversed(range(len(pieces))):
+        chosen = f"(ite (= n! {index + at + 1}) {pieces[at]} {chosen})"
+    bound = [("r!", f"(str.rev {term})"), *bindings, ("n!", count)]
+    return _let(bound, chosen), _let(bound, f"(> n! {index})")
 
 
-def _mirrored(reversed_term: str, separator: str | None, limit: int, at: int) -> Piece:
-    """Piece ``at`` from the right of an rsplit, from the reversed string's split."""
-    if separator is None:
-        piece, there = worded(reversed_term, limit, at)
-    else:
-        piece, there = parted(reversed_term, separator[::-1], limit, at)
-    return f"(str.rev {piece})", there
+# a walk of the reversed string: the names it binds, how many pieces the string has, and each
+# piece from the right, written with those names
+type Walk = tuple[list[tuple[str, str]], str, list[str]]
+
+
+def _separators_back(separator: str, limit: int) -> Walk:
+    """The first ``limit`` separators of the reversed string, ``h!j``, -1 once one is missing."""
+    written, width = encode(separator[::-1]), len(separator)
+    hits = [("h!0", f"(str.indexof r! {written} 0)")]
+    for at in range(1, limit):
+        look = f"(str.indexof r! {written} (+ h!{at - 1} {width}))"
+        hits.append((f"h!{at}", f"(ite (< h!{at - 1} 0) (- 1) {look})"))
+    found = [f"(ite (>= h!{at} 0) 1 0)" for at in range(limit)]
+    starts = ["0", *(f"(+ h!{at} {width})" for at in range(limit))]
+    stops = [f"(ite (< h!{at} 0) (str.len r!) h!{at})" for at in range(limit)] + ["(str.len r!)"]
+    pieces = [_back(start, stop) for start, stop in zip(starts, stops, strict=True)]
+    return hits, _sum(["1", *found]), pieces
+
+
+def _words_back(limit: int) -> Walk:
+    """The first ``limit`` + 1 words of the reversed string; the last runs to its end."""
+    bounds = _words("r!", limit + 1)
+    found = [f"(ite (>= a!{at} 0) 1 0)" for at in range(limit + 1)]
+    stops = [f"b!{at}" for at in range(limit)] + ["(str.len r!)"]
+    pieces = [_back(f"a!{at}", stop) for at, stop in enumerate(stops)]
+    return bounds, _sum(found), pieces
+
+
+def _back(start: str, stop: str) -> str:
+    """The reversed string from ``start`` up to ``stop``, turned the right way round."""
+    return f"(str.rev (str.substr r! {start} (- {stop} {start})))"
+
+
+def _sum(terms: list[str]) -> str:
+    """The terms added up. One is itself."""
+    return terms[0] if len(terms) == 1 else f"(+ {' '.join(terms)})"
 
 
 def partition_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:

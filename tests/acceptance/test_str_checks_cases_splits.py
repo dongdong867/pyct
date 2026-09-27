@@ -6,6 +6,7 @@ check, a case change or a split is followed only if the fork built on it reaches
 and the solver's answer runs, so only a real run through the command line proves it.
 """
 
+import time
 from pathlib import Path
 
 from tests.acceptance.harness import (
@@ -67,6 +68,8 @@ SPLIT_FAMILY_FORKS: list[tuple[int, list[object]]] = [
     (10, ["==", ["[]", ["splitlines", "s"], 0], "'top'"]),
 ]
 TRACKED_RSPLIT = "targets.strs.tracked_rsplit::cut"
+LONG_RSPLIT = "targets.strs.long_rsplit::head"
+LONG_RSPLIT_FILE = str(REPO_ROOT / "targets" / "strs" / "long_rsplit.py")
 SHOUTED_PAIR = "targets.strs.shouted_pair::pair"
 SHOUTED_PAIR_FILE = str(REPO_ROOT / "targets" / "strs" / "shouted_pair.py")
 
@@ -225,3 +228,17 @@ def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() 
     seed = first_line(result.stdout)
     assert seed["forks"] == []
     assert seed["downgrades"] == [{"name": "rsplit", "count": 1}]
+
+
+# follow-strings-reports-a-slow-encoding-as-a-miss, for an rsplit with a limit of 2,000
+def test_an_rsplit_with_a_large_limit_ends_within_the_budget() -> None:
+    started = time.perf_counter()
+    result = run_pyct(LONG_RSPLIT, '{"s": "b,c"}', "--budget", "3")
+    elapsed = time.perf_counter() - started
+
+    assert result.returncode == 0, result.stderr
+    # render writes the 2,000 steps in a few hundredths of a second; cvc5 does not answer
+    # them within the budget, and pyct stops it a second past its limit
+    assert (2, "timeout") in misses_of(result.stdout), result.stdout
+    assert summary_line(result.stdout)["stopped"] == "budget spent"
+    assert elapsed < 3 + 1 + 2, elapsed

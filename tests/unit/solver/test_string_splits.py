@@ -2,6 +2,8 @@
 held against Python on them."""
 
 import random
+import time
+import tracemalloc
 from collections.abc import Callable
 
 import pytest
@@ -221,3 +223,26 @@ def test_an_operand_that_opens_with_a_quote_but_holds_no_str_is_an_error() -> No
 
     with pytest.raises(ValueError, match="not a string literal"):
         render(prefix, {"s": str})
+
+
+@pytest.mark.parametrize("separator", ["','", None], ids=["on a separator", "on whitespace"])
+def test_an_rsplit_with_a_large_limit_renders_in_size_and_memory_that_grow_with_it(
+    separator: str | None,
+) -> None:
+    def rendered(limit: int) -> str:
+        condition: Expression = ["==", ["[]", ["rsplit", "s", separator, limit], 0], "'a'"]
+        return render((fork(condition, taken=False),), {"s": str})
+
+    tracemalloc.start()
+    started = time.perf_counter()
+    text = rendered(2000)
+    elapsed = time.perf_counter() - started
+    _, peak = tracemalloc.get_traced_memory()
+    tracemalloc.stop()
+
+    # the reversed string is walked once, each step naming the last, so twice the limit is
+    # about twice the text: 0.6 MB on a separator and 1.7 MB on whitespace at 2,000
+    assert len(text) < 2.2 * len(rendered(1000))
+    assert len(text) < 2_000_000
+    assert elapsed < 1.0
+    assert peak < 20_000_000
