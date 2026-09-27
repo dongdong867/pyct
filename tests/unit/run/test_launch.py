@@ -304,8 +304,9 @@ def test_a_command_that_catches_the_stop_and_returns_still_ends_by_sigterm(
     no_process_starts(monkeypatch)
 
     def catches(watch: ImportWatch | None) -> int:
-        os.kill(os.getpid(), signal.SIGTERM)
+        # the handler runs as os.kill returns, so the signal goes inside the catch
         with contextlib.suppress(Stopped):
+            os.kill(os.getpid(), signal.SIGTERM)
             time.sleep(5)
         return 0
 
