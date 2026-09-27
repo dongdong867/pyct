@@ -37,6 +37,9 @@ WRITTEN: dict[str, tuple[Expression, str]] = {
     "two bools equal": (["==", ABOVE, BELOW], "(= (> |arg.x| 0) (> |arg.y| 0))"),
     "two bools unequal": (["!=", ABOVE, BELOW], "(distinct (> |arg.x| 0) (> |arg.y| 0))"),
     "a bool equal to a literal": (["==", ABOVE, True], "(= (> |arg.x| 0) true)"),
+    # a bool's text is Python's word for it, not the text of 1 or 0; a form's operand is defined
+    # once as `e!0`, a Bool, as `test_a_bool_held_twice_is_defined_once_as_a_bool` shows
+    "a bool's text": (["==", ["str", ABOVE], "'False'"], '(= (ite e!0 "True" "False") "False")'),
 }
 
 
@@ -169,6 +172,7 @@ def test_a_bool_held_twice_is_defined_once_as_a_bool() -> None:
             ["==", ["//", 7, ABOVE], 7], lambda x, y: x > 0 and 7 // (x > 0) == 7, id="//"
         ),
         pytest.param([">", ["+", "x", True], 5], lambda x, y: x + True > 5, id="literal"),
+        pytest.param(["==", ["str", ABOVE], "'True'"], lambda x, y: str(x > 0) == "True", id="str"),
     ],
 )
 def test_cvc5_answers_a_bool_used_as_a_number_as_python_does(

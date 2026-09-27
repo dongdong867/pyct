@@ -1,4 +1,5 @@
-"""A number written as text, read as Python's `int` and `float` read it.
+"""A number written as text, read as Python's `int` and `float` read it, and written as `str`
+writes it.
 
 ``isint`` and ``isfloat`` hold for a string Python's own `int(s)` and
 `float(s)` accept, and ``int`` and ``float`` of a string are the number it
@@ -21,6 +22,9 @@ one correct rounding of an Int, and a fraction one correct division of such
 an Int by a power of ten a double holds exactly, which is Python's double
 to the last bit. Past the bound the term is a double of its own, so an
 unsat there holds for every value Python reads, and a sat is ``unknown``.
+
+``str`` of an int is its decimal digits, with ``-`` before a negative one,
+and ``str`` of a bool is ``True`` or ``False``, each exact.
 
 A form here names the parts it reads more than once with ``let``, as
 ``b!``, ``d!``, ``i!``, ``f!``, ``k!``, ``a!``, ``n!`` and ``g!``,
@@ -84,6 +88,21 @@ def int_of(term: str) -> str:
     """
     magnitude = f"(str.to_int {_digits(term)})"
     return f'(ite (str.contains {term} "-") (- {magnitude}) {magnitude})'
+
+
+def text_of_int(term: str) -> str:
+    """The text Python's `str(n)` writes for an int: its decimal digits, `-` before a negative.
+
+    `str.from_int` writes a natural number's digits, the reverse of what
+    `int_of` reads, so a negative one is written by its magnitude after the
+    sign. Python's limit on the digits it writes is not held here.
+    """
+    return f'(ite (< {term} 0) (str.++ "-" (str.from_int (- {term}))) (str.from_int {term}))'
+
+
+def text_of_bool(term: str) -> str:
+    """The text Python's `str(b)` writes for a bool: `True` or `False`."""
+    return f'(ite {term} "True" "False")'
 
 
 def _letters(word: str) -> str:
