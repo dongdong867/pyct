@@ -1,5 +1,6 @@
 """Where a run's inputs run: forked while pyct's process runs one thread, else fresh."""
 
+import contextlib
 import dataclasses
 import inspect
 import logging
@@ -251,3 +252,28 @@ def test_no_input_starts_once_pyct_s_process_was_told_to_stop(
     with pytest.raises(Stopped):
         inputs({"x": 0}, None)
     assert inputs.ran == []
+
+
+def catches_a_stop(x: int) -> int:
+    """Target code that catches the stop, as one under ``except BaseException`` does."""
+    with contextlib.suppress(Stopped):
+        process.stop()
+    return x
+
+
+def test_an_in_process_call_that_catches_a_stop_is_refused_as_it_returns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(process, "_stop_asked", False)
+    target = Target(
+        spec="m::catches_a_stop",
+        fn=catches_a_stop,
+        file=__file__,
+        signature=inspect.signature(catches_a_stop),
+    )
+    inputs = Inputs(target, Isolation.IN_PROCESS)
+
+    # the call ran, but its line is not written and no solve follows it
+    with pytest.raises(Stopped):
+        inputs({"x": 0}, None)
+    assert inputs.ran == [Isolation.IN_PROCESS]
