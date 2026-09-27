@@ -11,11 +11,12 @@ transform, so a changed pyct never reads code an older one made. It holds
 the digest of the source it was made from, the source file's stat when it
 was read, then the code. The digest decides: a different one is a miss, so
 an edit is substituted again whatever its size and time. An unchanged stat
-stands in for reading the source only when it was recorded well after the
-file last changed, as git's index trusts a file's stat: an edit made later
-changes the file's change time, however coarse the clock, so it never goes
-unseen. A folder or file that cannot be read or written is only a miss: the
-module is substituted again, and nothing is kept.
+stands in for reading the source only when it was recorded more than 2 s
+after the file last changed, as git's index trusts a file's stat: on a file
+clock no coarser than that, an edit made later changes the file's change
+time, so it never goes unseen. A folder or file that cannot be read or
+written is only a miss: the module is substituted again, and nothing is
+kept.
 """
 
 from __future__ import annotations
@@ -49,7 +50,7 @@ _IGNORE = "# made by pyct, which keeps its cache here\n*\n"
 # an entry's head: the source's digest, its stat as five ints, and whether that stat is trusted
 _HEAD = struct.Struct("<32s5q?")
 
-# how long after a file's last change its stat is trusted: past the coarsest file clock in use
+# how long after a file's last change its stat is trusted: FAT's two seconds, the coarsest clock
 _SETTLED_NS = 2_000_000_000
 
 # a file's stat as an entry records it: when its content and its inode last changed, its size,
@@ -92,10 +93,11 @@ def cached(
 
 @functools.cache
 def _version() -> str:
-    """A digest of the code that decides what substituted code is: the transform and its compile."""
+    """A digest of the code that decides what an entry holds: the transform, its compile, and this
+    module's format."""
     digest = hashlib.sha256()
-    for module in (substitute, compiled):
-        digest.update(Path(str(module.__file__)).read_bytes())
+    for file in (substitute.__file__, compiled.__file__, __file__):
+        digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]
 
 
