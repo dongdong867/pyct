@@ -12,6 +12,8 @@ from pyct.run.target import load_target
 
 # where an input runs, in a child process of its own or in the caller's
 WHERE = [Isolation.FORK, Isolation.IN_PROCESS]
+# and in a fresh interpreter, which imports the target by name
+EVERYWHERE = [*WHERE, Isolation.FRESH]
 
 # deeper than pickle recurses before it gives up, and within what JSON reads
 PICKLE_DEPTH = 9000
@@ -80,3 +82,21 @@ def test_run_walks_the_seed_once_and_once_more_per_solver_input(
     assert len(solved) >= 2
     # the leaves once for the run, then the one rebuild that writes each answer
     assert len(walks) == 1 + len(solved)
+
+
+@pytest.mark.parametrize("isolation", EVERYWHERE)
+def test_run_hands_each_input_arguments_of_its_own(isolation: Isolation) -> None:
+    # the target grows the list it reaches through the tuple, which is `a` itself
+    x = [0]
+    target = load_target("targets.nested.grows_through_tuple::grow")
+
+    result = run(target, {"a": x, "b": (x,)}, isolation=isolation)
+
+    assert [record.failure for record in result.records] == [None, None]
+    assert result.stopped.reason == "no fork to flip"
+    assert x == [0]
+    for record in result.records:
+        a, b = record.args["a"], record.args["b"]
+        assert isinstance(a, list) and isinstance(b, tuple)
+        # the line shows the input as it was called, both paths on one list
+        assert len(a) == 1 and b[0] is a

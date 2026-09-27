@@ -1,5 +1,6 @@
 """Turn a seed dict into the arguments the target is called with."""
 
+import copy
 import json
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
@@ -24,21 +25,22 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     Python but not a number to bind: it has no ``<`` worth tracking.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
-    under, so the target gets a copy of its own: a change it makes to one
-    reaches neither the seed nor a later input. A value under a key no access
-    can name, a float key say, is copied the same way and tracked nowhere.
-    Every other value, a subclass of dict or list too, passes through as it
-    came.
+    under, and every other value is copied, so the target gets arguments of
+    its own: a change it makes reaches neither the seed nor a later input.
+    A value under a key no access can name, a float key say, is copied the
+    same way and tracked nowhere (see ``_Walk``).
     """
     return walked(seed, lambda value, access: _tracked(value, access, sink))
 
 
 @dataclass(frozen=True)
 class Seed:
-    """A run's seed and the values bind tracks in it, walked for once per run.
+    """A run's seed as the walk copied it, and the values bind tracks in it.
 
-    The seed never changes during a run, so neither do its leaves: every
-    solve and every answer reads these rather than walking the seed again.
+    Made once, before any input runs. No input is handed these objects: each
+    gets a rebuild of them, so neither they nor the leaves change during the
+    run, and every solve and every answer reads them rather than walking the
+    caller's seed again.
     """
 
     args: Mapping[str, object]
@@ -46,7 +48,14 @@ class Seed:
 
     @classmethod
     def of(cls, args: Mapping[str, object]) -> "Seed":
-        return cls(args=args, leaves=leaves(args))
+        """The seed copied, and its leaves noted, in one walk."""
+        found: dict[str, type] = {}
+
+        def note(value: int | str, access: Expression) -> object:
+            found[leaf_name(access)] = type(value)
+            return value
+
+        return cls(args=walked(args, note), leaves=found)
 
 
 def leaves(seed: Mapping[str, object]) -> dict[str, type]:
@@ -55,14 +64,7 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
     This is what the solver is allowed to answer about: nothing else in the
     seed carries a condition back. Each is named as ``leaf_name`` names it.
     """
-    found: dict[str, type] = {}
-
-    def note(value: int | str, access: Expression) -> object:
-        found[leaf_name(access)] = type(value)
-        return value
-
-    walked(seed, note)
-    return found
+    return dict(Seed.of(seed).leaves)
 
 
 # the head of each step an access takes to a value inside an argument: `["[]", container, key]`
@@ -104,6 +106,9 @@ def _binds(value: object) -> TypeGuard[int | str]:
     return isinstance(value, int | str) and not isinstance(value, bool)
 
 
+# the types whose values the walk hands on as they are: nothing can change one
+_ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
+
 # one value still to place: the value, its access, and the container and slot its copy goes in.
 # The access is None under a key no access can name. The slot is an index for a list and any key
 # for a dict, the seed's own
@@ -121,13 +126,18 @@ class _Walk:
     order that names anything: a copy first reached under a key no access
     can name is walked again, into the same copy, when a path that names it
     reaches it. Each container is walked at most twice, so the walk ends.
+
+    Any other value is copied by ``copy.deepcopy`` with the same memo, so a
+    list reached through a tuple, say, is the walk's copy of it there too. A
+    value deepcopy cannot copy stays as it came.
     """
 
     def __init__(self, at_leaf: AtLeaf) -> None:
         self._at_leaf = at_leaf
-        # each copy by the identity of the seed's container, which is kept alive beside it so
-        # its identity is not reused, and the containers whose copies a path names
-        self._copies: dict[int, object] = {}
+        # each copy by the identity of the seed's value, which is kept alive beside it so its
+        # identity is not reused, and the containers whose copies a path names. The copies are
+        # deepcopy's memo too, which it keeps its own values alive in
+        self._copies: dict[int, Any] = {}
         self._kept: list[object] = []
         self._named: set[int] = set()
         self._pending: list[_Pending] = []
@@ -154,23 +164,37 @@ class _Walk:
         """
         if access is not None and _binds(value):
             return self._at_leaf(value, access)
-        if type(value) is not list and type(value) is not dict:
+        if type(value) in _ATOMIC:
             return value
-        copy = self._copies.get(id(value))
-        if copy is None:
-            copy = [None] * len(value) if isinstance(value, list) else dict.fromkeys(value)
-            self._copies[id(value)] = copy
+        if type(value) is not list and type(value) is not dict:
+            return self._deep_copy(value)
+        made = self._copies.get(id(value))
+        if made is None:
+            made = [None] * len(value) if isinstance(value, list) else dict.fromkeys(value)
+            self._copies[id(value)] = made
             self._kept.append(value)
         elif access is None or id(value) in self._named:
-            return copy
+            return made
         if access is not None:
             self._named.add(id(value))
-        self._later(_items(value, access, copy))
-        return copy
+        self._later(_items(value, access, made))
+        return made
+
+    def _deep_copy(self, value: object) -> object:
+        """A copy of a value the walk does not rebuild, or the value itself when it has none.
+
+        deepcopy runs any ``__deepcopy__`` or pickling hook a value brings,
+        and one may refuse, a lock say: that value reaches the target as it
+        came.
+        """
+        try:
+            return copy.deepcopy(value, self._copies)
+        except Exception:
+            return value
 
 
 def _items(
-    value: list[object] | dict[object, object], access: Expression | None, copy: Any
+    value: list[object] | dict[object, object], access: Expression | None, into: Any
 ) -> Iterable[_Pending]:
     """A container's values to place into its copy, each with the access one step in.
 
@@ -178,8 +202,8 @@ def _items(
     literal (see ``_key``), and by nothing otherwise.
     """
     if isinstance(value, list):
-        return ((item, _step(access, i), copy, i) for i, item in enumerate(value))
-    return ((item, _step(access, _key(key)), copy, key) for key, item in value.items())
+        return ((item, _step(access, i), into, i) for i, item in enumerate(value))
+    return ((item, _step(access, _key(key)), into, key) for key, item in value.items())
 
 
 class _Unnamed(Enum):

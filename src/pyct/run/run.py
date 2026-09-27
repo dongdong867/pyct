@@ -160,15 +160,18 @@ def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told)
     """The seed and every input after it, what the solver missed, and why they stopped.
 
     A seed whose process cannot start stops the run before any input.
+
+    The seed is copied, and its leaves noted, before the seed input runs.
+    Every input, the seed's too, is handed a rebuild of that copy, so no
+    input changes what the solver reads or what a later input starts from.
     """
+    copied = Seed.of(seed)
     try:
-        seeded = _record_of(seed, call(seed, bounds.until))
+        seeded = _record_of(copied.args, call(copied.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
     told.record(seeded)
-    tree = Tree()
-    tree.add(seeded.forks)
-    looped = _loop(call, seeded, tree, bounds, told)
+    looped = _loop(call, copied, seeded, bounds, told)
     return Loop((seeded, *looped.records), looped.misses, looped.stop)
 
 
@@ -194,8 +197,8 @@ def _environment(cvc5: str | None, isolated: bool) -> Environment:
 
 def _loop(
     call: Call,
+    seed: Seed,
     seeded: InputRecord,
-    tree: Tree,
     bounds: Bounds,
     told: _Told,
 ) -> Loop:
@@ -213,8 +216,8 @@ def _loop(
     records: list[InputRecord] = []
     misses: list[Miss] = []
     covered = [seeded.covered_lines & told.scope.lines]
-    # the seed's leaves, walked for once for the whole loop
-    seed = Seed.of(seeded.args)
+    tree = Tree()
+    tree.add(seeded.forks)
     while True:
         attempt = _attempt(call, seed, tree, bounds, covered)
         if attempt.stop is not None:

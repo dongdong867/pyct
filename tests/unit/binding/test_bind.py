@@ -1,5 +1,6 @@
 import json
 import sys
+import threading
 from collections import OrderedDict
 
 from pyct.binding.bind import access_name, bind, leaf_name, leaves
@@ -38,13 +39,15 @@ def test_a_str_becomes_a_concolic_str_named_after_its_parameter() -> None:
     assert bound.sink is sink
 
 
-def test_every_other_value_passes_through_untouched() -> None:
+def test_every_other_value_is_a_plain_copy_of_its_own() -> None:
     seed = {"f": 1.5, "n": None, "xs": {1, 2}}
 
     args = bind(seed, [])
 
+    xs = args["xs"]
     assert args == seed
-    assert args["xs"] is seed["xs"]
+    assert isinstance(xs, set) and xs is not seed["xs"]
+    assert all(type(item) is int for item in xs)
 
 
 def test_an_empty_seed_binds_to_an_empty_dict() -> None:
@@ -149,12 +152,34 @@ def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
     assert type(config["items"]) is list
 
 
-def test_a_subclass_of_dict_passes_through_as_it_came() -> None:
+def test_a_subclass_of_dict_is_a_copy_of_the_same_type_with_plain_values() -> None:
     seed = {"d": OrderedDict(k=1)}
 
     args = bind(seed, [])
 
-    assert args["d"] is seed["d"]
+    d = args["d"]
+    assert type(d) is OrderedDict and d is not seed["d"]
+    assert d == {"k": 1} and type(d["k"]) is int
+
+
+def test_a_list_reached_through_a_tuple_is_the_walks_own_copy_there_too() -> None:
+    x = [0]
+    seed: dict[str, object] = {"a": x, "b": (x,)}
+
+    args = bind(seed, [])
+
+    a, b = args["a"], args["b"]
+    assert isinstance(b, tuple) and b[0] is a and a is not x
+    assert isinstance(a, list) and isinstance(a[0], ConcolicInt)
+
+
+def test_a_value_that_cannot_be_copied_reaches_the_target_as_it_came() -> None:
+    lock = threading.Lock()
+
+    args = bind({"guard": lock, "x": [0]}, [])
+
+    assert args["guard"] is lock
+    assert isinstance(args["x"], list) and isinstance(args["x"][0], ConcolicInt)
 
 
 def test_leaves_names_each_value_inside_by_its_access_in_seed_order() -> None:
