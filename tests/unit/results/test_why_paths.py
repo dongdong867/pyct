@@ -1,6 +1,7 @@
 """Why a line was missed where paths join, raises are caught, and nothing shows a side."""
 
 import logging
+import time
 from pathlib import Path
 
 import pytest
@@ -314,3 +315,28 @@ def test_facts_no_cause_explains_are_logged_as_such(
     assert entry.reason is Reason.ENDED_BEFORE
     said = f"no cause explains line 3 of {file}; it is put down as ended before"
     assert caplog.messages == [said]
+
+
+def test_a_long_generator_s_causes_take_near_linear_time(tmp_path: Path) -> None:
+    ifs = "".join(f"    if x == {k}:\n        y += {k}\n" for k in range(200))
+    after = "".join(f"    y += {k}\n" for k in range(20))
+    source = f"def gen(x):\n    y = 0\n{ifs}    yield y\n{after}    yield y\n"
+    file = module(tmp_path, source)
+    yield_line = 3 + 2 * 200
+    tests = frozenset(range(3, yield_line, 2))
+    # 201 inputs, each through every test and one of the if bodies, then left at the yield
+    walked = [
+        Walked(forks=(), failed=False, lines=frozenset({2, yield_line, 4 + 2 * k}) | tests)
+        for k in range(200)
+    ]
+    walked.append(Walked(forks=(), failed=False, lines=frozenset({2, yield_line}) | tests))
+    covered = frozenset().union(*(each.lines for each in walked))
+    uncovered = frozenset(range(yield_line + 1, yield_line + 22))
+
+    started = time.perf_counter()
+    entries = why(file, (set(uncovered), set(covered)), walked)
+    spent = time.perf_counter() - started
+
+    assert [entry.reason for entry in entries] == [Reason.SUSPENDED]
+    assert entries[0].lines == tuple(sorted(uncovered))
+    assert spent < 1.0, spent

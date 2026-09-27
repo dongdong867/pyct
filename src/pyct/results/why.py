@@ -165,7 +165,7 @@ class _Seen:
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
         if code not in self.flows:
             self.flows[code] = _Walk.of(self, code)
-        return self.flows[code].cause(line)
+        return self.flows[code].cause_of(line)
 
 
 def _fork(branch: Branch) -> Fork:
@@ -180,6 +180,7 @@ class _Walk:
     flow: Flow
     passed: frozenset[int]
     forked: frozenset[tuple[int, int, bool]]
+    causes: dict[tuple[int, ...], WhyEntry] = field(default_factory=dict)
 
     @classmethod
     def of(cls, seen: _Seen, code: types.CodeType) -> _Walk:
@@ -189,6 +190,13 @@ class _Walk:
         passed = flow.marked(seen.covered, forks)
         forked = frozenset((line, col, is_raising) for line, col, _, is_raising in forks)
         return cls(seen, flow, passed, forked)
+
+    def cause_of(self, line: int) -> WhyEntry:
+        """The line's cause, found once for every line along one straight run."""
+        run = self.flow.run_of(line)
+        if run not in self.causes:
+            self.causes[run] = self.cause(line)
+        return self.causes[run]
 
     def cause(self, line: int) -> WhyEntry:
         """The first place on the line's way no input got past, else the first reaching side
@@ -265,14 +273,8 @@ class _Walk:
 
     def _last_lines(self, each: _Input, line: int) -> list[int]:
         """The lines an input ran toward the line that no later line it ran came after."""
-        ran = [at for at in each.lines if at != line and line in self.flow.after(at)]
-        return [
-            at
-            for at in ran
-            if not any(
-                other in self.flow.after(at) and at not in self.flow.after(other) for other in ran
-            )
-        ]
+        ran = frozenset(at for at in each.lines if at != line and line in self.flow.after(at))
+        return [at for at in ran if not self.flow.strictly_after(at) & ran]
 
     def _frontier(self, line: int) -> int | None:
         """The deepest node on the line's way some input is shown to have passed."""

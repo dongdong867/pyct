@@ -89,6 +89,8 @@ class Flow:
         self._idom = _dominators(graph.successors, graph.entry, self._order)
         self._normal = frozenset(_postorder(graph.normal, graph.entry))
         self._after: dict[int, frozenset[int]] = {}
+        self._strictly: dict[int, frozenset[int]] = {}
+        self._towards: dict[int, frozenset[int]] = {}
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
@@ -166,37 +168,70 @@ class Flow:
     def after(self, line: int) -> frozenset[int]:
         """The lines a run can go on to once it has run ``line``."""
         if line not in self._after:
-            starts = [
-                each for block in self._holders(line) for each in self._graph.successors[block]
-            ]
+            following = self._graph.successors
+            starts = [each for block in self._holders(line) for each in following[block]]
             held = self._graph.held
-            reached = _postorder(self._graph.successors, *starts)
+            reached = _postorder(following, *starts)
             self._after[line] = frozenset(at for node in reached for at in held.get(node, ()))
         return self._after[line]
 
+    def strictly_after(self, line: int) -> frozenset[int]:
+        """The lines a run can go on to after ``line`` and never come back to it from."""
+        if line not in self._strictly:
+            later = self.after(line)
+            self._strictly[line] = frozenset(at for at in later if line not in self.after(at))
+        return self._strictly[line]
+
     def straight(self, start: int, line: int) -> bool:
-        """Whether a run that ran ``start`` goes on to ``line`` with no condition and no raise
-        between them, so only a raise or an ending could keep it from the line.
+        """Whether a run that ran ``start`` goes on to ``line`` with no condition, no raise and
+        no yield between them, so only a raise or an ending could keep it from the line.
 
         From every block that holds ``start``: a line such as a ternary's holds
         the blocks on both sides of its test, and a run in the first may not
-        have gone on at all.
+        have gone on at all. A frame can stay at a yield, so a run stops there.
         """
-        graph = self._graph
-        plain = [
-            [each for each in following if each not in graph.steps]
-            for following in graph.successors
-        ]
         ends = set(self._holders(line))
         holders = self._holders(start)
         return bool(holders) and all(
-            ends.intersection(_postorder(plain, *plain[block])) for block in holders
+            ends.intersection(_postorder(self._plain, *self._plain[block])) for block in holders
         )
+
+    @functools.cached_property
+    def _plain(self) -> list[list[int]]:
+        """Each node's successors a run reaches with no condition, no raise and no yield."""
+        graph = self._graph
+        return [
+            [] if node in graph.yields else [each for each in following if each not in graph.steps]
+            for node, following in enumerate(graph.successors)
+        ]
+
+    def run_of(self, line: int) -> tuple[int, ...]:
+        """The first block of the straight run that holds ``line``: its lines share a cause.
+
+        A block whose one way in is the one plain way out of the block before
+        it, with no condition or yield between, is reached exactly when that
+        block goes on, so every line along such a run has the same way and the
+        same reaching sides. A raise out of the block before is no way in.
+        """
+        holders = self._holders(line)
+        if len(holders) != 1:
+            return tuple(sorted(holders))
+        block = holders[0]
+        before = self._predecessors
+        blocks = [node for node in before[block] if node not in self._graph.steps]
+        while len(before[block]) == 1 and len(blocks) == 1 and self._plain[blocks[0]] == [block]:
+            block = blocks[0]
+            blocks = [node for node in before[block] if node not in self._graph.steps]
+        return (block,)
+
+    @functools.cached_property
+    def _predecessors(self) -> list[list[int]]:
+        return self._graph.predecessors()
 
     def raises_toward(self, line: int) -> frozenset[int]:
         """The raise nodes entered from a block ``line`` can still be reached from."""
         toward = self._toward(line)
-        before = self._graph.predecessors()
+        before = self._predecessors
         return frozenset(r for r in self._graph.raises if toward.intersection(before[r]))
 
     def toward(self, line: int) -> frozenset[int]:
@@ -228,7 +263,9 @@ class Flow:
         return found
 
     def _toward(self, line: int) -> frozenset[int]:
-        return frozenset(_postorder(self._graph.predecessors(), *self._holders(line)))
+        if line not in self._towards:
+            self._towards[line] = frozenset(_postorder(self._predecessors, *self._holders(line)))
+        return self._towards[line]
 
     def _tested_before(self, node: int) -> tuple[int, int]:
         """Test order: the node a side leaves, earliest first, then the side's own number."""

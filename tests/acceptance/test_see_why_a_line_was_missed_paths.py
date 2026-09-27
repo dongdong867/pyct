@@ -295,3 +295,26 @@ def test_a_generator_expression_a_caller_stops_asking_leaves_no_line_behind() ->
 
     assert result.returncode == 0, result.stderr
     assert 55 not in summary_line(result.stdout)["uncovered"][spec("async_shapes", "")[1]]  # type: ignore[index]
+
+
+LOOPING = [
+    ("takes_one", 8, {"reason": "suspended", "yield": 7}),
+    ("run_async", 35, {"reason": "suspended", "yield": 34}),
+    ("resumed_raise", 19, {"reason": "ended before"}),
+]
+
+
+# see-why-a-line-was-missed-says-a-generator-was-left-suspended
+@pytest.mark.parametrize(("function", "line", "expected"), LOOPING, ids=[row[0] for row in LOOPING])
+def test_a_generator_paused_at_a_yield_in_a_loop_is_suspended_and_one_that_raised_ended(
+    function: str, line: int, expected: dict[str, object]
+) -> None:
+    target, file = spec("looping_yield", function)
+
+    result = run_pyct(target, '{"x": 1}')
+
+    assert result.returncode == 0, result.stderr
+    entry = entry_for(result.stdout, line)
+    assert entry["reason"] == expected["reason"]
+    if "yield" in expected:
+        assert entry["yield"] == {"file": file, "line": expected["yield"]}
