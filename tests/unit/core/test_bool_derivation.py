@@ -9,7 +9,7 @@ from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
-# own with no downgrade, silently. Thirteen on the floor version; a newer Python may add another
+# own with no downgrade, silently. Sixteen on the floor version; a newer Python may add another
 UNTAUGHT_OPERATIONS = (
     "__rpow__",
     "__lshift__",
@@ -24,6 +24,9 @@ UNTAUGHT_OPERATIONS = (
     "__float__",
     "__str__",
     "__format__",
+    "bit_count",
+    "bit_length",
+    "to_bytes",
 )
 
 # what a bool teaches that an int leaves to int: `&`, `|` and `^` between two bools
@@ -41,9 +44,9 @@ def _downgrades(cls: type) -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the thirteen are counted on the floor; a newer Python may define another int method",
+    reason="the sixteen are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_bool_downgrades_the_thirteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_bool_downgrades_the_sixteen_operations_it_has_not_taught() -> None:
     assert _downgrades(ConcolicBool) == set(UNTAUGHT_OPERATIONS)
 
 
@@ -51,7 +54,7 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
     derived = _downgrades(ConcolicBool)
 
     assert set(UNTAUGHT_OPERATIONS) <= derived
-    assert derived.isdisjoint(numbers.INT_KEPT + numbers.INT_NOT_YET)
+    assert derived.isdisjoint(numbers.INT_KEPT)
 
 
 def test_a_bool_loses_what_an_int_loses_but_what_it_teaches_itself() -> None:

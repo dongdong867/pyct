@@ -25,6 +25,7 @@
 {"set": "v2", "target": "targets.floats.literals::count", "seed": {"x": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.floats.nan_beside_finite::count", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.floats.nan_or_infinity::kind", "seed": {"x": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.floats.plain_methods::keep_and_lose", "seed": {"f": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4, 6]}
 {"set": "v2", "target": "targets.floats.rounding::round_off", "seed": {"x": 0.5, "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [7, 9, 11, 13]}
 {"set": "v2", "target": "targets.floats.rounding_exact::hit", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
@@ -51,6 +52,8 @@
 {"set": "v2", "target": "targets.ints.negative_modulo::band", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ints.pickled::copied", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [52]}
 {"set": "v2", "target": "targets.ints.pickled::each_type", "seed": {"n": 3, "s": "ab"}, "status": "differs", "only_legacy": [], "only_v2": [25, 27, 29]}
+{"set": "v2", "target": "targets.ints.plain_methods::as_its_int", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [38]}
+{"set": "v2", "target": "targets.ints.plain_methods::keep", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [13, 15, 17, 19]}
 {"set": "v2", "target": "targets.isolate.base_raises::stop", "seed": {"x": 0, "y": 0}, "status": "legacy failed", "only_legacy": [], "only_v2": [], "failures": {"legacy": "timeout: timeout: child closed pipe without sending result"}, "covered": [6, 7, 8, 9, 10]}
 {"set": "v2", "target": "targets.isolate.counter::count", "seed": {"x": 0}, "status": "differs", "only_legacy": [9], "only_v2": []}
 {"set": "v2", "target": "targets.isolate.exits::leave", "seed": {"x": 0}, "status": "legacy failed", "only_legacy": [], "only_v2": [], "failures": {"legacy": "timeout: timeout: child closed pipe without sending result"}, "covered": [5, 6, 7]}
