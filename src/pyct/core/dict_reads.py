@@ -17,9 +17,11 @@ at its place (``placed``), so an answer keeps that key there, as a read keeps a 
 from __future__ import annotations
 
 import json
+import sys
+import types
 from collections.abc import Callable, Iterator
 
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import PYCT_DIR, Downgrade, Expression
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
@@ -69,10 +71,31 @@ def present(self: DictState, key: object, name: str) -> bool | None:
     if written is None or (is_tracked(key) and self.changed):
         return None
     known = settled_as(key)
-    if plain(key) in self.changed or known in self.settled:
+    if plain(key) in self.changed or known in self.settled or proven(self, key):
         return held
     self.settled[known] = held
     return forked(self.sink, ["in", written, self.expression], held, name)
+
+
+def proven(self: DictState, key: object) -> bool:
+    """Whether a walk of this dict just showed it holds ``key``, so no input takes the other
+    side of the lookup: the very key a walk is stopped at, as in `for k in d: d[k]`, or one a
+    walk handed out to the code that started it, as Python's own `dict(d)` and `{**d}` look up
+    each key they walked. A key the target writes as a literal after a walk is looked up as any
+    other."""
+    entry = self.handed.get(id(key))
+    if entry is None or entry[0] is not key:
+        return False
+    return self.holding.get(id(key)) is key or entry[1] == outside_caller()
+
+
+def outside_caller() -> tuple[int, int]:
+    """The innermost frame outside pyct, and the instruction it runs: the code that called into
+    the dict, the target's or a library's, as C code between the two leaves no frame."""
+    frame: types.FrameType | None = sys._getframe(1)
+    while frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR):
+        frame = frame.f_back
+    return (0, -1) if frame is None else (id(frame), frame.f_lasti)
 
 
 def found(self: DictState, key: object, name: str) -> bool:
@@ -159,16 +182,17 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
     self.walked_at = caller(depth)
-    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
+    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST, outside_caller()))
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
     """A walk over the dict from its last key, forking as a walk from the first does."""
-    return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
+    return _walked(self, reversed(dict.keys(self)), pick, (name, LAST, outside_caller()))
 
 
-# the end a walk starts from, which says what keeps a key it reads at its place
-FIRST, LAST = "walked", "last"
+# the end a walk starts from, which says what keeps a key it reads at its place, and popitem's,
+# which reads from the last and removes what it read
+FIRST, LAST, POPPED = "walked", "last", "popped"
 
 
 def placed(self: DictState, key: object, end: str) -> Expression:
@@ -187,17 +211,18 @@ def placed(self: DictState, key: object, end: str) -> Expression:
     if written is None:
         return None
     own_key = self.changed.get(key) is True and self.settled.get(key) is False
-    if end == LAST:
-        return None if own_key else ["last", self.expression, written]
+    if end in (LAST, POPPED):
+        return None if own_key else [end, self.expression, written]
     return ["exactly", self.expression] if own_key else ["walked", self.expression, written]
 
 
 def _walked(
-    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str]
+    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str, tuple[int, int]]
 ) -> Iterator[object]:
     """Each key in Python's own order: Python's own iterator raises where the dict changes size
-    while it walks. A change made without the dict's methods turns the walk plain there."""
-    name, end = how
+    while it walks. A change made without the dict's methods turns the walk plain there. Each
+    key handed out is noted, and so is the key the walk is stopped at (see ``proven``)."""
+    name, end, started = how
     at = 0
     while True:
         key = own(next, keys, MISSING)
@@ -206,7 +231,12 @@ def _walked(
         pin = None if key is MISSING else placed(self, key, end)
         if not forked(self.sink, [">", self.size_term(), at], key is not MISSING, name, pin):
             return
-        yield pick(self, key)
+        self.handed[id(key)] = (key, started)
+        self.holding[id(key)] = key
+        try:
+            yield pick(self, key)
+        finally:
+            self.holding.pop(id(key), None)
         at += 1
     while key is not MISSING:
         yield plain_pick(pick, self, key)

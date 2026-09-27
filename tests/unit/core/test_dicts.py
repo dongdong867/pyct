@@ -231,7 +231,7 @@ def test_a_walk_s_fork_keeps_the_key_it_read_at_its_place() -> None:
         ["last", "config", "'a'"],
         None,
         None,  # popitem of the target's own key
-        ["last", "config", "'b'"],
+        ["popped", "config", "'b'"],
         None,  # the test's own compare of the value popped
     ]
 

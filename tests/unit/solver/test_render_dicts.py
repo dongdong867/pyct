@@ -1,6 +1,8 @@
 """Tracked dicts written for cvc5: a presence for each key a fork names, a count of the input's
 other keys kept and of keys made up, one size, and the answer read back as each dict's keys."""
 
+import time
+
 import pytest
 
 from pyct.binding.annotations import Items
@@ -307,36 +309,54 @@ def kept(expression: Expression, holds: Expression, *, taken: bool = True) -> Br
 
 
 @needs_cvc5
-def test_a_key_a_walk_read_first_stays_where_a_fork_names_it() -> None:
-    # `for k in config: config[k] > 1` read b second; its lookup names it, so a and b stay
+def test_a_key_whose_value_a_fork_reads_stays_in_its_place_or_the_fork_is_unknown() -> None:
+    # `for k, v in config.items(): if v > 1` read b's value at the second place: an answer
+    # without a would hand another value out there, and one that keeps a needs a order no
+    # answer writes. The ask without the places is sat, so it is unknown, never unsat
     forks = (
         kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
         kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
-        fork(["in", "'b'", "config"], taken=False),
+        fork([">", ["[]", "config", "'b'"], 1], taken=False),
+        fork(["in", "'a'", "config"], taken=False),
     )
-    seed = Seed.of({"config": {"a": 0, "b": 0, "c": 0}})
+    seed = Seed.of({"config": {"a": 0, "b": 0}})
 
-    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unknown)
 
 
 @needs_cvc5
-def test_a_key_a_walk_read_first_may_go_where_no_fork_names_it() -> None:
+def test_a_key_no_fork_reads_the_value_of_may_go_from_its_place() -> None:
+    # `for k in config: pass` and then `"a" not in config`: another key may stand where a was
     solved = answered(
         {"config": {"a": 0, "b": 0}},
         kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
         kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
         fork([">", ["len", "config"], 2], taken=False),
-        fork(["in", "'z'", "config"]),
+        fork(["in", "'a'", "config"], taken=False),
     )
 
     config = solved["config"]
-    assert isinstance(config, dict) and "z" in config and len(config) == 2
+    assert isinstance(config, dict) and "a" not in config and len(config) == 2
 
 
 @needs_cvc5
-def test_a_key_read_from_the_last_stays_last_where_a_fork_names_a_key() -> None:
+def test_the_keys_a_walk_passed_stay_or_the_fork_is_unknown() -> None:
+    # the walk passed a and b, which no fork names: a key named later comes in only past them
+    forks = (
+        kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
+        kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
+        fork([">", ["len", "config"], 2], taken=False),
+        fork(["in", "'z'", "config"]),
+    )
+    seed = Seed.of({"config": {"a": 0, "b": 0}})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unknown)
+
+
+@needs_cvc5
+def test_a_key_read_from_the_last_stays_last_or_the_fork_is_unknown() -> None:
     # `key, value = config.popitem()` then `value > 5`, then `"a" in config`: an added a would
-    # be popped instead of b
+    # be popped instead of b, and only `{"a": 0, "b": 9}`, which no answer writes, takes it
     forks = (
         kept(["!=", ["len", "config"], 0], ["last", "config", "'b'"]),
         fork([">", ["[]", "config", "'b'"], 5]),
@@ -344,11 +364,11 @@ def test_a_key_read_from_the_last_stays_last_where_a_fork_names_a_key() -> None:
     )
     seed = Seed.of({"config": {"b": 9}})
 
-    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unknown)
 
 
 @needs_cvc5
-def test_past_the_target_s_own_key_the_input_s_keys_all_stay() -> None:
+def test_past_the_target_s_own_key_the_input_s_keys_all_stay_or_the_fork_is_unknown() -> None:
     # `config["seen"] = 1`, then a walk over the values reads a's and then seen's
     forks = (
         fork(["in", "'seen'", "config"], taken=False),
@@ -356,6 +376,20 @@ def test_past_the_target_s_own_key_the_input_s_keys_all_stay() -> None:
         fork([">", ["[]", "config", "'a'"], 5], taken=False),
         kept([">", ["+", ["len", "config"], 1], 1], ["exactly", "config"]),
         fork([">", ["+", ["len", "config"], 1], 2]),
+    )
+    seed = Seed.of({"config": {"a": 0}})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unknown)
+
+
+@needs_cvc5
+def test_a_path_no_key_order_takes_is_unsat_with_the_places_left_out() -> None:
+    # the value read under a keeps a in the dict whatever the order, so the ask without the
+    # places is unsat too, and that unsat is the path's
+    forks = (
+        kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
+        fork([">", ["[]", "config", "'a'"], 1], taken=False),
+        fork(["in", "'a'", "config"], taken=False),
     )
     seed = Seed.of({"config": {"a": 0}})
 
@@ -389,3 +423,29 @@ def test_a_tracked_key_s_lookups_write_the_dict_s_keys_once() -> None:
 
     # 100 lookups write the 500 keys once, as 10 lookups do: each writes a call, not the keys
     assert written(100) < written(10) * 1.5
+
+
+def lookups(names: int, keys: int) -> tuple[Seed, tuple[Branch, ...]]:
+    """A path that looks ``names`` tracked keys up in a dict of ``keys`` keys, each in turn."""
+    seed = Seed.of({"prices": {f"k{i}": 0 for i in range(keys)}, "names": ["k0"] * names})
+    forks = tuple(fork(["in", ["[]", "names", at], "prices"]) for at in range(names))
+    return seed, forks
+
+
+@needs_cvc5
+def test_tracked_key_lookups_past_their_steps_are_unknown_at_once() -> None:
+    # cvc5 writes each lookup over every key: 300 into 3,000 keys grew it to 3.8 GB and then
+    # ran to the limit; the steps scale with the solve's limit, as a list read's do
+    seed, forks = lookups(300, 3000)
+
+    started = time.monotonic()
+    answer = solve(forks, seed.leaves, 10.0, seed.containers(), seed.values)
+
+    assert isinstance(answer, Unknown) and time.monotonic() - started < 2.0
+
+
+@needs_cvc5
+def test_tracked_key_lookups_inside_their_steps_are_asked() -> None:
+    seed, forks = lookups(5, 100)
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers(), seed.values), Sat)

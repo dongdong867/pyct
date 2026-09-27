@@ -17,6 +17,7 @@ from pyct.binding.bind import leaf_name
 from pyct.binding.shapes import MADE_UP
 from pyct.core.branch import Expression
 from pyct.solver.heads import SORTS
+from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.literals import is_literal, leaf_term, value
 from pyct.solver.strings import encode
 
@@ -88,6 +89,19 @@ class Keyed:
     facts: dict[str, None]
     # each function a tracked key's lookup or read calls, by name, as the program defines it
     functions: dict[str, str]
+    # the steps the program's tracked-key lookups have taken, and the most they may take, None
+    # for no limit: cvc5 writes each call out over every key the function reads
+    spent: int
+    most_lookups: int | None
+
+    def _step(self, found: Tracked, typed: type | None) -> None:
+        """Count one call of a tracked key's lookup, as many steps as the keys it may equal. A
+        program past its steps is given up before cvc5 grows it out of reach."""
+        self.spent += len(found.candidates(typed)) + 1
+        if self.most_lookups is not None and self.spent > self.most_lookups:
+            raise ProgramTooLargeError(
+                f"tracked-key lookups ran past {self.most_lookups} steps into the dict's keys"
+            )
 
     def hold(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""
@@ -115,6 +129,7 @@ class Keyed:
         The keys are written once, in a function each lookup calls, so a path's program grows
         with its keys and its lookups, not with the one times the other.
         """
+        self._step(found, typed)
         name = found.constant(f"has.{_sort_word(typed)}")
         if name not in self.functions:
             options = [self._equals(found, key) for key in found.candidates(typed)]
@@ -134,6 +149,7 @@ class Keyed:
         once, as functions each read calls.
         """
         term, typed = keyed
+        self._step(found, typed)
         word = f"{_sort_word(typed)}.{kind}"
         fits, read = found.constant(f"fits.{word}"), found.constant(f"read.{word}")
         if read not in self.functions:

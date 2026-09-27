@@ -88,6 +88,7 @@ def program(
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back,
+        placed=dicts.placed,
     )
 
 

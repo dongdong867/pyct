@@ -1,11 +1,11 @@
 """The tracked dicts a path names, written for cvc5.
 
-A dict the seed names is declared by what the path asks of it (containers-arrays-and-a-kept-
-key-count, dict-keys-named-held-or-made-up): a `Bool` for each key a fork names, in the order the
-path first names it; an `Int` for how many of the input's other keys stay, from the first, so a
-smaller dict loses them from its end; an `Int` for how many keys pyct makes up to meet a count,
-for a dict whose keys are all strs; and its size, one `Int` with one defining equation, at most
-1,000,000 (answers-hold-at-most-a-million-items).
+A dict the seed names is declared by what the path asks of it (containers-arrays-a-kept-key-
+count-and-places, dict-keys-named-held-or-made-up): a `Bool` for each key a fork names, in the
+order the path first names it; an `Int` for how many of the input's other keys stay, from the
+first, so a smaller dict loses them from its end; an `Int` for how many keys pyct makes up to
+meet a count, for a dict whose keys are all strs; and its size, one `Int` with one defining
+equation, at most 1,000,000 (answers-hold-at-most-a-million-items).
 
 A value a fork reads under a key says the dict holds that key, and so does a dict or a list a
 fork reads under one. A tracked key names no key: `["in", "name", "prices"]` is whether it
@@ -13,7 +13,11 @@ equals a key the dict holds, whichever it is (see ``dict_keys``), and a value re
 the value under the key it equals.
 
 The first ask holds the input's other keys and makes none up, so an answer keeps what the input
-had where no fork asks otherwise; an unsat to it is asked again with both free (see ``cvc5``).
+had where no fork asks otherwise; an unsat to it is asked again with both free. Each ask keeps a
+key a walk read in its place where a fork reads the value under it (``_in_place``), so an answer
+walks the dict as the path did; an unsat to that is asked once more without, and only an unsat
+there is the path's (see ``cvc5``). A tracked key's lookups are functions each call reads, and
+past their steps the program is given up (``Keyed``).
 """
 
 from __future__ import annotations
@@ -50,7 +54,8 @@ class Tracked:
 
     What a walk read at its place holds too (see ``core.dict_reads.placed``): ``walked``
     holds the input's keys a walk from the first read, and ``last`` those a walk from the last
-    read; ``own`` says a walk from the first read one of the target's own keys. A place matters
+    read, and ``popped`` those popitem read and removed; ``own`` says a walk from the first read
+    one of the target's own keys. A place matters
     only where a fork names the key there, by the value under it or by looking it up: a key no
     fork names can stand anywhere, and another key in its place changes no fork (see
     ``_in_place``).
@@ -66,6 +71,7 @@ class Tracked:
     asked: frozenset[object] = frozenset()
     walked: set[object] = field(default_factory=set)
     last: set[object] = field(default_factory=set)
+    popped: set[object] = field(default_factory=set)
     own: bool = False
 
     def constant(self, part: str) -> str:
@@ -128,8 +134,13 @@ class DictTerms(Keyed):
         self.type_of: Callable[[Expression], type | None] = lambda part: None
         # whether the first ask holds each dict's other keys and makes none up
         self.keep = True
+        # whether the ask keeps what each walk read at its place, and whether it held any
+        self.pinned = True
+        self.placed = False
         self.extra: dict[str, str] = {}
         self.functions: dict[str, str] = {}
+        self.spent = 0
+        self.most_lookups: int | None = None
         self.facts: dict[str, None] = {}
         # each value constant a dict declared, and what the answer names it by: a leaf's name,
         # or the dict and the key it is the value under
@@ -143,6 +154,8 @@ class DictTerms(Keyed):
         noted, and the input's other keys held on the first ask."""
         terms = cls(origin.dicts, origin.values, constants)
         terms.keep = origin.keep
+        terms.pinned = origin.pinned
+        terms.most_lookups = origin.lookups
         terms.learn(prefix)
         return terms
 
@@ -188,7 +201,8 @@ class DictTerms(Keyed):
         found.own = found.own or head == "exactly"
         literal = literal_key(key[0]) if key else MISSING
         if literal is not MISSING and literal in found.places:
-            (found.walked if head == "walked" else found.last).add(literal)
+            ends = {"walked": found.walked, "last": found.last, "popped": found.popped}
+            ends[str(head)].add(literal)
 
     def _note(self, part: list[Expression]) -> None:
         head = part[0]
@@ -316,33 +330,28 @@ class DictTerms(Keyed):
         return lines
 
     def _in_place(self, found: Tracked) -> list[str]:
-        """What keeps each key a walk read at its place, where another key there would change a
-        fork: where a fork names a key, by the value under it or by looking it up.
+        """What keeps each key a walk read at its place, where a fork reads the value under it:
+        another key there would hand out another value, and that fork would read it instead.
 
-        From the first, the input's keys stay up to the last walked key a fork names; past the
-        target's own key, they all stay and none is added, where a fork names a walked key. From
-        the last, where a fork names any of the dict's keys, since whichever key moves into the
-        place read, a named key added after it or one before it, is the one handed out: the key
-        read stays and none is added. A key no fork names is held by the count kept from the
-        first reaching past it.
+        From the first, the input's keys stay up to the last walked key whose value a fork
+        reads, and past the target's own key they all stay and none is added. From the last, a
+        key read stays and none is added after it; a key popitem removed, wherever a fork names
+        any key of the dict, since another key removed changes that lookup. Every key a walk
+        passed that no fork names itself stays too, so dropping one moves no key a walk read.
+        These hold on the asks that keep what a walk read (see ``pinned``) and on no other.
         """
-        places, unnamed, named_by_forks = found.places, found.unnamed, found.asked
-        walked = [places[key] for key in found.walked if key in named_by_forks]
-        whole = found.own and bool(walked)
-        through = len(places) - 1 if whole else max(walked, default=-1)
-        from_last = bool(found.last) and bool(named_by_forks)
-        last = sorted(found.last, key=lambda key: places[key]) if from_last else []
-        keep = [key for key in places if places[key] <= through] + last
+        if not self.pinned:
+            return []
+        keep, closed = _held_in_place(found)
         named = dict.fromkeys(key for key in keep if key in found.named)
         lines = [f"(assert {self.present(found, key)})" for key in named]
-        order = {key: at for at, key in enumerate(unnamed)}
-        reach = max((order[key] + 1 for key in keep if key in order), default=0)
-        if reach and found.sized:
-            lines.append(f"(assert (>= {found.constant('kept')} {reach}))")
-        if whole or last:
-            added = [key for key in found.named if key not in places]
+        lines += _kept_past(found, keep)
+        if closed:
+            added = [key for key in found.named if key not in found.places]
             lines += [f"(assert (not {self.present(found, key)}))" for key in added]
             lines += [f"(assert (= {found.constant('made')} 0))"] if found.sized else []
+        if lines:
+            self.placed = True
         return lines
 
     @property
@@ -363,6 +372,32 @@ class DictTerms(Keyed):
     def answered(self) -> set[str]:
         """The names the answer holds for the dicts, as cvc5 writes them back: without bars."""
         return {name.strip("|") for name in self.asked()}
+
+
+def _held_in_place(found: Tracked) -> tuple[list[object], bool]:
+    """The input's keys that stay where a walk read them, and whether no key may be added: see
+    ``DictTerms._in_place``."""
+    places, read = found.places, found.held
+    walked = [places[key] for key in found.walked if key in read]
+    whole = found.own and bool(walked)
+    through = len(places) - 1 if whole else max(walked, default=-1)
+    # which key popitem removes changes every later lookup, not only a read of its value
+    popped = found.popped if found.asked else set()
+    last = [key for key in found.last if key in read] + [k for k in popped if k not in found.last]
+    passed = max((places[key] for key in found.walked), default=-1)
+    unasked = [key for key in places if places[key] <= passed and key not in found.asked]
+    keep = [key for key in places if places[key] <= through] + last + unasked
+    return keep, whole or bool(last)
+
+
+def _kept_past(found: Tracked, keep: list[object]) -> list[str]:
+    """How many of the input's keys no fork names stay, counted from the first: past every
+    such key ``keep`` holds."""
+    order = {key: at for at, key in enumerate(found.unnamed)}
+    reach = max((order[key] + 1 for key in keep if key in order), default=0)
+    if not reach or not found.sized:
+        return []
+    return [f"(assert (>= {found.constant('kept')} {reach}))"]
 
 
 # the counts a dict with a size declares: its size, the input's other keys it keeps, and the

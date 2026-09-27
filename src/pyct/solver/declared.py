@@ -79,7 +79,8 @@ class Program:
     ``names_by_symbol`` holds each leaf's name, keyed by its constant's
     symbol without the bars, which is how a model names it back. ``lists`` and ``dicts`` are
     what the program declared for the lists and the dicts the path reads, which read their
-    answers back. ``kept`` says the program holds each dict's other keys and makes none up.
+    answers back. ``kept`` says the program holds each dict's other keys and makes none up, and
+    ``placed`` that it keeps a key a walk read at its place.
     ``bounded`` says a form in the program is exact only inside a bound, such as a float floor
     division's: a program that holds the bound answers Python's inputs when sat, and only one
     that leaves it out says unsat for every value Python could give past it (see
@@ -96,6 +97,7 @@ class Program:
     bounded: bool = False
     dicts: DictTerms | None = None
     kept: bool = False
+    placed: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for,

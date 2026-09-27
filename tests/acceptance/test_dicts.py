@@ -43,6 +43,8 @@ LENGTH = "targets.dicts.length::check"
 INT_KEYS = "targets.dicts.int_keys"
 LAST_ITEM = "targets.dicts.last_item::check"
 WALKED = "targets.dicts.walked_then_asked::check"
+WALKED_FILE = str(DICTS / "walked_then_asked.py")
+WALK_BACK = "targets.dicts.walk_back::check"
 LENGTH_FILE = str(DICTS / "length.py")
 
 # a walk over a dict has no limit on its passes, so a run over a target that walks one ends when
@@ -293,9 +295,10 @@ def test_no_int_key_is_added_where_nothing_says_the_keys_are_ints() -> None:
     assert isinstance(misses, list) and [miss["why"] for miss in misses] == ["unsat"], misses
 
 
-# follow-dicts-as-they-change: `popitem` reads the dict's last key, so an answer that adds a key
-# after it would pop another: it keeps the key it read, and a fork only an added key takes is a
-# miss
+# follow-dicts-as-they-change: `popitem` reads the dict's last key, so an answer that adds `a`
+# after `b` would pop `a`. Only `{"a": 0, "b": 9}` takes line 5, and an answer lists the
+# input's keys first, so no answer pyct writes takes it: the fork is an `unknown` miss, never an
+# `unsat` one, and no answer leaves the plan
 def test_popitem_keeps_the_key_it_read() -> None:
     result = run_pyct(LAST_ITEM, '{"config": {"b": 9}}')
 
@@ -304,13 +307,13 @@ def test_popitem_keeps_the_key_it_read() -> None:
     assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
     misses = summary_line(result.stdout)["misses"]
     assert isinstance(misses, list)
-    assert [(miss["line"], miss["why"]) for miss in misses] == [(4, "unsat")], misses
+    assert [(miss["line"], miss["why"]) for miss in misses] == [(4, "unknown")], misses
 
 
 # follow-dicts-as-they-change: a walk is not a lookup, so the first lookup after it records
-# whether its key is there, and the solver is asked for the other side. The walk read `a` at
-# its place, and every input that walks to a key looks that same key up, so the other side is
-# an unsat miss on each input's path, never an answer that leaves the plan
+# whether its key is there, and the solver is asked for the other side. Nothing reads the value
+# the walk read at `a`'s place, so another key may stand there: `{"d": {"b": 1}}` reaches the
+# target, and so does an answer with a made-up key in `a`'s place
 def test_a_lookup_after_a_walk_records_its_fork() -> None:
     result = run_pyct(WALKED, '{"d": {"a": 1}}', *UNTIL_NO_GAIN)
 
@@ -318,7 +321,18 @@ def test_a_lookup_after_a_walk_records_its_fork() -> None:
     lines = input_lines(result.stdout)
     assert (4, ["in", "'a'", "d"], True) in listed(lines[0])
     assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
+    assert 5 in covered_of(lines)[WALKED_FILE], lines
+
+
+# follow-dicts-as-they-change: one more pass of a walk from the end needs a key ahead of the
+# input's own, which no answer writes: the fork is an `unknown` miss, never an `unsat` one
+def test_a_walk_from_the_end_reports_a_pass_it_cannot_write_as_unknown() -> None:
+    result = run_pyct(WALK_BACK, '{"config": {"a": 0, "b": 0}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
     misses = summary_line(result.stdout)["misses"]
-    assert isinstance(misses, list) and misses, result.stdout
-    assert {(miss["line"], miss["why"]) for miss in misses} == {(4, "unsat")}, misses
-    assert (4, 7) in {(miss["line"], miss["col"]) for miss in misses}, misses
+    assert isinstance(misses, list)
+    assert (2, "unknown") in {(miss["line"], miss["why"]) for miss in misses}, misses
+    assert (2, "unsat") not in {(miss["line"], miss["why"]) for miss in misses}, misses

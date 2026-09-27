@@ -19,7 +19,7 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade
-from pyct.core.dict_reads import LAST, found, is_tracked, placed, present, value, written_key
+from pyct.core.dict_reads import POPPED, found, is_tracked, placed, present, value, written_key
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -153,7 +153,7 @@ def last_item(self: DictState) -> tuple[object, object]:
     if not self.holds("popitem"):
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
-    pin = None if key is MISSING else placed(self, key, LAST)
+    pin = None if key is MISSING else placed(self, key, POPPED)
     if not forked(self.sink, ["!=", self.size_term(), 0], key is not MISSING, "popitem", pin):
         return own(dict.popitem, self)
     if not self.holds("popitem", key):

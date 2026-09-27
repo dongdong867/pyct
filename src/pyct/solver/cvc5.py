@@ -58,6 +58,13 @@ LONGEST_WAIT_SECONDS = 2_147_483.0
 # again with clamps settled; never fewer than READ_STEPS
 STEPS_PER_SECOND = 100
 
+# the steps a path's tracked-key lookups into its dicts may take together, per second of the
+# solve's limit: cvc5 writes each call out over every key it may equal, about 20,000 steps a
+# second. 3,000 keys looked up and read 10 times, 60,000 steps, solve in about 3 s, 30 times in
+# about 9 s, and 300 times grow past 3.8 GB; so at the 10 s default 150,000 steps are asked, 25
+# lookups and reads into 3,000 keys, and more are given up at once
+LOOKUP_STEPS_PER_SECOND = 15_000
+
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
 # second of the solve's limit, so a path's outcome never turns on how long the first ask took.
 # Each cut of a list at open clamps doubles them: ten cuts take about 10,000 and eleven about
@@ -113,7 +120,10 @@ def solve(
 
     A program that keeps each dict's keys no fork names and makes none up answers with the
     input's keys where the path does not ask for others. An unsat to it asks once more with
-    them free, and that answer is the path's (see ``dicts``).
+    them free. A program that keeps a key a walk read at its place answers an input that walks
+    as the path did; an unsat to it asks once more without, where only an unsat is the path's:
+    a sat answer there needs the dict's keys in an order no answer writes, so it is an
+    ``Unknown()`` (see ``dicts``).
 
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
@@ -134,6 +144,8 @@ def solve(
         logger.debug("unsat with each dict's other keys kept: asking with them free")
         origin = replace(origin, keep=False)
         answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat) and written is not None and written.placed:
+        return _unplaced(path, replace(origin, keep=False, pinned=False))
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
@@ -141,6 +153,15 @@ def solve(
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin)
     return answer
+
+
+def _unplaced(path: _Path, origin: Origin) -> Answer:
+    """An unsat answer to a program that keeps each key a walk read at its place, asked once
+    more without: an unsat is the path's, and a model an ``Unknown()``, since the input it
+    describes walks its dict in an order no answer writes."""
+    logger.debug("unsat with the keys a walk read kept in place: asking without")
+    answer, _ = _solved(path, origin)
+    return Unknown() if isinstance(answer, Sat) else answer
 
 
 def _origin(
@@ -151,7 +172,8 @@ def _origin(
     dicts = {name: shape for name, shape in shapes.items() if isinstance(shape, DictShape)}
     steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
     until = monotonic() + timeout
-    return Origin(shapes=lists, dicts=dicts, values=values, steps=steps, until=until)
+    lookups = int(timeout * LOOKUP_STEPS_PER_SECOND)
+    return Origin(lists, dicts, values, steps=steps, until=until, lookups=lookups)
 
 
 def _loosened(path: _Path, origin: Origin) -> Answer:

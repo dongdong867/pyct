@@ -86,7 +86,9 @@ class Origin:
     None for no limit; ``most`` the most all reads of the program take together before the
     program is given up (``ProgramTooLargeError``), None for no limit; and ``until`` the
     monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
-    keys no fork names and makes none up (see ``dicts``).
+    keys no fork names and makes none up, ``pinned`` whether it keeps each key a walk read at its
+    place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
+    program is given up, None for no limit (see ``dicts``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -100,6 +102,8 @@ class Origin:
     most: int | None = None
     until: float | None = None
     keep: bool = True
+    pinned: bool = True
+    lookups: int | None = None
 
 
 class UnencodedError(ValueError):

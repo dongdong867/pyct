@@ -69,6 +69,7 @@
     {"set": "v2", "target": "targets.dicts.own_changes::check", "seed": {"config": {"a": 0}}},
     {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}},
     {"set": "v2", "target": "targets.dicts.untaught::check", "seed": {"config": {"a": 1}, "name": "b"}},
+    {"set": "v2", "target": "targets.dicts.walk_back::check", "seed": {"config": {"a": 0, "b": 0}}},
     {"set": "v2", "target": "targets.dicts.walked_then_asked::check", "seed": {"d": {"a": 1}}},
     {"set": "v2", "target": "targets.flip.cut_short_on_the_other_side::cut", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.flip.hard_forks_last::triage", "seed": {"n": 1, "s": "a", "t": "b", "u": "c"}},
