@@ -5,8 +5,11 @@ from collections.abc import Mapping
 
 import pytest
 
-from pyct.binding import bind
+from pyct.binding import walk
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
 from pyct.results.record import Source, StopKind
+from pyct.run import run as run_module
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
@@ -28,9 +31,12 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
 
     result = run(target, {"xs": xs}, isolation=isolation)
 
-    assert [record.failure for record in result.records] == [None, None]
+    # the one input that fails is the one too short to read at 1
+    failures = [record.failure for record in result.records if record.failure is not None]
+    assert [failure.detail for failure in failures] == ["IndexError: list index out of range"]
     assert result.stopped.reason == "no fork to flip"
-    solved = result.records[1].args["xs"]
+    # the answer that flips the item keeps the list holding itself
+    solved = next(record.args["xs"] for record in result.records[1:] if record.failure is None)
     assert isinstance(solved, list)
     assert isinstance(solved[0], int) and solved[0] > 5
     assert solved[1] is solved
@@ -42,8 +48,9 @@ def test_run_never_changes_the_callers_seed_under_a_float_key() -> None:
 
     result = run(target, seed, isolation=Isolation.IN_PROCESS)
 
-    assert [record.failure for record in result.records] == [None, None]
-    assert [record.args["table"] for record in result.records] == [{1.5: [0]}, {1.5: [0]}]
+    # no input met the list an earlier one grew, and every line shows it as called
+    assert all(record.failure is None for record in result.records)
+    assert all(record.args["table"] == {1.5: [0]} for record in result.records)
     assert seed == {"items": [0], "table": {1.5: [0]}}
 
 
@@ -67,13 +74,15 @@ def test_run_walks_the_seed_once_and_once_more_per_solver_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     walks: list[object] = []
-    rebuilt = bind._Walk.rebuilt
+    rebuilt = walk.Walk.rebuilt
 
-    def counted(walk: bind._Walk, seed: Mapping[str, object]) -> dict[str, object]:
+    def counted(
+        one: walk.Walk, seed: Mapping[str, object], checks: object = None
+    ) -> dict[str, object]:
         walks.append(seed)
-        return rebuilt(walk, seed)
+        return rebuilt(one, seed, checks)  # type: ignore[arg-type]
 
-    monkeypatch.setattr(bind._Walk, "rebuilt", counted)
+    monkeypatch.setattr(walk.Walk, "rebuilt", counted)
     target = load_target("targets.nested.two_items::classify")
 
     # each input's own walk, bind's, happens in the input's process and is not counted here
@@ -81,7 +90,8 @@ def test_run_walks_the_seed_once_and_once_more_per_solver_input(
 
     solved = [record for record in result.records if record.source is Source.SOLVER]
     assert len(solved) >= 2
-    # the leaves once for the run, then the one rebuild that writes each answer
+    # the leaves once for the run, then the one rebuild that writes each answer and notes its
+    # leaves, which a later answer on its path starts from
     assert len(walks) == 1 + len(solved)
 
 
@@ -93,14 +103,15 @@ def test_run_hands_each_input_arguments_of_its_own(isolation: Isolation) -> None
 
     result = run(target, {"a": x, "b": (x,)}, isolation=isolation)
 
-    assert [record.failure for record in result.records] == [None, None]
+    assert all(record.failure is None for record in result.records)
     assert result.stopped.reason == "no fork to flip"
     assert x == [0]
     for record in result.records:
         a, b = record.args["a"], record.args["b"]
         assert isinstance(a, list) and isinstance(b, tuple)
-        # the line shows the input as it was called, both paths on one list
-        assert len(a) == 1 and b[0] is a
+        # the line shows the input as it was called, both paths on one list, without the None
+        # the target appended
+        assert None not in a and b[0] is a
 
 
 @pytest.mark.parametrize("isolation", EVERYWHERE)
@@ -129,9 +140,29 @@ def test_run_copies_the_seed_before_the_seed_input_can_change_it() -> None:
 
     result = run(target, {"a": x, "h": Holder(x)}, isolation=Isolation.IN_PROCESS)
 
-    assert [record.failure for record in result.records] == [None, None]
+    assert all(record.failure is None for record in result.records)
     starts = [record.args["a"] for record in result.records]
-    assert all(isinstance(a, list) and len(a) == 1 for a in starts), starts
+    assert all(isinstance(a, list) and None not in a for a in starts), starts
+
+
+def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    held: list[tuple[int, list[int]]] = []
+    attempt = run_module._attempt
+
+    def watched(call: object, inputs: dict[int, object], tree: object, *rest: object) -> object:
+        held.append((tree.oldest, sorted(inputs)))  # type: ignore[attr-defined]
+        return attempt(call, inputs, tree, *rest)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_module, "_attempt", watched)
+    target = load_target("targets.nested.two_items::classify")
+
+    run(target, {"items": [1, 2]}, isolation=Isolation.IN_PROCESS)
+
+    assert len(held) > 2
+    # an input kept is one a later pick may still extend; none is kept once every fork is spent
+    assert all(min(kept, default=oldest) >= oldest for oldest, kept in held), held
 
 
 @pytest.mark.parametrize("isolation", EVERYWHERE)
@@ -149,3 +180,24 @@ def test_a_float_inside_an_argument_passes_through_plain(isolation: Isolation) -
     assert isinstance(config, dict)
     assert type(config["ratio"]) is float and config["ratio"] == 0.25
     assert solved.mismatch_at is None
+
+
+def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None:
+    # each cut at items[x:x + 1] doubles a read through it; written with the clamps settled as
+    # the seed had them, the flip of items[2] == 99 is solved well inside the solver's limit
+    target = load_target("targets.lists.in_place::cuts")
+
+    result = run(
+        target,
+        {"items": [5, 6, 7], "x": 1},
+        limits=Limits(budget=Budget(seconds=20)),
+        isolation=Isolation.IN_PROCESS,
+    )
+
+    # the fork on items[2] == 99, after the one on its length
+    forks = [fork for record in result.records for fork in record.forks]
+    checks = [
+        fork for fork in forks if isinstance(fork.expression, list) and fork.expression[0] == "=="
+    ]
+    assert [fork.taken for fork in checks] == [False, True], result.records
+    assert not result.misses

@@ -1,16 +1,15 @@
 """A path of forks written out as the SMT-LIB program cvc5 reads."""
 
 from collections.abc import Callable, Collection, Mapping
-from dataclasses import dataclass
 from functools import partial
 
-from pyct.binding.bind import access_name
+from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
-from pyct.solver.answer import SolverAnswerError
 from pyct.solver.answer_size import longest_string
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
+from pyct.solver.declared import Leaves, Program, symbols
 from pyct.solver.heads import (
     BOUNDED,
     FORMS,
@@ -25,154 +24,117 @@ from pyct.solver.heads import (
 )
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
-from pyct.solver.literals import is_literal, leaf_term, plain_operand, string_order
+from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
+from pyct.solver.literals import leaf_term, plain_operand, string_order
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.symbols import leaf_sort, leaf_symbol
+from pyct.solver.symbols import leaf_sort
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
-
-# what names the assertion that holds a float leaf finite, before the leaf's symbol, so the
-# unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
-# assertion's name never meets a constant
-FINITE = "finite!"
-
-
-@dataclass(frozen=True)
-class _Leaves:
-    """The seed's leaves by name, with their types and the constant each mentioned one gets."""
-
-    kinds: Mapping[str, type]
-    constants: Mapping[str, str]
-
-    def named(self, part: Expression) -> str | None:
-        """The name of the leaf a part of a condition is, or None for a literal or an operation.
-
-        A parameter is its bare name. A value inside one is its access, which
-        reads as an operation does: only an access to one of the seed's own
-        leaves is a value, and any other is an operation on a tracked value.
-        Which steps an access takes is binding's to say (``access_name``).
-        """
-        if isinstance(part, str):
-            return None if is_literal(part) else part
-        name = access_name(part)
-        return name if name in self.kinds else None
-
-    def holds(self, part: Expression) -> bool:
-        """Whether a part is one of the seed's leaves, which a condition names and never opens."""
-        return self.named(part) is not None
-
-    def kind(self, part: Expression) -> type | None:
-        """The type of the leaf a part is, or None for anything else."""
-        name = self.named(part)
-        return None if name is None else self.kinds.get(name)
-
-
-@dataclass(frozen=True)
-class Program:
-    """The SMT-LIB program for one path, and the leaf each constant it declares stands for.
-
-    ``names_by_symbol`` holds each leaf's name, keyed by its constant's
-    symbol without the bars, which is how a model names it back.
-    ``bounded`` says a form in the program is exact only inside a bound,
-    such as a float floor division's: a program that holds the bound answers
-    Python's inputs when sat, and only one that leaves it out says unsat for
-    every value Python could give past it (see ``floats.floor_division``).
-    """
-
-    text: str
-    names_by_symbol: Mapping[str, str]
-    bounded: bool = False
-
-    def read(self, model: Mapping[str, object]) -> dict[str, object]:
-        """A model cvc5 wrote by constant, named by the leaves the constants were declared for.
-
-        A symbol the program did not declare is ``SolverAnswerError``, as any
-        value line pyct cannot read is: a guess would hand back a wrong input.
-        """
-        unknown = [symbol for symbol in model if symbol not in self.names_by_symbol]
-        if unknown:
-            named = ", ".join(unknown)
-            raise SolverAnswerError(
-                f"cvc5 answered about names the program did not declare: {named}"
-            )
-        return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
 
 
 def program(
     prefix: tuple[Branch, ...],
     leaves: Mapping[str, type],
+    lists: Mapping[str, ListShape] | Origin | None = None,
     *,
     finite: Collection[str] = (),
     cores: bool = False,
-    bounded: bool = True,
 ) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
     What to declare, what to define, what to assert, what to ask. Only the
     leaves the prefix mentions are declared, so the answer names nothing the
     path did not depend on. ``leaves`` names each leaf as ``pyct.binding``
-    does, and ``leaf_symbol`` names its constant. Two pieces of one string side by
-    side are first written as the one piece they make (see `joined`), and a
-    part of the conditions written more than once is defined once before the
-    assertions (see `_Program`). Each float leaf in ``finite`` that the
-    prefix names is held to a finite double, and each bound a form is exact
-    inside is held (see `Program`). With ``cores``, each of those finite
-    assertions is named for the leaf's symbol and cvc5 is asked to dump the
-    unsat core, so an unsat says which of them it rests on; that slows some
-    sat answers, so only a program asked after an unsat does it.
-    Without ``bounded`` the bounds are left out, and each form past its bound
-    is only what Python could give there (see ``floats.floor_division``).
+    does, and ``symbol`` names its constant. ``lists`` names each tracked list
+    with its shape, or is the input whose path this is (``Origin``): its lists,
+    its values, which settle a list cut at clamps the path leaves open, and the
+    instant writing must end by. Two pieces of one string side by side are first
+    written as the one piece they make (see `joined`), and a part of the
+    conditions written more than once is defined once before the assertions (see
+    `_Program`). Each float leaf in ``finite`` that the prefix names is held to a
+    finite double, and each bound a form is exact inside is held (see `Program`).
+    With ``cores``, each of those finite assertions is named for the leaf's
+    symbol and cvc5 is asked to dump the unsat core, so an unsat says which of
+    them it rests on; that slows some sat answers, so only a program asked after
+    an unsat does it. Without ``Origin.bounded`` the bounds are left out, and
+    each form past its bound is only what Python could give there (see
+    ``floats.floor_division``).
     """
-    seed = _Leaves(kinds=leaves, constants={})
-    prefix = joined(prefix, seed.holds)
-    order, holders = distinct(prefix, seed.holds)
-    symbols = _symbols(prefix, order, seed)
-    constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
+    origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
+    prefix, order, holders, named = _path(prefix, leaves, origin.shapes)
+    constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
-    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, prefix, bounded)
+    terms = ListTerms(origin.shapes, {name: named[name] for name in named if name in origin.shapes})
+    terms.learn(prefix)
+    terms.start_from(origin, constants)
+    body = _Program(Leaves(leaves, constants, origin.shapes), order, holders, prefix, terms)
     held = [name for name in constants if name in finite and leaves[name] is float]
-    lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
+    finites = [floats.held_finite(constants[name], named[name] if cores else None) for name in held]
+    text = _text(prefix, body, declared, finites, cores=bool(held and cores))
+    by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
+    listed = terms if terms.declared else None
+    return Program(
+        text,
+        by_symbol,
+        listed,
+        narrowed=terms.narrowed,
+        held=terms.held,
+        bounded=bool(body.bounds),
+    )
+
+
+def _path(
+    prefix: tuple[Branch, ...], leaves: Mapping[str, type], shapes: Mapping[str, ListShape]
+) -> tuple[tuple[Branch, ...], list[Node], dict[int, int], dict[str, str]]:
+    """The path as the program writes it: joins of string pieces written as one, each distinct
+    part in order with how many places hold it, and each leaf and list it names by symbol."""
+    seed = Leaves(kinds=leaves, constants={}, lists=shapes)
+    listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
+    prefix = joined(prefix, seed.holds, lambda part: id(part) in listed or part in shapes)
+    order, holders = distinct(prefix, seed.holds)
+    return prefix, order, holders, symbols(prefix, order, seed)
+
+
+def _text(
+    prefix: tuple[Branch, ...],
+    body: "_Program",
+    declared: list[tuple[str, str]],
+    finites: list[str],
+    *,
+    cores: bool,
+) -> str:
+    """The program's lines, in the order cvc5 reads them: each leaf and each list's parts
+    declared before any term on them, the leaves held finite, the definitions, what the lists
+    and the path assert, and what to ask for."""
+    terms = body.lists
+    lines = ["(set-option :dump-unsat-cores true)"] if cores else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
     lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
-    lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
-    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if bounded]
+    lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
+    lines += finites
+    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if body.bounded]
+    lines += terms.assertions()
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
-    names = {symbol: name for name, symbol in symbols.items()}
-    return Program(text="\n".join(lines) + "\n", names_by_symbol=names, bounded=bool(body.bounds))
+    lines += [f"(get-value ({name}))" for name in terms.asked()]
+    return "\n".join(lines) + "\n"
 
 
-def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> frozenset[str]:
+def float_leaves(
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    lists: Mapping[str, ListShape] | None = None,
+) -> frozenset[str]:
     """The float leaves a fork of the prefix names: those its first ask holds finite."""
     if float not in leaves.values():
         return frozenset()
-    seed = _Leaves(kinds=leaves, constants={})
-    prefix = joined(prefix, seed.holds)
-    order, _ = distinct(prefix, seed.holds)
-    return frozenset(name for name in _symbols(prefix, order, seed) if leaves[name] is float)
-
-
-def _held_finite(constant: str, symbol: str | None) -> str:
-    """The assertion that holds one float leaf finite, named for the leaf's symbol if given."""
-    held = floats.finite(constant)
-    return f"(assert {held})" if symbol is None else f"(assert (! {held} :named {FINITE}{symbol}))"
-
-
-def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:
-    """The symbol of each leaf the prefix names, in the order the seed bound them."""
-    parts = [fork.expression for fork in prefix] + [part for node in order for part in node[1:]]
-    named = {name for part in parts if (name := seed.named(part)) is not None}
-    unknown = sorted(named - set(seed.kinds))
-    if unknown:
-        raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {
-        name: leaf_symbol(name, index) for index, name in enumerate(seed.kinds) if name in named
-    }
+    _, _, _, named = _path(prefix, leaves, lists or {})
+    return frozenset(name for name in named if leaves.get(name) is float)
 
 
 class _Program:
@@ -190,14 +152,15 @@ class _Program:
 
     def __init__(
         self,
-        leaves: _Leaves,
+        leaves: Leaves,
         order: list[Node],
         holders: dict[int, int],
         prefix: tuple[Branch, ...],
-        bounded: bool,
+        lists: ListTerms,
     ) -> None:
         self.leaves = leaves
-        self.bounded = bounded
+        # whether each bound a form is exact inside is held (see `_bounded`)
+        self.bounded = lists.source.bounded
         self.types: dict[int, type | None] = {}
         # each part's term, its defined name or the part written out, kept until every place
         # that holds the part has read it: a chain held once keeps the text of its top alone
@@ -208,14 +171,22 @@ class _Program:
         self.bounds: list[str] = []
         # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
+        # the lists the path reads: they read their parts by name, as often as they need, and
+        # define what they write once in the program's own definitions
+        self.lists = lists
+        lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
+        lists.constant = self._constant
         for node in order:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
         # `letters`), and the letters' names once written
         self.spellings = Spellings(order, prefix, self._string)
-        read = self._read_by_forms(order)
-        # each part comes after the parts it holds (see `distinct`), so their terms are written
-        # before it, and no part waits on Python's stack for its operands
+        self._write_each(order, holders, self._read_by_forms(order))
+
+    def _write_each(self, order: list[Node], holders: dict[int, int], read: set[int]) -> None:
+        """Each part's term, in order. Each part comes after the parts it holds (see
+        `distinct`), so their terms are written before it, and no part waits on Python's stack
+        for its operands."""
         for node in order:
             if self.types[id(node)] is tuple:
                 # a tuple has no term of its own; a search reads its items' terms
@@ -243,7 +214,27 @@ class _Program:
             return leaf_term(expression)
         key = id(expression)
         self.unread[key] -= 1
-        return self.terms[key] if self.unread[key] else self.terms.pop(key)
+        return _read(self.terms[key] if self.unread[key] else self.terms.pop(key), expression)
+
+    def _named(self, part: Expression) -> str:
+        """A part's term as a list reads it: a leaf's constant, a literal, or a defined part's
+        name, which no read lets go.
+
+        A list reads only its own operands, whose terms stay until it is written; a part whose
+        term was let go is refused as a miss rather than a crash."""
+        constant = self._constant(part)
+        if constant is not None:
+            return constant
+        if not isinstance(part, list):
+            return leaf_term(part)
+        if id(part) not in self.terms:
+            raise UnencodedError(f"pyct cannot render {part}: its term was already let go")
+        return _read(self.terms[id(part)], part)
+
+    def _constant(self, part: Expression) -> str | None:
+        """The constant of the leaf a part is, or None for any other part."""
+        name = self.leaves.named(part)
+        return None if name is None else self.leaves.constants[name]
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
@@ -260,8 +251,12 @@ class _Program:
         return None if term is None else type(term)
 
     def _result(self, node: Node) -> type | None:
-        """The type of an operation's value, its operands already typed."""
+        """The type of an operation's value, its operands already typed. A part that builds or
+        reads a tracked list is typed by the lists (see ``ListTerms.result``)."""
         head, *operands = node
+        self.lists.infer(node, self.types)
+        if self.lists.involves(node):
+            return self.lists.result(node)
         if not isinstance(head, str) or head not in RESULTS:
             return None
         result = RESULTS[head]
@@ -297,7 +292,9 @@ class _Program:
         string, or an order on strings."""
         read: set[int] = set()
         for node in order:
-            if (
+            if self.lists.involves(node):
+                read |= {id(part) for part in self.lists.operands(node)}
+            elif (
                 self._form(node) is not None
                 or _read_by_a_form(node[0])
                 or self._orders_strings(node)
@@ -345,12 +342,17 @@ class _Program:
 
         A part to define is defined once, by name, when it has a sort to define it by. A
         split's term is the string it splits, for its pieces to read, and a string no term
-        writes is declared (see `_declared`).
+        writes is declared (see `_declared`). A tracked list has no term of its own: its reads
+        and its length do.
         """
         kind = self.types[id(node)]
+        if kind is TrackedList:
+            self.lists.build(node)
+            return ""
         if kind is list:
             return self.term(node[1])
-        operation = self._operation(node)
+        involves = self.lists.involves(node)
+        operation = self.lists.scalar(node, kind) if involves else self._operation(node)
         sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
             return operation
@@ -475,6 +477,14 @@ class _Program:
 def _read_by_a_form(head: Expression) -> bool:
     """Whether an operation's operands are read by a form of one head whatever their type."""
     return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
+
+
+def _read(term: str, part: Expression) -> str:
+    """A part's term where a condition reads it. A tracked list and a read of an item no term
+    holds, a None or a list inside, write none: no condition core records reads one whole."""
+    if not term:
+        raise UnencodedError(f"pyct cannot render {part}: it is no value a condition reads")
+    return term
 
 
 def _operator(head: str, kind: type | None) -> str:

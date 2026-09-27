@@ -39,14 +39,15 @@ def raised_by_target(error: BaseException) -> bool:
     return getattr(error, _TARGET_RAISE, False) is True
 
 
-def forked(sink: BranchSink, expression: Expression, taken: bool) -> bool:
+def forked(sink: BranchSink, expression: Expression, taken: bool, name: str = "__bool__") -> bool:
     """Record the fork a truth test just took, and answer with the side it took.
 
     Python demands a real bool back from ``__bool__``, so no concolic type can
     answer with a value that carries the condition; the condition goes to the
     sink here instead. One helper, so every type records it the same way.
+    ``name`` is the operation that took it: a truth test, or a list's walk or index.
     """
-    sink.append(Branch(expression=expression, taken=taken, site=caller_site()))
+    sink.append(Branch(expression=expression, taken=taken, site=caller_site(), lost_as=name))
     return taken
 
 
