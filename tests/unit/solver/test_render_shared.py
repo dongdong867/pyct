@@ -181,7 +181,8 @@ ITEMS: dict[str, type] = {
 
 
 def test_two_strings_inside_a_list_are_joined_as_two_values() -> None:
-    first, second = ["[]", "items", 0], ["[]", "items", 1]
+    first: Expression = ["[]", "items", 0]
+    second: Expression = ["[]", "items", 1]
 
     # each is a value the seed holds, not a piece of the list, so nothing makes them one piece
     assert _asserted(["==", ["+", first, second], "'ab'"], ITEMS) == (

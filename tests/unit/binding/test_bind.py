@@ -5,7 +5,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from pyct.binding.bind import access_name, bind, leaf_name, leaves
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -266,7 +266,7 @@ def test_access_name_reads_only_a_step_the_walk_takes() -> None:
 
 
 def test_access_name_reads_a_chain_of_steps_down_to_a_name_only() -> None:
-    deep: object = "s"
+    deep: Expression = "s"
     for _ in range(5000):
         deep = ["+", deep, "' '"]
 
