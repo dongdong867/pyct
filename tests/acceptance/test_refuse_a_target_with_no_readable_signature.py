@@ -20,7 +20,7 @@ MODULE = "targets.load.unreadable_signatures"
 
 def reason_for(name: str) -> str:
     """What plain Python says when it cannot read the signature of ``name`` in the module."""
-    with pytest.raises((ValueError, TypeError)) as refused:
+    with pytest.raises(Exception) as refused:
         inspect.signature(getattr(unreadable_signatures, name))
     return str(refused.value)
 

@@ -35,3 +35,16 @@ def _k(x: int) -> int:
 _k.__signature__ = 5
 wrong_signature_type = _k
 partial_max = functools.partial(max, 1)
+
+
+class _Odd:
+    """A callable object whose every missing attribute raises KeyError, not AttributeError."""
+
+    def __getattr__(self, name: str) -> object:
+        raise KeyError(name)
+
+    def __call__(self, x: int) -> int:
+        return x
+
+
+odd_callable = _Odd()

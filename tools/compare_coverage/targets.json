@@ -123,6 +123,7 @@
     {"set": "v2", "target": "targets.isolate.terminates::stop", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.isolate.threaded_closure", "left_out": "a factory: the target is the closure it returns, which no module attribute names"},
+    {"set": "v2", "module": "targets.load.annotated_for_type_checking", "left_out": "annotated with a name only a type checker imports, by design"},
     {"set": "v2", "module": "targets.load.catches_one_stop_at_import", "left_out": "waits at import until a BaseException, by design"},
     {"set": "v2", "target": "targets.load.counts_its_imports::f", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.load.crashes_at_import", "left_out": "reads address zero at import by design, which crashes its process and writes a crash report"},
