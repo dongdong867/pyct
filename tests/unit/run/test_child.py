@@ -3,7 +3,13 @@
 import mmap
 import os
 import signal
+import threading
+import time
+from collections.abc import Callable
 
+import pytest
+
+from pyct.execution.deadline import DeadlineError, deadline
 from pyct.results.failure import FailureKind
 from pyct.run.child import serve, settle
 from pyct.run.journal import CAPACITY, JournalWriter, read
@@ -45,3 +51,58 @@ def test_the_input_s_process_takes_each_stop_signal_by_its_default_action() -> N
         signal.signal(signal.SIGTERM, previous)
 
     assert os.waitstatus_to_exitcode(status) == 0
+
+
+def settled_then(step: Callable[[], None]) -> int:
+    """Fork a child that settles as an input's process, then runs ``step``: its exit code.
+
+    The child exits 0 once the step is done, and 3 when a DeadlineError got out of it.
+    """
+    with mmap.mmap(-1, CAPACITY) as buffer:
+        pid = os.fork()
+        if pid == 0:
+            settle(JournalWriter(buffer))
+            try:
+                step()
+            except DeadlineError:
+                os._exit(3)
+            os._exit(0)
+        _, status = os.waitpid(pid, 0)
+    return os.waitstatus_to_exitcode(status)
+
+
+def alarm_after_the_block() -> None:
+    with deadline(time.monotonic() + 10):
+        pass
+    # the kernel timer's SIGALRM, come late, after its block has ended
+    os.kill(os.getpid(), signal.SIGALRM)
+    for _ in range(1000):
+        pass
+
+
+def test_a_late_alarm_in_the_input_s_process_neither_ends_it_nor_raises() -> None:
+    assert settled_then(alarm_after_the_block) == 0
+
+
+def hang_until_the_deadline() -> None:
+    try:
+        with deadline(time.monotonic() + 0.05):
+            while True:
+                pass
+    except DeadlineError:
+        return
+    os._exit(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_the_input_s_own_alarm_still_ends_a_hang() -> None:
+    assert settled_then(hang_until_the_deadline) == 0
+
+
+def test_the_input_s_deadline_starts_no_thread() -> None:
+    def count_threads() -> None:
+        with deadline(time.monotonic() + 10):
+            running = threading.active_count()
+        os._exit(0 if running == 1 else 1)
+
+    assert settled_then(count_threads) == 0

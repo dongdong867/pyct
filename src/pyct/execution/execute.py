@@ -126,7 +126,7 @@ def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | Non
 def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
     """The failure a raise ended the call with, or None for a call that returned."""
     error = ending.error
-    # the timer can land in pyct's own frames too, so the kind is by type, before the rest
+    # the alarm can land in pyct's own frames too, so the kind is by type, before the rest
     if isinstance(error, DeadlineError):
         # only a fired alarm reaches here, and those tests run without coverage
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")  # pragma: no cover
