@@ -236,7 +236,8 @@ def floor_division(dividend: str, divisor: str, past: str | None = None) -> tupl
     can be whatever Python gives past the bound, and an unsat on it holds for
     every such value. Without ``past`` the term is the floor everywhere, for a
     program that holds the bound, where the two agree and cvc5 answers far
-    faster (see ``Program.bounded``).
+    faster (see ``Program.bounded``); that bound also says the floor converts
+    to a finite double (``_quotient_inside``).
     """
     zero = _zero_like_quotient(dividend, divisor)
     floor_ = f"(let ((k! (to_int q!))) (ite (= k! 0) {zero} {from_int('k!')}))"
@@ -246,13 +247,28 @@ def floor_division(dividend: str, divisor: str, past: str | None = None) -> tupl
     past_infinity = f"(ite {moved} {literal(-1.0)} {zero})"
     undefined = _undefined(dividend, divisor)
     finite = f"(ite (fp.isInfinite {divisor}) {past_infinity} {reals.format(floor_)})"
-    inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
+    inside = _quotient_inside(held=past is None)
     bound = f"(or {undefined} (fp.isInfinite {divisor}) {reals.format(inside)})"
     exact = f"(ite {undefined} {_NAN} {finite})"
     if past is None:
         return exact, bound
     beyond = reals.format(f"(ite {_past_holds(past)} {past} {_NAN})")
     return f"(ite {bound} {exact} {beyond})", bound
+
+
+def _quotient_inside(*, held: bool) -> str:
+    """Whether the true quotient, named ``q!``, is inside the bound.
+
+    In a program that holds the bound, ``held``, it says too that the quotient's floor converts
+    to a finite double. A whole number below 2**50 in size always does, so the bound means what
+    it did; said outright, cvc5 1.3.4 answers the finite fork over a `//` in a tenth of a second,
+    where proving it took about 6 s. The term past the bound, which tests the bound rather than
+    holds it, leaves it out: there it slowed ``x // 1.0 == 1e300`` from 0.3 s to 1.4 s.
+    """
+    inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
+    if not held:
+        return inside
+    return f"(and {inside} (not (fp.isInfinite {from_int('(to_int q!)')})))"
 
 
 # how large CPython's `//` is past the bound, at the least: a quotient of 2**50 or more, moved
