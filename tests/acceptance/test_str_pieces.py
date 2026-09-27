@@ -163,7 +163,9 @@ def cut_counts(expression: object) -> list[int]:
 
 # follow-strings-cuts-a-long-expression
 def test_cuts_a_long_expression() -> None:
-    result = run_pyct(REBUILT, '{"s": "aaaaaaaaaaaaaaaaaa"}')
+    # the criterion names no budget, and a range over the length is followed, so the solver can
+    # always lengthen the loop and the tree never empties: a budget ends the run
+    result = run_pyct(REBUILT, '{"s": "aaaaaaaaaaaaaaaaaa"}', "--budget", "10")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -179,7 +181,8 @@ def test_cuts_a_long_expression() -> None:
     assert fork_line.count(" nodes)") == len(counts)
     assert all(f"...({count} nodes)" in fork_line for count in counts)
     # the solver still gets the whole condition, so the cut fork is flipped like any other
-    aim = {"file": REBUILT_FILE, "line": cut["line"], "col": cut["col"], "position": 18}
+    position = len(seed_forks) - 1
+    aim = {"file": REBUILT_FILE, "line": cut["line"], "col": cut["col"], "position": position}
     reaching = [line for line in inputs[1:] if line["aim"] == aim and line["mismatch_at"] is None]
     assert reaching, [line["aim"] for line in inputs[1:]]
     assert text(reaching[0], "s") == "abcdefghijklmnopqr"

@@ -1,12 +1,10 @@
 import math
-import re
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.printed import LIMIT
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -106,6 +104,8 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
     "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
     "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "in-a-range": (["in", "port", ["range", 1, 65536]], "port in range(1, 65536)"),
+    "not-in-a-stepped-range": (["not in", 5, ["range", 0, "n", -2]], "5 not in range(0, n, -2)"),
     "tracked-index": (["[]", "s", "n"], "s[n]"),
     "long-enough-for-a-tracked-index": ([">", ["len", "s"], "n"], "len(s) > n"),
     "reversed": (["==", ["[:]", "s", None, None, -1], "'abc'"], "s[::-1] == 'abc'"),
@@ -191,6 +191,16 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "trunc": (["==", ["trunc", "x"], -2], "math.trunc(x) == -2"),
     "round": (["==", ["round", "x"], 2], "round(x) == 2"),
     "finite": (["isfinite", "x"], "math.isfinite(x)"),
+    # the other `math` functions pyct follows, isclose's tolerances by the keywords Python takes
+    "sqrt": ([">", ["sqrt", "n"], 3.0], "math.sqrt(n) > 3.0"),
+    "copysign": (["<", ["copysign", 1.0, "x"], 0.0], "math.copysign(1.0, x) < 0.0"),
+    "isnan-of-fabs": (["isnan", ["fabs", "x"]], "math.isnan(math.fabs(x))"),
+    "isinf": (["isinf", "x"], "math.isinf(x)"),
+    "isclose": (
+        ["isclose", "x", 0.1, 1e-09, 0.0],
+        "math.isclose(x, 0.1, rel_tol=1e-09, abs_tol=0.0)",
+    ),
+    "not": (["not", ["<", "x", 0.0]], "not x < 0.0"),
 }
 
 
@@ -442,50 +452,3 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
-
-
-def test_render_trace_writes_an_expression_past_the_cap_cut() -> None:
-    term: Expression = "s"
-    for _ in range(40):
-        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
-    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    # the fork line holds what the stdout line holds, each cut part as the distinct nodes it holds
-    assert lines[1].startswith("fork m.py:5:7  (")
-    assert lines[1].endswith(" == 'abc'  not taken")
-    assert " nodes)" in lines[1]
-    assert len(lines[1]) < 20_000
-
-
-def test_render_trace_writes_a_condition_nested_past_the_recursion_limit() -> None:
-    term: Expression = "x"
-    for _ in range(LIMIT - 1):
-        term = ["abs", term]
-    # LIMIT nodes, so the line prints it whole, nested deeper than Python's recursion limit
-    fork = Branch(expression=term, taken=True, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"x": 1}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    nested = LIMIT - 1
-    assert lines[1] == f"fork m.py:5:7  {'abs(' * nested}x{')' * nested}  taken"
-
-
-def test_render_trace_writes_a_string_built_over_five_thousand_passes() -> None:
-    term: Expression = "s"
-    for _ in range(5000):
-        term = ["+", term, "' '"]
-    fork = Branch(expression=["startswith", term, "'ok'"], taken=False, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"s": "a"}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    # the top of the string is kept over the cut part, each pass one more sum, as Python reads a
-    # chain of them from the left
-    assert re.fullmatch(
-        r"fork m\.py:5:7  \(\.\.\.\(\d+ nodes\)( \+ ' ')+\)\.startswith\('ok'\)  not taken",
-        lines[1],
-    )

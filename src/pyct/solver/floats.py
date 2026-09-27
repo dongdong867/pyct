@@ -17,7 +17,10 @@ tells -0.0 from 0.0.
 
 ``whole`` is ``float.is_integer``: a finite double its integral part
 equals. It is false on NaN, where ``fp.eq`` is, and on the infinities.
-``finite`` holds for a double that is neither NaN nor an infinity.
+``finite`` holds for a double that is neither NaN nor an infinity, as
+``math.isfinite``, and ``copysign`` and ``close`` are ``math.copysign`` and
+``math.isclose``; the other `math` functions pyct follows are one IEEE
+operation each, in `heads.OPERATORS`.
 
 ``%`` follows CPython's own steps, from C's ``fmod``, ``//`` is the floor
 CPython's steps come to inside a bound (``floor_division``), and the four
@@ -25,7 +28,7 @@ roundings to an int read the integral double back as an Int. An Int meets a
 double as Python converts it, rounding half to even (``from_int``).
 
 A form here names the parts it reads more than once with ``let``, as
-``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``x!`` and ``y!``. None of them can
+``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``d!``, ``x!`` and ``y!``. None of them can
 capture a name in an operand, since render defines every part a form reads:
 an operand is a leaf's constant, a literal, a name render defined or
 declared, ``e!`` and a number and never one of these, or an int's
@@ -115,6 +118,32 @@ def _to_int(mode: str) -> Callable[[str], str]:
         return f"(to_int (fp.to_real (fp.roundToIntegral {mode} {term})))"
 
     return rounded
+
+
+def copysign(magnitude: str, sign: str) -> str:
+    """Python's ``math.copysign``: the first double's size with the second's sign.
+
+    SMT-LIB's NaN has no sign, so a NaN ``sign`` counts as positive, as
+    Python's own NaN, ``float('nan')``, is; a NaN made negative, as
+    ``-float('nan')`` is, is not one this reads.
+    """
+    return f"(let ((x! (fp.abs {magnitude}))) (ite (fp.isNegative {sign}) (fp.neg x!) x!))"
+
+
+def close(a: str, b: str, rel_tol: str, abs_tol: str) -> str:
+    """Python's ``math.isclose``, CPython's ``math_isclose_impl`` step by step.
+
+    Equal doubles are close, infinities included; otherwise an infinity is
+    close to nothing, and two others are close when their difference is
+    within the relative tolerance of either one or within the absolute
+    tolerance. A NaN is close to nothing. Python refuses a negative
+    tolerance before it compares, so the tolerances here are never one.
+    """
+    within = f"(fp.leq d! (fp.abs (fp.mul RNE {rel_tol} {{}})))"
+    near = f"(or {within.format(b)} {within.format(a)} (fp.leq d! {abs_tol}))"
+    finite = f"(not (fp.isInfinite {a})) (not (fp.isInfinite {b}))"
+    apart = f"(let ((d! (fp.abs (fp.sub RNE {b} {a})))) {near})"
+    return f"(or (fp.eq {a} {b}) (and {finite} {apart}))"
 
 
 # `math.floor`, `math.ceil`, `math.trunc`, and `round` with no digits, which rounds half to even

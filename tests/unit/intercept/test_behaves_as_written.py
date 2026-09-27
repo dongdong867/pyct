@@ -94,8 +94,33 @@ PROGRAMS: dict[str, str] = {
     "map float over two": "answer = list(map(float, note('a', a), note('b', b)))",
     "map bool lazily": "found = map(bool, note('a', a))\nanswer = next(found, 'none')",
     "own int": "def int(value):\n    return ('own', value)\nanswer = int(note('a', a))",
+    # `range`, bare, after a dot, walked, searched, and a name the module binds itself
+    "range": "answer = list(range(note('a', a)))",
+    "range with a step": "answer = list(range(note('a', a), 9, note('b', b)))",
+    "range with a keyword": "answer = range(note('a', a), step=note('b', b))",
+    "builtins.range": "import builtins\nanswer = builtins.range(note('a', a), 3)",
+    "range walked": "answer = [i for i in range(note('a', a))]",
+    "in range": "answer = note('a', a) in range(note('b', b))",
+    "not in range": "answer = note('a', a) not in range(-5, 5, 2)",
+    "own range": "def range(value):\n    return ('own', value)\nanswer = range(note('a', a))",
+    "range in class body": (
+        "class Held(metaclass=Logging):\n    held = list(range(note('a', a)))\nanswer = Held.held"
+    ),
     "int in class body": (
         "class Held(metaclass=Logging):\n    held = int(note('a', a))\nanswer = Held.held"
+    ),
+    # a function of math, through each name an import of it binds
+    "math.sqrt": "import math\nanswer = math.sqrt(note('a', a))",
+    "m.copysign": "import math as m\nanswer = m.copysign(note('a', a), note('b', b))",
+    "math.isclose by keyword": (
+        "import math\nanswer = math.isclose(a=note('a', a), b=note('b', b), abs_tol=0.5)"
+    ),
+    "from math import isnan": "from math import isnan\nanswer = isnan(note('a', a))",
+    "from math import fabs as size": "from math import fabs as size\nanswer = size(note('a', a))",
+    "from math import *": "from math import *\nanswer = gcd(note('a', a), note('b', b))",
+    "math.exp in class body": (
+        "import math\nclass Held(metaclass=Logging):\n    held = math.exp(note('a', a))\n"
+        "answer = Held.held"
     ),
     # a str literal's method, given each operand
     "literal find": "answer = 'xyz'.find(note('b', b))",
