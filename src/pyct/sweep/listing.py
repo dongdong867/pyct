@@ -42,6 +42,10 @@ class PackageImportError(Exception):
     """The package itself did not import. The message says so, and how its import ended."""
 
 
+class _HungUp(BaseException):
+    """A SIGHUP, raised so the lister is stopped before sweep ends by it."""
+
+
 @dataclass(frozen=True)
 class Heard:
     """What one lister said: its rows, and the module it stopped on and how, unless it finished."""
@@ -57,13 +61,13 @@ def list_package(
 
     An entry several modules export is one row. Raises ``PackageImportError``
     when the package itself does not import, since then nothing is swept. A
-    SIGTERM ends it as a Ctrl-C does, with the lister stopped. Like a Ctrl-C's
-    handling, this needs the main thread.
+    SIGTERM ends it as a Ctrl-C does, and a SIGHUP by the SIGHUP, each with
+    the lister stopped. Like a Ctrl-C's handling, this needs the main thread.
     """
     kept: dict[tuple[str, str], Row] = {}
     after: str | None = None
     while True:
-        with _sigterm_as_ctrl_c():
+        with _signals_stop_the_lister():
             heard = _listen(package, after, grace, lister)
         for row in heard.rows:
             kept.setdefault(row.order, row)
@@ -77,23 +81,38 @@ def list_package(
 
 
 @contextlib.contextmanager
-def _sigterm_as_ctrl_c() -> Generator[None]:
-    """Raise ``KeyboardInterrupt`` on a SIGTERM inside the block, then put the old handler back.
+def _signals_stop_the_lister() -> Generator[None]:
+    """Stop the lister before a SIGTERM or a SIGHUP ends sweep, then put the old handlers back.
 
-    The lister leads a session of its own, so a signal to sweep never
-    reaches it; ending sweep by a signal's default action would leave it
-    running, forever if an import hangs. Raising instead runs the ``finally``
-    that stops its group, and the sweep then ends as it does on a Ctrl-C.
+    The lister leads a session of its own, so neither signal reaches it;
+    ending sweep by a signal's default action would leave it running, forever
+    if an import hangs. So each raises inside the block, and the ``finally``
+    that stops the lister's group runs. A SIGTERM then ends the sweep as a
+    Ctrl-C does. A SIGHUP, as when the terminal closes, ends it by the SIGHUP
+    itself. A signal already ignored, as ``nohup`` ignores SIGHUP, stays so.
     """
-
-    def interrupt(number: int, frame: object) -> None:
-        raise KeyboardInterrupt
-
-    previous = signal.signal(signal.SIGTERM, interrupt)
+    handlers = {signal.SIGTERM: _interrupt, signal.SIGHUP: _hang_up}
+    previous = {number: signal.getsignal(number) for number in handlers}
+    for number, handler in handlers.items():
+        if previous[number] is signal.SIG_DFL:
+            signal.signal(number, handler)
     try:
         yield
+    except _HungUp:
+        signal.signal(signal.SIGHUP, signal.SIG_DFL)
+        signal.raise_signal(signal.SIGHUP)
+        raise
     finally:
-        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
+        for number, handler in previous.items():
+            signal.signal(number, signal.SIG_DFL if handler is None else handler)
+
+
+def _interrupt(number: int, frame: object) -> None:
+    raise KeyboardInterrupt
+
+
+def _hang_up(number: int, frame: object) -> None:
+    raise _HungUp
 
 
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:

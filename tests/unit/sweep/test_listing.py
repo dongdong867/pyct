@@ -1,5 +1,6 @@
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -185,3 +186,43 @@ def test_a_sigterm_ends_the_listing_as_a_ctrl_c_does_and_stops_the_lister(
     for pid in pids.read_text().split():
         with pytest.raises(ProcessLookupError):
             os.kill(int(pid), 0)
+
+
+def test_a_sighup_stops_the_lister_and_ends_the_sweep_by_it(tmp_path: Path) -> None:
+    # a closing terminal sends SIGHUP; the lister leads its own session and never gets it
+    pids = tmp_path / "pids"
+    env = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
+    env["SWEEP_PIDS_FILE"] = str(pids)
+    sweep = subprocess.Popen(
+        [sys.executable, "-P", "-m", "pyct", "sweep", STALL, "--list"],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        while not (pids.exists() and pids.read_text().endswith("\n")):
+            time.sleep(0.05)
+        sweep.send_signal(signal.SIGHUP)
+        ended = sweep.wait(timeout=20)
+    finally:
+        sweep.kill()
+
+    # a shell reports it as exit 129
+    assert ended == -signal.SIGHUP
+    for pid in pids.read_text().split():
+        with pytest.raises(ProcessLookupError):
+            os.kill(int(pid), 0)
+
+
+def test_an_ignored_sighup_stays_ignored() -> None:
+    # under nohup the terminal's SIGHUP is ignored, and sweep must not start heeding it
+    script = DONE_AFTER + (
+        "import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\nprint('{\"done\": true}')\n"
+    )
+    previous = signal.signal(signal.SIGHUP, signal.SIG_IGN)
+    try:
+        assert list_package("p", lister=stand_in(script)) == ()
+        assert signal.getsignal(signal.SIGHUP) is signal.SIG_IGN
+    finally:
+        signal.signal(signal.SIGHUP, previous)
