@@ -164,17 +164,25 @@ class _Package:
         A function the class body compiled says where the body is: its
         compiled qualified name starts with the class's. The ``_make`` a named
         tuple takes from Python claims the class's ``__qualname__`` but was
-        compiled elsewhere, so it says nothing. A body file outside the package
-        is no home, whatever ``__module__`` says; a library may rewrite that.
-        Only a class whose body compiled no function falls back to the module
-        ``__module__`` names.
+        compiled elsewhere, so it says nothing. A function borrowed from a
+        same-named class elsewhere does match, so the first matching function
+        in the package decides, and a class whose matching functions are all
+        outside the package has no home, whatever ``__module__`` says; a library
+        may rewrite that. Only a class whose body compiled no function falls
+        back to the module ``__module__`` names.
         """
         prefix = f"{cls.__qualname__}."
+        matched = False
         for value in list(vars(cls).values()):
             target = function_of(value)
             code = getattr(target, "__code__", None)
             if getattr(code, "co_qualname", "").startswith(prefix):
-                return self._home_of(_code_file(target))
+                matched = True
+                home = self._home_of(_code_file(target))
+                if home is not None:
+                    return home
+        if matched:
+            return None
         return self._home_of(getattr(sys.modules.get(cls.__module__), "__file__", None))
 
     def _home_of(self, file: object) -> str | None:

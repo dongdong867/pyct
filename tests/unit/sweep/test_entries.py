@@ -123,6 +123,14 @@ def test_a_class_written_outside_the_package_is_no_entry_whatever_its_module_say
     assert entries(api, api) == [Entry(api, "gauge", seed={"n": 0})]
 
 
+def test_a_class_that_borrows_a_same_named_constructor_is_named_by_its_own_body() -> None:
+    package = f"{SWEEP}.borrowed.pkg"
+    assert entries(package, package) == [
+        Entry(package, "Thing", seed={"n": 0}),
+        Entry(package, "Thing.extra", skip=METHOD),
+    ]
+
+
 def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
     # a named tuple's _make and _replace say they are its own, but their code is Python's
     module = f"{SWEEP}.tuples"
