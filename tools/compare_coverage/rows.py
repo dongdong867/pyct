@@ -199,7 +199,7 @@ def _same_copy(view: SideView, file: Path | None, body_file: Path | None) -> Sid
     not the file the own lines come from.
 
     Each side loads the module under its own copy of the library, at the same path in it, so
-    the two copies are the same file when their contents are, whatever their line endings.
+    the two copies are the same file when their contents are, a CRLF line ending read as LF.
     """
     if view.failure is not None or file is None or body_file is None or file == body_file:
         return view
