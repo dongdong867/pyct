@@ -31,6 +31,7 @@ import os
 import signal
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
+from typing import NoReturn
 
 from pyct.execution.deadline import alarm
 from pyct.execution.execute import ExecutionResult
@@ -44,6 +45,38 @@ STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
 KILL_GRACE = 0.5
+
+
+class Stopped(BaseException):
+    """pyct's process was told to stop, by a SIGTERM (see ``launch``).
+
+    A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
+    it through and ends each process pyct started on the way out. Target
+    code that catches BaseException can catch it and go on, so a stop also
+    refuses every input after it (see ``refuse_after_a_stop``).
+    """
+
+
+# whether this process was told to stop; once it was, no input starts
+_stop_asked = False
+
+
+def stop() -> NoReturn:
+    """Raise ``Stopped``, and refuse every input from now on."""
+    global _stop_asked
+    _stop_asked = True
+    raise Stopped
+
+
+def stop_asked() -> bool:
+    """Whether this process was told to stop, though target code may have caught it."""
+    return _stop_asked
+
+
+def refuse_after_a_stop() -> None:
+    """Raise ``Stopped`` again when this process was told to stop, so no input starts."""
+    if _stop_asked:
+        raise Stopped
 
 
 class InputStartError(Exception):

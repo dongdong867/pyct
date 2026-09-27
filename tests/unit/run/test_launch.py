@@ -5,6 +5,7 @@ runner: every command here ends its process itself. The watcher's own end by a s
 recorded instead of raised, so the test runner outlives it.
 """
 
+import contextlib
 import os
 import signal
 import threading
@@ -15,9 +16,10 @@ from typing import NoReturn
 import pytest
 
 from pyct.run import launch as launch_module
+from pyct.run import process
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import CTRL_C_GRACE, Stopped, _ending, launch
-from pyct.run.process import Waited
+from pyct.run.launch import CTRL_C_GRACE, _ending, launch
+from pyct.run.process import Stopped, Waited
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -41,6 +43,12 @@ def _handlers_kept() -> Generator[None]:
     yield
     for number, handler in kept.items():
         signal.signal(number, handler)
+
+
+@pytest.fixture(autouse=True)
+def _never_stopped(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stop this test's own process takes leaves no input refused after the test."""
+    monkeypatch.setattr(process, "_stop_asked", False)
 
 
 @pytest.fixture(autouse=True)
@@ -288,6 +296,21 @@ def test_a_sigterm_ends_the_command_by_sigterm(
 
     assert raised == [signal.SIGTERM]
     assert code == 128 + signal.SIGTERM
+
+
+def test_a_command_that_catches_the_stop_and_returns_still_ends_by_sigterm(
+    monkeypatch: pytest.MonkeyPatch, raised: list[int]
+) -> None:
+    no_process_starts(monkeypatch)
+
+    def catches(watch: ImportWatch | None) -> int:
+        os.kill(os.getpid(), signal.SIGTERM)
+        with contextlib.suppress(Stopped):
+            time.sleep(5)
+        return 0
+
+    assert launch(catches, ARGV) == 128 + signal.SIGTERM
+    assert raised == [signal.SIGTERM]
 
 
 def test_a_command_that_returns_puts_the_sigterm_handler_back(

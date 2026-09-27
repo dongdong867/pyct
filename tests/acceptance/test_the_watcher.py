@@ -36,6 +36,7 @@ SWALLOWS_AT_IMPORT = "targets.load.swallows_stops_at_import::f"
 SWALLOWS_IN_A_CALL = "targets.load.swallows_stops_in_a_call::f"
 TELLS_ITS_PATH = "targets.load.tells_its_path::f"
 HANGS_IN_C_AT_IMPORT = "targets.load.hangs_in_c_at_import::f"
+CATCHES_ONE_STOP = "targets.load.catches_one_stop_at_import::f"
 # how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
 SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
 # how soon after the signal every process of the run must have ended
@@ -358,3 +359,30 @@ def test_a_sigkill_to_pyct_ends_its_process_in_c_code(tmp_path: Path) -> None:
 
         assert group_ended(process.pid, within=SWALLOWED_ENDED_WITHIN)
         assert not is_running(importing)
+
+
+# target code that catches the stop and returns does not let the run go on: no input starts
+def test_a_stop_the_import_catches_and_returns_from_still_ends_the_run(tmp_path: Path) -> None:
+    pid_file = tmp_path / "pid"
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env["PYCT_TEST_PID_FILE"] = str(pid_file)
+    process = subprocess.Popen(
+        [sys.executable, "-P", "-m", "pyct", "run", CATCHES_ONE_STOP, '{"x": 0}'],
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    try:
+        pid_written_to(pid_file, process)
+        os.kill(process.pid, signal.SIGTERM)
+        stdout, _ = process.communicate(timeout=10)
+
+        assert process.returncode == -signal.SIGTERM
+        assert stdout == ""
+        assert group_ended(process.pid)
+    finally:
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)

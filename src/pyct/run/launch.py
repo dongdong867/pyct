@@ -50,7 +50,7 @@ from pyct.core.branch import PYCT_DIR
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
 from pyct.run.import_watch import ImportWatch
-from pyct.run.process import Child, Waited, how
+from pyct.run.process import Child, Stopped, Waited, how, stop, stop_asked
 from pyct.run.threads import running
 
 # the signals the watcher passes on to the command's process as soon as it gets them: those
@@ -99,14 +99,6 @@ _LOOK_EVERY = 0.05
 
 # the command line's work, given the page when a watcher reads it; returns the exit code
 type Command = Callable[[ImportWatch | None], int]
-
-
-class Stopped(BaseException):
-    """The command's process got a SIGTERM, or its watcher is gone.
-
-    A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
-    it through and ends each process pyct started on the way out.
-    """
 
 
 def launch(command: Command, argv: Sequence[str]) -> int:
@@ -203,25 +195,30 @@ def _serve(
 
 
 def _stoppable(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int | None:
-    """What ``command`` returns, or None when a SIGTERM stopped it."""
+    """What ``command`` returns, or None when a SIGTERM stopped it.
+
+    A stop that target code caught, which let ``command`` return, stopped it
+    all the same.
+    """
     previous = signal.signal(signal.SIGTERM, _stop)
     try:
         signal.pthread_sigmask(signal.SIG_SETMASK, held)
-        return command(watch)
+        code = command(watch)
     except Stopped:
         return None
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
+    return None if stop_asked() else code
 
 
 def _stop(_number: int, _frame: object) -> NoReturn:
-    """Raise ``Stopped``, with SIGTERM at its default action from now on.
+    """Stop, with SIGTERM at its default action from now on.
 
     A second SIGTERM then ends the process however the first one's
     unwinding goes, and so does the guard's, if it has to send one.
     """
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
-    raise Stopped
+    stop()
 
 
 def _watch(child: Child, watch: ImportWatch, held: Iterable[int], kept: int, threaded: bool) -> int:

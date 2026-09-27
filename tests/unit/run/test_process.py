@@ -14,8 +14,19 @@ import pytest
 from pyct.core.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
+from pyct.run import process
 from pyct.run.journal import Reading
-from pyct.run.process import KILL_GRACE, Child, Waited, ending, watched
+from pyct.run.process import (
+    KILL_GRACE,
+    Child,
+    Stopped,
+    Waited,
+    ending,
+    refuse_after_a_stop,
+    stop,
+    stop_asked,
+    watched,
+)
 from tests.unit.another_thread import another_thread
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="t.py", line=2, col=7))
@@ -426,3 +437,15 @@ def test_a_second_ctrl_c_as_pyct_ends_the_process_reaps_it_while_another_thread_
 
     monkeypatch.undo()
     assert not left_unreaped(pid)
+
+
+def test_a_stop_raises_and_refuses_every_input_after_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(process, "_stop_asked", False)
+    refuse_after_a_stop()
+
+    with pytest.raises(Stopped):
+        stop()
+
+    assert stop_asked()
+    with pytest.raises(Stopped):
+        refuse_after_a_stop()
