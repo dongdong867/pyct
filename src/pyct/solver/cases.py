@@ -9,9 +9,9 @@ checks (see `checks`).
 
 ``title`` and ``swapcase`` are in `recased`.
 
-A padding takes its width, and a strip or a padding its characters, as the
-plain values core wrote, so the padding is cut from a literal as long as the
-width.
+A padding takes its width and its fill as the plain values core wrote, so
+the padding is cut from a literal as long as the width. A strip takes its
+characters as the SMT-LIB literal render wrote, and reads them back.
 """
 
 from collections.abc import Callable, Mapping
@@ -30,7 +30,7 @@ def _capitalized(term: str) -> str:
 def _kept(characters: str | None) -> str:
     """One character a strip keeps: any but whitespace, or any but the characters given.
 
-    The characters arrive as the literal core wrote.
+    The characters arrive as the SMT-LIB literal render wrote.
     """
     stripped: Ranges = SPACE if characters is None else of(decode(characters))
     return one_of(outside(stripped))
@@ -126,7 +126,7 @@ def zero_filled(term: str, width: int) -> str:
 
 
 # the case changes and strips, each taking its operands rendered, the characters a strip takes
-# as a literal. casefold is lower for ASCII
+# as an SMT-LIB literal. casefold is lower for ASCII
 CASES: Mapping[str, Callable[..., str]] = {
     "upper": lambda term: f"(str.to_upper {term})",
     "lower": lambda term: f"(str.to_lower {term})",

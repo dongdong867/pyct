@@ -47,12 +47,12 @@ def characters(receiver: object, args: tuple[object, ...]) -> list[Expression] |
 
 def width_and_fill(receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """A padding's width, a plain int, and the character it fills with, a plain str."""
-    if not args or len(args) > 2 or (width := position(args[0])) is None:
+    if not args or len(args) > 2 or (columns := position(args[0])) is None:
         return None
     if len(args) == 1:
-        return [width]
+        return [columns]
     written = literal(args[1], type(receiver))
-    return None if written is None else [width, written]
+    return None if written is None else [columns, written]
 
 
 def width(receiver: object, args: tuple[object, ...]) -> list[Expression] | None:

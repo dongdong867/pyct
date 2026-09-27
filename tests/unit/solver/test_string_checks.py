@@ -67,7 +67,7 @@ PAST_ASCII_ANSWERS = {
 
 
 @needs_cvc5
-def test_a_character_past_ascii_is_in_no_class_but_printable_past_u00a0() -> None:
+def test_a_character_past_ascii_is_in_no_class_and_printable_as_the_table_says() -> None:
     values = list(PAST_ASCII_ANSWERS)
     lines, _ = _program(values)
 

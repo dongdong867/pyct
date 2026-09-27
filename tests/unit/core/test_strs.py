@@ -370,7 +370,7 @@ KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
 
 
 @pytest.mark.parametrize(("call", "name"), KEYWORD_CALLS.values(), ids=list(KEYWORD_CALLS))
-def test_a_keyword_to_an_untaught_method_is_strs_own_and_a_downgrade(
+def test_a_keyword_where_pyct_encodes_none_is_strs_own_and_a_downgrade(
     call: Callable[[str], object], name: str
 ) -> None:
     sink: list[SinkItem] = []

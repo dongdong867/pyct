@@ -19,11 +19,12 @@ from pyct.core.str_splits import (
 )
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
-# the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
-# the pieces it writes stay symbolic, and a copy is the value itself. The tuple here names what
-# is left to str on purpose, and the derivation at the bottom of the file downgrades every other
-# method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
-# itself, so nothing inherited needs naming.
+# the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches, the
+# pieces, the character checks, the case changes, strips and paddings, and the splits it writes
+# stay symbolic, and a copy is the value itself. The tuple here names what is left to str on
+# purpose, and the derivation at the bottom of the file downgrades every other method str
+# defines, plain methods and operators alike. str defines `__str__` and `__format__` itself, so
+# nothing inherited needs naming.
 
 # not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
 # once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
