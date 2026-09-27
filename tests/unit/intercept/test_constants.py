@@ -124,23 +124,34 @@ def test_a_read_in_a_method_s_or_a_lambda_s_body_is_not_in_the_class_s_scope() -
     assert [id(node) in found.in_class for node in loads] == [False, False]
 
 
-def _lines_run(source: str) -> int:
-    """How many lines of the constants module run to read the source: the work it does."""
+def _steps_run(source: str) -> int:
+    """How many loop steps the constants module takes to read the source: the work it does.
+
+    Each pass of a loop jumps back, so jumps count the passes, a generator's inside one line
+    included. Counted through a ``sys.monitoring`` tool of its own, so the tracer that measures
+    the suite's coverage keeps running.
+    """
     tree = ast.parse(source)
+    monitoring = sys.monitoring
+    tool = next(tool for tool in (3, 4, 5) if monitoring.get_tool(tool) is None)
     counted = 0
 
-    def trace(frame: types.FrameType, event: str, arg: object) -> Any:
+    def on_jump(code: types.CodeType, offset: int, destination: int) -> Any:
         nonlocal counted
-        if frame.f_code.co_filename == constants.__file__:
-            counted += event == "line"
-            return trace
+        if code.co_filename != constants.__file__:
+            return monitoring.DISABLE
+        counted += 1
         return None
 
-    sys.settrace(trace)
+    monitoring.use_tool_id(tool, "work count")
+    monitoring.register_callback(tool, monitoring.events.JUMP, on_jump)
+    monitoring.set_events(tool, monitoring.events.JUMP)
     try:
         literal_names(tree)
     finally:
-        sys.settrace(None)
+        monitoring.set_events(tool, 0)
+        monitoring.register_callback(tool, monitoring.events.JUMP, None)
+        monitoring.free_tool_id(tool)
     return counted
 
 
@@ -148,7 +159,7 @@ def test_the_work_grows_with_a_class_body_as_it_does_with_any_body() -> None:
     def class_of(statements: int) -> str:
         return "class C:\n" + "".join(f"    a{n} = RATE\n" for n in range(statements))
 
-    small, large = _lines_run(class_of(200)), _lines_run(class_of(800))
+    small, large = _steps_run(class_of(200)), _steps_run(class_of(800))
 
     # four times the statements, about four times the work: one pass, not one per statement
     assert large < 4.5 * small
