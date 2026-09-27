@@ -53,11 +53,50 @@ PROGRAMS: dict[str, str] = {
         "class Held(metaclass=Logging):\n    held = note('a', a) in note('b', b)\n"
         "answer = Held.held"
     ),
+    # the conversions, bare, after a dot, under `map`, and a name the module binds itself
+    "int": "answer = int(note('a', a))",
+    "int with a base": "answer = int(note('a', a), note('b', b))",
+    "int with a keyword": "answer = int(note('a', a), base=note('b', b))",
+    "float": "answer = float(note('a', a))",
+    "bool": "answer = bool(note('a', a))",
+    "builtins.int": "import builtins\nanswer = builtins.int(note('a', a))",
+    "map int": "answer = list(map(int, note('a', a)))",
+    "map float over two": "answer = list(map(float, note('a', a), note('b', b)))",
+    "map bool lazily": "found = map(bool, note('a', a))\nanswer = next(found, 'none')",
+    "own int": "def int(value):\n    return ('own', value)\nanswer = int(note('a', a))",
+    "int in class body": (
+        "class Held(metaclass=Logging):\n    held = int(note('a', a))\nanswer = Held.held"
+    ),
+    # a method str has, on whatever the receiver is
+    "find": "answer = note('a', a).find(note('b', b))",
+    "index": "answer = note('a', a).index(note('b', b))",
+    "startswith": "answer = note('a', a).startswith(note('b', b))",
+    "count": "answer = note('a', a).count(note('b', b))",
+    "split by keyword": "answer = note('a', a).split(sep=note('b', b))",
+    "join": "answer = note('a', a).join(note('b', b))",
+    "literal find": "answer = 'xyz'.find(note('b', b))",
+    "if startswith": (
+        "if note('a', a).startswith(note('b', b)):\n    answer = 'yes'\nelse:\n    answer = 'no'"
+    ),
+    # every operator a plain number on the left may hand over
+    **{
+        f"a {op} b": f"answer = note('a', a) {op} note('b', b)"
+        for op in ("+", "-", "*", "/", "//", "%", "<<", ">>", "&", "|", "^")
+    },
+    **{
+        f"a {op} b": f"answer = note('a', a) {op} note('b', b)"
+        for op in ("<", "<=", ">", ">=", "==", "!=")
+    },
+    "a ** b": "answer = note('a', a) ** note('b', b)",
+    "if a < b": "if note('a', a) < note('b', b):\n    answer = 'yes'\nelse:\n    answer = 'no'",
+    "not a == b": "answer = not note('a', a) == note('b', b)",
+    "plain float left": "answer = 0.5 + note('b', b)",
+    "plain bool left": "answer = True == note('b', b)",
 }
 
 
 class Logged:
-    """An operand whose every method `is` or `in` may reach logs its call."""
+    """An operand whose every method a substituted operation may reach logs its call."""
 
     def __init__(self, log: list[object]) -> None:
         self.log = log
@@ -94,6 +133,30 @@ class Logged:
         self.log.append("__float__")
         return 1.0
 
+    def __add__(self, other: object) -> object:
+        self.log.append(("__add__", type(other).__name__))
+        return NotImplemented
+
+    def __radd__(self, other: object) -> object:
+        self.log.append(("__radd__", type(other).__name__))
+        return "added"
+
+    def __lt__(self, other: object) -> object:
+        self.log.append(("__lt__", type(other).__name__))
+        return NotImplemented
+
+    def __gt__(self, other: object) -> object:
+        self.log.append(("__gt__", type(other).__name__))
+        return Answer(self.log)
+
+    def __rand__(self, other: object) -> object:
+        self.log.append(("__rand__", type(other).__name__))
+        return "anded"
+
+    def find(self, *args: object, **kwargs: object) -> object:
+        self.log.append(("find", len(args), sorted(kwargs)))
+        return -1
+
 
 class Asked(dict[str, object]):
     """A class namespace that logs each name it is asked for and does not hold."""
@@ -125,7 +188,7 @@ class Answer:
 
 
 class Raising:
-    """An operand whose every method `is` or `in` may reach raises, naming itself."""
+    """An operand whose every method a substituted operation may reach raises, naming itself."""
 
     def __eq__(self, other: object) -> bool:
         raise ValueError("__eq__ raised")
@@ -141,6 +204,24 @@ class Raising:
 
     def __bool__(self) -> bool:
         raise ValueError("__bool__ raised")
+
+    def __int__(self) -> int:
+        raise ValueError("__int__ raised")
+
+    def __float__(self) -> float:
+        raise ValueError("__float__ raised")
+
+    def __add__(self, other: object) -> object:
+        raise ValueError("__add__ raised")
+
+    def __radd__(self, other: object) -> object:
+        raise ValueError("__radd__ raised")
+
+    def __gt__(self, other: object) -> object:
+        raise ValueError("__gt__ raised")
+
+    def find(self, *args: object) -> object:
+        raise ValueError("find raised")
 
 
 # the plain operands: a value of each built-in type, a container of each kind, and a value that
@@ -185,7 +266,17 @@ def outcome(code: types.CodeType, a_index: int, b_index: int) -> tuple[object, .
     except Exception as error:
         return ("raised", type(error), str(error), log)
     answer = namespace["answer"]
-    return ("answered", type(answer), answer, log)
+    return ("answered", type(answer), _comparable(answer), log)
+
+
+def _comparable(answer: object) -> object:
+    """The answer, with each of this module's own objects, which each run builds anew, as its
+    class's name, so two runs' answers compare without asking the objects themselves."""
+    if isinstance(answer, tuple):
+        return tuple(_comparable(each) for each in answer)
+    if isinstance(answer, Logged | Raising | Answer):
+        return type(answer).__name__
+    return answer
 
 
 @pytest.mark.parametrize("shape", PROGRAMS)

@@ -2,12 +2,13 @@
 
 import pytest
 
+from pyct.core import substitutes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import PASSING, in_, is_, is_not, not_in
+from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_in
 
 
 def expressions(sink: list[SinkItem]) -> list[object]:
@@ -140,8 +141,10 @@ def test_an_unhashable_value_in_a_literal_display_raises_as_python_does() -> Non
         in_([1], frozenset({1, 2}), (1, 2))
 
 
-def test_the_passing_frames_are_the_four_routers() -> None:
-    assert {code.co_name for code in PASSING} == {"is_", "is_not", "in_", "not_in"}
+def test_the_passing_frames_are_the_routers() -> None:
+    # every operator's function runs the one code its factory makes
+    names = {"is_", "is_not", "in_", "not_in", "call", "method", "route"}
+    assert {code.co_name for code in PASSING} == names
 
 
 def test_a_tracked_bool_searched_in_a_literal_display_of_bools_records_its_fork() -> None:
@@ -183,3 +186,162 @@ def test_a_tracked_int_in_a_literal_display_of_floats_meets_each_as_python_does(
 
     assert in_(n, frozenset({1.5, 3.0}), (1.5, 3.0)) is True
     assert expressions(sink) == [(["==", "n", 1.5], False), (["==", "n", 3.0], True)]
+
+
+def tracked_int(value: int, sink: list[SinkItem]) -> ConcolicInt:
+    return ConcolicInt(value, expression="n", sink=sink)
+
+
+def test_a_conversion_call_on_a_tracked_value_is_pyct_s() -> None:
+    sink: list[SinkItem] = []
+    n = tracked_int(3, sink)
+
+    assert call(int, n) is n
+    converted = call(float, n)
+    assert (type(converted), converted.expression) == (ConcolicFloat, ["float", "n"])
+    assert sink == []
+
+
+def test_any_other_call_is_the_callee_s_own() -> None:
+    sink: list[SinkItem] = []
+    n = tracked_int(3, sink)
+    calls: list[object] = []
+
+    def own_int(*args: object, **kwargs: object) -> int:
+        calls.append((args, kwargs))
+        return 7
+
+    assert call(own_int, n, base=2) == 7
+    assert calls == [((n,), {"base": 2})]
+    assert call(int, "12") == 12
+    with pytest.raises(TypeError, match=r"int\(\) can't convert non-string with explicit base"):
+        call(int, n, 10)
+    assert sink == []
+
+
+def test_a_plain_str_s_method_given_a_tracked_str_runs_on_a_tracked_str() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("b", expression="s", sink=sink)
+
+    found = method("abc".find, s)
+
+    assert (type(found), repr(found), found.expression) == (
+        ConcolicInt,
+        "1",
+        ["find", "'abc'", "s"],
+    )
+    starts = method("abc".startswith, s)
+    assert starts.expression == ["startswith", "'abc'", "s"]
+    assert sink == []
+
+
+def test_a_plain_str_s_method_in_a_form_pyct_does_not_teach_is_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("x", expression="s", sink=sink)
+
+    assert method("abcx".find, s, 1) == 3
+    assert [item.name for item in sink if isinstance(item, Downgrade)] == ["find"]
+
+
+def test_a_plain_str_past_what_cvc5_holds_is_python_s_answer_and_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("b", expression="s", sink=sink)
+
+    assert method("\U00030000b".find, s) == 1
+    assert sink == [Downgrade(name="find")]
+
+
+def test_a_plain_str_s_index_records_its_in_fork_before_it_raises() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("z", expression="s", sink=sink)
+
+    with pytest.raises(ValueError, match="substring not found"):
+        method("abc".index, s)
+
+    assert expressions(sink) == [(["in", "s", "'abc'"], False)]
+
+
+def test_any_other_method_call_is_the_bound_method_s_own() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("b", expression="s", sink=sink)
+
+    assert method(["a", s].index, s) == 1
+    assert method("abc".find, "b") == 1
+    assert method(str.find, "abc", s) == 1
+    assert method("-".join, ["a", "b"]) == "a-b"
+    # the list's own `index` compares s with each item, and `==` records that fork
+    assert expressions(sink) == [(["==", "s", "'a'"], False)]
+
+
+@pytest.mark.parametrize(
+    ("operation", "left", "expression"),
+    [
+        (substitutes.add, 0.5, ["+", 0.5, "n"]),
+        (substitutes.sub, 0.5, ["-", 0.5, "n"]),
+        (substitutes.mul, 0.5, ["*", 0.5, "n"]),
+        (substitutes.lt, 2.5, [">", "n", 2.5]),
+        (substitutes.ge, 2.5, ["<=", "n", 2.5]),
+        (substitutes.add, True, ["+", True, "n"]),
+        (substitutes.eq, True, ["==", "n", True]),
+    ],
+)
+def test_a_plain_float_or_bool_on_the_left_hands_the_operator_to_a_tracked_int(
+    operation: object, left: object, expression: object
+) -> None:
+    sink: list[SinkItem] = []
+
+    answer = operation(left, tracked_int(3, sink))  # pyrefly: ignore[not-callable]
+
+    assert answer.expression == expression
+    assert sink == []
+
+
+def test_a_division_handed_over_records_its_zero_fork() -> None:
+    sink: list[SinkItem] = []
+
+    answer = substitutes.truediv(1.0, tracked_int(4, sink))
+
+    assert (repr(answer), answer.expression) == ("0.25", ["/", 1.0, "n"])
+    assert expressions(sink) == [(["!=", "n", 0], True)]
+
+
+def test_a_plain_bool_on_the_left_of_a_tracked_bool_answers_with_both_conditions() -> None:
+    sink: list[SinkItem] = []
+    b = tracked_bool(False, sink)
+
+    assert substitutes.bit_and(True, b).expression == ["&", True, [">", "x", 5]]
+    assert substitutes.bit_or(False, b).expression == ["|", False, [">", "x", 5]]
+    assert substitutes.bit_xor(True, b).expression == ["^", True, [">", "x", 5]]
+    assert sink == []
+
+
+def test_what_the_tracked_value_does_not_take_is_left_to_python() -> None:
+    sink: list[SinkItem] = []
+    n = tracked_int(2, sink)
+
+    assert substitutes.power(0.5, n) == 0.25
+    with pytest.raises(TypeError, match="unsupported operand"):
+        substitutes.lshift(0.5, n)
+    assert sink == []
+
+
+def test_any_other_pair_is_python_s_own_operator() -> None:
+    sink: list[SinkItem] = []
+    f = ConcolicFloat(1.5, expression="f", sink=sink)
+
+    assert substitutes.add(1, 2) == 3
+    assert substitutes.add("a", "b") == "ab"
+    assert substitutes.mul(0.5, 4) == 2.0
+    # a plain float beside a tracked float or bool is the tracked value's own business
+    assert substitutes.add(0.5, f).expression == ["+", 0.5, "f"]
+    assert substitutes.add(0.5, tracked_bool(True, sink)) == 1.5
+    with pytest.raises(TypeError, match="unsupported operand"):
+        substitutes.sub("a", 1)
+    assert substitutes.floordiv(7.0, tracked_int(2, sink)).expression == ["//", 7.0, "n"]
+    assert substitutes.mod(7.0, tracked_int(2, sink)).expression == ["%", 7.0, "n"]
+    # an operator a tracked int does not teach is its own answer and a downgrade, as ever
+    assert substitutes.rshift(True, tracked_int(1, sink)) == 0
+    assert Downgrade(name="__rrshift__") in sink
+    assert substitutes.le(True, tracked_int(1, sink)).expression == [">=", "n", True]
+    assert substitutes.gt(True, tracked_int(1, sink)).expression == ["<", "n", True]
+    assert substitutes.ne(True, tracked_int(1, sink)).expression == ["!=", "n", True]

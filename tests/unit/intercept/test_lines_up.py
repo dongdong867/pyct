@@ -155,6 +155,44 @@ SPREAD_OUT = [
 ]
 
 
+# calls and operators spread over lines, one per rule for where their parts' instructions are
+CALLS_AND_OPERATORS_SPREAD_OUT = [
+    "int(\n x)",
+    "(\n int)(x)",
+    "builtins.int(\n x)",
+    "text.find(\n s)",
+    "text.find(s,\n 1)",
+    "map(\n int, xs)",
+    "'abc'.index(\n s)",
+    "(a +\n b)",
+    "(a\n + b)",
+    "(0.5\n * n)",
+    "(f(\n x) + y)",
+    "(a.b\n + c)",
+    "(-\n a) - b",
+    "(a +\n b +\n c)",
+    "(a <\n b)",
+    "if (a <\n b):\n pass",
+    "if int(\n x):\n pass",
+    "if text.startswith(\n s):\n pass",
+    "while (a\n != b):\n break",
+    "assert (\n a) == b",
+    "x = (0.5 if t else\n 1.5) / n",
+    "y = not (a\n == b)",
+]
+
+
+@pytest.mark.parametrize("shape", CALLS_AND_OPERATORS_SPREAD_OUT)
+def test_a_call_or_operator_spread_over_lines_lines_up(shape: str) -> None:
+    source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
+    written = compile(source, "<f>", "exec")
+    tree = substitute(ast.parse(source))
+    substituted = compile(tree, "<f>", "exec")
+
+    assert ast.dump(tree) != ast.dump(ast.parse(source)), shape
+    assert layout(written) == layout(substituted)
+
+
 @pytest.mark.parametrize("shape", SPREAD_OUT)
 def test_a_compare_whose_left_side_spans_lines_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"

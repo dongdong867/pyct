@@ -5,20 +5,18 @@ import time
 
 import pytest
 
+from pyct.core import substitutes
 from pyct.intercept.compiled import SubstitutionError, substituted_code
 from pyct.intercept.substitute import BOUND, WRITTEN_MOST, substitute
 
-# the import a module with a substitution starts with
-BINDING = (
-    "from pyct.core.substitutes import is_ as __pyct_is__, is_not as __pyct_is_not__, "
-    "in_ as __pyct_in__, not_in as __pyct_not_in__"
-)
+# how the import a module with a substitution starts with begins
+BINDING = "from pyct.core.substitutes import "
 
 
 def substituted(source: str) -> str:
     """The source as the transform leaves it, written back as Python, less its binding import."""
     lines = ast.unparse(substitute(ast.parse(source))).splitlines()
-    return "\n".join(line for line in lines if line != BINDING)
+    return "\n".join(line for line in lines if not line.startswith(BINDING))
 
 
 def statements(source: str) -> list[ast.stmt]:
@@ -55,10 +53,10 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
         "a is None",
         "a is 1",
         "not (a is None)",
-        # a chained compare, and every other operator
+        # a chained compare, and an operator no plain number can hand over
         "0 < x in {1, 5}",
-        "a == b",
-        "not (a == b)",
+        "a == 1",
+        "not (a == 'x')",
         # a loop, a comprehension and a pattern hold `in` or `is` but no compare
         "for x in xs:\n    pass",
         "[x for x in xs]",
@@ -143,7 +141,8 @@ def test_each_call_takes_the_compare_s_position_and_its_name_the_first_operand_s
 
 def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
     assert all(name.startswith("__") and name.endswith("__") for name in BOUND)
-    assert set(BOUND.values()) == {"is_", "is_not", "in_", "not_in"}
+    assert {"is_", "is_not", "in_", "not_in", "call", "method", "add", "lt"} <= set(BOUND.values())
+    assert all(hasattr(substitutes, function) for function in BOUND.values())
 
 
 def test_a_repeated_constant_is_handed_over_once_as_the_display_holds_it() -> None:
@@ -166,11 +165,18 @@ def test_the_names_are_imported_before_the_first_statement_that_runs_on_its_line
         "Assign",
     ]
     assert (body[2].lineno, body[2].end_lineno) == (4, 4)
-    assert ast.unparse(body[2]) == BINDING
+    assert ast.unparse(body[2]) == f"{BINDING}in_ as __pyct_in__"
+
+
+def test_a_module_imports_only_the_names_it_calls_in_the_order_bound() -> None:
+    body = substitute(ast.parse("y = a not in b\nz = x is True\nw = int(v)\n")).body
+
+    expected = "is_ as __pyct_is__, not_in as __pyct_not_in__, call as __pyct_call__"
+    assert ast.unparse(body[0]) == BINDING + expected
 
 
 def test_a_module_with_nothing_substituted_imports_nothing() -> None:
-    assert ast.unparse(substitute(ast.parse("x = a == b\n"))) == "x = a == b"
+    assert ast.unparse(substitute(ast.parse("x = a == 1\n"))) == "x = a == 1"
 
 
 def test_every_class_body_declares_the_names_global_after_its_docstring() -> None:
@@ -178,7 +184,7 @@ def test_every_class_body_declares_the_names_global_after_its_docstring() -> Non
     outer = statements(source)[0]
 
     assert isinstance(outer, ast.ClassDef)
-    assert isinstance(outer.body[1], ast.Global) and outer.body[1].names == list(BOUND)
+    assert isinstance(outer.body[1], ast.Global) and outer.body[1].names == ["__pyct_in__"]
     inner = outer.body[3]
     assert isinstance(inner, ast.ClassDef) and isinstance(inner.body[0], ast.Global)
 
