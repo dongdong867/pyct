@@ -4,13 +4,16 @@ import logging
 import math
 import shutil
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from pyct.core.branch import Expression
+from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.floats import finite
+from pyct.solver.list_reader import RenderTimeError
 from tests.unit.solver.test_cvc5 import NOT_UNKNOWN, fork
 
 needs_cvc5 = pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
@@ -201,7 +204,8 @@ def test_each_ask_after_the_first_gets_what_is_left_of_the_limit(
 ) -> None:
     unsat_on_y = "unsat\n(\nfinite!arg.y\n)\n"
     fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n", unsat_on_y, "unsat\n")
-    _clock(monkeypatch, 100.0, 101.0, 102.0, 103.0, 103.5)
+    # the program is written in no time, so the first ask reads the clock as the solve began
+    _clock(monkeypatch, 100.0, 100.0, 101.0, 102.0, 103.0, 103.5)
 
     ask(tmp_path, monkeypatch, (["==", "x", "x"], [">", "y", 0.0]), timeout=5.0)
 
@@ -221,7 +225,7 @@ def test_an_ask_with_no_time_left_is_a_timeout_without_cvc5(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, asks: int
 ) -> None:
     fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n")
-    _clock(monkeypatch, 100.0, *([101.0] * (asks - 1)), 105.0)
+    _clock(monkeypatch, 100.0, 100.0, *([101.0] * (asks - 1)), 105.0)
 
     with caplog.at_level(logging.DEBUG, logger="pyct.solver.cvc5"):
         assert ask(tmp_path, monkeypatch, timeout=5.0) == Timeout()
@@ -229,7 +233,27 @@ def test_an_ask_with_no_time_left_is_a_timeout_without_cvc5(
     assert len(asked(tmp_path)) == asks
     # every other timeout is logged where cvc5 is asked; this one asks nothing, so it says so
     assert caplog.records[-1].levelno == logging.DEBUG
-    assert caplog.records[-1].getMessage() == "no time left to ask cvc5 again with more doubles"
+    assert caplog.records[-1].getMessage() == "no time left to ask cvc5"
+
+
+@pytest.mark.parametrize("writes", [1, 2], ids=["the-core-program", "the-freed-program"])
+def test_a_later_program_that_outlives_the_limit_is_a_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, writes: int
+) -> None:
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n")
+    written = cvc5_module.program
+    calls: list[int] = []
+
+    def late(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) > writes:
+            raise RenderTimeError("past the deadline")
+        return written(*args, **kwargs)
+
+    monkeypatch.setattr(cvc5_module, "program", late)
+
+    assert ask(tmp_path, monkeypatch) == Timeout()
+    assert len(asked(tmp_path)) == writes
 
 
 @needs_cvc5

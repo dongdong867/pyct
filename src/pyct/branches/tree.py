@@ -64,8 +64,16 @@ class Tree:
             (index, depth) for depth in reversed(range(len(forks))) if self._new_side(forks[depth])
         )
 
+    @property
+    def oldest(self) -> int:
+        """The oldest path a pick may still extend: every path before it has no open fork, and
+        a fork never reopens, so no later pick names one of those."""
+        self._seek()
+        return self._path
+
     def next(self) -> Plan | None:
-        """The path that takes the other side of the open fork the order picks next.
+        """The path that takes the other side of the open fork the order picks next, and which
+        path it extends, counted in the order ``add`` took them.
 
         New side first, by decision fork-order-new-side-first: an open fork
         whose other side no input took at its site comes first, oldest path
@@ -85,7 +93,7 @@ class Tree:
         path, depth = picked
         forks, keys = self._paths[path]
         self._aimed.add(keys[depth])
-        return plan(forks[: depth + 1])
+        return plan(forks[: depth + 1], path)
 
     def _next_new_side(self) -> Place | None:
         """The first fork waiting as a new side that is still open and still new.
@@ -103,13 +111,21 @@ class Tree:
 
     def _next_oldest(self) -> Place | None:
         """The deepest open fork on the oldest path that holds one."""
+        found = self._seek()
+        if found is not None:
+            self._depth = found[1] - 1
+        return found
+
+    def _seek(self) -> Place | None:
+        """Move where the oldest-path pick starts looking to the deepest open fork on the oldest
+        path that holds one, and name it; None when no path holds one."""
         while self._path < len(self._paths):
             forks, keys = self._paths[self._path]
             depth = len(forks) - 1 if self._depth is None else self._depth
             while depth >= 0 and not self._open(keys[depth], forks[depth].taken):
                 depth -= 1
             if depth >= 0:
-                self._depth = depth - 1
+                self._depth = depth
                 return self._path, depth
             self._path += 1
             self._depth = None

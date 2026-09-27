@@ -9,13 +9,18 @@ from pyct.results.record import Aim
 
 @dataclass(frozen=True)
 class Plan:
-    """The path the next input should take, and the fork it is aimed at."""
+    """The path the next input should take, the fork it is aimed at, and whose path it extends.
+
+    ``path`` counts the paths in the order the tree took them, the seed's first, so it names
+    the input whose path this is, which the answer starts from.
+    """
 
     prefix: tuple[Branch, ...]
     aim: Aim
+    path: int = 0
 
 
-def plan(forks: tuple[Branch, ...]) -> Plan | None:
+def plan(forks: tuple[Branch, ...], path: int = 0) -> Plan | None:
     """The path of ``forks`` with its last fork taken the other way.
 
     The last fork is the one nothing else on the path depends on, so
@@ -27,4 +32,4 @@ def plan(forks: tuple[Branch, ...]) -> Plan | None:
     last = forks[-1]
     flipped = dataclasses.replace(last, taken=not last.taken)
     aim = Aim(site=last.site, position=len(forks) - 1, raising=last.raising)
-    return Plan(prefix=(*forks[:-1], flipped), aim=aim)
+    return Plan(prefix=(*forks[:-1], flipped), aim=aim, path=path)

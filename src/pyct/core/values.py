@@ -45,16 +45,25 @@ def raised_by_target(error: BaseException) -> bool:
 _BEFORE_A_RAISE = [False]
 
 
-def forked(sink: BranchSink, expression: Expression, taken: bool, *, raising: bool = False) -> bool:
+def forked(
+    sink: BranchSink,
+    expression: Expression,
+    taken: bool,
+    name: str = "__bool__",
+    *,
+    raising: bool = False,
+) -> bool:
     """Record the fork a truth test just took, and answer with the side it took.
 
     Python demands a real bool back from ``__bool__``, so no concolic type can
     answer with a value that carries the condition; the condition goes to the
     sink here instead. One helper, so every type records it the same way.
+    ``name`` is the operation that took it: a truth test, or a list's walk or index.
     ``raising`` marks a fork taken before an operation that may raise.
     """
     marked = raising or _BEFORE_A_RAISE[0]
-    sink.append(Branch(expression=expression, taken=taken, site=caller_site(), raising=marked))
+    branch = Branch(expression, taken, caller_site(), raising=marked, lost_as=name)
+    sink.append(branch)
     return taken
 
 

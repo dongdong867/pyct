@@ -287,15 +287,16 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     A tuple reads ``('a', t)``, and one item ``('a',)``. An index reads
     ``s[i]`` and a slice ``s[i:j]`` or ``s[i:j:k]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A function in `_FUNCTIONS` reads as the table spells
-    it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
-    Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among
-    them. A part cut from a long expression reads ``...(N nodes)``, and
-    ``...(? nodes)`` when its count is ``null``. Each binds tighter than any
-    operator, so none needs parentheses of its own.
+    ``config['port']``. A list display reads ``[x, 7]``. A function in `_FUNCTIONS` reads as
+    the table spells it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
+    Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among them. A part cut
+    from a long expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
+    ``null``. Each binds tighter than any operator, so none needs parentheses of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
+    if head == "[,]":
+        return f"[{', '.join(texts)}]"
     if head == CUT:
         return f"...({'?' if expression[1] is None else texts[0]} nodes)"
     if head == "()":

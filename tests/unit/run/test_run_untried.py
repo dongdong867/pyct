@@ -66,7 +66,7 @@ def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
     def refused(args: object, until: float | None) -> object:
         raise InputStartError("could not start a child process")
 
-    attempt = _attempt(refused, Seed.of(seed), tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
+    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
 
     assert attempt.stop is not None
     assert attempt.unrun == ForkSite(Site(file=ONE_CHECK, line=2, col=7))

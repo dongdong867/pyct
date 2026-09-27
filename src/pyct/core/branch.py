@@ -8,7 +8,7 @@ import sys
 import types
 import weakref
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -44,12 +44,16 @@ class Branch:
     as division's zero fork, rather than where a value is tested for truth.
     Both can sit at one column, as in ``if s[0] != s[0]:``, so only the mark
     tells whose side a fork took.
+
+    ``lost_as`` names the operation that took it, which a call that is over names its loss by
+    when a value it kept records one (see ``execution.tally``). It is no part of the fork.
     """
 
     expression: Expression
     taken: bool
     site: Site
     raising: bool = False
+    lost_as: str = field(default="__bool__", compare=False)
 
     @property
     def where(self) -> ForkSite:

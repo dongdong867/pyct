@@ -11,6 +11,7 @@ from pyct.binding.bind import access_name, bind, leaf_name, leaves
 from pyct.core.branch import Expression, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 
 
@@ -186,7 +187,9 @@ def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
     config["seen"] = True
     assert seed == {"config": {"items": [0]}}
     assert type(config) is dict
-    assert type(config["items"]) is list
+    # a list the walk names is tracked whole, and still a list to the target
+    assert isinstance(config["items"], ConcolicList)
+    assert config["items"].expression == ["+", ["[]", "config", "'items'"], ["[,]", 1]]
 
 
 def test_a_subclass_of_dict_is_a_copy_of_the_same_type_with_plain_values() -> None:

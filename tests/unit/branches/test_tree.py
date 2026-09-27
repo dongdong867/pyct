@@ -42,14 +42,16 @@ def test_a_newer_path_waits_until_every_older_fork_was_aimed_at() -> None:
     tree.add((fork(2, taken=True), fork(3, taken=True)))
     tree.add((fork(4, taken=True), fork(5, taken=True)))
 
-    aims = [picked.aim for picked in iter(tree.next, None)]
+    picks = list(iter(tree.next, None))
 
-    assert aims == [
+    assert [picked.aim for picked in picks] == [
         Aim(site=fork(3, taken=True).site, position=1),
         Aim(site=fork(2, taken=True).site, position=0),
         Aim(site=fork(5, taken=True).site, position=1),
         Aim(site=fork(4, taken=True).site, position=0),
     ]
+    # each pick names the path it extends, whose input an answer starts from
+    assert [picked.path for picked in picks] == [0, 0, 1, 1]
 
 
 def test_a_fork_whose_other_side_no_input_took_comes_before_the_loop() -> None:
@@ -290,3 +292,18 @@ def test_an_operation_s_side_at_a_test_s_column_does_not_make_the_test_s_flip_ol
     # before line 3, which the oldest-path order would pick
     assert picked is not None
     assert (picked.aim.site, picked.aim.raising) == (test.site, False)
+
+
+def test_the_oldest_path_a_pick_can_still_extend_moves_on_as_paths_are_spent() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True),))
+    tree.add((fork(2, taken=False), fork(3, taken=True)))
+
+    # both sides of line 2 ran, so the first path has no fork left and no later pick extends it
+    assert tree.oldest == 1
+    picked = tree.next()
+
+    assert picked is not None and picked.path == 1 and picked.aim.position == 1
+    # the pick spent the last open fork, so no path is left to extend
+    assert tree.oldest == 2
+    assert tree.next() is None
