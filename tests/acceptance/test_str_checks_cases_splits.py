@@ -163,14 +163,16 @@ def test_keeps_a_non_ascii_approximation_honest() -> None:
     assert _reported_taken(result.stdout) == []
 
 
-# follow-strings-keeps-a-non-ascii-approximation-honest, with the contract's own literal
-def test_reports_a_non_ascii_fork_taken_only_where_python_takes_it() -> None:
+# beside follow-strings-keeps-a-non-ascii-approximation-honest, not a criterion of its own: a
+# fork past ASCII that Python does take is reported taken, and only there
+def test_reports_a_non_ascii_fork_taken_where_python_takes_it() -> None:
     result = run_pyct(PAST_ASCII_UPPER, '{"s": "x"}')
 
     assert result.returncode == 0, result.stderr
-    # É is its own upper() in Python and in cvc5 alike, so an input may take the fork; each
-    # line that says so is right
-    assert all(s.upper() == "É" for s in _reported_taken(result.stdout))
+    # É is its own upper() in Python and in cvc5 alike, so the solver's É takes the fork
+    taken = _reported_taken(result.stdout)
+    assert taken, result.stdout
+    assert all(s.upper() == "É" for s in taken)
 
 
 # follow-strings-follows-split
