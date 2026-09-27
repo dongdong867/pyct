@@ -27,7 +27,6 @@
 {"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}, "status": "differs", "only_legacy": [21], "only_v2": []}
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [3], "only_v2": [7]}
-{"set": "v2", "target": "targets.nested.string_in_list::check", "seed": {"items": ["ab"]}, "status": "differs", "only_legacy": [3, 4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.find_from_position::check", "seed": {"s": "abcx"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.length_check::check", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [4], "only_v2": []}
