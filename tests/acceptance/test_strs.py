@@ -8,6 +8,7 @@ solver's answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     one_line,
@@ -233,7 +234,9 @@ def test_downgrades_a_literal_the_solver_cannot_hold() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # U+30000 is one past the last character cvc5 holds, so Python answers the compare alone
-    assert seed["downgrades"] == [{"name": "__eq__", "count": 1}]
+    assert seed["downgrades"] == [
+        downgrade("__eq__", 1, "targets/strs/past_the_last_character.py:2:7")
+    ]
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -270,7 +273,7 @@ def test_records_an_untaught_method_as_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # a method is named by its own name, and what it hands back is plain, so nothing forks on it
-    assert seed["downgrades"] == [{"name": "encode", "count": 1}]
+    assert seed["downgrades"] == [downgrade("encode", 1, "targets/strs/encode_check.py:2:8")]
     assert seed["forks"] == []
 
 
@@ -281,10 +284,12 @@ def test_counts_text_conversion_as_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # str(s) runs __str__; an f-string with no format spec runs __format__, which runs
-    # __str__ first, so the two __str__ calls in a row are one entry
+    # __str__ first. The two __str__ calls sit at two sites, so each is its own entry
+    at = "targets/strs/text_conversion.py"
     assert seed["downgrades"] == [
-        {"name": "__str__", "count": 2},
-        {"name": "__format__", "count": 1},
+        downgrade("__str__", 1, f"{at}:2:12"),
+        downgrade("__str__", 1, f"{at}:3:13"),
+        downgrade("__format__", 1, f"{at}:3:13"),
     ]
 
 
@@ -295,7 +300,7 @@ def test_counts_len_as_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # Python makes what __len__ hands back a plain int before the target sees it
-    assert seed["downgrades"] == [{"name": "__len__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__len__", 1, "targets/strs/length_check.py:2:7")]
     assert seed["forks"] == []
 
 
@@ -351,7 +356,7 @@ def test_downgrades_a_search_from_a_position() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # a start position is a form pyct does not encode, so str answers and the method is named
-    assert seed["downgrades"] == [{"name": "find", "count": 1}]
+    assert seed["downgrades"] == [downgrade("find", 1, "targets/strs/find_from_position.py:2:7")]
     assert seed["forks"] == []
 
 

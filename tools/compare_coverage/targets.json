@@ -209,6 +209,8 @@
     {"set": "v2", "target": "targets.trace.through_shift::size", "seed": {"x": -3}},
     {"set": "v2", "target": "targets.trace.two_checks::bucket", "seed": {"x": 5}},
     {"set": "v2", "target": "targets.trace.uncalled_helper::classify", "seed": {"x": 3}},
+    {"set": "v2", "target": "targets.why.lost::lose", "seed": {"x": 3}},
+    {"set": "v2", "target": "targets.why.sites::sites", "seed": {"x": 3}},
     {"set": "fixtures", "target": "tests.acceptance.fixtures.branches.multi_way_elif::grade", "seed": {"score": 50}},
     {"set": "fixtures", "target": "tests.acceptance.fixtures.branches.nested_conditions::categorize", "seed": {"x": 0, "y": 0}},
     {"set": "fixtures", "target": "tests.acceptance.fixtures.branches.no_branches::double", "seed": {"x": 1}},

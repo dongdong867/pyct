@@ -43,16 +43,16 @@ def test_counts_after_an_interrupted_downgrade_land_on_their_own_entry() -> None
     def trial(interrupt: Interrupt, at: int) -> None:
         buffer = bytearray(1 << 16)
         writer = JournalWriter(buffer)
-        writer.downgrade("__abs__", 1)
-        interrupt(functools.partial(writer.downgrade, "__neg__", 1))
-        writer.downgrade("__neg__", 2)
-        writer.downgrade("__neg__", 3)
-        writer.downgrade("__abs__", 1)
+        writer.downgrade("__abs__", SITE, 1)
+        interrupt(functools.partial(writer.downgrade, "__neg__", SITE, 1))
+        writer.downgrade("__neg__", SITE, 2)
+        writer.downgrade("__neg__", SITE, 3)
+        writer.downgrade("__abs__", SITE, 1)
 
         assert read(buffer).downgrades == (
-            DowngradeCount(name="__abs__", count=1),
-            DowngradeCount(name="__neg__", count=3),
-            DowngradeCount(name="__abs__", count=1),
+            DowngradeCount(name="__abs__", count=1, site=SITE),
+            DowngradeCount(name="__neg__", count=3, site=SITE),
+            DowngradeCount(name="__abs__", count=1, site=SITE),
         ), at
 
     at_every_line(JOURNAL, trial)
@@ -62,21 +62,21 @@ def test_an_entry_lost_between_two_entries_of_one_name_keeps_them_apart() -> Non
     def trial(interrupt: Interrupt, at: int) -> None:
         buffer = bytearray(1 << 16)
         writer = JournalWriter(buffer)
-        writer.downgrade("__rshift__", 1)
-        writer.downgrade("__rshift__", 2)
-        interrupt(functools.partial(writer.downgrade, "__or__", 1))
-        writer.downgrade("__rshift__", 1)
+        writer.downgrade("__rshift__", SITE, 1)
+        writer.downgrade("__rshift__", SITE, 2)
+        interrupt(functools.partial(writer.downgrade, "__or__", SITE, 1))
+        writer.downgrade("__rshift__", SITE, 1)
 
         # the interrupted entry may be missing; the two around it stay two, with their counts
         assert read(buffer).downgrades in (
             (
-                DowngradeCount(name="__rshift__", count=2),
-                DowngradeCount(name="__or__", count=1),
-                DowngradeCount(name="__rshift__", count=1),
+                DowngradeCount(name="__rshift__", count=2, site=SITE),
+                DowngradeCount(name="__or__", count=1, site=SITE),
+                DowngradeCount(name="__rshift__", count=1, site=SITE),
             ),
             (
-                DowngradeCount(name="__rshift__", count=2),
-                DowngradeCount(name="__rshift__", count=1),
+                DowngradeCount(name="__rshift__", count=2, site=SITE),
+                DowngradeCount(name="__rshift__", count=1, site=SITE),
             ),
         ), at
 
@@ -87,21 +87,21 @@ def test_an_entry_that_grows_past_one_of_its_name_before_a_lost_one_stays_apart(
     def trial(interrupt: Interrupt, at: int) -> None:
         buffer = bytearray(1 << 16)
         writer = JournalWriter(buffer)
-        writer.downgrade("__abs__", 1)
-        interrupt(functools.partial(writer.downgrade, "__neg__", 1))
+        writer.downgrade("__abs__", SITE, 1)
+        interrupt(functools.partial(writer.downgrade, "__neg__", SITE, 1))
         for count in (1, 2, 3):
-            writer.downgrade("__abs__", count)
+            writer.downgrade("__abs__", SITE, count)
 
         # the later entry counts more than the earlier one and is still its own
         assert read(buffer).downgrades in (
             (
-                DowngradeCount(name="__abs__", count=1),
-                DowngradeCount(name="__neg__", count=1),
-                DowngradeCount(name="__abs__", count=3),
+                DowngradeCount(name="__abs__", count=1, site=SITE),
+                DowngradeCount(name="__neg__", count=1, site=SITE),
+                DowngradeCount(name="__abs__", count=3, site=SITE),
             ),
             (
-                DowngradeCount(name="__abs__", count=1),
-                DowngradeCount(name="__abs__", count=3),
+                DowngradeCount(name="__abs__", count=1, site=SITE),
+                DowngradeCount(name="__abs__", count=3, site=SITE),
             ),
         ), at
 

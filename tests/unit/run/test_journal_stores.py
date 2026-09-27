@@ -7,7 +7,10 @@ import signal
 import time
 from typing import NoReturn
 
+from pyct.core.branch import Site
 from pyct.run.journal import RECORDS, JournalWriter
+
+SITE = Site(file="t.py", line=3, col=7)
 
 # how long the reader looks at the two words while the writer writes them
 SAMPLING = 1.0
@@ -44,11 +47,11 @@ def write_while_watched(buffer: mmap.mmap, parent: int) -> NoReturn:
 def write(buffer: mmap.mmap, parent: int) -> None:
     """Grow one count in place, and add a line now and then, while ``parent`` is alive."""
     writer = JournalWriter(buffer)
-    writer.downgrade("__abs__", 1)
+    writer.downgrade("__abs__", SITE, 1)
     count = 2
     while os.getppid() == parent:
         for _ in range(1024):
-            writer.downgrade("__abs__", count)
+            writer.downgrade("__abs__", SITE, count)
             if count % 16 == 0:
                 writer.line(count)
             count += 1

@@ -7,7 +7,7 @@ shows what the target was handed and whose raise the line reports.
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, one_line, run_pyct
+from tests.acceptance.harness import REPO_ROOT, downgrade, one_line, run_pyct
 
 SPLIT_KEYWORD = "targets.strs.split_keyword::split_on_comma"
 SPLIT_KEYWORD_FILE = str(REPO_ROOT / "targets" / "strs" / "split_keyword.py")
@@ -48,7 +48,7 @@ def test_names_the_method() -> None:
     seed = one_line(result.stdout)
     assert seed["failure"] is None
     # named by the method, as the positional call is; the bytes it hands back are plain
-    assert seed["downgrades"] == [{"name": "encode", "count": 1}]
+    assert seed["downgrades"] == [downgrade("encode", 1, "targets/strs/encode_keyword.py:2:11")]
     assert seed["forks"] == []
 
 
@@ -60,7 +60,11 @@ def test_counts_every_form_as_one_method() -> None:
     seed = one_line(result.stdout)
     assert seed["failure"] is None
     # positional, keyword and mixed are one method called three times in a row
-    assert seed["downgrades"] == [{"name": "encode", "count": 3}]
+    assert seed["downgrades"] == [
+        downgrade("encode", 1, "targets/strs/encode_forms.py:2:12"),
+        downgrade("encode", 1, "targets/strs/encode_forms.py:3:13"),
+        downgrade("encode", 1, "targets/strs/encode_forms.py:4:12"),
+    ]
 
 
 # pass-keywords-through-a-downgrade-passes-any-keyword-name
@@ -70,7 +74,7 @@ def test_passes_any_keyword_name() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     assert seed["failure"] is None
-    assert seed["downgrades"] == [{"name": "format", "count": 1}]
+    assert seed["downgrades"] == [downgrade("format", 1, "targets/strs/format_keyword.py:2:8")]
     # `x` is a name the target's own format field chose, and str's format filled it with 1
     assert UNDER_THE_FORK in covered_in(seed, FORMAT_KEYWORD_FILE)
 

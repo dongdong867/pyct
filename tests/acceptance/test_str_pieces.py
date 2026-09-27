@@ -7,6 +7,7 @@ runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     one_line,
@@ -147,7 +148,7 @@ def test_downgrades_a_tracked_index() -> None:
     seed = one_line(result.stdout)
     # a tracked int as the index is a form pyct does not encode, so str answers and the
     # operator is named by its dunder
-    assert seed["downgrades"] == [{"name": "__getitem__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__getitem__", 1, "targets/strs/tracked_index.py:2:7")]
     assert seed["forks"] == []
 
 

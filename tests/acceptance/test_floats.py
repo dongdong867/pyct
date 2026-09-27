@@ -11,6 +11,7 @@ import pytest
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     one_line,
@@ -271,7 +272,11 @@ def test_downgrades_an_untaught_float_operation() -> None:
     seed = first_line(result.stdout)
     # an operator by its dunder, a method by its name; a bool beside a float is float's own
     names = ["__pow__", "__int__", "__round__", "hex", "__str__", "__add__"]
-    assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
+    # one call a line, from line 2 on, each at the statement's start
+    assert seed["downgrades"] == [
+        downgrade(name, 1, f"targets/floats/untaught.py:{line}:4")
+        for line, name in enumerate(names, start=2)
+    ]
     assert expressions(seed) == [[">", "x", 0.0]]
 
 

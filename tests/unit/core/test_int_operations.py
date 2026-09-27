@@ -4,6 +4,7 @@ import json
 import math
 import operator
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -116,7 +117,7 @@ def test_an_untaught_operation_returns_a_plain_value_and_records_its_name(
 
     assert result == call(3)
     assert not isinstance(result, ConcolicInt)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize(
@@ -184,7 +185,7 @@ def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], obj
 
     assert result == call(1)
     assert not isinstance(result, ConcolicInt)
-    assert sink == [Downgrade(name="__pow__")]
+    assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
 def test_a_float_exponent_is_floats_own_power() -> None:
@@ -206,7 +207,7 @@ def test_a_symbolic_exponent_is_a_downgrade() -> None:
     assert 2**x == 4
 
     # cvc5 takes a constant exponent only, so both spellings stay int's own
-    assert sink == [Downgrade(name="__pow__"), Downgrade(name="__rpow__")]
+    assert sink == [Downgrade(name="__pow__", site=ANY), Downgrade(name="__rpow__", site=ANY)]
 
 
 @pytest.mark.parametrize("call", IDENTITIES.values(), ids=list(IDENTITIES))
@@ -250,7 +251,7 @@ def test_int_of_a_concolic_int_is_a_downgrade() -> None:
     result = int(x)
 
     assert type(result) is int
-    assert sink == [Downgrade(name="__int__")]
+    assert sink == [Downgrade(name="__int__", site=ANY)]
 
 
 def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
@@ -258,7 +259,7 @@ def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
     x = ConcolicInt(1234, expression="x", sink=sink)
 
     assert round(x, -2) == 1200
-    assert sink == [Downgrade(name="__round__")]
+    assert sink == [Downgrade(name="__round__", site=ANY)]
 
 
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
@@ -325,7 +326,7 @@ def test_turning_a_concolic_int_into_text_records_a_downgrade() -> None:
     assert str(x) == "3"
     assert f"{x:d}" == "3"
 
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+    assert sink == [Downgrade(name="__str__", site=ANY), Downgrade(name="__format__", site=ANY)]
 
 
 def test_an_empty_format_goes_through_str_and_records_both() -> None:
@@ -335,7 +336,7 @@ def test_an_empty_format_goes_through_str_and_records_both() -> None:
     assert f"{x}" == "3"
 
     # int's own __format__ formats an empty spec by asking str, so the f-string loses it twice
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+    assert sink == [Downgrade(name="__str__", site=ANY), Downgrade(name="__format__", site=ANY)]
 
 
 def test_using_a_concolic_int_as_an_index_records_nothing() -> None:
@@ -401,7 +402,7 @@ def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
 
     # no int downgrade takes a keyword today; to_bytes does, so the factory is built on it here
     assert to_bytes(x, length=2, byteorder="big") == b"\x00\x03"
-    assert sink == [Downgrade(name="to_bytes")]
+    assert sink == [Downgrade(name="to_bytes", site=ANY)]
 
 
 def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:

@@ -1,5 +1,6 @@
 import math
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -106,7 +107,7 @@ def test_an_operand_float_answers_but_pyct_does_not_encode_is_a_downgrade(
     # float's own answer, where NotImplemented would hand the compare to int, which has none
     assert type(result) is bool
     assert result is call(2.5)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_equal_to_a_str_is_pythons_own_constant() -> None:

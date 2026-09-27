@@ -4,6 +4,7 @@ before it may raise, and the forms left to str as a downgrade."""
 import operator
 import sys
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -229,7 +230,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
     # tracked int or bool as a position without asking it anything, so it records nothing
     assert result == call("abcb", 1)
     assert not isinstance(result, ConcolicStr | ConcolicBool)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
@@ -242,7 +243,7 @@ def test_a_replace_with_a_tracked_old_string_is_a_downgrade() -> None:
     # every character, and a tracked old string may be empty
     assert result == "axcx"
     assert not isinstance(result, ConcolicStr)
-    assert sink == [Downgrade(name="replace")]
+    assert sink == [Downgrade(name="replace", site=ANY)]
 
 
 # a piece given what str refuses: the call, and the error str raises for it

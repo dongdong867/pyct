@@ -135,8 +135,9 @@ def _aim(aim: Aim) -> str:
 
 
 def _downgrade(entry: DowngradeCount) -> str:
-    """One call is its bare name; a run of them carries how many."""
-    return entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    """One call is its bare name; a run of them carries how many. Either says where."""
+    counted = entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    return f"{counted} at {_site(entry.site)}"
 
 
 def _fork(branch: Branch, expression: Expression) -> str:

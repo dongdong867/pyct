@@ -102,6 +102,18 @@ def hanging_cvc5(tmp_path: Path) -> Path:
     return script
 
 
+def downgrade(name: str, count: int, at: str) -> dict[str, object]:
+    """A downgrade entry as an input's line writes it. ``at`` is ``targets/<file>.py:line:col``."""
+    path, line, col = at.rsplit(":", 2)
+    return {
+        "name": name,
+        "count": count,
+        "file": str(REPO_ROOT / path),
+        "line": int(line),
+        "col": int(col),
+    }
+
+
 def input_lines(stdout: str) -> list[dict[str, object]]:
     """The one line per input, without the summary line that closes stdout.
 

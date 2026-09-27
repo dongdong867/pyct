@@ -217,15 +217,15 @@ def test_render_trace_joins_the_downgrades_in_order_and_counts_a_run() -> None:
         forks=(),
         covered_lines=frozenset(),
         downgrades=(
-            DowngradeCount(name="__radd__", count=3),
-            DowngradeCount(name="__abs__", count=1),
+            DowngradeCount(name="__radd__", count=3, site=Site(file="m.py", line=7, col=4)),
+            DowngradeCount(name="__abs__", count=1, site=Site(file="m.py", line=2, col=8)),
         ),
     )
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # one call is the bare name; more than one carries the count after it
-    assert lines[-1] == "downgrades __radd__ ×3, __abs__"
+    # one call is the bare name; more than one carries the count after it; each says where
+    assert lines[-1] == "downgrades __radd__ ×3 at m.py:7:4, __abs__ at m.py:2:8"
 
 
 def test_render_trace_opens_a_seed_with_the_word_seed() -> None:

@@ -110,8 +110,15 @@ def _aim(aim: Aim | None) -> dict[str, object] | None:
 
 
 def _downgrade(entry: DowngradeCount) -> dict[str, object]:
-    """One method or dunder that dropped the condition, and how many calls in a row did."""
-    return {"name": entry.name, "count": entry.count}
+    """One method or dunder that dropped the condition, how many calls in a row did, and where."""
+    site = entry.site
+    return {
+        "name": entry.name,
+        "count": entry.count,
+        "file": site.file,
+        "line": site.line,
+        "col": site.col,
+    }
 
 
 def _failure(failure: Failure | None) -> dict[str, str] | None:

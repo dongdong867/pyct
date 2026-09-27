@@ -3,6 +3,7 @@
 import json
 import math
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -203,7 +204,7 @@ def test_an_untaught_operation_is_a_downgrade(call: Callable[[int], object], nam
     # the loss is recorded by name, and the value is int's own answer on the 1 the bool is
     assert result == call(1)
     assert not isinstance(result, ConcolicInt | ConcolicBool)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def test_a_bool_reads_as_true_or_false() -> None:
@@ -214,7 +215,7 @@ def test_a_bool_reads_as_true_or_false() -> None:
     assert sink == []
     # the text drops the condition, so each is a downgrade; an f-string records one entry
     assert (str(above), f"{below}") == ("True", "False")
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+    assert sink == [Downgrade(name="__str__", site=ANY), Downgrade(name="__format__", site=ANY)]
 
 
 def test_a_bool_formats_with_a_spec_as_python_formats_a_bool() -> None:

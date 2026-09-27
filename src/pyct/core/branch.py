@@ -6,6 +6,7 @@ import itertools
 import os
 import sys
 import types
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,9 +47,14 @@ class Branch:
 
 @dataclass(frozen=True)
 class Downgrade:
-    """One operation pyct has not taught. ``name`` is a method name or a dunder."""
+    """One operation pyct has not taught, and where it was called.
+
+    ``name`` is a method name or a dunder. ``site`` is found as a fork's is:
+    the innermost code outside pyct that made the call.
+    """
 
     name: str
+    site: Site
 
 
 # what a sink holds: the forks and the downgrades, in the order they happened
@@ -66,6 +72,17 @@ class BranchSink(Protocol):
     def append(self, item: SinkItem, /) -> None: ...
 
 
+# each instruction's site, by its code's id and offset, found once: a loop that forks or
+# downgrades at one place asks on every pass, and finding the column walks the code's
+# positions. The code is held weakly, so an id a freed code leaves behind is never read as it
+_SITES: dict[tuple[int, int], tuple[weakref.ref[types.CodeType], Site]] = {}
+
+
+# the last instruction a site was found for, and its site: a loop's repeat asks for it. One
+# tuple, set in one store, so the alarm landing mid-update never pairs one with another's site
+_LAST: list[tuple[types.CodeType | None, int, Site]] = [(None, -1, Site(file="", line=0, col=0))]
+
+
 def caller_site() -> Site:
     """The position of the innermost frame outside pyct.
 
@@ -73,11 +90,31 @@ def caller_site() -> Site:
     steps over pyct's own frames. The column comes from the running
     instruction's position, which spans the expression being tested.
     """
-    frame: types.FrameType | None = sys._getframe(1)
+    return site_of(sys._getframe(1))
+
+
+def site_of(frame: types.FrameType | None) -> Site:
+    """The position of ``frame``, or of the innermost frame outside pyct that called it.
+
+    A caller that knows its own caller hands that frame in, which spares the
+    walk one step on a path a loop runs on every pass.
+    """
+    # the last site found is outside pyct, so a repeat of it needs no walk
+    last_code, last_at, last_site = _LAST[0]
+    if frame is not None and frame.f_code is last_code and frame.f_lasti == last_at:
+        return last_site
     while frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR):
         frame = frame.f_back
     if frame is None:
         raise RuntimeError("no frame outside pyct to record the fork against")
-    # f_lasti counts bytes, co_positions() counts two-byte instructions; traceback.py does the same
-    _, _, col, _ = next(itertools.islice(frame.f_code.co_positions(), frame.f_lasti // 2, None))
-    return Site(file=frame.f_code.co_filename, line=frame.f_lineno, col=0 if col is None else col)
+    code, at = frame.f_code, frame.f_lasti
+    held = _SITES.get((id(code), at))
+    if held is not None and held[0]() is code:
+        site = held[1]
+    else:
+        # f_lasti counts bytes, co_positions() counts two-byte instructions, as in traceback.py
+        _, _, col, _ = next(itertools.islice(code.co_positions(), at // 2, None))
+        site = Site(file=code.co_filename, line=frame.f_lineno, col=0 if col is None else col)
+        _SITES[(id(code), at)] = (weakref.ref(code), site)
+    _LAST[0] = (code, at, site)
+    return site

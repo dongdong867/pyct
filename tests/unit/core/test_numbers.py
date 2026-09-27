@@ -3,6 +3,7 @@
 import subprocess
 import sys
 import textwrap
+from unittest.mock import ANY
 
 import pytest
 
@@ -133,7 +134,7 @@ def test_a_tracked_int_meets_a_tracked_float_with_pythons_own_answer(
 
     assert crossed is answer
     assert numbers.operand(y) is None
-    assert Downgrade(name=MIRRORED[op]) in sink
+    assert Downgrade(name=MIRRORED[op], site=ANY) in sink
     # CPython compares a float with an int past 48 bits by its integral part, as an int, and
     # that asks the tracked int: its fork is on x and a plain int, on the side Python took,
     # never on y read as an int

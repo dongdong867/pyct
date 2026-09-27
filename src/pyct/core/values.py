@@ -6,11 +6,12 @@ downgrades derived for what a type has not taught.
 
 from __future__ import annotations
 
+import sys
 import types
 from collections.abc import Callable
 from typing import Protocol
 
-from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site, site_of
 
 # the mark that says a raise came out of the base type's own operation. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
@@ -122,7 +123,8 @@ def downgraded(
         result = own(operation, self, *args, **kwargs)
         if result is NotImplemented:
             return result
-        self.sink.append(Downgrade(name=name))
+        # the call's own caller is where the walk for the site starts
+        self.sink.append(Downgrade(name=name, site=site_of(sys._getframe(1))))
         return own(plain, self, base) if result is self else result
 
     return downgrade
@@ -158,7 +160,7 @@ def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]
 
 def _written(value: _Sinked, held: object, name: str) -> Pickled:
     """Record writing a pickle as a downgrade, and answer with its plain value and type."""
-    value.sink.append(Downgrade(name=name))
+    value.sink.append(Downgrade(name=name, site=caller_site()))
     return type(held), (held,)
 
 

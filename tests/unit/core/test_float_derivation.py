@@ -1,6 +1,7 @@
 import copy
 import math
 import sys
+from unittest.mock import ANY
 
 import pytest
 
@@ -67,7 +68,7 @@ def test_text_conversion_is_a_downgrade_though_float_inherits_it() -> None:
     x = ConcolicFloat(2.5, expression="x", sink=sink)
 
     assert str(x) == "2.5"
-    assert sink == [Downgrade(name="__str__")]
+    assert sink == [Downgrade(name="__str__", site=ANY)]
 
 
 def test_the_object_plumbing_records_nothing() -> None:
