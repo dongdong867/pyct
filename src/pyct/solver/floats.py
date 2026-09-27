@@ -261,9 +261,10 @@ def _quotient_inside(*, held: bool) -> str:
 
     In a program that holds the bound, ``held``, it says too that the quotient's floor converts
     to a finite double. A whole number below 2**50 in size always does, so the bound means what
-    it did; said outright, cvc5 1.3.4 answers the finite fork over a `//` in a tenth of a second,
-    where proving it took about 6 s. The term past the bound, which tests the bound rather than
-    holds it, leaves it out: there it slowed ``x // 1.0 == 1e300`` from 0.3 s to 1.4 s.
+    it did; said outright, the finite fork over a `//` flips in about 0.07 s, where cvc5 1.3.4
+    took about 6 s to prove it and as long again for the unsat core. The term past the bound,
+    which tests the bound rather than holds it, leaves it out: there it slowed
+    ``x // 1.0 == 1e300`` from 0.3 s to 1.4 s.
     """
     inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
     if not held:

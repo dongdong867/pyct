@@ -1,11 +1,13 @@
 """Acceptance tests for the solve-a-finite-floor-division-fast perf ticket.
 
-Each test spawns ``python -P -m pyct`` through the harness with the real cvc5. The first four
-hold the finite fork a rounding records over a float `//`, `int(x // 2)` in
-``targets.strs.float_position::cut``: it flips within a second, the gate's limits cover the
-line past it, and the gate's row for it is `same`. The rest hold what the float rules answered
+The first four tests hold the finite fork a rounding records over a float `//`,
+`int(x // 2)` in ``targets.strs.float_position::cut``: it flips within a second, the gate's
+limits cover the line past it, the per-merge files list the target with nothing accepted for
+it, and the other forks' answers stay finite. The rest hold what the float rules answered
 before: a quotient past the 2**50 bound stays a miss, a floor no double has stays unsat, and
-the solver's limit still ends the flip.
+the solver's limit still ends the flip. Each run spawns ``python -P -m pyct`` through the
+harness with the real cvc5. The checker's own row for the target is held in
+``tests/compare_coverage/acceptance/test_float_position.py``.
 """
 
 import json
