@@ -268,26 +268,3 @@ def test_a_sweep_started_under_nohup_outlives_the_sighup_and_ends_on_a_sigterm(
 
     assert ended == -signal.SIGTERM
     assert gone(lister)
-
-
-def test_an_ignored_sighup_stays_ignored() -> None:
-    # under nohup the terminal's SIGHUP is ignored, and sweep must not start heeding it; a
-    # process of its own, so a sweep that did heed it ends that process and not the tests
-    lister = DONE_AFTER + (
-        "import os, signal\nos.kill(os.getppid(), signal.SIGHUP)\nprint('{\"done\": true}')\n"
-    )
-    check = (
-        "import signal, sys\n"
-        "from pyct.sweep.listing import list_package\n"
-        f"rows = list_package('p', lister=(sys.executable, '-c', {lister!r}))\n"
-        "print(rows == (), signal.getsignal(signal.SIGHUP) is signal.SIG_IGN)\n"
-    )
-    finished = subprocess.run(
-        [sys.executable, "-c", WITH_SIGHUP.format(action="IGN"), "-c", check],
-        capture_output=True,
-        text=True,
-        check=False,
-        timeout=30,
-    )
-
-    assert (finished.returncode, finished.stdout) == (0, "True True\n"), finished.stderr

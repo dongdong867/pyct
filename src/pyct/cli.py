@@ -3,7 +3,8 @@
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
 [--solver-timeout SECONDS] [--in-process]``
 
-``pyct sweep PACKAGE --list``
+``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
+[--total-budget SECONDS]``
 """
 
 from __future__ import annotations
@@ -39,15 +40,28 @@ from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
-from pyct.sweep.listing import PackageImportError, list_package
-from pyct.sweep.rows import closing, row_line, summary_line, told
+from pyct.sweep.listing import PackageImportError
+from pyct.sweep.result import SweepLimits, closing, summary_line
+from pyct.sweep.rows import Row, row_line, running, told
+from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
 )
-SWEEP_USAGE = "pyct sweep PACKAGE --list"
-
+SWEEP_USAGE = (
+    "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
+    " [--total-budget SECONDS]"
+)
+# what pyct sweep --help says above the flags, kept as written
+SWEEP_WARNING = """\
+pyct sweep runs each public function and class of PACKAGE as its own pyct run.
+It calls every function and class it runs with inputs it made up. Each entry
+runs in a temporary working directory of its own, which takes only the files
+an input writes by a relative path, and isolation undoes what an input changes
+in its process. Nothing undoes a file an input writes anywhere else or a
+request it sends.
+"""
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
 # fork, its condition, and a few operations the target applies to the value
@@ -75,10 +89,15 @@ class RunCommand:
 
 @dataclass(frozen=True)
 class SweepCommand:
-    """What ``pyct sweep`` was asked for: the package, and whether only to list its entries."""
+    """What ``pyct sweep`` was asked for: the package, whether only to list its entries, and the
+    limits, as the command line gave them."""
 
     package: str
     list_only: bool = False
+    budget_text: str | None = None
+    plateau_text: str | None = None
+    solver_timeout_text: str | None = None
+    total_budget_text: str | None = None
 
 
 def entry() -> int:
@@ -164,21 +183,45 @@ def _checked(
 
 
 def _sweep(command: SweepCommand) -> int:
-    """List the package's entries: each row on stdout with its stderr line, then the summary.
-
-    Running the entries is not built yet, so ``--list`` is required.
-    """
-    if not command.list_only:
-        raise UsageError(f"pyct sweep runs no entry yet; pass --list\nusage: {SWEEP_USAGE}")
-    rows = list_package(command.package)
-    for row in rows:
-        _line(row_line(row))
-        said = told(row)
-        if said is not None:
-            print(said, file=sys.stderr, flush=True)
-    print(closing(command.package, rows), end="", file=sys.stderr, flush=True)
-    _line(summary_line(command.package, rows))
+    """Sweep the package: each row on stdout as it is known, with its stderr line, then the
+    closing lines and the summary."""
+    check_package(command.package)
+    limits = _sweep_limits(command)
+    mode = Mode.LIST if command.list_only else Mode.RUN
+    result = sweep(command.package, limits=limits, mode=mode, tell=SweepTell(_starting, _row))
+    print(closing(result), end="", file=sys.stderr, flush=True)
+    _line(summary_line(result))
     return 0
+
+
+def _sweep_limits(command: SweepCommand) -> SweepLimits:
+    """The limits the command line gave, each by ``pyct run``'s rule, or the sweep's defaults."""
+    defaults = SweepLimits()
+    budget = parse_budget(command.budget_text).seconds
+    plateau = parse_plateau(command.plateau_text).inputs
+    total = parse_budget(command.total_budget_text, "total budget").seconds
+    solver_timeout = command.solver_timeout_text
+    return SweepLimits(
+        budget=defaults.budget if budget is None else budget,
+        plateau=defaults.plateau if plateau is None else plateau,
+        solver_timeout=(
+            defaults.solver_timeout
+            if solver_timeout is None
+            else parse_solver_timeout(solver_timeout).seconds
+        ),
+        total_budget=total,
+    )
+
+
+def _starting(row: Row, number: int, count: int) -> None:
+    print(running(row, number, count), file=sys.stderr, flush=True)
+
+
+def _row(row: Row) -> None:
+    _line(row_line(row))
+    said = told(row)
+    if said is not None:
+        print(said, file=sys.stderr, flush=True)
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
@@ -221,9 +264,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``."""
     parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
-    sweep_parser = commands.add_parser("sweep", usage=SWEEP_USAGE)
-    sweep_parser.add_argument("package", metavar="PACKAGE")
-    sweep_parser.add_argument("--list", dest="list_only", action="store_true")
+    _sweep_parser(commands)
     run_parser = commands.add_parser("run", usage=USAGE)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
@@ -234,7 +275,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     run_parser.add_argument("--in-process", action="store_true")
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
-        return SweepCommand(package=namespace.package, list_only=namespace.list_only)
+        return _sweep_command(namespace)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
@@ -246,6 +287,45 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         solver_timeout_text=namespace.solver_timeout,
         in_process=namespace.in_process,
     )
+
+
+def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
+    """The ``sweep`` command, with the warning ``--help`` gives above its flags."""
+    parser = commands.add_parser(
+        "sweep",
+        usage=SWEEP_USAGE,
+        description=SWEEP_WARNING,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("package", metavar="PACKAGE", help="a module name, such as a.b")
+    parser.add_argument(
+        "--list", dest="list_only", action="store_true", help="list the entries; run none"
+    )
+    parser.add_argument("--budget", metavar="SECONDS", help="each entry's budget; 30 by default")
+    parser.add_argument("--plateau", metavar="N", help="each entry's plateau; 5 by default")
+    parser.add_argument(
+        "--solver-timeout", metavar="SECONDS", help="each solve's limit; 10 by default"
+    )
+    parser.add_argument(
+        "--total-budget", metavar="SECONDS", help="the whole sweep's bound; none by default"
+    )
+
+
+def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
+    return SweepCommand(
+        package=namespace.package,
+        list_only=namespace.list_only,
+        budget_text=namespace.budget,
+        plateau_text=namespace.plateau,
+        solver_timeout_text=namespace.solver_timeout,
+        total_budget_text=namespace.total_budget,
+    )
+
+
+def check_package(package: str) -> None:
+    """Refuse anything but a module name, each dotted part a name. A path is not a module."""
+    if not all(part.isidentifier() for part in package.split(".")) or package.endswith(".py"):
+        raise UsageError(f"PACKAGE must be a module name, got {package!r}")
 
 
 def check_spec(spec: str) -> None:
@@ -306,11 +386,14 @@ def _depth(value: object) -> int:
     return deepest
 
 
-def parse_budget(budget_text: str | None) -> Budget:
-    """The budget is a positive number of seconds. No flag is no deadline."""
+def parse_budget(budget_text: str | None, flag: str = "budget") -> Budget:
+    """The budget is a positive number of seconds. No flag is no deadline.
+
+    ``flag`` names it in a refusal, so a sweep's total budget is refused in the budget's words.
+    """
     if budget_text is None:
         return Budget()
-    return Budget(seconds=_positive_seconds(budget_text, "budget"))
+    return Budget(seconds=_positive_seconds(budget_text, flag))
 
 
 def parse_plateau(plateau_text: str | None) -> Plateau:

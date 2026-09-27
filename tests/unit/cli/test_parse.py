@@ -3,6 +3,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.cli import (
+    SWEEP_USAGE,
     RunCommand,
     SweepCommand,
     UsageError,
@@ -104,15 +105,23 @@ def test_the_two_seconds_flags_refuse_in_the_same_words(
     assert str(refused.value) == refusal
 
 
-def test_sweep_reads_the_package_and_the_list_flag() -> None:
+def test_sweep_reads_the_package_the_list_flag_and_the_limits() -> None:
     assert parse_command(["sweep", "shop", "--list"]) == SweepCommand(
         package="shop", list_only=True
     )
     assert parse_command(["sweep", "shop"]) == SweepCommand(package="shop", list_only=False)
+    argv = ["--budget", "1", "--plateau", "2", "--solver-timeout", "3", "--total-budget", "4"]
+    assert parse_command(["sweep", "shop", *argv]) == SweepCommand(
+        package="shop",
+        budget_text="1",
+        plateau_text="2",
+        solver_timeout_text="3",
+        total_budget_text="4",
+    )
 
 
 def test_a_sweep_usage_error_shows_the_usage_of_sweep() -> None:
     with pytest.raises(UsageError) as refused:
         parse_command(["sweep"])
 
-    assert str(refused.value).endswith("usage: pyct sweep PACKAGE --list")
+    assert str(refused.value).endswith(f"usage: {SWEEP_USAGE}")
