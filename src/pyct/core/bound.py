@@ -24,8 +24,9 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core import codes, strs
+from pyct.core import codes, list_reads, strs
 from pyct.core.ints import ConcolicInt
+from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 
 # Python's own three, captured before this module defines its own under the same names. A target
@@ -35,7 +36,7 @@ from pyct.core.strs import ConcolicStr
 _LEN, _ORD, _CHR = len, ord, chr
 
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]] = {
-    _LEN: {ConcolicStr: strs.length},
+    _LEN: {ConcolicStr: strs.length, ConcolicList: list_reads.length},
     _ORD: {ConcolicStr: codes.code},
     _CHR: {ConcolicInt: codes.character},
 }
@@ -53,8 +54,8 @@ def _routed(
 
 
 def len(*args: object, **kwargs: object) -> object:
-    # a tracked string's length is a tracked int, `["len", s]`. Its docstring is Python's own
-    # (see `_dressed`)
+    # a tracked string's or list's length is a tracked int, `["len", s]`. Its docstring is
+    # Python's own (see `_dressed`)
     return _routed(_LEN, args, kwargs)
 
 

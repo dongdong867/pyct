@@ -42,6 +42,12 @@ from collections.abc import Callable
 _VALUE = re.compile(r"\(fp #b(?P<sign>[01]) #b(?P<exponent>[01]{11}) #b(?P<fraction>[01]{52})\)")
 
 
+# what names the assertion that holds a float leaf finite, before the leaf's symbol, so the
+# unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
+# assertion's name never meets a constant
+FINITE = "finite!"
+
+
 def literal(value: float) -> str:
     """The SMT-LIB term cvc5 reads as exactly this double: its bit pattern."""
     (bits,) = struct.unpack(">Q", struct.pack(">d", value))
@@ -57,6 +63,13 @@ def decode(text: str) -> float:
     bits = int(matched["sign"] + matched["exponent"] + matched["fraction"], 2)
     (value,) = struct.unpack(">d", bits.to_bytes(8, "big"))
     return value
+
+
+def held_finite(constant: str, symbol: str | None) -> str:
+    """The assertion that holds one float leaf finite, named for the leaf's symbol if given, so
+    the unsat core cvc5 dumps names it (``FINITE``)."""
+    held = finite(constant)
+    return f"(assert {held})" if symbol is None else f"(assert (! {held} :named {FINITE}{symbol}))"
 
 
 def finite(term: str) -> str:

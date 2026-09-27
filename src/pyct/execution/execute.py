@@ -74,6 +74,7 @@ def execute(
     it, so a caller whose process can die mid-call keeps what the call did.
     """
     tally = Tally(watch)
+    tally.go_live()
     bound = bind(args, tally)
     tracer = _LineTracer(ctx.file, tally)
     tracer.start()

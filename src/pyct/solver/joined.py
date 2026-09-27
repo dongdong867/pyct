@@ -21,17 +21,22 @@ from pyct.solver.splits import SPLITS
 type _Span = tuple[Expression, int | None, int | None]
 
 
-def joined(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> tuple[Branch, ...]:
+def joined(
+    prefix: tuple[Branch, ...], is_leaf: IsLeaf, is_list: IsLeaf = lambda part: False
+) -> tuple[Branch, ...]:
     """The path with every join of two adjacent pieces of one string written as one piece.
 
     Each distinct part is rewritten once, so a part held in many places is
     still one part, and one that nothing joins is left as it is. A leaf of
-    the seed is a value, not a piece, even when it is an item of a list.
+    the seed is a value, not a piece. An item of a tracked list, ``is_list``
+    of its list, is not a piece of it either: two slices of one list join as
+    two pieces of a string do, but an item joined to a slice is a list inside
+    a list, or a str added to a str, and no piece of either.
     """
     order, _ = distinct(prefix, is_leaf)
     written: dict[int, Expression] = {}
     for node in order:
-        written[id(node)] = _rejoined(node, written, is_leaf)
+        written[id(node)] = _rejoined(node, written, (is_leaf, is_list))
     return tuple(
         replace(fork, expression=written.get(id(fork.expression), fork.expression))
         if isinstance(fork.expression, list)
@@ -40,21 +45,24 @@ def joined(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> tuple[Branch, ...]:
     )
 
 
-def _rejoined(node: Node, written: dict[int, Expression], is_leaf: IsLeaf) -> Expression:
+def _rejoined(
+    node: Node, written: dict[int, Expression], tests: tuple[IsLeaf, IsLeaf]
+) -> Expression:
     """A part with its operands rewritten, and itself one piece if it joins two."""
+    is_leaf, is_list = tests
     head, *operands = node
     parts = [written.get(id(part), part) if isinstance(part, list) else part for part in operands]
     pieces = len(parts) == 2 and not any(is_leaf(part) for part in parts)
-    if head == "+" and pieces and (whole := _join(parts[0], parts[1])) is not None:
+    if head == "+" and pieces and (whole := _join(parts[0], parts[1], is_list)) is not None:
         return whole
     if all(part is operand for part, operand in zip(parts, operands, strict=True)):
         return node
     return [head, *parts]
 
 
-def _join(left: Expression, right: Expression) -> Expression | None:
+def _join(left: Expression, right: Expression, is_list: IsLeaf) -> Expression | None:
     """The one piece two pieces of one string make, side by side, or None when they do not."""
-    first, second = _span(left), _span(right)
+    first, second = _span(left, is_list), _span(right, is_list)
     if first is None or second is None or not _same(first[0], second[0]):
         return None
     term, start, middle = first
@@ -66,13 +74,13 @@ def _join(left: Expression, right: Expression) -> Expression | None:
     return term if not start and stop is None else ["[:]", term, start, stop]
 
 
-def _span(part: Expression) -> _Span | None:
+def _span(part: Expression, is_list: IsLeaf) -> _Span | None:
     """A piece of a string with no negative bound, as its string and its bounds, or None."""
     match part:
         case ["[]", [str() as head, *_], _] if head in SPLITS:
             # a piece of a split is a whole string, not a character of the list
             return None
-        case ["[]", term, int() as index] if _ahead(index):
+        case ["[]", term, int() as index] if _ahead(index) and not is_list(term):
             return term, index, index + 1
         case ["[:]", term, None | int() as start, None | int() as stop] if _ahead(start, stop):
             return term, start, stop

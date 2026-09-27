@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pyct.core.branch import Branch, SinkItem
+from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.results.record import DowngradeCount
+
+# the tally of the call running now in this process, if one is
+_LIVE: list[Tally | None] = [None]
 
 
 class Watch(Protocol):
@@ -52,8 +55,17 @@ class Tally:
         self._entries: list[_Entry] = []
 
     def append(self, item: SinkItem, /) -> None:
-        """Keep a fork or a downgrade the call just made. The ``BranchSink`` core pushes to."""
+        """Keep a fork or a downgrade the call just made. The ``BranchSink`` core pushes to.
+
+        A sealed tally keeps nothing. A value the target kept from this call can still reach it
+        from a later call in the same process, and that call's condition is then lost: the
+        call running now names it, a fork by the operation that took it: a truth test's `__bool__`,
+        a walk's `__iter__`, an index's `__getitem__`.
+        """
         if self.sealed:
+            live = _LIVE[0]
+            if live is not None and live is not self:
+                live.append(Downgrade(name=item.lost_as if isinstance(item, Branch) else item.name))
             return
         if isinstance(item, Branch):
             self.branches.append(item)
@@ -70,9 +82,16 @@ class Tally:
         if self.watch is not None:
             self.watch.line(number)
 
+    def go_live(self) -> None:
+        """Make this the tally of the call running now, which a value from a call that is over
+        names its loss to."""
+        _LIVE[0] = self
+
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""
         self.sealed = True
+        if _LIVE[0] is self:
+            _LIVE[0] = None
 
     def counted(self) -> tuple[DowngradeCount, ...]:
         """The downgrades as the line lists them, one entry per run of one name."""
