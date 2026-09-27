@@ -156,6 +156,16 @@ def test_cvc5_answers_unknown_where_only_a_quotient_past_the_bound_takes_the_pat
     assert isinstance(value, float) and value // 2.5 == 3.0
 
 
+@needs_cvc5
+def test_cvc5_flips_the_finite_fork_over_a_floor_division_within_a_second() -> None:
+    # no finite double has a non-finite `x // 2`, which cvc5 took seconds to prove
+    answer = solve((fork(["isfinite", ["//", "x", 2]], taken=False),), {"x": float}, 1.0)
+
+    assert isinstance(answer, Sat)
+    value = answer.model["x"]
+    assert isinstance(value, float) and not math.isfinite(value)
+
+
 @pytest.mark.parametrize(
     ("expression", "bool_term"),
     [

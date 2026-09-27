@@ -55,9 +55,15 @@ FLOAT_TERMS: list[Expression] = [
     ["%", "f", 2.5],
     ["float", "x"],
     ["float", "s"],
+    # the `math` functions, on a float or an int, which each reads as a double
+    ["sqrt", "f"],
+    ["fabs", "x"],
+    ["copysign", "f", -1],
 ]
 # a tuple of prefixes, which only a search reads
 TUPLE_TERMS: list[Expression] = [["()", "'a'", "t"]]
+# a range's arguments, which only a membership reads
+RANGE_TERMS: list[Expression] = [["range", 0, "n", 2]]
 STR_TERMS: list[Expression] = [
     ["+", "s", "'a'"],
     ["[]", "s", 0],
@@ -66,18 +72,25 @@ STR_TERMS: list[Expression] = [
     ["removeprefix", "s", "'a'"],
     ["removesuffix", "s", "'a'"],
     ["chr", "x"],
+    ["str", "x"],
     *([head, "s"] for head in (*CASES, *TO_DECLARE)),
     *([head, "s", 3] for head in PADDINGS),
 ]
 BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
     ["in", "'a'", "s"],
     ["not in", "'a'", "s"],
+    ["in", "x", RANGE_TERMS[0]],
+    ["not in", 3, RANGE_TERMS[0]],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
     ["startswith", "s", TUPLE_TERMS[0]],
     ["endswith", "s", TUPLE_TERMS[0], "n"],
     ["is_integer", "f"],
     ["isfinite", "f"],
+    ["isnan", "f"],
+    ["isinf", "x"],
+    ["isclose", "f", "x", 1e-09, 0.0],
+    ["not", ["<", "x", 1]],
     ["isint", "s"],
     ["isfloat", "s"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
@@ -104,7 +117,9 @@ def _asserted(text: str) -> str:
 
 
 def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
-    terms = INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS + LIST_TERMS + TUPLE_TERMS
+    terms = (
+        INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS + LIST_TERMS + TUPLE_TERMS + RANGE_TERMS
+    )
     assert {_head(term) for term in terms} == set(RESULTS)
 
 

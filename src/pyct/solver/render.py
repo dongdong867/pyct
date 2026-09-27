@@ -14,6 +14,7 @@ from pyct.solver.heads import (
     BOUNDED,
     FORMS,
     INDEXED,
+    MEMBERSHIPS,
     ON_A_CHARACTER,
     OPERATORS,
     POSITIONED,
@@ -189,10 +190,11 @@ class _Program:
         `distinct`), so their terms are written before it, and no part waits on Python's stack
         for its operands."""
         for node in order:
-            if self.types[id(node)] is tuple:
-                # a tuple has no term of its own; a search reads its items' terms
-                # (`_operand_or_items`)
-                self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+            if (kind := self.types[id(node)]) in (tuple, range):
+                # no term of its own: a search reads a tuple's items, a membership or an equality
+                # a range's Ints
+                item_term = self.term if kind is tuple else partial(self._operand, kind=int)
+                self.tuples[id(node)] = tuple(item_term(item) for item in node[1:])
                 continue
             define = holders[id(node)] > 1 or id(node) in read
             self.terms[id(node)] = self._written(node, define=define)
@@ -278,15 +280,14 @@ class _Program:
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
-        """The type an operation works on: its operands', with a bool read as the int 1 or 0.
-
-        Two bools stay bools only under an operator bool has of its own, such
-        as `&` or `==`; `+` or `<` on them works on the ints they are.
-        """
-        if head in WORKS_ON:
-            return WORKS_ON[head]
-        kind = self._operands_type(operands)
-        return int if kind is bool and (head, bool) not in OPERATORS else kind
+        """The type an operation works on: its operands', with a bool read as the int 1 or 0 but
+        under an operation bool has of its own, `&`, `==` or `str`, where it stays a bool, and a
+        membership in a range working on its ints."""
+        kind = WORKS_ON.get(head) or self._operands_type(operands)
+        if kind is range and head in MEMBERSHIPS:
+            return int
+        own = (head, bool) in OPERATORS or (head, bool) in FORMS
+        return int if kind is bool and not own else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
         """The parts a form reads: an operand of a form, a check, a piece, a split, a declared
@@ -403,8 +404,8 @@ class _Program:
         return terms + [self._position(part) for part in operands[first:]]
 
     def _operand_or_items(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
-        """An operand's term, or a tuple's items' terms, which is all a tuple has."""
-        if isinstance(part, list) and self.type_of(part) is tuple:
+        """An operand's term, or a tuple's or a range's items' terms, which is all either has."""
+        if isinstance(part, list) and self.type_of(part) in (tuple, range):
             return self.tuples[id(part)]
         return self._operand(part, kind)
 

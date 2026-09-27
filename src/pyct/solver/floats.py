@@ -17,7 +17,10 @@ tells -0.0 from 0.0.
 
 ``whole`` is ``float.is_integer``: a finite double its integral part
 equals. It is false on NaN, where ``fp.eq`` is, and on the infinities.
-``finite`` holds for a double that is neither NaN nor an infinity.
+``finite`` holds for a double that is neither NaN nor an infinity, as
+``math.isfinite``, and ``copysign`` and ``close`` are ``math.copysign`` and
+``math.isclose``; the other `math` functions pyct follows are one IEEE
+operation each, in `heads.OPERATORS`.
 
 ``%`` follows CPython's own steps, from C's ``fmod``, ``//`` is the floor
 CPython's steps come to inside a bound (``floor_division``), and the four
@@ -25,7 +28,7 @@ roundings to an int read the integral double back as an Int. An Int meets a
 double as Python converts it, rounding half to even (``from_int``).
 
 A form here names the parts it reads more than once with ``let``, as
-``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``x!`` and ``y!``. None of them can
+``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``d!``, ``x!`` and ``y!``. None of them can
 capture a name in an operand, since render defines every part a form reads:
 an operand is a leaf's constant, a literal, a name render defined or
 declared, ``e!`` and a number and never one of these, or an int's
@@ -115,6 +118,32 @@ def _to_int(mode: str) -> Callable[[str], str]:
         return f"(to_int (fp.to_real (fp.roundToIntegral {mode} {term})))"
 
     return rounded
+
+
+def copysign(magnitude: str, sign: str) -> str:
+    """Python's ``math.copysign``: the first double's size with the second's sign.
+
+    SMT-LIB's NaN has no sign, so a NaN ``sign`` counts as positive, as
+    Python's own NaN, ``float('nan')``, is; a NaN made negative, as
+    ``-float('nan')`` is, is not one this reads.
+    """
+    return f"(let ((x! (fp.abs {magnitude}))) (ite (fp.isNegative {sign}) (fp.neg x!) x!))"
+
+
+def close(a: str, b: str, rel_tol: str, abs_tol: str) -> str:
+    """Python's ``math.isclose``, CPython's ``math_isclose_impl`` step by step.
+
+    Equal doubles are close, infinities included; otherwise an infinity is
+    close to nothing, and two others are close when their difference is
+    within the relative tolerance of either one or within the absolute
+    tolerance. A NaN is close to nothing. Python refuses a negative
+    tolerance before it compares, so the tolerances here are never one.
+    """
+    within = f"(fp.leq d! (fp.abs (fp.mul RNE {rel_tol} {{}})))"
+    near = f"(or {within.format(b)} {within.format(a)} (fp.leq d! {abs_tol}))"
+    finite = f"(not (fp.isInfinite {a})) (not (fp.isInfinite {b}))"
+    apart = f"(let ((d! (fp.abs (fp.sub RNE {b} {a})))) {near})"
+    return f"(or (fp.eq {a} {b}) (and {finite} {apart}))"
 
 
 # `math.floor`, `math.ceil`, `math.trunc`, and `round` with no digits, which rounds half to even
@@ -207,7 +236,8 @@ def floor_division(dividend: str, divisor: str, past: str | None = None) -> tupl
     can be whatever Python gives past the bound, and an unsat on it holds for
     every such value. Without ``past`` the term is the floor everywhere, for a
     program that holds the bound, where the two agree and cvc5 answers far
-    faster (see ``Program.bounded``).
+    faster (see ``Program.bounded``); that bound also says the floor converts
+    to a finite double (``_quotient_inside``).
     """
     zero = _zero_like_quotient(dividend, divisor)
     floor_ = f"(let ((k! (to_int q!))) (ite (= k! 0) {zero} {from_int('k!')}))"
@@ -217,13 +247,29 @@ def floor_division(dividend: str, divisor: str, past: str | None = None) -> tupl
     past_infinity = f"(ite {moved} {literal(-1.0)} {zero})"
     undefined = _undefined(dividend, divisor)
     finite = f"(ite (fp.isInfinite {divisor}) {past_infinity} {reals.format(floor_)})"
-    inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
+    inside = _quotient_inside(held=past is None)
     bound = f"(or {undefined} (fp.isInfinite {divisor}) {reals.format(inside)})"
     exact = f"(ite {undefined} {_NAN} {finite})"
     if past is None:
         return exact, bound
     beyond = reals.format(f"(ite {_past_holds(past)} {past} {_NAN})")
     return f"(ite {bound} {exact} {beyond})", bound
+
+
+def _quotient_inside(*, held: bool) -> str:
+    """Whether the true quotient, named ``q!``, is inside the bound.
+
+    In a program that holds the bound, ``held``, it says too that the quotient's floor converts
+    to a finite double. A whole number below 2**50 in size always does, so the bound means what
+    it did; said outright, the finite fork over a `//` flips in about 0.07 s, where cvc5 1.3.4
+    took about 6 s to prove it and as long again for the unsat core. The term past the bound,
+    which tests the bound rather than holds it, leaves it out: there it slowed
+    ``x // 1.0 == 1e300`` from 0.3 s to 1.4 s.
+    """
+    inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
+    if not held:
+        return inside
+    return f"(and {inside} (not (fp.isInfinite {from_int('(to_int q!)')})))"
 
 
 # how large CPython's `//` is past the bound, at the least: a quotient of 2**50 or more, moved

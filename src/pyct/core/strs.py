@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from pyct.core import numbers, texts
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression
 from pyct.core.ints import ConcolicInt
@@ -465,6 +466,13 @@ class ConcolicStr(str):
     # a walk hands out each character as a tracked str, one fork a pass (see `walk`)
     __iter__ = walk
 
+    def __str__(self) -> str:
+        # its text is the value itself, and adds no node, and so is a format with no spec; a
+        # spec is str's own format and a downgrade
+        return self
+
+    __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
+
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)
         self.expression = expression
@@ -480,3 +488,5 @@ class ConcolicStr(str):
 # the class body above is everything ConcolicStr teaches. The rest of str differs only in the
 # name it calls and records, so the derivation writes it
 downgrade_the_rest(ConcolicStr, str, kept=_KEPT, inherited=())
+# a number's text is a tracked str (`pyct.core.texts`)
+numbers.enter(str, ConcolicStr, number=False)
