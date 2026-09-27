@@ -49,9 +49,10 @@ as the display holds them, when there are at most `SEARCHED_MOST`: a larger
 display is searched as any large set is.
 
 The operators a plain number on the left may hand to a tracked value are
-`operators`', and the calls of a conversion or of a method str has are
-`calls`'. Each rule takes the node the walk meets, and a node no rule takes
-stays as written.
+`operators`', the calls of a conversion or of a method str has are
+`calls`', and the `return` of a `__bool__` method is `bool_returns`', which
+the walk hands each class it meets. Each rule takes the node the walk
+meets, and a node no rule takes stays as written.
 
 Annotations are left alone: under ``from __future__ import annotations``
 Python keeps one as its text, which the seed checks read.
@@ -62,7 +63,7 @@ from __future__ import annotations
 import ast
 
 from pyct.core.hashed import SEARCHED_MOST
-from pyct.intercept import calls, operators
+from pyct.intercept import bool_returns, calls, operators
 from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
@@ -85,6 +86,7 @@ BOUND: dict[str, str] = {
     _IDENTITY: "Identity",
     **operators.BOUND,
     **calls.BOUND,
+    **bool_returns.BOUND,
 }
 # the operator an `is` link becomes on pyct's identity
 _AS_IN: dict[type[ast.cmpop], type[ast.cmpop]] = {ast.Is: ast.In, ast.IsNot: ast.NotIn}
@@ -124,7 +126,7 @@ def substitute(tree: ast.Module) -> ast.Module:
     while pending:
         node = pending.pop()
         if isinstance(node, ast.ClassDef):
-            classes.append(node)
+            _met_class(node, classes, parts)
         skipped = _ANNOTATIONS.get(type(node))
         for field, value in ast.iter_fields(node):
             if field == skipped:
@@ -138,6 +140,14 @@ def substitute(tree: ast.Module) -> ast.Module:
     if called:
         _bind(tree, classes, [name for name in BOUND if name in called])
     return tree
+
+
+def _met_class(owner: ast.ClassDef, classes: list[ast.ClassDef], parts: Parts) -> None:
+    """Keep a class the walk meets, whose body declares the bound names global, and hand over
+    the value of each `return` of its `__bool__` method before the walk goes inside, so the walk
+    meets each value in the call that holds it."""
+    classes.append(owner)
+    bool_returns.hand_over(owner, parts)
 
 
 def _visited(node: object, pending: list[ast.AST], parts: Parts) -> object:
