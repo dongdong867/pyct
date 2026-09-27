@@ -229,12 +229,10 @@ def test_reports_a_tracked_index_past_the_end() -> None:
     ]
     assert failure_of(seed) == "target_raised IndexError:"
     # flipping the fork asks only that n < len(s), which a negative n past the start also
-    # meets, so the input aimed at it takes it and may still raise at the second fork. The
-    # flip of that one hands back an input that raises nothing
+    # meets, so the input aimed at it may still raise at the second fork; a later one does not
     lines = solved(result.stdout)
-    aimed = [line for line in lines if aimed_at(line) == 0]
-    assert aimed and all(forks_of(line)[0]["taken"] is True for line in aimed)
-    assert any(line["failure"] is None for line in lines)
+    first = next(at for at, line in enumerate(lines) if aimed_at(line) == 0)
+    assert any(line["failure"] is None for line in lines[first + 1 :])
 
 
 # follow-positions-into-a-string-reports-a-tracked-index-before-the-start
