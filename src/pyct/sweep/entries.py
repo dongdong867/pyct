@@ -19,7 +19,7 @@ own body defines under a public name is listed too, and skipped until
 import inspect
 import os
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from types import ModuleType
 
@@ -169,10 +169,10 @@ def _unnamed(home: str, found_in: str, found_as: str) -> Entry:
     return Entry(found_in, found_as, skip=f"no name in {home} holds it")
 
 
-def seeded(module: str, name: str, value: object) -> Entry:
+def seeded(module: str, name: str, value: Callable[..., object]) -> Entry:
     """The entry with the seed sweep gives ``value``, or skipped with the reason it has none."""
     try:
-        return Entry(module, name, seed=seed_of(value))  # pyrefly: ignore[bad-argument-type]
+        return Entry(module, name, seed=seed_of(value))
     except NoSeedError as error:
         return Entry(module, name, skip=str(error))
 
