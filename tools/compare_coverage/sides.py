@@ -4,7 +4,9 @@ This checkout's ``pyct run`` is one side and legacy's engine, through its adapte
 Each runs as a process of its own and prints one JSON line the checker reads. Both fail a
 report the same ways: stopped past its wait, a non-zero exit (the code and the last stderr
 line), or no line to read (``no summary line``). A side never raises for a target's trouble;
-the trouble becomes the report's failure and the row goes on.
+the trouble becomes the report's failure and the row goes on. For an installed entry, each
+side's own interpreter also says which copy of the library it has, through
+``library_probe.py``.
 """
 
 import json
@@ -13,9 +15,14 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Protocol
 
-from tools.compare_coverage.process import Finished
+from tools.compare_coverage.process import Command, Finished, run_command
 
 NO_SUMMARY = "no summary line"
+
+LIBRARY_PROBE = Path(__file__).with_name("library_probe.py")
+
+# the probe reads package metadata and prints a line; anything slower is not answering
+LIBRARY_SECONDS = 30.0
 
 
 @dataclass(frozen=True)
@@ -99,6 +106,31 @@ def _process_failure(finished: Finished) -> str | None:
     if finished.returncode != 0:
         return f"exit {finished.returncode}: {last_line(finished.stderr)}"
     return None
+
+
+def with_library(
+    report: SideReport, python: str, request: SideRequest, environment: Mapping[str, str]
+) -> SideReport:
+    """``report`` with the requested library as the side's own interpreter finds it.
+
+    The probe starts as the side does, from the entry's root with the side's environment,
+    so it reads the side's own search path. A probe that fails fails the side, after any
+    failure the side had already.
+    """
+    if request.library is None:
+        return report
+    command = Command(
+        (python, "-P", str(LIBRARY_PROBE), request.library), request.root, environment
+    )
+    probed = read_report(run_command(command, LIBRARY_SECONDS), "version", _library_report)
+    if probed.failure is not None:
+        failure = f"cannot read which {request.library} it has: {probed.failure}"
+        return replace(report, failure=report.failure or failure)
+    return replace(report, library=probed.library)
+
+
+def _library_report(line: dict[str, object]) -> SideReport:
+    return SideReport(library=installed_of(line))
 
 
 def last_line(text: str) -> str:

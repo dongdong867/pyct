@@ -31,7 +31,7 @@ from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage.cli import prepare
 from tools.compare_coverage.compare import Sides
 from tools.compare_coverage.entries import Entry, Library, entry_file
-from tools.compare_coverage.legacy_adapter import installed
+from tools.compare_coverage.library_probe import installed
 from tools.compare_coverage.sides import Limits, SideReport, SideRequest, installed_of
 
 WERKZEUG = "werkzeug.http::parse_list_header"

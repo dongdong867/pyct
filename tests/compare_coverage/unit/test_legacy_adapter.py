@@ -1,12 +1,9 @@
 """The adapter in this process with a fake engine: the config it builds, the line it prints."""
 
-import importlib.metadata
 import json
 import os
-import platform
 import runpy
 import sys
-import sysconfig
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,7 +12,7 @@ from typing import Any
 import pytest
 
 from tools.compare_coverage import legacy_adapter
-from tools.compare_coverage.legacy_adapter import Engine, installed, main, report
+from tools.compare_coverage.legacy_adapter import Engine, main, report
 
 
 @dataclass(frozen=True)
@@ -87,37 +84,7 @@ def test_the_line_holds_the_file_lines_stop_and_inputs(root: Path) -> None:
         "stopped": "exhausted",
         "inputs": 4,
         "failure": None,
-        "library": None,
     }
-
-
-def test_the_line_names_the_requested_librarys_version_even_when_the_import_fails(
-    root: Path,
-) -> None:
-    asked = {**a_request(root), "library": "pytest"}
-    missing = {**a_request(root, "adapter_target::g"), "library": "no-such-dist"}
-
-    line = report(asked, fake_engine(Answer(), []))
-    failed = report(missing, fake_engine(Answer(), []))
-
-    assert line["library"] == installed("pytest")
-    assert failed["library"] == {"version": None, "root": None}
-    assert failed["failure"] is not None
-
-
-def test_a_library_is_its_version_and_the_folder_its_modules_sit_in() -> None:
-    pytest_dist = importlib.metadata.distribution("pytest")
-
-    assert installed("pytest") == {
-        "version": pytest_dist.version,
-        "root": str(pytest_dist.locate_file("")),
-    }
-    assert (Path(str(installed("pytest")["root"])) / "pytest" / "__init__.py").exists()
-    assert installed("python") == {
-        "version": platform.python_version(),
-        "root": sysconfig.get_path("stdlib"),
-    }
-    assert installed("no-such-dist") == {"version": None, "root": None}
 
 
 def test_an_engine_that_says_it_failed_is_a_failure_with_its_text(root: Path) -> None:

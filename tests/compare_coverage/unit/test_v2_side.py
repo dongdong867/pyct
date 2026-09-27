@@ -6,7 +6,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from tools.compare_coverage.legacy_adapter import installed
+from tools.compare_coverage.library_probe import installed
 from tools.compare_coverage.process import side_environment
 from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest
 from tools.compare_coverage.v2_side import Stamp, V2Side
@@ -110,15 +110,25 @@ def test_a_summary_line_that_names_two_files_is_unreadable(tmp_path: Path) -> No
     assert "covered must name the one file" in report.failure
 
 
-def test_the_side_reads_the_requested_library_in_the_checkers_own_environment(
-    tmp_path: Path,
-) -> None:
+def test_the_side_reads_the_requested_library_as_pyct_run_would_find_it(tmp_path: Path) -> None:
     side = fake_side(tmp_path, summary())
-    asked = replace(request(), library="werkzeug")
 
-    report = side.run(asked)
+    report = side.run(replace(request(), library="werkzeug"))
 
     werkzeug = installed("werkzeug")
     assert report.library == Installed(version=werkzeug["version"], root=werkzeug["root"])
     assert werkzeug["version"] == "3.1.3"
     assert side.run(request()).library is None
+
+
+def test_the_library_is_read_from_the_sides_working_directory_first(tmp_path: Path) -> None:
+    # pyct run puts its working directory first on the path, so a copy there is the one it has
+    root = tmp_path / "root"
+    metadata = root / "werkzeug-9.9.dist-info" / "METADATA"
+    metadata.parent.mkdir(parents=True)
+    metadata.write_text("Metadata-Version: 2.1\nName: werkzeug\nVersion: 9.9\n")
+    side = fake_side(tmp_path, summary())
+
+    report = side.run(replace(request(), root=root, library="werkzeug"))
+
+    assert report.library == Installed(version="9.9", root=str(root))

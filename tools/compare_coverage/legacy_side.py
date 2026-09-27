@@ -16,13 +16,13 @@ from tools.compare_coverage.sides import (
     Limits,
     SideReport,
     SideRequest,
-    installed_of,
     last_line,
     lines_of,
     optional_count,
     optional_text,
     read_report,
     result_line,
+    with_library,
 )
 
 ADAPTER = Path(__file__).with_name("legacy_adapter.py")
@@ -74,11 +74,13 @@ class LegacySide:
             "seed": request.seed,
             "root": str(request.root),
             "limits": self.given(request.limits),
-            "library": request.library,
         }
-        argv = (str(interpreter(self.checkout)), "-P", str(ADAPTER), json.dumps(payload))
+        python = str(interpreter(self.checkout))
+        argv = (python, "-P", str(ADAPTER), json.dumps(payload))
         finished = run_command(Command(argv, request.root, self.environment), request.wait)
-        return read_report(finished, "covered", _report)
+        return with_library(
+            read_report(finished, "covered", _report), python, request, self.environment
+        )
 
 
 def _report(line: dict[str, object]) -> SideReport:
@@ -88,7 +90,6 @@ def _report(line: dict[str, object]) -> SideReport:
         stopped=optional_text(line["stopped"]),
         inputs=optional_count(line["inputs"]),
         failure=optional_text(line["failure"]),
-        library=installed_of(line["library"]),
     )
 
 

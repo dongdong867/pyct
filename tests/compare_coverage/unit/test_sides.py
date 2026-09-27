@@ -1,19 +1,24 @@
 """How either side's process becomes a report: its line, and every way it fails."""
 
 import json
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from tools.compare_coverage.process import Finished
 from tools.compare_coverage.sides import (
     Installed,
+    Limits,
     SideReport,
+    SideRequest,
     installed_of,
     last_line,
     lines_of,
     optional_count,
     optional_text,
     read_report,
+    with_library,
 )
 
 
@@ -100,3 +105,17 @@ def test_a_library_is_read_as_its_version_and_folder_or_nothing() -> None:
 def test_a_library_that_is_not_a_version_and_folder_is_unreadable(value: object) -> None:
     with pytest.raises((KeyError, ValueError)):
         installed_of(value)
+
+
+def test_a_probe_that_fails_fails_the_side_after_its_own_failure(tmp_path: Path) -> None:
+    python = tmp_path / "python"
+    python.write_text("#!/bin/sh\necho 'no metadata here' >&2\nexit 3\n")
+    python.chmod(0o755)
+    request = SideRequest("m::f", {}, tmp_path, Limits(), 60, library="werkzeug")
+    ran, stopped = SideReport(file="/m.py"), SideReport(failure="stopped after 90 s")
+
+    failed = with_library(ran, str(python), request, {})
+
+    assert failed.failure == "cannot read which werkzeug it has: exit 3: no metadata here"
+    assert with_library(stopped, str(python), request, {}).failure == "stopped after 90 s"
+    assert with_library(ran, str(python), replace(request, library=None), {}) == ran
