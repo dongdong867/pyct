@@ -13,6 +13,9 @@ from types import ModuleType
 
 from pyct.run.import_watch import ImportWatch
 
+# what inspect raises when it cannot read a signature itself; its message says why on its own
+_INSPECT_S_OWN = (ValueError, TypeError)
+
 
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
@@ -84,11 +87,14 @@ def _signature(spec: str, fn: Callable[..., object]) -> inspect.Signature:
 def _reason(error: BaseException) -> str:
     """Python's message for ``error`` as one line that is never empty.
 
-    That is the message's first line that holds anything, or the
-    exception's type name when no line does, so the refusal stays one
-    line on stderr.
+    That is the message's first line that holds anything. An exception that
+    is not one of inspect's own refusals, such as a ``KeyError`` or a
+    ``SystemExit`` from the target's code, is named before it, as
+    ``SystemExit: 0``. A message with no such line gives the type's name
+    alone. So the refusal stays one line on stderr.
     """
-    for line in str(error).splitlines():
-        if line.strip():
-            return line
-    return type(error).__name__
+    lines = [line for line in str(error).splitlines() if line.strip()]
+    named = type(error).__name__
+    if not lines:
+        return named
+    return lines[0] if type(error) in _INSPECT_S_OWN else f"{named}: {lines[0]}"

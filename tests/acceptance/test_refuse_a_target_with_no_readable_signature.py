@@ -74,7 +74,7 @@ def test_refuses_a_signature_read_that_exits() -> None:
     result = run_pyct(f"{MODULE}::exits_while_read", "--args", '{"x": 1}')
 
     assert result.stderr.splitlines() == [
-        f"cannot read the signature of {MODULE}::exits_while_read: 0"
+        f"cannot read the signature of {MODULE}::exits_while_read: SystemExit: 0"
     ]
     assert result.stdout == ""
     assert result.returncode == 1

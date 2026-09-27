@@ -120,11 +120,11 @@ def test_load_target_refuses_a_target_whose_signature_python_cannot_read(name: s
 @pytest.mark.parametrize(
     ("name", "reason"),
     [
-        pytest.param("odd_callable", "'__wrapped__'", id="a-bare-key"),
+        pytest.param("odd_callable", "KeyError: '__wrapped__'", id="a-bare-key"),
         pytest.param("no_message", "RuntimeError", id="no-message"),
         pytest.param("two_line_message", "first line", id="two-lines"),
         pytest.param("blank_first_line", "after a blank line", id="a-blank-first-line"),
-        pytest.param("exits_while_read", "0", id="an-exit"),
+        pytest.param("exits_while_read", "SystemExit: 0", id="an-exit"),
     ],
 )
 def test_load_target_gives_one_line_that_is_never_empty(name: str, reason: str) -> None:
@@ -141,4 +141,13 @@ def test_load_target_gives_one_line_that_is_never_empty(name: str, reason: str) 
     reason="before 3.14 the def evaluates its annotations, so the module does not import",
 )
 def test_load_target_refuses_an_annotation_python_cannot_evaluate() -> None:
-    refused_as_python_refuses("targets.load.annotated_for_type_checking::f")
+    spec = "targets.load.annotated_for_type_checking::f"
+
+    with pytest.raises(TargetError) as refused:
+        load_target(spec)
+
+    # not one of inspect's own refusals, so the reason names the exception's type
+    with pytest.raises(NameError) as unread:
+        inspect.signature(sys.modules["targets.load.annotated_for_type_checking"].f)
+    reason = f"NameError: {unread.value}"
+    assert str(refused.value) == f"cannot read the signature of {spec}: {reason}"
