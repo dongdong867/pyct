@@ -152,9 +152,14 @@ def test_keeps_a_non_ascii_approximation_honest() -> None:
     result = run_pyct(PAST_ASCII_LOWER, '{"s": "x"}')
 
     assert result.returncode == 0, result.stderr
+    # the fork is recorded, so what follows is the solver's doing, not a lost condition
+    seed, *solved = input_lines(result.stdout)
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [
+        (["==", ["upper", "s"], "'é'"], False)
+    ]
     # no str's upper() is "é"; cvc5's leaves é as it is, so the solver's é leaves the plan
-    solved = input_lines(result.stdout)[1:]
-    assert misses_of(result.stdout) or all(line["mismatch_at"] is not None for line in solved)
+    left = bool(solved) and all(line["mismatch_at"] is not None for line in solved)
+    assert misses_of(result.stdout) or left, result.stdout
     assert _reported_taken(result.stdout) == []
 
 
