@@ -34,7 +34,6 @@ TRUTH_TEST_FILE = str(REPO_ROOT / "targets" / "strs" / "truth_test.py")
 PAST_THE_LAST_CHARACTER = "targets.strs.past_the_last_character::match"
 ENCODE_CHECK = "targets.strs.encode_check::check"
 TEXT_CONVERSION = "targets.strs.text_conversion::show"
-LENGTH_CHECK = "targets.strs.length_check::check"
 FIND_FROM_POSITION = "targets.strs.find_from_position::check"
 FIND_BELOW = "targets.strs.find_below::check"
 MISSING_SUBSTRING = "targets.strs.missing_substring::locate"
@@ -288,17 +287,6 @@ def test_counts_text_conversion_as_a_downgrade() -> None:
         downgrade("__str__", 1, f"{at}:3:13"),
         downgrade("__format__", 1, f"{at}:3:13"),
     ]
-
-
-# follow-strings-counts-len-as-a-downgrade
-def test_counts_len_as_a_downgrade() -> None:
-    result = run_pyct(LENGTH_CHECK, '{"s": "abc"}')
-
-    assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
-    # Python makes what __len__ hands back a plain int before the target sees it
-    assert seed["downgrades"] == [downgrade("__len__", 1, "targets/strs/length_check.py:2:7")]
-    assert seed["forks"] == []
 
 
 # follow-strings-finds-the-missing-substring

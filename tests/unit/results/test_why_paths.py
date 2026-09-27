@@ -339,4 +339,6 @@ def test_a_long_generator_s_causes_take_near_linear_time(tmp_path: Path) -> None
 
     assert [entry.reason for entry in entries] == [Reason.SUSPENDED]
     assert entries[0].lines == tuple(sorted(uncovered))
-    assert spent < 1.0, spent
+    # the per-line, per-input walk this replaced took 15 s here without coverage's tracing,
+    # and 0.6 s now; the bound leaves room for tracing and a busy machine
+    assert spent < 5.0, spent

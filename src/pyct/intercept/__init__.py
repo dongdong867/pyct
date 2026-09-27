@@ -1,10 +1,12 @@
 """Interception: the target's package calls core where Python would not.
 
 An import hook loads every module of the target's top-level package with a
-fixed set of operations substituted where the code writes them, so a
-tracked value keeps its condition through `is True` and `in`. It is
-mechanical and fixed; the LLM source rewrite of the next paper is
-`pyct.rewrite`, which may hand its source to the same loader.
+fixed set of operations substituted where the code writes them, and runs
+it with `len`, `ord` and `chr` bound to pyct's own in its builtins, so a
+tracked value keeps its condition through `is True`, `in` and the three
+builtins. It is mechanical and fixed, one to one, and not a rewrite; the
+LLM source rewrite of the next paper is `pyct.rewrite`, which may hand its
+source to the same loader.
 
 Substituted code calls pyct through four names it binds in the module,
 ``__pyct_is__``, ``__pyct_is_not__``, ``__pyct_in__`` and
