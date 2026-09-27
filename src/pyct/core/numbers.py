@@ -90,13 +90,13 @@ def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
     type whose follow story has not shipped, fails here where it happens,
     never as a quietly plain value.
     """
-    tracked_class = _TRACKED.get(type(value))
+    tracked_class: Any = _TRACKED.get(type(value))
     if tracked_class is None:
         raise LookupError(
             f"no tracked type is entered for {type(value).__name__}; "
             "pyct.core imports each number module so that each enters its class"
         )
-    return tracked_class(value, expression=expression, sink=sink)
+    return tracked_class.made(value, expression, sink)
 
 
 def operand(other: object) -> Expression | None:

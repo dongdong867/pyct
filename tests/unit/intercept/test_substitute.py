@@ -199,8 +199,8 @@ def test_a_bool_link_before_an_is_against_none_answers_as_plain_python(chain: st
     namespace: dict[str, object] = {}
     exec(compile(substitute(ast.parse(source)), "<f>", "exec"), namespace)
     sink: list[SinkItem] = []
-    flag = ConcolicBool(True, expression="flag", sink=sink)
-    other = ConcolicBool(True, expression="other", sink=sink)
+    flag = ConcolicBool.made(True, expression="flag", sink=sink)
+    other = ConcolicBool.made(True, expression="other", sink=sink)
 
     plain: dict[str, object] = {}
     exec(compile(source, "<f>", "exec"), plain)

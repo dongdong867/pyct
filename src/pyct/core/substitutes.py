@@ -17,16 +17,16 @@ a chained compare, where each operand is evaluated once on Python's stack,
 the link keeps Python's own `in` and searches a container of this module's,
 `Searched` or `Identity`, which asks the same functions.
 
-A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or
-`range(...)`, and a call of a `math` function through a name the module
-binds to it (`pyct.intercept.constants`), asks `call` for its callee first,
-and calls what it hands back: pyct's router for Python's own function,
-which `pyct.core.bound` holds beside the `len`, `ord` and `chr` it binds in
-the module's builtins, and the callee itself for anything else, so a
-function of the target's runs with no frame of pyct's above it. An
-operator's right side goes through `handed` (`pyct.core.handed`) before
-Python's own operator runs, so no frame of pyct's is above the target's own
-operator either.
+A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`,
+`range(...)`, or `type(...)` with one argument, and a call of a `math`
+function through a name the module binds to it (`pyct.intercept.constants`),
+asks `call` for its callee first, and calls what it hands back: pyct's
+router for Python's own function, which `pyct.core.bound` holds beside the
+`len`, `ord` and `chr` it binds in the module's builtins, and the callee
+itself for anything else, so a function of the target's runs with no frame
+of pyct's above it. An operator's right side goes through `handed`
+(`pyct.core.handed`) before Python's own operator runs, so no frame of
+pyct's is above the target's own operator either.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -215,8 +215,8 @@ class Identity(_Link):
 
 
 def call(callee: object, /) -> Any:
-    """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `range(...)`
-    calls, and a call of a `math` function through a name the module binds to it.
+    """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
+    `type(...)` calls, and a call of a `math` function through a name the module binds to it.
 
     ``callee`` is what the name the code wrote holds when the call runs.
     Python's own builtin gets pyct's router for it (`bound.CALLED`), and
