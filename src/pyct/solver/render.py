@@ -8,9 +8,12 @@ from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
+from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
 from pyct.solver.joined import joined
+from pyct.solver.recased import TO_DECLARE, Declared
+from pyct.solver.splits import SPLITS
 from pyct.solver.strings import above, below, encode
 
 # what opens a string literal in an expression: repr writes one in either quote, and a
@@ -199,6 +202,7 @@ class _Program:
         self.terms: dict[int, str] = {}
         self.unread = dict(holders)
         self.definitions: list[str] = []
+        self.facts: set[str] = set()
         for node in order:
             self.types[id(node)] = self._result(node)
         read = self._read_by_forms(order)
@@ -270,10 +274,15 @@ class _Program:
         return int if kind is bool and (head, bool) not in OPERATORS else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
-        """The parts a form reads: an operand of a form, a piece, or an order on strings."""
+        """The parts a form reads: an operand of a form, a check, a piece, a split, a declared
+        string, or an order on strings."""
         read: set[int] = set()
         for node in order:
-            if self._form(node) is not None or node[0] in POSITIONED or self._orders_strings(node):
+            if (
+                self._form(node) is not None
+                or _read_by_a_form(node[0])
+                or self._orders_strings(node)
+            ):
                 read |= {id(part) for part in node[1:] if isinstance(part, list)}
         return read
 
@@ -292,10 +301,14 @@ class _Program:
     def _written(self, node: Node, *, define: bool) -> str:
         """A part's term, its own parts already written: its name if it is defined, else itself.
 
-        A part to define is defined once, by name, when it has a sort to define it by.
+        A part to define is defined once, by name, when it has a sort to define it by. A
+        split's term is the string it splits, for its pieces to read, and a string no term
+        writes is declared (see `_declared`).
         """
-        operation = self._operation(node)
         kind = self.types[id(node)]
+        if kind is list:
+            return self.term(node[1])
+        operation = self._operation(node)
         sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
         if sort is None:
             return operation
@@ -310,11 +323,19 @@ class _Program:
             raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
-            return positioned(self.term(term), *(_position(part) for part in positions))
+            if isinstance(term, list) and self.type_of(term) is list:
+                return self._piece(term, positions)
+            return positioned(self.term(term), *(_plain(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
         if (form := self._form(node)) is not None:
             return form(*rendered)
+        if (declared := TO_DECLARE.get(head)) is not None:
+            return self._declared(declared, *rendered)
+        if (check := CHECKS.get(head)) is not None:
+            answer, fact = check(*rendered)
+            self._hold(fact)
+            return answer
         if head in STRING_ORDERS and kind is str:
             return _string_order(head, operands, rendered)
         return f"({_operator(head, kind)} {' '.join(rendered)})"
@@ -327,6 +348,44 @@ class _Program:
         if kind is int and self.type_of(part) is bool:
             return f"(ite {term} 1 0)"
         return term
+
+    def _declared(self, declared: Callable[[str, str], Declared], term: str) -> str:
+        """A string no term writes whole: a declared name in it, held to the condition that
+        makes the value Python's.
+
+        The condition is asserted with the definitions, on every path: it
+        only says what the name is, and some string always meets it.
+        """
+        name = f"e!{len(self.definitions)}"
+        value, condition = declared(name, term)
+        self.definitions.append(f"(declare-const {name} String)")
+        self.definitions.append(f"(assert {condition})")
+        return value
+
+    def _piece(self, split: Node, positions: list[Expression]) -> str:
+        """A piece of a split, and the assertion that the string has it.
+
+        The target took the piece out of the list Python built, so the piece
+        is there on every input that follows the path this far.
+        """
+        (index,) = (_plain(part) for part in positions)
+        if not isinstance(index, int):
+            raise ValueError(f"pyct cannot render piece {index} of a split: core writes an int")
+        plain = tuple(_plain(part) for part in split[2:])
+        piece, there = SPLITS[str(split[0])](self.term(split), plain, index)
+        self._hold(there)
+        return piece
+
+    def _hold(self, fact: str) -> None:
+        """Assert, once, a fact every input on the path meets."""
+        if fact != "true" and fact not in self.facts:
+            self.facts.add(fact)
+            self.definitions.append(f"(assert {fact})")
+
+
+def _read_by_a_form(head: Expression) -> bool:
+    """Whether an operation's operands are read by a form of one head whatever their type."""
+    return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
 
 
 def _leaf(leaf: str | int | float | bool | None) -> str:
@@ -345,11 +404,17 @@ def _leaf(leaf: str | int | float | bool | None) -> str:
     return encode(_value(leaf))
 
 
-def _position(part: Expression) -> int | None:
-    """A position in a piece, as the plain int it is, or None for a slice's missing bound."""
-    if part is None or (isinstance(part, int) and not isinstance(part, bool)):
+def _plain(part: Expression) -> int | str | None:
+    """An operand a form takes as it is: an int or a bool, None for a slice's missing bound, or
+    a string literal's str. A name is not one."""
+    if part is None or isinstance(part, int):
         return part
-    raise ValueError(f"pyct cannot render {part} as a position: core writes a plain int there")
+    if isinstance(part, str) and _is_literal(part):
+        return _value(part)
+    raise ValueError(
+        f"pyct cannot render {part} as a position, a separator or a fill: core writes a plain "
+        "value there"
+    )
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:

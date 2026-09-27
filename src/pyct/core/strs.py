@@ -8,7 +8,15 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
+from pyct.core.str_cases import changed, characters, check, width, width_and_fill
 from pyct.core.str_operands import position, within_cvc5
+from pyct.core.str_splits import (
+    from_the_right,
+    line_ends,
+    one_separator,
+    separator_and_limit,
+    split_up,
+)
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
@@ -30,6 +38,7 @@ _KEPT = (
     "__getattribute__",
     "__sizeof__",
 )
+
 
 def _operand(other: object) -> Expression | None:
     """The symbolic form of an operand str takes, or None for one it does not.
@@ -357,6 +366,42 @@ class ConcolicStr(str):
     replace = _piece("replace", _replacement)  # pyrefly: ignore[bad-override]
     removeprefix = _piece("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
     removesuffix = _piece("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
+
+    # a character check answers with a tracked bool, and a case change, a strip or a padding
+    # with a tracked str (see `str_cases`); each takes any arguments and hands a form it does
+    # not encode to str, so its signature is not str's; the override breaks str's on purpose
+    isdigit = check("isdigit")  # pyrefly: ignore[bad-override]
+    isdecimal = check("isdecimal")  # pyrefly: ignore[bad-override]
+    isnumeric = check("isnumeric")  # pyrefly: ignore[bad-override]
+    isalpha = check("isalpha")  # pyrefly: ignore[bad-override]
+    isalnum = check("isalnum")  # pyrefly: ignore[bad-override]
+    isspace = check("isspace")  # pyrefly: ignore[bad-override]
+    isupper = check("isupper")  # pyrefly: ignore[bad-override]
+    islower = check("islower")  # pyrefly: ignore[bad-override]
+    isascii = check("isascii")  # pyrefly: ignore[bad-override]
+    isprintable = check("isprintable")  # pyrefly: ignore[bad-override]
+    istitle = check("istitle")  # pyrefly: ignore[bad-override]
+    isidentifier = check("isidentifier")  # pyrefly: ignore[bad-override]
+    upper = changed("upper")  # pyrefly: ignore[bad-override]
+    lower = changed("lower")  # pyrefly: ignore[bad-override]
+    capitalize = changed("capitalize")  # pyrefly: ignore[bad-override]
+    title = changed("title")  # pyrefly: ignore[bad-override]
+    swapcase = changed("swapcase")  # pyrefly: ignore[bad-override]
+    casefold = changed("casefold")  # pyrefly: ignore[bad-override]
+    strip = changed("strip", characters)  # pyrefly: ignore[bad-override]
+    lstrip = changed("lstrip", characters)  # pyrefly: ignore[bad-override]
+    rstrip = changed("rstrip", characters)  # pyrefly: ignore[bad-override]
+    zfill = changed("zfill", width)  # pyrefly: ignore[bad-override]
+    center = changed("center", width_and_fill)  # pyrefly: ignore[bad-override]
+    ljust = changed("ljust", width_and_fill)  # pyrefly: ignore[bad-override]
+    rjust = changed("rjust", width_and_fill)  # pyrefly: ignore[bad-override]
+
+    # a split hands back str's own list or tuple, each piece a tracked str carrying its
+    # position in it (see `str_splits`)
+    split = split_up("split", separator_and_limit)  # pyrefly: ignore[bad-override]
+    rsplit = split_up("rsplit", from_the_right)  # pyrefly: ignore[bad-override]
+    partition = split_up("partition", one_separator)  # pyrefly: ignore[bad-override]
+    splitlines = split_up("splitlines", line_ends)  # pyrefly: ignore[bad-override]
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)

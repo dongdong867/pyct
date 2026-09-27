@@ -9,7 +9,11 @@ operation SMT-LIB has no operator for by the form in `FORMS`, a piece by
 from collections.abc import Callable, Mapping
 
 from pyct.solver import floats
+from pyct.solver.cases import CASES, PADDINGS
+from pyct.solver.checks import CHECKS
 from pyct.solver.ints import floor_division, modulo
+from pyct.solver.recased import TO_DECLARE
+from pyct.solver.splits import SPLITS
 from pyct.solver.strings import (
     character,
     contains,
@@ -66,6 +70,11 @@ RESULTS: Mapping[str, type | None] = {
     "replace": str,
     "removeprefix": str,
     "removesuffix": str,
+    **dict.fromkeys(CHECKS, bool),
+    **dict.fromkeys([*CASES, *PADDINGS, *TO_DECLARE], str),
+    # a split builds a list, which SMT-LIB has no sort for here: its term is the string it splits,
+    # and only its pieces are read, each through `[]`
+    **dict.fromkeys(SPLITS, list),
 }
 
 # Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one
@@ -139,8 +148,10 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("!=", float): floats.unequal,
     ("-", float): floats.minus,
     ("is_integer", float): floats.whole,
+    **{(head, str): form for head, form in CASES.items()},
 }
 
-# a piece taken at positions: the string arrives rendered, and each position as the plain int
-# it is, or None for a slice's missing bound, so the form sees its sign
-POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced}
+# a string taken at positions or padded: the string arrives rendered, and each other operand as
+# the plain value it is, an int, None for a slice's missing bound, or a literal's str, so the
+# form sees a position's sign and cuts a padding to its width
+POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced, **PADDINGS}

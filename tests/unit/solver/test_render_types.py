@@ -3,13 +3,18 @@
 import pytest
 
 from pyct.core.branch import Expression
+from pyct.solver.cases import CASES, PADDINGS
+from pyct.solver.checks import CHECKS
 from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
+from pyct.solver.recased import TO_DECLARE
+from pyct.solver.splits import SPLITS
 from tests.unit.solver.test_render import fork, render
 
 
 def test_every_head_render_writes_says_what_type_its_value_is() -> None:
     written = {head for head, _ in OPERATORS} | {head for head, _ in FORMS}
     written |= set(POSITIONED) | set(STRING_ORDERS)
+    written |= set(CHECKS) | set(SPLITS) | set(TO_DECLARE)
 
     # a head with no entry cannot say whether a `+` or an order above it is on strings, and a
     # wrong guess is a program cvc5 refuses, which stops the run on `solver failed`
@@ -48,6 +53,8 @@ STR_TERMS: list[Expression] = [
     ["replace", "s", "'a'", "'b'"],
     ["removeprefix", "s", "'a'"],
     ["removesuffix", "s", "'a'"],
+    *([head, "s"] for head in (*CASES, *TO_DECLARE)),
+    *([head, "s", 3] for head in PADDINGS),
 ]
 BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
     ["in", "'a'", "s"],
@@ -55,7 +62,10 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["endswith", "s", "'a'"],
     ["is_integer", "f"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
+    *([head, "s"] for head in CHECKS),
 ]
+# a split builds a list, which no order reads; each piece of it is a str
+LIST_TERMS: list[Expression] = [[head, "s", "','"] for head in SPLITS]
 TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "f": float, "g": float, "s": str, "t": str}
 
 
@@ -70,12 +80,12 @@ def _ids(terms: list[Expression]) -> list[str]:
 
 
 def _asserted(text: str) -> str:
-    """The one assertion a one-fork program holds."""
-    return next(line for line in text.splitlines() if line.startswith("(assert "))
+    """The fork's assertion, the last a one-fork program holds, after any a definition makes."""
+    return [line for line in text.splitlines() if line.startswith("(assert ")][-1]
 
 
 def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
-    terms = INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS
+    terms = INT_TERMS + FLOAT_TERMS + STR_TERMS + BOOL_TERMS + LIST_TERMS
     assert {_head(term) for term in terms} == set(RESULTS)
 
 

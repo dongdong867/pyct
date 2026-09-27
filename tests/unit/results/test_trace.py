@@ -92,6 +92,12 @@ INFIX: dict[str, tuple[Expression, str]] = {
         "s[1:].removeprefix('x')",
     ),
     "replace": (["replace", "s", "'a'", "'b'"], "s.replace('a', 'b')"),
+    "check-with-no-argument": (["isdigit", "s"], "s.isdigit()"),
+    "method-on-a-method": (["==", ["strip", ["upper", "s"]], "'A'"], "s.upper().strip() == 'A'"),
+    "piece-of-a-split": (
+        ["==", ["[]", ["split", "s", None, 1], 0], "'a'"],
+        "s.split(None, 1)[0] == 'a'",
+    ),
     "cut-part": (["==", ["...", 5000], "'abc'"], "...(5000 nodes) == 'abc'"),
     "piece-of-a-cut-part": (["[]", ["...", 12], 0], "...(12 nodes)[0]"),
     "uncounted-cut-part": (["==", ["...", None], "'abc'"], "...(? nodes) == 'abc'"),

@@ -63,6 +63,11 @@ def _read(value: str) -> object:
     return -int(value[len("(- ") : -1]) if value.startswith("(") else int(value)
 
 
+def method(name: str) -> Callable[..., object]:
+    """What a str method means in Python: the method of that name, called on its receiver."""
+    return lambda receiver, *args: getattr(receiver, name)(*args)
+
+
 def python(expression: Expression, s: object, heads: Heads, *, name: str = "s") -> object:
     """What Python makes of a condition on s. A leaf is s, a literal, a number, or None.
 
@@ -131,13 +136,41 @@ def disagrees(
         assert isinstance(s, str)
         return not takes(path, s, heads)
     if isinstance(answer, Unsat):
-        short = (
-            "".join(p) for k in range(longest + 1) for p in itertools.product(letters, repeat=k)
-        )
-        return any(takes(path, s, heads) for s in short)
+        return any(takes(path, s, heads) for s in _short(letters, longest))
     return False
+
+
+def _short(letters: list[str], longest: int) -> Iterable[str]:
+    """Every string of up to ``longest`` of the letters, shortest first."""
+    return ("".join(p) for k in range(longest + 1) for p in itertools.product(letters, repeat=k))
 
 
 def heads_named(path: tuple[Branch, ...], heads: Iterable[str]) -> set[str]:
     """Every one of the heads that a path's forks name."""
     return {head for fork in path for head in heads if f"'{head}'" in str(fork.expression)}
+
+
+def ascii_disagrees(
+    path: tuple[Branch, ...], answer: Answer, heads: Heads, letters: list[str], longest: int
+) -> bool:
+    """Whether Python disagrees with an answer an encoding exact for ASCII must get right.
+
+    A model with a character past ASCII may leave the plan, which the run
+    reports as it reports any input that did; an all-ASCII model and an
+    unsat are held to Python as `disagrees` holds them. A string without a
+    piece of a split the path took out does not take the path.
+    """
+    if isinstance(answer, Sat):
+        s = str(answer.model["s"])
+        return s.isascii() and not _takes_with_pieces(path, s, heads)
+    if isinstance(answer, Unsat):
+        return any(_takes_with_pieces(path, s, heads) for s in _short(letters, longest))
+    return False
+
+
+def _takes_with_pieces(path: tuple[Branch, ...], s: str, heads: Heads) -> bool:
+    """Whether s takes every fork of the path, a missing piece of a split taking none."""
+    try:
+        return takes(path, s, heads)
+    except IndexError:
+        return False
