@@ -7,6 +7,7 @@ found from the working directory, and its run prints rows.
 
 import json
 import os
+import platform
 from pathlib import Path
 
 import pytest
@@ -37,7 +38,9 @@ def test_refuses_a_bad_legacy_checkout(tmp_path: Path, legacy: str | None, says:
 
     assert says in result.stderr
     recipe = "uv sync --project DIR --frozen --extra realworld --extra library"
-    assert f"git worktree add DIR main && {recipe}" in result.stderr
+    assert f"git worktree add DIR main && {recipe} --python {platform.python_version()}" in (
+        result.stderr
+    )
     assert result.stdout == ""
     assert result.returncode == 2
 

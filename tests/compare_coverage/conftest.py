@@ -7,12 +7,13 @@ needs is exact, and does not move when a follow story closes a gap.
 
 ``legacy_checkout`` is a real checkout of ``main`` with its own environment, made once per
 session: ``git archive main`` into pytest's temporary folder, then ``uv sync`` with the
-``realworld`` and ``library`` extras. When ``PYCT_LEGACY_CHECKOUT`` names a checkout, that one
-is used instead.
+``realworld`` and ``library`` extras and this interpreter's Python release. When
+``PYCT_LEGACY_CHECKOUT`` names a checkout, that one is used instead.
 """
 
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -95,7 +96,10 @@ def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> Non
     subprocess.run(["tar", "-x", "-C", str(checkout)], input=archive.stdout, check=True)
     try:
         subprocess.run(
-            ["uv", "sync", "--frozen", "--no-dev", "--extra", "realworld", "--extra", "library"],
+            [
+                *("uv", "sync", "--frozen", "--no-dev", "--extra", "realworld"),
+                *("--extra", "library", "--python", platform.python_version()),
+            ],
             cwd=checkout,
             env=dict(environment),
             capture_output=True,
