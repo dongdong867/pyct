@@ -307,6 +307,7 @@ def test_the_passing_frames_are_the_routers() -> None:
         "method",
         "_on_text",
         "handed",
+        "answer",
         "len",
         "ord",
         "chr",

@@ -25,6 +25,7 @@ before, and it never outlives the operator.
 from __future__ import annotations
 
 import operator
+import types
 from collections.abc import Callable
 from typing import Any
 
@@ -57,7 +58,12 @@ _REFLECTED: dict[str, Callable[[Any, Any], object]] = {
 
 
 def _reflected(name: str, python: Callable[[Any, Any], object]) -> Callable[[Any, object], object]:
-    """The stand-in's reflected method: the tracked value's own, else Python's plain answer."""
+    """The stand-in's reflected method: the tracked value's own, else Python's plain answer.
+
+    It is a router, and blame reads through it (`PASSING`): it runs nothing of
+    its own, and Python's operator refusing the pair raises what the written
+    operator raises.
+    """
 
     def answer(self: Any, left: object) -> object:
         value = self.value
@@ -98,3 +104,10 @@ def handed(right: object, left: object, /) -> object:
     if kind is ConcolicBool and beside is bool:
         return _STAND_INS[kind](right)
     return right
+
+
+# the frames blame reads through: a raise under one of them, from Python's own operator on the
+# literal and the tracked value, is the target's, as it is when the target's operator raises
+PASSING: frozenset[types.CodeType] = frozenset(
+    {handed.__code__, _reflected("__radd__", operator.add).__code__}
+)

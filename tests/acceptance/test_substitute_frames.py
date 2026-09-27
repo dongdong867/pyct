@@ -34,3 +34,20 @@ def test_endless_recursion_through_a_conversion_is_the_target_s() -> None:
     failure = failure_of(first_line(result.stdout))
     assert failure["kind"] == "target_raised", failure
     assert str(failure["detail"]).startswith("RecursionError")
+
+
+# intercept-builtin-functions-leaves-a-builtins-raise-to-the-target: Python's own operator
+# refusing a float literal and a tracked int is the target's raise
+@pytest.mark.parametrize(
+    ("function", "seed", "error"),
+    [("shift", '{"n": 0}', "TypeError"), ("power", '{"n": 400}', "OverflowError")],
+)
+def test_python_s_own_operator_refusing_a_handed_operand_is_the_target_s(
+    function: str, seed: str, error: str
+) -> None:
+    result = run_pyct(f"targets.intercept.handed_raises::{function}", seed)
+
+    assert result.returncode == 0, result.stderr
+    failure = failure_of(first_line(result.stdout))
+    assert failure["kind"] == "target_raised", failure
+    assert str(failure["detail"]).startswith(error)

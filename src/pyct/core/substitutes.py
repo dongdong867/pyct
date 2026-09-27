@@ -34,9 +34,9 @@ from collections.abc import Callable
 from typing import Any, cast
 
 from pyct.core import bound, strs
+from pyct.core import handed as handing
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
-from pyct.core.handed import handed
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -160,12 +160,15 @@ def _on_text(
     return receiver_method(*args, **kwargs)
 
 
+# what substituted code calls for an operator's right side, where `pyct.core.handed` holds it
+handed = handing.handed
+
+
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord`, `chr` or a conversion, or from the target's own `__contains__`, `__len__` or
 # `__int__`, is the target's
 PASSING: frozenset[types.CodeType] = (
-    frozenset(
-        function.__code__ for function in (is_, is_not, in_, not_in, call, method, _on_text, handed)
-    )
+    frozenset(function.__code__ for function in (is_, is_not, in_, not_in, call, method, _on_text))
+    | handing.PASSING
     | bound.PASSING
 )
