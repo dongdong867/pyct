@@ -48,16 +48,18 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     cut to what it can.
 
     A prefix that names a float leaf is asked first with each such leaf held
-    finite; decision float-answer-finite-first. Only an ``Unsat`` asks
-    again: once with the same leaves held and cvc5 asked for its unsat core,
-    which says which of them the unsat rests on, and then with those leaves
-    free and the rest still held. That repeats until an ask answers
-    otherwise or the core names no held leaf. So a leaf is NaN or an
-    infinity only where no finite double serves it, whatever the others
-    need. The core costs its ask time only after an unsat, since asking for
-    it slows some sat answers. Each ask after the first gets what the ones
-    before left of ``timeout``, so all stay inside the one limit, and one
-    with nothing left is a ``Timeout()`` without starting cvc5.
+    finite; decision float-finite-first-frees-the-unsat-core. Only an
+    ``Unsat`` asks again: once with the same leaves held and cvc5 asked for
+    its unsat core, which says which of them the unsat rests on, and then
+    with those leaves free and the rest still held. That repeats until an
+    ask answers otherwise or the core names no held leaf. So a leaf may be
+    NaN or an infinity only once an unsat that held it finite names it in
+    its core. One core may name several leaves where freeing any one of them
+    would do, and each is freed. The core costs its ask time only after an
+    unsat, since asking for it slows some sat answers. Each ask after the
+    first gets what the ones before left of ``timeout``, so all stay inside
+    the one limit, and one with nothing left is a ``Timeout()`` without
+    starting cvc5.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
