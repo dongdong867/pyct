@@ -169,9 +169,12 @@ def test_a_path_that_names_no_float_is_asked_once_as_it_is(
 
 
 def _clock(monkeypatch: pytest.MonkeyPatch, *readings: float) -> None:
-    """The monotonic clock the solve reads, one reading per read."""
+    """The monotonic clock the solve reads, one reading per read.
+
+    cvc5's own name for it is patched, so no other reader of the clock draws from these.
+    """
     times = iter(readings)
-    monkeypatch.setattr("pyct.solver.cvc5.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("pyct.solver.cvc5.monotonic", lambda: next(times))
 
 
 def test_each_ask_after_the_first_gets_what_is_left_of_the_limit(

@@ -3,8 +3,8 @@
 import logging
 import math
 import subprocess
-import time
 from collections.abc import Mapping
+from time import monotonic
 
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
@@ -66,7 +66,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     finite = float_leaves(prefix, leaves)
-    started = time.monotonic()
+    started = monotonic()
     left = timeout
     while True:
         answer, core = _ask(program(prefix, leaves, finite=finite), left)
@@ -74,7 +74,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
         if not freed:
             return answer
         finite -= freed
-        left = timeout - (time.monotonic() - started)
+        left = timeout - (monotonic() - started)
         if left <= 0:
             logger.debug("no time left to ask cvc5 again with more doubles")
             return Timeout()
