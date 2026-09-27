@@ -1,9 +1,9 @@
 """The readable trace, the stderr half of what a run says: each input's lines, then how it ended."""
 
-import builtins
 import json
 import keyword
 from collections.abc import Mapping, Sequence
+from typing import TypeGuard
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
@@ -161,8 +161,9 @@ def _ended(failure: Failure | None) -> list[str]:
 # a part as the fork line writes it, and how tightly it binds as an operand, as `_BINARY` ranks
 type _Text = tuple[str, int]
 
-# how tightly Python's grammar binds what the fork line writes, loosest first. A head Python
-# has no operator for, such as `abs`, is written `abs x` and binds looser than everything
+# how tightly Python's grammar binds what the fork line writes, loosest first. A head that is
+# neither an operator nor a name, which core does not record, is written `op a` and binds
+# looser than everything
 _UNRANKED = 0
 _COMPARES = 1
 # a unary `-`, `+` or `~`, and a negative number, bind looser than `**` and tighter than `*`
@@ -233,9 +234,13 @@ def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
 
 
 def _prefixed(operator: Expression, operand: _Text) -> _Text:
-    """A condition on one operand: a unary operator binds as Python's does, a named head not."""
+    """A condition on one operand: a unary operator against it, `-x`, binding as Python's does.
+
+    Two minuses read ``--x``, as Python reads them. A head that is not an
+    operator keeps ``op a``, and binds looser than any operator.
+    """
     if operator in _UNARY_OPERATORS:
-        return f"{operator} {_operand(operand, _UNARY)}", _UNARY
+        return f"{operator}{_operand(operand, _UNARY)}", _UNARY
     return f"{operator} {_operand(operand, _ALONE)}", _UNRANKED
 
 
@@ -254,8 +259,11 @@ def _least(level: int, *, right: bool) -> int:
     return level + 1 if right else level
 
 
-# the builtins a fork line writes as Python calls them: `len(s)`
-_CALLED = ("len",)
+# the functions pyct follows, which a fork line writes as Python calls them: `abs(x)`,
+# `len(s)`. A story that follows one more adds its head here. Any other name is a method on its
+# first operand, so a name Python uses for both, such as `format` or `hex`, reads by what pyct
+# follows rather than by what `builtins` holds
+_FUNCTIONS = frozenset(("abs", "len"))
 
 
 def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
@@ -263,9 +271,9 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
 
     An index reads ``s[i]`` and a slice ``s[i:j]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A builtin in `_CALLED` reads ``len(s)``, and a method
-    reads as Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()``
-    among them. A part cut from a long expression reads ``...(N nodes)``, and
+    ``config['port']``. A function in `_FUNCTIONS` reads ``abs(x)``, and any
+    other name is a method as Python calls it, ``a.name(b)`` or ``a.name()``,
+    ``x.is_integer()`` among them. A part cut from a long expression reads ``...(N nodes)``, and
     ``...(? nodes)`` when its count is ``null``. Each binds tighter than any
     operator, so none needs parentheses of its own.
     """
@@ -277,25 +285,20 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
         return f"{_operand(operands[0], _ALONE)}[{written}]"
-    if head in _CALLED:
+    if not _is_a_name(head):
+        return None
+    if head in _FUNCTIONS:
         return f"{head}({', '.join(texts)})"
-    if _is_a_method(expression):
-        return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
-    return None
+    return f"{_operand(operands[0], _ALONE)}.{head}({', '.join(texts[1:])})"
 
 
-def _is_a_method(expression: list[Expression]) -> bool:
-    """Whether a condition is a method called on a receiver, with or without arguments.
+def _is_a_name(head: Expression) -> TypeGuard[str]:
+    """Whether a head names a function or a method, rather than an operator.
 
-    A name is an identifier that is not a keyword, so ``in`` stays an
-    operator Python writes between its operands. A builtin's name on one
-    operand, such as ``abs``, keeps the ``op a`` it always had, and any other
-    name on one operand is a method with no argument, ``s.upper()``.
+    A name is an identifier that is not a keyword, so ``in`` and ``not`` stay
+    operators Python writes beside their operands.
     """
-    head = expression[0]
-    if not isinstance(head, str) or not head.isidentifier() or keyword.iskeyword(head):
-        return False
-    return len(expression) > 2 or not hasattr(builtins, head)
+    return isinstance(head, str) and head.isidentifier() and not keyword.iskeyword(head)
 
 
 def _operand(written: _Text, least: int) -> str:
