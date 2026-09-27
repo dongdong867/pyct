@@ -74,6 +74,20 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     return ConcolicInt(value, expression=expression, sink=self.sink)
 
 
+def length(self: ListState) -> int:
+    """`len(items)` where pyct binds `len`: the list's own length, carrying `["len", items]`,
+    the same term the list's own forks read.
+
+    Python's `len` makes what `__len__` hands back a plain int, so a tracked list's `__len__`
+    stays a downgrade; this is what pyct's own `len` asks for instead (`pyct.core.bound.len`).
+    A list with no form, or one whose form stopped describing it, gives its plain length. A
+    length cannot fail, so it records no fork.
+    """
+    if not self.holds("__len__"):
+        return self.length()
+    return ConcolicInt(self.length(), expression=["len", self.expression], sink=self.sink)
+
+
 def _named(self: ListState, row: ListState, written: Expression) -> None:
     """Name a list inside as the target indexed it, ``grid[-1]`` or ``grid[i]``, so its forks
     follow the outer list's length and the index.

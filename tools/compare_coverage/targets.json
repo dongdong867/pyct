@@ -200,7 +200,7 @@
     {"set": "v2", "target": "targets.lists.in_place::swaps", "seed": {"pair": [1, 2]}},
     {"set": "v2", "target": "targets.lists.in_place::tally", "seed": {"counts": [0, 0], "n": 3}},
     {"set": "v2", "target": "targets.lists.keeps::keep", "seed": {"items": [1]}},
-    {"set": "v2", "target": "targets.lists.len_downgrade::check", "seed": {"items": [1]}},
+    {"set": "v2", "target": "targets.lists.length::check", "seed": {"items": [1]}},
     {"set": "v2", "target": "targets.lists.loop_passes::count", "seed": {"items": [0, 20]}},
     {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}},
     {"set": "v2", "target": "targets.lists.million::past_the_limit", "seed": {"items": [0]}},

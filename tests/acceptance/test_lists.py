@@ -29,7 +29,7 @@ ROWS = "targets.lists.rows::check"
 THOUSANDS = "targets.lists.thousands::gather"
 MILLION = "targets.lists.million"
 MILLION_FILE = str(LISTS / "million.py")
-LEN = "targets.lists.len_downgrade::check"
+LEN = "targets.lists.length::check"
 UNTAUGHT = "targets.lists.untaught::check"
 OUTSIDE = "targets.lists.outside_change::check"
 RAISES = "targets.lists.raises"
@@ -412,18 +412,23 @@ def test_limits_an_answer_to_a_million_items() -> None:
     assert f"missed {MILLION_FILE}:8:7 unsat" in past_limit.stderr.splitlines()
 
 
-# follow-lists-and-dicts-as-they-change-names-len-as-a-downgrade
-def test_names_len_as_a_downgrade() -> None:
+# follow-lists-and-dicts-as-they-change-follows-len-of-a-list: `len(items)` goes through pyct's
+# own `len`, so it is the list's length term, and an item the target appended counts
+def test_follows_len_of_a_list() -> None:
     result = run_pyct(LEN, '{"items": [1]}')
 
     assert result.returncode == 0, result.stderr
-    seed = first_line(result.stdout)
-    downgrades = seed["downgrades"]
-    assert isinstance(downgrades, list), seed
-    assert [(entry["name"], entry["count"]) for entry in downgrades] == [("__len__", 1)]
+    lines = input_lines(result.stdout)
+    seed = lines[0]
+    assert seed["downgrades"] == [], seed
+    appended = ["+", "items", ["[,]", 0]]
     assert [(line, expression) for line, expression, _ in listed(seed)] == [
-        (4, ["!=", ["len", "items"], 0])
+        (3, [">", ["len", appended], 3]),
+        (5, ["!=", ["len", appended], 0]),
     ]
+    # the flip takes the long side: three items of the argument's, and the appended one
+    long = [items_of(line) for line in solved(lines) if listed(line)[0][2]]
+    assert long and all(len(items) >= 3 for items in long), lines
 
 
 # follow-lists-and-dicts-as-they-change-downgrades-an-untaught-list-form

@@ -241,8 +241,10 @@ def _truth(self: ListState) -> bool:
 
 
 def _size(self: ListState) -> int:
-    """``len(items)``: Python makes the answer plain before the target sees it, so it is a
-    downgrade, but for the size a walk just started asks for (see `reads.hinted`)."""
+    """``items.__len__()``: Python's `len` makes the answer plain before the target sees it, so
+    it is a downgrade, but for the size a walk just started asks for (see `reads.hinted`). A
+    `len(items)` in the target's package asks pyct's own `len`, which gives the list's length
+    term (`reads.length`)."""
     if self.expression is not None and not reads.hinted(self):
         self.sink.append(Downgrade(name="__len__"))
     return self.length()

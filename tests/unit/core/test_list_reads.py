@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from pyct.core import bound
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import handed
@@ -275,6 +276,30 @@ def test_len_is_a_downgrade_but_for_the_size_a_walk_just_started_asks_for() -> N
 
     assert size == 2 and values(copied) == [1, 2]
     assert downgrades(sink) == ["__len__"]
+
+
+def test_pyct_s_len_is_the_list_s_length_term() -> None:
+    items, sink = tracked([1, 2])
+    items.append(3)
+
+    size = bound.len(items)
+
+    # a length cannot fail, so reading one records nothing
+    assert downgrades(sink) == [] and forks(sink) == []
+    assert isinstance(size, ConcolicInt) and int.__int__(size) == 3
+    assert size.expression == ["len", ["+", "items", ["[,]", 3]]]
+
+
+def test_pyct_s_len_of_a_list_whose_form_stopped_describing_it_is_plain() -> None:
+    items, sink = tracked([1, 2])
+    list.append(items, 3)
+
+    size = bound.len(items)
+
+    assert type(size) is int and size == 3
+    # the list turned plain here, so the line names the call that found it changed
+    assert downgrades(sink) == ["__len__"]
+    assert type(bound.len(items)) is int and downgrades(sink) == ["__len__"]
 
 
 def test_an_item_that_is_a_list_is_handed_out_as_it_is_stored() -> None:
