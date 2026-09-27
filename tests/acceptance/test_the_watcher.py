@@ -50,9 +50,10 @@ def group_ended(group: int, within: float = 1.0) -> bool:
     """Whether no process of ``group`` is left ``within`` seconds, as the system reaps them.
 
     That is every process of the run but the guard, which runs in a group
-    of its own; ``test_guard`` pins its end. The system refuses to signal a
-    group whose only processes are still exiting, so a refusal means to
-    look again.
+    of its own; ``test_the_watcher_ends_and_reaps_its_guard`` in
+    ``test_launch`` pins its end. The system refuses to signal a group
+    whose only processes are still exiting, so a refusal means to look
+    again.
     """
     deadline = time.monotonic() + within
     while time.monotonic() < deadline:

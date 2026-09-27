@@ -19,7 +19,7 @@ from pyct.run import launch as launch_module
 from pyct.run import process
 from pyct.run.import_watch import ImportWatch
 from pyct.run.launch import CTRL_C_GRACE, _ending, launch
-from pyct.run.process import Stopped, Waited
+from pyct.run.process import Child, Stopped, Waited
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -330,6 +330,29 @@ def test_a_stop_that_lands_as_the_handler_comes_off_still_ends_by_sigterm(
 
     assert launch(lambda watch: 0, ARGV) == 128 + signal.SIGTERM
     assert raised == [signal.SIGTERM]
+
+
+def test_the_watcher_ends_and_reaps_its_guard(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a stand-in for the guard, which never ends by itself
+    stand_in = os.fork()
+    if stand_in == 0:
+        try:
+            time.sleep(10)
+        finally:
+            os._exit(0)
+    monkeypatch.setattr(launch_module, "guard", lambda lifeline, target: Child(stand_in))
+
+    def returns(watch: ImportWatch | None) -> None:
+        os._exit(0)
+
+    try:
+        assert launch(ending_in(returns), ARGV) == 0
+        with pytest.raises(ChildProcessError):
+            os.waitpid(stand_in, os.WNOHANG)
+    finally:
+        with contextlib.suppress(ProcessLookupError, ChildProcessError):
+            os.kill(stand_in, signal.SIGKILL)
+            os.waitpid(stand_in, 0)
 
 
 def test_a_command_that_returns_puts_the_sigterm_handler_back(
