@@ -86,8 +86,7 @@ class ConcolicBool(int):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
     # a pickle holds the plain value and loads as a bool, and writing it is a downgrade
-    __reduce_ex__ = pickled(bool, "__reduce_ex__")
-    __reduce__ = pickled(bool, "__reduce__")
+    __reduce_ex__, __reduce__ = pickled(bool)
 
     __add__ = numbers.arithmetic("+", int.__add__)
     __radd__ = numbers.arithmetic("+", int.__radd__, reflected=True)

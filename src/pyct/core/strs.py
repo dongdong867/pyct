@@ -16,10 +16,11 @@ from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, for
 # method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
 # itself, so nothing inherited needs naming.
 
-# not the target's path: `__hash__`, `__repr__`, `__getnewargs__` and the rest of the object
-# plumbing, so a dict key and a debugger read cost nothing. str takes `__getattribute__` from
-# object today; it is kept all the same, because the downgrade wrapper reads `self.sink`
-# through it, and a wrapped one would recurse on the first attribute read
+# not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
+# once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
+# debugger read cost nothing. str takes `__getattribute__` from object today; it is kept all
+# the same, because the downgrade wrapper reads `self.sink` through it, and a wrapped one would
+# recurse on the first attribute read
 _KEPT = (
     "__hash__",
     "__repr__",
@@ -343,8 +344,7 @@ class ConcolicStr(str):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
     # a pickle holds the plain value and loads as a str, and writing it is a downgrade
-    __reduce_ex__ = pickled(str, "__reduce_ex__")
-    __reduce__ = pickled(str, "__reduce__")
+    __reduce_ex__, __reduce__ = pickled(str)
 
     # a position or a count is a tracked int, so `s.find("x") < n` is one fork on s and n, and
     # `in`, `startswith` and `endswith` answer with a tracked bool for the reason the compares

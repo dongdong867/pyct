@@ -48,8 +48,7 @@ class ConcolicInt(int):
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
     # a pickle holds the plain value and loads as an int, and writing it is a downgrade
-    __reduce_ex__ = pickled(int, "__reduce_ex__")
-    __reduce__ = pickled(int, "__reduce__")
+    __reduce_ex__, __reduce__ = pickled(int)
 
     __add__ = numbers.arithmetic("+", int.__add__)
     __radd__ = numbers.arithmetic("+", int.__radd__, reflected=True)

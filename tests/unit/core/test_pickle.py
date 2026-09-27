@@ -82,6 +82,22 @@ def test_the_pickled_value_keeps_its_condition() -> None:
 
 
 @pytest.mark.parametrize(("make", "plain"), TRACKED.values(), ids=list(TRACKED))
+def test_reduce_takes_the_arguments_pythons_own_takes(
+    make: Callable[[list[SinkItem]], object], plain: object
+) -> None:
+    sink: list[SinkItem] = []
+    value = make(sink)
+
+    # one protocol and none, as on a plain value; a refused call records nothing
+    for call in (lambda v: v.__reduce_ex__(), lambda v: v.__reduce__(2)):
+        with pytest.raises(TypeError):
+            call(plain)
+        with pytest.raises(TypeError):
+            call(value)
+    assert sink == []
+
+
+@pytest.mark.parametrize(("make", "plain"), TRACKED.values(), ids=list(TRACKED))
 def test_reduce_called_by_its_own_name_is_a_downgrade_by_that_name(
     make: Callable[[list[SinkItem]], object], plain: object
 ) -> None:
@@ -126,3 +142,18 @@ def test_a_protocol_pickle_refuses_raises_before_anything_is_written(
 
     assert str(raised.value) == str(refused.value)
     assert sink == []
+
+
+@pytest.mark.parametrize("protocol", PROTOCOLS)
+@pytest.mark.parametrize(("make", "plain"), TRACKED.values(), ids=list(TRACKED))
+def test_a_tracked_values_pickle_is_other_bytes_that_load_to_the_same_value(
+    make: Callable[[list[SinkItem]], object], plain: object, protocol: int
+) -> None:
+    written = pickle.dumps(make([]), protocol)
+    own = pickle.dumps(plain, protocol)
+
+    # the pickler writes an exact int, bool or str by its type and asks a tracked one for
+    # __reduce_ex__, so the bytes differ; what they load to does not
+    assert written != own
+    assert type(pickle.loads(written)) is type(pickle.loads(own))
+    assert pickle.loads(written) == pickle.loads(own)
