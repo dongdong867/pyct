@@ -5,17 +5,17 @@ runner: every command here ends its process itself. The watcher's own end by a s
 recorded instead of raised, so the test runner outlives it.
 """
 
-import contextlib
 import os
 import signal
 import threading
+import time
 from collections.abc import Callable, Generator
 from typing import NoReturn
 
 import pytest
 
 from pyct.run.import_watch import ImportWatch
-from pyct.run.launch import launch
+from pyct.run.launch import Stopped, launch
 
 MODULE = "some.module"
 ARGV = ["run", f"{MODULE}::f", '{"x": 1}']
@@ -32,19 +32,40 @@ def _handlers_kept() -> Generator[None]:
 
 @pytest.fixture
 def raised(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    """The signals the watcher raises on itself, recorded instead of raised."""
+    """The signals the watcher raises on itself, recorded instead of raised.
+
+    The watcher is this test's own process. A process forked from it raises
+    for real, so a command's process still ends by its signal.
+    """
     signals: list[int] = []
-    monkeypatch.setattr(signal, "raise_signal", signals.append)
+    watcher = os.getpid()
+    raise_for_real = signal.raise_signal
+
+    def raise_signal(number: int) -> None:
+        if os.getpid() == watcher:
+            signals.append(number)
+        else:
+            raise_for_real(number)
+
+    monkeypatch.setattr(signal, "raise_signal", raise_signal)
     return signals
 
 
 def ending_in(command: Callable[[ImportWatch | None], None]) -> Callable[[ImportWatch | None], int]:
-    """``command`` in the command's process, which then exits 0 if the command did not end it."""
+    """``command`` in the command's process, which then exits 0 if the command did not end it.
+
+    A raise must not unwind into the test runner's frames this process
+    copied. ``Stopped`` goes on, since the command's process catches it and
+    ends by SIGTERM.
+    """
 
     def run(watch: ImportWatch | None) -> NoReturn:
-        # a raise here must not unwind into the test runner's frames this process copied
-        with contextlib.suppress(BaseException):
+        try:
             command(watch)
+        except Stopped:
+            raise
+        except BaseException:
+            pass
         os._exit(0)
 
     return run
@@ -226,13 +247,36 @@ def test_a_sigterm_to_the_watcher_goes_on_to_the_command_s_process(
     assert capsys.readouterr().err == ""
 
 
-def test_the_command_runs_in_this_process_when_no_other_can_start(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def no_process_starts(monkeypatch: pytest.MonkeyPatch) -> None:
     def refused() -> int:
         raise BlockingIOError(35, "Resource temporarily unavailable")
 
     monkeypatch.setattr(os, "fork", refused)
+
+
+def test_a_sigterm_ends_the_command_by_sigterm_and_puts_its_handler_back(
+    monkeypatch: pytest.MonkeyPatch, raised: list[int]
+) -> None:
+    # with no process of its own, the command's process is this one, so its end is recorded
+    no_process_starts(monkeypatch)
+    before = signal.getsignal(signal.SIGTERM)
+
+    def stopped(watch: ImportWatch | None) -> int:
+        os.kill(os.getpid(), signal.SIGTERM)
+        time.sleep(5)
+        return 0
+
+    code = launch(stopped, ARGV)
+
+    assert raised == [signal.SIGTERM]
+    assert code == 128 + signal.SIGTERM
+    assert signal.getsignal(signal.SIGTERM) is before
+
+
+def test_the_command_runs_in_this_process_when_no_other_can_start(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    no_process_starts(monkeypatch)
     held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
 
     code = launch(lambda watch: 7 if watch is None else 0, ARGV)

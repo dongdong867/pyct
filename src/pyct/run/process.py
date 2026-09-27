@@ -37,6 +37,10 @@ from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import Reading
 
+# the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
+# SIGINT, and SIGTERM, which the command's process ends on (see ``launch``)
+STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
+
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
 KILL_GRACE = 0.5
@@ -72,15 +76,16 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
     ``until`` is the input's deadline, a monotonic instant; the process is
     killed ``KILL_GRACE`` after it. ``None`` waits as long as it runs.
 
-    A Ctrl-C is held from before the start until pyct holds the pid inside
-    the guard that ends the process on the way out, so none lands between
-    the two and leaves the process running. It then goes on, as
-    KeyboardInterrupt, once the process is ended and reaped.
+    A Ctrl-C, or another signal in ``STOP_SIGNALS``, is held from before the
+    start until pyct holds the pid inside the guard that ends the process on
+    the way out, so none lands between the two and leaves the process
+    running. It then goes on, as KeyboardInterrupt for a Ctrl-C, once the
+    process is ended and reaped.
     """
     child: Child | None = None
     try:
-        # a Ctrl-C held here goes on as the block ends, with the process in the guard's hands
-        with _ctrl_c_held():
+        # a signal held here goes on as the block ends, with the process in the guard's hands
+        with _stops_held():
             child = Child(start())
         with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
             return child.wait()
@@ -90,27 +95,31 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
 
 
 @contextlib.contextmanager
-def _ctrl_c_held() -> Generator[None]:
-    """Hold a Ctrl-C until the block ends, then let it go on as it would have.
+def _stops_held() -> Generator[None]:
+    """Hold each signal in ``STOP_SIGNALS`` until the block ends, then let it go on as it would.
 
-    The signal mask holds it for this thread, and a child forked inside the
-    block starts with that mask. The system can still hand SIGINT to another
+    The signal mask holds them for this thread, and a child forked inside the
+    block starts with that mask. The system can still hand one to another
     thread of pyct's process, and Python then raises in this thread anyway,
     so a handler that only notes it holds it here too. On the way out the old
-    handler comes back, and a noted Ctrl-C is raised again for it. Like the
-    rest of ``run()``, this needs the main thread.
+    handlers come back, and each noted signal is raised again for them. Like
+    the rest of ``run()``, this needs the main thread.
     """
     noted: list[int] = []
-    previous = signal.signal(signal.SIGINT, lambda number, frame: noted.append(number))
-    held = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGINT})
+    previous = {
+        number: signal.signal(number, lambda got, frame: noted.append(got))
+        for number in STOP_SIGNALS
+    }
+    held = signal.pthread_sigmask(signal.SIG_BLOCK, STOP_SIGNALS)
     try:
         yield
     finally:
-        # unblocking runs the noting handler for a Ctrl-C this thread held
+        # unblocking runs the noting handler for a signal this thread held
         signal.pthread_sigmask(signal.SIG_SETMASK, held)
-        signal.signal(signal.SIGINT, signal.SIG_DFL if previous is None else previous)
-        if noted:
-            signal.raise_signal(signal.SIGINT)
+        for number, handler in previous.items():
+            signal.signal(number, signal.SIG_DFL if handler is None else handler)
+        for number in dict.fromkeys(noted):
+            signal.raise_signal(number)
 
 
 class Child:
@@ -164,12 +173,13 @@ class Child:
 
         The status is asked for without waiting first, so a process pyct
         already reaped, whose status was lost on the way out, is never
-        killed: its pid may belong to another process by now. A Ctrl-C is
-        held until the process is reaped, then goes on.
+        killed: its pid may belong to another process by now. A Ctrl-C, or
+        another signal in ``STOP_SIGNALS``, is held until the process is
+        reaped, then goes on.
         """
         if self.status is not None:
             return
-        with _ctrl_c_held():
+        with _stops_held():
             self._kill_and_reap()
 
     def _kill_and_reap(self) -> None:

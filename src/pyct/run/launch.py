@@ -13,7 +13,9 @@ the command's process ended: with its exit code, or by its signal.
 A Ctrl-C reaches both processes, since the terminal signals its whole
 foreground group, so the watcher only notes it and the command's process
 ends as it does on any Ctrl-C. A SIGTERM is sent to one process, so the
-watcher notes it and passes it on. When the command's process ends by a
+watcher notes it and passes it on. The command's process ends on a
+SIGTERM as on a Ctrl-C: it ends its input's process and cvc5 on the way
+out, then ends by the SIGTERM. When the command's process ends by a
 signal the watcher got too, that ending is the signal's, not the
 import's, so the watcher ends the same way.
 """
@@ -37,13 +39,21 @@ _NOTED = frozenset({signal.SIGINT, signal.SIGTERM})
 type Command = Callable[[ImportWatch | None], int]
 
 
+class Stopped(BaseException):
+    """The command's process got a SIGTERM.
+
+    A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
+    it through and ends each process pyct started on the way out.
+    """
+
+
 def launch(command: Command, argv: Sequence[str]) -> int:
     """Run ``command`` in a process of its own, watched from this one, and end as it ended.
 
     The command's process returns what ``command`` returns, so it ends
     through the interpreter's own exit, as pyct always has. This process
     returns the exit code it ends with, or ends by the command's signal.
-    When no process can start, the command runs in this one, unwatched.
+    When no process can start, this one runs the command, unwatched.
     """
     watch = ImportWatch(argv)
     flush_streams()
@@ -54,8 +64,29 @@ def launch(command: Command, argv: Sequence[str]) -> int:
         pid = None
     if pid:
         return _watch(Child(pid), watch, held)
-    signal.pthread_sigmask(signal.SIG_SETMASK, held)
-    return command(None if pid is None else watch)
+    return _serve(command, None if pid is None else watch, held)
+
+
+def _serve(command: Command, watch: ImportWatch | None, held: Iterable[int]) -> int:
+    """Run ``command`` as the command's process, which ends on a SIGTERM as on a Ctrl-C.
+
+    The SIGTERM raises ``Stopped`` wherever the process is, so the input's
+    process and cvc5 are ended on the way out, and then the command's
+    process ends by the SIGTERM. The handler goes in while SIGTERM is still
+    held from before the fork; ``held`` is the mask to put back.
+    """
+    previous = signal.signal(signal.SIGTERM, _stop)
+    try:
+        signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        return command(watch)
+    except Stopped:
+        return _end_by(signal.SIGTERM)
+    finally:
+        signal.signal(signal.SIGTERM, signal.SIG_DFL if previous is None else previous)
+
+
+def _stop(_number: int, _frame: object) -> None:
+    raise Stopped
 
 
 def _watch(child: Child, watch: ImportWatch, held: Iterable[int]) -> int:
