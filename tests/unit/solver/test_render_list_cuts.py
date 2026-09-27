@@ -31,6 +31,7 @@ def _cut(times: int) -> tuple[Seed, tuple[Branch, ...]]:
 
 
 @needs_cvc5
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("times", "limit", "spent"),
     [

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.results.record import DowngradeCount
 
 # the tally of the call running now in this process, if one is
@@ -21,26 +21,26 @@ class Watch(Protocol):
     """Who hears each fact of one call, the moment the call makes it.
 
     A fork as it is taken, and a line the first time the call reaches it. A
-    downgrade comes with its count so far: a count of 1 starts an entry, and a
-    higher count means the last entry grew by one. The tally decides what an
-    entry is; a watch only mirrors it.
+    downgrade comes with its site and its count so far: a count of 1 starts an
+    entry, and a higher count means the last entry grew by one. The tally
+    decides what an entry is; a watch only mirrors it.
     """
 
     def fork(self, branch: Branch) -> None: ...
 
     def line(self, number: int) -> None: ...
 
-    def downgrade(self, name: str, count: int) -> None: ...
+    def downgrade(self, name: str, site: Site, count: int) -> None: ...
 
 
 class Tally:
     """What one call did so far: its lines, its forks, and its downgrades, in call order.
 
     It is the call's sink, so core pushes forks and downgrades into it, and
-    the line tracer feeds it lines. Consecutive downgrades of one name
-    collapse into one entry as they arrive; a fork between them does not split
-    them, because the entries run over the downgrades alone, as the line lists
-    them. After the call it is sealed: pyct's own text calls on a tracked
+    the line tracer feeds it lines. Consecutive downgrades of one name at one
+    site collapse into one entry as they arrive; a fork between them does not
+    split them, because the entries run over the downgrades alone, as the line
+    lists them. After the call it is sealed: pyct's own text calls on a tracked
     value, such as writing the failure, are not the target's and record
     nothing.
     """
@@ -65,14 +65,15 @@ class Tally:
         if self.sealed:
             live = _LIVE[0]
             if live is not None and live is not self:
-                live.append(Downgrade(name=item.lost_as if isinstance(item, Branch) else item.name))
+                name = item.lost_as if isinstance(item, Branch) else item.name
+                live.append(Downgrade(name=name, site=item.site))
             return
         if isinstance(item, Branch):
             self.branches.append(item)
             if self.watch is not None:
                 self.watch.fork(item)
             return
-        self._downgrade(item.name)
+        self._downgrade(item.name, item.site)
 
     def line(self, number: int) -> None:
         """Keep a line the call reached. Only its first sight reaches the watch."""
@@ -94,23 +95,29 @@ class Tally:
             _LIVE[0] = None
 
     def counted(self) -> tuple[DowngradeCount, ...]:
-        """The downgrades as the line lists them, one entry per run of one name."""
-        return tuple(DowngradeCount(name=entry.name, count=entry.count) for entry in self._entries)
+        """The downgrades as the line lists them, one entry per run of one name at one site."""
+        return tuple(
+            DowngradeCount(name=entry.name, count=entry.count, site=entry.site)
+            for entry in self._entries
+        )
 
-    def _downgrade(self, name: str) -> None:
-        if self._entries and self._entries[-1].name == name:
-            self._entries[-1].count += 1
+    def _downgrade(self, name: str, site: Site) -> None:
+        last = self._entries[-1] if self._entries else None
+        # a site found again is the one object caller_site keeps, so `is` settles most repeats
+        if last is not None and last.name == name and (last.site is site or last.site == site):
+            last.count += 1
         else:
-            self._entries.append(_Entry(name))
+            self._entries.append(_Entry(name, site))
         if self.watch is not None:
-            self.watch.downgrade(name, self._entries[-1].count)
+            self.watch.downgrade(name, site, self._entries[-1].count)
 
 
 class _Entry:
-    """One run of calls of one name, counted as they come."""
+    """One run of calls of one name at one site, counted as they come."""
 
-    __slots__ = ("count", "name")
+    __slots__ = ("count", "name", "site")
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, site: Site) -> None:
         self.name = name
+        self.site = site
         self.count = 1

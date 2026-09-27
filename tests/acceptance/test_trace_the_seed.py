@@ -17,6 +17,7 @@ from pyct.core.branch import Site
 from pyct.run import isolation
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     let_pyct_run_in_process,
@@ -298,7 +299,7 @@ def test_records_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     line = one_line(result.stdout)
     # a shift drops the condition, so the name of the call it went through is all that is left
-    assert line["downgrades"] == [{"name": "__rshift__", "count": 1}]
+    assert line["downgrades"] == [downgrade("__rshift__", 1, "targets/trace/through_shift.py:2:8")]
     # y is a plain int after the shift, so `y < 10` is Python's own compare and no fork is recorded
     assert line["forks"] == []
     assert line["covered"] == {THROUGH_SHIFT_FILE: [2, 3, 4]}
@@ -326,7 +327,7 @@ def test_writes_a_readable_trace_to_stderr() -> None:
 
     lost = run_pyct(THROUGH_SHIFT, '{"x": -3}')
 
-    assert "downgrades __rshift__" in lost.stderr.splitlines()
+    assert f"downgrades __rshift__ at {THROUGH_SHIFT_FILE}:2:8" in lost.stderr.splitlines()
 
     raised = run_pyct(RAISES, '{"x": 3}')
 

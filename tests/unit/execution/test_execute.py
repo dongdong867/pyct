@@ -358,7 +358,7 @@ def test_execute_keeps_the_targets_downgrades_when_it_raises() -> None:
 
     # the target's own downgrade before the raise stays; writing the failure adds none
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail="ValueError: abc")
-    assert result.downgrades == (DowngradeCount(name="expandtabs", count=1),)
+    assert named(result.downgrades) == [("expandtabs", 1)]
 
 
 def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
@@ -371,7 +371,7 @@ def test_execute_reports_a_downgrade_and_the_fork_it_cost() -> None:
     result = execute(ctx, {"x": -3})
 
     # a shift drops the condition, so the compare after it is Python's own and no fork is left
-    assert result.downgrades == (DowngradeCount(name="__rshift__", count=1),)
+    assert named(result.downgrades) == [("__rshift__", 1)]
     assert result.branches == ()
 
 
@@ -392,16 +392,13 @@ def test_execute_keeps_the_forks_and_the_downgrades_each_in_order() -> None:
         ["<", "x", 10],
         ["<", "x", 100],
     ]
-    assert result.downgrades == (
-        DowngradeCount(name="__rshift__", count=1),
-        DowngradeCount(name="__invert__", count=1),
-    )
+    assert named(result.downgrades) == [("__rshift__", 1), ("__invert__", 1)]
 
 
 def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None:
     def repeats(x: int) -> int:
-        x >> 1
-        x >> 1
+        for _ in range(2):
+            x >> 1
         y = x | 1
         x >> 1
         return y
@@ -410,12 +407,30 @@ def test_execute_collapses_a_run_of_one_downgraded_call_into_one_count() -> None
 
     result = execute(ctx, {"x": 3})
 
-    # only calls next to each other collapse, so the second run of shifts is its own entry
-    assert result.downgrades == (
-        DowngradeCount(name="__rshift__", count=2),
-        DowngradeCount(name="__or__", count=1),
-        DowngradeCount(name="__rshift__", count=1),
-    )
+    # only calls next to each other at one site collapse, so the later shift is its own entry
+    assert named(result.downgrades) == [("__rshift__", 2), ("__or__", 1), ("__rshift__", 1)]
+    first, _, last = result.downgrades
+    assert (first.site.file, first.site.line + 2) == (last.site.file, last.site.line)
+
+
+def test_execute_keeps_one_name_at_two_sites_apart() -> None:
+    def twice(x: int) -> int:
+        x >> 1
+        return x >> 2
+
+    ctx = ExecutionContext(fn=twice, file=str(FIXTURE))
+
+    result = execute(ctx, {"x": 3})
+
+    # the same name at the next line is another site, so another entry
+    assert named(result.downgrades) == [("__rshift__", 1), ("__rshift__", 1)]
+    first, second = result.downgrades
+    assert (first.site.line + 1, first.site.col, second.site.col) == (second.site.line, 8, 15)
+
+
+def named(downgrades: tuple[DowngradeCount, ...]) -> list[tuple[str, int]]:
+    """Each entry's name and count, for a test that pins the order and the collapse."""
+    return [(entry.name, entry.count) for entry in downgrades]
 
 
 def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(

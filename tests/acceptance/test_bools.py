@@ -7,6 +7,7 @@ answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     one_line,
@@ -231,8 +232,12 @@ def test_downgrades_an_untaught_bool_operation() -> None:
     # `int(b)` written in the target's package is 1 or 0 with its condition, no longer a
     # downgrade (intercept-builtin-functions-follows-int-of-a-bool), and `str(b)` and `f"{b}"`
     # are its text with its condition (follow-builtins-and-conversions-follows-str-of-a-bool)
-    names = ["__invert__", "__lshift__", "__and__"]
-    assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
+    at = "targets/bools/untaught.py"
+    assert seed["downgrades"] == [
+        downgrade("__invert__", 1, f"{at}:3:4"),
+        downgrade("__lshift__", 1, f"{at}:4:4"),
+        downgrade("__and__", 1, f"{at}:5:4"),
+    ]
     # `str(b)` and the f-string each record their compare, and read `True`, so the `if b:`
     # inside them runs and records its fork
     text: list[object] = ["==", ["str", [">", "x", 0]], "'True'"]

@@ -45,7 +45,7 @@ def run_pyct(
     env = {k: v for k, v in os.environ.items() if k not in left_out}
     if path is not None:
         env["PATH"] = path
-    return subprocess.run(
+    result = subprocess.run(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
         cwd=cwd,
         env=env,
@@ -56,6 +56,29 @@ def run_pyct(
         # budget has to fail the test instead of hanging the suite
         timeout=timeout,
     )
+    check_every_uncovered_line_explained_once(result.stdout)
+    # a line no cause explains is put down as ended before with no input that ended
+    assert "no cause explains line" not in result.stderr, result.stderr
+    return result
+
+
+def check_every_uncovered_line_explained_once(stdout: str) -> None:
+    """Fail unless the summary's ``why_uncovered`` names each uncovered line exactly once.
+
+    Every run the acceptance suite makes passes through here, so each target it
+    runs proves see-why-a-line-was-missed-accounts-for-every-uncovered-line-once.
+    A run with no summary line, such as a refused seed, has nothing to check.
+    """
+    lines = stdout.splitlines()
+    summary = json.loads(lines[-1]) if lines and lines[-1].startswith("{") else {}
+    if "stopped" not in summary:
+        return
+    named: dict[str, list[int]] = {}
+    for entry in summary["why_uncovered"]:
+        named.setdefault(entry["file"], []).extend(entry["lines"])
+    for file, uncovered in summary["uncovered"].items():
+        assert sorted(named.pop(file, [])) == uncovered, (file, summary["why_uncovered"])
+    assert not named, named
 
 
 def let_pyct_run_in_process(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -111,6 +134,18 @@ def hanging_cvc5(tmp_path: Path) -> Path:
     )
     script.chmod(0o755)
     return script
+
+
+def downgrade(name: str, count: int, at: str) -> dict[str, object]:
+    """A downgrade entry as an input's line writes it. ``at`` is ``targets/<file>.py:line:col``."""
+    path, line, col = at.rsplit(":", 2)
+    return {
+        "name": name,
+        "count": count,
+        "file": str(REPO_ROOT / path),
+        "line": int(line),
+        "col": int(col),
+    }
 
 
 def input_lines(stdout: str) -> list[dict[str, object]]:

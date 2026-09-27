@@ -39,13 +39,13 @@ def test_each_fact_reads_back_as_it_was_written() -> None:
 
     writer.line(2)
     writer.fork(FORK)
-    writer.downgrade("__rshift__", 1)
+    writer.downgrade("__rshift__", SITE, 1)
     writer.line(3)
 
     reading = read(buffer)
     assert reading.lines == frozenset({2, 3})
     assert reading.branches == (FORK,)
-    assert reading.downgrades == (DowngradeCount(name="__rshift__", count=1),)
+    assert reading.downgrades == (DowngradeCount(name="__rshift__", count=1, site=SITE),)
     assert not reading.ended
 
 
@@ -53,14 +53,14 @@ def test_a_repeated_downgrade_grows_its_one_entry() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
 
-    writer.downgrade("__abs__", 1)
-    writer.downgrade("__abs__", 2)
-    writer.downgrade("__abs__", 3)
-    writer.downgrade("__neg__", 1)
+    writer.downgrade("__abs__", SITE, 1)
+    writer.downgrade("__abs__", SITE, 2)
+    writer.downgrade("__abs__", SITE, 3)
+    writer.downgrade("__neg__", SITE, 1)
 
     assert read(buffer).downgrades == (
-        DowngradeCount(name="__abs__", count=3),
-        DowngradeCount(name="__neg__", count=1),
+        DowngradeCount(name="__abs__", count=3, site=SITE),
+        DowngradeCount(name="__neg__", count=1, site=SITE),
     )
 
 
@@ -159,16 +159,16 @@ def test_a_fork_that_cannot_be_encoded_stops_the_journal() -> None:
 def test_a_detached_writer_writes_nothing() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)
-    writer.downgrade("__abs__", 1)
+    writer.downgrade("__abs__", SITE, 1)
 
     writer.detach()
     writer.line(2)
-    writer.downgrade("__abs__", 2)
+    writer.downgrade("__abs__", SITE, 2)
     writer.end(None)
 
     reading = read(buffer)
     assert reading.lines == frozenset()
-    assert reading.downgrades == (DowngradeCount(name="__abs__", count=1),)
+    assert reading.downgrades == (DowngradeCount(name="__abs__", count=1, site=SITE),)
     assert not reading.ended
 
 
@@ -366,8 +366,8 @@ def test_a_downgrade_that_does_not_fit_is_not_grown_later() -> None:
     buffer = journal(RECORDS)
     writer = JournalWriter(buffer)
 
-    writer.downgrade("__abs__", 1)
-    writer.downgrade("__abs__", 2)
+    writer.downgrade("__abs__", SITE, 1)
+    writer.downgrade("__abs__", SITE, 2)
 
     reading = read(buffer)
     assert reading.downgrades == ()

@@ -10,6 +10,7 @@ import pytest
 from targets.ints import own_subclass
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     input_lines,
     run_pyct,
@@ -97,5 +98,5 @@ def test_asks_an_int_subclass_its_own_reflected_method_first() -> None:
     assert REV_BIG in covered_in(seed, OWN_SUBCLASS_FILE)
     # its answer is a plain bool, so the condition is lost and the operation is named
     assert seed["forks"] == []
-    assert seed["downgrades"] == [{"name": "__gt__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__gt__", 1, "targets/ints/own_subclass.py:98:7")]
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"

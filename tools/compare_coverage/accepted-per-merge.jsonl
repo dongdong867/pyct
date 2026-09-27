@@ -149,3 +149,4 @@
 {"set": "v2", "target": "targets.types.read::other_answers", "seed": {"n": 1, "flag": true}, "status": "differs", "only_legacy": [], "only_v2": [71]}
 {"set": "v2", "target": "targets.types.read::range_type", "seed": {"n": 2}, "status": "differs", "only_legacy": [107], "only_v2": [99, 106]}
 {"set": "v2", "target": "targets.types.read::rebuilt", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [52]}
+{"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}

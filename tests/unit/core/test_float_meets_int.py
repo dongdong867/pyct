@@ -2,6 +2,7 @@
 
 import math
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -142,7 +143,7 @@ def test_true_division_between_ints_records_the_zero_fork_first() -> None:
     assert type(result) is ConcolicFloat
     assert result.expression == ["/", "n", "m"]
     assert repr(result) == "3.5"
-    assert sink == [Branch(expression=["!=", "m", 0], taken=True, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["!=", "m", 0], taken=True, site=PROBE_SITE, raising=True)]
 
 
 def test_true_division_by_a_zero_int_lists_the_fork_it_died_on() -> None:
@@ -154,7 +155,7 @@ def test_true_division_by_a_zero_int_lists_the_fork_it_died_on() -> None:
         _probe("def probe(a, b):\n    return a / b\n")(n, m)
 
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=["!=", "m", 0], taken=False, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["!=", "m", 0], taken=False, site=PROBE_SITE, raising=True)]
 
 
 def test_a_reflected_true_division_forks_on_the_tracked_divisor() -> None:
@@ -164,7 +165,7 @@ def test_a_reflected_true_division_forks_on_the_tracked_divisor() -> None:
     result = _probe("def probe(b):\n    return 2 / b\n")(n)
 
     assert type(result) is ConcolicFloat and result.expression == ["/", 2, "n"]
-    assert sink == [Branch(expression=["!=", "n", 0], taken=True, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["!=", "n", 0], taken=True, site=PROBE_SITE, raising=True)]
 
 
 def test_an_int_dividend_over_a_tracked_float_forks_on_the_float() -> None:
@@ -176,7 +177,7 @@ def test_an_int_dividend_over_a_tracked_float_forks_on_the_float() -> None:
         _probe("def probe(b):\n    return 1 / b\n")(x)
 
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=["!=", "x", 0.0], taken=False, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["!=", "x", 0.0], taken=False, site=PROBE_SITE, raising=True)]
 
 
 def test_a_float_over_a_tracked_int_forks_on_the_int() -> None:
@@ -216,7 +217,7 @@ def test_a_rounding_is_a_tracked_int_after_its_finite_fork(
     assert type(result) is ConcolicInt
     assert result.expression == [head, "x"]
     assert int(int.__index__(result)) == call(-2.5)
-    assert sink == [Branch(expression=["isfinite", "x"], taken=True, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["isfinite", "x"], taken=True, site=PROBE_SITE, raising=True)]
 
 
 @pytest.mark.parametrize(
@@ -233,7 +234,9 @@ def test_a_value_that_cannot_round_lists_the_fork_it_died_on(
         _probe("def probe(f, r):\n    return r(f)\n")(x, call)
 
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=["isfinite", "x"], taken=False, site=PROBE_SITE)]
+    assert sink == [
+        Branch(expression=["isfinite", "x"], taken=False, site=PROBE_SITE, raising=True)
+    ]
 
 
 def test_round_half_to_even_is_pythons() -> None:
@@ -250,7 +253,7 @@ def test_round_to_digits_is_a_downgrade() -> None:
     result = round(x, 2)
 
     assert type(result) is float and result == round(2.675, 2)
-    assert sink == [Downgrade(name="__round__")]
+    assert sink == [Downgrade(name="__round__", site=ANY)]
 
 
 def test_round_with_a_form_float_refuses_raises_its_own_error() -> None:
