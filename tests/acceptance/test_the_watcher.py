@@ -42,15 +42,17 @@ REAPS_ALL_AT_IMPORT = "targets.load.reaps_all_at_import::f"
 IGNORES_SIGCHLD = "targets.load.ignores_sigchld::f"
 # how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
 SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
-# how soon after the signal every process of the run must have ended
+# how soon after the signal every process in the run's group must have ended
 ENDED_WITHIN = 1.5
 
 
 def group_ended(group: int, within: float = 1.0) -> bool:
     """Whether no process of ``group`` is left ``within`` seconds, as the system reaps them.
 
-    The system refuses to signal a group whose only processes are still
-    exiting, so a refusal means to look again.
+    That is every process of the run but the guard, which runs in a group
+    of its own; ``test_guard`` pins its end. The system refuses to signal a
+    group whose only processes are still exiting, so a refusal means to
+    look again.
     """
     deadline = time.monotonic() + within
     while time.monotonic() < deadline:
