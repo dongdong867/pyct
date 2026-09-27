@@ -3,8 +3,8 @@
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.floats import ConcolicFloat
 from pyct.core.branch import Branch, Downgrade, SinkItem
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 from pyct.core.substitutes import PASSING, in_, is_, is_not, not_in
