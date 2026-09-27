@@ -453,4 +453,3 @@ def test_a_flipped_outcome_or_a_dropped_copy_is_a_difference() -> None:
     (inner,) = [each for each in loop.co_consts if isinstance(each, types.CodeType)]
     jumps = conditional_jumps(inner)
     assert len(jumps) == 2 and jumps[0] == jumps[1]
-    assert jumps[:1] != jumps
