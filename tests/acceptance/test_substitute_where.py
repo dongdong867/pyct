@@ -5,6 +5,7 @@ module that does not compile reports. Each test spawns ``python -P -m pyct`` thr
 harness, some of them from a folder of their own.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -97,8 +98,13 @@ def test_leaves_the_target_s_folder_as_it_was(tmp_path: Path) -> None:
     (package / "__init__.py").write_text("")
     (package / "check.py").write_text(CHECK)
     # plain Python imports it first, so its __pycache__ holds the bytecode Python wrote
+    writes = {key: value for key, value in os.environ.items() if key != "PYTHONDONTWRITEBYTECODE"}
     subprocess.run(
-        [sys.executable, "-c", "import tidy.check"], cwd=tmp_path, check=True, timeout=30
+        [sys.executable, "-c", "import tidy.check"],
+        cwd=tmp_path,
+        env=writes,
+        check=True,
+        timeout=30,
     )
     before = files_under(package)
     assert any(name.startswith("__pycache__") for name in before), before
