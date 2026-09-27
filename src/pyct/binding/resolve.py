@@ -1,7 +1,8 @@
 """An annotation stored as text, read in every module whose names it could have been written in.
 
-``pyct run``'s seed checks and ``pyct sweep``'s seeds both read annotations
-here, so the two never disagree about what a text annotation names.
+``pyct run``'s seed checks and ``pyct sweep``'s seeds both read text
+annotations here, in the same modules and by the same agreement rule. Each
+says what it makes of an annotation, and agreement is on that.
 """
 
 import functools

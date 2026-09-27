@@ -12,6 +12,7 @@ from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.sweep.seeds import NoSeedError, carried, seed_of
 from targets.sweep import cannot_seed, defaults, seeds, seeds_as_text, text_annotations
+from tests.unit.sweep import own_t
 
 T = TypeVar("T")
 UserId = NewType("UserId", int)
@@ -119,6 +120,14 @@ def test_a_text_annotation_is_written_as_the_signature_prints_it() -> None:
     assert reason(seeds_as_text.load) == "no seed for data: 'bytes'"
 
 
+@pytest.mark.parametrize("fn", [own_t.first, own_t.Child])
+def test_text_two_modules_read_as_different_objects_agrees_on_the_value(
+    fn: Callable[..., object],
+) -> None:
+    # each module builds its own list[T]; both give [], and pyct run asks for a list
+    assert seed_of(fn) == {"items": []}
+
+
 def test_an_unresolved_text_annotation_gets_zero() -> None:
     assert as_json(seed_of(text_annotations.f)) == as_json({"a": 0, "b": [], "c": 0})
 
@@ -174,7 +183,15 @@ def test_json_does_not_carry(value: object) -> None:
 
 @pytest.mark.parametrize(
     "fn",
-    [seeds.f, defaults.f, defaults.g, seeds_as_text.f, seeds_as_text.with_defaults],
+    [
+        seeds.f,
+        defaults.f,
+        defaults.g,
+        seeds_as_text.f,
+        seeds_as_text.with_defaults,
+        own_t.first,
+        own_t.Child,
+    ],
 )
 def test_every_seed_passes_pyct_runs_seed_checks(fn: Callable[..., object]) -> None:
     seed = seed_of(fn)

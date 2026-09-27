@@ -9,9 +9,14 @@ tested by its base type, ``Literal`` gives its first value, and
 one Python cannot test, gets ``0``.
 
 A default stays in the seed when JSON carries it and ``pyct run``'s own seed
-check accepts it, so every seed passes the checks the run makes. Otherwise
-the parameter is left out and the target's own default applies. Text
-annotations are read with the code those checks use (``binding.resolve``).
+check accepts it. Otherwise the parameter is left out and the target's own
+default applies.
+
+A text annotation is read in every module that could have written it, as
+the seed check reads it (``binding.resolve``), and those modules must agree
+on the value, not on the object: two modules that each define their own
+``T`` build two ``list[T]`` objects, and both give ``[]``. Where the value
+is agreed, the check the run makes agrees too.
 """
 
 import copy
@@ -93,8 +98,8 @@ def _value_for(parameter: inspect.Parameter, fn: Callable[..., object]) -> objec
     """The value a parameter with no default starts from."""
     if parameter.annotation is inspect.Parameter.empty:
         return 0
-    agreed = resolved(parameter.annotation, fn, _held)
-    fit = UNTESTABLE if agreed is None else _fit(agreed[0])
+    agreed = resolved(parameter.annotation, fn, _typed_fit)
+    fit = UNTESTABLE if agreed is None else agreed[1]
     if fit is UNTESTABLE:
         return 0
     if fit is NO_FIT:
@@ -103,9 +108,11 @@ def _value_for(parameter: inspect.Parameter, fn: Callable[..., object]) -> objec
     return fit
 
 
-def _held(annotation: object) -> tuple[object]:
-    """The annotation held in a tuple, so text naming ``None`` is told from no answer at all."""
-    return (annotation,)
+def _typed_fit(annotation: object) -> tuple[type, object]:
+    """``_fit``'s answer beside its type, so modules that agree on ``0`` do not agree on
+    ``False`` or ``0.0``, and ``null`` is told from no answer at all."""
+    fit = _fit(annotation)
+    return (type(fit), fit)
 
 
 def _fit(annotation: object) -> object:
