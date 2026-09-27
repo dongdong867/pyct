@@ -30,6 +30,13 @@ def test_an_answer_with_no_value_lines_is_an_empty_model() -> None:
     assert model_from([]) == {}
 
 
+def test_a_bool_value_is_read_back_as_the_bool_it_spells() -> None:
+    model = model_from(["((|arg.flag| true))", "((off false))", "((n 1))"])
+
+    assert model == {"arg.flag": True, "off": False, "n": 1}
+    assert [type(value) for value in model.values()] == [bool, bool, int]
+
+
 def test_a_string_value_is_read_back_as_the_str_it_spells() -> None:
     # cvc5's own printing of a value holding a newline, a quote, two backslashes and an é
     line = '((s "a\\u{a}b""c\\u{5c}\\u{5c}d \\u{e9}"))'

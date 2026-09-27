@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from pyct.core import strs
-from pyct.core.substitutes import in_
+from pyct.core.substitutes import Searched, in_
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 
@@ -69,3 +69,57 @@ def test_a_codeless_target_that_is_the_substituted_in_reads_through_it() -> None
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.TARGET_RAISED
+
+
+class Equal:
+    """An element the target put in a set: it hashes as the int 1, and its `__eq__` raises."""
+
+    def __hash__(self) -> int:
+        return 1
+
+    def __eq__(self, other: object) -> bool:
+        raise ZeroDivisionError("the element's own raise")
+
+
+class Unordered:
+    """An operand of the target's own whose `<` raises."""
+
+    def __lt__(self, other: object) -> bool:
+        raise ZeroDivisionError("the operand's own raise")
+
+
+def blamed(target: object, seed: dict[str, object]) -> tuple[FailureKind, str]:
+    """How the one input ended, and its detail."""
+    result = execute(ExecutionContext(fn=target, file=str(FIXTURE)), seed)  # pyrefly: ignore
+    assert result.failure is not None
+    return result.failure.kind, result.failure.detail
+
+
+def test_a_raise_in_python_s_own_lookup_of_a_searched_set_is_the_target_s() -> None:
+    def target(n: int) -> object:
+        return in_(n, {Equal()})
+
+    assert blamed(target, {"n": 1}) == (
+        FailureKind.TARGET_RAISED,
+        "ZeroDivisionError: the element's own raise",
+    )
+
+
+def test_a_raise_under_a_chain_s_searched_link_is_the_target_s() -> None:
+    def target(n: int) -> object:
+        return n in Searched(Box())
+
+    assert blamed(target, {"n": 1}) == (
+        FailureKind.TARGET_RAISED,
+        "ZeroDivisionError: the box's own raise",
+    )
+
+
+def test_a_raise_in_a_compare_a_link_hands_on_is_the_target_s() -> None:
+    def target(n: int) -> object:
+        return Searched(Unordered()) < n
+
+    assert blamed(target, {"n": 1}) == (
+        FailureKind.TARGET_RAISED,
+        "ZeroDivisionError: the operand's own raise",
+    )

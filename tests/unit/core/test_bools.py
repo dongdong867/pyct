@@ -71,7 +71,6 @@ UNTAUGHT: dict[str, tuple[Callable[[int], object], str]] = {
     "3 & b": (lambda b: 3 & b, "__rand__"),
     "int(b)": (int, "__int__"),
     "float(b)": (float, "__float__"),
-    "b / 2": (lambda b: b / 2, "__truediv__"),
     "round(b, -1)": (lambda b: round(b, -1), "__round__"),
 }
 

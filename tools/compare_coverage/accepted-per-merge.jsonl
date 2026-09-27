@@ -5,7 +5,15 @@
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.count_branch::has_two_ab", "seed": {"s": "xx"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_case_fold::in_lower_set", "seed": {"x": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
+{"set": "v2", "target": "targets.bools.before_none::check", "seed": {"flag": true, "other": false}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.bools.bools_and_floats::mix", "seed": {"f": 0.0, "flag": false}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.bools.chain_links::band", "seed": {"x": 0, "flag": false}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
+{"set": "v2", "target": "targets.bools.flag_parameter::flip", "seed": {"flag": false, "x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.bools.hashed_membership::pick", "seed": {"s": "none", "n": 0}, "status": "differs", "only_legacy": [11], "only_v2": [8]}
+{"set": "v2", "target": "targets.bools.hundred::within", "seed": {"n": -1}, "status": "differs", "only_legacy": [], "only_v2": [7]}
+{"set": "v2", "target": "targets.bools.identity::check", "seed": {"flag": false, "x": 0}, "status": "differs", "only_legacy": [5], "only_v2": [3, 6, 8]}
+{"set": "v2", "target": "targets.bools.two_flags::same", "seed": {"flag": true, "other": true}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.flip.hard_forks_last::triage", "seed": {"n": 1, "s": "a", "t": "b", "u": "c"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.flip.order::order", "seed": {"s": "a", "t": "b"}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
