@@ -10,13 +10,15 @@ forks``). Python's own call then answers, or raises, marked as the target's.
 
 from __future__ import annotations
 
-from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.strs import ConcolicStr, one_character
 from pyct.core.values import forked, own
 
 # the last code `chr` takes: U+10FFFF
 LAST_CODE = 0x10FFFF
+
+# Python's own, as this module loads: what `builtins` holds later is the target's business
+_ORD, _CHR = ord, chr
 
 
 def code(c: ConcolicStr) -> ConcolicInt:
@@ -24,13 +26,13 @@ def code(c: ConcolicStr) -> ConcolicInt:
 
     `ord` takes exactly one character, so `["==", ["len", c], 1]` goes in
     first; on any other length Python's own `ord` raises its TypeError. A
-    character an index or a walk handed out, `["[]", s, i]`, is one
+    character an index, a walk or `chr` made (`ConcolicStr.single`) is one
     character on every path that reaches it, so it records no such fork,
     which the solver could only answer unsat.
     """
-    if not _indexed(c.expression):
+    if not c.single:
         forked(c.sink, ["==", ["len", c.expression], 1], own(str.__len__, c) == 1)
-    return ConcolicInt(own(ord, c), expression=["ord", c.expression], sink=c.sink)
+    return ConcolicInt(own(_ORD, c), expression=["ord", c.expression], sink=c.sink)
 
 
 def character(n: ConcolicInt) -> ConcolicStr:
@@ -43,9 +45,4 @@ def character(n: ConcolicInt) -> ConcolicStr:
     value = own(int.__index__, n)
     if forked(n.sink, [">=", n.expression, 0], value >= 0):
         forked(n.sink, ["<=", n.expression, LAST_CODE], value <= LAST_CODE)
-    return ConcolicStr(own(chr, n), expression=["chr", n.expression], sink=n.sink)
-
-
-def _indexed(expression: Expression) -> bool:
-    """Whether a string's expression is one character read at a position: `["[]", s, i]`."""
-    return isinstance(expression, list) and expression[0] == "[]"
+    return one_character(own(_CHR, n), ["chr", n.expression], n.sink)

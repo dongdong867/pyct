@@ -207,20 +207,42 @@ def test_a_module_s_own_len_keeps_its_meaning(package: Path) -> None:
     assert own_len.size("ab") == 7
 
 
-def test_a_builtin_that_no_longer_holds_python_s_own_is_not_bound(
+def test_a_module_in_scope_finds_what_builtins_holds_when_it_looks(
     package: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    (package / "sized.py").write_text(SIZED)
+    (package / "sized.py").write_text(SIZED + "\n\ndef later():\n    return _\n")
 
     def replaced(c: str) -> int:
         return 0
 
-    monkeypatch.setattr(builtins, "ord", replaced)
     with intercepting(interception(package.parent)):
         sized = importlib.import_module("pkghook.sized")
 
-    assert vars(sized)["__builtins__"]["ord"] is replaced
-    assert vars(sized)["__builtins__"]["len"] is substitutes.len_
+    # a name replaced or added after the module ran, as gettext.install adds `_`
+    monkeypatch.setattr(builtins, "ord", replaced)
+    monkeypatch.setattr(builtins, "_", "added", raising=False)
+    held = vars(sized)["__builtins__"]
+    assert sized.size("abc") == (3, 0, "b")
+    assert sized.later() == "added"
+    assert held["ord"] is replaced and held.get("ord") is replaced and "_" in held
+    assert held["len"] is substitutes.len_ and held.get("len") is substitutes.len_
+    assert held.get("no such name", "absent") == "absent" and "no such name" not in held
+    with pytest.raises(KeyError):
+        held["no such name"]
+
+
+def test_a_write_through_a_module_s_builtins_reaches_builtins(package: Path) -> None:
+    (package / "sized.py").write_text(SIZED)
+    with intercepting(interception(package.parent)):
+        sized = importlib.import_module("pkghook.sized")
+
+    held = vars(sized)["__builtins__"]
+    try:
+        held["_pyct_probe"] = "written"
+        assert builtins._pyct_probe == "written"  # pyrefly: ignore[missing-attribute]
+    finally:
+        del held["_pyct_probe"]
+    assert not hasattr(builtins, "_pyct_probe") and "_pyct_probe" not in held
 
 
 def test_a_module_outside_the_scope_keeps_python_s_builtins(package: Path, tmp_path: Path) -> None:

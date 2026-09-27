@@ -247,7 +247,7 @@ def _item(self: ConcolicStr, key: object) -> object:
     if index is not None:
         _long_enough(self, index)
         expression = ["[]", self.expression, index]
-        return ConcolicStr(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+        return one_character(own(str.__getitem__, self, key), expression, self.sink)
     bounds = _bounds(key)
     if bounds is None:
         return _GETITEM_DOWNGRADE(self, key)
@@ -342,6 +342,14 @@ def _prepended(self: ConcolicStr, other: object) -> object:
     return ConcolicStr(own(_joined_after, self, other), expression=expression, sink=self.sink)
 
 
+def one_character(value: str, expression: Expression, sink: BranchSink) -> ConcolicStr:
+    """A tracked str that holds one character on every path that makes it: an index's, a walk's
+    or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
+    character = ConcolicStr(value, expression=expression, sink=sink)
+    character.single = True
+    return character
+
+
 class ConcolicStr(str):
     """A real str with a name and a sink.
 
@@ -354,6 +362,8 @@ class ConcolicStr(str):
 
     expression: Expression
     sink: BranchSink
+    # set by `one_character` alone: a value any other operation makes may have any length
+    single: bool = False
 
     # Python swaps the operands of a reflected compare itself, so `"b" < s` runs
     # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.

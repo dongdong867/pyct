@@ -1,5 +1,7 @@
 """What a bound `len`, `ord` and `chr` call: Python's own on plain values, core's on tracked."""
 
+import builtins
+import inspect
 from collections.abc import Callable
 
 import pytest
@@ -124,3 +126,40 @@ def test_the_passing_frames_are_the_routers() -> None:
         "chr_",
         "_routed",
     }
+
+
+@pytest.mark.parametrize("name", ["len", "ord", "chr"])
+def test_a_bound_builtin_calls_python_s_own_when_builtins_holds_another(
+    name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    python, bound = BOUND[name]
+    argument = {"len": "ab", "ord": "a", "chr": 98}[name]
+    calls: list[object] = []
+
+    def replaced(*args: object, **kwargs: object) -> object:
+        calls.append(args)
+        return python(*args, **kwargs)
+
+    # every builtin replaced, as a target or a mock may replace them after the module loaded
+    for each, (own_python, _) in BOUND.items():
+        monkeypatch.setattr(builtins, each, replaced if each == name else own_python)
+    answer = outcome(bound, ((argument,), {}))
+    tracked = outcome(bound, ((ConcolicStr("a", expression="s", sink=[]),), {}))
+    monkeypatch.undo()
+
+    # a module that found the bound function keeps it, as plain Python keeps the builtin it
+    # found, and it answers as Python's own without asking what builtins holds now
+    assert answer == outcome(python, ((argument,), {}))
+    assert tracked[0] == outcome(python, (("a",), {}))[0]
+    assert calls == []
+
+
+@pytest.mark.parametrize("name", ["len", "ord", "chr"])
+def test_a_bound_builtin_looks_like_python_s_own(name: str) -> None:
+    python, bound = BOUND[name]
+
+    assert (bound.__name__, bound.__qualname__, bound.__module__) == (name, name, "builtins")
+    assert bound.__doc__ == python.__doc__
+    text_signature = "__text_signature__"
+    assert getattr(bound, text_signature, None) == getattr(python, text_signature)
+    assert inspect.signature(bound) == inspect.signature(python)

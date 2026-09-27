@@ -3,7 +3,7 @@
 import pytest
 
 from pyct.core import codes, strs
-from pyct.core.branch import Branch, SinkItem
+from pyct.core.branch import Branch, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
@@ -97,10 +97,29 @@ def test_a_code_out_of_range_records_the_fork_it_fails_and_raises_as_python_does
     assert [side for _, side in sides(sink)] == taken
 
 
-def test_the_code_of_a_character_read_at_a_position_records_no_length_fork() -> None:
+def test_the_code_of_a_character_an_index_or_a_walk_hands_out_records_no_length_fork() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("ae", expression="s", sink=sink)
+    indexed, walked = s[1], next(iter(s))
+    sink.clear()
+
+    codes.code(indexed)  # pyrefly: ignore[bad-argument-type]
+    codes.code(walked)
+    codes.code(codes.character(ConcolicInt(98, expression="n", sink=sink)))
+
+    assert [expression for expression, _ in sides(sink)] == [[">=", "n", 0], ["<=", "n", 1114111]]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [["[]", "words", 0], ["[]", ["split", "s", "','"], 0], ["[]", ["partition", "s", "':'"], 2]],
+)
+def test_the_code_of_any_other_string_records_its_length_fork_whatever_its_shape(
+    expression: Expression,
+) -> None:
     sink: list[SinkItem] = []
 
-    code = codes.code(ConcolicStr("e", expression=["[]", "s", 0], sink=sink))
+    with pytest.raises(TypeError):
+        codes.code(ConcolicStr("ab", expression=expression, sink=sink))
 
-    assert (int.__int__(code), code.expression) == (101, ["ord", ["[]", "s", 0]])
-    assert sink == []
+    assert sides(sink) == [(["==", ["len", expression], 1], False)]

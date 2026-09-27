@@ -23,6 +23,7 @@ unless one of core's own frames sits below.
 
 from __future__ import annotations
 
+import inspect
 import types
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -111,10 +112,15 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
 # the tracked values core follows through each bound builtin, by their exact type, and the
 # function that follows them. A tracked value's `__len__` stays a downgrade, since Python's own
 # `len` makes its answer plain; pyct's asks core for the tracked length instead
+# Python's own three, captured as this module loads: a target that replaces one in `builtins`
+# later changes what its modules find by the name (see `pyct.intercept.wrap`), not what a
+# bound function a module already holds calls, as with the builtin plain Python found
+_LEN, _ORD, _CHR = len, ord, chr
+
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[[Any], object]]] = {
-    len: {ConcolicStr: strs.length},
-    ord: {ConcolicStr: codes.code},
-    chr: {ConcolicInt: codes.character},
+    _LEN: {ConcolicStr: strs.length},
+    _ORD: {ConcolicStr: codes.code},
+    _CHR: {ConcolicInt: codes.character},
 }
 
 
@@ -122,7 +128,7 @@ def _routed(
     python: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
 ) -> object:
     """Core's answer for one tracked argument core follows through `python`, else Python's call."""
-    if len(args) == 1 and not kwargs:
+    if _LEN(args) == 1 and not kwargs:
         follow = _FOLLOWED[python].get(type(args[0]))
         if follow is not None:
             return follow(args[0])
@@ -130,27 +136,39 @@ def _routed(
 
 
 def len_(*args: object, **kwargs: object) -> object:
-    """`len` where pyct binds it: a tracked string's length is a tracked int, `["len", s]`."""
-    return _routed(len, args, kwargs)
+    # `len` where pyct binds it: a tracked string's length is a tracked int, `["len", s]`. Its
+    # docstring is Python's own (see `_dressed`)
+    return _routed(_LEN, args, kwargs)
 
 
 def ord_(*args: object, **kwargs: object) -> object:
-    """`ord` where pyct binds it: a tracked string's code is a tracked int, `["ord", c]`."""
-    return _routed(ord, args, kwargs)
+    # `ord` where pyct binds it: a tracked string's code is a tracked int, `["ord", c]`
+    return _routed(_ORD, args, kwargs)
 
 
 def chr_(*args: object, **kwargs: object) -> object:
-    """`chr` where pyct binds it: a tracked int's character is a tracked string, `["chr", n]`."""
-    return _routed(chr, args, kwargs)
+    # `chr` where pyct binds it: a tracked int's character is a tracked string, `["chr", n]`
+    return _routed(_CHR, args, kwargs)
+
+
+def _dressed(bound: Callable[..., object], python: Callable[..., object]) -> None:
+    """Give a bound function the names, text and signature of Python's own, as target code reads
+    them: `len.__name__`, `help(len)` and `inspect.signature(len)` answer as they do in plain
+    Python. Its repr and its identity stay a function's."""
+    for name in ("__name__", "__qualname__", "__module__", "__doc__", "__text_signature__"):
+        setattr(bound, name, getattr(python, name))
+    bound.__signature__ = inspect.signature(python)  # pyrefly: ignore[missing-attribute]
 
 
 # each builtin pyct binds in the target's modules, by name: Python's own, which a module's
-# builtins must still hold for pyct to bind it, and pyct's
+# builtins must hold for pyct's to be found under the name, and pyct's
 BOUND: Mapping[str, tuple[Callable[..., object], Callable[..., object]]] = {
-    "len": (len, len_),
-    "ord": (ord, ord_),
-    "chr": (chr, chr_),
+    "len": (_LEN, len_),
+    "ord": (_ORD, ord_),
+    "chr": (_CHR, chr_),
 }
+for _python, _bound in BOUND.values():
+    _dressed(_bound, _python)
 
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
