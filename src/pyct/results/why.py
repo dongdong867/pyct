@@ -146,13 +146,16 @@ class _Seen:
         walked: Sequence[Walked],
         tries: Mapping[ForkSite, Tries],
     ) -> _Seen:
+        # inputs that took one path are one input to every question asked of them
         inputs = tuple(
-            _Input(
-                each.lines,
-                tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
-                each.failed,
+            dict.fromkeys(
+                _Input(
+                    each.lines,
+                    tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
+                    each.failed,
+                )
+                for each in walked
             )
-            for each in walked
         )
         return cls(file, covered, inputs, tries, _owners(file))
 
@@ -181,6 +184,7 @@ class _Walk:
     passed: frozenset[int]
     forked: frozenset[tuple[int, int, bool]]
     causes: dict[tuple[int, ...], WhyEntry] = field(default_factory=dict)
+    _lasts: dict[tuple[frozenset[int], tuple[int, ...]], list[int]] = field(default_factory=dict)
 
     @classmethod
     def of(cls, seen: _Seen, code: types.CodeType) -> _Walk:
@@ -273,8 +277,11 @@ class _Walk:
 
     def _last_lines(self, each: _Input, line: int) -> list[int]:
         """The lines an input ran toward the line that no later line it ran came after."""
-        ran = frozenset(at for at in each.lines if at != line and line in self.flow.after(at))
-        return [at for at in ran if not self.flow.strictly_after(at) & ran]
+        ran = each.lines & self.flow.reaching_lines(line)
+        key = (ran, self.flow.run_of(line))
+        if key not in self._lasts:
+            self._lasts[key] = sorted(self.flow.last_among(ran))
+        return self._lasts[key]
 
     def _frontier(self, line: int) -> int | None:
         """The deepest node on the line's way some input is shown to have passed."""

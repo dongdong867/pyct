@@ -88,8 +88,7 @@ class Flow:
         self._order = {n: at for at, n in enumerate(_postorder(graph.successors, graph.entry))}
         self._idom = _dominators(graph.successors, graph.entry, self._order)
         self._normal = frozenset(_postorder(graph.normal, graph.entry))
-        self._after: dict[int, frozenset[int]] = {}
-        self._strictly: dict[int, frozenset[int]] = {}
+        self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
 
     def way(self, line: int) -> tuple[Step, ...]:
@@ -123,10 +122,17 @@ class Flow:
         """
         found: set[int] = set()
         for line in set(lines):
-            found.update(self._proved(self._holders(line)))
+            self._mark_up(self._meet_of(self._holders(line)), found)
         for fork in set(forks):
-            found.update(self._proved(self._graph.forked(fork)))
+            self._mark_up(self._meet_of(self._graph.forked(fork)), found)
         return frozenset(found)
+
+    def _mark_up(self, node: int | None, found: set[int]) -> None:
+        """Add ``node`` and every node that dominates it, stopping at one already found:
+        everything above that is found too, so a run's lines cost its path, not its depth."""
+        while node is not None and node not in found:
+            found.add(node)
+            node = None if node == self._graph.entry else self._idom[node]
 
     @functools.cached_property
     def _by_lines(self) -> frozenset[int]:
@@ -165,22 +171,74 @@ class Flow:
         """The lines that hold a yield: a ``yield``, a ``yield from`` or an ``await``."""
         return frozenset(self._graph.yields.values())
 
-    def after(self, line: int) -> frozenset[int]:
-        """The lines a run can go on to once it has run ``line``."""
-        if line not in self._after:
-            following = self._graph.successors
-            starts = [each for block in self._holders(line) for each in following[block]]
+    def reaching_lines(self, line: int) -> frozenset[int]:
+        """The lines a run can go on from to ``line``, found by one search back from it."""
+        if line not in self._reaching_lines:
             held = self._graph.held
-            reached = _postorder(following, *starts)
-            self._after[line] = frozenset(at for node in reached for at in held.get(node, ()))
-        return self._after[line]
+            toward = self._toward(line) - set(self._holders(line))
+            self._reaching_lines[line] = frozenset(
+                at for node in toward for at in held.get(node, ())
+            )
+        return self._reaching_lines[line]
 
-    def strictly_after(self, line: int) -> frozenset[int]:
-        """The lines a run can go on to after ``line`` and never come back to it from."""
-        if line not in self._strictly:
-            later = self.after(line)
-            self._strictly[line] = frozenset(at for at in later if line not in self.after(at))
-        return self._strictly[line]
+    def last_among(self, ran: frozenset[int]) -> frozenset[int]:
+        """The lines of ``ran`` that no other line of ``ran`` comes strictly after.
+
+        Strictly after is a later part of the flow a run cannot come back from:
+        lines in one loop are not after each other, and a line is not after
+        itself though Python compiles it into several blocks, as an ``await``.
+        One pass forward and one back over the flow's loops taken as single
+        parts, with each part's lines as the bits of an int.
+        """
+        part, following, preceding = self._parts
+        lines = sorted(ran)
+        parts_of = {line: {part[b] for b in self._holders(line) if b in part} for line in lines}
+        held = [0] * len(following)
+        for at, line in enumerate(lines):
+            for each in parts_of[line]:
+                held[each] |= 1 << at
+        later = [0] * len(following)
+        for each in reversed(range(len(following))):
+            for next_ in following[each]:
+                later[each] |= held[next_] | later[next_]
+        earlier = [0] * len(following)
+        for each in range(len(following)):
+            for back in preceding[each]:
+                earlier[each] |= held[back] | earlier[back]
+        return frozenset(
+            line
+            for at, line in enumerate(lines)
+            if not _strictly_after(parts_of[line], (held, later, earlier)) & ~(1 << at)
+        )
+
+    @functools.cached_property
+    def _parts(self) -> tuple[dict[int, int], list[set[int]], list[set[int]]]:
+        """Each reachable node's strongly connected part, numbered in the order a run meets
+        them, and each part's following and preceding parts (Kosaraju's two passes)."""
+        graph = self._graph
+        before = self._predecessors
+        part: dict[int, int] = {}
+        number = -1
+        for root in sorted(self._order, key=self._order.__getitem__, reverse=True):
+            if root in part:
+                continue
+            number += 1
+            part[root] = number
+            stack = [root]
+            while stack:
+                node = stack.pop()
+                for back in before[node]:
+                    if back in self._order and back not in part:
+                        part[back] = number
+                        stack.append(back)
+        following: list[set[int]] = [set() for _ in range(number + 1)]
+        preceding: list[set[int]] = [set() for _ in range(number + 1)]
+        for node, at in part.items():
+            for next_ in graph.successors[node]:
+                if part.get(next_, at) != at:
+                    following[at].add(part[next_])
+                    preceding[part[next_]].add(at)
+        return part, following, preceding
 
     def straight(self, start: int, line: int) -> bool:
         """Whether a run that ran ``start`` goes on to ``line`` with no condition, no raise and
@@ -250,10 +308,6 @@ class Flow:
             return None
         return functools.reduce(lambda a, b: _intersect(a, b, self._idom, self._order), reachable)
 
-    def _proved(self, nodes: list[int]) -> list[int]:
-        meet = self._meet_of(nodes)
-        return [] if meet is None else self._up(meet)
-
     def _up(self, node: int) -> list[int]:
         """``node`` and every node that dominates it, nearest first."""
         found = [node]
@@ -313,7 +367,16 @@ class _Graph:
         return cls(builder.successors, normal, steps, builder.held(), builder.raises, 0, yields)
 
     def blocks_of(self, line: int) -> list[int]:
-        return [block for block, lines in self.held.items() if line in lines]
+        return self._by_line.get(line, [])
+
+    @functools.cached_property
+    def _by_line(self) -> dict[int, list[int]]:
+        """Each line's blocks, indexed once."""
+        indexed: dict[int, list[int]] = {}
+        for block, lines in self.held.items():
+            for line in lines:
+                indexed.setdefault(line, []).append(block)
+        return indexed
 
     def lines(self) -> set[int]:
         return {line for lines in self.held.values() for line in lines}
@@ -400,6 +463,17 @@ class _Builder:
             index: frozenset(op.line for op in block if op.line)
             for index, block in enumerate(self.blocks)
         }
+
+
+def _strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]) -> int:
+    """The lines, as bits, in parts after ``parts`` that cannot reach back into them."""
+    held, later, earlier = bits
+    after = back = same = 0
+    for each in parts:
+        after |= later[each]
+        back |= earlier[each]
+        same |= held[each]
+    return after & ~back & ~same
 
 
 def _postorder(successors: list[list[int]], *roots: int) -> list[int]:
