@@ -53,6 +53,8 @@ class StubCheckout:
         metadata = folder / f"{name}-{version}.dist-info" / "METADATA"
         metadata.parent.mkdir()
         metadata.write_text(f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n")
+        # the record says which files the library installed, so which modules it provides
+        (metadata.parent / "RECORD").write_text("".join(f"{path},,\n" for path in files))
         for path, text in files.items():
             (folder / path).parent.mkdir(parents=True, exist_ok=True)
             (folder / path).write_text(text)

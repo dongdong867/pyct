@@ -124,8 +124,8 @@ def unreadable_row(entry: Entry, file: Path, reason: str) -> Row:
 
 def compared_row(entry: Entry, files: Files, body: Body, reports: Reports) -> Row:
     """The row for an entry both sides ran."""
-    v2 = _view(reports.v2, files.v2, body, entry.library)
-    legacy = _view(reports.legacy, files.legacy, body, entry.library)
+    v2 = _view(reports.v2, files.v2, body, entry)
+    legacy = _view(reports.legacy, files.legacy, body, entry)
     status = _status(v2, legacy)
     compared = status is Status.DIFFERS
     return Row(
@@ -165,19 +165,20 @@ def installed_files(module: str, library: Library, reports: Reports) -> Files:
 
 
 def _installed_file(module: str, library: Library, installed: Installed | None) -> Path | None:
-    if installed is None or installed.root is None or _library_failure(library, installed):
+    if installed is None or installed.root is None or _library_failure(library, installed, module):
         return None
     return entry_file(module, Path(installed.root))
 
 
-def _view(report: SideReport, file: Path | None, body: Body, library: Library | None) -> SideView:
+def _view(report: SideReport, file: Path | None, body: Body, entry: Entry) -> SideView:
     """The side as the row shows it. Lines of a file other than the entry's are not its lines.
 
     The library is checked only on a side that said which one it has: a side stopped, or
     ended with no line, keeps the reason it failed.
     """
+    library = entry.library
     checked = library is not None and report.library is not None
-    failure = _library_failure(library, report.library) if checked else None
+    failure = _library_failure(library, report.library, entry.module) if checked else None
     return SideView(
         file=report.file,
         covered=tuple(sorted(body.cut(report.covered))) if _in(report, file) else (),
@@ -188,12 +189,17 @@ def _view(report: SideReport, file: Path | None, body: Body, library: Library | 
     )
 
 
-def _library_failure(library: Library, installed: Installed | None) -> str | None:
-    """Why the side's library is not the pinned one: the library, the pin, the side's version."""
+def _library_failure(library: Library, installed: Installed | None, module: str) -> str | None:
+    """Why the side's library is not the pinned one: the library, the pin, the side's version.
+
+    A pinned version that did not install the module's file does not provide the module.
+    """
     version = None if installed is None else installed.version
-    if version is not None and library.matches(version):
-        return None
-    return f"the entry pins {library.name} {library.version}; this side has {version or 'none'}"
+    if version is None or not library.matches(version):
+        return f"the entry pins {library.name} {library.version}; this side has {version or 'none'}"
+    if installed is not None and not installed.provides:
+        return f"{library.name} {version} does not provide {module}"
+    return None
 
 
 def _in(report: SideReport, file: Path | None) -> bool:

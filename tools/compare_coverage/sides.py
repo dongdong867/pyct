@@ -53,10 +53,12 @@ class SideRequest:
 @dataclass(frozen=True)
 class Installed:
     """A library as one side's environment has it: its version and the folder its modules
-    sit in, or ``None`` for both when it is not installed."""
+    sit in, or ``None`` for both when it is not installed, and whether it installed the
+    entry's module."""
 
     version: str | None = None
     root: str | None = None
+    provides: bool = False
 
 
 @dataclass(frozen=True)
@@ -119,9 +121,9 @@ def with_library(
     """
     if request.library is None:
         return report
-    command = Command(
-        (python, "-P", str(LIBRARY_PROBE), request.library), request.root, environment
-    )
+    module = request.target.split("::")[0]
+    argv = (python, "-P", str(LIBRARY_PROBE), request.library, module)
+    command = Command(argv, request.root, environment)
     probed = read_report(run_command(command, LIBRARY_SECONDS), "version", _library_report)
     if probed.failure is not None:
         failure = f"cannot read which {request.library} it has: {probed.failure}"
@@ -165,12 +167,16 @@ def optional_text(value: object) -> str | None:
 
 
 def installed_of(value: object) -> Installed | None:
-    """A report's library, ``{"version", "root"}`` or ``null``, as the side sent it."""
+    """A report's library, ``{"version", "root", "provides"}`` or ``null``, as sent."""
     if value is None:
         return None
-    if not isinstance(value, dict):
-        raise ValueError(f"library must be an object with version and root, got {value!r}")
-    return Installed(version=optional_text(value["version"]), root=optional_text(value["root"]))
+    if not isinstance(value, dict) or not isinstance(value["provides"], bool):
+        raise ValueError(f"library must be an object with version, root and provides: {value!r}")
+    return Installed(
+        version=optional_text(value["version"]),
+        root=optional_text(value["root"]),
+        provides=value["provides"],
+    )
 
 
 def optional_count(value: object) -> int | None:

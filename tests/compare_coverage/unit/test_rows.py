@@ -135,7 +135,7 @@ LIBRARY_ENTRY = Entry(set="realworld", module="w.http", name="f", seed={}, libra
 
 def in_folder(folder: str, *lines: int, version: str | None = "3.1.3") -> SideReport:
     """A side that loaded ``w/http.py`` under ``folder``, its copy of werkzeug at ``version``."""
-    library = Installed(version=version, root=folder if version else None)
+    library = Installed(version=version, root=folder if version else None, provides=bool(version))
     return SideReport(
         file=f"{folder}/w/http.py", covered=frozenset(lines), stopped="done", library=library
     )
@@ -209,3 +209,14 @@ def test_a_library_neither_side_has_reads_no_file() -> None:
     reports = Reports(v2=SideReport(), legacy=SideReport())
 
     assert installed_files("w.http", WERKZEUG, reports) == Files(body=None, v2=None, legacy=None)
+
+
+def test_a_pin_that_does_not_provide_the_module_fails_the_side() -> None:
+    # the pinned version sits beside the module, but its record does not hold it
+    other = in_folder("/legacy", 2)
+    assert other.library is not None
+    row = legacy_row(replace(other, library=replace(other.library, provides=False)))
+
+    assert row.legacy is not None
+    assert row.legacy.failure == "werkzeug 3.1.3 does not provide w.http"
+    assert row.legacy.covered == ()

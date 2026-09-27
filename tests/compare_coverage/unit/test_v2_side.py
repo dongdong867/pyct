@@ -8,7 +8,7 @@ from pathlib import Path
 
 from tools.compare_coverage.library_probe import installed
 from tools.compare_coverage.process import side_environment
-from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest
+from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest, installed_of
 from tools.compare_coverage.v2_side import Stamp, V2Side
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -115,9 +115,10 @@ def test_the_side_reads_the_requested_library_as_pyct_run_would_find_it(tmp_path
 
     report = side.run(replace(request(), library="werkzeug"))
 
-    werkzeug = installed("werkzeug")
-    assert report.library == Installed(version=werkzeug["version"], root=werkzeug["root"])
-    assert werkzeug["version"] == "3.1.3"
+    # werkzeug does not provide the one_check target the request names
+    assert report.library == installed_of(installed("werkzeug", "targets.flip.one_check"))
+    assert report.library is not None and not report.library.provides
+    assert report.library.version == "3.1.3"
     assert side.run(request()).library is None
 
 
@@ -131,4 +132,4 @@ def test_the_library_is_read_from_the_sides_working_directory_first(tmp_path: Pa
 
     report = side.run(replace(request(), root=root, library="werkzeug"))
 
-    assert report.library == Installed(version="9.9", root=str(root))
+    assert report.library == Installed(version="9.9", root=str(root), provides=False)

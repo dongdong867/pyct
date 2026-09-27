@@ -45,7 +45,7 @@ def test_the_side_says_which_version_of_the_requested_library_legacy_has(
 
     report = side.run(SideRequest("fakelib::f", {"x": 0}, tmp_path, limits, 60, "fakelib"))
 
-    assert report.library == Installed(version="1.0", root=str(folder))
+    assert report.library == Installed(version="1.0", root=str(folder), provides=True)
     assert report.file == str(folder / "fakelib" / "__init__.py")
     assert side.run(request()).library is None
 

@@ -81,7 +81,7 @@ class EchoSide:
         module = request.target.split("::")[0]
         if request.library is None:
             return SideReport(file=str(entry_file(module, request.root)), stopped="done")
-        library = installed_of(installed(request.library))
+        library = installed_of(installed(request.library, module))
         assert library is not None and library.root is not None, request.library
         file = entry_file(module, Path(library.root))
         return SideReport(file=str(file), stopped="done", library=library)

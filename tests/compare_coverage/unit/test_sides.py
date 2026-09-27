@@ -95,13 +95,23 @@ def test_optional_fields_take_their_type_or_none() -> None:
         optional_count(True)
 
 
-def test_a_library_is_read_as_its_version_and_folder_or_nothing() -> None:
-    assert installed_of({"version": "1.0", "root": "/lib"}) == Installed("1.0", "/lib")
-    assert installed_of({"version": None, "root": None}) == Installed()
+def test_a_library_is_read_as_its_version_folder_and_module_or_nothing() -> None:
+    assert installed_of({"version": "1.0", "root": "/lib", "provides": True}) == Installed(
+        "1.0", "/lib", provides=True
+    )
+    assert installed_of({"version": None, "root": None, "provides": False}) == Installed()
     assert installed_of(None) is None
 
 
-@pytest.mark.parametrize("value", [["1.0"], {"version": 1, "root": "/lib"}, {"root": "/lib"}])
+@pytest.mark.parametrize(
+    "value",
+    [
+        ["1.0"],
+        {"version": 1, "root": "/lib", "provides": True},
+        {"root": "/lib", "provides": True},
+        {"version": "1.0", "root": "/lib", "provides": "yes"},
+    ],
+)
 def test_a_library_that_is_not_a_version_and_folder_is_unreadable(value: object) -> None:
     with pytest.raises((KeyError, ValueError)):
         installed_of(value)
