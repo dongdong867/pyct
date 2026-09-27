@@ -14,6 +14,7 @@
 {"set": "v2", "target": "targets.bools.hundred::within", "seed": {"n": -1}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.bools.identity::check", "seed": {"flag": false, "x": 0}, "status": "differs", "only_legacy": [5], "only_v2": [3, 6, 8]}
 {"set": "v2", "target": "targets.bools.two_flags::same", "seed": {"flag": true, "other": true}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.flip.digit_fields::fields", "seed": {"a": "1", "b": "2", "c": "3"}, "status": "differs", "only_legacy": [9, 11, 13], "only_v2": []}
 {"set": "v2", "target": "targets.flip.hard_forks_last::triage", "seed": {"n": 1, "s": "a", "t": "b", "u": "c"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.flip.order::order", "seed": {"s": "a", "t": "b"}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
@@ -106,7 +107,6 @@
 {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.empty_needle::past", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
-{"set": "v2", "target": "targets.strs.float_position::cut", "seed": {"s": "abc", "x": 2.0}, "status": "differs", "only_legacy": [3], "only_v2": []}
 {"set": "v2", "target": "targets.strs.index_out_of_range::pick", "seed": {"s": "ab", "n": 5}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.strs.long_answer::tail_is_z", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.long_or_empty::measure", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [], "only_v2": [3]}

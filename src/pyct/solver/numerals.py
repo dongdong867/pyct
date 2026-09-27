@@ -12,6 +12,11 @@ there (``README.md › Rules › string encodings``).
 
 `int` reads at most `sys.get_int_max_str_digits()` digits, as Python does
 when pyct runs, underscores left out; a string with more raises ValueError.
+One character of a string, as `s[i]` hands it out, is read by forms of its
+own: of the ASCII characters Python reads only the ten digits there, as the
+digit it is, so its forms need no grammar, no count and no pass over the
+text, which cost cvc5 seconds for each character a loop reads (decision
+int-text-digits-in-one-pass-and-a-character-as-a-digit).
 
 `float` of a string is exact inside a bound, which the path holds on a first
 ask (see ``Program.bounded`` in ``solver/render.py``): a string of digits
@@ -57,17 +62,17 @@ _DIGIT = '(re.range "0" "9")'
 # digits, with single underscores between them
 _DIGITS = f'(re.++ {_DIGIT} (re.* (re.++ (re.opt (str.to_re "_")) {_DIGIT})))'
 _SIGN = f"(re.opt {_characters('+-')})"
-
-
-def _unspaced(term: str) -> str:
-    """The string without the spaces around it; inside a number Python takes none."""
-    return f'(str.replace_re_all {term} {_SPACE} "")'
+# every character other than a digit Python's `int` reads in a number
+_NOT_DIGITS = _characters(_SPACES + "_+-")
 
 
 def _digits(term: str) -> str:
-    """The digits of an int Python reads, without its spaces, underscores and sign."""
-    bare = f'(str.replace_all {_unspaced(term)} "_" "")'
-    return f'(str.replace_all (str.replace_all {bare} "+" "") "-" "")'
+    """The digits of an int Python reads, without its spaces, underscores and sign.
+
+    One pass takes out every such character: the same string a pass for each kind leaves,
+    which cvc5 answers faster (decision int-text-digits-in-one-pass-and-a-character-as-a-digit).
+    """
+    return f'(str.replace_re_all {term} {_NOT_DIGITS} "")'
 
 
 def is_int(term: str) -> str:
@@ -84,10 +89,23 @@ def int_of(term: str) -> str:
     """The int Python's `int(s)` reads, where it accepts the string.
 
     A minus can only be the sign there, so its presence says the number is
-    negative.
+    negative. The digits there are one or more, so their Int is never
+    negative, and ``abs`` changes nothing; it says so to cvc5, which does not
+    tie `str.to_int`'s -1 for text that is no number to the grammar, and ran
+    past its limit asking whether a digit string reads as a negative int.
     """
-    magnitude = f"(str.to_int {_digits(term)})"
+    magnitude = f"(abs (str.to_int {_digits(term)}))"
     return f'(ite (str.contains {term} "-") (- {magnitude}) {magnitude})'
+
+
+def is_int_character(term: str) -> str:
+    """Python's `int(c)` accepts one character: it is a digit."""
+    return f"(str.in_re {term} {_DIGIT})"
+
+
+def int_of_character(term: str) -> str:
+    """The int Python's `int(c)` reads from one character it accepts: the digit's value."""
+    return f"(str.to_int {term})"
 
 
 def text_of_int(term: str) -> str:
