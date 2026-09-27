@@ -152,18 +152,17 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
 
     answer = call(_tracked("aa,b", sink))
 
-    # str's own answer, read without a compare of pyct's: a split that finds no separator
-    # hands back the receiver itself as its one piece, as it does for a plain str
+    # str's own answer, plain all through: a split that finds no separator hands back no
+    # tracked piece, though CPython hands a str subclass back as its one piece
     assert not isinstance(answer, ConcolicStr | ConcolicBool)
-    assert _plain(answer) == call("aa,b")
+    assert not any(isinstance(part, ConcolicStr) for part in _parts(answer))
+    assert answer == call("aa,b")
     assert sink == [Downgrade(name=name)]
 
 
-def _plain(answer: object) -> object:
-    """A str, or a list or tuple of them, as plain strs: `==` on a tracked one records a fork."""
-    if isinstance(answer, list | tuple):
-        return type(answer)(_plain(part) for part in answer)
-    return str.__str__(answer) if isinstance(answer, str) else answer
+def _parts(answer: object) -> list[object]:
+    """The items of a list or tuple a call handed back, or nothing for any other answer."""
+    return list(answer) if isinstance(answer, list | tuple) else []
 
 
 # the forms pyct encodes that str refuses: the call, and the error str raises

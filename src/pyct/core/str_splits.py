@@ -10,7 +10,7 @@ downgrade named by the method (``README.md › Rules › downgrades``).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 
 from pyct.core.branch import Expression
 from pyct.core.str_cases import Reader, Tracked, piece
@@ -85,18 +85,40 @@ def line_ends(_receiver: object, args: tuple[object, ...]) -> list[Expression] |
     return None if kept is None else [bool(kept)]
 
 
+def _on_the_plain_value(operation: Callable[..., Sequence[str]]) -> Callable[..., Sequence[str]]:
+    """str's own split called on the plain text of the receiver and of each str argument.
+
+    Where nothing splits, CPython hands a str subclass back as its one
+    piece, partition hands back its separator as the middle one, and
+    partition asks a subclass for its text through `__str__`. On plain text
+    every piece is plain, and pyct's call records nothing.
+    """
+
+    def call(receiver: object, *args: object, **kwargs: object) -> Sequence[str]:
+        texts = [_text(arg) for arg in args]
+        return operation(plain(receiver), *texts, **{key: _text(v) for key, v in kwargs.items()})
+
+    return call
+
+
+def _text(value: object) -> object:
+    """A str argument as its plain text; any other argument as it is."""
+    return plain(value) if isinstance(value, str) else value
+
+
 def split_up(name: str, reader: Reader) -> Callable[..., object]:
-    """str's own split, each piece a tracked str at its position in what Python built."""
-    operation = getattr(str, name)
-    downgrade = downgraded(str, name)
+    """str's own split, each piece a tracked str at its position in what Python built.
+
+    A form pyct does not encode is a downgrade whose pieces are all plain.
+    """
+    operation = _on_the_plain_value(getattr(str, name))
+    downgrade = downgraded(str, name, calling=operation)
 
     def compute(self: Tracked, /, *args: object, **kwargs: object) -> object:
         forms = None if kwargs else reader(self, args)
         if forms is None:
             return downgrade(self, *args, **kwargs)
-        # str's own split on the plain value: on a subclass, partition and rsplit may ask for
-        # its text through `__str__`, which pyct's call is not the target's downgrade
-        parts = own(operation, plain(self), *args)
+        parts = own(operation, self, *args)
         pieces = _pieces(self, [name, self.expression, *forms], parts)
         return tuple(pieces) if isinstance(parts, tuple) else list(pieces)
 
