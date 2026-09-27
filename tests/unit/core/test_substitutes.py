@@ -3,6 +3,7 @@
 import pytest
 
 from pyct.core.bools import ConcolicBool
+from pyct.core.floats import ConcolicFloat
 from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -160,3 +161,14 @@ def test_a_tracked_value_in_a_literal_display_tries_each_element_in_order_until_
     # True and 1 are equal, as Python has them; the search stops at the first that holds
     assert in_(x, frozenset({True, 2}), (True, 2)) is True
     assert expressions(sink) == [(["==", "x", True], True)]
+
+
+def test_a_tracked_float_in_a_literal_display_is_searched_for_in_the_order_written() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat(1.5, expression="x", sink=sink)
+
+    assert in_(x, frozenset({2.5, 1.5}), (2.5, 1.5)) is True
+    assert expressions(sink) == [(["==", "x", 2.5], False), (["==", "x", 1.5], True)]
+    # an int element meets the float as `x == 2` does, a compare floats do not teach yet
+    assert in_(x, frozenset({2}), (2,)) is False
+    assert expressions(sink)[-1] == "__eq__"

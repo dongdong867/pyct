@@ -21,12 +21,13 @@ import types
 
 from pyct.core import strs
 from pyct.core.bools import ConcolicBool
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
 # the tracked values a set or dict can hold: those a literal display is searched for, element
 # by element, as a tuple of the same elements is
-_HASHABLE = (ConcolicBool, ConcolicInt, ConcolicStr)
+_HASHABLE = (ConcolicBool, ConcolicInt, ConcolicFloat, ConcolicStr)
 
 
 def _stands_for(value: object, other: object) -> bool:
