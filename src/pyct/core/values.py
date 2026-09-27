@@ -60,6 +60,17 @@ def copy_as_itself[T](value: T, memo: object = None) -> T:
     return value
 
 
+def plain(value: object, kind: type) -> object:
+    """The value as Python's own ``kind`` holds it: the same text or number, with no condition.
+
+    ``kind``'s own ``__getnewargs__`` answers what the value is rebuilt from,
+    as pickle rebuilds a subclass of it, and reads the value without calling
+    any method a concolic type overrides, so nothing is recorded. ``kind``
+    then builds its own value from that.
+    """
+    return kind(*kind.__getnewargs__(value))
+
+
 class _Sinked(Protocol):
     """A value with a sink: all a downgrade needs of the type it is set on."""
 
@@ -75,6 +86,9 @@ def downgraded(
     keywords too, so the operation takes and refuses what it would take and
     refuse on a plain value. The note comes after the call, so an operation
     that raises records nothing and the raise stays the target's.
+    The result is plain: an operation that answers with its receiver, as
+    str's `%` and `format` do with nothing to fill in, hands back the
+    receiver's plain value, so a fork on the result names nothing it lost.
     ``NotImplemented`` is not an answer either: the other operand's reflected
     method gets its turn, and only a real result is a lost condition.
     ``calling`` is how the base type answers when its method by that name
@@ -87,9 +101,10 @@ def downgraded(
 
     def downgrade(self: _Sinked, /, *args: object, **kwargs: object) -> object:
         result = own(operation, self, *args, **kwargs)
-        if result is not NotImplemented:
-            self.sink.append(Downgrade(name=name))
-        return result
+        if result is NotImplemented:
+            return result
+        self.sink.append(Downgrade(name=name))
+        return plain(self, base) if result is self else result
 
     return downgrade
 

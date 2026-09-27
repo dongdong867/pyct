@@ -162,6 +162,31 @@ def test_a_method_that_answers_not_implemented_records_nothing() -> None:
     assert sink == []
 
 
+class Receiver(int):
+    """An int standing in for any concolic type, so the rule is read away from str's `%`."""
+
+    sink: BranchSink
+
+
+def _the_receiver(value: int) -> int:
+    """A base type's operation that answers with its receiver, as str's `%` can."""
+    return value
+
+
+def test_a_downgrade_that_answers_with_its_receiver_hands_back_the_plain_value() -> None:
+    sink: list[SinkItem] = []
+    value = Receiver(7)
+    value.sink = sink
+    downgrade = values.downgraded(int, "itself", calling=_the_receiver)
+
+    result = downgrade(value)
+
+    # the value Python's own int holds, never the receiver that carries the condition
+    assert type(result) is int
+    assert result == 7
+    assert sink == [Downgrade(name="itself")]
+
+
 # None in sys.modules makes importing that name raise, so a shared module that reached into
 # a concolic type's module fails before the print. The package stands in bare, because its own
 # init imports every number module to fill the table numbers keeps
