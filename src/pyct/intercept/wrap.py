@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import builtins
 import copy
-from collections.abc import Iterable, Iterator
+from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
 from pyct.core.bound import BOUND
 
@@ -82,31 +82,35 @@ class LiveBuiltins(dict[str, object]):
     def __len__(self) -> int:
         return len(_BUILTINS)
 
-    def keys(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
-        return self._now().keys()
+    # views that read through the methods above, so they stay live as a dict's own views do
+    def keys(self) -> KeysView[str]:  # pyrefly: ignore[bad-override]
+        return KeysView(self)
 
-    def items(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
-        return self._now().items()
+    def items(self) -> ItemsView[str, object]:  # pyrefly: ignore[bad-override]
+        return ItemsView(self)
 
-    def values(self):  # noqa: ANN201  # pyrefly: ignore[bad-override]
-        return self._now().values()
+    def values(self) -> ValuesView[object]:  # pyrefly: ignore[bad-override]
+        return ValuesView(self)
 
     def __eq__(self, other: object) -> bool:
-        return self._now() == other
+        # equal to what a lookup finds, and to builtins' own dict, as the module's builtins are
+        # in plain Python
+        return self._now() == other or other == _BUILTINS
 
     def __ne__(self, other: object) -> bool:
-        return self._now() != other
+        return not self == other
 
     __hash__ = None  # pyrefly: ignore[bad-override]
 
     def __repr__(self) -> str:
         return repr(self._now())
 
-    def __or__(self, other: dict[str, object]) -> dict[str, object]:  # pyrefly: ignore
-        return self._now().__or__(other)  # pyrefly: ignore[bad-return]
+    # a union is a plain dict's, its TypeError on a non-dict included
+    def __or__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return self._now() | other  # pyrefly: ignore[unsupported-operation]
 
-    def __ror__(self, other: dict[str, object]) -> dict[str, object]:  # pyrefly: ignore
-        return self._now().__ror__(other)  # pyrefly: ignore[bad-return]
+    def __ror__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return other | self._now()  # pyrefly: ignore[unsupported-operation]
 
     def copy(self) -> dict[str, object]:  # pyrefly: ignore[bad-override]
         return self._now()

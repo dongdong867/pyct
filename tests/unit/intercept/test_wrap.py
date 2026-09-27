@@ -8,6 +8,7 @@ from collections.abc import Iterator
 import pytest
 
 from pyct.core import bound
+from pyct.intercept import wrap
 from pyct.intercept.wrap import LiveBuiltins
 
 PROBE = "_pyct_live_probe"
@@ -96,27 +97,47 @@ def test_a_copy_is_a_plain_dict_and_writes_nothing_back(
     assert builtins.print is replaced
 
 
-def test_popitem_and_clear_act_on_builtins() -> None:
+def test_popitem_and_clear_act_on_builtins(monkeypatch: pytest.MonkeyPatch) -> None:
+    # a stand-in for builtins' own dict, so this process keeps its builtins throughout
+    stand_in: dict[str, object] = {"print": print, PROBE: 1}
+    monkeypatch.setattr(wrap, "_BUILTINS", stand_in)
     held = LiveBuiltins()
-    real = vars(builtins)
-    saved = real.copy()
-    # nothing between the clear and the restore may look a builtin up: there are none
-    real[PROBE] = 1
-    popped = held.popitem()
-    held.clear()
-    emptied = not real
-    real.update(saved)
 
-    assert popped == (PROBE, 1)
-    assert emptied
-    assert len(held) == len(real)
+    assert held.popitem() == (PROBE, 1)
+    assert stand_in == {"print": print}
+    held.clear()
+    assert stand_in == {}
+    assert len(held) == 0 and list(held) == []
+
+
+def test_it_equals_builtins_own_dict_as_the_module_s_builtins_do(live: LiveBuiltins) -> None:
+    real = vars(builtins)
+
+    assert live == real and real == live
+    assert not live != real and not real != live  # noqa: SIM202
+    assert live == expected() and live != {}
+
+
+def test_its_views_are_live(live: LiveBuiltins) -> None:
+    keys, items, values = live.keys(), live.items(), live.values()
+    builtins._pyct_live_probe = "late"  # pyrefly: ignore[missing-attribute]
+
+    assert PROBE in keys
+    assert (PROBE, "late") in items and ("len", bound.len) in items
+    assert "late" in values
+    assert len(keys) == len(items) == len(values) == len(vars(builtins))
+    assert set(keys) == set(vars(builtins))
 
 
 def test_a_union_answers_as_on_builtins_own_dict(live: LiveBuiltins) -> None:
     assert (live | {PROBE: 1}) == {**expected(), PROBE: 1}
     assert ({PROBE: 1} | live) == {PROBE: 1, **expected()}
-    with pytest.raises(TypeError):
-        live | [(PROBE, 1)]  # pyrefly: ignore[unsupported-operation]
+    for operation in (lambda held: held | [(PROBE, 1)], lambda held: [(PROBE, 1)] | held):
+        with pytest.raises(TypeError) as plain:
+            operation(dict(vars(builtins)))
+        with pytest.raises(TypeError) as caught:
+            operation(live)
+        assert str(caught.value) == str(plain.value)
     assert LiveBuiltins.fromkeys([PROBE]) == {PROBE: None}
     assert PROBE not in vars(builtins)
     assert repr(live) == repr(expected())
