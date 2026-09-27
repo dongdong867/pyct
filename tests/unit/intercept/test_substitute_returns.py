@@ -25,6 +25,15 @@ SPREAD_OUT = [
     "if a:\n    return b\nreturn (c\n    > 0)",
     "for x in y:\n    if x:\n        return (x\n        > 0)\nreturn False",
     "try:\n    return (a\n        == b)\nexcept E:\n    return False",
+    # a value whose last instruction CPython moves to the line its attribute ends on
+    "return (\n    x\n    .w)",
+    "return (\n    x.y(z)\n    .w())",
+    "return (x\n    .w)",
+    "return (\n    x\n    .w and y)",
+    "return (a and\n    x\n    .w)",
+    "return (a if t else\n    x\n    .w)",
+    "return (\n    x\n    .w if t else b)",
+    "return (\n    x\n    .w(*z))",
 ]
 
 
@@ -111,6 +120,17 @@ def test_the_call_takes_the_value_s_position_and_its_name_the_value_s_first_inst
     assert (call.func.lineno, call.func.col_offset) == (4, 12)
     # the value is the compare as written, moved into the call
     assert ast.unparse(call.args[0]) == "self.v != 0"
+
+
+def test_a_value_ending_on_a_later_line_s_attribute_is_handed_over_at_that_attribute() -> None:
+    tree = substitute(ast.parse(method("return (\n    x\n    .w)")))
+    (returned,) = [node for node in ast.walk(tree) if isinstance(node, ast.Return)]
+    call = returned.value
+
+    # where CPython puts the value's own last instruction, the load of `w`
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    assert (call.lineno, call.col_offset) == (5, 13)
+    assert (call.func.lineno, call.func.col_offset) == (4, 12)
 
 
 def test_the_module_binds_the_name_and_the_class_declares_it_global() -> None:

@@ -18,15 +18,18 @@ recorded where `if` would test it: ``return a and b`` becomes
 
 The value is the statement's own node, moved into the call, which takes the
 value's position, so the fork is recorded at the line and column where the
-value starts. The name sits where the value's first instruction does
-(`positions.Parts.named`), so it adds no line.
+value starts. A value that ends on an attribute on a later line than it
+starts, as ``(x\n.w)``, has its last instruction on the attribute's line,
+so the call and its fork go to the attribute's name there. The name sits
+where the value's first instruction does (`positions.Parts.named`). So the
+call adds no line.
 """
 
 from __future__ import annotations
 
 import ast
 
-from pyct.intercept.positions import Parts
+from pyct.intercept.positions import Parts, method_call
 
 _NAME = "__pyct_truth__"
 BOUND: dict[str, str] = {_NAME: "truth"}
@@ -80,8 +83,27 @@ def _handed(returned: ast.Return, parts: Parts) -> None:
             pending.extend([(node, "body", None), (node, "orelse", None)])
         elif node is not None and parts.folded(node) is None:
             call = ast.Call(func=parts.named(_NAME, node), args=[node], keywords=[])
-            call = ast.copy_location(call, node)
+            call = _placed(call, node)
             if index is None:
                 setattr(parent, field, call)
             else:
                 held[index] = call
+
+
+def _placed(call: ast.Call, value: ast.expr) -> ast.Call:
+    """The call at the value's position, or at the attribute's name where CPython moves the
+    value's last instruction there.
+
+    CPython loads an attribute, and calls a method, on the line the
+    attribute's name is on, so a value that ends on an attribute on a later
+    line than it starts has its last instruction there. The call runs right
+    after it, and at its line adds no line step.
+    """
+    ast.copy_location(call, value)
+    attribute = value.func if isinstance(value, ast.Call) and method_call(value) else value
+    if not isinstance(attribute, ast.Attribute):
+        return call
+    line, end = attribute.end_lineno, attribute.end_col_offset
+    if line is not None and end is not None and line != value.lineno:
+        call.lineno, call.col_offset = line, end - len(attribute.attr)
+    return call
