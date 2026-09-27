@@ -114,6 +114,8 @@
     {"set": "v2", "target": "targets.intercept.conversions::int_through_map", "seed": {"s": "1", "t": "2"}},
     {"set": "v2", "target": "targets.intercept.endless::conv", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.handed_on::pair", "seed": {"s": "", "t": ""}},
+    {"set": "v2", "target": "targets.intercept.handed_raises::power", "seed": {"n": 400}},
+    {"set": "v2", "target": "targets.intercept.handed_raises::shift", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.intercept.identities::sides", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.intercept.identity::check", "seed": {"x": 10}},
     {"set": "v2", "target": "targets.intercept.in_list::later", "seed": {"s": "x"}},
