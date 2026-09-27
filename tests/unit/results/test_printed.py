@@ -394,7 +394,7 @@ def _orthogonal_vectors(vectors: int, width: int, forks: int) -> list[Branch]:
     ]
     shown: list[Branch] = []
     for _ in range(forks):
-        parts = [
+        parts: list[Expression] = [
             _joined_strings([c for c in columns if rng.random() < 0.5])
             for _ in range(vectors // forks)
         ]
