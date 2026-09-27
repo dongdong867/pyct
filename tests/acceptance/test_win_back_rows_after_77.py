@@ -7,6 +7,8 @@ after `s.isdigit()` in a helper, whose flip only a string of more digits than Py
 so each call's fork ran to the solver's limit before any other.
 """
 
+import pytest
+
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 
 DIGIT_CHECKSUM = "targets.strs.digit_checksum::checksum"
@@ -29,6 +31,7 @@ def covered_in(stdout: str, file: str) -> set[int]:
     return lines
 
 
+@pytest.mark.serial
 def test_flips_every_fork_of_a_loop_that_reads_each_character_as_an_int() -> None:
     result = run_pyct(DIGIT_CHECKSUM, '{"number": "41111111"}', "--budget", "5")
 

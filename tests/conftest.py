@@ -23,6 +23,10 @@ from collections.abc import Iterator
 from typing import NoReturn
 
 import pytest
+from xdist.remote import Producer
+from xdist.scheduler import Scheduling
+
+from tests.serial_last import SERIAL, SerialLastScheduling
 
 # what makes coverage.py start in a new process, or restart in a forked one
 COVERAGE_STARTUP = ("COVERAGE_PROCESS_CONFIG", "COVERAGE_PROCESS_START")
@@ -64,6 +68,25 @@ def _after_fork_in_child() -> None:
 
 
 os.register_at_fork(after_in_child=_after_fork_in_child)
+
+
+@pytest.hookimpl(tryfirst=True)
+def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
+    """Put every test marked ``serial`` in the group a parallel run holds back until the end.
+
+    First, so a worker names the group in each test's id before it sends the ids back.
+    """
+    for item in items:
+        if item.get_closest_marker("serial") is not None:
+            item.add_marker(pytest.mark.xdist_group(SERIAL))
+
+
+@pytest.hookimpl(optionalhook=True)
+def pytest_xdist_make_scheduler(config: pytest.Config, log: Producer) -> Scheduling | None:
+    """``--dist loadgroup`` runs the ``serial`` group last, alone; tests/serial_last.py."""
+    if config.getvalue("dist") != "loadgroup":
+        return None
+    return SerialLastScheduling(config, log)
 
 
 @pytest.fixture(autouse=True, scope="session")

@@ -33,10 +33,12 @@ def test_the_timeout_ends_a_test_stuck_on_coverages_lock(tmp_path: Path) -> None
     config = str(REPO_ROOT / "pyproject.toml")
     started = time.monotonic()
 
-    # the project's pytest and coverage settings, with the timeout cut to two seconds
+    # the project's pytest and coverage settings, with the timeout cut to two seconds. The
+    # folder bounds collection: pytest would otherwise scan every folder above the test file,
+    # the system's temporary folder among them, which other programs fill with files
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "test_stuck.py", "-c", config, "--rootdir", str(tmp_path)]
-        + ["--cov", f"--cov-config={config}", "-o", "timeout=2"],
+        + ["--confcutdir", str(tmp_path), "--cov", f"--cov-config={config}", "-o", "timeout=2"],
         cwd=tmp_path,
         env=env,
         capture_output=True,

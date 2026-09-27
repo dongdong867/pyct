@@ -83,6 +83,7 @@ def test_the_allowance_is_a_quarter_or_the_fixed_cost_whichever_is_more() -> Non
     assert allowed(0.002) == 0.002 + 0.001
 
 
+@pytest.mark.serial
 @pytest.mark.parametrize("modules", [200, 3])
 def test_a_warm_substituted_import_costs_at_most_a_quarter_or_1_ms_more(
     tmp_path: Path, modules: int
