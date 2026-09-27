@@ -38,10 +38,11 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
 class Seed:
     """A run's seed as the walk copied it, and the values bind tracks in it.
 
-    Made once, before any input runs. Each input is handed a rebuild of these
-    objects and never the dicts and lists here, which hold every leaf, so
-    those and the leaves stay as they are for the whole run. Every solve and
-    every answer reads them rather than walking the caller's seed again.
+    Made once, before any input runs. The target is never called with the
+    dicts and lists here, which hold every leaf: ``bind`` rebuilds them for
+    each call. So they and the leaves stay as the walk made them for the
+    whole run, and every solve and every answer reads them rather than
+    walking the caller's seed again.
     """
 
     args: Mapping[str, object]
@@ -128,9 +129,9 @@ class _Walk:
     can name is walked again, into the same copy, when a path that names it
     reaches it. Each container is walked at most twice, so the walk ends.
 
-    Any other value is copied by ``copy.deepcopy`` with the same memo, so a
-    list reached through a tuple, say, is the walk's copy of it there too. A
-    value deepcopy cannot copy stays as it came.
+    Any other value is copied by ``copy.deepcopy`` with a memo that reads the
+    walk's copies, so a list reached through a tuple, say, is the walk's copy
+    of it there too. A value deepcopy cannot copy stays as it came.
     """
 
     def __init__(self, at_leaf: AtLeaf) -> None:

@@ -39,8 +39,8 @@ USAGE = (
 )
 
 
-# the levels the check allows between a seed value and Python's JSON writer: the line, its
-# forks, one fork, its condition, and a few operations the target applies to the value
+# how many levels past the seed's own depth the check writes: room for the line, its forks, one
+# fork, its condition, and a few operations the target applies to the value
 LINE_NESTING = 8
 
 
@@ -206,7 +206,7 @@ def parse_seed(seed_text: str) -> Mapping[str, object]:
 
 
 def _check_writable(seed: Mapping[str, object]) -> None:
-    """Refuse a seed nested so deep that a line with a fork on its deepest value cannot be written.
+    """Refuse a seed too deep for a line to hold a fork a few operations deep on its deepest value.
 
     The line holds each fork on a value inside the seed a few levels below
     the value, and Python's JSON writer stops at a depth of its own. So the
