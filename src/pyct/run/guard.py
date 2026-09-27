@@ -12,14 +12,19 @@ one read of it. A byte means the watcher passed a SIGTERM on to pyct's
 process. An end of file means the watcher is gone, however it went,
 SIGKILL included, and the guard sends pyct's process that SIGTERM itself.
 Either way the guard then gives pyct's process ``STOP_GRACE`` to end by its
-handler, and ends it by SIGKILL if it still runs, whatever it is doing.
+handler, and ends it by SIGKILL if it still runs, whatever it is doing. So
+the end comes about ``STOP_GRACE`` after the stop, give or take
+``LOOK_EVERY``. A guard that cannot start leaves the stop to the handler
+alone.
 
 The guard acts only while pyct's process is still its parent: a process
 that ended has given up its pid, which may belong to another process by
-then. So it ends at most ``LOOK_EVERY`` after pyct's process ends, when that
-process did not end and reap it first, as it does on every ending of its
-own. It runs in a process group of its own, so a Ctrl-C from the terminal
-does not end it before it acts. It is a Python run isolated and without
+then. pyct's process ends and reaps its guard on every ending of its own.
+When it ends some other way, by a crash, the guard ends as its read
+returns, once the watcher's end of the lifeline closes, or within
+``LOOK_EVERY`` if it is already waiting out the grace. It runs in a
+process group of its own, so a Ctrl-C from the terminal does not end it
+before it acts. It is a Python run isolated and without
 site, which starts in milliseconds and no thread, and its standard output
 and error are the null device, so it holds none of pyct's.
 """
