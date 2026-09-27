@@ -103,13 +103,20 @@ def operand(other: object) -> Expression | None:
 
     It takes the int family alone, as int's own operations do. A tracked int
     or bool reads as its expression. A plain int reads as itself, and so
-    does a plain bool, the int 1 or 0, as the literal True or False. Any
-    other value, a tracked number of another type included, is None, so the
-    operation answers NotImplemented and Python asks the other operand.
+    does a plain bool, the int 1 or 0, as the literal True or False. An int
+    of the target's own subclass, an IntEnum member say, reads as the plain
+    int it equals: pyct writes the expression later, and the object kept as
+    it is would run the target's own methods then. `int.__index__` is int's
+    own, so it reads the value without calling any method the subclass
+    defines. Any other value, a tracked number of another type included, is
+    None, so the operation answers NotImplemented and Python asks the other
+    operand.
     """
     if not isinstance(other, int):
         return None
-    return cast(Number, other).expression if type(other) in _CLASSES else other
+    if type(other) in _CLASSES:
+        return cast(Number, other).expression
+    return other if type(other) is int or type(other) is bool else int.__index__(other)
 
 
 def plain_int(value: object) -> object:
