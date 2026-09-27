@@ -3,9 +3,11 @@
 A name counts when every binding of it anywhere in the module, in any scope,
 is an assignment of a literal to that name alone: ``RATE = 0.5`` or
 ``TEXT: str = "xyz"``. A parameter, a loop or ``with`` target, an import, a
-``def`` or ``class``, an ``except`` or pattern capture, an unpacking, an
-augmented assignment, an annotation with no value, which makes the name a
-function's own, and a ``del`` of the name each make it not count. The
+``def``, ``class`` or ``type`` statement, a type parameter, an ``except``
+or pattern capture, an unpacking, an augmented assignment, an annotation
+with no value, which makes the name a function's own, and a ``del`` of the
+name each make it not count, and a ``from m import *``, which may bind any
+name, makes no name in the module count. The
 kinds are the literals' types, so a name bound to 0.5 in one place and to
 True in another holds a float or a bool.
 
@@ -19,17 +21,6 @@ from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
-
-# the nodes that open a scope of their own, where a name is looked up as a function looks it up
-_FUNCTIONS = (
-    ast.FunctionDef,
-    ast.AsyncFunctionDef,
-    ast.Lambda,
-    ast.ListComp,
-    ast.SetComp,
-    ast.DictComp,
-    ast.GeneratorExp,
-)
 
 
 @dataclass(frozen=True)
@@ -57,16 +48,43 @@ def literal_names(tree: ast.AST) -> Constants:
     refused: set[str] = set()
     counted: set[int] = set()
     in_class: set[int] = set()
+    refused_all = False
     pending: list[tuple[ast.AST, bool]] = [(tree, False)]
     while pending:
         node, classed = pending.pop()
         _bindings(node, kinds, refused, counted)
+        refused_all = refused_all or _star_import(node)
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and classed:
             in_class.add(id(node))
-        inner = isinstance(node, ast.ClassDef) or (classed and not isinstance(node, _FUNCTIONS))
-        pending.extend((child, inner) for child in ast.iter_child_nodes(node))
+        pending.extend(
+            (child, _in_class_scope(node, child, classed)) for child in ast.iter_child_nodes(node)
+        )
+    if refused_all:
+        return Constants(kinds={}, in_class=frozenset(in_class))
     held = {name: frozenset(types) for name, types in kinds.items() if name not in refused}
     return Constants(kinds=held, in_class=frozenset(in_class))
+
+
+def _in_class_scope(parent: ast.AST, child: ast.AST, classed: bool) -> bool:
+    """Whether a child of a node runs in a class body's scope.
+
+    A class's body does. A function's or a lambda's body does not, while its
+    decorators, defaults and annotations run where the function is written,
+    so they keep the parent's scope, as does everything else, a
+    comprehension inside a class body included.
+    """
+    if isinstance(parent, ast.ClassDef):
+        return classed or any(child is statement for statement in parent.body)
+    if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
+        return classed and not any(child is statement for statement in parent.body)
+    if isinstance(parent, ast.Lambda):
+        return classed and child is not parent.body
+    return classed
+
+
+def _star_import(node: ast.AST) -> bool:
+    """Whether a node is ``from m import *``, which may bind any name."""
+    return isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names)
 
 
 def _bindings(
@@ -105,7 +123,9 @@ def _other_bindings(node: ast.AST) -> list[str]:
         return [node.id]
     if isinstance(node, ast.arg):
         return [node.arg]
-    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+    if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef | ast.TypeAlias):
+        return [node.name if isinstance(node.name, str) else node.name.id]
+    if isinstance(node, ast.TypeVar | ast.ParamSpec | ast.TypeVarTuple):
         return [node.name]
     if isinstance(node, ast.alias):
         return [(node.asname or node.name).partition(".")[0]]

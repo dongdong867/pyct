@@ -96,6 +96,39 @@ PROGRAMS: dict[str, str] = {
     "name bound to a float + b": "RATE = 0.5\nanswer = RATE + note('b', b)",
     "name bound to a bool == b": "FLAG = True\nanswer = FLAG == note('b', b)",
     "name bound to text find": "TEXT = 'xyz'\nanswer = TEXT.find(note('b', b))",
+    # a name bound to a literal, read in a class body where the class's namespace answers it, is
+    # read once there, beside one read the rule takes outside the class
+    "name in a class body's default": (
+        "RATE = 0.5\nclass Held(metaclass=Logging):\n"
+        "    def m(self, x=RATE * note('b', b)):\n        return x\n"
+        "answer = (Held().m(), RATE + note('a', a))"
+    ),
+    "name in a class body's lambda default": (
+        "RATE = 0.5\nclass Held(metaclass=Logging):\n"
+        "    held = (lambda z=RATE + note('b', b): z)()\n"
+        "answer = (Held.held, RATE + note('a', a))"
+    ),
+    "name in a class body's comprehension": (
+        "RATE = 0.5\nclass Held(metaclass=Logging):\n"
+        "    held = [v for v in (RATE * note('b', b), 2)]\n"
+        "answer = (Held.held, RATE + note('a', a))"
+    ),
+    "name in a class body's decorator": (
+        "RATE = 0.5\nclass Held(metaclass=Logging):\n"
+        "    @(lambda f, k=RATE == note('b', b): k)\n    def held(self):\n        pass\n"
+        "answer = (Held.held, RATE + note('a', a))"
+    ),
+    "name in a method body of a class": (
+        "RATE = 0.5\nclass Held(metaclass=Logging):\n"
+        "    def m(self):\n        return RATE * note('b', b)\nanswer = Held().m()"
+    ),
+    # a name bound to a literal, rebound at run time to something else
+    "name rebound through globals": (
+        "RATE = 0.5\nglobals()['RATE'] = note('a', a)\nanswer = RATE * note('b', b)"
+    ),
+    "text name rebound through globals": (
+        "TEXT = 'xyz'\nglobals()['TEXT'] = note('a', a)\nanswer = TEXT.find(note('b', b))"
+    ),
 }
 
 

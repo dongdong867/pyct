@@ -50,6 +50,10 @@ def test_a_name_bound_to_literals_of_two_kinds_holds_both() -> None:
         "match v:\n    case {**RATE}:\n        pass",
         "match v:\n    case RATE:\n        pass",
         "RATE: float",
+        "def f[RATE]():\n    pass",
+        "class C[**RATE]:\n    pass",
+        "type Alias[*RATE] = tuple",
+        "type RATE = float",
     ],
 )
 def test_any_other_binding_anywhere_in_the_module_makes_the_name_not_count(binding: str) -> None:
@@ -84,3 +88,33 @@ def test_a_method_on_a_name_bound_to_str_literals_is_substituted() -> None:
 
     assert "return __pyct_method__(text.find, s)" in substituted(source)
     assert "__pyct_method__" not in substituted("text = 'x'\ntext = 1.5\ny = text.find(s)\n")
+
+
+def test_a_star_import_may_bind_any_name_so_no_name_counts() -> None:
+    assert kinds("RATE = 0.5\nTEXT = 'x'\nfrom m import *\n") == {}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "class C:\n    def m(self, x=RATE):\n        pass",
+        "class C:\n    f = lambda self, x=RATE: x",
+        "class C:\n    @deco(RATE)\n    def m(self):\n        pass",
+        "class C:\n    held = [v for v in (RATE, 2)]",
+        "class C:\n    class D(Base, k=RATE):\n        pass",
+    ],
+)
+def test_a_read_that_runs_in_a_class_s_scope_is_told_apart(source: str) -> None:
+    tree = ast.parse(source)
+    found = literal_names(tree)
+    loads = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "RATE"]
+
+    assert [id(node) in found.in_class for node in loads] == [True]
+
+
+def test_a_read_in_a_method_s_or_a_lambda_s_body_is_not_in_the_class_s_scope() -> None:
+    tree = ast.parse("class C:\n    f = lambda self: RATE\n    def m(self):\n        return RATE\n")
+    found = literal_names(tree)
+    loads = [node for node in ast.walk(tree) if isinstance(node, ast.Name) and node.id == "RATE"]
+
+    assert [id(node) in found.in_class for node in loads] == [False, False]
