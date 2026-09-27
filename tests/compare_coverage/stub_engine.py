@@ -11,16 +11,16 @@ keyed by ``MODULE::NAME``:
 - ``sleep``: seconds to sleep first, for a side that runs too long
 - ``exit``: end the process at once with this code, after printing ``say`` to stderr
 
-Each call's config, process id and temp folder are appended to ``calls.jsonl`` in the
-checkout. Each call also leaves a ``.pyct-cov.*`` file in that temp folder, as legacy's line
-tracer does.
+Each call's config, process id and temp folder, the one ``TMPDIR`` names, are appended to
+``calls.jsonl`` in the checkout. Each call also leaves a ``.pyct-cov.*`` file in that folder,
+as legacy's line tracer does. The stub reads ``TMPDIR`` rather than importing ``tempfile``,
+which imports ``shutil``: a test's entry can name a module of that name.
 """
 
 import dataclasses
 import json
 import os
 import sys
-import tempfile
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -90,7 +90,7 @@ def _script(target: str) -> dict[str, Any]:
 
 def _record(config: ExecutionConfig, plugins: list[Any] | None) -> None:
     fields = {**dataclasses.asdict(config), "scope": sorted(config.scope.files)}
-    temp = tempfile.gettempdir()
+    temp = os.environ["TMPDIR"]
     Path(temp, f".pyct-cov.{os.getpid()}").write_text("")
     call = {"config": fields, "plugins": plugins, "pid": os.getpid(), "temp": temp}
     with open(CHECKOUT / "calls.jsonl", "a") as calls:
