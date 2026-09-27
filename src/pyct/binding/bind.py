@@ -112,8 +112,8 @@ def _binds(value: object) -> TypeGuard[int | str]:
 _ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
 
 # one value still to place: the value, its access, and the container and slot its copy goes in.
-# The access is None under a key no access can name. The slot is an index for a list and any key
-# for a dict, the seed's own
+# The access is None under a key no access can name. The slot is an index for a list, and for a
+# dict the copy's own key (see _items)
 type _Pending = tuple[object, Expression | None, dict[Any, object] | list[object], Any]
 
 
