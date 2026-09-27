@@ -36,6 +36,7 @@ REVERSED_BETWEEN = "targets.strs.reversed_between::back"
 OTHER_FORMS = "targets.strs.other_forms::other"
 INDEX_FROM_POSITION = "targets.strs.index_from_position::f"
 FLOAT_POSITION = "targets.strs.float_position::cut"
+CODE_AT_POSITION = "targets.strs.code_at_position::code_at"
 
 # the two forks a tracked index records before str's own index may raise
 LONG_ENOUGH: list[object] = [">", ["len", "s"], "n"]
@@ -235,6 +236,23 @@ def test_a_position_int_makes_of_a_float_is_a_named_downgrade() -> None:
         ["==", ["[]", "s", 1], "'z'"],
     ]
     assert any_line(result.stdout, lambda line: text(line, "s")[1] == "z")
+
+
+def test_the_code_of_a_tracked_index_needs_no_length_fork() -> None:
+    result = run_pyct(CODE_AT_POSITION, '{"s": "abc", "n": 0}')
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    # the index makes one character past its bounds forks, so ord adds no fork on its length,
+    # and the target's own len(s) is the same term the bounds forks measure
+    assert [fork["expression"] for fork in forks_of(seed)] == [
+        [">", ["len", "s"], 2],
+        LONG_ENOUGH,
+        NOT_TOO_SHORT,
+        ["==", ["ord", ["[]", "s", "n"]], 122],
+    ]
+    assert flipped_every_fork(result.stdout)
+    assert no_downgrade(result.stdout)
 
 
 # follow-positions-into-a-string-reports-a-tracked-index-past-the-end

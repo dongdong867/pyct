@@ -87,6 +87,19 @@ def test_a_tracked_position_used_twice_is_defined_once() -> None:
     assert text.count("(+ |arg.n| 1)") == 1
 
 
+def test_the_targets_length_and_a_bounds_fork_measure_one_term() -> None:
+    # `len(s)` the target calls and the length a tracked index's fork measures are one term
+    path = (
+        Branch(expression=[">", ["len", "s"], 2], taken=True, site=SITE),
+        Branch(expression=[">", ["len", "s"], "n"], taken=True, site=SITE),
+    )
+
+    lines = render(path, {"s": str, "n": int}).splitlines()
+
+    assert "(assert (> (str.len |arg.s|) 2))" in lines
+    assert "(assert (> (str.len |arg.s|) |arg.n|))" in lines
+
+
 # what a position is written as in a fixed-value case: a plain int, or a constant held to it
 type Held = Callable[[int | None], int | str | None]
 
