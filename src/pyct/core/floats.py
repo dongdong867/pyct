@@ -18,7 +18,8 @@ the dunder where float answers, as for a bool. Never NotImplemented where
 float answers: int's own methods answer NotImplemented for a float, so that
 would make `f < True` a TypeError. A float subclass that defines a
 reflected operation otherwise than float is asked first, as Python asks it
-of a plain float.
+of a plain float, and a plain answer from it is a downgrade named by the
+dunder.
 """
 
 from __future__ import annotations
@@ -83,7 +84,8 @@ def _answered_first(name: str, self: object, other: object) -> object:
     reflected operation first when its type is a float subclass, a
     library's such as numpy.float64 or the target's own, that defines that
     operation otherwise than float. So pyct asks it too, before anything of
-    float's runs, and its answer is the answer. One that answers
+    float's runs, and its answer is the answer, a plain one named as a
+    downgrade (see `numbers.reflected_answer`). One that answers
     NotImplemented hands the operation back to float, as it would.
     """
     reflected = _REFLECTED.get(name)
@@ -93,7 +95,7 @@ def _answered_first(name: str, self: object, other: object) -> object:
     operation = getattr(kind, reflected)
     if issubclass(kind, ConcolicFloat) or operation is getattr(float, reflected):
         return NotImplemented
-    return own(operation, other, self)
+    return numbers.reflected_answer(name, self, other, operation)
 
 
 def _operand(other: object) -> Expression | None:

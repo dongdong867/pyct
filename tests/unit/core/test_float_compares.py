@@ -192,4 +192,5 @@ def test_a_float_subclass_with_its_own_reflected_compare_answers_first() -> None
     assert (2.5 < Gauge(1.0)) == "gauge >"  # noqa: SIM300 - the order is the point
     assert (x < Gauge(1.0)) == "gauge >"
     assert (x == Gauge(1.0)) == "gauge =="
-    assert sink == []
+    # each answer is plain, so x's condition is lost there and each compare is named
+    assert sink == [Downgrade(name="__lt__", site=ANY), Downgrade(name="__eq__", site=ANY)]

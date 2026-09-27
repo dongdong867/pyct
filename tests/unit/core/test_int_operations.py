@@ -382,7 +382,7 @@ def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
     assert sink == []
 
 
-def test_an_operation_the_other_type_answers_records_nothing() -> None:
+def test_an_operation_the_other_type_answers_is_named_as_a_downgrade() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
@@ -392,6 +392,7 @@ def test_an_operation_the_other_type_answers_records_nothing() -> None:
 
     # a float of the target's own that adds itself otherwise than float is asked, as Python
     # asks it for a plain int, and int's own never answered
-    assert x + Measured(1.5) == "measured"
+    assert x + Measured(1.5) == 3 + Measured(1.5)
 
-    assert sink == []
+    # its answer is plain, so x's condition is lost there and the operation is named
+    assert sink == [Downgrade(name="__add__", site=ANY)]
