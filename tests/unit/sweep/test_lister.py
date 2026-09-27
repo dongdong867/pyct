@@ -2,6 +2,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from tests.acceptance.harness import REPO_ROOT
 
@@ -9,12 +10,12 @@ WALK = "targets.sweep.walk"
 ROUGH = "targets.sweep.rough"
 
 
-def lister(*argv: str) -> tuple[list[dict[str, object]], str]:
+def lister(*argv: str, cwd: Path = REPO_ROOT) -> tuple[list[dict[str, object]], str]:
     """The lister's facts for ``argv``, and what it wrote on stderr."""
     env = {name: value for name, value in os.environ.items() if name != "PYTHONPATH"}
     finished = subprocess.run(
         [sys.executable, "-P", "-m", "pyct.sweep.lister", *argv],
-        cwd=REPO_ROOT,
+        cwd=cwd,
         env=env,
         capture_output=True,
         text=True,
@@ -63,3 +64,21 @@ def test_a_package_on_the_way_is_imported_again_and_lists_nothing() -> None:
     facts, _ = lister(WALK, "--after", f"{WALK}.util.text")
 
     assert facts == [{"importing": WALK}, {"importing": f"{WALK}.util"}, {"done": True}]
+
+
+def test_a_module_whose_name_is_no_identifier_is_not_walked(tmp_path: Path) -> None:
+    # pyct run cannot name it, and "-" sorts before ".", out of the order --after relies on
+    package = tmp_path / "ph"
+    package.mkdir()
+    (package / "__init__.py").write_text("")
+    (package / "a-b.py").write_text("def hy(n: int) -> int:\n    return n\n")
+    (package / "ok.py").write_text("def fine(n: int) -> int:\n    return n\n")
+
+    facts, _ = lister("ph", cwd=tmp_path)
+
+    assert facts == [
+        {"importing": "ph"},
+        {"importing": "ph.ok"},
+        entry("ph.ok", "fine", {"n": 0}),
+        {"done": True},
+    ]

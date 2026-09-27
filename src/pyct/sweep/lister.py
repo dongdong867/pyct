@@ -8,8 +8,9 @@ them, each once, and sweep reads what it writes. When a module ends this
 process or stalls it, sweep starts a new one with ``--after`` that module,
 which walks on past it and never imports it again.
 
-It walks PACKAGE and, below it, every module whose name has no part that
-starts with ``_`` and no part named ``test`` or ``tests``, in name order.
+It walks PACKAGE and, below it, every module whose name's every part is an
+identifier that does not start with ``_`` and is not ``test`` or ``tests``,
+in name order.
 PACKAGE itself is walked whatever its name. A package that does not import
 is not walked below. With ``--after``, a module up to that one was listed
 by an earlier process: a package on the way to it is imported again to
@@ -125,7 +126,10 @@ def _modules_below(module: ModuleType, name: str) -> list[str]:
 
 
 def _walked(part: str) -> bool:
-    return not part.startswith("_") and part not in LEFT_OUT
+    """A part the walk takes: a public name that is not a test folder's. A part that is no
+    identifier, a file named ``a-b.py`` say, names no module ``pyct run`` can name, and it
+    would sort out of the order ``--after`` relies on."""
+    return part.isidentifier() and not part.startswith("_") and part not in LEFT_OUT
 
 
 def _write(out: TextIO, fact: dict[str, object]) -> None:
