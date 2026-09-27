@@ -141,3 +141,22 @@ def test_an_unhashable_value_in_a_literal_display_raises_as_python_does() -> Non
 
 def test_the_passing_frames_are_the_four_routers() -> None:
     assert {code.co_name for code in PASSING} == {"is_", "is_not", "in_", "not_in"}
+
+
+def test_a_tracked_bool_searched_in_a_literal_display_of_bools_records_its_fork() -> None:
+    sink: list[SinkItem] = []
+    b = tracked_bool(False, sink)
+
+    # the tracked value is on the left of each `==`, so it answers, as `b == True` does
+    assert in_(b, frozenset({True}), (True,)) is False
+    assert not_in(b, frozenset({True}), (True,)) is True
+    assert expressions(sink) == [(["==", [">", "x", 5], True], False)] * 2
+
+
+def test_a_tracked_value_in_a_literal_display_tries_each_element_in_order_until_one_holds() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(1, expression="x", sink=sink)
+
+    # True and 1 are equal, as Python has them; the search stops at the first that holds
+    assert in_(x, frozenset({True, 2}), (True, 2)) is True
+    assert expressions(sink) == [(["==", "x", True], True)]

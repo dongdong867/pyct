@@ -60,17 +60,32 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     searched in a plain one does the same with the plain one as a literal.
     ``written`` holds the literal elements of a set, or the literal keys of
     a dict, in the order the display writes them: a tracked value is
-    searched for there, one `==` fork per element tried, as a tuple
-    records. Anything else is Python's own `in`.
+    searched for there, one `==` fork per element tried (see `_searched`).
+    Anything else is Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.in_text(item, container)
     if written is not None and isinstance(item, _HASHABLE):
-        return item in written
+        return _searched(item, written)
     # any value, as Python's own `in` takes, raising what Python raises for one it cannot search
     return item in container  # pyrefly: ignore[not-iterable]
+
+
+def _searched(item: object, written: tuple[object, ...]) -> bool:
+    """Whether the tracked item equals one of the literal elements, tried in the order written.
+
+    Python's answer, as a tuple of the same elements gives it, and the same
+    stop at the first element that holds. The tracked item is on the left of
+    each `==`, so it answers and its fork is recorded, as `b == True` records
+    it; with the literal on the left, a plain `True` would answer a tracked
+    bool, which is an int to it, and record nothing.
+    """
+    for element in written:
+        if item == element:
+            return True
+    return False
 
 
 def not_in(item: object, container: object, written: tuple[object, ...] | None = None) -> object:
@@ -83,7 +98,7 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
     if type(container) is str and isinstance(item, ConcolicStr):
         return strs.not_in_text(item, container)
     if written is not None and isinstance(item, _HASHABLE):
-        return item not in written
+        return not _searched(item, written)
     return item not in container  # pyrefly: ignore[not-iterable]
 
 
