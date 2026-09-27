@@ -20,7 +20,7 @@ from enum import StrEnum
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
-from pyct.results.graphs import OutOfTimeError
+from pyct.results.graphs import OutOfTimeError, Pace
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -105,8 +105,9 @@ class Run:
     tries: Mapping[ForkSite, Tries]
     stop_at: float | None = None
 
-    def late(self) -> bool:
-        return self.stop_at is not None and clock() > self.stop_at
+    def late(self, ahead: float = 0.0) -> bool:
+        """Whether the stop comes within ``ahead`` seconds, or has come."""
+        return self.stop_at is not None and clock() + ahead > self.stop_at
 
 
 def explain(
@@ -143,8 +144,9 @@ def _work_out(
     """Work out each line's cause into ``by_cause``, until the stop comes.
 
     The stop comes as ``OutOfTimeError``, raised only where the analysis
-    looks at its clock: before each line, and at each step of a walk whose
-    work grows with the function, the lines or the inputs (``graphs.Pace``).
+    looks at its clock: before each line, at each step of a walk whose work
+    grows with the function, the lines or the inputs (``graphs.Pace``), and
+    before dis's label pass, which no step can break into.
     """
     seen = _Seen.of(file, covered, run)
     for line in lines:
@@ -198,7 +200,7 @@ class _Seen:
                     tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
                     each.failed,
                 )
-                for each in run.walked
+                for each in Pace(run.late).each(run.walked)
             )
         )
         return cls(file, covered, inputs, run, _owners(file))
@@ -237,11 +239,12 @@ class _Walk:
 
     @classmethod
     def of(cls, seen: _Seen, code: types.CodeType) -> _Walk:
-        forks = [fork for each in seen.inputs for fork in each.forks]
-        raising = frozenset((line, col) for line, col, _, is_raising in forks if is_raising)
+        each = Pace(seen.run.late).each
+        forks = [fork for one in each(seen.inputs) for fork in one.forks]
+        raising = frozenset((line, col) for line, col, _, is_raising in each(forks) if is_raising)
         flow = Flow(code, raising, late=seen.run.late)
         passed = flow.marked(seen.covered, forks)
-        forked = frozenset((line, col, is_raising) for line, col, _, is_raising in forks)
+        forked = frozenset((line, col, is_raising) for line, col, _, is_raising in each(forks))
         return cls(seen, flow, passed, forked)
 
     def cause_of(self, line: int) -> WhyEntry:
@@ -328,7 +331,7 @@ class _Walk:
         """The lines an input ran toward the line that no later line it ran came after.
 
         Asked once per input by ``_suspended`` and ``_raised_out``, so it checks
-        the stop: off the main thread no timer can, and the loop grows with the inputs.
+        the stop: the loop grows with the inputs.
         """
         if self.seen.run.late():
             raise OutOfTimeError
@@ -397,7 +400,7 @@ class _Walk:
         """The nodes each input's own lines and forks prove it passed, found once."""
         marks = []
         for each in self.seen.inputs:
-            # the one step whose count grows with the run's inputs
+            # a step per input: the loop grows with the run's inputs
             if self.seen.run.late():
                 raise OutOfTimeError
             marks.append(self.flow.marked(each.lines, each.forks))

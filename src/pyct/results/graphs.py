@@ -2,14 +2,14 @@
 
 Each walk takes the analysis's ``Pace``, which looks at the run's clock every
 so many steps and ends the analysis with ``OutOfTimeError`` once its stop has
-come. The stop is the analysis's own: it is raised only where a walk steps,
-never by a signal, so nothing else the process does meets it.
+come. The stop is the analysis's own: it is raised only where a walk steps
+or asks ahead, never by a signal, so nothing else the process does meets it.
 """
 
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 
 # how many steps pass between two looks at the clock: a look costs a clock read, and a step
@@ -55,7 +55,7 @@ class OutOfTimeError(BaseException):
     """
 
 
-def never() -> bool:
+def never(_ahead: float = 0.0) -> bool:
     """A stop that never comes: the check for a run with no deadline."""
     return False
 
@@ -63,23 +63,37 @@ def never() -> bool:
 @dataclass
 class Pace:
     """The analysis's stop: every ``_EVERY`` steps it asks ``late`` whether the stop has come,
-    and raises OutOfTimeError when it has.
+    and raises OutOfTimeError when it has. ``late(ahead)`` says whether it comes within
+    ``ahead`` seconds, so work no step can break into asks first (``afford``).
 
     Each walk whose work grows with the function, the lines or the inputs
-    steps it once per node, line or input, so no walk runs long past the stop.
+    steps it once per node, line, input or climb, so no walk runs long past
+    the stop. Work no step can break into asks ``afford`` first.
     """
 
-    late: Callable[[], bool] = never
+    late: Callable[[float], bool] = never
     steps: int = 0
 
     def step(self) -> None:
         self.steps += 1
-        if self.steps % _EVERY == 0 and self.late():
+        if self.steps % _EVERY == 0 and self.late(0.0):
+            raise OutOfTimeError
+
+    def each[T](self, items: Iterable[T]) -> Iterator[T]:
+        """``items``, one step each."""
+        for item in items:
+            self.step()
+            yield item
+
+    def afford(self, seconds: float) -> None:
+        """Raise OutOfTimeError now when work that cannot step, and may take ``seconds``,
+        would run past the stop."""
+        if self.late(seconds):
             raise OutOfTimeError
 
 
 def dominators(
-    successors: list[list[int]], root: int, number: dict[int, int], pace: Pace | None = None
+    successors: list[list[int]], root: int, number: dict[int, int], pace: Pace
 ) -> dict[int, int]:
     """Each reachable node's immediate dominator, the root its own (Cooper, Harvey and Kennedy).
 
@@ -95,21 +109,22 @@ def dominators(
     while changed:
         changed = False
         for node in reversed(order[:-1]):
-            if pace is not None:
-                pace.step()
+            pace.step()
             known = [each for each in predecessors[node] if each in idom]
-            meet = functools.reduce(lambda a, b: intersect(a, b, idom, number), known)
+            meet = functools.reduce(lambda a, b: intersect(a, b, idom, number, pace), known)
             if idom.get(node) != meet:
                 idom[node] = meet
                 changed = True
     return idom
 
 
-def intersect(a: int, b: int, idom: dict[int, int], number: dict[int, int]) -> int:
-    """The nearest node that dominates both ``a`` and ``b``."""
+def intersect(a: int, b: int, idom: dict[int, int], number: dict[int, int], pace: Pace) -> int:
+    """The nearest node that dominates both ``a`` and ``b``, one step a climb."""
     while a != b:
         while number[a] < number[b]:
+            pace.step()
             a = idom[a]
         while number[b] < number[a]:
+            pace.step()
             b = idom[b]
     return a

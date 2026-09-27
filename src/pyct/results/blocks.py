@@ -71,6 +71,20 @@ class Op:
     col: int | None
 
 
+# every opcode dis lists as a jump: `hasjump` from 3.13, `hasjrel` and `hasjabs` before it. Pseudo
+# opcodes, numbered past a byte, never appear in a code's bytes
+_JUMP_OPCODES = frozenset(
+    opcode
+    for name in ("hasjump", "hasjrel", "hasjabs")
+    for opcode in getattr(dis, name, ())
+    if opcode < 256
+)
+# what the label pass is allowed for each pair of jumps, in seconds. It compares half the pairs,
+# at about 2.5 ns each on 3.12 and 3.13 and 4.6 ns on 3.14, measured at 20000 `if`s on an Apple
+# M-series; 10 ns for every pair is 20 ns for each one compared, four times the slowest
+_A_PAIR = 1e-8
+
+
 # one way out of a block: the offset it goes to, and the step it passes, if any
 type Exit = tuple[int, Step | None]
 
@@ -81,8 +95,11 @@ def blocks_of_code(
     """The code's blocks, and the offsets a raising operation's fork splits a block after.
 
     Reading a large function's instructions is the first work that grows, so
-    ``pace`` steps once an instruction.
+    ``pace`` steps once an instruction. Before the first, dis finds every
+    jump's label in one pass no step can break into, so the pace is asked
+    first whether that pass fits before the stop.
     """
+    pace.afford(_label_pass(code))
     ops = [_op(instruction) for instruction in _read(code, pace)]
     splits = _splits(ops, raising)
     edges = {edge for entry in _table(code) for edge in (entry.start, entry.end, entry.target)}
@@ -105,6 +122,18 @@ def handler_ranges(code: types.CodeType, blocks: list[list[Op]]) -> Iterator[tup
 def _table(code: types.CodeType) -> list[dis._ExceptionTableEntry]:  # pyrefly: ignore[missing-attribute]
     # the code's exception table, which dis reads since 3.11 and typeshed leaves out
     return list(dis.Bytecode(code).exception_entries)  # pyrefly: ignore[missing-attribute]
+
+
+def _label_pass(code: types.CodeType) -> float:
+    """At most how long dis's label pass takes, in seconds.
+
+    The pass checks each jump's label against every label it found before, so
+    it grows as the square of the jumps. Each opcode is one byte in two of the
+    code, and a jump opcode is one dis lists as a jump on this Python.
+    """
+    opcodes = code.co_code[::2]
+    jumps = sum(opcodes.count(opcode) for opcode in _JUMP_OPCODES)
+    return jumps * jumps * _A_PAIR
 
 
 def _read(code: types.CodeType, pace: Pace) -> Iterator[dis.Instruction]:

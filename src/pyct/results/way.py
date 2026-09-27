@@ -56,7 +56,7 @@ class Flow:
         self,
         code: types.CodeType,
         raising: frozenset[tuple[int, int]],
-        late: Callable[[], bool] = never,
+        late: Callable[[float], bool] = never,
     ) -> None:
         self.pace = Pace(late)
         graph = _Graph.of(code, raising, self.pace)
@@ -106,7 +106,7 @@ class Flow:
             self._mark_up(self._meet_of(self._holders(line)), found)
         for fork in set(forks):
             self.pace.step()
-            self._mark_up(self._meet_of(self._graph.forked(fork)), found)
+            self._mark_up(self._meet_of(self._proved_by.get(fork, [])), found)
         return frozenset(found)
 
     def _mark_up(self, node: int | None, found: set[int]) -> None:
@@ -187,9 +187,12 @@ class Flow:
         """
         part, following, preceding = self._parts
         lines = sorted(ran)
-        parts_of = {line: {part[b] for b in self._holders(line) if b in part} for line in lines}
+        each_line = self.pace.each
+        parts_of = {
+            line: {part[b] for b in self._holders(line) if b in part} for line in each_line(lines)
+        }
         held = [0] * len(following)
-        for at, line in enumerate(lines):
+        for at, line in enumerate(each_line(lines)):
             for each in parts_of[line]:
                 held[each] |= 1 << at
         later = [0] * len(following)
@@ -204,7 +207,7 @@ class Flow:
                 earlier[each] |= held[back] | earlier[back]
         return frozenset(
             line
-            for at, line in enumerate(lines)
+            for at, line in enumerate(each_line(lines))
             if not strictly_after(parts_of[line], (held, later, earlier)) & ~(1 << at)
         )
 
@@ -290,6 +293,21 @@ class Flow:
         return (block,)
 
     @functools.cached_property
+    def _proved_by(self) -> dict[Fork, list[int]]:
+        """Each fork the code can record, and the nodes it proves: the side it took, or, for an
+        operation that raised, its block, the side's one predecessor. Built once, read per fork."""
+        proved: dict[Fork, list[int]] = {}
+        before = self._predecessors
+        for node, step in self._graph.steps.items():
+            self.pace.step()
+            if step.kind is not StepKind.CONDITION:
+                continue
+            proved.setdefault((step.line, step.col, step.side, step.raising), []).append(node)
+            if step.raising:
+                proved.setdefault((step.line, step.col, False, True), []).append(before[node][0])
+        return proved
+
+    @functools.cached_property
     def _predecessors(self) -> list[list[int]]:
         return self._graph.predecessors()
 
@@ -313,7 +331,9 @@ class Flow:
         reachable = [node for node in nodes if node in self._idom]
         if not reachable:
             return None
-        return functools.reduce(lambda a, b: intersect(a, b, self._idom, self._order), reachable)
+        return functools.reduce(
+            lambda a, b: intersect(a, b, self._idom, self._order, self.pace), reachable
+        )
 
     def _up(self, node: int) -> list[int]:
         """``node`` and every node that dominates it, nearest first."""
@@ -408,23 +428,6 @@ class _Graph:
             for each in following:
                 before[each].append(node)
         return before
-
-    def forked(self, fork: Fork) -> list[int]:
-        """The nodes a fork proves: the side it took, or the block of an operation that raised."""
-        return self._proved_by.get(fork, [])
-
-    @functools.cached_property
-    def _proved_by(self) -> dict[Fork, list[int]]:
-        """Each fork the code can record, and the nodes it proves. Built once, read per fork."""
-        proved: dict[Fork, list[int]] = {}
-        for node, step in self.steps.items():
-            if step.kind is not StepKind.CONDITION:
-                continue
-            proved.setdefault((step.line, step.col, step.side, step.raising), []).append(node)
-            if step.raising:
-                source = next(n for n, following in enumerate(self.successors) if node in following)
-                proved.setdefault((step.line, step.col, False, True), []).append(source)
-        return proved
 
 
 class _Builder:

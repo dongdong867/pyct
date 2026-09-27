@@ -145,7 +145,7 @@ def _long_generator(tmp_path: Path, tests: int) -> tuple[str, frozenset[int], li
 
 
 def test_off_the_main_thread_the_clock_checks_still_stop_the_analysis(tmp_path: Path) -> None:
-    # no timer can be armed off the main thread, so each step's own clock check is the bound
+    # the stop reads the clock where the analysis steps, so it holds on any thread
     file, uncovered, walked = _long_generator(tmp_path, 1600)
     covered = frozenset().union(*(each.lines for each in walked))
     ended: list[float] = []
