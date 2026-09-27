@@ -12,6 +12,7 @@ import pytest
 from pyct.core.branch import Branch, Expression
 from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.answer import Error, Sat, Unsat
+from pyct.solver.answer_size import longest_string
 from pyct.solver.cvc5 import solve
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import encode
@@ -163,7 +164,11 @@ def test_a_piece_the_string_always_has_asserts_nothing(piece: Expression) -> Non
 
     lines = render(prefix, {"s": str}).splitlines()
 
-    assert [line for line in lines if line.startswith("(assert ")] == [lines[-3]]
+    # the string's length bound, and the fork
+    assert [line for line in lines if line.startswith("(assert ")] == [
+        longest_string("|arg.s|"),
+        lines[-3],
+    ]
 
 
 def test_a_piece_at_a_position_that_is_not_an_int_is_an_error() -> None:

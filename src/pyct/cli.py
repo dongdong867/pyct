@@ -39,7 +39,6 @@ from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, interception, load_target
-from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 from pyct.sweep.listing import PackageImportError
 from pyct.sweep.result import SweepLimits, closing, summary_line
@@ -159,7 +158,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, SolverAnswerError, TargetError, PackageImportError) as error:
+    except (SolverMissingError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)

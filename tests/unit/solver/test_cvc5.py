@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import Error, Sat, SolverAnswerError, Timeout, Unknown, Unsat
+from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import GRACE_SECONDS, solve
 
 SITE = Site(file="m.py", line=2, col=7)
@@ -249,10 +249,14 @@ def test_the_real_cvc5_answers_about_parameters_named_as_its_own_words_or_past_a
     assert isinstance(value, int) and value > 3
 
 
-def test_a_model_naming_what_was_not_declared_is_an_error_rather_than_a_guess(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_a_model_naming_what_was_not_declared_is_unknown_rather_than_a_guess(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     fake_cvc5(tmp_path, out=f"sat\n((arg.y 12))\n{NOT_UNKNOWN}")
 
-    with pytest.raises(SolverAnswerError, match="arg.y"):
-        ask(tmp_path, monkeypatch)
+    with caplog.at_level(logging.WARNING, logger="pyct.solver.cvc5"):
+        assert ask(tmp_path, monkeypatch) == Unknown()
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1, caplog.text
+    assert "arg.y" in warnings[0].getMessage()
