@@ -62,6 +62,7 @@ STR_TERMS: list[Expression] = [
 ]
 BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
     ["in", "'a'", "s"],
+    ["not in", "'a'", "s"],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
     ["is_integer", "f"],

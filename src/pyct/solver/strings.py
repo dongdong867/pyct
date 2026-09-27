@@ -126,6 +126,11 @@ def contains(sub: str, term: str) -> str:
     return f"(str.contains {term} {sub})"
 
 
+def not_contains(sub: str, term: str) -> str:
+    """``sub not in s``: the negation of `contains`, the needle first."""
+    return f"(not {contains(sub, term)})"
+
+
 def first_index(term: str, sub: str) -> str:
     """``s.find(sub)``: where sub first starts in s, or -1.
 

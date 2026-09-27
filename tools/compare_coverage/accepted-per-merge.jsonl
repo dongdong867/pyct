@@ -6,9 +6,7 @@
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_branch::matches_monday", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [13]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_non_ascii::matches_cafe", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.count_branch::has_two_ab", "seed": {"s": "xx"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_chain_productive::chain_with_distinct_paths", "seed": {"x": "none"}, "status": "differs", "only_legacy": [26, 27, 28, 29, 30, 31, 32], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_set::matches_color", "seed": {"x": "none"}, "status": "differs", "only_legacy": [18], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_single::in_single_set", "seed": {"x": "z"}, "status": "differs", "only_legacy": [18], "only_v2": []}
+{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_case_fold::in_lower_set", "seed": {"x": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.substr_concrete_start::slice_with_symbolic_end", "seed": {"s": "hello world", "n": 8}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
@@ -27,6 +25,13 @@
 {"set": "v2", "target": "targets.floats.rounding_exact::hit", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.truth_test::tell", "seed": {"x": 1.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.intercept.across::spread", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [17]}
+{"set": "v2", "target": "targets.intercept.identities::sides", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [11]}
+{"set": "v2", "target": "targets.intercept.identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.intercept.in_plain_text::pick", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.intercept.positions::place", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
+{"set": "v2", "target": "targets.intercept.threaded_identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [18]}
+{"set": "v2", "target": "targets.intercept.type_errors::in_set", "seed": {"items": [1]}, "status": "differs", "only_legacy": [10], "only_v2": []}
 {"set": "v2", "target": "targets.ints.compare_deep_copy::check", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.ints.constant_power::root", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ints.counted_up::count_up", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [5]}

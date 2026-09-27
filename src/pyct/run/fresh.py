@@ -8,10 +8,12 @@ which imports the target by name and runs the one call. It costs about
 library, so it is the way only when forking is unsafe.
 
 Only the input crosses on the way in: pyct's import path, the target's name
-and file, the arguments and the deadline, pickled into a file the new
-interpreter reads. Every fresh interpreter of one run gets the same hash
-seed, so a target whose path follows the order of a set of strings takes
-the same path for the same input in each of them. The facts
+and file, the arguments, the deadline and the interception pyct's own
+process holds open, pickled into a file the new interpreter reads. The new
+interpreter opens the same interception before it imports the target.
+Every fresh interpreter of one run gets the same hash seed, so a target
+whose path follows the order of a set of strings takes the same path for
+the same input in each of them. The facts
 come back through the same journal a forked child writes, backed by a
 file both processes map. The new interpreter's stdin is empty and its
 stdout is stderr from its first instruction.
@@ -36,6 +38,7 @@ from typing import NoReturn
 from pyct.binding.call import positional_only
 from pyct.core.branch import PYCT_DIR
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
+from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
 from pyct.run.journal import CAPACITY, JournalWriter, read
@@ -94,11 +97,17 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
     """The one call the request asks for, told to the journal as it happens."""
     with os.fdopen(request, "rb") as handed:
         sys.path[:] = pickle.load(handed)
-        spec, file, args, until = pickle.load(handed)
-    target = load_target(spec)
-    positional = positional_only(target.signature)
-    ctx = ExecutionContext(fn=target.fn, file=file, alone=True, positional=positional)
-    return execute(ctx, args, until, watch=watch).failure
+        spec, file, args, until, interception = pickle.load(handed)
+    with _intercepting(interception):
+        target = load_target(spec)
+        positional = positional_only(target.signature)
+        ctx = ExecutionContext(fn=target.fn, file=file, alone=True, positional=positional)
+        return execute(ctx, args, until, watch=watch).failure
+
+
+def _intercepting(interception: Interception | None) -> contextlib.AbstractContextManager[None]:
+    """The interception pyct's own process held open, or nothing when it held none."""
+    return contextlib.nullcontext() if interception is None else intercepting(interception)
 
 
 @contextlib.contextmanager
@@ -128,7 +137,7 @@ def _request(
         try:
             handed = stack.enter_context(tempfile.TemporaryFile())
             pickle.dump(list(sys.path), handed)
-            pickle.dump((spec, file, dict(args), until), handed)
+            pickle.dump((spec, file, dict(args), until, current()), handed)
             handed.flush()
         except (OSError, pickle.PicklingError, TypeError, AttributeError, RecursionError) as error:
             raise InputStartError(
