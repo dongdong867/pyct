@@ -12,7 +12,7 @@ from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_l
 LONG_DIGITS = "targets.strs.long_digits::card"
 LONG_DIGITS_FILE = str(REPO_ROOT / "targets" / "strs" / "long_digits.py")
 # each ``return``, one per side the seed's forks lead to
-LONG_DIGITS_RETURNS = {3, 5, 7, 8}
+LONG_DIGITS_RETURNS = {4, 6, 8, 9}
 HARD_FORKS_LAST = "targets.flip.hard_forks_last::triage"
 HARD_FORKS_LAST_FILE = str(REPO_ROOT / "targets" / "flip" / "hard_forks_last.py")
 # ``sign = "not positive"``, which only an input with n <= 0 runs
@@ -50,6 +50,8 @@ def test_a_timeout_sends_the_next_input_to_the_seed_s_first_fork() -> None:
     result = run_pyct(HARD_FORKS_LAST, seed, "--budget", "3", "--solver-timeout", "1")
 
     assert result.returncode == 0, result.stderr
+    # the order below rests on the seed's deepest fork running to the solver's limit
+    assert solver_counts(result.stdout)["timeout"] >= 1, result.stdout
     solved = [line for line in input_lines(result.stdout) if line["source"] == "solver"]
     # the seed's deepest fork timed out, so the next pick is the seed's first fork, n <= 0
     assert solved, result.stdout

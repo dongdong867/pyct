@@ -179,3 +179,14 @@ def test_a_long_string_one_check_reads_is_answered_inside_the_limit() -> None:
     number = answer.model["s"]
     assert isinstance(number, str) and number.isdigit(), answer
     assert len(number) >= 13 and not number.startswith("4"), answer
+
+
+def test_a_replaced_string_one_check_reads_is_asked_as_one_membership() -> None:
+    """The card number's shape: the check reads a string the target made, not a parameter."""
+    replaced = ["replace", "s", "' '", "''"]
+    prefix = (Branch(expression=["isdigit", replaced], taken=True, site=SITE),)
+
+    text = render(prefix, {"s": str})
+
+    assert "str.in_re" in text
+    assert "str.replace_re_all" not in text

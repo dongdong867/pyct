@@ -1,8 +1,9 @@
 def card(number: str) -> str:
-    if not number.isdigit():
+    digits = number.replace(" ", "")
+    if not digits.isdigit():
         return "not digits"
-    if len(number) < 13:
+    if len(digits) < 13:
         return "short"
-    if number.startswith("4"):
+    if digits.startswith("4"):
         return "four"
     return "other"

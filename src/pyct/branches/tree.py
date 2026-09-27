@@ -44,7 +44,9 @@ class Tree:
         self._aimed: set[ForkKey] = set()
         self._sides: set[tuple[Site, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
-        # fork first. A side taken never becomes new again, so a fork leaves for good
+        # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
+        # forks sit together, so after a pick the rest of its path leads the queue. A side taken
+        # never becomes new again, so a fork leaves for good
         self._new: deque[Place] = deque()
         # where the oldest-path pick starts looking: the oldest path that may still hold an open
         # fork, and the deepest position on it that may, None before the pick first reaches the

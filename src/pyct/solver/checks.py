@@ -1,4 +1,5 @@
-"""Python's character checks in SMT-LIB, each written with how many characters of a kind s has.
+"""Python's character checks in SMT-LIB: on a string one check reads, one regular expression
+membership; on a string two or more read, counts of how many characters of each kind it has.
 
 A check asks what kind each character of a string is: a digit, a letter, a
 space, and so on. The characters cvc5 holds are split into kinds that do not
@@ -169,6 +170,11 @@ def _identifier(term: str) -> str:
     return f"(and {named} (not (str.in_re (str.at {term} 0) {one_of(DIGITS)})))"
 
 
+# the kinds past ASCII, and the kinds isprintable says no to
+_PAST_ASCII = ["unprintable_past_ascii", "printable_past_ascii"]
+_UNPRINTABLE = ["whitespace_but_space", "control_but_whitespace", "unprintable_past_ascii"]
+
+
 # each character check, as the term that gives Python's answer for ASCII. isdigit, isdecimal
 # and isnumeric part only past ASCII, where each has characters the others do not
 _ANSWERS: Mapping[str, Callable[[str], str]] = {
@@ -180,10 +186,8 @@ _ANSWERS: Mapping[str, Callable[[str], str]] = {
     "isspace": lambda term: _all(term, ["space", "whitespace_but_space"]),
     "isupper": lambda term: _cased(term, "upper", "lower"),
     "islower": lambda term: _cased(term, "lower", "upper"),
-    "isascii": lambda term: _none(term, ["unprintable_past_ascii", "printable_past_ascii"]),
-    "isprintable": lambda term: _none(
-        term, ["whitespace_but_space", "control_but_whitespace", "unprintable_past_ascii"]
-    ),
+    "isascii": lambda term: _none(term, _PAST_ASCII),
+    "isprintable": lambda term: _none(term, _UNPRINTABLE),
     "istitle": _titled,
     "isidentifier": _identifier,
 }
@@ -200,14 +204,19 @@ CHECKS: Mapping[str, Callable[[str], Check]] = {
 }
 
 
+def _runs(kinds: Iterable[str]) -> Ranges:
+    """The characters of the kinds, as runs in order."""
+    return _joined(tuple(run for kind in kinds for run in KINDS[kind]))
+
+
 def _in(kinds: Iterable[str]) -> str:
     """The regular expression that matches one character of the kinds."""
-    return one_of(_joined(tuple(run for kind in kinds for run in KINDS[kind])))
+    return one_of(_runs(kinds))
 
 
 def _not_in(kinds: Iterable[str]) -> str:
     """The regular expression that matches one character of none of the kinds."""
-    return one_of(outside(_joined(tuple(run for kind in kinds for run in KINDS[kind]))))
+    return one_of(outside(_runs(kinds)))
 
 
 def _one_of_case(cased: str, other: str) -> str:
@@ -217,7 +226,6 @@ def _one_of_case(cased: str, other: str) -> str:
 
 
 _ALL_DIGITS = f"(re.+ {_in(['digit'])})"
-_UNPRINTABLE = ["whitespace_but_space", "control_but_whitespace", "unprintable_past_ascii"]
 
 # each check as the one regular expression a string matches exactly where the check's counts
 # say true
@@ -230,7 +238,7 @@ _MEMBERSHIPS: Mapping[str, str] = {
     "isspace": f"(re.+ {_in(['space', 'whitespace_but_space'])})",
     "isupper": _one_of_case("upper", "lower"),
     "islower": _one_of_case("lower", "upper"),
-    "isascii": f"(re.* {_not_in(['unprintable_past_ascii', 'printable_past_ascii'])})",
+    "isascii": f"(re.* {_not_in(_PAST_ASCII)})",
     "isprintable": f"(re.* {_not_in(_UNPRINTABLE)})",
     "istitle": _TITLED,
     "isidentifier": (
