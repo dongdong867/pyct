@@ -342,7 +342,12 @@ def test_hands_back_the_new_shape() -> None:
 # follow-lists-and-dicts-as-they-change-fills-an-added-item-by-kind
 @pytest.mark.parametrize(
     ("function", "seed", "kind"),
-    [("walk", [1], int), ("walk_strs", [], str), ("walk", [], type(None))],
+    [
+        ("walk", [1], int),
+        ("walk_strs", [], str),
+        ("walk", [], type(None)),
+        ("walk_floats", [], float),
+    ],
 )
 def test_fills_an_added_item_by_kind(function: str, seed: list[object], kind: type) -> None:
     result = run_pyct(f"{FILLS}::{function}", json.dumps({"items": seed}), *UNTIL_NO_GAIN)
@@ -355,6 +360,10 @@ def test_fills_an_added_item_by_kind(function: str, seed: list[object], kind: ty
     ]
     assert grown, result.stdout
     assert all(type(item) is kind for answer in grown for item in answer[len(seed) :]), grown
+    # an answer passes the seed check whenever the seed did
+    answer = json.dumps({"items": grown[0]})
+    again = run_pyct(f"{FILLS}::{function}", "--args", answer, *UNTIL_NO_GAIN)
+    assert again.returncode == 0, again.stderr
 
 
 # follow-lists-and-dicts-as-they-change-follows-lists-inside-lists

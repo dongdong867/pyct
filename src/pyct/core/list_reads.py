@@ -16,9 +16,9 @@ from __future__ import annotations
 import sys
 from collections.abc import Iterator
 
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import TRACKED, ListState, kind_of, plain
+from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked
 
@@ -52,24 +52,41 @@ def tracked_long_enough(self: ListState, index: ConcolicInt) -> bool:
 def handed(self: ListState, position: int, written: Expression, name: str) -> object:
     """The item at ``position``, handed out as the target indexed it with ``written``.
 
-    An int or a str comes out tracked when the solver can tell its kind from the form: a
-    position from the start of an argument's own list, or a list whose items share that kind.
-    Past that it is a downgrade named ``name``, and the item comes out plain.
+    An int or a str comes out tracked, as ``items[written]``, whatever else the list holds: the
+    solver reads it by its position, by its list, or by what the path does with it. A list
+    inside comes out as it is stored, since the target may change it where it sits; one still
+    as its argument had it is named as the target indexed it (see ``_named``). A slot that no
+    longer holds what pyct saw there is read plain, named ``name``.
     """
+    if not self.holds(name, position):
+        return plain(list.__getitem__(self, position))
     item = list.__getitem__(self, position)
-    kind = kind_of(item)
-    if kind not in TRACKED:
+    if isinstance(item, ListState):
+        _named(self, item, written)
+        return item
+    if kind_of(item) not in TRACKED:
         return item
     value = plain(item)
-    by_position = self.static() and type(written) is int and written >= 0
-    if not by_position and self.kinds & TRACKED != {kind}:
-        self.sink.append(Downgrade(name=name))
-        return value
     expression: Expression = ["[]", self.expression, written]
     if isinstance(value, str):
         return ConcolicStr(value, expression=expression, sink=self.sink)
     assert isinstance(value, int)
     return ConcolicInt(value, expression=expression, sink=self.sink)
+
+
+def _named(self: ListState, row: ListState, written: Expression) -> None:
+    """Name a list inside as the target indexed it, ``grid[-1]`` or ``grid[i]``, so its forks
+    follow the outer list's length and the index.
+
+    Only a list still as its argument had it, inside a list of lists still as the argument had
+    it, is named again: a list the target changed keeps the form that builds it.
+    """
+    if self.kinds != {"list"} or self.expression is None or row.expression is None:
+        return
+    if is_read(self.expression) and is_read(row.expression):
+        wanted: Expression = ["[]", self.expression, written]
+        if row.expression != wanted:
+            row.expression = wanted
 
 
 def more(self: ListState, at: int) -> bool:

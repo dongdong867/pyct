@@ -127,13 +127,29 @@ def test_a_position_from_the_start_of_a_mixed_argument_is_read_by_its_position()
     assert downgrades(sink) == []
 
 
-def test_a_position_from_the_end_of_a_mixed_list_is_a_downgrade_named_by_the_read() -> None:
+def test_a_position_from_the_end_of_a_mixed_list_hands_out_the_item_as_indexed() -> None:
     items, sink = tracked([1, "a"])
 
     last = items[-1]
 
-    assert last == "a" and type(last) is str
-    assert downgrades(sink) == ["__getitem__"]
+    # the solver reads it by what the path does with it: the kinds leave it to the path
+    assert isinstance(last, ConcolicStr) and last.expression == ["[]", "items", -1]
+    assert downgrades(sink) == []
+
+
+def test_a_list_inside_is_named_as_the_target_indexed_it_until_it_changes() -> None:
+    sink: list[SinkItem] = []
+    rows: list[Any] = [ConcolicList.made([], ["[]", "grid", at], sink) for at in range(2)]
+    grid: Any = ConcolicList.made(rows, "grid", sink)
+    i = ConcolicInt(0, expression="i", sink=sink)
+
+    last = grid[-1]
+    assert last.expression == ["[]", "grid", -1]
+    first = grid[i]
+    assert first.expression == ["[]", "grid", "i"]
+    first.append(1)
+    changed = first.expression
+    assert grid[0] is first and first.expression is changed
 
 
 def test_an_index_of_a_kind_pyct_does_not_follow_is_lists_own_answer() -> None:

@@ -97,7 +97,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
-    attempt = _attempt(call, [Seed.of(seed)], tree, Bounds(until=time.monotonic() - 1), ())
+    attempt = _attempt(call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), ())
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)

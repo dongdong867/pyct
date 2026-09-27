@@ -162,3 +162,16 @@ def test_the_picks_over_a_loop_s_many_paths_take_linear_time() -> None:
         tree.add((*picked.prefix, *ending))
 
     assert time.perf_counter() - started < 3.0
+
+
+def test_the_oldest_path_a_pick_can_still_extend_moves_on_as_paths_are_spent() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True),))
+    tree.add((fork(2, taken=False), fork(3, taken=True)))
+
+    assert tree.oldest == 0
+    picked = tree.next()
+
+    # both sides of line 2 ran, so the first path has no fork left and no later pick extends it
+    assert picked is not None and picked.path == 1
+    assert tree.oldest == 1

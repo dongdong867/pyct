@@ -1,21 +1,16 @@
-"""A tracked list as cvc5 reads it: a length, and each item read by splitting the list at the
-pieces it was built from (lists-and-dicts-as-arrays-with-a-length).
+"""A tracked list as cvc5 reads it: a length, and the pieces it was built from
+(lists-and-dicts-as-arrays-with-a-length).
 
 An argument's list is an ``Int`` length and one array per kind of item. A list the target built
 from it is a tree of the pieces Python joined: a display of items, two lists joined, a window a
-slice cut, a list repeated. A read at a position walks that tree with ``ite``, one branch per
-piece the position can land in, so the program holds no store and no sequence. A position is
-kept as a sum of named terms and a number, so the pieces it cannot reach are left out before
-any term is written: after 3,000 appends, ``out[3]`` reaches five pieces and ``out[-1]`` one.
-
-Every item keeps its kind, so a read of an int is a read of the int array, and when the list
-also holds items of other kinds the read carries a guard: where the position lands, the item is
-of the kind the target read.
+slice cut, a list repeated. A position is kept as a sum of named terms and a number, and each
+named term with the least value the path lets it take, so pieces a read cannot reach are left
+out before any term is written (see ``list_reads``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
@@ -23,13 +18,16 @@ from pyct.binding.shapes import ListShape
 # a term that holds, and one that does not
 TRUE, FALSE = "true", "false"
 
+# the least value each named term can take on the path, by its text
+type Least = Mapping[str, int]
+
 
 @dataclass(frozen=True)
 class Lin:
     """An Int term as a number plus named terms, each times a number: ``n + 3``, ``n - s``.
 
-    Two positions that differ by a number compare without the solver, which is what leaves
-    out the pieces a read cannot reach.
+    Two positions that differ by a number, or by named terms whose least values settle it,
+    compare without the solver.
     """
 
     const: int = 0
@@ -64,18 +62,19 @@ class Lin:
             parts.append(_number(self.const))
         return parts[0] if len(parts) == 1 else f"(+ {' '.join(parts)})"
 
-    def lowest(self, nonnegative: set[str]) -> int | None:
-        """The least the term can be, when each named term it adds is one known not negative."""
-        if any(factor < 0 or term not in nonnegative for term, factor in self.atoms):
+    def lowest(self, least: Least) -> int | None:
+        """The least the term can be, when each named term it adds has a known least value and
+        it takes none away."""
+        if any(factor < 0 or term not in least for term, factor in self.atoms):
             return None
-        return self.const
+        return self.const + sum(factor * least[term] for term, factor in self.atoms)
 
-    def highest(self, nonnegative: set[str]) -> int | None:
-        """The most the term can be, when each named term it takes away is one known not
-        negative."""
-        if any(factor > 0 or term not in nonnegative for term, factor in self.atoms):
+    def highest(self, least: Least) -> int | None:
+        """The most the term can be, when it only takes away named terms with known least
+        values."""
+        if any(factor > 0 or term not in least for term, factor in self.atoms):
             return None
-        return self.const
+        return self.const + sum(factor * least[term] for term, factor in self.atoms)
 
 
 def _number(value: int) -> str:
@@ -91,7 +90,7 @@ class Piece:
     """A list as cvc5 reads it: its length, and the kinds of the items it can hand out.
 
     ``kinds`` are the kinds of the items the input and the target put in it, as core counts
-    them to tell a read's kind; ``every`` adds the kinds of items the solver may add.
+    them; ``every`` adds the kinds of items the solver may add.
     """
 
     length: Lin
@@ -99,12 +98,17 @@ class Piece:
     every: frozenset[str]
 
 
+# where a list the seed names holds an item of a kind: the guard at a position
+type Guard = Callable[[Lin, str, Least], str]
+
+
 @dataclass
 class Stored(Piece):
-    """An argument's list, or a list inside one: an array per kind, read at a position."""
+    """An argument's list, or a list inside one: an array per kind, read at a position, and
+    where each kind is."""
 
     arrays: Callable[[str], str] = field(default=lambda kind: kind)
-    shape: ListShape = field(default_factory=lambda: ListShape(()))
+    guard: Guard = field(default=lambda position, kind, least: TRUE)
 
 
 @dataclass
@@ -117,7 +121,7 @@ class Shown(Piece):
 
 @dataclass
 class Joined(Piece):
-    """Lists joined by `+`, or one repeated by `*`, in order."""
+    """Lists joined by `+`, in order."""
 
     parts: list[Piece] = field(default_factory=list)
     _flat: list[Piece] | None = None
@@ -151,6 +155,14 @@ class Window(Piece):
     step: int = 1
 
 
+@dataclass
+class Repeated(Piece):
+    """A list repeated a plain number of times: its position ``q`` reads the list at
+    ``q mod len``, so a repeat costs one piece however many times it repeats."""
+
+    base: Piece = field(default_factory=lambda: Shown(Lin(), frozenset(), frozenset()))
+
+
 @dataclass(frozen=True)
 class Read:
     """What reading one position gives: the item's term, or None where no item of the kind
@@ -160,17 +172,28 @@ class Read:
     guard: str
 
 
-def compare(low: Lin, high: Lin, nonnegative: set[str], *, or_equal: bool = False) -> str:
+def compare(low: Lin, high: Lin, least: Least, *, or_equal: bool = False) -> str:
     """``low < high``, or ``low <= high``, decided here when the difference says."""
     difference = high.minus(low)
-    least = difference.lowest(nonnegative)
-    most = difference.highest(nonnegative)
-    if least is not None and (least > 0 or (or_equal and least >= 0)):
+    lowest = difference.lowest(least)
+    highest = difference.highest(least)
+    if lowest is not None and (lowest > 0 or (or_equal and lowest >= 0)):
         return TRUE
-    if most is not None and (most < 0 or (not or_equal and most <= 0)):
+    if highest is not None and (highest < 0 or (not or_equal and highest <= 0)):
         return FALSE
     op = "<=" if or_equal else "<"
     return f"({op} {low.text()} {high.text()})"
+
+
+def equal(position: Lin, at: int, least: Least) -> str:
+    """``position == at``, decided here when the difference says."""
+    below = compare(position, Lin(at), least)
+    above = compare(Lin(at), position, least)
+    if FALSE == below == above:
+        return TRUE
+    if TRUE in (below, above):
+        return FALSE
+    return f"(= {position.text()} {at})"
 
 
 def ite(condition: str, then: str, otherwise: str) -> str:
@@ -179,6 +202,23 @@ def ite(condition: str, then: str, otherwise: str) -> str:
     if condition == FALSE:
         return otherwise
     return f"(ite {condition} {then} {otherwise})"
+
+
+def nested(branches: Iterable[tuple[str, str]], last: str) -> str:
+    """``(ite c1 v1 (ite c2 v2 ... last))``, each branch taken when its condition holds first.
+
+    Written in one join, so a read through thousands of pieces costs their length, not its
+    square. A branch whose condition fails is left out, and one that holds ends the chain.
+    """
+    kept: list[str] = []
+    for condition, value in branches:
+        if condition == FALSE:
+            continue
+        if condition == TRUE:
+            last = value
+            break
+        kept.append(f"(ite {condition} {value} ")
+    return "".join(kept) + last + ")" * len(kept)
 
 
 def either(one: str, other: str) -> str:
@@ -197,148 +237,23 @@ def both(one: str, other: str) -> str:
     return one if other == TRUE else f"(and {one} {other})"
 
 
-def stored_guard(piece: Stored, position: Lin, kind: str, nonnegative: set[str]) -> str:
-    """Where an argument's list holds an item of ``kind`` at ``position``: the runs of the input
-    that hold that kind, and past the input when an added item is of it."""
-    if piece.every == {kind}:
-        return TRUE
-    guard = FALSE
-    for run_kind, start, stop in piece.shape.runs():
-        if run_kind == kind:
-            within = both(
-                compare(Lin(start), position, nonnegative, or_equal=True),
-                compare(position, Lin(stop), nonnegative),
-            )
-            guard = either(guard, within)
-    if piece.shape.fill == kind:
-        added = compare(Lin(len(piece.shape.kinds)), position, nonnegative, or_equal=True)
-        guard = either(guard, added)
+def shape_guard(shape: ListShape) -> Guard:
+    """Where a list of the input holds an item of a kind: the runs of the input that hold it,
+    and past the input when an added item is of it."""
+    runs = shape.runs()
+
+    def guard(position: Lin, kind: str, least: Least) -> str:
+        found = FALSE
+        for run_kind, start, stop in runs:
+            if run_kind == kind:
+                within = both(
+                    compare(Lin(start), position, least, or_equal=True),
+                    compare(position, Lin(stop), least),
+                )
+                found = either(found, within)
+        if shape.fill == kind:
+            added = compare(Lin(len(shape.kinds)), position, least, or_equal=True)
+            found = either(found, added)
+        return found
+
     return guard
-
-
-def read(piece: Piece, position: Lin, kind: str, nonnegative: set[str]) -> Read:
-    """The item of ``kind`` at ``position``, split at the pieces the position can land in.
-
-    The tree of pieces is walked with a stack of its own, since a list the target changed
-    thousands of times is that many levels deep.
-    """
-    found = _Reader(kind, nonnegative).read(piece, position)
-    # a list whose every item is of the kind read needs no guard: the path keeps the position
-    # inside the list, and any item there is of that kind
-    return Read(found.value, TRUE) if piece.every <= {kind} else found
-
-
-# one step of a read: a piece to read at a position, or the branches to put back together
-type _Task = tuple[Piece, Lin] | tuple[None, list[str]]
-
-
-class _Reader:
-    """One read, its pieces walked on a stack of its own and put back together as they finish."""
-
-    def __init__(self, kind: str, nonnegative: set[str]) -> None:
-        self.kind = kind
-        self.nonnegative = nonnegative
-
-    def read(self, piece: Piece, position: Lin) -> Read:
-        tasks: list[_Task] = [(piece, position)]
-        done: list[Read] = []
-        while tasks:
-            task = tasks.pop()
-            if task[0] is None:
-                conditions = task[1]
-                parts = [done.pop() for _ in range(len(conditions) + 1)][::-1]
-                done.append(_chosen(conditions, parts))
-                continue
-            branches = self._branches(task[0], task[1])
-            if isinstance(branches, Read):
-                done.append(branches)
-                continue
-            conditions, parts = branches
-            tasks.append((None, conditions))
-            tasks.extend(reversed(parts))
-        return done[0]
-
-    def _branches(
-        self, piece: Piece, position: Lin
-    ) -> Read | tuple[list[str], list[tuple[Piece, Lin]]]:
-        """A read that ends at this piece, or the pieces it goes on into and when each."""
-        if isinstance(piece, Stored):
-            return self._stored(piece, position)
-        if isinstance(piece, Shown):
-            return self._shown(piece, position)
-        if isinstance(piece, Window):
-            moved = piece.start.plus(position, piece.step)
-            return [], [(piece.base, moved)]
-        assert isinstance(piece, Joined)
-        return self._joined(piece, position)
-
-    def _stored(self, piece: Stored, position: Lin) -> Read:
-        guard = stored_guard(piece, position, self.kind, self.nonnegative)
-        if self.kind not in piece.every:
-            return Read(None, FALSE)
-        return Read(f"(select {piece.arrays(self.kind)} {position.text()})", guard)
-
-    def _shown(self, piece: Shown, position: Lin) -> Read:
-        """A display: the item the position is, each one a branch."""
-        value, guard = None, FALSE
-        for at in reversed(range(len(piece.items))):
-            here = _equal(position, at, self.nonnegative)
-            if here == FALSE:
-                continue
-            term, item_kind = piece.items[at]
-            fits = False
-            if term is not None and item_kind == self.kind:
-                fits = True
-                value = term if value is None else ite(here, term, value)
-            guard = ite(here, TRUE if fits else FALSE, guard)
-        every = all(term is not None and kind == self.kind for term, kind in piece.items)
-        return Read(value, TRUE if every else guard)
-
-    def _joined(
-        self, piece: Joined, position: Lin
-    ) -> Read | tuple[list[str], list[tuple[Piece, Lin]]]:
-        """Joined lists: the part the position lands in, each part a branch taken when the
-        position is before its end, those it cannot reach left out."""
-        conditions: list[str] = []
-        parts: list[tuple[Piece, Lin]] = []
-        offset = Lin()
-        for part in piece.flat():
-            end = offset.plus(part.length)
-            before_end = compare(position, end, self.nonnegative)
-            if before_end != FALSE:
-                parts.append((part, position.minus(offset)))
-                if before_end == TRUE:
-                    break
-                conditions.append(before_end)
-            offset = end
-        if not parts:
-            return Read(None, FALSE)
-        # the last part reached is the branch taken when every condition before it failed
-        return conditions[: len(parts) - 1], parts
-
-
-def _equal(position: Lin, at: int, nonnegative: set[str]) -> str:
-    """``position == at``, decided here when the difference says."""
-    below = compare(position, Lin(at), nonnegative)
-    above = compare(Lin(at), position, nonnegative)
-    if FALSE == below == above:
-        return TRUE
-    if TRUE in (below, above):
-        return FALSE
-    return f"(= {position.text()} {at})"
-
-
-def _chosen(conditions: list[str], parts: list[Read]) -> Read:
-    """Branches put back together: the first part whose condition holds, the last one else.
-
-    A branch where no item of the kind read can be is left out of the value and turns its
-    guard false, so the solver keeps the position away from it.
-    """
-    value = parts[-1].value
-    guard = parts[-1].guard if value is not None else FALSE
-    for condition, part in zip(reversed(conditions), reversed(parts[:-1]), strict=True):
-        part_guard = part.guard if part.value is not None else FALSE
-        if part.value is not None:
-            value = part.value if value is None else ite(condition, part.value, value)
-        guard = ite(condition, part_guard, guard)
-    return Read(value, guard)

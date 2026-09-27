@@ -2,6 +2,7 @@
 
 import json
 import keyword
+import math
 from collections.abc import Mapping, Sequence
 
 from pyct.core.branch import Branch, Expression, Site
@@ -210,8 +211,14 @@ def _infix(expression: Expression) -> str:
 
 
 def _leaf(leaf: Expression) -> _Text:
-    """A name or a literal as the line writes it. A negative number binds as a unary minus."""
+    """A name or a literal as the line writes it. A negative number binds as a unary minus.
+
+    A float Python writes as `nan` or `inf` is written as the call that makes it, so the line
+    still reads as Python.
+    """
     text = leaf if isinstance(leaf, str) else repr(leaf)
+    if isinstance(leaf, float) and not math.isfinite(leaf):
+        text = f"-float('{-leaf!r}')" if leaf < 0 else f"float('{leaf!r}')"
     return text, _UNARY if text.startswith("-") else _ALONE
 
 

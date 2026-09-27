@@ -7,6 +7,7 @@ import pytest
 
 from pyct.binding import walk
 from pyct.results.record import Source, StopKind
+from pyct.run import run as run_module
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
@@ -138,3 +139,22 @@ def test_run_copies_the_seed_before_the_seed_input_can_change_it() -> None:
     assert all(record.failure is None for record in result.records)
     starts = [record.args["a"] for record in result.records]
     assert all(isinstance(a, list) and None not in a for a in starts), starts
+
+
+def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    held: list[tuple[int, list[int]]] = []
+    attempt = run_module._attempt
+
+    def watched(call: object, inputs: dict[int, object], tree: object, *rest: object) -> object:
+        held.append((tree.oldest, sorted(inputs)))  # type: ignore[attr-defined]
+        return attempt(call, inputs, tree, *rest)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(run_module, "_attempt", watched)
+    target = load_target("targets.nested.two_items::classify")
+
+    run(target, {"items": [1, 2]}, isolation=Isolation.IN_PROCESS)
+
+    assert len(held) > 2
+    assert all(min(kept) >= oldest for oldest, kept in held), held

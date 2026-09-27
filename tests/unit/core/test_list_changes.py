@@ -219,6 +219,11 @@ UNFOLLOWED: dict[str, tuple[Callable[[Any, Any], object], str]] = {
     "slice by a step": (lambda a, n: a.__setitem__(slice(None, None, 2), [0, 0]), "__setitem__"),
     "slice an object": (lambda a, n: a.__setitem__(slice(0, 1), [object()]), "__setitem__"),
     "del by a step": (lambda a, n: a.__delitem__(slice(None, None, 2)), "__delitem__"),
+    "slice backward": (
+        lambda a, n: a.__setitem__(slice(None, None, -1), [4, 3, 2, 1]),
+        "__setitem__",
+    ),
+    "del backward": (lambda a, n: a.__delitem__(slice(None, None, -1)), "__delitem__"),
     "del at a compare": (lambda a, n: a.__delitem__(n > 0), "__delitem__"),
     "*= a tracked count": (lambda a, n: a.__imul__(n), "__imul__"),
     "+ an object": (lambda a, n: a + [object()], "__add__"),
@@ -368,3 +373,17 @@ def test_an_item_set_writes_a_tracked_list_by_its_form() -> None:
         ["[:]", ["[:]", "items", 0, None], 1, None],
     ]
     assert isinstance(sink, list) and not [item for item in sink if isinstance(item, Downgrade)]
+
+
+def test_a_pop_after_a_change_outside_the_methods_records_no_fork_on_the_item() -> None:
+    items, sink = tracked([1, 2])
+
+    list.__setitem__(items, -1, 100)
+    popped = items.pop()
+
+    # the last slot no longer holds what pyct saw there: the pop is Python's own, named
+    assert type(popped) is int and popped == 100
+    assert popped > 50
+    assert downgrades(sink) == ["pop"]
+    assert [expression for expression, _ in forks(sink)] == [["!=", ["len", "items"], 0]]
+    assert items.expression is None

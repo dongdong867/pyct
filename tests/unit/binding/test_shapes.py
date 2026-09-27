@@ -25,9 +25,12 @@ def test_an_added_item_takes_the_kind_the_items_share_or_the_annotations() -> No
 
 def test_the_annotation_names_the_kind_of_an_added_item() -> None:
     assert annotated(int) == "int" and annotated(str) == "str"
-    assert annotated(float) == "none" and annotated(None) == "none"
+    assert annotated(float) == "float" and annotated(bool) == "bool"
+    assert annotated(None) == "none"
     assert annotated(OneOf((int, type(None)))) == "int"
-    assert annotated(OneOf((int, str))) == "none"
+    # the first kind the annotation names, so the item passes the seed check the seed passed
+    assert annotated(OneOf((str, int))) == "str"
+    assert annotated(OneOf((type(None), float))) == "float"
     assert annotated(Items(list, None)) == "list"
     assert annotated(Items(dict, None)) == "dict"
 
@@ -46,3 +49,12 @@ def test_a_list_at_its_answered_length_keeps_what_no_fork_read() -> None:
 
     # a read str position keeps the input's: no str array came back; added dicts start empty
     assert resized([1, "a"], answer, shape) == [9, "a", {}, {}]
+
+
+def test_an_added_item_the_annotation_types_as_a_float_or_a_bool_holds_its_plain_default() -> None:
+    answer = ListAnswer(length=2)
+
+    # nothing solves a float or a bool yet: the added item holds the type's own zero, which the
+    # seed check accepts, where null would be refused
+    assert resized([], answer, ListShape((), fill="float")) == [0.0, 0.0]
+    assert resized([], answer, ListShape((), fill="bool")) == [False, False]

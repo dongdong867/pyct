@@ -236,8 +236,9 @@ def _loop(
     tree.add(seeded.forks)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)
-    inputs = [seed]
+    inputs = {0: seed}
     while True:
+        _let_go(inputs, tree.oldest)
         attempt = _attempt(call, inputs, tree, bounds, covered)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop)
@@ -245,17 +246,16 @@ def _loop(
             misses.append(attempt.miss)
             told.miss(attempt.miss)
         if attempt.ran is not None:
-            record = attempt.ran.record
-            records.append(record)
-            covered.append(record.covered_lines & told.scope.lines)
-            tree.add(record.forks)
-            inputs.append(attempt.ran.seed)
-            told.record(record)
+            records.append(attempt.ran.record)
+            covered.append(attempt.ran.record.covered_lines & told.scope.lines)
+            tree.add(attempt.ran.record.forks)
+            inputs[len(records)] = attempt.ran.seed
+            told.record(attempt.ran.record)
 
 
 def _attempt(
     call: Call,
-    inputs: Sequence[Seed],
+    inputs: Mapping[int, Seed],
     tree: Tree,
     bounds: Bounds,
     covered: Sequence[frozenset[int]],
@@ -297,6 +297,13 @@ def _attempt(
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error))
     return Attempt(ran=Ran(record, solved))
+
+
+def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
+    """Let go of each input whose path no later pick can extend: an answer holding a long list
+    is kept only while an answer may still start from it."""
+    for path in [path for path in inputs if path < oldest]:
+        del inputs[path]
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

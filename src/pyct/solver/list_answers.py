@@ -64,7 +64,25 @@ class _Answering:
         """Every list the program declared: each the seed names, and each inside one a part
         reads."""
         named = [(name, ()) for name in self.terms.symbols if self._declared(name, (), "len")]
-        return named + sorted(set(self.terms.stored.values()) - set(named))
+        inside = {
+            (name, positions)
+            for name, places, _ in self.terms.stored.values()
+            if (positions := self._places(name, places)) is not None
+        }
+        return named + sorted(inside - set(named))
+
+    def _places(self, name: str, places: tuple[Expression, ...]) -> tuple[int, ...] | None:
+        """The positions that reach a list inside, each as the answer has it: a position from
+        the end counted back from the answered length of the list it is inside."""
+        positions: list[int] = []
+        for place in places:
+            at = self._number(place)
+            if at is None:
+                return None
+            if at < 0:
+                at += _count(self._value(name, tuple(positions), "len"))
+            positions.append(at)
+        return tuple(positions)
 
     def answer(
         self,
@@ -106,8 +124,9 @@ class _Answering:
         """A list the path built, built again over marks, by Python's own operations."""
         head, *operands = node
         if head == "[]":
-            name, positions = self.terms.stored[id(node)]
-            return self._stored(name, positions)
+            name, places, _ = self.terms.stored[id(node)]
+            positions = self._places(name, places)
+            return [] if positions is None else self._stored(name, positions)
         if head == "[,]":
             return [None] * len(operands)
         if head == "+":

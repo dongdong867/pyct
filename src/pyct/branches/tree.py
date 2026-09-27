@@ -46,6 +46,12 @@ class Tree:
             keys.append(key)
         self._paths.append((forks, tuple(keys)))
 
+    @property
+    def oldest(self) -> int:
+        """The oldest path a pick may still extend: every path before it has no open fork, and
+        a fork never reopens, so no later pick names one of those."""
+        return self._path
+
     def next(self) -> Plan | None:
         """The path that takes the other side of the deepest open fork on the oldest path, and
         which path it extends, counted in the order ``add`` took them.

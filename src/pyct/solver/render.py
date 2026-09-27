@@ -15,7 +15,7 @@ from pyct.solver.declared import (
     value_of,
 )
 from pyct.solver.joined import joined
-from pyct.solver.lists import ListTerms, TrackedList
+from pyct.solver.lists import ListTerms, TrackedList, UnencodedError
 from pyct.solver.strings import (
     above,
     below,
@@ -160,6 +160,7 @@ def program(
     prefix: tuple[Branch, ...],
     leaves: Mapping[str, type],
     lists: Mapping[str, ListShape] | None = None,
+    until: float | None = None,
 ) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
@@ -170,6 +171,8 @@ def program(
     with its shape. Two pieces of one string side by side are first written as
     the one piece they make (see `joined`), and a part of the conditions written
     more than once is defined once before the assertions (see `_Program`).
+    ``until`` is the monotonic instant writing must end by: a read of a list the
+    target changed thousands of times stops there (``RenderTimeError``).
     """
     shapes = lists or {}
     seed = Leaves(kinds=leaves, constants={}, lists=shapes)
@@ -180,11 +183,21 @@ def program(
     constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, sort_of(name, leaves[name])) for name, constant in constants.items()]
-    terms = ListTerms(shapes, {name: named[name] for name in named if name in shapes})
+    terms = _list_terms(shapes, {name: named[name] for name in named if name in shapes}, prefix)
+    terms.until = until
     body = _Program(Leaves(kinds=leaves, constants=constants, lists=shapes), order, holders, terms)
     text = _text(prefix, body, declared)
     by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
     return Program(text=text, names_by_symbol=by_symbol, lists=terms if terms.declared else None)
+
+
+def _list_terms(
+    shapes: Mapping[str, ListShape], symbols: Mapping[str, str], prefix: tuple[Branch, ...]
+) -> ListTerms:
+    """The lists of the path, with how long the path's own forks say each is at least."""
+    terms = ListTerms(shapes, symbols)
+    terms.learn(prefix)
+    return terms
 
 
 def _text(prefix: tuple[Branch, ...], body: "_Program", declared: list[tuple[str, str]]) -> str:
@@ -286,6 +299,7 @@ class _Program:
         """The type of an operation's value, its operands already typed. A part that builds or
         reads a tracked list is typed by the lists (see ``ListTerms.result``)."""
         head, *operands = node
+        self.lists.infer(node, self.types)
         if self.lists.involves(node):
             return self.lists.result(node)
         if not isinstance(head, str) or head not in RESULTS:
@@ -376,7 +390,7 @@ def _read(term: str, part: Expression) -> str:
     """A part's term where a condition reads it. A tracked list and a read of an item no term
     holds, a None or a list inside, write none: no condition core records reads one whole."""
     if not term:
-        raise ValueError(f"pyct cannot render {part}: it is no value a condition reads")
+        raise UnencodedError(f"pyct cannot render {part}: it is no value a condition reads")
     return term
 
 

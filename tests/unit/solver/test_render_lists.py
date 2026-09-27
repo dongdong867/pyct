@@ -2,6 +2,7 @@
 and answered back as each list's new length and the items a fork read."""
 
 import json
+import time
 
 import pytest
 
@@ -10,9 +11,11 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.shapes import ArrayValue, ListShape
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import Sat, SolverAnswerError, Unsat
+from pyct.solver.answer import Sat, SolverAnswerError, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.list_reader import RenderTimeError
 from pyct.solver.list_terms import FALSE, TRUE, Lin, both, either, ite
+from pyct.solver.lists import UnencodedError
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
 
@@ -157,8 +160,12 @@ def test_a_read_no_item_of_its_kind_can_meet_is_refused() -> None:
     # str by a position the kinds cannot tell is a downgrade
     with pytest.raises(ValueError, match="no <class 'int'> item is read there"):
         program((fork(["==", ["[]", ["[,]", 1, None], 5], 1]),), {}, {})
-    with pytest.raises(ValueError, match="no value a condition reads"):
+    with pytest.raises(UnencodedError, match="no <class 'int'> item is read there"):
         program((fork(["==", ["[]", ["[,]", 1, "'a'"], 1], 1]),), {}, {})
+    # two reads of items of two kinds, compared: nothing on the path says which kind either is
+    mixed: Expression = ["[,]", 1, "'a'"]
+    with pytest.raises(UnencodedError, match="no value a condition reads"):
+        program((fork(["==", ["[]", mixed, 0], ["[]", mixed, 1]]),), {}, {})
 
 
 def test_the_answer_names_a_list_by_its_access_and_a_list_inside_by_its_own() -> None:
@@ -207,3 +214,71 @@ def test_an_index_past_the_million_items_an_answer_holds_is_unsat() -> None:
     answer = solve((fork([">", ["len", "items"], 1_000_000]),), seed.leaves, 10.0, seed.lists)
 
     assert isinstance(answer, Unsat)
+
+
+@needs_cvc5
+def test_a_list_repeated_many_times_is_read_as_one_piece_and_kept_to_a_million_items() -> None:
+    repeated: Expression = ["*", "items", 200_000]
+    forks = (
+        fork([">", ["len", repeated], 199_999]),
+        fork([">", ["[]", repeated, 199_999], 5]),
+    )
+    seed = Seed.of({"items": [1]})
+
+    started = time.perf_counter()
+    text = program(forks, seed.leaves, seed.lists).text
+    written = time.perf_counter() - started
+    answer = solve(forks, seed.leaves, 10.0, seed.lists)
+
+    assert written < 0.5 and len(text) < 5_000
+    assert isinstance(answer, Sat)
+    items = apply(seed, answer.model).args["items"]
+    # the list the target builds from the answer holds at most a million items too
+    assert isinstance(items, list) and 1 <= len(items) * 200_000 <= 1_000_000
+    assert (items * 200_000)[199_999] > 5
+
+
+def _appended(times: int) -> Expression:
+    """``items`` with ``times`` values appended one at a time, as a loop of appends writes it."""
+    form: Expression = "items"
+    for value in range(times):
+        form = ["+", form, ["[,]", value]]
+    return form
+
+
+def test_writing_a_long_read_stops_at_the_solves_deadline() -> None:
+    appended = _appended(2_000)
+    forks = (fork(["==", ["[]", appended, "i"], 7]),)
+
+    with pytest.raises(RenderTimeError):
+        program(forks, {"i": int}, {"items": ListShape(("int",), fill="int")}, time.monotonic())
+
+
+def test_a_solve_whose_program_outlives_its_limit_is_a_timeout() -> None:
+    forks = (fork(["==", ["[]", _appended(2_000), "i"], 7]),)
+
+    answer = solve(forks, {"i": int}, 1e-6, {"items": ListShape(("int",), fill="int")})
+
+    assert isinstance(answer, Timeout)
+
+
+def test_a_path_nothing_types_a_read_of_is_an_unknown_not_a_crash() -> None:
+    mixed: Expression = ["[,]", 1, "'a'"]
+    forks = (fork(["==", ["[]", mixed, 0], ["[]", mixed, 1]]),)
+
+    assert isinstance(solve(forks, {}, 5.0, {}), Unknown)
+
+
+def test_a_list_changed_in_place_at_a_plain_index_is_written_in_one_row() -> None:
+    form: Expression = "items"
+    forks = [fork([">", ["len", "items"], 0])]
+    for value in range(60):
+        forks.append(fork([">", ["len", form], 0]))
+        after: Expression = ["[:]", ["[:]", form, 0, None], 1, None]
+        form = ["+", ["+", ["[:]", form, None, 0], ["[,]", value]], after]
+    forks.append(fork([">", ["[]", form, 0], 100]))
+
+    started = time.perf_counter()
+    text = program(tuple(forks), {}, {"items": ListShape(("int",), fill="int")}).text
+
+    assert time.perf_counter() - started < 0.5 and len(text) < 50_000

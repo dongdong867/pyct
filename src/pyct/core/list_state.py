@@ -72,15 +72,12 @@ def plain_items(value: object) -> object:
     return plain(value)
 
 
-def is_static(expression: Expression) -> bool:
-    """Whether a list's form names an argument's list as it came: a parameter, or an access.
-
-    Such a list is the one the input holds, so the kind at each position of it is the input's,
-    and a read at a position from the start is typed by that position alone.
-    """
+def is_read(expression: Expression) -> bool:
+    """Whether a list's form reads an argument's list as it came: a parameter, or reads of one,
+    each at a position or a key the target wrote, plain or tracked."""
     step = expression
     while isinstance(step, list):
-        if len(step) != 3 or step[0] != "[]" or isinstance(step[2], list):
+        if len(step) != 3 or step[0] != "[]":
             return False
         step = step[1]
     return isinstance(step, str) and not step.startswith(("'", '"'))
@@ -162,10 +159,6 @@ class ListState(list):
         """
         self.expression = None
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
-
-    def static(self) -> bool:
-        """Whether the form names an argument's list as it came (see ``is_static``)."""
-        return self.expression is not None and is_static(self.expression)
 
     def derived(
         self, items: list[object], shadow: list[object], expression: Expression

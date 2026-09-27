@@ -16,7 +16,7 @@ from pyct.binding.annotations import NONE, Check, Items, OneOf
 from pyct.core.list_state import kind_of
 
 # the kinds an added item takes from an annotation's item type, when the items do not say
-_ANNOTATED: Mapping[type, str] = {int: "int", str: "str"}
+_ANNOTATED: Mapping[type, str] = {int: "int", str: "str", float: "float", bool: "bool"}
 
 
 @dataclass(frozen=True)
@@ -74,15 +74,16 @@ def empty(check: Check | None) -> ListShape:
 
 
 def annotated(check: Check | None) -> str:
-    """The kind an annotation's item type gives an added item: an int, a str, either of them
-    with None, a list, or a dict. Any other is `null`."""
+    """The kind an annotation's item type gives an added item, one the seed check accepts: a
+    plain type's own, the first plain type a union names, a list, or a dict. An annotation the
+    check reads nothing of gives `null`."""
     if isinstance(check, Items):
         return "list" if check.kind is list else "dict"
     if isinstance(check, type):
         return _ANNOTATED.get(check, "none")
     if isinstance(check, OneOf):
         kinds = [kind for kind in check.kinds if kind is not NONE]
-        return _ANNOTATED.get(kinds[0], "none") if len(kinds) == 1 else "none"
+        return _ANNOTATED.get(kinds[0], "none") if kinds else "none"
     return "none"
 
 
@@ -112,8 +113,9 @@ class ListAnswer:
     read: frozenset[int] = frozenset()
 
 
-# the item an added position holds when no array says, by its kind
-_ADDED: Mapping[str, object] = {"int": 0, "str": ""}
+# the item an added position holds when no array says, by its kind: the solver answers an int
+# or a str, and a float or a bool, which nothing solves yet, holds its type's own zero
+_ADDED: Mapping[str, object] = {"int": 0, "str": "", "float": 0.0, "bool": False}
 
 
 def resized(items: list[object], answer: ListAnswer, shape: ListShape) -> list[object]:

@@ -3,11 +3,15 @@
 import logging
 import math
 import subprocess
+import time
 from collections.abc import Mapping
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
+from pyct.solver.declared import Program
+from pyct.solver.list_reader import RenderTimeError
+from pyct.solver.lists import UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import program
 
@@ -62,7 +66,9 @@ def solve(
     ``SolverAnswerError``, because a half-read model would quietly hand the
     seed's values back as the solver's.
     """
-    written = program(prefix, leaves, lists)
+    written = _written(prefix, leaves, lists, time.monotonic() + timeout)
+    if not isinstance(written, Program):
+        return written
     text = written.text + WHY
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     argv = _argv(timeout)
@@ -88,6 +94,25 @@ def solve(
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
     return answer
+
+
+def _written(
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    lists: Mapping[str, ListShape] | None,
+    until: float,
+) -> Program | Timeout | Unknown:
+    """The program for the path, written by ``until``: a program that outlives the solve's
+    limit is a ``Timeout()``, as a solve that does is, and a path with a read nothing on it
+    types is an ``Unknown()``, a miss rather than a crash."""
+    try:
+        return program(prefix, leaves, lists, until)
+    except RenderTimeError:
+        logger.warning("writing the program for cvc5 ran past the time limit")
+        return Timeout()
+    except UnencodedError as error:
+        logger.warning("pyct cannot write the path for cvc5: %s", error)
+        return Unknown()
 
 
 def _argv(timeout: float) -> list[str]:

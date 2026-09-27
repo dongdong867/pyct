@@ -8,7 +8,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_forms import UNWRITTEN, displayed, written
-from pyct.core.list_state import is_static, kind_of
+from pyct.core.list_state import is_read, kind_of
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_list_reads import downgrades, forks, tracked
@@ -172,12 +172,12 @@ def test_each_kind_of_item_is_its_own() -> None:
     assert kind_of(ConcolicStr("a", expression="s", sink=[])) == "str"
 
 
-def test_a_form_is_static_when_it_names_an_argument_as_it_came() -> None:
-    assert is_static("items")
-    assert is_static(["[]", ["[]", "config", "'rows'"], 0])
-    assert not is_static(["+", "items", ["[,]", 1]])
-    assert not is_static(["[]", "items", ["+", "i", 1]])
-    assert not is_static("'items'")
+def test_a_form_reads_an_argument_when_it_names_one_as_it_came() -> None:
+    assert is_read("items")
+    assert is_read(["[]", ["[]", "config", "'rows'"], 0])
+    assert is_read(["[]", "grid", -1]) and is_read(["[]", "grid", ["+", "i", 1]])
+    assert not is_read(["+", "items", ["[,]", 1]])
+    assert not is_read("'items'")
 
 
 def test_a_display_writes_what_an_expression_holds_and_nothing_else() -> None:

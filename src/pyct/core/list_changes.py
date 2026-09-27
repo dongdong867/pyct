@@ -171,6 +171,9 @@ def pop(self: ListState, *args: Any) -> object:
     if not _pops(self, key, bool(args)):
         return own(list.pop, self, *args)
     at = resolved(self, key)
+    if not self.holds("pop", at):
+        # the slot no longer holds what pyct saw there: the list is plain, and so is the pop
+        return own(list.pop, self, *args)
     item = handed(self, at, position(key), "pop")
     form = (
         ["[:]", self.expression, None, -1] if not args else dropped(self.expression, position(key))
