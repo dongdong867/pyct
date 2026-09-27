@@ -5,7 +5,7 @@ from __future__ import annotations
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, operand
-from pyct.core.values import copy_as_itself, downgrade_the_rest, forked, own
+from pyct.core.values import copy_as_itself, downgrade_the_rest, forked, own, pickled
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
 # arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
@@ -47,6 +47,9 @@ class ConcolicInt(int):
     __hash__ = int.__hash__
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
+    # a pickle holds the plain value and loads as an int, and writing it is a downgrade
+    __reduce_ex__ = pickled(int, "__reduce_ex__")
+    __reduce__ = pickled(int, "__reduce__")
 
     __add__ = numbers.arithmetic("+", int.__add__)
     __radd__ = numbers.arithmetic("+", int.__radd__, reflected=True)

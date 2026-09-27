@@ -34,7 +34,7 @@ from pyct.core.values import downgraded, own
 # or 0, so both keep the same names, and both derivations read them here. Each derivation
 # downgrades every other method int defines.
 
-# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# not the target's path: `__hash__`, `__repr__`, `__getnewargs__` and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
 # harder reason: the downgrade wrapper reads `self.sink`, which goes through `__getattribute__`
 # itself, so a wrapped one recurses on the first attribute read

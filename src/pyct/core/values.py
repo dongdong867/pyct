@@ -66,7 +66,8 @@ def plain(value: object, kind: type) -> object:
     ``kind``'s own ``__getnewargs__`` answers what the value is rebuilt from,
     as pickle rebuilds a subclass of it, and reads the value without calling
     any method a concolic type overrides, so nothing is recorded. ``kind``
-    then builds its own value from that.
+    then builds its own value from that, so a compare's answer, which int
+    reads as 1 or 0, comes back a bool.
     """
     return kind(*kind.__getnewargs__(value))
 
@@ -106,6 +107,28 @@ def downgraded(
         return own(plain, self, base) if result is self else result
 
     return downgrade
+
+
+def pickled(kind: type, name: str) -> Callable[..., tuple[type, tuple[object]]]:
+    """What a tracked value hands pickle: its plain value, which loads as Python's own ``kind``.
+
+    Set as ``__reduce_ex__``, which pickle asks every value it writes for at
+    every protocol, and as ``__reduce__``, so nothing rebuilds a concolic
+    type through a ``__new__`` that needs an expression and a sink, and no
+    pickle holds the sink. A pickle can load in another process or a later
+    input, where the condition does not apply, so writing one is a downgrade
+    named ``name``, and the value that was pickled keeps its condition
+    (pickle-holds-the-plain-value). The copy module asks for ``__copy__``
+    and ``__deepcopy__`` first, so a copy stays the value itself.
+    """
+
+    def reduce(self: _Sinked, /, *protocol: object) -> tuple[type, tuple[object]]:
+        # every protocol writes the same: the type that rebuilds the value, and its plain value
+        held = own(plain, self, kind)
+        self.sink.append(Downgrade(name=name))
+        return kind, (held,)
+
+    return reduce
 
 
 def _called_on_a_value(member: object) -> bool:

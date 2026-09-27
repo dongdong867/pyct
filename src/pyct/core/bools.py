@@ -14,7 +14,14 @@ from typing import Any
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, operand
-from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import (
+    copy_as_itself,
+    downgrade_the_rest,
+    downgraded,
+    forked,
+    own,
+    pickled,
+)
 
 
 def _the_int(self: ConcolicBool) -> Any:
@@ -78,6 +85,9 @@ class ConcolicBool(int):
     __hash__ = int.__hash__
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
+    # a pickle holds the plain value and loads as a bool, and writing it is a downgrade
+    __reduce_ex__ = pickled(bool, "__reduce_ex__")
+    __reduce__ = pickled(bool, "__reduce__")
 
     __add__ = numbers.arithmetic("+", int.__add__)
     __radd__ = numbers.arithmetic("+", int.__radd__, reflected=True)

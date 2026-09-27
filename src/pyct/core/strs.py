@@ -8,7 +8,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
-from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches and
 # the pieces it writes stay symbolic, and a copy is the value itself. The tuple here names what
@@ -16,7 +16,7 @@ from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, for
 # method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
 # itself, so nothing inherited needs naming.
 
-# not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
+# not the target's path: `__hash__`, `__repr__`, `__getnewargs__` and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. str takes `__getattribute__` from
 # object today; it is kept all the same, because the downgrade wrapper reads `self.sink`
 # through it, and a wrapped one would recurse on the first attribute read
@@ -342,6 +342,9 @@ class ConcolicStr(str):
     __hash__ = str.__hash__
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
+    # a pickle holds the plain value and loads as a str, and writing it is a downgrade
+    __reduce_ex__ = pickled(str, "__reduce_ex__")
+    __reduce__ = pickled(str, "__reduce__")
 
     # a position or a count is a tracked int, so `s.find("x") < n` is one fork on s and n, and
     # `in`, `startswith` and `endswith` answer with a tracked bool for the reason the compares
