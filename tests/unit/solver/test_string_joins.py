@@ -1,6 +1,8 @@
 """A join of strings in SMT-LIB: the concatenation it is, the items a tracked list's walk says it
 holds, and each split it reads held to its number of pieces, with cvc5 held against Python."""
 
+from collections.abc import Callable
+
 import pytest
 
 from pyct.binding.bind import Seed
@@ -13,15 +15,21 @@ from tests.unit.solver.agreement import needs_cvc5
 from tests.unit.solver.test_render_lists import answered, fork
 
 SPLIT: Expression = ["split", "s", "','"]
-PIECES: Expression = ["[,]", ["[]", SPLIT, 0], ["[]", SPLIT, 1]]
+PIECE_ITEMS: list[Expression] = [["[]", SPLIT, 0], ["[]", SPLIT, 1]]
+PIECES: Expression = ["[,]", *PIECE_ITEMS]
 
 
 def _names(_part: Expression) -> bool:
     return False
 
 
-def _expressions(prefix: tuple[Branch, ...]) -> list[Expression]:
-    return [branch.expression for branch in expanded(prefix, _names)]
+def _held(values: dict[str, object]) -> Callable[[Expression], object]:
+    """What the input holds for a parameter the part names, as render reads the input."""
+    return lambda part: values.get(part) if isinstance(part, str) else None
+
+
+def _expressions(prefix: tuple[Branch, ...], **values: object) -> list[Expression]:
+    return [branch.expression for branch in expanded(prefix, _names, _held(values))]
 
 
 def _walk(name: Expression, count: int) -> list[Branch]:
@@ -32,7 +40,7 @@ def _walk(name: Expression, count: int) -> list[Branch]:
 def test_a_path_with_no_join_is_handed_back_as_it_is() -> None:
     prefix = (fork(["==", "s", "'a'"]),)
 
-    assert expanded(prefix, _names) is prefix
+    assert expanded(prefix, _names, _held({})) is prefix
 
 
 @pytest.mark.parametrize(
@@ -64,15 +72,38 @@ def test_a_join_of_a_tracked_list_reads_as_many_items_as_its_walk_ended_on() -> 
 
 def test_a_join_of_a_tracked_list_no_walk_ended_on_is_a_pyct_bug() -> None:
     with pytest.raises(ValueError, match="no walk ends on it"):
-        expanded((fork(["==", ["join", "'-'", "parts"], "'a'"]),), _names)
+        expanded((fork(["==", ["join", "'-'", "parts"], "'a'"]),), _names, _held({}))
 
 
-def test_each_split_a_join_reads_is_held_to_one_more_piece_than_the_path_reads() -> None:
-    later = fork(["==", ["[]", SPLIT, 2], "'z'"], taken=False)
+@pytest.mark.parametrize(
+    "items",
+    [PIECE_ITEMS, [["upper", ["[]", SPLIT, 1]], ["upper", ["[]", SPLIT, 0]]]],
+    ids=["as they are", "through an operation"],
+)
+def test_a_split_whose_every_piece_a_join_reads_is_held_to_its_number(
+    items: list[Expression],
+) -> None:
+    written = _expressions((fork(["==", ["join", "'-'", ["[,]", *items]], "'a-b'"]),), s="x,y")
 
-    written = _expressions((fork(["==", ["join", "'-'", PIECES], "'a-b'"]), later))
+    assert written[-1] == [COUNTED, SPLIT, 2]
 
-    assert written[-1] == [COUNTED, SPLIT, 3]
+
+@pytest.mark.parametrize(
+    ("joined", "s"),
+    [
+        # part of the list: the input's split has three pieces, and the join reads two
+        (PIECES, "x,y,z"),
+        # a split read only as the string of another split
+        (["[,]", ["[]", ["split", ["[]", SPLIT, 0], "':'"], 0]], "x:y,z"),
+        # a split of a string the input does not hold as it is
+        (["[,]", ["[]", ["split", ["upper", "s"], "','"], 0]], "x"),
+    ],
+    ids=["part of the list", "through another split", "of a changed string"],
+)
+def test_any_other_split_a_join_reads_is_left_free(joined: Expression, s: str) -> None:
+    written = _expressions((fork(["==", ["join", "'-'", joined], "'a'"]),), s=s)
+
+    assert len(written) == 1
 
 
 @pytest.mark.parametrize(
@@ -98,16 +129,36 @@ def test_cvc5_joins_a_tracked_list_as_python_does() -> None:
 
 
 @needs_cvc5
-def test_cvc5_answers_no_split_with_more_pieces_than_the_join_reads() -> None:
-    joined = fork(["==", ["join", "'-'", PIECES], "'a-b'"])
-    seed = Seed.of({"s": "x,y"})
+@pytest.mark.parametrize(
+    ("split", "seed", "more"),
+    [
+        (SPLIT, "x,y", [">=", ["count", "s", "','"], 2]),
+        (["rsplit", "s", "','", 3], "x,y", [">=", ["count", "s", "','"], 2]),
+        (["splitlines", "s"], "x\ny", [">=", ["count", "s", "'\\n'"], 3]),
+    ],
+    ids=["split", "rsplit with a limit", "splitlines"],
+)
+def test_cvc5_answers_no_split_with_more_pieces_than_the_join_reads(
+    split: list[Expression], seed: str, more: Expression
+) -> None:
+    pieces: Expression = ["[,]", ["[]", split, 0], ["[]", split, 1]]
+    joined = fork(["==", ["join", "'-'", pieces], "'a-b'"])
+    args = Seed.of({"s": seed})
 
-    held = solve((joined,), seed.leaves, 10.0)
-    more = solve((joined, fork([">=", ["count", "s", "','"], 2])), seed.leaves, 10.0)
+    held = solve((joined,), args.leaves, 10.0, args.lists, args.values)
+    another = solve((joined, fork(more)), args.leaves, 10.0, args.lists, args.values)
 
-    # Python joins every piece: a string with one comma more joins three
-    assert isinstance(held, Sat) and "-".join(str(held.model["s"]).split(",")) == "a-b"
-    assert isinstance(more, Unsat)
+    # Python joins every piece: a string with one piece more joins three
+    assert isinstance(held, Sat), held
+    text = str(held.model["s"])
+    head, *operands = [split[0], *(_plain(part) for part in split[2:])]
+    assert "-".join(getattr(str, str(head))(text, *operands)) == "a-b", text
+    assert isinstance(another, Unsat), another
+
+
+def _plain(part: Expression) -> object:
+    """A split's plain operand as Python takes it: a literal's text, or the number."""
+    return part[1:-1] if isinstance(part, str) else part
 
 
 def test_a_count_of_anything_but_a_split_is_a_pyct_bug() -> None:

@@ -63,3 +63,21 @@ def of_anything(parts):
 
 def of_what_it_is_given(sep, n):
     return sep.join(n)
+
+
+def of_the_first_piece(s):
+    if "-".join(s.split(",")[:1]) == "a":
+        return "joined"
+    if "," in s:
+        if s.endswith("z"):
+            return "ends"  # first piece
+    return "other"
+
+
+def of_a_piece_split_again(s):
+    if "-".join(s.split(",")[0].split(":")) == "a-b":
+        return "joined"
+    if "," in s:
+        if s.endswith("z"):
+            return "ends"  # split again
+    return "other"

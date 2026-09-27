@@ -235,3 +235,33 @@ def test_raises_on_a_separator_given_no_iterable() -> None:
     seed = first_line(result.stdout)
     assert failure_detail(seed) == raised_by_python(lambda: "-".join(NOT_ITERABLE)), seed
     assert downgrade_names(seed) == [], seed
+
+
+# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a join of part of a split's
+# list holds nothing, so a fork the seed's own number of pieces takes is flipped as without a join
+def test_a_join_of_part_of_a_split_leaves_its_number_of_pieces_free() -> None:
+    result = run_pyct(f"{JOINS}::of_the_first_piece", '{"s": "q,r"}')
+
+    assert result.returncode == 0, result.stderr
+    covered = covered_lines(input_lines(result.stdout))
+    assert line_of('return "ends"  # first piece') in covered, result.stdout
+
+
+# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a split the join reads only
+# as the string of another split is not one whose pieces it joins
+def test_a_join_of_a_piece_split_again_leaves_the_first_split_free() -> None:
+    result = run_pyct(f"{JOINS}::of_a_piece_split_again", '{"s": "q,r"}')
+
+    assert result.returncode == 0, result.stderr
+    covered = covered_lines(input_lines(result.stdout))
+    assert line_of('return "ends"  # split again') in covered, result.stdout
+
+
+def covered_lines(lines: list[dict[str, object]]) -> set[int]:
+    """Every line of the fixture some input covered."""
+    covered: set[int] = set()
+    for line in lines:
+        each = line["covered"]
+        assert isinstance(each, dict), line
+        covered |= set(each.get(JOINS_FILE, []))
+    return covered

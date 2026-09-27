@@ -65,7 +65,7 @@ def program(
     ``floats.floor_division``).
     """
     origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
-    prefix, order, holders, named = _path(prefix, leaves, origin.shapes)
+    prefix, order, holders, named = _path(prefix, leaves, origin)
     constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
@@ -89,12 +89,13 @@ def program(
 
 
 def _path(
-    prefix: tuple[Branch, ...], leaves: Mapping[str, type], shapes: Mapping[str, ListShape]
+    prefix: tuple[Branch, ...], leaves: Mapping[str, type], origin: Origin
 ) -> tuple[tuple[Branch, ...], list[Node], dict[int, int], dict[str, str]]:
     """The path as written: joins spelled out, pieces side by side as one, each distinct part in
     order with how many places hold it, and each leaf and list it names by symbol."""
+    shapes = origin.shapes
     seed = Leaves(kinds=leaves, constants={}, lists=shapes)
-    prefix = expanded(prefix, seed.holds)
+    prefix = expanded(prefix, seed.holds, lambda part: origin.values.get(seed.named(part) or ""))
     listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
     prefix = joined(prefix, seed.holds, lambda part: id(part) in listed or part in shapes)
     order, holders = distinct(prefix, seed.holds)
@@ -136,7 +137,7 @@ def float_leaves(
     """The float leaves a fork of the prefix names: those its first ask holds finite."""
     if float not in leaves.values():
         return frozenset()
-    _, _, _, named = _path(prefix, leaves, lists or {})
+    _, _, _, named = _path(prefix, leaves, Origin(shapes=lists or {}))
     return frozenset(name for name in named if leaves.get(name) is float)
 
 
