@@ -21,10 +21,11 @@ from pyct.solver.heads import (
     WORKS_ON,
 )
 from pyct.solver.joined import joined
-from pyct.solver.literals import is_literal, literal_of, plain_operand, value
+from pyct.solver.letters import Key, Spellings, fixed_position
+from pyct.solver.literals import is_literal, leaf_term, literal_of, plain_operand
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import above, below, encode
+from pyct.solver.strings import above, below
 
 # the sort of a part defined once, by the type of its value
 _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
@@ -128,7 +129,7 @@ def program(
     constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
-    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, bounded)
+    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, prefix, bounded)
     held = [name for name in constants if name in finite and leaves[name] is float]
     lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
     lines.append("(set-logic ALL)")
@@ -210,7 +211,12 @@ class _Program:
     """
 
     def __init__(
-        self, leaves: _Leaves, order: list[Node], holders: dict[int, int], bounded: bool
+        self,
+        leaves: _Leaves,
+        order: list[Node],
+        holders: dict[int, int],
+        prefix: tuple[Branch, ...],
+        bounded: bool,
     ) -> None:
         self.leaves = leaves
         self.bounded = bounded
@@ -224,6 +230,9 @@ class _Program:
         self.bounds: list[str] = []
         for node in order:
             self.types[id(node)] = self._result(node)
+        # the strings read at fixed positions, each written once as its first letters (see
+        # `letters`), and the letters' names once written
+        self.spellings = Spellings(order, prefix, self._string)
         read = self._read_by_forms(order)
         # each part comes after the parts it holds (see `distinct`), so their terms are written
         # before it, and no part waits on Python's stack for its operands
@@ -246,7 +255,7 @@ class _Program:
         if name is not None:
             return self.leaves.constants[name]
         if not isinstance(expression, list):
-            return _leaf(expression)
+            return leaf_term(expression)
         key = id(expression)
         self.unread[key] -= 1
         return self.terms[key] if self.unread[key] else self.terms.pop(key)
@@ -373,6 +382,8 @@ class _Program:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
                 return self._piece(term, positions)
+            if (letter := self._letter(node)) is not None:
+                return letter
             return positioned(self.term(term), *(plain_operand(part) for part in positions))
         kind = self._kind(head, operands)
         rendered = [self._operand(part, kind) for part in operands]
@@ -431,6 +442,23 @@ class _Program:
         self._hold(there)
         return piece
 
+    def _string(self, part: Expression) -> Key | None:
+        """What tells a string term from another: its leaf's name, or its part's id."""
+        if self.type_of(part) is not str or not (self.leaves.holds(part) or isinstance(part, list)):
+            return None
+        return ("leaf", self.leaves.named(part)) if self.leaves.holds(part) else id(part)
+
+    def _letter(self, node: Node) -> str | None:
+        """What an index at a fixed position reads of a spelled string, or None for any other
+        index (see `letters`). The string is spelled out on its first read."""
+        at = fixed_position(node)
+        string = None if at is None else self._string(node[1])
+        if at is None or string is None or not self.spellings.spells(string):
+            return None
+        read, lines = self.spellings.read(string, at, self.term(node[1]))
+        self.definitions += lines
+        return read
+
     def _hold(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""
         if fact != "true" and fact not in self.facts:
@@ -441,22 +469,6 @@ class _Program:
 def _read_by_a_form(head: Expression) -> bool:
     """Whether an operation's operands are read by a form of one head whatever their type."""
     return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
-
-
-def _leaf(leaf: str | int | float | bool | None) -> str:
-    """A number, a truth value or a string literal.
-
-    A negative int is a subtraction, and a float is its bit pattern, sign and all.
-    """
-    if leaf is None:
-        raise ValueError("pyct cannot render a missing bound outside a slice")
-    if isinstance(leaf, bool):
-        return "true" if leaf else "false"
-    if isinstance(leaf, int):
-        return f"(- {-leaf})" if leaf < 0 else str(leaf)
-    if isinstance(leaf, float):
-        return floats.literal(leaf)
-    return encode(value(leaf))
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
