@@ -67,3 +67,14 @@ def test_refuses_before_the_seed_and_cvc5(tmp_path: Path) -> None:
     assert "cvc5" not in result.stderr
     assert result.stdout == ""
     assert result.returncode == 1
+
+
+# a SystemExit while the signature is read is a refusal too, never a silent exit 0
+def test_refuses_a_signature_read_that_exits() -> None:
+    result = run_pyct(f"{MODULE}::exits_while_read", "--args", '{"x": 1}')
+
+    assert result.stderr.splitlines() == [
+        f"cannot read the signature of {MODULE}::exits_while_read: 0"
+    ]
+    assert result.stdout == ""
+    assert result.returncode == 1

@@ -67,3 +67,4 @@ class _Raises:
 no_message = _Raises(RuntimeError())
 two_line_message = _Raises(ValueError("first line\nsecond line"))
 blank_first_line = _Raises(ValueError("\nafter a blank line"))
+exits_while_read = _Raises(SystemExit(0))

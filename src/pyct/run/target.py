@@ -68,15 +68,16 @@ def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:
 
 
 def _signature(spec: str, fn: Callable[..., object]) -> inspect.Signature:
-    """``fn``'s signature. Any Exception ``inspect.signature`` raises is a ``TargetError``.
+    """``fn``'s signature. A raise or a ``SystemExit`` as it is read is a ``TargetError``.
 
     Reading a signature can run the target's own code, such as an attribute
     lookup or, from Python 3.14, an annotation's evaluation, so any
-    Exception can come of it. The refusal gives ``_reason`` for it.
+    Exception can come of it, or a SystemExit. The refusal gives ``_reason``
+    for it. A KeyboardInterrupt, or pyct's own stop, goes on to end pyct.
     """
     try:
         return inspect.signature(fn)
-    except Exception as error:
+    except (Exception, SystemExit) as error:
         raise TargetError(f"cannot read the signature of {spec}: {_reason(error)}") from error
 
 

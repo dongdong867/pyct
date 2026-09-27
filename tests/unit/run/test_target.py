@@ -124,6 +124,7 @@ def refused_as_python_refuses(spec: str) -> None:
         "no_message",
         "two_line_message",
         "blank_first_line",
+        "exits_while_read",
     ],
 )
 def test_load_target_refuses_a_target_whose_signature_python_cannot_read(name: str) -> None:
