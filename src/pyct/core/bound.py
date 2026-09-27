@@ -1,16 +1,17 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
-`bool`, `map` and `range`: pyct's own routers, one table for all of them (`_FOLLOWED`). `CALLED`
-also holds the router of each `math` function (`pyct.core.math_calls`).
+`bool`, `map`, `range` and `type`: pyct's own routers, one table for all of them
+(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`).
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
-`float(...)`, `bool(...)`, `map(...)` or `range(...)` the router `CALLED`
-holds for the builtin, since a type name is never bound. Python makes the
-answers of the builtins plain, or calls no method of the value at all; here
-a tracked value that core follows through one of them gets core's tracked
-answer, and every other call, keywords and any count of arguments included,
-is Python's own. `map` with a conversion first maps pyct's router for it,
-and `range` with a tracked int among its arguments is a tracked range.
+`float(...)`, `bool(...)`, `map(...)`, `range(...)` or `type(...)` the
+router `CALLED` holds for the builtin, since a type name is never bound.
+Python makes the answers of the builtins plain, or calls no method of the
+value at all, and `type` reads pyct's class; here a tracked value that core
+follows through one of them gets core's answer, and every other call,
+keywords and any count of arguments included, is Python's own. `map` with a
+conversion first maps pyct's router for it, and `range` with a tracked int
+among its arguments is a tracked range.
 
 Each bound function carries the name, text and signature of Python's own,
 and lives in this module under that name, so pickle saves and loads it by
@@ -37,6 +38,7 @@ from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
+from pyct.core.values import BASES_BY_ID
 
 # Python's own three, captured before this module defines its own under the same names. A target
 # that replaces one in `builtins` later changes what its modules find by the name (see
@@ -174,13 +176,28 @@ def range_(*args: object, **kwargs: object) -> Any:
     return range(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
-# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or `range(...)`, or a
-# call of a `math` function through a name the module binds to it, calls in place of Python's
-# own function, by its identity (see `pyct.core.substitutes.call`)
+def type_(value: object, /) -> Any:
+    """Python's `type` where the code writes it with one argument: a tracked value's base type.
+
+    `type` reads the real class, which for a tracked value is pyct's, so the
+    table of base types answers for it (`pyct.core.bases`), by the class's
+    identity alone, so no class's own code runs here. It reads the class and
+    never the value, so it records nothing. Any other value's class is
+    Python's own answer. Interception hands it exactly one argument, never
+    unpacked, as `type(v)` is written (`pyct.intercept.calls`).
+    """
+    kind = type(value)
+    return BASES_BY_ID.get(id(kind), kind)
+
+
+# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
+# `type(...)`, or a call of a `math` function through a name the module binds to it, calls in
+# place of Python's own function, by its identity (see `pyct.core.substitutes.call`)
 CALLED: Mapping[int, Callable[..., object]] = {
     **_CONVERTERS,
     id(map): map_,
     id(range): range_,
+    id(type): type_,
     **math_calls.ROUTERS,
 }
 
@@ -221,6 +238,7 @@ PASSING: frozenset[types.CodeType] = (
             bool_,
             map_,
             range_,
+            type_,
             conversions.itself,
         )
     )

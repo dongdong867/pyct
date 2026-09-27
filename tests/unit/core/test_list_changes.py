@@ -67,7 +67,7 @@ def _plain(value: object) -> object:
 def test_each_change_writes_the_form_python_builds(name: str) -> None:
     original = [1, 2, 3, 4]
     items, sink = tracked(original)
-    x = ConcolicInt(1, expression="x", sink=sink)
+    x = ConcolicInt.made(1, expression="x", sink=sink)
 
     CHANGES[name](items, x)
 
@@ -86,7 +86,7 @@ def test_a_long_run_of_changes_keeps_the_form_python_builds() -> None:
     for _ in range(300):
         original = [chooser.randrange(-3, 4) for _ in range(chooser.randrange(0, 6))]
         items, sink = tracked(original)
-        x = ConcolicInt(1, expression="x", sink=sink)
+        x = ConcolicInt.made(1, expression="x", sink=sink)
         for name in chooser.sample(sorted(CHANGES), 6):
             # Python's own refusal, a pop past the end or a sort of a list and an int, changes
             # nothing
@@ -236,7 +236,7 @@ UNFOLLOWED: dict[str, tuple[Callable[[Any, Any], object], str]] = {
 @pytest.mark.parametrize("name", UNFOLLOWED)
 def test_a_form_pyct_does_not_follow_is_a_downgrade_named_by_the_operation(name: str) -> None:
     items, sink = tracked([1, 2, 3, 4])
-    n = ConcolicInt(2, expression="n", sink=sink)
+    n = ConcolicInt.made(2, expression="n", sink=sink)
     change, named = UNFOLLOWED[name]
 
     change(items, n)

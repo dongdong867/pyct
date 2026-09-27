@@ -34,7 +34,7 @@ def code(c: ConcolicStr) -> ConcolicInt:
     """
     if not c.single:
         forked(c.sink, ["==", ["len", c.expression], 1], own(str.__len__, c) == 1)
-    return ConcolicInt(own(_ORD, c), expression=["ord", c.expression], sink=c.sink)
+    return ConcolicInt.made(own(_ORD, c), expression=["ord", c.expression], sink=c.sink)
 
 
 def character(n: ConcolicInt) -> ConcolicStr:

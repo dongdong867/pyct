@@ -49,7 +49,7 @@ def _probe(name: str, *args: object) -> object:
 
 
 def _int(value: int, sink: list[SinkItem], name: str) -> ConcolicInt:
-    return ConcolicInt(value, expression=name, sink=sink)
+    return ConcolicInt.made(value, expression=name, sink=sink)
 
 
 def _range(*args: object) -> ConcolicRange:
@@ -186,7 +186,7 @@ def test_a_keyword_raises_python_s_type_error() -> None:
 
 def test_a_tracked_bool_is_the_int_it_is() -> None:
     sink: list[SinkItem] = []
-    flag = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    flag = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     handed = _probe("loop", _range(flag))
 

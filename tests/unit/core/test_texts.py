@@ -46,7 +46,7 @@ EXACT_ONLY: dict[str, Callable[[str], object]] = {
 
 def _text() -> ConcolicStr:
     sink: list[SinkItem] = []
-    text = str(ConcolicInt(7, expression="n", sink=sink))
+    text = str(ConcolicInt.made(7, expression="n", sink=sink))
     assert isinstance(text, ConcolicStr)
     return text
 

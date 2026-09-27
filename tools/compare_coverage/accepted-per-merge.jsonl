@@ -133,3 +133,13 @@
 {"set": "v2", "target": "targets.strs.text_of_values::formatted_alone", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [30, 32, 34, 36]}
 {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [16]}
 {"set": "v2", "target": "targets.strs.text_of_values::mapped", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [43]}
+{"set": "v2", "target": "targets.types.copied::f", "seed": {"n": 3, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [13, 17, 19, 21]}
+{"set": "v2", "target": "targets.types.dispatched::f", "seed": {"flag": true, "x": 1, "r": 2.5, "s": "a", "xs": [1]}, "status": "differs", "only_legacy": [38], "only_v2": [37]}
+{"set": "v2", "target": "targets.types.matched::f", "seed": {"flag": true, "x": 1, "r": 2.5, "s": "a", "xs": [1]}, "status": "differs", "only_legacy": [21], "only_v2": [20]}
+{"set": "v2", "target": "targets.types.read::bool_checks", "seed": {"flag": true, "x": 1}, "status": "differs", "only_legacy": [32], "only_v2": [24, 31]}
+{"set": "v2", "target": "targets.types.read::class_and_name", "seed": {"n": 1, "s": "a", "flag": true, "xs": [1]}, "status": "differs", "only_legacy": [46], "only_v2": [36, 45]}
+{"set": "v2", "target": "targets.types.read::each_type", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [14], "only_v2": [6, 13]}
+{"set": "v2", "target": "targets.types.read::guarded", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [19]}
+{"set": "v2", "target": "targets.types.read::other_answers", "seed": {"n": 1, "flag": true}, "status": "differs", "only_legacy": [], "only_v2": [71]}
+{"set": "v2", "target": "targets.types.read::range_type", "seed": {"n": 2}, "status": "differs", "only_legacy": [107], "only_v2": [99, 106]}
+{"set": "v2", "target": "targets.types.read::rebuilt", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [52]}

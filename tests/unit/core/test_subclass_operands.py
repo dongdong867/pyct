@@ -72,7 +72,7 @@ INT_OPERATIONS: dict[str, Callable[[Any, Any], Any]] = {
 def test_an_int_subclass_beside_a_tracked_int_reads_as_its_plain_int(
     operation: Callable[[Any, Any], Any], other: int
 ) -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     result = operation(n, other)
 
@@ -81,7 +81,7 @@ def test_an_int_subclass_beside_a_tracked_int_reads_as_its_plain_int(
 
 
 def test_a_divmod_by_an_int_subclass_reads_it_as_its_plain_int() -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     quotient, remainder = divmod(n, Loud(3))
 
@@ -89,7 +89,7 @@ def test_a_divmod_by_an_int_subclass_reads_it_as_its_plain_int() -> None:
 
 
 def test_a_reflected_operation_reads_an_int_subclass_as_its_plain_int() -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     # `Loud(3) - n` is int's own and plain, so the reflected method is asked for by name
     result = n.__rsub__(Loud(3))
@@ -100,7 +100,7 @@ def test_a_reflected_operation_reads_an_int_subclass_as_its_plain_int() -> None:
 
 def test_a_tracked_bool_reads_an_int_subclass_as_its_plain_int() -> None:
     sink: list[SinkItem] = []
-    truth = ConcolicInt(7, expression="n", sink=sink) > 0
+    truth = ConcolicInt.made(7, expression="n", sink=sink) > 0
 
     result = truth + Loud(2)
 
@@ -109,7 +109,7 @@ def test_a_tracked_bool_reads_an_int_subclass_as_its_plain_int() -> None:
 
 
 def test_a_tracked_float_reads_an_int_subclass_as_its_plain_int() -> None:
-    f = ConcolicFloat(0.5, expression="f", sink=[])
+    f = ConcolicFloat.made(0.5, expression="f", sink=[])
 
     results: list[Any] = [f + Loud(2), f < Lying(2), f * Level.HIGH]
 
@@ -118,8 +118,8 @@ def test_a_tracked_float_reads_an_int_subclass_as_its_plain_int() -> None:
 
 
 def test_a_float_subclass_reads_as_its_plain_float_beside_any_tracked_number() -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
-    f = ConcolicFloat(0.5, expression="f", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
+    f = ConcolicFloat.made(0.5, expression="f", sink=[])
 
     results: list[Any] = [n < Gauge(2.5), n + Gauge(2.5), f < Gauge(2.5), f - Gauge(2.5)]
 
@@ -128,7 +128,7 @@ def test_a_float_subclass_reads_as_its_plain_float_beside_any_tracked_number() -
 
 
 def test_a_plain_bool_operand_stays_the_literal_it_is() -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     result = n + True
 
@@ -185,7 +185,7 @@ def test_an_int_subclass_answers_its_reflected_operation_first_as_python_asks_it
     operation: Callable[[Any, Any], Any], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = operation(n, Rev(3))
 
@@ -197,7 +197,7 @@ def test_an_int_subclass_answers_its_reflected_operation_first_as_python_asks_it
 
 def test_a_tracked_answer_from_an_int_subclass_is_no_downgrade() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = n // Rev(3)
 
@@ -208,7 +208,7 @@ def test_a_tracked_answer_from_an_int_subclass_is_no_downgrade() -> None:
 
 def test_an_int_flag_answers_with_its_own_flag_as_python_does() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = n | Flag.A
 
@@ -220,7 +220,7 @@ def test_an_int_flag_answers_with_its_own_flag_as_python_does() -> None:
 
 def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = n + Shy(2)
 
@@ -230,14 +230,14 @@ def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() ->
 
 
 def test_a_three_argument_power_asks_the_int_subclass_nothing() -> None:
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     assert pow(n, Rev(2), 5) == pow(7, Rev(2), 5)
 
 
 def test_a_reflected_call_on_the_tracked_int_asks_the_int_subclass_nothing() -> None:
     # Python has already asked the subclass on the left for `Rev(3) + n`, and int's own answered
-    n = ConcolicInt(7, expression="n", sink=[])
+    n = ConcolicInt.made(7, expression="n", sink=[])
 
     result = n.__radd__(Rev(3))
 
@@ -247,8 +247,8 @@ def test_a_reflected_call_on_the_tracked_int_asks_the_int_subclass_nothing() -> 
 def test_a_tracked_bool_or_float_asks_an_int_subclass_nothing_as_python_does() -> None:
     # Rev subclasses neither bool nor float, so Python asks the left operand first
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
-    f = ConcolicFloat(0.5, expression="f", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+    f = ConcolicFloat.made(0.5, expression="f", sink=sink)
 
     # each on a bool and a float, so the same lambdas give plain Python's answers
     operations: list[Callable[[Any, Any], Any]] = [
@@ -307,7 +307,7 @@ def test_a_float_subclass_answers_beside_a_tracked_int_as_python_asks_it(
     operation: Callable[[Any, Any], Any], name: str
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = operation(n, Dial(2.0))
 
@@ -318,7 +318,7 @@ def test_a_float_subclass_answers_beside_a_tracked_int_as_python_asks_it(
 
 def test_a_tracked_answer_from_a_float_subclass_beside_a_tracked_int_is_no_downgrade() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     result = n * Dial(2.0)
 
@@ -329,7 +329,7 @@ def test_a_tracked_answer_from_a_float_subclass_beside_a_tracked_int_is_no_downg
 
 def test_a_float_subclass_that_declines_beside_a_tracked_int_raises_as_python_does() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     with pytest.raises(TypeError):
         7 - Dial(2.0)
@@ -366,7 +366,7 @@ def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     operation: Callable[[Any], Any],
 ) -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(7, expression="n", sink=sink)
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
     with pytest.raises(TypeError) as plain:
         operation(7)

@@ -32,7 +32,7 @@ CHECKS = [
 
 
 def _tracked(value: str, sink: list[SinkItem] | None = None) -> ConcolicStr:
-    return ConcolicStr(value, expression="s", sink=[] if sink is None else sink)
+    return ConcolicStr.made(value, expression="s", sink=[] if sink is None else sink)
 
 
 @pytest.mark.parametrize("name", CHECKS)
@@ -136,7 +136,10 @@ NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
     "s.strip(tracked)": (lambda s: s.strip(_tracked("a")), "strip"),
     "s.strip(past cvc5)": (lambda s: s.strip(PAST_CVC5), "strip"),
     "s.center(9, tracked)": (lambda s: s.center(9, _tracked("*")), "center"),
-    "s.ljust(tracked int)": (lambda s: s.ljust(ConcolicInt(9, expression="n", sink=[])), "ljust"),
+    "s.ljust(tracked int)": (
+        lambda s: s.ljust(ConcolicInt.made(9, expression="n", sink=[])),
+        "ljust",
+    ),
     "s.split(sep=',')": (lambda s: s.split(sep=","), "split"),
     "s.split(tracked)": (lambda s: s.split(_tracked(",")), "split"),
     "s.split(past cvc5)": (lambda s: s.split(PAST_CVC5), "split"),
@@ -208,8 +211,8 @@ def test_the_plain_text_of_anything_but_a_str_is_an_error() -> None:
 
 def test_an_rsplit_on_a_tracked_separator_records_its_downgrade_and_nothing_else() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("xabyab", expression="s", sink=sink)
-    t = ConcolicStr("aba", expression="t", sink=sink)
+    s = ConcolicStr.made("xabyab", expression="s", sink=sink)
+    t = ConcolicStr.made("aba", expression="t", sink=sink)
 
     for limit in (-1, 1):
         s.rsplit(t, limit)

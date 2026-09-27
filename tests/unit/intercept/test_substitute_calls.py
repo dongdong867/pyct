@@ -19,6 +19,9 @@ from tests.unit.intercept.test_substitute import substituted
         ("builtins.int(x)", "__pyct_call__(builtins.int)(x)"),
         ("map(int, parts)", "__pyct_call__(map)(int, parts)"),
         ("map(builtins.float, parts)", "__pyct_call__(map)(builtins.float, parts)"),
+        ("type(x)", "__pyct_call__(type)(x)"),
+        ("type(x > 0) is bool", "__pyct_call__(type)(x > 0) is bool"),
+        ("builtins.type(x)", "__pyct_call__(builtins.type)(x)"),
         ("range(n)", "__pyct_call__(range)(n)"),
         ("range(a, b, -1)", "__pyct_call__(range)(a, b, -1)"),
         ("builtins.range(n)", "__pyct_call__(builtins.range)(n)"),
@@ -107,6 +110,13 @@ def test_an_operator_with_a_float_or_bool_literal_on_the_left_hands_its_right_si
         "b'abc'.find(s)",
         "f'{a}'.find(s)",
         "'abc'.__contains__(s)",
+        # `type` with other than one argument alone: three build a class, and the rest refuse
+        "type('C', (), {})",
+        "type(x, 1)",
+        "type(x, k=1)",
+        "type(object=x)",
+        "type(*args)",
+        "map(type, values)",
         # a method call whose name sits on a later line than the call starts
         "('abc'\n    .find(s))",
         "(builtins\n    .int(x))",

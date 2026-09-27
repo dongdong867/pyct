@@ -72,16 +72,16 @@ WRITES: dict[str, Callable[[object], None]] = {"set real": _set_real, "del real"
 def _tracked(value: float, sink: list[SinkItem]) -> object:
     """The tracked value of a plain int, bool or float, as `x` or the compare `x > 0`."""
     if isinstance(value, bool):
-        return ConcolicBool(value, expression=[">", "x", 0], sink=sink)
+        return ConcolicBool.made(value, expression=[">", "x", 0], sink=sink)
     if isinstance(value, float):
-        return ConcolicFloat(value, expression="x", sink=sink)
-    return ConcolicInt(value, expression="x", sink=sink)
+        return ConcolicFloat.made(value, expression="x", sink=sink)
+    return ConcolicInt.made(value, expression="x", sink=sink)
 
 
 @pytest.mark.parametrize("read", ITSELF.values(), ids=list(ITSELF))
 def test_an_int_hands_back_itself_and_records_nothing(read: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     # the value itself, as `+x` is, so the condition is kept and no node is added
     assert read(x) is x
@@ -90,7 +90,7 @@ def test_an_int_hands_back_itself_and_records_nothing(read: Callable[[int], obje
 
 def test_an_ints_ratio_is_itself_over_a_plain_one() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     numerator, denominator = x.as_integer_ratio()
 
@@ -102,7 +102,7 @@ def test_an_ints_ratio_is_itself_over_a_plain_one() -> None:
 @pytest.mark.parametrize("read", CONSTANTS.values(), ids=list(CONSTANTS))
 def test_an_int_reads_a_constant_plainly(read: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     answer = read(x)
 
@@ -114,7 +114,7 @@ def test_an_int_reads_a_constant_plainly(read: Callable[[int], object]) -> None:
 @pytest.mark.parametrize(("name", "call"), DOWNGRADED.items(), ids=list(DOWNGRADED))
 def test_an_int_downgrades_the_rest_by_name(name: str, call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     answer = call(x)
 
@@ -184,7 +184,7 @@ def test_every_classmethod_of_the_base_type_is_named_in_the_class_body(
 @pytest.mark.parametrize("build", FROM_BYTES.values(), ids=list(FROM_BYTES))
 def test_from_bytes_through_a_tracked_int_is_ints_own(build: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     answer = build(x)
 
@@ -195,7 +195,7 @@ def test_from_bytes_through_a_tracked_int_is_ints_own(build: Callable[[int], obj
 
 def test_from_bytes_through_a_tracked_bool_is_bools_own() -> None:
     sink: list[SinkItem] = []
-    b = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     # plain Python builds a bool here too: `True.from_bytes(b"\x01\x00", "big")` is True
     assert b.from_bytes(b"\x01\x00", "big") is True.from_bytes(b"\x01\x00", "big")
@@ -204,7 +204,7 @@ def test_from_bytes_through_a_tracked_bool_is_bools_own() -> None:
 
 def test_a_classmethod_raises_what_the_base_type_raises() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt.made(3, expression="x", sink=sink)
 
     with pytest.raises(ValueError) as plain:
         int.from_bytes(b"\x01", "middle")  # pyrefly: ignore[bad-argument-type]
@@ -219,7 +219,7 @@ def test_a_classmethod_raises_what_the_base_type_raises() -> None:
 @pytest.mark.parametrize("read", ITSELF.values(), ids=list(ITSELF))
 def test_a_bool_hands_back_the_int_it_is(read: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    b = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     answer = read(b)
 
@@ -232,7 +232,7 @@ def test_a_bool_hands_back_the_int_it_is(read: Callable[[int], object]) -> None:
 @pytest.mark.parametrize("read", CONSTANTS.values(), ids=list(CONSTANTS))
 def test_a_bool_reads_ints_constants_plainly(read: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    b = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     answer = read(b)
 
@@ -244,7 +244,7 @@ def test_a_bool_reads_ints_constants_plainly(read: Callable[[int], object]) -> N
 @pytest.mark.parametrize(("name", "call"), DOWNGRADED.items(), ids=list(DOWNGRADED))
 def test_a_bool_downgrades_what_an_int_does(name: str, call: Callable[[int], object]) -> None:
     sink: list[SinkItem] = []
-    b = ConcolicBool(True, expression=[">", "x", 0], sink=sink)
+    b = ConcolicBool.made(True, expression=[">", "x", 0], sink=sink)
 
     assert call(b) == call(True)
     assert sink == [Downgrade(name=name)]
@@ -253,7 +253,7 @@ def test_a_bool_downgrades_what_an_int_does(name: str, call: Callable[[int], obj
 @pytest.mark.parametrize("read", [lambda f: f.real, lambda f: f.conjugate()], ids=["real", "conj"])
 def test_a_float_hands_back_itself(read: Callable[[float], object]) -> None:
     sink: list[SinkItem] = []
-    f = ConcolicFloat(0.5, expression="f", sink=sink)
+    f = ConcolicFloat.made(0.5, expression="f", sink=sink)
 
     assert read(f) is f
     assert sink == []
@@ -261,7 +261,7 @@ def test_a_float_hands_back_itself(read: Callable[[float], object]) -> None:
 
 def test_a_floats_imag_is_a_plain_zero() -> None:
     sink: list[SinkItem] = []
-    f = ConcolicFloat(0.5, expression="f", sink=sink)
+    f = ConcolicFloat.made(0.5, expression="f", sink=sink)
 
     assert type(f.imag) is float and f.imag == 0.0
     assert sink == []
@@ -270,7 +270,7 @@ def test_a_floats_imag_is_a_plain_zero() -> None:
 @pytest.mark.parametrize("build", FROMHEX.values(), ids=list(FROMHEX))
 def test_fromhex_through_a_tracked_float_is_floats_own(build: Callable[[float], object]) -> None:
     sink: list[SinkItem] = []
-    f = ConcolicFloat(0.5, expression="f", sink=sink)
+    f = ConcolicFloat.made(0.5, expression="f", sink=sink)
 
     answer = build(f)
 
