@@ -386,3 +386,25 @@ def test_a_stop_the_import_catches_and_returns_from_still_ends_the_run(tmp_path:
     finally:
         with suppress(ProcessLookupError):
             os.killpg(process.pid, signal.SIGKILL)
+
+
+# a Ctrl-C after a SIGTERM reaches pyct's group, not its guard, which still ends the run;
+# forked or started fresh, pyct's process starts its guard with a different signal mask
+@pytest.mark.parametrize("thread", [False, True], ids=["forked", "fresh"])
+def test_a_ctrl_c_during_the_grace_leaves_the_guard_to_end_the_run(
+    thread: bool, tmp_path: Path
+) -> None:
+    pid_file = tmp_path / "pid"
+    env = site_in(tmp_path / "site", thread=thread)
+    with in_a_session(pid_file, SWALLOWS_AT_IMPORT, '{"x": 0}', env=env) as process:
+        pid_written_to(pid_file, process)
+        sent = time.monotonic()
+        os.kill(process.pid, signal.SIGTERM)
+        time.sleep(0.3)
+        os.killpg(process.pid, signal.SIGINT)
+        process.wait(timeout=10)
+        took = time.monotonic() - sent
+
+        assert process.returncode == -signal.SIGTERM
+        assert took < SWALLOWED_ENDED_WITHIN, took
+        assert group_ended(process.pid)
