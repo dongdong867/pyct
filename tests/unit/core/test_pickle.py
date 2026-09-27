@@ -18,10 +18,10 @@ from pyct.core.strs import ConcolicStr
 
 # each concolic type built on a sink: how to make one, and the plain value Python's own holds
 TRACKED: dict[str, tuple[Callable[[list[SinkItem]], object], object]] = {
-    "a tracked int": (lambda sink: ConcolicInt(3, expression="n", sink=sink), 3),
-    "a compare's answer": (lambda sink: ConcolicInt(3, expression="n", sink=sink) > 0, True),
-    "a tracked str": (lambda sink: ConcolicStr("ab", expression="s", sink=sink), "ab"),
-    "a tracked float": (lambda sink: ConcolicFloat(2.5, expression="x", sink=sink), 2.5),
+    "a tracked int": (lambda sink: ConcolicInt.made(3, expression="n", sink=sink), 3),
+    "a compare's answer": (lambda sink: ConcolicInt.made(3, expression="n", sink=sink) > 0, True),
+    "a tracked str": (lambda sink: ConcolicStr.made("ab", expression="s", sink=sink), "ab"),
+    "a tracked float": (lambda sink: ConcolicFloat.made(2.5, expression="x", sink=sink), 2.5),
 }
 PROTOCOLS = range(pickle.HIGHEST_PROTOCOL + 1)
 
@@ -59,8 +59,8 @@ def test_multiprocessing_pickles_the_plain_value(
 
 def test_each_tracked_value_in_a_container_is_one_downgrade() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
-    s = ConcolicStr("ab", expression="s", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
+    s = ConcolicStr.made("ab", expression="s", sink=sink)
 
     # n and s each appear twice, and pickle writes a value once and refers back to it, so
     # three values are written: n, s and the compare's answer
@@ -73,7 +73,7 @@ def test_each_tracked_value_in_a_container_is_one_downgrade() -> None:
 
 def test_the_pickled_value_keeps_its_condition() -> None:
     sink: list[SinkItem] = []
-    n = ConcolicInt(3, expression="n", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
 
     pickle.dumps(n)
     bigger = n > 10

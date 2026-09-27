@@ -25,7 +25,7 @@ def python_raise(operation: object, *args: object) -> tuple[type, str]:
 def test_the_length_of_a_tracked_string_is_a_tracked_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
 
-    size = strs.length(ConcolicStr("abc", expression="s", sink=sink))
+    size = strs.length(ConcolicStr.made("abc", expression="s", sink=sink))
 
     assert type(size) is ConcolicInt
     assert int.__int__(size) == 3
@@ -37,7 +37,7 @@ def test_the_length_of_a_tracked_string_is_a_tracked_int_and_records_nothing() -
 def test_the_code_of_one_character_is_a_tracked_int_past_its_one_character_fork() -> None:
     sink: list[SinkItem] = []
 
-    code = codes.code(ConcolicStr("A", expression="c", sink=sink))
+    code = codes.code(ConcolicStr.made("A", expression="c", sink=sink))
 
     assert type(code) is ConcolicInt
     assert int.__int__(code) == 65
@@ -52,7 +52,7 @@ def test_the_code_of_anything_but_one_character_records_its_fork_and_raises_as_p
     sink: list[SinkItem] = []
 
     with pytest.raises(TypeError) as caught:
-        codes.code(ConcolicStr(value, expression="c", sink=sink))
+        codes.code(ConcolicStr.made(value, expression="c", sink=sink))
 
     assert (TypeError, str(caught.value)) == python_raise(ord, value)
     assert raised_by_target(caught.value)
@@ -62,7 +62,7 @@ def test_the_code_of_anything_but_one_character_records_its_fork_and_raises_as_p
 def test_the_character_of_a_code_is_a_tracked_string_past_its_two_range_forks() -> None:
     sink: list[SinkItem] = []
 
-    character = codes.character(ConcolicInt(122, expression="n", sink=sink))
+    character = codes.character(ConcolicInt.made(122, expression="n", sink=sink))
 
     assert type(character) is ConcolicStr
     assert str.__str__(character) == "z"
@@ -74,7 +74,7 @@ def test_the_character_of_a_code_is_a_tracked_string_past_its_two_range_forks() 
 def test_the_character_of_each_end_of_the_range_is_python_s(value: int) -> None:
     sink: list[SinkItem] = []
 
-    character = codes.character(ConcolicInt(value, expression="n", sink=sink))
+    character = codes.character(ConcolicInt.made(value, expression="n", sink=sink))
 
     assert str.__str__(character) == chr(value)
     assert [taken for _, taken in sides(sink)] == [True, True]
@@ -90,7 +90,7 @@ def test_a_code_out_of_range_records_the_fork_it_fails_and_raises_as_python_does
     sink: list[SinkItem] = []
 
     with pytest.raises(ValueError) as caught:
-        codes.character(ConcolicInt(value, expression="n", sink=sink))
+        codes.character(ConcolicInt.made(value, expression="n", sink=sink))
 
     assert (ValueError, str(caught.value)) == python_raise(chr, value)
     assert raised_by_target(caught.value)
@@ -99,13 +99,13 @@ def test_a_code_out_of_range_records_the_fork_it_fails_and_raises_as_python_does
 
 def test_the_code_of_a_character_an_index_or_a_walk_hands_out_records_no_length_fork() -> None:
     sink: list[SinkItem] = []
-    s = ConcolicStr("ae", expression="s", sink=sink)
+    s = ConcolicStr.made("ae", expression="s", sink=sink)
     indexed, walked = s[1], next(iter(s))
     sink.clear()
 
     codes.code(indexed)  # pyrefly: ignore[bad-argument-type]
     codes.code(walked)
-    codes.code(codes.character(ConcolicInt(98, expression="n", sink=sink)))
+    codes.code(codes.character(ConcolicInt.made(98, expression="n", sink=sink)))
 
     assert [expression for expression, _ in sides(sink)] == [[">=", "n", 0], ["<=", "n", 1114111]]
 
@@ -120,6 +120,6 @@ def test_the_code_of_any_other_string_records_its_length_fork_whatever_its_shape
     sink: list[SinkItem] = []
 
     with pytest.raises(TypeError):
-        codes.code(ConcolicStr("ab", expression=expression, sink=sink))
+        codes.code(ConcolicStr.made("ab", expression=expression, sink=sink))
 
     assert sides(sink) == [(["==", ["len", expression], 1], False)]

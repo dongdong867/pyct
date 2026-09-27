@@ -139,8 +139,8 @@ def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]
     """A tracked value's ``__reduce_ex__`` and ``__reduce__``: its plain value, loading as ``kind``.
 
     pickle asks a tracked value for ``__reduce_ex__`` at every protocol, so
-    no pickle rebuilds a concolic type through a ``__new__`` that needs an
-    expression and a sink, and no pickle holds the sink. A pickle can load in
+    no pickle rebuilds a concolic type, whose class called with a value
+    builds a plain one, and no pickle holds the sink. A pickle can load in
     another process or a later input, where the condition does not apply, so
     writing one is a downgrade named by the method Python called, and the
     value that was pickled keeps its condition (pickle-holds-the-plain-value).
@@ -163,6 +163,49 @@ def _written(value: _Sinked, held: object, name: str) -> Pickled:
     """Record writing a pickle as a downgrade, and answer with its plain value and type."""
     value.sink.append(Downgrade(name=name))
     return type(held), (held,)
+
+
+# each tracked class and the base type Python's own value has: the one table of them, its rows
+# written by `pyct.core.bases` once every tracked class exists. A tracked value reports its row
+# as its class, and its class called outside pyct's construction builds that type's value
+BASES: dict[type, type] = {}
+# the same rows by the tracked class's identity, for code that meets any class, as the `type`
+# router does: reading a class's identity runs none of its code, where hashing it may
+BASES_BY_ID: dict[int, type] = {}
+
+# what each base type is called with for a plain value of its own, when not with nothing
+_EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
+
+
+def _base_class(self: object) -> type:
+    """The class a tracked value reports: its base type, as Python's own value reads it."""
+    return BASES[type(self)]
+
+
+def _assigned_class(self: object, kind: object) -> None:
+    """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
+    error, in its words, as it refuses every class for an int, float, str, bool, list or range.
+    """
+    base = BASES[type(self)]
+    own(setattr, base(*_EMPTY.get(base, ())), "__class__", kind)
+
+
+# a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
+# when the real type does not match, and `functools.singledispatch` and a class pattern read it,
+# so each answers as for the plain value (tracked-values-report-their-base-type-as-their-class).
+# It reads the class and never the value, so it records nothing. `type(v)` still reads the real
+# class, which is how pyct tells a tracked value apart
+REPORTED_CLASS = property(_base_class, _assigned_class)
+
+
+def as_base(cls: type, /, *args: object, **kwargs: object) -> Any:
+    """A tracked class called outside pyct's construction: its base type's own plain value.
+
+    Code that calls the class a value reports, as `type(v)(5)` does outside
+    the target's package, gets what the base type builds from the same
+    arguments, or its raise.
+    """
+    return own(BASES[cls], *args, **kwargs)
 
 
 def built_plainly(kind: type, name: str) -> Any:

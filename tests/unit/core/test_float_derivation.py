@@ -54,7 +54,7 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
 
 def test_text_conversion_is_a_downgrade_though_float_inherits_it() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     assert str(x) == "2.5"
     assert sink == [Downgrade(name="__str__")]
@@ -62,7 +62,7 @@ def test_text_conversion_is_a_downgrade_though_float_inherits_it() -> None:
 
 def test_the_object_plumbing_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     assert repr(x) == "2.5"
     assert hash(x) == hash(2.5)
@@ -73,7 +73,7 @@ def test_the_object_plumbing_records_nothing() -> None:
 
 def test_a_copy_is_the_value_itself() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(2.5, expression="x", sink=sink)
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
     assert copy.copy(x) is x
     assert copy.deepcopy(x) is x
@@ -82,7 +82,7 @@ def test_a_copy_is_the_value_itself() -> None:
 
 def test_a_downgrade_that_raises_is_the_targets_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicFloat(math.nan, expression="x", sink=sink)
+    x = ConcolicFloat.made(math.nan, expression="x", sink=sink)
 
     with pytest.raises(ValueError) as raised:
         int(x)

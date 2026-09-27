@@ -55,12 +55,12 @@ class _Tracker:
 
     def scalar(self, value: int | float | str, place: Place) -> object:
         if isinstance(value, str):
-            return ConcolicStr(value, expression=place.access, sink=self.sink)
+            return ConcolicStr.made(value, expression=place.access, sink=self.sink)
         if isinstance(value, float):
-            return ConcolicFloat(value, expression=place.access, sink=self.sink)
+            return ConcolicFloat.made(value, expression=place.access, sink=self.sink)
         if isinstance(value, bool):
-            return ConcolicBool(value, expression=place.access, sink=self.sink)
-        return ConcolicInt(value, expression=place.access, sink=self.sink)
+            return ConcolicBool.made(value, expression=place.access, sink=self.sink)
+        return ConcolicInt.made(value, expression=place.access, sink=self.sink)
 
     def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
         made = ConcolicList.made([None] * len(value), place.access, self.sink)

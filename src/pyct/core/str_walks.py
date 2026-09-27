@@ -33,7 +33,7 @@ def walk(s: ConcolicStr) -> Iterator[ConcolicStr]:
     measured: Expression = ["len", s.expression]
     at = 0
     while forked(s.sink, [">", measured, at], at < length):
-        character = type(s)(
+        character = type(s).made(
             own(str.__getitem__, s, at), expression=["[]", s.expression, at], sink=s.sink
         )
         # one character on every pass: the pass's fork says position i exists
