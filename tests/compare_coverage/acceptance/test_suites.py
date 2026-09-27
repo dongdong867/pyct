@@ -88,6 +88,8 @@ class EchoSide:
 
 
 @pytest.mark.legacy
+# the first legacy test to run builds the checkout, as the conftest says
+@pytest.mark.timeout(180)
 def test_runs_every_set(legacy_checkout: Path) -> None:
     """compare-coverage-against-legacy-runs-every-set"""
     run, _ = prepare(["--legacy", str(legacy_checkout)], os.environ)
@@ -104,6 +106,8 @@ def test_runs_every_set(legacy_checkout: Path) -> None:
 
 
 @pytest.mark.legacy
+# the first legacy test to run builds the checkout, as the conftest says
+@pytest.mark.timeout(180)
 def test_names_library_versions(legacy_checkout: Path) -> None:
     """compare-coverage-against-legacy-names-library-versions"""
     result = run_checker(
