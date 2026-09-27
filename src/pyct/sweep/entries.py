@@ -119,7 +119,7 @@ class _Package:
     def __init__(self, name: str) -> None:
         self.name = name
         self.files = _files(name)
-        self.modules = len(sys.modules)
+        self.module_count = len(sys.modules)
         self.holders: dict[str, dict[int, list[str]]] = {}
 
     def entries(self, module: ModuleType, found_in: str, name: str) -> list[Entry]:
@@ -186,9 +186,9 @@ class _Package:
         """
         if not isinstance(file, str):
             return None
-        if len(sys.modules) != self.modules:
+        if len(sys.modules) != self.module_count:
             self.files = _files(self.name)
-            self.modules = len(sys.modules)
+            self.module_count = len(sys.modules)
         return self.files.get(os.path.realpath(file))
 
     def _name_in(self, home: str, target: object) -> str | None:
