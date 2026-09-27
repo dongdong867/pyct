@@ -6,6 +6,7 @@ pyct's own. The thread tests start a thread before pyct runs, as a host's instru
 does from ``sitecustomize``.
 """
 
+import json
 import os
 import signal
 import subprocess
@@ -33,6 +34,7 @@ CRASHES = "targets.load.crashes_at_import"
 SEGFAULT = "targets.isolate.segfault::fault"
 SWALLOWS_AT_IMPORT = "targets.load.swallows_stops_at_import::f"
 SWALLOWS_IN_A_CALL = "targets.load.swallows_stops_in_a_call::f"
+TELLS_ITS_PATH = "targets.load.tells_its_path::f"
 # how soon a run whose target catches the stop must have ended: the stop's grace, and a margin
 SWALLOWED_ENDED_WITHIN = STOP_GRACE + 1.5
 # how soon after the signal every process of the run must have ended
@@ -161,18 +163,28 @@ def test_a_ctrl_c_during_an_import_ends_pyct_once(tmp_path: Path) -> None:
         assert "cannot import" not in stderr
 
 
-def with_a_thread_at_entry(tmp_path: Path, *argv: str) -> subprocess.CompletedProcess[str]:
-    """``pyct run`` in an interpreter that starts a thread before pyct runs.
+# a sitecustomize that starts a thread, as a host's instrumentation does
+THREAD_AT_ENTRY = (
+    "import threading, time\n"
+    "threading.Thread(target=time.sleep, args=(3600,), daemon=True).start()\n"
+)
 
+
+def site_in(site: Path, *, thread: bool) -> dict[str, str]:
+    """An environment whose interpreter runs ``site``'s sitecustomize before pyct runs.
+
+    It starts a thread when ``thread`` says so, and does nothing otherwise.
     Python's warnings are on, so a fork of a threaded process would say so.
     """
-    (tmp_path / "sitecustomize.py").write_text(
-        "import threading, time\n"
-        "threading.Thread(target=time.sleep, args=(3600,), daemon=True).start()\n"
-    )
+    site.mkdir(exist_ok=True)
+    (site / "sitecustomize.py").write_text(THREAD_AT_ENTRY if thread else "")
     env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
-    env["PYTHONPATH"] = str(tmp_path)
+    env["PYTHONPATH"] = str(site)
     env["PYTHONWARNINGS"] = "default"
+    return env
+
+
+def run_in(env: dict[str, str], *argv: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-P", "-m", "pyct", "run", *argv],
         cwd=REPO_ROOT,
@@ -182,6 +194,11 @@ def with_a_thread_at_entry(tmp_path: Path, *argv: str) -> subprocess.CompletedPr
         check=False,
         timeout=30,
     )
+
+
+def with_a_thread_at_entry(tmp_path: Path, *argv: str) -> subprocess.CompletedProcess[str]:
+    """``pyct run`` in an interpreter that starts a thread before pyct runs."""
+    return run_in(site_in(tmp_path, thread=True), *argv)
 
 
 # a process that runs other threads is never forked: pyct's process starts fresh instead
@@ -273,3 +290,20 @@ def test_a_sigkill_to_pyct_ends_an_import_that_catches_the_stop(tmp_path: Path) 
 
         assert group_ended(process.pid, within=SWALLOWED_ENDED_WITHIN)
         assert not is_running(importing)
+
+
+# pyct's process started fresh gives the target the import path a forked one gives it
+def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
+    tmp_path: Path,
+) -> None:
+    paths: dict[bool, object] = {}
+    for thread in (False, True):
+        env = site_in(tmp_path / "site", thread=thread)
+        told = tmp_path / f"path-{thread}"
+        env["PYCT_TEST_PATH"] = str(told)
+
+        result = run_in(env, TELLS_ITS_PATH, '{"x": 0}')
+
+        assert result.returncode == 0, result.stderr
+        paths[thread] = json.loads(told.read_text())
+    assert paths[True] == paths[False]

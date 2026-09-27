@@ -71,10 +71,12 @@ _NOTED = _PASSED_ON | {signal.SIGINT}
 
 # names the page's and the lifeline's descriptors to a command's process started fresh
 _HANDED = "PYCT_WATCHED_BY"
-# what a command's process started fresh runs: the pyct this process runs, as ``python -m pyct``
+# what a command's process started fresh runs: the pyct this process runs, as ``python -m pyct``.
+# pyct's root goes on the import path only until pyct is imported, so the target's path is the
+# one a forked command's process gives it
 _BOOT = (
-    "import runpy, sys; sys.path.insert(0, sys.argv.pop(1)); "
-    "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
+    "import runpy, sys; root = sys.argv.pop(1); sys.path.insert(0, root); import pyct; "
+    "sys.path.remove(root); runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
 _PYCT_ROOT = str(Path(PYCT_DIR).parent)
 # the signals whose default action writes a core, as POSIX lists them, and SIGEMT where the
