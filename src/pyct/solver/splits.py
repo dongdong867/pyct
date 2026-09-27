@@ -169,7 +169,9 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
     )
     chosen = f'{opened}""{")" * len(candidates)}'
     bound = [("r!", f"(str.rev {term})"), *bindings, ("n!", count)]
-    return _let(bound, chosen), _let(bound, f"(> n! {index})")
+    # on a separator there is always a first piece, and asserting so would walk the string again
+    there = "true" if separator is not None and index == 0 else _let(bound, f"(> n! {index})")
+    return _let(bound, chosen), there
 
 
 def _unwalked(term: str, separator: str | None, limit: int, index: int) -> Piece:

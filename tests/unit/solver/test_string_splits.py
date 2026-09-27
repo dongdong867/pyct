@@ -149,8 +149,17 @@ def test_a_piece_asserts_once_that_the_string_has_it() -> None:
     assert "str.substr |arg.s| 0 2" not in "\n".join(lines)
 
 
-def test_a_piece_the_string_always_has_asserts_nothing() -> None:
-    prefix = (fork(["==", ["[]", ["partition", "s", "','"], 2], "'a'"], taken=True),)
+# pieces every string has: partition's three, and the first of a split or rsplit on a separator
+ALWAYS_THERE: dict[str, Expression] = {
+    "partition": ["[]", ["partition", "s", "','"], 2],
+    "split": ["[]", ["split", "s", "','", 2], 0],
+    "rsplit": ["[]", ["rsplit", "s", "','", 2], 0],
+}
+
+
+@pytest.mark.parametrize("piece", ALWAYS_THERE.values(), ids=list(ALWAYS_THERE))
+def test_a_piece_the_string_always_has_asserts_nothing(piece: Expression) -> None:
+    prefix = (fork(["==", piece, "'a'"], taken=True),)
 
     lines = render(prefix, {"s": str}).splitlines()
 
