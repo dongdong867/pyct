@@ -1,74 +1,153 @@
 """Turn a seed dict into the arguments the target is called with."""
 
-import copy
 import json
-from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass
-from enum import Enum
-from typing import Any, TypeGuard
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import TypeGuard
 
+from pyct.binding.annotations import Check, Items
+from pyct.binding.shapes import ListShape, shaped
+from pyct.binding.walk import Place, Walk
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.list_state import kinds_of
+from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
-
-# what a walk makes of one value bind tracks, given the access that reaches it
-type AtLeaf = Callable[[int | float | str, Expression], object]
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     """Give every int and str in the seed, at any depth, and every float argument, its access
-    and the sink.
+    and the sink, and every list the walk names its form.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
     <key>]`` per step, so ``config["server"]["port"]`` is
     ``["[]", ["[]", "config", "'server'"], "'port'"]``. A bool is an int to
-    Python but not a number to bind: it has no ``<`` worth tracking.
+    Python but not a number to bind: it has no ``<`` worth tracking. A list the
+    walk names is a tracked list whose form is its access, so its length and
+    its changes are followed too.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
     under, and every other value deepcopy can copy is copied, so a change the
     target makes to a copy reaches neither the seed nor a later input. A
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
-    (see ``_Walk``).
+    (see ``Walk``).
     """
-    return walked(seed, lambda value, access: _tracked(value, access, sink))
+    tracker = _Tracker(sink)
+    args = Walk(tracker).rebuilt(seed)
+    # each list's items are placed after the list is made, so what pyct saw of them is noted
+    # once the walk is done, before the target can touch any
+    for made in tracker.lists:
+        made.shadow = made.storage()
+        made.kinds = kinds_of(made.shadow)
+    return args
+
+
+class _Tracker:
+    """bind's visitor: a tracked int or str for each value, a tracked list for each list."""
+
+    def __init__(self, sink: BranchSink) -> None:
+        self.sink = sink
+        self.lists: list[ConcolicList] = []
+
+    def scalar(self, value: int | float | str, place: Place) -> object:
+        if isinstance(value, str):
+            return ConcolicStr(value, expression=place.access, sink=self.sink)
+        if isinstance(value, float):
+            return ConcolicFloat(value, expression=place.access, sink=self.sink)
+        return ConcolicInt(value, expression=place.access, sink=self.sink)
+
+    def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
+        made = ConcolicList.made([None] * len(value), place.access, self.sink)
+        self.lists.append(made)
+        return made, list(value)
 
 
 @dataclass(frozen=True)
 class Seed:
-    """A run's seed as the walk copied it, and the values bind tracks in it.
+    """An input's arguments as the walk copied them, and what the solver may answer about.
 
-    Made once, before any input runs. The target is never called with the
-    dicts and lists here, which hold every leaf: ``bind`` rebuilds them for
-    each call. So they and the leaves stay as the walk made them for the
-    whole run, and every solve and every answer reads them rather than
-    walking the caller's seed again.
+    ``leaves`` names each int and str the solver declares on its own: a parameter, or a value
+    inside a dict. ``lists`` names each tracked list the solver declares as a length and its
+    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``checks``
+    is what each parameter's annotation asks of it, which says the kind of an item the solver
+    adds to a list with none to go by, for this input and each answer made from it. The target
+    is never called with the dicts and lists here: ``bind`` rebuilds them for each call. So
+    they stay as the walk made them, and every solve and every answer on the input's path reads
+    them rather than walking the input again.
     """
 
     args: Mapping[str, object]
     leaves: Mapping[str, type]
+    lists: Mapping[str, ListShape] = field(default_factory=dict)
+    checks: Mapping[str, Check] = field(default_factory=dict)
+    # each leaf's value in this input, which settles how a list the path changed was cut
+    values: Mapping[str, object] = field(default_factory=dict)
 
     @classmethod
-    def of(cls, args: Mapping[str, object]) -> "Seed":
-        """The seed copied, and its leaves noted, in one walk."""
-        found: dict[str, type] = {}
+    def of(cls, args: Mapping[str, object], checks: Mapping[str, Check] | None = None) -> "Seed":
+        """The arguments copied, and their leaves and lists noted, in one walk."""
+        noted = Noted()
+        copied = Walk(noted).rebuilt(args, checks)
+        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values)
 
-        def note(value: int | float | str, access: Expression) -> object:
-            found[leaf_name(access)] = type(value)
-            return value
 
-        return cls(args=walked(args, note), leaves=found)
+class Noted:
+    """Seed's visitor: each leaf and list noted by name, each list's shape made after the walk."""
+
+    def __init__(self) -> None:
+        # every int and str in walk order, and those the solver declares on their own
+        self.named: dict[str, type] = {}
+        self.leaves: dict[str, type] = {}
+        self.values: dict[str, object] = {}
+        # each tracked list in the order the walk made it: its copy, its name or the list and
+        # position it is a row of, and what its annotation asks of each item
+        self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
+
+    def scalar(self, value: int | float | str, place: Place) -> object:
+        return self.noted(value, place)
+
+    def noted(self, value: object, place: Place) -> object:
+        """Note a tracked value by its name and type, and hand it back to go where it was."""
+        name = leaf_name(place.access)
+        self.named[name] = type(value)
+        if not place.in_list:
+            self.leaves[name] = type(value)
+            self.values[name] = value
+        return value
+
+    def listed(self, value: list[object], place: Place) -> tuple[list[object], list[object]]:
+        made: list[object] = [None] * len(value)
+        where = (id(place.into), place.slot) if place.in_list else leaf_name(place.access)
+        check = place.check
+        each = check.each if isinstance(check, Items) and check.kind is list else None
+        self.made.append((made, where, each))
+        return made, list(value)
+
+    def shapes(self) -> dict[str, ListShape]:
+        """Each list's shape, its rows first: the walk made every row after its list."""
+        rows: dict[int, dict[int, ListShape]] = {}
+        named: dict[str, ListShape] = {}
+        for made, where, each in reversed(self.made):
+            shape = shaped(made, rows.pop(id(made), {}), each)
+            if isinstance(where, str):
+                named[where] = shape
+            else:
+                rows.setdefault(where[0], {})[where[1]] = shape
+        return dict(reversed(named.items()))
 
 
 def leaves(seed: Mapping[str, object]) -> dict[str, type]:
-    """The name and type of every value ``bind`` tracks, in the seed's order.
+    """The name and type of every int and str ``bind`` tracks, in the seed's order.
 
-    This is what the solver is allowed to answer about: nothing else in the
-    seed carries a condition back. Each is named as ``leaf_name`` names it.
+    Each is named as ``leaf_name`` names it: the leaves the solver declares and the items of
+    the lists it declares, every value a fork can name by its access.
     """
-    return dict(Seed.of(seed).leaves)
+    noted = Noted()
+    Walk(noted).rebuilt(seed)
+    return noted.named
 
 
 # the head of each step an access takes to a value inside an argument: `["[]", container, key]`
@@ -111,192 +190,3 @@ def leaf_name(access: Expression) -> str:
     parameter whose name is an identifier.
     """
     return access if isinstance(access, str) else json.dumps(access)
-
-
-def walked(seed: Mapping[str, object], at_leaf: AtLeaf) -> dict[str, object]:
-    """The seed rebuilt, with ``at_leaf``'s answer in place of every value bind tracks.
-
-    bind, leaves and the model all read this one walk, so they cannot
-    disagree about which values are tracked or what each is named.
-    """
-    return _Walk(at_leaf).rebuilt(seed)
-
-
-def _binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
-    """Whether bind tracks this value at this access: the one rule the walk reads.
-
-    A float is tracked as an argument's own value. One inside a dict or a
-    list passes through plain until run-with-nested-arguments follows it.
-    """
-    if isinstance(value, float):
-        return isinstance(access, str)
-    return isinstance(value, int | str) and not isinstance(value, bool)
-
-
-# the types whose values the walk hands on as they are: nothing can change one
-_ATOMIC: frozenset[type] = frozenset({int, float, str, bool, type(None)})
-
-# one value still to place: the value, its access, and the container and slot its copy goes in.
-# The access is None under a key no access can name. The slot is an index for a list, and for a
-# dict the copy's own key (see _items)
-type _Pending = tuple[object, Expression | None, dict[Any, object] | list[object], Any]
-
-
-class _Walk:
-    """One walk of a seed, in seed order, depth first, and never recursive.
-
-    A list of what is left to place stands in for Python's call stack, so a
-    seed nested past Python's recursion limit is walked like any other. Each
-    dict and list the walk rebuilds is remembered by the identity of the
-    seed's own, so one reached again, by a second path or from inside
-    itself, is the same copy. Its values are named by the first path in seed
-    order that names anything: a copy first reached under a key no access
-    can name is walked again, into the same copy, when a path that names it
-    reaches it. Each container is walked at most twice, so the walk ends.
-
-    Any other value is copied by ``copy.deepcopy`` with a memo that reads the
-    walk's copies, so a list reached through a tuple, say, is the walk's copy
-    of it there too. A value deepcopy cannot copy stays as it came.
-    """
-
-    def __init__(self, at_leaf: AtLeaf) -> None:
-        self._at_leaf = at_leaf
-        # each copy by the identity of the seed's value, which is kept alive beside it so its
-        # identity is not reused, and the containers whose copies a path names. The copies are
-        # what deepcopy finds before it copies a value again
-        self._copies: dict[int, Any] = {}
-        self._kept: list[object] = []
-        self._named: set[int] = set()
-        self._pending: list[_Pending] = []
-
-    def rebuilt(self, seed: Mapping[str, object]) -> dict[str, object]:
-        """The seed as the walk rebuilds it, one parameter per key."""
-        rebuilt: dict[str, object] = dict.fromkeys(seed)
-        self._later((value, name, rebuilt, name) for name, value in seed.items())
-        while self._pending:
-            value, access, into, slot = self._pending.pop()
-            into[slot] = self._placed(value, access)
-        return rebuilt
-
-    def _later(self, values: Iterable[_Pending]) -> None:
-        """Queue values to place in the order given: the stack pops the last one first."""
-        self._pending.extend(reversed(list(values)))
-
-    def _placed(self, value: object, access: Expression | None) -> object:
-        """What goes where ``value`` was: its tracked form, its copy, or the value itself.
-
-        A dict and a list, and not their subclasses, are copied, and their
-        values queued. A value with no access is never tracked, and neither is
-        anything under it.
-        """
-        if access is not None and _binds(value, access):
-            return self._at_leaf(value, access)
-        if type(value) in _ATOMIC:
-            return value
-        if type(value) is not list and type(value) is not dict:
-            return self._deep_copy(value)
-        made = self._copies.get(id(value))
-        if made is None:
-            made = [None] * len(value) if isinstance(value, list) else dict.fromkeys(value)
-            self._copies[id(value)] = made
-            self._kept.append(value)
-        elif access is None or id(value) in self._named:
-            return made
-        if access is not None:
-            self._named.add(id(value))
-        self._later(_items(value, access, made))
-        return made
-
-    def _deep_copy(self, value: object) -> object:
-        """A copy of a value the walk does not rebuild, or the value itself when it has none.
-
-        deepcopy runs any ``__deepcopy__`` or pickling hook a value brings,
-        and one may refuse, a lock say: that value reaches the target as it
-        came. deepcopy records a copy before it fills it, so it copies into a
-        scratch memo over the walk's own, and only a copy that finishes joins
-        the walk's: a refused one leaves no half-made copy behind.
-        """
-        scratch = _Scratch(self._copies)
-        try:
-            copied = copy.deepcopy(value, scratch)
-        except Exception:
-            return value
-        # deepcopy keeps what it copied alive in a list under the memo's own identity, which the
-        # scratch memo gives up when it goes, so the walk keeps them instead
-        self._kept.extend(scratch.pop(id(scratch), []))
-        self._copies.update(scratch)
-        return copied
-
-
-class _Scratch(dict[int, Any]):
-    """deepcopy's memo for one copy: what it copies now, read over what the walk already has.
-
-    deepcopy looks a value up with ``get``, and a tuple's copy with an
-    index, and records each copy by setting it. So this dict holds only the
-    new copies, and the walk's stay as they were until the copy finishes.
-    """
-
-    def __init__(self, under: Mapping[int, Any]) -> None:
-        super().__init__()
-        self._under = under
-
-    def get(self, key: int, default: Any = None) -> Any:
-        return super().get(key, self._under.get(key, default))
-
-    def __missing__(self, key: int) -> Any:
-        return self._under[key]
-
-
-def _items(
-    value: list[object] | dict[object, object], access: Expression | None, into: Any
-) -> Iterable[_Pending]:
-    """A container's values to place into its copy, each with the access one step in.
-
-    A dict's value is named by its key when the key can be written as a
-    literal (see ``_key``), and by nothing otherwise. It goes in under the
-    copy's own key, in the same order: a copy deepcopy made holds copies of
-    the seed's keys, and a key equal only to itself would go in twice.
-    """
-    if isinstance(value, list):
-        return ((item, _step(access, i), into, i) for i, item in enumerate(value))
-    pairs = zip(value.items(), into, strict=True)
-    return ((item, _step(access, _key(key)), into, slot) for (key, item), slot in pairs)
-
-
-class _Unnamed(Enum):
-    """What ``_key`` answers for a key no access can write, apart from every literal."""
-
-    KEY = "a key no access can name"
-
-
-def _step(container: Expression | None, key: Expression | _Unnamed) -> Expression | None:
-    """The access one step further in, ``["[]", container, key]``.
-
-    None when the container has no access, or the key cannot be written.
-    """
-    if container is None or key is _Unnamed.KEY:
-        return None
-    return ["[]", container, key]
-
-
-def _key(key: object) -> Expression | _Unnamed:
-    """A key as an access writes it: a str in its Python quotes, an int as itself.
-
-    Any other key is ``_Unnamed.KEY``: no access names the value under it.
-    The answer is apart from every literal, so a key written as ``null`` can
-    join them later.
-    """
-    if isinstance(key, str):
-        # str's own repr: a key of the target's own str subclass may print itself another way
-        return str.__repr__(key)
-    if isinstance(key, int) and not isinstance(key, bool):
-        return int(key)
-    return _Unnamed.KEY
-
-
-def _tracked(value: int | float | str, access: Expression, sink: BranchSink) -> object:
-    if isinstance(value, str):
-        return ConcolicStr(value, expression=access, sink=sink)
-    if isinstance(value, float):
-        return ConcolicFloat(value, expression=access, sink=sink)
-    return ConcolicInt(value, expression=access, sink=sink)

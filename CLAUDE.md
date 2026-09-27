@@ -58,6 +58,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
     ├── ints/         a follow story's fixtures, under the type it follows
     ├── strs/         the same for strings
     ├── floats/       the same for floats
+    ├── lists/        the same for lists as they change. dicts/ next
     ├── nested/       values inside an argument: a dict's and a list's
     └── sweep/        packages and modules `pyct sweep` lists and runs
 ```

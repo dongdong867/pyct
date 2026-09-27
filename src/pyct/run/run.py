@@ -10,6 +10,7 @@ from typing import assert_never
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
+from pyct.binding.resolve import checked_annotations
 from pyct.branches.compare import compare
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
@@ -104,12 +105,26 @@ class Bounds:
 
 
 @dataclass(frozen=True)
+class Ran:
+    """An input that ran: its record, and its arguments as the walk copied them, which a later
+    answer on its path starts from."""
+
+    record: InputRecord
+    seed: Seed
+
+
+@dataclass(frozen=True)
 class Attempt:
     """What one pass of the loop produced: an input, or a miss, or the reason to stop."""
 
     stop: Stop | None = None
-    record: InputRecord | None = None
+    ran: Ran | None = None
     miss: Miss | None = None
+
+    @property
+    def record(self) -> InputRecord | None:
+        """The record of the input that ran, if one did."""
+        return None if self.ran is None else self.ran.record
 
 
 @dataclass(frozen=True)
@@ -144,7 +159,8 @@ def run(
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())
     bounds = Bounds.of(limits)
-    looped = _inputs(inputs, seed, bounds, _Told(scope=scope, tell=tell))
+    copied = Seed.of(seed, checked_annotations(target.signature, target.fn))
+    looped = _inputs(inputs, copied, bounds, _Told(scope=scope, tell=tell))
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -156,7 +172,7 @@ def run(
     )
 
 
-def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told) -> Loop:
+def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
     """The seed and every input after it, what the solver missed, and why they stopped.
 
     A seed whose process cannot start stops the run before any input.
@@ -166,7 +182,6 @@ def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told)
     that copy, so no input changes the leaves the solver reads or the copies
     a later input starts from.
     """
-    copied = Seed.of(seed)
     try:
         seeded = _record_of(copied.args, call(copied.args, bounds.until))
     except InputStartError as error:
@@ -219,23 +234,28 @@ def _loop(
     covered = [seeded.covered_lines & told.scope.lines]
     tree = Tree()
     tree.add(seeded.forks)
+    # each input as the walk copied it, by its path's number: a solver answer starts from the
+    # input whose path it extends, not from the seed (see ``Plan.path``)
+    inputs = {0: seed}
     while True:
-        attempt = _attempt(call, seed, tree, bounds, covered)
+        _let_go(inputs, tree.oldest)
+        attempt = _attempt(call, inputs, tree, bounds, covered)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop)
         if attempt.miss is not None:
             misses.append(attempt.miss)
             told.miss(attempt.miss)
-        if attempt.record is not None:
-            records.append(attempt.record)
-            covered.append(attempt.record.covered_lines & told.scope.lines)
-            tree.add(attempt.record.forks)
-            told.record(attempt.record)
+        if attempt.ran is not None:
+            records.append(attempt.ran.record)
+            covered.append(attempt.ran.record.covered_lines & told.scope.lines)
+            tree.add(attempt.ran.record.forks)
+            inputs[len(records)] = attempt.ran.seed
+            told.record(attempt.ran.record)
 
 
 def _attempt(
     call: Call,
-    seed: Seed,
+    inputs: Mapping[int, Seed],
     tree: Tree,
     bounds: Bounds,
     covered: Sequence[frozenset[int]],
@@ -265,16 +285,26 @@ def _attempt(
         return Attempt(stop=Stop(StopKind.NO_FORK))
     if bounds.plateau is not None and no_gain(covered, bounds.plateau):
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau))
-    answer = solve(wanted.prefix, seed.leaves, _solve_limit(bounds, left))
+    origin = inputs[wanted.path]
+    limit = _solve_limit(bounds, left)
+    answer = solve(wanted.prefix, origin.leaves, limit, origin.lists, origin.values)
     if isinstance(answer, Error):
         return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail))
     if not isinstance(answer, Sat):
         return Attempt(miss=Miss(wanted.aim.site, _why(answer)))
-    args = apply(seed, answer.model)
+    solved = apply(origin, answer.model)
     try:
-        return Attempt(record=_record_of(args, call(args, bounds.until), wanted))
+        record = _record_of(solved.args, call(solved.args, bounds.until), wanted)
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error))
+    return Attempt(ran=Ran(record, solved))
+
+
+def _let_go(inputs: dict[int, Seed], oldest: int) -> None:
+    """Let go of each input whose path no later pick can extend: an answer holding a long list
+    is kept only while an answer may still start from it."""
+    for path in [path for path in inputs if path < oldest]:
+        del inputs[path]
 
 
 def _why(answer: Unsat | Unknown | Timeout) -> MissWhy:

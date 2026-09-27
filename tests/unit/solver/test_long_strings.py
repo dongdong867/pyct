@@ -8,7 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.binding.bind import Seed
+from pyct.binding.model import apply
+from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.cvc5 import solve
@@ -107,3 +109,33 @@ def test_a_fork_only_a_longer_string_takes_is_unsat() -> None:
     path = (fork(["!=", ["[:]", "s", MOST_ITEMS, None], "''"], taken=True),)
 
     assert solve(path, {"s": str}, 10.0) == Unsat()
+
+
+def _item_longer_than(least: int) -> tuple[Seed, tuple[Branch, ...]]:
+    """A list of strs, read at 0, and a fork that the item is longer than ``least``."""
+    seed = Seed.of({"items": ["a"]})
+    item: Expression = ["[]", "items", 0]
+    path = (
+        fork([">", ["len", "items"], 0], taken=True),
+        fork([">", ["len", item], least], taken=True),
+    )
+    return seed, path
+
+
+@needs_cvc5
+def test_a_fork_only_a_longer_string_item_of_a_list_takes_is_unsat() -> None:
+    seed, path = _item_longer_than(1_500_000)
+
+    assert solve(path, seed.leaves, 10.0, seed.lists, seed.values) == Unsat()
+
+
+@needs_cvc5
+def test_a_string_item_of_a_list_past_cvc5_s_default_model_length_is_handed_back() -> None:
+    seed, path = _item_longer_than(100_000)
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    assert isinstance(answer, Sat), answer
+    items = apply(seed, answer.model).args["items"]
+    assert isinstance(items, list) and isinstance(items[0], str)
+    assert MOST_ITEMS >= len(items[0]) > 100_000
