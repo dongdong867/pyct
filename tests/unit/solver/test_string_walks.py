@@ -86,3 +86,24 @@ def test_cvc5_answers_two_reads_far_apart_inside_a_second() -> None:
     assert isinstance(answer, Sat), answer
     s = answer.model["s"]
     assert isinstance(s, str) and s[0] == "a" and s[far] == "b"
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("passes", "far"), [(400, 1000), (40, 20_000)], ids=["400-1000", "40-20000"]
+)
+def test_cvc5_answers_a_walk_then_a_read_far_past_it_inside_a_second(passes: int, far: int) -> None:
+    # a walk, then `s[far]`: the far read sits in the rest the walk's letters leave, so it adds
+    # no letter and no second look at the whole string
+    walked = flipped_path("ab" * (passes // 2), _walk(passes), PYTHON_HEADS)
+    read = (
+        _fork([">", ["len", "s"], far], taken=True),
+        _fork(["==", ["[]", "s", far], "'b'"], taken=True),
+    )
+
+    answer = solve((*walked, *read), {"s": str}, 1.0)
+
+    assert isinstance(answer, Sat), answer
+    s = answer.model["s"]
+    assert isinstance(s, str) and s[far] == "b"
+    assert not disagrees(walked, answer, PYTHON_HEADS, [], 0)

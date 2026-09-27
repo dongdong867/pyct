@@ -38,11 +38,12 @@ def furthest_reads(order: Iterable[Node], key: Keyed) -> dict[Key, int]:
     The letters run from position 0 to the furthest read position at which
     at least half the letters so far are read, so a walk, which reads every
     position, spells them all, and the program never holds more than twice
-    as many letters as reads: `s[0]` and `s[20000]` spell one letter, not
-    twenty thousand. A read past that stays ``str.at``. A string with fewer
-    than two reads in its letters gains nothing from them, and a path that
-    cuts a string down pass by pass reads each piece once: spelled out, each
-    piece would be one more equation for cvc5 to hold.
+    as many letters as reads: `s[0]`, `s[1]` and `s[20000]` spell two
+    letters, not twenty thousand, and `s[0]` and `s[20000]` spell none. A
+    read past the letters reads the rest (see `past_the_letters`). A string
+    with fewer than two reads in its letters gains nothing from them, and a
+    path that cuts a string down pass by pass reads each piece once: spelled
+    out, each piece would be one more equation for cvc5 to hold.
     """
     read: dict[Key, set[int]] = {}
     for node in order:
@@ -103,3 +104,40 @@ def spelled(term: str, names: list[str], rest: str, held: int) -> list[str]:
         lines.append(f"(assert (= (str.len {name}) {there}))")
     lines.append(f"(assert (= {term} (str.++ {' '.join(names)} {rest})))")
     return lines
+
+
+def past_the_letters(rest: str, at: int) -> str:
+    """A read ``at`` places past a spelled string's letters: that place in the rest.
+
+    It is exactly the string's own character there. Where the string is
+    longer than its letters, each letter is one character and the rest is
+    what follows them; where it is not, the rest is empty, and so is the
+    string past its end.
+    """
+    return f"(str.at {rest} {at})"
+
+
+class Spellings:
+    """The strings a path spells out, each on its first read, and what each read of one is."""
+
+    def __init__(self, order: Iterable[Node], prefix: Iterable[Branch], key: Keyed) -> None:
+        self.furthest = furthest_reads(order, key)
+        self.held = held_lengths(prefix, key)
+        self.names: dict[Key, list[str]] = {}
+
+    def spells(self, string: Key) -> bool:
+        """Whether the path reads this string densely enough to spell it."""
+        return string in self.furthest
+
+    def read(self, string: Key, at: int, term: str) -> tuple[str, list[str]]:
+        """What a read of ``string`` at ``at`` is, its letter or its place in the rest, and the
+        lines to write before it: the spelling, on the string's first read."""
+        last = self.furthest[string]
+        lines: list[str] = []
+        if string not in self.names:
+            count = len(self.names)
+            self.names[string] = [f"c!{count}!{k}" for k in range(last + 1)] + [f"r!{count}"]
+            *letters, rest = self.names[string]
+            lines = spelled(term, letters, rest, self.held.get(string, 0))
+        names = self.names[string]
+        return (names[at] if at <= last else past_the_letters(names[-1], at - last - 1)), lines

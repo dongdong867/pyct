@@ -12,7 +12,7 @@ from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
 from pyct.solver.joined import joined
-from pyct.solver.letters import Key, fixed_position, furthest_reads, held_lengths, spelled
+from pyct.solver.letters import Key, Spellings, fixed_position
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import above, below, encode
@@ -214,9 +214,7 @@ class _Program:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
         # `letters`), and the letters' names once written
-        self.furthest = furthest_reads(order, self._string)
-        self.held = held_lengths(prefix, self._string)
-        self.letters: dict[Key, list[str]] = {}
+        self.spellings = Spellings(order, prefix, self._string)
         read = self._read_by_forms(order)
         # each part comes after the parts it holds (see `distinct`), so their terms are written
         # before it, and no part waits on Python's stack for its operands
@@ -397,19 +395,15 @@ class _Program:
         return ("leaf", self.leaves.named(part)) if self.leaves.holds(part) else id(part)
 
     def _letter(self, node: Node) -> str | None:
-        """The letter an index at a fixed position reads, the string spelled out on its first
-        read (see `letters`); None for any other index."""
+        """What an index at a fixed position reads of a spelled string, or None for any other
+        index (see `letters`). The string is spelled out on its first read."""
         at = fixed_position(node)
         string = None if at is None else self._string(node[1])
-        if at is None or string not in self.furthest or at > self.furthest[string]:
+        if at is None or string is None or not self.spellings.spells(string):
             return None
-        term = self.term(node[1])
-        if string not in self.letters:
-            count = len(self.letters)
-            names = [f"c!{count}!{k}" for k in range(self.furthest[string] + 1)]
-            self.letters[string] = names
-            self.definitions += spelled(term, names, f"r!{count}", self.held.get(string, 0))
-        return self.letters[string][at]
+        read, lines = self.spellings.read(string, at, self.term(node[1]))
+        self.definitions += lines
+        return read
 
     def _hold(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""
