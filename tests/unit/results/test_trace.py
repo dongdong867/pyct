@@ -69,9 +69,29 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "method-inside-a-compare": (["<", ["find", "s", "'x'"], "n"], "s.find('x') < n"),
     "method-on-a-condition": (["find", ["+", "s", "t"], "'x'"], "(s + t).find('x')"),
     "keyword": (["in", "'a'", "s"], "'a' in s"),
-    "builtin": (["abs", "x"], "abs x"),
-    "unary-minus": (["-", "x"], "- x"),
+    "builtin": (["abs", "x"], "abs(x)"),
+    "unary-minus": (["-", "x"], "-x"),
     "key": (["[]", "config", "'port'"], "config['port']"),
+    # a call binds tighter than any operator, so it never gets parentheses of its own
+    "builtin-under-a-unary-minus": (["<", ["-", ["abs", "x"]], -3], "-abs(x) < -3"),
+    "builtin-as-the-base-of-a-power": ([">", ["**", ["abs", "x"], 2], 9], "abs(x) ** 2 > 9"),
+    "builtin-of-a-sum": ([">", ["abs", ["-", "x", 1]], 3], "abs(x - 1) > 3"),
+    "builtin-of-a-builtin": (
+        [">", ["abs", ["-", ["abs", "x"], 5]], 1],
+        "abs(abs(x) - 5) > 1",
+    ),
+    "length-of-a-sum": (["len", ["+", "s", "t"]], "len(s + t)"),
+    # a builtin's name the table does not hold is a method, as `format` and `hex` are on a
+    # str and a float
+    "builtin-name-on-a-receiver": (["hex", "x"], "x.hex()"),
+    "builtin-name-with-an-argument": (["format", "s", "'x'"], "s.format('x')"),
+    "unary-minus-of-a-unary-minus": ([">", ["-", ["-", "x"]], 1], "--x > 1"),
+    "unary-minus-of-a-negative-number": (["-", -3], "--3"),
+    "unary-invert": (["~", "x"], "~x"),
+    "unary-plus-of-a-compare": (["+", [">", "x", 0]], "+(x > 0)"),
+    # a head that is neither an operator, a function nor a name keeps `op a`, in parentheses
+    # as any operand
+    "keyword-on-one-operand": (["==", ["not", "x"], True], "(not x) == True"),
     "key-of-a-key": (
         ["<", ["[]", ["[]", "config", "'server'"], "'port'"], 1],
         "config['server']['port'] < 1",
@@ -113,15 +133,15 @@ INFIX: dict[str, tuple[Expression, str]] = {
     ),
     "and-of-compares": (["&", [">", "x", 0], [">", "y", 0]], "(x > 0) & (y > 0)"),
     "and-inside-a-compare": (["==", ["&", "a", "b"], True], "a & b == True"),
-    "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "- x + 1"),
-    "unary-minus-inside-a-compare": (["<", ["-", "x"], -3], "- x < -3"),
-    "power-under-a-unary-minus": (["-", ["**", "x", 2]], "- x ** 2"),
-    "unary-minus-under-a-power": (["**", ["-", "x"], 2], "(- x) ** 2"),
+    "unary-minus-inside-a-sum": (["+", ["-", "x"], 1], "-x + 1"),
+    "unary-minus-inside-a-compare": (["<", ["-", "x"], -3], "-x < -3"),
+    "power-under-a-unary-minus": (["-", ["**", "x", 2]], "-x ** 2"),
+    "unary-minus-under-a-power": (["**", ["-", "x"], 2], "(-x) ** 2"),
     "negative-base-of-a-power": (["**", -2, "x"], "(-2) ** x"),
-    "unary-minus-exponent": (["**", "x", ["-", "y"]], "x ** - y"),
+    "unary-minus-exponent": (["**", "x", ["-", "y"]], "x ** -y"),
     "power-of-a-power": (["**", ["**", "x", "y"], 2], "(x ** y) ** 2"),
     "power-exponent": (["**", "x", ["**", "y", 2]], "x ** y ** 2"),
-    "sum-under-a-unary-minus": (["-", ["+", "x", 1]], "- (x + 1)"),
+    "sum-under-a-unary-minus": (["-", ["+", "x", 1]], "-(x + 1)"),
     "compare-in-a-sum": (["+", [">", "x", 0], 1], "(x > 0) + 1"),
     "sum-of-a-count": (
         ["==", ["+", ["+", 0, [">", "x", 5]], [">", "y", 5]], 0],
@@ -132,7 +152,12 @@ INFIX: dict[str, tuple[Expression, str]] = {
     # a float literal as repr writes it
     "float-exponent": (["<", "x", 1e-05], "x < 1e-05"),
     "float-whole": (["!=", "x", 2.0], "x != 2.0"),
-    "float-infinity": ([">", "x", math.inf], "x > inf"),
+    # an infinity as the call that makes it, which Python reads back
+    "float-infinity": ([">", "x", math.inf], "x > float('inf')"),
+    "float-minus-infinity": ([">", "x", -math.inf], "x > -float('inf')"),
+    "float-nan": (["!=", "x", math.nan], "x != float('nan')"),
+    # a minus infinity binds as a unary minus, so it needs parentheses as the base of `**`
+    "minus-infinity-as-a-base": (["**", -math.inf, "x"], "(-float('inf')) ** x"),
     "method-with-no-argument": (["is_integer", "x"], "x.is_integer()"),
     "method-with-no-argument-on-a-condition": (
         ["is_integer", ["/", "x", "y"]],
@@ -419,8 +444,8 @@ def test_render_trace_writes_a_condition_nested_past_the_recursion_limit() -> No
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    nested = LIMIT - 2
-    assert lines[1] == f"fork m.py:5:7  {'abs (' * nested}abs x{')' * nested}  taken"
+    nested = LIMIT - 1
+    assert lines[1] == f"fork m.py:5:7  {'abs(' * nested}x{')' * nested}  taken"
 
 
 def test_render_trace_writes_a_string_built_over_five_thousand_passes() -> None:
