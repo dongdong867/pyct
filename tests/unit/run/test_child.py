@@ -11,6 +11,7 @@ import pytest
 
 from pyct.execution.deadline import DeadlineError, deadline
 from pyct.results.failure import FailureKind
+from pyct.run import child
 from pyct.run.child import serve, settle
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import STOP_SIGNALS
@@ -56,7 +57,8 @@ def test_the_input_s_process_takes_each_stop_signal_by_its_default_action() -> N
 def settled_then(step: Callable[[], None]) -> int:
     """Fork a child that settles as an input's process, then runs ``step``: its exit code.
 
-    The child exits 0 once the step is done, and 3 when a DeadlineError got out of it.
+    The child exits 0 once the step is done, and 3 when a DeadlineError got out of it. It
+    exits as the input's process does, so coverage.py saves what it measured there.
     """
     with mmap.mmap(-1, CAPACITY) as buffer:
         pid = os.fork()
@@ -65,8 +67,8 @@ def settled_then(step: Callable[[], None]) -> int:
             try:
                 step()
             except DeadlineError:
-                os._exit(3)
-            os._exit(0)
+                child._EXIT(3)
+            child._EXIT(0)
         _, status = os.waitpid(pid, 0)
     return os.waitstatus_to_exitcode(status)
 
@@ -91,7 +93,7 @@ def hang_until_the_deadline() -> None:
                 pass
     except DeadlineError:
         return
-    os._exit(1)
+    child._EXIT(1)
 
 
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
@@ -103,6 +105,6 @@ def test_the_input_s_deadline_starts_no_thread() -> None:
     def count_threads() -> None:
         with deadline(time.monotonic() + 10):
             running = threading.active_count()
-        os._exit(0 if running == 1 else 1)
+        child._EXIT(0 if running == 1 else 1)
 
     assert settled_then(count_threads) == 0
