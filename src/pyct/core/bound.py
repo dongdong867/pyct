@@ -1,15 +1,20 @@
-"""What a module of the target's package finds under `len`, `ord` and `chr`: pyct's own three.
+"""What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
+`bool` and `map`: pyct's own routers, one table for all of them (`_FOLLOWED`).
 
-`pyct.intercept` binds these names in the builtins of each module of the
-target's package (`BOUND`). Python makes the answers of the builtins plain,
-or calls no method of the value at all; here a tracked value that core
-follows through one of them gets core's tracked answer, and every other
-call, keywords and any count of arguments included, is Python's own.
+`pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
+of the target's package (`BOUND`), and hands a call written `int(...)`,
+`float(...)`, `bool(...)` or `map(...)` the router `CALLED` holds for the
+builtin, since a type name is never bound. Python makes the answers of the
+builtins plain, or calls no method of the value at all; here a tracked
+value that core follows through one of them gets core's tracked answer, and
+every other call, keywords and any count of arguments included, is Python's
+own. `map` with a conversion first maps pyct's router for it.
 
-Each function carries the name, text and signature of Python's own, and
-lives in this module under that name, so pickle saves and loads it by
+Each bound function carries the name, text and signature of Python's own,
+and lives in this module under that name, so pickle saves and loads it by
 reference, as it does Python's: a target can hand `len` to a process pool.
-Its ``__module__`` names this module, not ``builtins``.
+Its ``__module__`` names this module, not ``builtins``. A conversion's
+router lives here too, so a `map` of one pickles by reference as well.
 
 Each is a router: it picks which answer to give and calls Python or core
 for it, and runs none of the target's code in its own lines. So blame reads
@@ -91,25 +96,43 @@ def chr(*args: object, **kwargs: object) -> object:
     return _routed(_CHR, args, kwargs)
 
 
+# how each conversion follows each tracked type, read straight from `_FOLLOWED` so a
+# conversion of a plain value costs one lookup
+_INT, _FLOAT, _BOOL = _FOLLOWED[int], _FOLLOWED[float], _FOLLOWED[bool]
+
+
 def int_(*args: object, **kwargs: object) -> Any:
     """Python's `int` where the code writes it, core's conversion for one tracked value.
 
     A tracked str in any other form, `int(s, 16)` say, is Python's answer
     and a downgrade named `int`.
     """
-    if args and type(args[0]) is ConcolicStr and (_LEN(args) > 1 or kwargs):
-        return conversions.int_in_another_form(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
-    return _routed(int, args, kwargs)
+    if args:
+        follow = _INT.get(type(args[0]))
+        if follow is not None:
+            if _LEN(args) == 1 and not kwargs:
+                return follow(args[0])
+            if type(args[0]) is ConcolicStr:
+                return conversions.int_in_another_form(*args, **kwargs)  # pyrefly: ignore
+    return int(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
 def float_(*args: object, **kwargs: object) -> Any:
     """Python's `float` where the code writes it, core's conversion for one tracked value."""
-    return _routed(float, args, kwargs)
+    if _LEN(args) == 1 and not kwargs:
+        follow = _FLOAT.get(type(args[0]))
+        if follow is not None:
+            return follow(args[0])
+    return float(*args, **kwargs)  # pyrefly: ignore[bad-argument-type]
 
 
 def bool_(*args: object, **kwargs: object) -> Any:
     """Python's `bool` where the code writes it, core's truth for one tracked value, untested."""
-    return _routed(bool, args, kwargs)
+    if _LEN(args) == 1 and not kwargs:
+        follow = _BOOL.get(type(args[0]))
+        if follow is not None:
+            return follow(args[0])
+    return bool(*args, **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
 # the router map hands each item to in a conversion's place, by the conversion

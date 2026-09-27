@@ -92,6 +92,10 @@ PROGRAMS: dict[str, str] = {
     },
     "if 0.5 < b": "if 0.5 < note('b', b):\n    answer = 'yes'\nelse:\n    answer = 'no'",
     "not True == b": "answer = not True == note('b', b)",
+    # a name bound only to a literal, read as the literal
+    "name bound to a float + b": "RATE = 0.5\nanswer = RATE + note('b', b)",
+    "name bound to a bool == b": "FLAG = True\nanswer = FLAG == note('b', b)",
+    "name bound to text find": "TEXT = 'xyz'\nanswer = TEXT.find(note('b', b))",
 }
 
 

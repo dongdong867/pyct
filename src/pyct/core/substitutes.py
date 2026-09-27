@@ -131,25 +131,41 @@ def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: o
     """A call written ``"text".name(...)``, a str literal's method, as ``receiver_method(...)``.
 
     Given a tracked str, it runs as it runs on a tracked str holding the
-    literal's text (`strs.on_text`). Any other call is str's own method, called
-    through str as the written call reaches it, so a refusal reads in the
-    written call's words. Only the types of the method, its receiver and the
-    arguments are read.
+    literal's text (`strs.on_text`). Any other call is the method's own; one
+    with a keyword goes through str, as the written call reaches it, so a
+    refusal reads in the written call's words. Only the types of the method,
+    its receiver and the arguments are read.
     """
-    if type(receiver_method) is not types.BuiltinMethodType:
-        return receiver_method(*args, **kwargs)
-    receiver = receiver_method.__self__
-    if type(receiver) is not str:
-        return receiver_method(*args, **kwargs)
-    if any(type(arg) is ConcolicStr for arg in (*args, *kwargs.values())):
+    for arg in args:
+        if type(arg) is ConcolicStr:
+            return _on_text(receiver_method, args, kwargs)
+    if not kwargs:
+        return receiver_method(*args)
+    for arg in kwargs.values():
+        if type(arg) is ConcolicStr:
+            return _on_text(receiver_method, args, kwargs)
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver_method) is types.BuiltinMethodType and type(receiver) is str:
+        return getattr(str, receiver_method.__name__)(receiver, *args, **kwargs)
+    return receiver_method(*args, **kwargs)
+
+
+def _on_text(
+    receiver_method: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
+) -> Any:
+    """A tracked str handed to a plain str's own method, as `strs.on_text` runs it."""
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver_method) is types.BuiltinMethodType and type(receiver) is str:
         return strs.on_text(cast(types.BuiltinMethodType, receiver_method), *args, **kwargs)
-    return getattr(str, receiver_method.__name__)(receiver, *args, **kwargs)
+    return receiver_method(*args, **kwargs)
 
 
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
 # `ord`, `chr` or a conversion, or from the target's own `__contains__`, `__len__` or
 # `__int__`, is the target's
 PASSING: frozenset[types.CodeType] = (
-    frozenset(function.__code__ for function in (is_, is_not, in_, not_in, call, method, handed))
+    frozenset(
+        function.__code__ for function in (is_, is_not, in_, not_in, call, method, _on_text, handed)
+    )
     | bound.PASSING
 )
