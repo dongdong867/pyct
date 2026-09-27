@@ -3,7 +3,7 @@
 The tree keeps cursors so a pick never rereads a fork it has ruled out, and
 decides a fork's tier once, when its path arrives. The reference here keeps
 nothing between picks, so the two agree only if the cursors skip nothing
-and the tiers are right (fork-order-new-side-first).
+and the tiers are right (fork-order-shallowest-first-after-a-timeout).
 """
 
 import random
@@ -23,8 +23,9 @@ class Rescan:
 
     A fork is open while no pick aimed at it and no input took its other
     side after the same prefix. A fork whose other side no input took
-    anywhere comes first, oldest path first and deepest fork first; then
-    every other open fork, in the same order.
+    anywhere comes first, oldest path first and deepest fork first, or
+    shallowest first on a path a pick timed out on; then every other open
+    fork, oldest path first and deepest fork first.
     """
 
     def __init__(self) -> None:
@@ -32,6 +33,8 @@ class Rescan:
         self.walked: set[tuple[Side, ...]] = set()
         self.aimed: set[tuple[tuple[Side, ...], Site]] = set()
         self.sides: set[Side] = set()
+        self.picked: int | None = None
+        self.turned: set[int] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
         self.paths.append(forks)
@@ -43,12 +46,18 @@ class Rescan:
 
     def next(self) -> Plan | None:
         for new_side_only in (True, False):
-            for forks in self.paths:
-                for at in reversed(range(len(forks))):
+            for path, forks in enumerate(self.paths):
+                turned = new_side_only and path in self.turned
+                for at in range(len(forks)) if turned else reversed(range(len(forks))):
                     if self._open(forks, at) and (not new_side_only or self._new_side(forks[at])):
                         self.aimed.add(self._key(forks, at))
+                        self.picked = path
                         return plan(forks[: at + 1])
         return None
+
+    def timed_out(self) -> None:
+        if self.picked is not None:
+            self.turned.add(self.picked)
 
     def _key(self, forks: tuple[Branch, ...], at: int) -> tuple[tuple[Side, ...], Site]:
         return tuple((fork.site, fork.taken) for fork in forks[:at]), forks[at].site
@@ -97,3 +106,7 @@ def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
             path = _after(rng, picked)
             tree.add(path)
             reference.add(path)
+        elif rng.random() < 0.5:
+            # the solver ran out of time on the plan
+            tree.timed_out()
+            reference.timed_out()

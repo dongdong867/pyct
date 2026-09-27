@@ -101,6 +101,54 @@ def test_a_new_side_another_input_took_since_waits_its_turn() -> None:
     assert aims == [(2, 0), (5, 0), (3, 1), (3, 1)]
 
 
+def test_a_timeout_sends_the_rest_of_its_path_s_new_sides_shallowest_first() -> None:
+    tree = Tree()
+    tree.add(tuple(fork(line, taken=True) for line in (2, 3, 4, 5)))
+    first = tree.next()
+
+    tree.timed_out()
+    later = [picked.aim.position for picked in iter(tree.next, None)]
+
+    assert first is not None and first.aim.position == 3
+    assert later == [0, 1, 2]
+
+
+def test_a_second_timeout_on_a_path_keeps_it_shallowest_first() -> None:
+    tree = Tree()
+    tree.add(tuple(fork(line, taken=True) for line in (2, 3, 4, 5)))
+    tree.next()
+    tree.timed_out()
+    second = tree.next()
+
+    tree.timed_out()
+    later = [picked.aim.position for picked in iter(tree.next, None)]
+
+    assert second is not None and second.aim.position == 0
+    assert later == [1, 2]
+
+
+def test_a_timeout_leaves_a_later_path_deepest_first() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(3, taken=True), fork(4, taken=True)))
+    tree.add((fork(6, taken=True), fork(7, taken=True), fork(8, taken=True)))
+    tree.next()
+
+    tree.timed_out()
+    aims = [(picked.aim.site.line, picked.aim.position) for picked in iter(tree.next, None)]
+
+    assert aims == [(2, 0), (3, 1), (8, 2), (7, 1), (6, 0)]
+
+
+def test_a_timeout_before_any_pick_changes_no_order() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(3, taken=True)))
+
+    tree.timed_out()
+    aims = [picked.aim.position for picked in iter(tree.next, None)]
+
+    assert aims == [1, 0]
+
+
 def test_a_fork_is_aimed_at_once() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True), fork(3, taken=True)))
