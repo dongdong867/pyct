@@ -90,7 +90,7 @@ def test_follows_a_chained_compare() -> None:
     # the chain is Python's `and` of its links, both at the column where the chain starts
     assert {**link, "taken": True, "expression": [">=", "x", 0]} in forks_of(inputs[1])
     assert expressions(inputs[1]) == [[">=", "x", 0], ["<", "x", 10]]
-    assert all(fork["col"] == 7 for fork in forks_of(inputs[1]))
+    assert [(fork["line"], fork["col"]) for fork in forks_of(inputs[1])] == [(2, 7), (2, 7)]
     assert sides(inputs, ["<", "x", 10]) == {True, False}
 
 

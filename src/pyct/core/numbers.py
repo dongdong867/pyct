@@ -256,12 +256,14 @@ def rounded(whole: Callable[[Any], object]) -> Callable[..., Any]:
     """Rounding a whole number to zero or more digits is `whole` of it; to tens, a downgrade.
 
     `whole` is what the type answers for the number it already is: an int
-    hands itself back, a bool the int 1 or 0.
+    hands itself back, a bool the int 1 or 0. A plain bool counts digits as
+    the int 1 or 0 it is, as it does for an exponent.
     """
     downgrade = downgraded(int, "__round__")
 
     def compute(self: Number, ndigits: object = None) -> Any:
-        if ndigits is None or (type(ndigits) is int and cast(int, ndigits) >= 0):
+        digits = type(ndigits) is int or type(ndigits) is bool
+        if ndigits is None or (digits and cast(int, ndigits) >= 0):
             return whole(self)
         return downgrade(self, ndigits)
 

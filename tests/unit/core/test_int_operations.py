@@ -44,6 +44,7 @@ IDENTITIES: dict[str, Callable[[ConcolicInt], object]] = {
     "+x": lambda x: +x,
     "round(x)": round,
     "round(x, 1)": lambda x: round(x, 1),
+    "round(x, True)": lambda x: round(x, True),
     "x.__index__()": lambda x: x.__index__(),
     "math.trunc(x)": math.trunc,
     "math.floor(x)": math.floor,

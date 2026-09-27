@@ -55,6 +55,7 @@ AS_THE_INT: dict[str, Callable[[int], object]] = {
     "+b": lambda b: +b,
     "round(b)": round,
     "round(b, 2)": lambda b: round(b, 2),
+    "round(b, False)": lambda b: round(b, False),
     "math.trunc(b)": math.trunc,
     "math.floor(b)": math.floor,
     "math.ceil(b)": math.ceil,

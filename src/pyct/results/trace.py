@@ -167,7 +167,8 @@ _COMPARES = 1
 # a unary `-`, `+` or `~`, and a negative number, bind looser than `**` and tighter than `*`
 _UNARY = 8
 _POWER = 9
-# a leaf, and a part Python writes around its operands, stand bare wherever they sit
+# a name, a literal that is not negative, and a part Python writes around its operands stand
+# bare wherever they sit, as a receiver and as the base of `**` too
 _ALONE = 10
 _BINARY: Mapping[str, int] = {
     **dict.fromkeys(("in", "not in", "is", "is not", "<", "<=", ">", ">=", "==", "!="), _COMPARES),

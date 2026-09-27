@@ -77,9 +77,11 @@ def downgraded(
     that raises records nothing and the raise stays the target's.
     ``NotImplemented`` is not an answer either: the other operand's reflected
     method gets its turn, and only a real result is a lost condition.
-    ``calling`` is the base type's operation for a name it does not define
-    itself: str has no `__radd__`, and its reflected concatenation is its
-    `__add__` the other way round.
+    ``calling`` is how the base type answers when its method by that name
+    is not the answer: str has no `__radd__`, and its reflected
+    concatenation is its `__add__` the other way round; a tracked bool
+    formats as the bool it is, where int's `__format__` writes a number.
+    The downgrade is still named ``name``.
     """
     operation = getattr(base, name) if calling is None else calling
 

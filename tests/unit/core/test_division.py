@@ -71,7 +71,7 @@ def test_a_division_by_a_constant_builds_its_node_and_forks_nothing(
     result = call(x)
 
     assert isinstance(result, ConcolicInt)
-    # operator.index reads the plain value: `==` on the result would fork into the sink
+    # int.__int__ reads the plain value: `==` on the result would fork into the sink
     assert int.__int__(result) == call(7)
     assert result.expression == expression
     # a constant divisor has no side to flip, so the division records nothing at all
