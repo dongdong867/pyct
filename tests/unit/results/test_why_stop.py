@@ -1,14 +1,17 @@
 """The analysis's stop is its own: it reads the clock where its work grows, and touches no signal,
 thread or handler, so nothing that lands on the process, a Ctrl-C say, meets a stop of its."""
 
+import dis
 import signal
 import textwrap
 import threading
 import time
+import tracemalloc
 from pathlib import Path
 
 import pytest
 
+from pyct.results import blocks
 from pyct.results.graphs import OutOfTimeError
 from pyct.results.way import Flow
 from pyct.results.why import Reason, Run, Walked, explain
@@ -152,3 +155,43 @@ def test_the_stop_lands_within_the_grace_on_each_large_shape(tmp_path: Path, sha
 
     assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
     assert ended - stop_at < 0.1, ended - stop_at
+
+
+def test_a_stop_lands_while_the_instructions_are_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    source, *_ = _tries(200)
+    code = compile(source, "m.py", "exec").co_consts[0]
+    total = len(list(dis.get_instructions(code)))
+    read: list[object] = []
+    op = blocks._op
+
+    def reading(instruction: dis.Instruction) -> blocks.Op:
+        read.append(instruction)
+        return op(instruction)
+
+    monkeypatch.setattr(blocks, "_op", reading)
+
+    # reading a large function's instructions is the first work that grows, so it checks too
+    with pytest.raises(OutOfTimeError):
+        Flow(code, frozenset(), late=lambda: True)
+    assert len(read) < total, total
+
+
+def _peak(tmp_path: Path, tests: int) -> int:
+    source, uncovered, covered, walked = _joined(tests)
+    file = module(tmp_path, source, f"joined{tests}.py")
+    tracemalloc.start()
+    try:
+        explain(file, uncovered, covered, Run(walked, {}))
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+def test_the_memory_the_analysis_keeps_grows_with_the_function_not_its_square(
+    tmp_path: Path,
+) -> None:
+    # what one line's search found is kept for that line alone: kept for every line, it grows
+    # as lines times nodes, and the collector's pauses over it are stretches no step can check
+    small, large = _peak(tmp_path, 100), _peak(tmp_path, 200)
+
+    assert large < 3 * small, (small, large)

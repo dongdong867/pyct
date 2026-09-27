@@ -184,7 +184,9 @@ class _Seen:
     inputs: tuple[_Input, ...]
     run: Run
     owners: dict[int, types.CodeType | None]
-    flows: dict[types.CodeType, _Walk] = field(default_factory=dict)
+    # keyed by the code's id: a large function's code is slow to hash, and `owners` keeps each
+    # one alive for as long as this is
+    flows: dict[int, _Walk] = field(default_factory=dict)
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
@@ -201,16 +203,21 @@ class _Seen:
         )
         return cls(file, covered, inputs, run, _owners(file))
 
+    @functools.cached_property
+    def _called(self) -> frozenset[int]:
+        """The ids of the functions a covered line of which ran."""
+        return frozenset(id(self.owners.get(line)) for line in self.covered)
+
     def cause(self, line: int) -> WhyEntry:
         """The one cause of an uncovered line. A line no function holds is the import's."""
         code = self.owners.get(line)
         if code is None:
             return WhyEntry(file=self.file, lines=(), reason=Reason.IMPORT)
-        if not any(owner is code and at in self.covered for at, owner in self.owners.items()):
+        if id(code) not in self._called:
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
-        if code not in self.flows:
-            self.flows[code] = _Walk.of(self, code)
-        return self.flows[code].cause_of(line)
+        if id(code) not in self.flows:
+            self.flows[id(code)] = _Walk.of(self, code)
+        return self.flows[id(code)].cause_of(line)
 
 
 def _fork(branch: Branch) -> Fork:

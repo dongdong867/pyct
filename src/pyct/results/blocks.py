@@ -14,6 +14,8 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from enum import StrEnum
 
+from pyct.results.graphs import Pace
+
 # the jumps that test a value: `if`, `while`, `and`, `or`, `assert`, a ternary, a comprehension's
 # `if`, and the test `is None` compiles to; a for loop's next item is its own two-way test
 TESTS = frozenset(
@@ -74,10 +76,14 @@ type Exit = tuple[int, Step | None]
 
 
 def blocks_of_code(
-    code: types.CodeType, raising: frozenset[tuple[int, int]]
+    code: types.CodeType, raising: frozenset[tuple[int, int]], pace: Pace
 ) -> tuple[list[list[Op]], frozenset[int]]:
-    """The code's blocks, and the offsets a raising operation's fork splits a block after."""
-    ops = [_op(instruction) for instruction in dis.get_instructions(code)]
+    """The code's blocks, and the offsets a raising operation's fork splits a block after.
+
+    Reading a large function's instructions is the first work that grows, so
+    ``pace`` steps once an instruction.
+    """
+    ops = [_op(instruction) for instruction in _read(code, pace)]
     splits = _splits(ops, raising)
     edges = {edge for entry in _table(code) for edge in (entry.start, entry.end, entry.target)}
     return _blocks(ops, edges, splits), splits
@@ -99,6 +105,12 @@ def handler_ranges(code: types.CodeType, blocks: list[list[Op]]) -> Iterator[tup
 def _table(code: types.CodeType) -> list[dis._ExceptionTableEntry]:  # pyrefly: ignore[missing-attribute]
     # the code's exception table, which dis reads since 3.11 and typeshed leaves out
     return list(dis.Bytecode(code).exception_entries)  # pyrefly: ignore[missing-attribute]
+
+
+def _read(code: types.CodeType, pace: Pace) -> Iterator[dis.Instruction]:
+    for instruction in dis.get_instructions(code):
+        pace.step()
+        yield instruction
 
 
 def _op(instruction: dis.Instruction) -> Op:

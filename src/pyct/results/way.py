@@ -66,6 +66,8 @@ class Flow:
         self._order = {n: at for at, n in enumerate(order)}
         self._idom = dominators(graph.successors, graph.entry, self._order, pace)
         self._normal = frozenset(postorder(graph.normal, graph.entry, pace=pace))
+        # one line's searches, kept while its cause is worked out: kept for every line they
+        # would grow as lines times nodes
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
 
@@ -169,9 +171,9 @@ class Flow:
         if line not in self._reaching_lines:
             held = self._graph.held
             toward = self._toward(line) - set(self._holders(line))
-            self._reaching_lines[line] = frozenset(
-                at for node in toward for at in held.get(node, ())
-            )
+            self._reaching_lines = {
+                line: frozenset(at for node in toward for at in held.get(node, ()))
+            }
         return self._reaching_lines[line]
 
     def last_among(self, ran: frozenset[int]) -> frozenset[int]:
@@ -323,9 +325,9 @@ class Flow:
 
     def _toward(self, line: int) -> frozenset[int]:
         if line not in self._towards:
-            self._towards[line] = frozenset(
-                postorder(self._predecessors, *self._holders(line), pace=self.pace)
-            )
+            self._towards = {
+                line: frozenset(postorder(self._predecessors, *self._holders(line), pace=self.pace))
+            }
         return self._towards[line]
 
     def _tested_before(self, node: int) -> tuple[int, int]:
@@ -359,17 +361,20 @@ class _Graph:
 
     @classmethod
     def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]], pace: Pace) -> _Graph:
-        blocks, splits = blocks_of_code(code, raising)
+        blocks, splits = blocks_of_code(code, raising, pace)
         builder = _Builder(blocks)
         for index, block in enumerate(blocks):
             pace.step()
             for target, step in exits(block, blocks, index, splits):
                 builder.join(index, builder.block_at(target), step)
-        for start, covered in handler_ranges(code, blocks):
+        ranges = list(handler_ranges(code, blocks))
+        for start, covered in ranges:
+            pace.step()
             if blocks[builder.block_at(start)][0].name == "END_ASYNC_FOR":
                 builder.ends_an_async_for(start, covered)
         normal = [list(each) for each in builder.successors]
-        for start, covered in handler_ranges(code, blocks):
+        for start, covered in ranges:
+            pace.step()
             if blocks[builder.block_at(start)][0].name != "END_ASYNC_FOR":
                 builder.raise_into(start, covered)
         normal += [[] for _ in range(len(builder.successors) - len(normal))]
