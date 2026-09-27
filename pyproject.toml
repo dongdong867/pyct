@@ -117,6 +117,7 @@ layers = [
   "(pyct.llm)",
   "pyct.run",
   "(pyct.rewrite)",
+  "pyct.intercept",
   "pyct.solver",
   "pyct.branches",
   "pyct.execution",

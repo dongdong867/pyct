@@ -66,6 +66,20 @@ def _after_fork_in_child() -> None:
 os.register_at_fork(after_in_child=_after_fork_in_child)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _session_cache(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    """Keep the code pyct substitutes for a target in a folder of this session's own.
+
+    pyct keeps it in ``.pyct_cache`` in the folder it runs from, the repository
+    root for most tests, unless ``PYCT_CACHE_DIR`` names another folder. Every
+    run this session starts, and every run in this process, inherits the
+    variable, so the suite writes nothing into the checkout.
+    """
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("PYCT_CACHE_DIR", str(tmp_path_factory.mktemp("pyct-cache")))
+        yield
+
+
 @pytest.fixture
 def deadline_fires_in_a_child(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep coverage.py out of every child this test forks, since their deadline fires."""

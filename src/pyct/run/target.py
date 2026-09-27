@@ -11,12 +11,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
+from pyct.intercept.cache import cache_folder
+from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_watch import ImportWatch
 
 # the two exceptions inspect raises when it cannot read a signature; one of exactly these types
 # reads by its message alone
 _INSPECT_S_OWN = (ValueError, TypeError)
-
 
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
@@ -105,3 +106,12 @@ def _reason(error: BaseException) -> str:
     if not lines:
         return named
     return lines[0] if type(error) in _INSPECT_S_OWN else f"{named}: {lines[0]}"
+
+
+def interception(spec: str) -> contextlib.AbstractContextManager[None]:
+    """The block that substitutes the target's package, for the owner of a run to hold open.
+
+    The spec's module names the package. Its code is kept in the cache
+    folder as it is when the block opens.
+    """
+    return intercepting(Interception(module=spec.partition("::")[0], cache=cache_folder()))

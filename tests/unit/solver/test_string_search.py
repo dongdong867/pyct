@@ -13,6 +13,7 @@ from pyct.solver.strings import (
     ends_with,
     first_index,
     last_index,
+    not_contains,
     occurrences,
     starts_with,
 )
@@ -66,6 +67,7 @@ def test_a_literal_is_reversed_character_by_character() -> None:
 # its operands in the expression's order, which puts the needle first for `in` alone
 PYTHON_SEARCHES: dict[str, tuple[Callable[[str, str], str], Callable[[str, str], object], str]] = {
     "in": (lambda s, sub: contains(sub, s), lambda s, sub: sub in s, "Bool"),
+    "not in": (lambda s, sub: not_contains(sub, s), lambda s, sub: sub not in s, "Bool"),
     "startswith": (starts_with, str.startswith, "Bool"),
     "endswith": (ends_with, str.endswith, "Bool"),
     "find": (first_index, str.find, "Int"),
@@ -131,6 +133,7 @@ def test_cvc5_agrees_with_python_on_every_search() -> None:
 # what each head on a search path means in Python, to hold a model against the plan
 PYTHON_HEADS: dict[str, Callable[..., object]] = {
     "in": lambda sub, s: sub in s,
+    "not in": lambda sub, s: sub not in s,
     "startswith": str.startswith,
     "endswith": str.endswith,
     "find": str.find,
@@ -145,15 +148,25 @@ PYTHON_HEADS: dict[str, Callable[..., object]] = {
 }
 
 # the searches a random path picks from
-SEARCH_HEADS = ["in", "startswith", "endswith", "find", "index", "rfind", "rindex", "count"]
+SEARCH_HEADS = [
+    "in",
+    "not in",
+    "startswith",
+    "endswith",
+    "find",
+    "index",
+    "rfind",
+    "rindex",
+    "count",
+]
 
 
 def _search_fork(rng: random.Random) -> tuple[Expression, Expression | None]:
     """One random search fork, and the `in` fork a raising search records before it, if any."""
     head = rng.choice(SEARCH_HEADS)
     sub = repr("".join(rng.choices(PATH_LETTERS, k=rng.randint(0, 2))))
-    if head == "in":
-        return ["in", sub, "s"], None
+    if head in ("in", "not in"):
+        return [head, sub, "s"], None
     if head in ("startswith", "endswith"):
         return [head, "s", sub], None
     another: list[Expression] = [rng.choice(["find", "rfind", "count"]), "s", sub]

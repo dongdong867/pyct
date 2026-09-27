@@ -7,6 +7,7 @@ import types
 from collections.abc import Callable, Iterator
 
 from pyct.core.branch import PYCT_DIR
+from pyct.core.substitutes import PASSING
 from pyct.core.values import raised_by_target
 from pyct.results.failure import Failure, FailureKind
 
@@ -18,11 +19,13 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     below the target's code object in the traceback lives under pyct's package
     directory; otherwise it is **target raised**. Below means deeper in the
     traceback than the target's own frame, so it covers the calls the target
-    made and not the ones that led to it. A raise the base type's own operation
-    made carries a mark saying so, and that mark wins: pyct ran the operation
-    but did not fail. A raise before the target was ``called`` is pyct's own
-    setup. A pyct bug keeps the whole traceback, because the frames are what a
-    person needs to fix pyct.
+    made and not the ones that led to it. A raise out of a call pyct made for
+    the target, the base type's own operation or the compile of one of its
+    modules, carries a mark saying so, and that mark wins: pyct ran the call
+    but did not fail. The one frame a substituted `is` or `in` adds is read
+    through, since the compare the target wrote had none. A raise before the
+    target was ``called`` is pyct's own setup. A pyct bug keeps the whole
+    traceback, because the frames are what a person needs to fix pyct.
     """
     if not raised_by_target(error) and any(
         _is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error, called)
@@ -36,8 +39,15 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:
-    """A frame of pyct's own: one whose code lives under pyct's directory."""
-    return code.co_filename.startswith(PYCT_DIR)
+    """A frame of pyct's own: one whose code lives under pyct's directory.
+
+    A function substituted code calls in place of `is` or `in` is not one.
+    It runs no work of its own, only Python's operation or the target's own
+    method, so a raise under it is the target's unless a frame of core's
+    sits below. `own`'s mark would not do: it would mark a raise out of
+    core's own code under it as the target's too.
+    """
+    return code.co_filename.startswith(PYCT_DIR) and code not in PASSING
 
 
 def _below_target(
@@ -69,7 +79,7 @@ def _below_codeless_target(
     frame stands in for it. One that wraps C runs no frame at all, so every
     entry under the caller's ran under it.
     """
-    if len(entries) > 1 and not entries[1].tb_frame.f_code.co_filename.startswith(PYCT_DIR):
+    if len(entries) > 1 and not _is_pyct_frame(entries[1].tb_frame.f_code):
         return entries[2:]
     return entries[1:]
 

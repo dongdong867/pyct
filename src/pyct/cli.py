@@ -33,7 +33,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import Tell, run
-from pyct.run.target import Target, TargetError, load_target
+from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
 
@@ -93,6 +93,9 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     stdout after it: the readable text comes first, as it does for every
     input.
 
+    The target's package is substituted from its import to the run's end,
+    in this process and in every input's (``pyct.intercept``).
+
     Checks run in this order: target form, seed shape, budget, plateau,
     solver timeout, import and signature, seed present, seed fits, seed
     types, cvc5.
@@ -108,14 +111,15 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
-        target, seed, limits = _checked(command, watch)
-        result = run(
-            target,
-            seed,
-            limits=limits,
-            isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
-            tell=Tell(report=_report, missed=_missed),
-        )
+        with interception(command.spec):
+            target, seed, limits = _checked(command, watch)
+            result = run(
+                target,
+                seed,
+                limits=limits,
+                isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
+                tell=Tell(report=_report, missed=_missed),
+            )
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
