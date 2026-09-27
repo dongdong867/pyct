@@ -27,8 +27,9 @@ HEAD = 8
 (_LOWER_CODES,) = LOWER
 _CASE_SHIFT = _LOWER_CODES[0] - _UPPER_CODES[0]
 
-# a declared string: the value's term, and the condition that holds it to Python's answer
-type Declared = tuple[str, str]
+# a value with a declared name in it: the name's sort, the value's term, and the condition
+# that holds it to Python's answer
+type Declared = tuple[str, str, str]
 
 
 def _within(code: str, codes: tuple[int, int]) -> str:
@@ -101,7 +102,7 @@ def swapped(name: str, term: str) -> Declared:
     marked = f'(str.replace_re_all {name} {one_of(LOWER)} "\\u{{0}}")'
     was = f'(str.to_upper (str.replace_re_all {rest} {one_of(UPPER)} "\\u{{0}}"))'
     condition = f"(and (= (str.to_upper {name}) (str.to_upper {rest})) (= {marked} {was}))"
-    return f"(str.++ {_head(term, _swapped_at)} {name})", condition
+    return "String", f"(str.++ {_head(term, _swapped_at)} {name})", condition
 
 
 def titled(name: str, term: str) -> Declared:
@@ -115,9 +116,9 @@ def titled(name: str, term: str) -> Declared:
     continued = f"(re.++ (re.* {one_of(LOWER)}) (re.opt (re.++ {NOT_LETTER} {TITLE_CASED})))"
     cased = f"(ite {after_letter} (str.in_re {name} {continued}) (str.in_re {name} {TITLE_CASED}))"
     condition = f"(and {_cased_alike(name, rest)} {cased})"
-    return f"(str.++ {_head(term, _titled_at)} {name})", condition
+    return "String", f"(str.++ {_head(term, _titled_at)} {name})", condition
 
 
 # a str no term writes whole: each takes a declared name and the string rendered, and gives
-# the value's term and the condition that makes it Python's answer
+# the name's sort, the value's term and the condition that makes it Python's answer
 TO_DECLARE: Mapping[str, Callable[[str, str], Declared]] = {"title": titled, "swapcase": swapped}

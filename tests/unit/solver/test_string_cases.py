@@ -78,7 +78,7 @@ def _declared_program(values: list[tuple[str, str]]) -> list[str]:
     """One program asking title or swapcase of each value, each rest declared by name."""
     lines = ["(set-logic ALL)"]
     for at, (head, value) in enumerate(values):
-        term, condition = TO_DECLARE[head](f"d{at}", f"s{at}")
+        _, term, condition = TO_DECLARE[head](f"d{at}", f"s{at}")
         lines += [f"(declare-const s{at} String)", f"(assert (= s{at} {encode(value)}))"]
         lines += [f"(declare-const d{at} String)", f"(assert {condition})"]
         lines += [f"(declare-const v{at} String)", f"(assert (= v{at} {term}))"]

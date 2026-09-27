@@ -350,15 +350,15 @@ class _Program:
         return term
 
     def _declared(self, declared: Callable[[str, str], Declared], term: str) -> str:
-        """A string no term writes whole: a declared name in it, held to the condition that
-        makes the value Python's.
+        """A value no term writes whole: a name declared in it, of the sort the form says, held
+        to the condition that makes the value Python's.
 
         The condition is asserted with the definitions, on every path: it
-        only says what the name is, and some string always meets it.
+        only says what the name is, and some value always meets it.
         """
         name = f"e!{len(self.definitions)}"
-        value, condition = declared(name, term)
-        self.definitions.append(f"(declare-const {name} String)")
+        sort, value, condition = declared(name, term)
+        self.definitions.append(f"(declare-const {name} {sort})")
         self.definitions.append(f"(assert {condition})")
         return value
 
