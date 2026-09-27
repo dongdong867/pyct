@@ -104,7 +104,7 @@ def test_a_tracked_string_in_a_plain_one_the_solver_cannot_hold_is_a_downgrade()
     sink: list[SinkItem] = []
     s = ConcolicStr("b", expression="s", sink=sink)
     # substituted code as the target's module holds it: each router called where the `in` was
-    namespace = {"in_": in_, "not_in": not_in}
+    namespace: dict[str, object] = {"in_": in_, "not_in": not_in}
     source = 'def look(s):\n    return in_(s, "ab\\U00030000"), not_in(s, "ab\\U00030000")\n'
     exec(compile(source, "<looked>", "exec"), namespace)
     look = namespace["look"]
