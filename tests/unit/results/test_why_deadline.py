@@ -157,16 +157,19 @@ def test_off_the_main_thread_the_clock_checks_still_stop_the_analysis(tmp_path: 
     file, uncovered, walked = _long_generator(tmp_path, 1600)
     covered = frozenset().union(*(each.lines for each in walked))
     ended: list[float] = []
+    named: list[int] = []
     stop_at = why_module.clock() + 1.5
 
     def analyse() -> None:
         entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=stop_at))
         ended.append(why_module.clock())
-        assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
+        named.extend(line for entry in entries for line in entry.lines)
 
     thread = threading.Thread(target=analyse)
     thread.start()
     thread.join(timeout=30)
 
+    # asserted here, where a failure fails the test
     assert ended, "the analysis did not finish"
     assert ended[0] - stop_at < 0.5, ended[0] - stop_at
+    assert sorted(named) == sorted(uncovered)

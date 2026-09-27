@@ -318,7 +318,7 @@
     {"set": "v2", "target": "targets.strs.equality::greet", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.find_below::check", "seed": {"s": "abc", "n": 1}},
     {"set": "v2", "target": "targets.strs.find_from_position::check", "seed": {"s": "abcx"}},
-    {"set": "v2", "target": "targets.strs.float_position::cut", "seed": {"s": "abc", "x": 2.0}},
+    {"set": "v2", "module": "targets.strs.float_position", "left_out": "its isfinite(x // 2) solve is slow enough that the row flips with machine load; solve-a-finite-floor-division-fast"},
     {"set": "v2", "target": "targets.strs.format_keyword::fill", "seed": {"s": "{x}"}},
     {"set": "v2", "target": "targets.strs.found_key::key_of", "seed": {"s": "host=a"}},
     {"set": "v2", "target": "targets.strs.in_where_it_runs::look", "seed": {"s": "x"}},

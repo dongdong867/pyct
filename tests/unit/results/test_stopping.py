@@ -1,8 +1,12 @@
 """The stop timer: the cause analysis ends at its stop wherever it is, and leaves nothing armed."""
 
 import gc
+import os
 import signal
+import subprocess
+import sys
 import textwrap
+import threading
 import time
 from pathlib import Path
 
@@ -65,19 +69,25 @@ def test_a_slow_step_still_ends_at_the_stop(
 
 def test_a_run_with_no_stop_arms_nothing() -> None:
     handler = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
 
     with stopping(None, time.monotonic):
         assert armed() == 0
         assert signal.getsignal(signal.SIGALRM) is handler
+        assert threading.active_count() == threads
 
 
-def test_the_timer_is_disarmed_and_the_handler_restored_when_the_block_raises() -> None:
+def test_the_stop_is_disarmed_and_the_handler_restored_when_the_block_raises() -> None:
     handler = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
 
     with pytest.raises(ValueError), stopping(time.monotonic() + 60, time.monotonic):
-        assert armed() > 0
+        # the stop's own handler, and the watcher that will send its signal
+        assert signal.getsignal(signal.SIGALRM) is not handler
+        assert threading.active_count() == threads + 1
         raise ValueError
 
+    assert threading.active_count() == threads
     assert armed() == 0
     assert signal.getsignal(signal.SIGALRM) is handler
 
@@ -126,11 +136,13 @@ class _Finalized:
 
 @DEADLINE_FIRES
 # the finalizer's swallowed stop is the point of the test: Python reports it as unraisable
-@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_a_stop_a_finalizer_swallowed_comes_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     file = module(tmp_path)
+    # what Python drops from a finalizer, which a stop that landed there becomes
+    swallowed: list[type[BaseException] | None] = []
+    monkeypatch.setattr(sys, "unraisablehook", lambda raised: swallowed.append(raised.exc_type))
     slow = Flow.marked
 
     def collecting(flow: Flow, *args: object) -> frozenset[int]:
@@ -150,6 +162,55 @@ def test_a_stop_a_finalizer_swallowed_comes_again(
     ended = time.monotonic()
 
     assert {entry.reason for entry in entries} == {Reason.NOT_WORKED_OUT}
-    # the first stop is lost in the finalizer's 0.3 s sleep; the next comes soon after it
+    # the first stop was lost in the finalizer's 0.3 s sleep; the next came soon after it
+    assert OutOfTimeError in swallowed
     assert ended - stop_at < 0.5, ended - stop_at
     assert armed() == 0
+
+
+# stop after stop landing right around the block's end, under the default handler, which a
+# signal delivered after the handler is restored would end the process with
+RACE = """\
+import random, signal, sys, time
+from pyct.results.graphs import OutOfTimeError
+from pyct.results.stopping import stopping
+
+ran = [0]
+previous = signal.SIG_DFL if sys.argv[1] == "default" else (lambda *_: ran.__setitem__(0, 1))
+signal.signal(signal.SIGALRM, previous)
+until = time.monotonic() + {seconds}
+blocks = 0
+while time.monotonic() < until:
+    blocks += 1
+    work = random.uniform(0, 200e-6)
+    try:
+        with stopping(time.monotonic() + work + random.uniform(-50e-6, 50e-6), time.monotonic):
+            end = time.monotonic() + work
+            while time.monotonic() < end:
+                pass
+    except OutOfTimeError:
+        pass
+    assert signal.getitimer(signal.ITIMER_REAL)[0] == 0
+    assert signal.getsignal(signal.SIGALRM) is previous
+assert not ran[0], "the previous handler ran for the stop's signal"
+print(blocks)
+"""
+
+
+@pytest.mark.parametrize("previous", ["default", "counting"])
+def test_no_stop_outlives_its_block(previous: str) -> None:
+    # coverage stays out: a signal in its tracer can hang the process (deadline_fires.py)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")}
+
+    finished = subprocess.run(
+        [sys.executable, "-c", RACE.format(seconds=3), previous],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        timeout=30,
+    )
+
+    # a SIGALRM that arrives once the default handler is back ends the process by SIGALRM
+    assert finished.returncode == 0, (finished.returncode, finished.stderr[-2000:])
+    assert int(finished.stdout) > 1000
