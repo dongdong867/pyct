@@ -148,11 +148,13 @@ def _heard(lines: "_Lines", package: str, grace: float) -> Heard:
 
 def _rows_of(fact: dict[str, object]) -> list[Row]:
     """The row a fact makes: a module whose import or reading raised, or an entry.
-    ``importing`` makes none."""
+    ``importing`` makes none. A fact carries Python's words; the row's are written here."""
     if "failed" in fact:
         return [_failed(str(fact["failed"]), str(fact["reason"]))]
     if "unread" in fact:
-        return [Row(str(fact["unread"]), None, Status.FAILED, reason=str(fact["reason"]))]
+        module, name = str(fact["unread"]), fact["name"]
+        read = module if name is None else f"{module}::{name}"
+        return [Row(module, None, Status.FAILED, reason=f"cannot read {read}: {fact['reason']}")]
     entry = fact.get("entry")
     if not isinstance(entry, dict):
         return []

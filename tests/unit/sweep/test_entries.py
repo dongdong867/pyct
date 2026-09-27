@@ -10,6 +10,7 @@ from pyct.sweep.entries import (
     METHOD,
     Entry,
     Reading,
+    Unread,
     entries_in,
     function_of,
     package_path,
@@ -95,7 +96,7 @@ def test_the_edges_of_what_a_name_holds() -> None:
     # the first public name that raised, in the words plain Python gives
     with pytest.raises(AttributeError) as plain:
         getattr(importlib.import_module(edges), "missing")  # noqa: B009 - a name __all__ lacks
-    assert reading.unread == f"{edges}::missing: {plain.value!r}"
+    assert reading.unread == Unread("missing", repr(plain.value))
     assert reading.entries == [
         Entry(edges, "total", seed={"n": 0}),
         # an alias is the same entry, under the function's own name
@@ -139,9 +140,7 @@ def test_a_name_that_raises_when_asked_its_class_is_unread_and_the_rest_are_read
     reading = read(unread, unread)
 
     raised = "RuntimeError('settings are not configured')"
-    assert reading == Reading(
-        [Entry(unread, "home", seed={"n": 0})], f"{unread}::settings: {raised}"
-    )
+    assert reading == Reading([Entry(unread, "home", seed={"n": 0})], Unread("settings", raised))
 
 
 class _LoadsWhenAsked(types.ModuleType):

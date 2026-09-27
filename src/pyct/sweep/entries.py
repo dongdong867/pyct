@@ -44,11 +44,20 @@ class Entry:
 
 
 @dataclass(frozen=True)
+class Unread:
+    """What raised while a module was read: the public name, or None for the module's names
+    as a whole, and Python's words for the error, its repr."""
+
+    name: str | None
+    error: str
+
+
+@dataclass(frozen=True)
 class Reading:
-    """What reading one module found: its entries, and the first public name that raised."""
+    """What reading one module found: its entries, and the first read that raised."""
 
     entries: list[Entry]
-    unread: str | None = None
+    unread: Unread | None = None
 
 
 def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
@@ -66,13 +75,13 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
     """
     found = _Package(package)
     entries: list[Entry] = []
-    unread: str | None = None
+    unread: Unread | None = None
     for name in public_names(module):
         try:
             entries.extend(found.entries(module, found_in, name))
         except Exception as error:
             if name not in _modules_below(module):
-                unread = unread or f"{found_in}::{name}: {error!r}"
+                unread = unread or Unread(name, repr(error))
     return Reading(entries, unread)
 
 

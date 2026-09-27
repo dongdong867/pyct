@@ -24,8 +24,9 @@ process started:
 - ``{"failed": M, "reason": R}`` for an import that raised, ``SystemExit``
   included, ``R`` its repr;
 - ``{"entry": {"module", "name", "seed", "skip"}}`` for each entry M holds;
-- ``{"unread": M, "reason": R}`` when reading M raised though its import did
-  not, ``R`` the row's whole reason;
+- ``{"unread": M, "name": N, "reason": R}`` when reading M raised though its
+  import did not, ``N`` the public name or null for M's names as a whole, and
+  ``R`` the error's repr;
 - ``{"done": true}`` at the end.
 
 stdout is pointed at stderr before any import, so a module that prints
@@ -43,7 +44,7 @@ from dataclasses import asdict, dataclass
 from types import ModuleType
 from typing import TextIO
 
-from pyct.sweep.entries import Reading, entries_in, package_path
+from pyct.sweep.entries import Reading, Unread, entries_in, package_path
 
 # parts of a module name below the package that leave the module out of the walk
 LEFT_OUT = frozenset({"test", "tests"})
@@ -99,11 +100,12 @@ def _read(module: ModuleType, name: str, walk: Walk) -> None:
     try:
         reading = entries_in(module, name, walk.package)
     except Exception as error:
-        reading = Reading([], f"{name}: {error!r}")
+        reading = Reading([], Unread(None, repr(error)))
     for entry in reading.entries:
         _write(walk.out, {"entry": asdict(entry)})
-    if reading.unread is not None:
-        _write(walk.out, {"unread": name, "reason": f"cannot read {reading.unread}"})
+    unread = reading.unread
+    if unread is not None:
+        _write(walk.out, {"unread": name, "name": unread.name, "reason": unread.error})
 
 
 def _imported(name: str, out: TextIO) -> ModuleType | None:
