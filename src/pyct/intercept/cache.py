@@ -4,7 +4,8 @@ Parsing and substituting a large package costs far more than importing it
 from Python's own bytecode, so each module's substituted code is kept and
 used again while its source is the same. The folder is ``.pyct_cache`` in
 the folder pyct runs from, as pytest keeps ``.pytest_cache``, or the one
-``PYCT_CACHE_DIR`` names. Nothing is written beside the target's files.
+``PYCT_CACHE_DIR`` names. Nothing is written inside the target's package
+or its ``__pycache__``.
 
 An entry is one file per module path, in a folder per version of the
 transform, so a changed pyct never reads code an older one made. It holds
@@ -16,7 +17,11 @@ after the file last changed, as git's index trusts a file's stat: on a file
 clock no coarser than that, an edit made later changes the file's change
 time, so it never goes unseen. A folder or file that cannot be read or
 written is only a miss: the module is substituted again, and nothing is
-kept.
+kept, which pyct says once as a warning.
+
+An entry is code that runs, so only this user's own entries are read, in a
+folder that is this user's alone: made with mode 0700, and never one that
+another user owns or may write to.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 
-from pyct.intercept import compiled, substitute
+from pyct.intercept import compiled, positions, substitute
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +81,8 @@ def cached(
     next run. The stat is taken before the read, so an edit between the two
     leaves a stat the next run does not match.
     """
+    if not _usable(root):
+        return build(read())
     entry = os.path.join(root, "substituted", _version(), _name(path))
     held = _held(entry)
     stat = _stat(path)
@@ -96,7 +103,7 @@ def _version() -> str:
     """A digest of the code that decides what an entry holds: the transform, its compile, and this
     module's format."""
     digest = hashlib.sha256()
-    for file in (substitute.__file__, compiled.__file__, __file__):
+    for file in (substitute.__file__, positions.__file__, compiled.__file__, __file__):
         digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]
 
@@ -109,11 +116,42 @@ def _name(path: str) -> str:
     return hashlib.sha256(key).hexdigest()[:32]
 
 
+@functools.cache
+def _usable(root: Path) -> bool:
+    """Whether the folder is there or can be made, and is this user's alone."""
+    try:
+        root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        found = root.stat()
+    except OSError as error:
+        _cannot_keep(root, str(error))
+        return False
+    if not _own(found):
+        _cannot_keep(root, "another user owns it or may write to it")
+        return False
+    return True
+
+
+def _own(found: os.stat_result) -> bool:
+    """Whether this user owns the file, and no one else may write to it."""
+    return found.st_uid == os.getuid() and not found.st_mode & 0o022
+
+
+@functools.cache
+def _cannot_keep(root: Path, why: str) -> None:
+    logger.warning(
+        "pyct cannot keep substituted code in %s (%s), so every run substitutes the target's "
+        "package again; %s names another folder",
+        root,
+        why,
+        CACHE_VARIABLE,
+    )
+
+
 def _held(entry: str) -> bytes | None:
-    """What the entry holds, or None when there is none to read."""
+    """What the entry holds, or None when there is none, or it is not this user's alone."""
     try:
         with open(entry, "rb", buffering=0) as handle:
-            return handle.readall()
+            return handle.readall() if _own(os.fstat(handle.fileno())) else None
     except OSError:
         return None
 
@@ -159,7 +197,7 @@ def _write(root: Path, entry: str, data: bytes) -> None:
     """
     folder = os.path.dirname(entry)
     try:
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(folder, mode=0o700, exist_ok=True)
         ignore = root / ".gitignore"
         if not ignore.exists():
             ignore.write_text(_IGNORE)
@@ -172,4 +210,4 @@ def _write(root: Path, entry: str, data: bytes) -> None:
                 os.unlink(handle.name)
             raise
     except OSError as error:
-        logger.debug("cannot keep substituted code in %s: %s", entry, error)
+        _cannot_keep(root, str(error))

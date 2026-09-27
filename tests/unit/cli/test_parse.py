@@ -89,3 +89,13 @@ def test_the_two_seconds_flags_refuse_in_the_same_words(
         parse(text)
 
     assert str(refused.value) == refusal
+
+
+def test_the_run_help_names_the_cache_folder_and_its_variable(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit):
+        parse_command(["run", "--help"])
+
+    help_text = " ".join(capsys.readouterr().out.split())
+    assert ".pyct_cache/" in help_text and "PYCT_CACHE_DIR" in help_text

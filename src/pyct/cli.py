@@ -43,6 +43,13 @@ USAGE = (
 )
 
 
+# where `pyct run --help` says the target's substituted code is kept
+CACHE_HELP = (
+    "pyct keeps the target's substituted code in .pyct_cache/ in the folder it runs from, "
+    "or in the folder PYCT_CACHE_DIR names. Deleting it is always safe."
+)
+
+
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
 # fork, its condition, and a few operations the target applies to the value
 LINE_NESTING = 8
@@ -191,7 +198,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``."""
     parser = _Parser(prog="pyct", usage=USAGE)
     commands = parser.add_subparsers(dest="command", required=True)
-    run_parser = commands.add_parser("run", usage=USAGE)
+    run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
     run_parser.add_argument("--args", dest="args_seed", metavar="JSON")

@@ -8,23 +8,28 @@ Three shapes, each a compare with one operator:
 - ``not`` over one of those, folded into the other operator as CPython's
   optimizer folds it, so ``not (a in b)`` is ``a not in b``.
 
-Each becomes a call of a function of `pyct.core.substitutes`, through the
-name the loader binds it to in the module, ``__pyct_in__(a, b)`` say. The
-operands are the compare's own nodes, moved into the call and never copied,
-so each is evaluated once and in Python's order: the left, then the right,
-then the test.
+Each becomes a call of a function of `pyct.core.substitutes` through a
+dunder name, ``__pyct_in__(a, b)`` say. The operands are the compare's own
+nodes, moved into the call and never copied, so each is evaluated once and
+in Python's order: the left, then the right, then the test.
+
+The module binds those names itself, in an import placed before its first
+statement that runs, after its docstring and its ``__future__`` imports and
+on that statement's own line, so the code has them in whatever namespace
+runs it: an import, ``runpy``, or a reload. A class body declares them
+global, so a namespace a metaclass prepares is never asked for them.
 
 Positions follow the compiled code, not the source text. The call takes the
 compare's whole position, which is where CPython puts the compare's own
 instruction and the jump that tests it, even under a folded ``not``. The
-name sits on the line where the left operand's first instruction does, so
-it adds no line: a plain name, since CPython moves a method call's own
-instruction to its attribute's line. A container display beside `in` is
-compiled as CPython compiles it there: a list becomes a tuple, and a list
-or set of constants one constant at the display's position, so a display
-written over several lines adds no line either. A set or dict display whose
-elements or keys are all constants also hands over those constants, in the
-order written, as a tuple.
+name sits on the line where the left operand's first instruction does
+(`positions.first`), so it adds no line: a plain name, since CPython moves
+a method call's own instruction to its attribute's line. A container
+display beside `in` is compiled as CPython compiles it there: a list
+becomes a tuple, and a list or set of constants one constant at the
+display's position. A set or dict display whose elements or keys are all
+constants also hands over those constants, in the order written, each once,
+as the display holds them.
 
 Annotations are left alone: under ``from __future__ import annotations``
 Python keeps one as its text, which the seed checks read.
@@ -33,10 +38,10 @@ Python keeps one as its text, which the seed checks read.
 from __future__ import annotations
 
 import ast
-import dis
-import warnings
 
-# the name each operator calls, which a substituted module holds before its code runs
+from pyct.intercept.positions import constants, first
+
+# the name each operator calls
 _NAMES: dict[type[ast.cmpop], str] = {
     ast.Is: "__pyct_is__",
     ast.IsNot: "__pyct_is_not__",
@@ -57,24 +62,11 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
     ast.NotIn: ast.In,
 }
 
+# the module the bound names come from
+_SUBSTITUTES = "pyct.core.substitutes"
+
 # the largest display whose constants are handed over; a larger one is Python's own lookup
 WRITTEN_MOST = 100
-
-# CPython's STACK_USE_GUIDELINE: a call or a display with more parts than this is built in steps
-_STACK_GUIDELINE = 30
-
-# the field of each node CPython evaluates first, where it is always the same field
-_FIRST_FIELDS: dict[type[ast.expr], str] = {
-    ast.Attribute: "value",
-    ast.Subscript: "value",
-    ast.NamedExpr: "value",
-    ast.Await: "value",
-    ast.Yield: "value",
-    ast.YieldFrom: "value",
-    ast.FormattedValue: "value",
-    ast.Compare: "left",
-    ast.IfExp: "test",
-}
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -90,11 +82,15 @@ def substitute(tree: ast.Module) -> ast.Module:
 
     The walk keeps its own stack rather than recursing, so a deeply nested
     expression, such as a long chain of `+`, needs no deeper Python stack
-    than a shallow one.
+    than a shallow one. A tree with a substitution binds the names it calls.
     """
     pending: list[ast.AST] = [tree]
+    classes: list[ast.ClassDef] = []
+    substituted = False
     while pending:
         node = pending.pop()
+        if isinstance(node, ast.ClassDef):
+            classes.append(node)
         skipped = _ANNOTATIONS.get(type(node))
         for field, value in ast.iter_fields(node):
             if field == skipped:
@@ -103,6 +99,9 @@ def substitute(tree: ast.Module) -> ast.Module:
                 value[:] = [_visited(item, pending) for item in value]
             elif isinstance(value, ast.AST):
                 setattr(node, field, _visited(value, pending))
+        substituted = substituted or _calls_a_substitute(node)
+    if substituted:
+        _bind(tree, classes)
     return tree
 
 
@@ -113,6 +112,10 @@ def _visited(node: object, pending: list[ast.AST]) -> object:
     replacement = _replacement(node) or node
     pending.append(replacement)
     return replacement
+
+
+def _calls_a_substitute(node: ast.AST) -> bool:
+    return isinstance(node, ast.Name) and node.id in BOUND
 
 
 def _replacement(node: ast.AST) -> ast.Call | None:
@@ -153,105 +156,26 @@ def _is_bool(node: ast.expr) -> bool:
 
 def _function(name: str, left: ast.expr) -> ast.Name:
     """The function's name, placed where the left operand's first instruction is."""
-    first = _first(left)
+    start = first(left)
     return ast.Name(
         id=name,
         ctx=ast.Load(),
-        lineno=first.lineno,
-        col_offset=first.col_offset,
-        end_lineno=first.lineno,
-        end_col_offset=first.col_offset,
+        lineno=start.lineno,
+        col_offset=start.col_offset,
+        end_lineno=start.lineno,
+        end_col_offset=start.col_offset,
     )
-
-
-def _first(node: ast.expr) -> ast.expr:
-    """The part of an expression whose position CPython gives the expression's first instruction.
-
-    It is the part evaluated first: the left of an operator, the object of
-    an attribute, a call or a subscript, the test of a conditional. Every
-    part of an expression on one line is on that line, so the walk goes
-    down only while the part spans lines. A part CPython folds to one
-    constant, or builds before its first element, is its own first.
-    """
-    while node.lineno != node.end_lineno:
-        part = _evaluated_first(node)
-        if part is None:
-            break
-        node = part
-    return node
-
-
-def _evaluated_first(node: ast.expr) -> ast.expr | None:
-    """The part of the node CPython evaluates before the rest of it, or None when it has none."""
-    if isinstance(node, ast.Call):
-        method = node.func
-        return method.value if isinstance(method, ast.Attribute) and _method_call(node) else None
-    if isinstance(node, ast.BinOp | ast.UnaryOp):
-        # a part CPython folds to a constant is loaded at its own position
-        if _constants([node], node) is not None:
-            return None
-        return node.left if isinstance(node, ast.BinOp) else node.operand
-    if isinstance(node, ast.Tuple | ast.List | ast.Set):
-        return _first_element(node)
-    if isinstance(node, ast.Dict):
-        return _first_entry(node)
-    if isinstance(node, ast.ListComp | ast.SetComp | ast.DictComp):
-        # CPython runs the comprehension inline, from its first iterable
-        return node.generators[0].iter
-    if isinstance(node, ast.BoolOp | ast.JoinedStr):
-        return node.values[0] if node.values else None
-    field = _FIRST_FIELDS.get(type(node))
-    return None if field is None else getattr(node, field)
-
-
-def _method_call(call: ast.Call) -> bool:
-    """Whether CPython compiles the call as a method call, evaluating its object first.
-
-    Otherwise its first instruction sits at the called expression's own
-    position.
-    """
-    unpacked = any(isinstance(arg, ast.Starred) for arg in call.args) or any(
-        keyword.arg is None for keyword in call.keywords
-    )
-    count = len(call.args) + len(call.keywords) + (1 if call.keywords else 0)
-    return not unpacked and count < _STACK_GUIDELINE
-
-
-def _first_entry(display: ast.Dict) -> ast.expr | None:
-    """A dict display's first key, or its first value when CPython loads its keys as one constant.
-
-    A display that opens with an unpacking, or holds nothing, starts by
-    building the dict.
-    """
-    keys = display.keys
-    if not keys or keys[0] is None:
-        return None
-    constant_keys = len(keys) > 1 and None not in keys
-    if constant_keys and _constants([key for key in keys if key is not None], display):
-        return None if 2 * len(keys) > _STACK_GUIDELINE else display.values[0]
-    return keys[0]
-
-
-def _first_element(display: ast.Tuple | ast.List | ast.Set) -> ast.expr | None:
-    """A display's first element, when CPython evaluates it before building the display."""
-    elements = display.elts
-    if not elements or len(elements) > _STACK_GUIDELINE or isinstance(elements[0], ast.Starred):
-        return None
-    folds = isinstance(display, ast.Tuple) or len(elements) > 2
-    if folds and _constants(elements, display) is not None:
-        return None
-    return elements[0]
 
 
 def _container(display: ast.expr) -> list[ast.expr]:
     """The container as CPython compiles it beside `in`, then any constants it was written with."""
     if isinstance(display, ast.List) and not _starred(display.elts):
-        folded = _constants(display.elts, display)
+        folded = constants(display.elts, display)
         if folded is None:
             return [ast.copy_location(ast.Tuple(elts=display.elts, ctx=ast.Load()), display)]
         return [_constant(folded, display)]
     if isinstance(display, ast.Set):
-        folded = _constants(display.elts, display)
+        folded = constants(display.elts, display)
         if folded is None:
             return [display]
         return [_constant(frozenset(folded), display), *_written(folded, display)]
@@ -259,7 +183,7 @@ def _container(display: ast.expr) -> list[ast.expr]:
         # a key of None is a `**` unpacking, whose keys the display does not write
         keys = [key for key in display.keys if key is not None]
         if len(keys) == len(display.keys):
-            return [display, *_written(_constants(keys, display), display)]
+            return [display, *_written(constants(keys, display), display)]
     return [display]
 
 
@@ -268,10 +192,16 @@ def _starred(elements: list[ast.expr]) -> bool:
 
 
 def _written(folded: tuple[object, ...] | None, display: ast.expr) -> list[ast.expr]:
-    """The constants a set or dict display was written with, when there are few enough."""
-    if folded is None or len(folded) > WRITTEN_MOST:
+    """The constants a set or dict display holds, in the order written, when there are few enough.
+
+    An element equal to an earlier one is dropped, as the display drops it:
+    `{1, True, 1}` holds the 1 alone.
+    """
+    if folded is None:
         return []
-    return [_constant(folded, display)]
+    held: set[object] = set()
+    kept = [element for element in folded if not (element in held or held.add(element))]
+    return [] if len(kept) > WRITTEN_MOST else [_constant(tuple(kept), display)]
 
 
 def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) -> ast.expr:
@@ -280,47 +210,42 @@ def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) 
     return ast.copy_location(ast.Constant(value=value), display)  # pyrefly: ignore[bad-argument-type]
 
 
-def _constants(elements: list[ast.expr], display: ast.expr) -> tuple[object, ...] | None:
-    """The elements as the one tuple constant CPython folds them to, or None when it does not.
+def _bind(tree: ast.Module, classes: list[ast.ClassDef]) -> None:
+    """Import the names into the module, and declare them global in every class body.
 
-    The running CPython answers: the elements are compiled alone, as a tuple,
-    and are constants when its code loads one constant and returns it.
-    Asking the compiler keeps the rule for what it folds its own, whatever
-    the release. Its warnings are the module's to give, once, when the
-    module itself compiles.
+    The import goes before the module's first statement that runs, on that
+    statement's line, which it shares, so it adds no line. A module of a
+    docstring and ``__future__`` imports alone runs nothing to substitute.
+    A ``global`` statement compiles to no instruction at all.
     """
-    if not all(_may_fold(element) for element in elements):
-        return None
-    probe = ast.Expression(
-        body=ast.copy_location(ast.Tuple(elts=elements, ctx=ast.Load()), display)
-    )
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        code = compile(probe, "<pyct probe>", "eval", dont_inherit=True)
-    steps = [step for step in dis.get_instructions(code) if step.opname not in ("RESUME", "NOP")]
-    names = [step.opname for step in steps]
-    if names == ["RETURN_CONST"] or names == ["LOAD_CONST", "RETURN_VALUE"]:
-        value = steps[0].argval
-        return value if isinstance(value, tuple) else None
-    return None
+    body = tree.body
+    start = _after_preamble(body, module=True)
+    where = body[start]
+    names = [_at(ast.alias(name=function, asname=name), where) for name, function in BOUND.items()]
+    imported = ast.ImportFrom(module=_SUBSTITUTES, names=names, level=0)
+    body.insert(start, _at(imported, where))
+    for owner in classes:
+        place = _after_preamble(owner.body, module=False)
+        declared = ast.Global(names=list(BOUND))
+        owner.body.insert(place, _at(declared, owner.body[min(place, len(owner.body) - 1)]))
 
 
-# what CPython may fold to a constant: constants, and operators, tuples and subscripts of them
-_FOLDABLE = (ast.Constant, ast.BinOp, ast.UnaryOp, ast.Tuple, ast.Subscript)
+def _after_preamble(body: list[ast.stmt], *, module: bool) -> int:
+    """Where the first statement after a docstring, and a module's ``__future__`` imports, is."""
+    index = 0
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        index = 1 if isinstance(body[0].value.value, str) else 0
+    while module and index < len(body) and _future(body[index]):
+        index += 1
+    return index
 
 
-def _may_fold(node: ast.expr) -> bool:
-    """Whether every part of the expression is one CPython may fold, worth asking the compiler.
+def _future(statement: ast.stmt) -> bool:
+    return isinstance(statement, ast.ImportFrom) and statement.module == "__future__"
 
-    The last part is looked at first, so a long chain of operators on
-    names answers at its first operator.
-    """
-    pending: list[ast.AST] = [node]
-    while pending:
-        part = pending.pop()
-        if isinstance(part, ast.Name) and part.id == "__debug__":
-            continue
-        if not isinstance(part, _FOLDABLE):
-            return False
-        pending.extend(child for child in ast.iter_child_nodes(part) if isinstance(child, ast.expr))
-    return True
+
+def _at[Placed: ast.stmt | ast.alias](node: Placed, where: ast.stmt) -> Placed:
+    """The node placed at the start of a statement's first line, taking no room of its own."""
+    node.lineno = node.end_lineno = where.lineno
+    node.col_offset = node.end_col_offset = where.col_offset
+    return node

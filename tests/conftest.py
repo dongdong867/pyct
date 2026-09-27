@@ -80,6 +80,21 @@ def _session_cache(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def _forget_substituted_modules() -> Iterator[None]:
+    """Drop, after each test, every module pyct substituted as it was imported.
+
+    A test that calls ``main()`` in this process imports its target with the
+    hook open, and the module would stay substituted for every later test,
+    which expects the target as written, so the suite would depend on the
+    order it runs in.
+    """
+    yield
+    for name, module in list(sys.modules.items()):
+        if type(getattr(module, "__loader__", None)).__module__ == "pyct.intercept.hook":
+            del sys.modules[name]
+
+
 @pytest.fixture
 def deadline_fires_in_a_child(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep coverage.py out of every child this test forks, since their deadline fires."""

@@ -2,7 +2,7 @@
 
 intercept-builtin-functions-behaves-as-written-on-plain-operands. Each program applies one
 substituted shape to its operands, and runs twice in fresh namespaces: compiled as written,
-and compiled as pyct substitutes it, in a namespace prepared as the loader prepares a module.
+and compiled as pyct substitutes it, which binds the names it calls itself.
 Each pair must give the same answer, of the same type, or raise the same exception type with
 the same message, and log the same calls in the same order.
 
@@ -19,7 +19,6 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyct.intercept.hook import prepare
 from pyct.intercept.substitute import substitute
 
 # one program per shape pyct substitutes; `a` and `b` are the operands, `note` logs each one's
@@ -48,6 +47,12 @@ PROGRAMS: dict[str, str] = {
     "in starred list": "answer = note('a', a) in [*note('s', [1]), 'x']",
     "in literal tuple": "answer = note('a', a) in (1, 'x')",
     "in empty dict": "answer = note('a', a) in {}",
+    "in repeated set": "answer = note('a', a) in {1, True, 1.0, 'x', 'x'}",
+    # a class body whose namespace logs every name it is asked for and does not hold
+    "in class body": (
+        "class Held(metaclass=Logging):\n    held = note('a', a) in note('b', b)\n"
+        "answer = Held.held"
+    ),
 }
 
 
@@ -88,6 +93,24 @@ class Logged:
     def __float__(self) -> float:
         self.log.append("__float__")
         return 1.0
+
+
+class Asked(dict[str, object]):
+    """A class namespace that logs each name it is asked for and does not hold."""
+
+    log: list[object] = []
+
+    def __missing__(self, name: str) -> object:
+        Asked.log.append(("asked", name))
+        raise KeyError(name)
+
+
+class Logging(type):
+    """A metaclass whose class bodies run in an `Asked` namespace."""
+
+    @classmethod
+    def __prepare__(metacls, name: str, bases: tuple[type, ...], **kwds: object) -> Asked:
+        return Asked()
 
 
 class Answer:
@@ -146,18 +169,17 @@ def operands(log: list[object]) -> list[object]:
     return [*PLAIN, Logged(log), Raising()]
 
 
-def outcome(code: types.CodeType, a_index: int, b_index: int, prepared: bool) -> tuple[object, ...]:
+def outcome(code: types.CodeType, a_index: int, b_index: int) -> tuple[object, ...]:
     """Run the code once on the two operands, and say what it answered or raised, and logged."""
     log: list[object] = []
+    Asked.log = log
     a, b = operands(log)[a_index], operands(log)[b_index]
 
     def note(name: str, value: object) -> object:
         log.append(("evaluated", name))
         return value
 
-    namespace: dict[str, object] = {"a": a, "b": b, "note": note}
-    if prepared:
-        prepare(namespace)
+    namespace: dict[str, object] = {"a": a, "b": b, "note": note, "Logging": Logging}
     try:
         exec(code, namespace)  # noqa: S102 - the program under test is this module's own table
     except Exception as error:
@@ -175,8 +197,8 @@ def test_each_substituted_operation_behaves_as_written(shape: str) -> None:
 
     count = len(operands([]))
     for a_index, b_index in itertools.product(range(count), repeat=2):
-        expected = outcome(written, a_index, b_index, prepared=False)
-        assert outcome(substituted, a_index, b_index, prepared=True) == expected, (
+        expected = outcome(written, a_index, b_index)
+        assert outcome(substituted, a_index, b_index) == expected, (
             shape,
             operands([])[a_index],
             operands([])[b_index],

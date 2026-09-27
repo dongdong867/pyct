@@ -138,7 +138,9 @@ def test_a_settled_entry_holding_no_code_is_a_miss(tmp_path: Path) -> None:
     assert module.builds == ["x = 1", "x = 1"]
 
 
-def test_a_folder_that_cannot_be_written_keeps_nothing_and_still_answers(tmp_path: Path) -> None:
+def test_a_folder_that_cannot_be_made_keeps_nothing_and_says_so_once(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     blocked = tmp_path / "file"
     blocked.write_text("a file where the folder would go")
     module = Module(tmp_path, "x = 1")
@@ -148,6 +150,43 @@ def test_a_folder_that_cannot_be_written_keeps_nothing_and_still_answers(tmp_pat
 
     assert isinstance(code, types.CodeType)
     assert module.builds == ["x = 1", "x = 1"]
+    warnings = [record for record in caplog.records if record.levelname == "WARNING"]
+    assert len(warnings) == 1
+    assert str(blocked) in warnings[0].getMessage() and CACHE_VARIABLE in warnings[0].getMessage()
+
+
+def test_a_folder_others_may_write_to_is_never_read_or_written(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    module = Module(tmp_path, "x = 1")
+
+    module.code(shared)
+    module.code(shared)
+
+    assert module.builds == ["x = 1", "x = 1"]
+    assert list(shared.iterdir()) == []
+    assert "may write to it" in caplog.text
+
+
+@pytest.mark.usefixtures("settled")
+def test_an_entry_others_may_write_to_is_a_miss(tmp_path: Path) -> None:
+    module = Module(tmp_path, "x = 1")
+    module.code(tmp_path / "cache")
+    (entry,) = entries(tmp_path / "cache")
+    entry.chmod(0o666)
+
+    module.code(tmp_path / "cache")
+
+    assert module.builds == ["x = 1", "x = 1"]
+
+
+def test_the_folder_is_made_for_this_user_alone(tmp_path: Path) -> None:
+    Module(tmp_path, "x = 1").code(tmp_path / "cache")
+
+    assert (tmp_path / "cache").stat().st_mode & 0o777 == 0o700
 
 
 def test_an_entry_that_cannot_be_put_in_place_leaves_no_file_behind(

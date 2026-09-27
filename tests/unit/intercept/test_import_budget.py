@@ -3,7 +3,8 @@
 
 A generated package of 200 modules, each with the compares pyct substitutes, is imported in
 fresh interpreters: as written, from the bytecode Python keeps, and substituted, from pyct's
-cache. Each takes its best of five, so a slow moment of the machine counts against neither.
+cache. Each takes its best of five, run in alternating pairs, so a slow moment of the machine
+counts against neither.
 The files are left to settle first, as a package on disk has, so the cache trusts their stat.
 """
 
@@ -75,7 +76,9 @@ def test_a_warm_substituted_import_costs_at_most_a_quarter_more(tmp_path: Path) 
     time.sleep(max(0.0, written_at + 2.5 - time.monotonic()))
     imported(tmp_path, "substituted")
 
-    written = min(imported(tmp_path, "written") for _ in range(5))
-    substituted = min(imported(tmp_path, "substituted") for _ in range(5))
+    # pair by pair, so a slow moment of the machine lands on both sides alike
+    pairs = [(imported(tmp_path, "written"), imported(tmp_path, "substituted")) for _ in range(5)]
+    written = min(first for first, _ in pairs)
+    substituted = min(second for _, second in pairs)
 
     assert substituted <= BUDGET * written, (substituted, written)

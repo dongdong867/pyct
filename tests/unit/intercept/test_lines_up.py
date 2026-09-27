@@ -147,6 +147,11 @@ SPREAD_OUT = [
     "not (\n a).b in c",
     "x in [\n __debug__, 1]",
     "x in [\n 'ab' * 3000, 1]",
+    "(\n handler\n)(request) in allowed",
+    "(\n f)() is True",
+    "{" + ", ".join(f"k{n}: {n}" for n in range(15)) + ",\n k: 1} in d",
+    "{" + ", ".join(f"k{n}: {n}" for n in range(16)) + ",\n k: 1} in d",
+    "{'a':\n f(), 'b': 2, **c} in d",
 ]
 
 
@@ -167,7 +172,8 @@ def test_a_compare_whose_left_side_runs_on_a_later_line_lines_up() -> None:
     substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
 
     assert layout(written) == layout(substituted)
-    assert line_starts(substituted.co_consts[0])[:2] == [(3, False), (2, False)]
+    (function,) = [each for each in substituted.co_consts if isinstance(each, types.CodeType)]
+    assert line_starts(function)[:2] == [(3, False), (2, False)]
 
 
 def test_each_operand_node_appears_once_in_the_substituted_tree() -> None:
