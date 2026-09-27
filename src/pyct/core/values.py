@@ -92,21 +92,25 @@ def downgraded(
 ) -> Callable[..., object]:
     """The base type's own operation, and a note in the sink that the condition was lost.
 
-    The arguments reach the base type's operation as the target wrote them,
-    keywords too, so the operation takes and refuses what it would take and
-    refuse on a plain value. The note comes after the call, so an operation
-    that raises records nothing and the raise stays the target's.
-    ``NotImplemented`` is not an answer either: the other operand's reflected
-    method gets its turn, and only a real result is a lost condition. A
-    result that is the receiver itself, as str's `%`, `format` and
-    `__format__` can give, comes back as the receiver's plain value.
+    The arguments reach the operation as the target wrote them, keywords
+    too, so it takes and refuses what it would take and refuse on a plain
+    value. The note comes after the call, so an operation that raises
+    records nothing and the raise stays the target's. ``NotImplemented`` is
+    not an answer either: the other operand's reflected method gets its
+    turn, and only a real result is a lost condition. A result that is the
+    receiver itself, as str's `%`, `format` and `__format__` can give, comes
+    back as the receiver's plain value.
+
     ``calling`` is how the base type answers when its method by that name
     is not the answer: str has no `__radd__`, and its reflected
     concatenation is its `__add__` the other way round; a tracked bool
-    formats as the bool it is, where int's `__format__` writes a number.
-    The downgrade is still named ``name``. ``first`` answers a call on one
-    argument before the base type does, when it has an answer, and that
-    answer comes back with no downgrade of pyct's own.
+    formats as the bool it is, where int's `__format__` writes a number; and
+    a split runs on plain values, so that none of its pieces is tracked.
+    Such a replacement may turn its arguments into plain values, and it is
+    what takes and refuses them. The downgrade is still named ``name``.
+    ``first`` answers a call on one argument before the base type does,
+    when it has an answer, and that answer comes back with no downgrade of
+    pyct's own.
     """
     operation = getattr(base, name) if calling is None else calling
 
