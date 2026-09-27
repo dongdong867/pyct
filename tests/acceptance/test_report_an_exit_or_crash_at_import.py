@@ -6,14 +6,18 @@ that started pyct gets back.
 """
 
 import signal
+from pathlib import Path
 
-from tests.acceptance.harness import run_pyct
+import pytest
+
+from tests.acceptance.harness import input_lines, run_pyct
 
 EXITS = "targets.load.exits_at_import"
 EXITS_CLEANLY = "targets.load.exits_cleanly_at_import"
 ENDS_ITS_PROCESS = "targets.load.ends_its_process_at_import"
 CRASHES = "targets.load.crashes_at_import"
 INTERRUPTED = "targets.load.interrupted_at_import"
+COUNTS_ITS_IMPORTS = "targets.load.counts_its_imports"
 
 
 def outcome(module: str) -> tuple[str, int, str]:
@@ -66,3 +70,15 @@ def test_ends_as_a_ctrl_c_does_on_a_keyboard_interrupt_at_import() -> None:
     assert stderr.splitlines()[-1] == "KeyboardInterrupt"
     assert "cannot import" not in stderr
     assert stdout == ""
+
+
+# the ticket's Keep: the module is still imported once per run, in the process that runs it
+def test_imports_the_module_once_per_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    notes = tmp_path / "imports"
+    monkeypatch.setenv("PYCT_TEST_IMPORTS", str(notes))
+
+    result = run_pyct(f"{COUNTS_ITS_IMPORTS}::f", "--args", '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert len(input_lines(result.stdout)) == 2, result.stdout
+    assert len(notes.read_text().splitlines()) == 1
