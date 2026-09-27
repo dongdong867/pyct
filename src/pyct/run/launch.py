@@ -3,7 +3,8 @@
 A target's module can end the process that imports it, by ``os._exit`` or
 by a signal such as SIGSEGV. pyct imports the target once, in the process
 that runs it, so that process cannot be the one that says so. The process
-the shell starts forks the command's process before anything else and only
+the shell starts forks the command's process before anything else, or
+starts it fresh when a thread already runs (see ``launch``), and only
 watches it. While the command's process imports the target, a page the two
 share names the module. When the command's process ends while the page
 names one, the watcher says ``cannot import <module>: <how it ended>``, in
@@ -183,10 +184,12 @@ def _serve(
 ) -> int:
     """Run ``command`` as the command's process, which stops on a SIGTERM or with its watcher.
 
-    The handlers go in before ``held``, the mask to put back, is put back.
-    When the command's process was forked, that mask held SIGTERM from
-    before the fork, so none lands before its handler. The watcher may be
-    gone before the system could say so, so the pipe is read once here too.
+    The handlers go in before the mask becomes ``held``. A forked command's
+    process has SIGTERM blocked from before the fork until then, so none
+    lands before its handler. One started fresh starts with ``held``, which
+    need not block SIGTERM, so a SIGTERM before its handler takes the
+    default action and ends it, as a stop would. The watcher may be gone
+    before the system could say so, so the pipe is read once here too.
     """
     stops = _Stops(lifeline)
     try:
