@@ -19,12 +19,6 @@ from tests.unit.intercept.test_substitute import substituted
         ("builtins.int(x)", "__pyct_call__(builtins.int)(x)"),
         ("map(int, parts)", "__pyct_call__(map)(int, parts)"),
         ("map(builtins.float, parts)", "__pyct_call__(map)(builtins.float, parts)"),
-        # a `math` function, after a dot or bare as `from math import sqrt` binds it
-        ("math.sqrt(x)", "__pyct_call__(math.sqrt)(x)"),
-        ("sqrt(x)", "__pyct_call__(sqrt)(x)"),
-        ("math.isclose(x, 0.1, rel_tol=t)", "__pyct_call__(math.isclose)(x, 0.1, rel_tol=t)"),
-        ("math.gcd(n, 6)", "__pyct_call__(math.gcd)(n, 6)"),
-        ("logger.log(x)", "__pyct_call__(logger.log)(x)"),
         ('"abc".find(s)', "__pyct_method__('abc'.find, s)"),
         ("'abc'.startswith(s, 1)", "__pyct_method__('abc'.startswith, s, 1)"),
         ("','.split(sep=s)", "__pyct_method__(','.split, sep=s)"),
@@ -93,11 +87,6 @@ def test_an_operator_with_a_float_or_bool_literal_on_the_left_hands_its_right_si
         "conv(x)",
         "map(str, parts)",
         "map(f, parts)",
-        # the roundings `math` asks the number itself for, and a `math` name called with nothing
-        "math.floor(x)",
-        "ceil(x)",
-        "math.trunc(x)",
-        "math.sqrt(*args)",
         "text.find(s)",
         "items.index(x)",
         "b'abc'.find(s)",
@@ -148,3 +137,73 @@ def test_a_handed_right_side_sits_where_the_literal_does() -> None:
     assert (handed.lineno, handed.col_offset) == (1, 5)
     assert (handed.func.lineno, handed.args[1].lineno) == (1, 1)
     assert handed.args[0].lineno == 2
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("import math\nmath.sqrt(x)", "import math\n__pyct_call__(math.sqrt)(x)"),
+        ("import math as m\nm.gcd(n, 6)", "import math as m\n__pyct_call__(m.gcd)(n, 6)"),
+        (
+            "import os, math\nmath.isclose(a=x, b=0.1)",
+            "import os, math\n__pyct_call__(math.isclose)(a=x, b=0.1)",
+        ),
+        ("from math import sqrt\nsqrt(x)", "from math import sqrt\n__pyct_call__(sqrt)(x)"),
+        (
+            "from math import sqrt as root\nroot(x)",
+            "from math import sqrt as root\n__pyct_call__(root)(x)",
+        ),
+        ("from math import *\nexp(x)", "from math import *\n__pyct_call__(exp)(x)"),
+        # two functions of math under one name: the callee read when the call runs picks
+        (
+            "from math import sqrt, exp as sqrt\nsqrt(x)",
+            "from math import sqrt, exp as sqrt\n__pyct_call__(sqrt)(x)",
+        ),
+        # bound in a function's scope, and read in another: every binding is the import
+        (
+            "def f():\n    import math\ndef g():\n    return math.log(x)",
+            "\ndef f():\n    import math\n\ndef g():\n    return __pyct_call__(math.log)(x)",
+        ),
+    ],
+)
+def test_a_call_of_a_math_function_by_the_name_the_module_imports_it_under_is_substituted(
+    source: str, expected: str
+) -> None:
+    assert substituted(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # a name that ends like a math function but names no import of it
+        "logger.log(x)",
+        "obj.sqrt(x)",
+        "pow(a, 2)",
+        "def dist(a, b):\n    return a\ndist(1, 2)",
+        "sqrt(x)",
+        "math.sqrt(x)",
+        # a module imported under math's name, and math imported under another's
+        "import numpy as math\nmath.sqrt(x)",
+        "import math as np\nimport numpy as np\nnp.exp(x)",
+        # a name the module binds another way too
+        "from math import sqrt\ndef sqrt(v):\n    return v\nsqrt(x)",
+        "from math import sqrt\nsqrt = abs\nsqrt(x)",
+        "import math\ndef f(math):\n    return math.sqrt(x)",
+        "import math\nfor math in mods:\n    math.sqrt(x)",
+        "from math import sqrt\nimport math as sqrt\nsqrt(x)",
+        "import math\nmath = 2.0\nmath.sqrt(x)",
+        # another module's star import may bind any name
+        "from math import sqrt\nfrom cmath import *\nsqrt(x)",
+        "import math\nfrom os import *\nmath.sqrt(x)",
+        # an attribute of an attribute, and a name math does not route
+        "import math\nself.math.sqrt(x)",
+        "import math\nmath.floor(x)",
+        "from math import ceil\nceil(x)",
+        "import math\nmath.pi(x)",
+        # a relative import, and a call with nothing written out
+        "from .math import sqrt\nsqrt(x)",
+        "import math\nmath.sqrt(*args)",
+    ],
+)
+def test_any_other_call_of_a_math_name_is_left_as_written(source: str) -> None:
+    assert substituted(source) == ast.unparse(ast.parse(source))

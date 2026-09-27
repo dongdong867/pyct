@@ -114,12 +114,30 @@ def test_a_tracked_int_is_read_as_the_double_python_converts_it_to() -> None:
     assert expressions(sink) == [(["not", ["<", "n", 0.0]], True)]
 
 
-def test_a_tracked_int_too_large_for_a_double_raises_python_s_error() -> None:
-    with pytest.raises(OverflowError) as raised:
-        called(math.fabs)(ConcolicInt(10**400, expression="n", sink=[]))
+@pytest.mark.parametrize("function", [math.fabs, math.sqrt, math.isfinite])
+@pytest.mark.parametrize("value", [10**400, -(10**400)], ids=["above", "below"])
+def test_a_tracked_int_too_large_for_a_double_raises_python_s_error_before_any_fork(
+    function: Callable[[int], object], value: int
+) -> None:
+    sink: list[SinkItem] = []
 
-    assert str(raised.value) == _message(math.fabs, 10**400)
+    with pytest.raises(OverflowError) as raised:
+        called(function)(ConcolicInt(value, expression="n", sink=sink))
+
+    assert str(raised.value) == _message(function, value)
     assert raised_by_target(raised.value)
+    # Python converts the int first, so the sign `sqrt` checks next is never read
+    assert sink == []
+
+
+def test_copysign_converts_each_int_before_it_reads_either() -> None:
+    sink: list[SinkItem] = []
+
+    with pytest.raises(OverflowError) as raised:
+        called(math.copysign)(tracked(1.0, sink), ConcolicInt(10**400, expression="n", sink=sink))
+
+    assert str(raised.value) == _message(math.copysign, 1.0, 10**400)
+    assert sink == []
 
 
 @pytest.mark.parametrize(
@@ -166,6 +184,44 @@ def test_isclose_writes_both_tolerances_whether_the_call_gave_them_or_not(
     assert (type(result), repr(result)) == (ConcolicBool, repr(answer))
     assert result.expression == expression
     assert [type(part) for part in expression[3:]] == [float, float]
+    assert sink == []
+
+
+@pytest.mark.parametrize(
+    ("args", "kwargs"),
+    [
+        ((), {"a": "x", "b": 1.5000000001}),
+        (("x",), {"b": 1.5000000001, "rel_tol": 1e-09}),
+        ((), {"b": 1.5000000001, "a": "x", "abs_tol": 0.0}),
+    ],
+)
+def test_isclose_takes_its_numbers_by_keyword_as_python_does(
+    args: tuple[object, ...], kwargs: dict[str, Any]
+) -> None:
+    sink: list[SinkItem] = []
+    written, _ = operands(args, sink)
+    given = {key: operands((value,), sink)[0][0] for key, value in kwargs.items()}
+
+    result = called(math.isclose)(*written, **given)
+
+    assert type(result) is ConcolicBool
+    assert result.expression == ["isclose", "x", 1.5000000001, 1e-09, 0.0]
+    assert sink == []
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"a": 1.0}, {"b": 1.0, "c": 2.0}],
+)
+def test_isclose_given_a_number_twice_or_a_keyword_it_lacks_raises_python_s_error(
+    kwargs: dict[str, Any],
+) -> None:
+    sink: list[SinkItem] = []
+
+    with pytest.raises(TypeError) as raised:
+        called(math.isclose)(tracked(1.5, sink), 1.0, **kwargs)
+
+    assert str(raised.value) == _message(math.isclose, 1.5, 1.0, **kwargs)
     assert sink == []
 
 

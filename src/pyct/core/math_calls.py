@@ -58,7 +58,7 @@ _PLAIN: Mapping[type, type | None] = {
 _TOLERANCES: Mapping[str, float] = {"rel_tol": 1e-09, "abs_tol": 0.0}
 
 # a number as a followed function reads it: its expression, and the plain value Python reads
-type Read = tuple[Expression, float | int]
+type Read = tuple[Expression, float]
 
 # how a followed function answers a call with a tracked argument, or NotImplemented for a form
 # it does not encode
@@ -66,21 +66,24 @@ type Follow = Callable[[tuple[object, ...], dict[str, object], BranchSink], obje
 
 
 def _read(value: object) -> Read | None:
-    """A number beside a tracked one: its expression and its value, or None for any other.
+    """A number beside a tracked one: its expression and the double Python reads, or None for
+    any other.
 
     A tracked float or int reads as its expression; a plain int as itself,
     and a plain float, the target's own float subclass among them, as the
-    double it holds, which is all Python's `math` reads of it.
+    double it holds, which is all Python's `math` reads of it. An int is
+    converted here, as Python converts it before anything else, so one too
+    large for a double raises Python's OverflowError before any fork.
     """
     kind = type(value)
     if kind is ConcolicInt:
         whole = cast(ConcolicInt, value)
-        return whole.expression, int.__index__(whole)
+        return whole.expression, own(int.__float__, whole)
     if kind is ConcolicFloat:
         real = cast(ConcolicFloat, value)
         return real.expression, float.__float__(real)
     if kind is int:
-        return cast(int, value), cast(int, value)
+        return cast(int, value), own(int.__float__, cast(int, value))
     if isinstance(value, float) and kind not in _PLAIN:
         double = float.__float__(value)
         return double, double
@@ -100,7 +103,7 @@ def _all_read(args: tuple[object, ...], count: int) -> list[Read] | None:
     return read
 
 
-def _not_negative(sink: BranchSink, expression: Expression, value: float | int) -> None:
+def _not_negative(sink: BranchSink, expression: Expression, value: float) -> None:
     """The fork `sqrt` takes before it runs, taken true when it does not raise, NaN included."""
     forked(sink, ["not", ["<", expression, 0.0]], not value < 0.0)
 
@@ -108,7 +111,7 @@ def _not_negative(sink: BranchSink, expression: Expression, value: float | int) 
 def _followed(
     function: Callable[..., object],
     count: int,
-    before: Callable[[BranchSink, Expression, float | int], None] | None = None,
+    before: Callable[[BranchSink, Expression, float], None] | None = None,
 ) -> Follow:
     """A function of ``count`` numbers, followed: Python's answer, tracked, under its name.
 
@@ -141,11 +144,16 @@ def _double(value: Any) -> float:
 def _close(args: tuple[object, ...], kwargs: dict[str, object], sink: BranchSink) -> object:
     """`isclose` of two numbers with plain tolerances: a tracked bool, both tolerances written.
 
-    Python refuses a negative tolerance before it compares, so its own call
-    runs before the expression is written, and a refused call records nothing.
+    The numbers may be given by position or by keyword, `a` and `b`, as
+    Python takes them. Python refuses a negative tolerance before it
+    compares, so its own call runs before the expression is written, and a
+    refused call records nothing.
     """
-    read = _all_read(args, 2)
-    given = {**_TOLERANCES, **kwargs}
+    named = {**dict(zip(("a", "b"), args, strict=False)), **kwargs}
+    if len(args) > 2 or len(named) != len(args) + len(kwargs):
+        return NotImplemented
+    read = _all_read((named.pop("a", None), named.pop("b", None)), 2)
+    given = {**_TOLERANCES, **named}
     if read is None or given.keys() != _TOLERANCES.keys():
         return NotImplemented
     if not all(_tolerance(value) for value in given.values()):

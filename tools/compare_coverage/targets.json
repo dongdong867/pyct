@@ -78,7 +78,7 @@
     {"set": "v2", "target": "targets.floats.literals::count", "seed": {"x": 0.5}},
     {"set": "v2", "target": "targets.floats.math_of_int::bare_root", "seed": {"n": 1}},
     {"set": "v2", "target": "targets.floats.math_of_int::root", "seed": {"n": 1}},
-    {"set": "v2", "module": "targets.floats.math_reads", "left_out": "each path through math.sqrt takes cvc5 1.3.4 a second or more, so the row ends on its budget, and covers more or less by machine load, at any compare budget"},
+    {"set": "v2", "module": "targets.floats.math_reads", "left_out": "each fp.sqrt solve takes cvc5 1.3.4 1 to 1.6 s, so at the per-merge set's 5 s budget the row ends on its budget and its coverage varies with machine load; a left_out holds in every run, so the full run leaves it out too"},
     {"set": "v2", "target": "targets.floats.math_untaught::lose", "seed": {"x": 1.0, "n": 4}},
     {"set": "v2", "target": "targets.floats.minus_zero::zero", "seed": {"y": -0.0}},
     {"set": "v2", "target": "targets.floats.mixed::mix", "seed": {"n": 0, "x": 10.0}},

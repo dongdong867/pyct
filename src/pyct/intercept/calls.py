@@ -3,9 +3,11 @@ str's methods.
 
 - A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
   dot as in `builtins.int(...)`, a call written `map(...)` with one of
-  those three first, and a call written with the name of a function of
-  `math` that pyct routes (`pyct.core.math_calls.NAMES`), `math.sqrt(...)`
-  or `sqrt(...)`, becomes ``__pyct_call__(int)(...)``: the callee is
+  those three first, and a call of a function of `math` that pyct routes
+  (`pyct.core.math_calls.NAMES`) through a name the module binds to `math`
+  or to that function alone, `math.sqrt(...)` or `root(...)` after `from
+  math import sqrt as root` (`pyct.intercept.constants`), becomes
+  ``__pyct_call__(int)(...)``: the callee is
   handed to pyct, which hands back pyct's router when it is Python's own
   function and the callee itself otherwise, and that is called with the
   arguments as written. So a name the target binds to its own keeps the
@@ -28,13 +30,10 @@ from __future__ import annotations
 
 import ast
 
-from pyct.core.math_calls import NAMES as MATH_NAMES
 from pyct.intercept.positions import Parts
 
 # the names whose calls are conversions pyct follows
 _CONVERSIONS = frozenset({"int", "float", "bool"})
-# the names whose calls pyct hands their callee first: a conversion, or a `math` function
-_CURRIED = _CONVERSIONS | MATH_NAMES
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
 
@@ -50,7 +49,7 @@ def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
     for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
-    if _asks_for_its_callee(node):
+    if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
         return _curried(node, parts)
     if _text_method(node.func, parts):
         callee = parts.named("__pyct_method__", node)
@@ -96,8 +95,8 @@ def _spelled(node: ast.expr) -> str | None:
 
 
 def _asks_for_its_callee(call: ast.Call) -> bool:
-    """Whether a call is written with a name whose callee pyct asks for first."""
+    """Whether a call is a conversion, or a `map` of one, whose callee pyct asks for first."""
     spelled = _spelled(call.func)
-    if spelled in _CURRIED:
+    if spelled in _CONVERSIONS:
         return True
     return spelled == "map" and bool(call.args) and _spelled(call.args[0]) in _CONVERSIONS

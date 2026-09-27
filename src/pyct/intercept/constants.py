@@ -15,12 +15,25 @@ The rules read such a name as they read the literal: an operator with it on
 the left, and a method called on it. Which value it holds when the code runs
 is still read then, since a name can also be set from outside the module's
 code, through ``globals()`` or another module.
+
+The same walk finds the names a module binds to `math` alone, every binding
+an ``import math`` or ``import math as m``, and the names it binds to a
+function of `math` pyct routes alone, every binding a ``from math import f``
+or ``from math import f as g``; ``from math import *`` binds each of those
+functions under its own name. A star import from any other module makes no
+such name count. A call of ``m.f(...)`` or ``g(...)`` asks for its callee
+first, and the callee is still read when the code runs.
 """
 
 from __future__ import annotations
 
 import ast
 from dataclasses import dataclass
+
+from pyct.core.math_calls import NAMES as MATH_NAMES
+
+# what an import of `math` binds a name to: the module, or one of its functions pyct routes
+_MODULE, _FUNCTION = "module", "function"
 
 
 @dataclass(frozen=True)
@@ -34,6 +47,8 @@ class Constants:
 
     kinds: dict[str, frozenset[type]]
     in_class: frozenset[int]
+    math_modules: frozenset[str] = frozenset()
+    math_functions: frozenset[str] = frozenset()
 
     def kind(self, node: ast.expr) -> frozenset[type] | None:
         """The kinds of literal a name read holds, or None for anything else."""
@@ -41,26 +56,77 @@ class Constants:
             return None
         return self.kinds.get(node.id)
 
+    def math_function(self, callee: ast.expr) -> bool:
+        """Whether a callee names a function of `math` pyct routes, through a name the module
+        binds to `math` alone, ``m.sqrt``, or to such a function alone, ``sqrt``."""
+        if isinstance(callee, ast.Name):
+            return callee.id in self.math_functions
+        if isinstance(callee, ast.Attribute) and isinstance(callee.value, ast.Name):
+            return callee.attr in MATH_NAMES and callee.value.id in self.math_modules
+        return False
+
 
 def literal_names(tree: ast.AST) -> Constants:
     """The names the tree binds to literals alone, and the names read directly in class bodies."""
     kinds: dict[str, set[type]] = {}
+    imported: dict[str, set[str]] = {}
     refused: set[str] = set()
     counted: set[int] = set()
     in_class: set[int] = set()
-    refused_all = False
+    stars: set[str | None] = set()
     pending: list[tuple[ast.AST, bool]] = [(tree, False)]
     while pending:
         node, classed = pending.pop()
+        _math_bindings(node, imported, counted)
         _bindings(node, kinds, refused, counted)
-        refused_all = refused_all or _star_import(node)
+        if _star_import(node):
+            stars.add(getattr(node, "module", None))
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and classed:
             in_class.add(id(node))
         pending.extend(_scoped(node, classed))
-    if refused_all:
-        return Constants(kinds={}, in_class=frozenset(in_class))
+    refused |= kinds.keys() & imported.keys()
+    modules, functions = _math_names(imported, refused, stars)
     held = {name: frozenset(types) for name, types in kinds.items() if name not in refused}
-    return Constants(kinds=held, in_class=frozenset(in_class))
+    return Constants(
+        kinds={} if stars else held,
+        in_class=frozenset(in_class),
+        math_modules=modules,
+        math_functions=functions,
+    )
+
+
+def _math_bindings(node: ast.AST, imported: dict[str, set[str]], counted: set[int]) -> None:
+    """Note what an import of `math` or of its functions binds, each name it binds counted.
+
+    A name `math` holds that pyct does not route, `floor` or `pi` say, is
+    left to the other bindings, which refuse it.
+    """
+    if isinstance(node, ast.Import):
+        aliases = [(alias, _MODULE) for alias in node.names if alias.name == "math"]
+    elif isinstance(node, ast.ImportFrom) and node.module == "math" and node.level == 0:
+        aliases = [(alias, _FUNCTION) for alias in node.names if alias.name in MATH_NAMES]
+        if any(alias.name == "*" for alias in node.names):
+            for name in MATH_NAMES:
+                imported.setdefault(name, set()).add(_FUNCTION)
+    else:
+        return
+    for alias, kind in aliases:
+        imported.setdefault(alias.asname or alias.name, set()).add(kind)
+        counted.add(id(alias))
+
+
+def _math_names(
+    imported: dict[str, set[str]], refused: set[str], stars: set[str | None]
+) -> tuple[frozenset[str], frozenset[str]]:
+    """The names bound to `math` alone, and those bound to one of its functions alone.
+
+    A star import from any module but `math` may bind any name, so none counts.
+    """
+    if stars - {"math"}:
+        return frozenset(), frozenset()
+    held = {name: kinds for name, kinds in imported.items() if name not in refused}
+    modules = frozenset(name for name, kinds in held.items() if kinds == {_MODULE})
+    return modules, frozenset(name for name, kinds in held.items() if kinds == {_FUNCTION})
 
 
 def _scoped(parent: ast.AST, classed: bool) -> list[tuple[ast.AST, bool]]:

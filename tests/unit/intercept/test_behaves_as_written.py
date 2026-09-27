@@ -67,6 +67,19 @@ PROGRAMS: dict[str, str] = {
     "int in class body": (
         "class Held(metaclass=Logging):\n    held = int(note('a', a))\nanswer = Held.held"
     ),
+    # a function of math, through each name an import of it binds
+    "math.sqrt": "import math\nanswer = math.sqrt(note('a', a))",
+    "m.copysign": "import math as m\nanswer = m.copysign(note('a', a), note('b', b))",
+    "math.isclose by keyword": (
+        "import math\nanswer = math.isclose(a=note('a', a), b=note('b', b), abs_tol=0.5)"
+    ),
+    "from math import isnan": "from math import isnan\nanswer = isnan(note('a', a))",
+    "from math import fabs as size": "from math import fabs as size\nanswer = size(note('a', a))",
+    "from math import *": "from math import *\nanswer = gcd(note('a', a), note('b', b))",
+    "math.exp in class body": (
+        "import math\nclass Held(metaclass=Logging):\n    held = math.exp(note('a', a))\n"
+        "answer = Held.held"
+    ),
     # a str literal's method, given each operand
     "literal find": "answer = 'xyz'.find(note('b', b))",
     "literal index": "answer = 'xyz'.index(note('b', b))",
