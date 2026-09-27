@@ -100,6 +100,9 @@ def test_walks_a_string_of_forty_letters() -> None:
     longer = [line for line in inputs[1:] if line["aim"] == exit_aim]
     assert longer and longer[0]["mismatch_at"] is None, [line["aim"] for line in inputs]
     assert len(text(longer[0], "s")) > 40
+    # every solve answers inside its limit, but the last, which the budget may cut short
+    solver = summary_line(result.stdout)["solver"]
+    assert isinstance(solver, dict) and solver["timeout"] <= 1, solver
 
 
 # follow-loops-and-ranges-walks-a-string-wherever-it-is-iterated

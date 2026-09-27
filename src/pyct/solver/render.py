@@ -401,7 +401,7 @@ class _Program:
         read (see `letters`); None for any other index."""
         at = fixed_position(node)
         string = None if at is None else self._string(node[1])
-        if at is None or string not in self.furthest:
+        if at is None or string not in self.furthest or at > self.furthest[string]:
             return None
         term = self.term(node[1])
         if string not in self.letters:

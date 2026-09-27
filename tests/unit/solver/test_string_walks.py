@@ -68,3 +68,21 @@ def test_a_character_the_path_holds_there_is_never_the_empty_string() -> None:
     )
 
     assert isinstance(solve(path, {"s": str}, 10.0), Unsat)
+
+
+@needs_cvc5
+def test_cvc5_answers_two_reads_far_apart_inside_a_second() -> None:
+    # `s[0]` and `s[20000]`: the path reads two letters, so the program writes no more than
+    # the reads it has, however far apart they sit
+    far = 20_000
+    path = (
+        _fork([">", ["len", "s"], far], taken=True),
+        _fork(["==", ["[]", "s", 0], "'a'"], taken=True),
+        _fork(["==", ["[]", "s", far], "'b'"], taken=True),
+    )
+
+    answer = solve(path, {"s": str}, 1.0)
+
+    assert isinstance(answer, Sat), answer
+    s = answer.model["s"]
+    assert isinstance(s, str) and s[0] == "a" and s[far] == "b"

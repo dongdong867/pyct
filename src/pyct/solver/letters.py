@@ -2,7 +2,7 @@
 
 A walk over a string reads ``s[0]``, ``s[1]``, and on to its last pass, and
 cvc5 answers a path of many ``(str.at s i)`` slowly: forty positions run past
-its time limit. A string read at two or more fixed positions is written
+its time limit. A string read densely at fixed positions from zero is written
 instead as its first letters and the rest, ``s = c0 ++ c1 ++ … ++ cm ++ rest``,
 and the same path is answered in hundredths of a second, a path over hundreds
 of positions inside the limit.
@@ -32,19 +32,32 @@ _LONGER: dict[str, int] = {">": 1, ">=": 0}
 
 
 def furthest_reads(order: Iterable[Node], key: Keyed) -> dict[Key, int]:
-    """For each string the path indexes at two or more fixed positions of zero or more, the
-    furthest one.
+    """For each string the path reads densely at fixed positions from zero, the furthest letter
+    to spell.
 
-    A string read at one position gains nothing from its letters, and a
-    path that cuts a string down pass by pass reads each piece once: spelled
-    out, each piece would be one more equation for cvc5 to hold.
+    The letters run from position 0 to the furthest read position at which
+    at least half the letters so far are read, so a walk, which reads every
+    position, spells them all, and the program never holds more than twice
+    as many letters as reads: `s[0]` and `s[20000]` spell one letter, not
+    twenty thousand. A read past that stays ``str.at``. A string with fewer
+    than two reads in its letters gains nothing from them, and a path that
+    cuts a string down pass by pass reads each piece once: spelled out, each
+    piece would be one more equation for cvc5 to hold.
     """
     read: dict[Key, set[int]] = {}
     for node in order:
         at = fixed_position(node)
         if at is not None and (string := key(node[1])) is not None:
             read.setdefault(string, set()).add(at)
-    return {string: max(positions) for string, positions in read.items() if len(positions) > 1}
+    dense = {string: _dense_end(sorted(positions)) for string, positions in read.items()}
+    return {string: end for string, end in dense.items() if end is not None}
+
+
+def _dense_end(positions: list[int]) -> int | None:
+    """The furthest position with at least half the letters up to it read, when two or more
+    reads lie within; else None."""
+    ends = [at for count, at in enumerate(positions, 1) if 2 * count >= at + 1 and count > 1]
+    return ends[-1] if ends else None
 
 
 def fixed_position(node: Node) -> int | None:
