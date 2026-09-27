@@ -24,7 +24,6 @@ UNTAUGHT_OPERATIONS = (
     "__invert__",
     "__int__",
     "__float__",
-    "__str__",
     "__format__",
     "bit_count",
     "bit_length",
@@ -43,16 +42,16 @@ def _derived_downgrades() -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the nineteen are counted on the floor; a newer Python may define another int method",
+    reason="the eighteen are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_int_downgrades_the_nineteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_int_downgrades_the_eighteen_operations_it_has_not_taught() -> None:
     assert _derived_downgrades() == set(UNTAUGHT_OPERATIONS)
 
 
 def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> None:
     derived = _derived_downgrades()
 
-    # the version gate above is on the count, not on the list; these nineteen exist on every
+    # the version gate above is on the count, not on the list; these eighteen exist on every
     # Python pyct runs on, so each one is a downgrade there too
     assert set(UNTAUGHT_OPERATIONS) <= derived
     # a wrapped kept name would cost a dict key a downgrade, and a wrapped `__getattribute__`

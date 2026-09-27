@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, compare, promoted
+from pyct.core.numbers import INT_KEPT, compare, promoted
 from pyct.core.values import (
+    alone,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
+    downgraded,
     forked,
     own,
     pickled,
@@ -87,6 +89,11 @@ class ConcolicInt(int):
     __ceil__ = _itself
     __round__ = numbers.rounded(_itself)
 
+    # its text is a tracked str, `["str", x]`, its decimal digits as int's repr writes them, and
+    # so is a format with no spec; a spec pyct does not encode is int's own and a downgrade
+    __str__ = numbers.text(int.__repr__)
+    __format__ = downgraded(int, "__format__", first=alone(__str__))  # pyrefly: ignore[bad-override]
+
     # int's plain names that hand back the value itself, as `+x` does. `imag` and `denominator`
     # stay int's own constants, 0 and 1, and `is_integer` is kept; the rest are derived downgrades
     real = numbers.attribute(int.real, _itself)  # pyrefly: ignore[bad-override]
@@ -107,8 +114,8 @@ class ConcolicInt(int):
         return forked(self.sink, ["!=", self.expression, 0], own(int.__bool__, self))
 
 
-# the class body above is everything ConcolicInt teaches. The rest of int, and the `__str__`
-# int inherits, differ only in the name they call and record, so the derivation writes them.
-# An int that Python computes is tracked as a ConcolicInt
-downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT, inherited=INT_INHERITED)
+# the class body above is everything ConcolicInt teaches. The rest of int differs only in the
+# name it calls and records, so the derivation writes it. An int that Python computes is
+# tracked as a ConcolicInt
+downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT, inherited=())
 numbers.enter(int, ConcolicInt)

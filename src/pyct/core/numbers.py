@@ -11,7 +11,9 @@ Each number module defines its class and enters it at its bottom, with
 `enter`. So no number module imports another, and this module names none of
 their classes. `pyct.core` imports every number module, so the table is full
 before any value is built; a result whose type nothing entered raises
-`LookupError` rather than coming back plain.
+`LookupError` rather than coming back plain. The tracked str enters its
+class too, as a result type and not a number, so a number's text is tracked
+by `text` without this module or a number module importing `pyct.core.strs`.
 
 The registry is two functions: `enter(base, cls)` and `tracked(value,
 expression, sink)`. `operand` is the int family's rule, a tracked int's and
@@ -52,10 +54,6 @@ INT_KEPT = (
     "is_integer",
 )
 
-# int inherits `__str__` from object, so reading what int itself defines never reaches it, and
-# `print(x)` still drops the condition
-INT_INHERITED = ("__str__",)
-
 
 class Number(Protocol):
     """A tracked value: all an operation here needs of the type it is set on."""
@@ -69,17 +67,20 @@ _TRACKED: dict[type, type] = {}
 _CLASSES: set[type] = set()
 
 
-def enter(base: type, tracked_class: type) -> None:
+def enter(base: type, tracked_class: type, *, number: bool = True) -> None:
     """Make `tracked_class` the tracked form of every result whose type is exactly `base`.
 
     Each number module calls this once, at its bottom, for the class it
-    defines. A second class for the same type would make the answer depend on
-    import order, so it raises.
+    defines, and so does `pyct.core.strs` with ``number=False``: a tracked
+    str is a result a number's text gives, and never an operand an operation
+    on numbers reads. A second class for the same type would make the answer
+    depend on import order, so it raises.
     """
     if _TRACKED.get(base, tracked_class) is not tracked_class:
         raise ValueError(f"{base.__name__} is already tracked by {_TRACKED[base].__name__}")
     _TRACKED[base] = tracked_class
-    _CLASSES.add(tracked_class)
+    if number:
+        _CLASSES.add(tracked_class)
 
 
 def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
@@ -96,6 +97,23 @@ def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
             "pyct.core imports each number module so that each enters its class"
         )
     return tracked_class(value, expression=expression, sink=sink)
+
+
+def text(written: Callable[[Any], str]) -> Callable[[Any], Any]:
+    """A tracked int's or bool's `__str__`: the text Python writes, carrying `["str", x]`.
+
+    Python hands the str `__str__` gives back on whole through `str(x)`,
+    `print`, `"%s" % x` and `map(str, ...)`, and through `format(x)`,
+    `f"{x}"` and `"{}".format(x)`, which reach it by `__format__` with no
+    spec, so the condition survives each. Text joined around it is Python's
+    own plain str. ``written`` writes the text of the plain value, and a
+    raise out of it, past Python's digit limit say, is the target's.
+    """
+
+    def compute(self: Number) -> Any:
+        return tracked(own(written, self), ["str", self.expression], self.sink)
+
+    return compute
 
 
 def operand(other: object) -> Expression | None:

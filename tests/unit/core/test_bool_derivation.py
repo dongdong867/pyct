@@ -21,7 +21,6 @@ UNTAUGHT_OPERATIONS = (
     "__invert__",
     "__int__",
     "__float__",
-    "__str__",
     "__format__",
     "bit_count",
     "bit_length",
@@ -44,9 +43,9 @@ def _downgrades(cls: type) -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the fifteen are counted on the floor; a newer Python may define another int method",
+    reason="the fourteen are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_bool_downgrades_the_fifteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_bool_downgrades_the_fourteen_operations_it_has_not_taught() -> None:
     assert _downgrades(ConcolicBool) == set(UNTAUGHT_OPERATIONS)
 
 

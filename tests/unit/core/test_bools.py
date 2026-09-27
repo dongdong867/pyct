@@ -9,6 +9,7 @@ import pytest
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem, Site
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
 
 # the condition every test here tests: `x > 0`, true for x = 1
@@ -212,9 +213,25 @@ def test_a_bool_reads_as_true_or_false() -> None:
 
     assert (repr(above), repr(below)) == ("True", "False")
     assert sink == []
-    # the text drops the condition, so each is a downgrade; an f-string records one entry
-    assert (str(above), f"{below}") == ("True", "False")
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+
+    # the text is a tracked str carrying the condition, and testing it records nothing yet
+    texts = [str(above), f"{below}", format(above), "%s" % below]  # noqa: UP031
+    tracked = [text for text in texts if isinstance(text, ConcolicStr)]
+    assert [(str.__str__(text), text.expression) for text in tracked] == [
+        ("True", ["str", [">", "x", 0]]),
+        ("False", ["str", [">", "y", 0]]),
+        ("True", ["str", [">", "x", 0]]),
+        ("False", ["str", [">", "y", 0]]),
+    ]
+    assert sink == []
+
+
+def test_a_bools_format_spec_is_a_downgrade() -> None:
+    sink: list[SinkItem] = []
+    above, _ = _conditions(sink)
+
+    assert f"{above:>5}" == f"{True:>5}"
+    assert sink == [Downgrade(name="__format__")]
 
 
 def test_a_bool_formats_with_a_spec_as_python_formats_a_bool() -> None:

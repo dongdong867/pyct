@@ -3,6 +3,7 @@ import dataclasses
 import json
 import math
 import operator
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from pyct.core import values
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
@@ -280,24 +282,69 @@ def test_the_object_plumbing_on_a_concolic_int_records_nothing() -> None:
     assert sink == []
 
 
-def test_turning_a_concolic_int_into_text_records_a_downgrade() -> None:
+# each way Python turns an int alone into text: it hands the tracked str `__str__` or
+# `__format__` gives back on whole
+TEXT_ALONE: dict[str, Callable[[int], object]] = {
+    "str(x)": str,
+    "format(x)": format,
+    'format(x, "")': lambda x: format(x, ""),
+    'f"{x}"': lambda x: f"{x}",
+    '"{}".format(x)': lambda x: "{}".format(x),  # noqa: UP032
+    '"%s" % x': lambda x: "%s" % x,  # noqa: UP031
+    "map(str, [x])": lambda x: next(map(str, [x])),
+}
+
+
+@pytest.mark.parametrize("value", [3, -42, 0])
+@pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
+def test_an_int_alone_turned_into_text_is_its_tracked_text(
+    call: Callable[[int], object], value: int
+) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt(value, expression="x", sink=sink)
 
-    assert str(x) == "3"
-    assert f"{x:d}" == "3"
+    text = call(x)
 
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+    assert isinstance(text, ConcolicStr)
+    assert (str.__str__(text), text.expression, text.sink) == (call(value), ["str", "x"], sink)
+    assert sink == []
 
 
-def test_an_empty_format_goes_through_str_and_records_both() -> None:
+def test_text_joined_around_an_int_is_plain_and_records_nothing() -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(3, expression="x", sink=sink)
+    x = ConcolicInt(7, expression="x", sink=sink)
 
-    assert f"{x}" == "3"
+    # Python joins the pieces without calling any method of the tracked str
+    text = f"n={x}"
 
-    # int's own __format__ formats an empty spec by asking str, so the f-string loses it twice
-    assert sink == [Downgrade(name="__str__"), Downgrade(name="__format__")]
+    assert (text, type(text)) == ("n=7", str)
+    assert sink == []
+
+
+@pytest.mark.parametrize("spec", ["d", "05d", "x", ">4", ","])
+def test_a_format_spec_is_a_downgrade_named_format(spec: str) -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicInt(1234, expression="x", sink=sink)
+
+    text = format(x, spec)
+
+    assert (text, type(text)) == (format(1234, spec), str)
+    assert sink == [Downgrade(name="__format__")]
+
+
+def test_text_past_pythons_digit_limit_raises_as_the_targets() -> None:
+    sink: list[SinkItem] = []
+    huge = 10 ** (sys.get_int_max_str_digits() + 1)
+    x = ConcolicInt(huge, expression="x", sink=sink)
+
+    with pytest.raises(ValueError) as raised:
+        str(x)
+
+    with pytest.raises(ValueError) as plain:
+        str(huge)
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    assert sink == []
 
 
 def test_using_a_concolic_int_as_an_index_records_nothing() -> None:

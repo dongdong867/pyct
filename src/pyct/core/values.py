@@ -131,6 +131,20 @@ def downgraded(
     return downgrade
 
 
+def alone(written: Callable[[Any], object]) -> First:
+    """What a tracked value's `__format__` answers first: with no format spec, its own text.
+
+    Python formats a value with no spec, `format(x)` or `f"{x}"`, as the
+    text `str(x)` writes, so it is ``written``'s answer, as tracked as that
+    is. A spec, or a tracked one, goes on to the base type's own format.
+    """
+
+    def first(_name: str, value: object, spec: object) -> object:
+        return written(value) if type(spec) is str and not spec else NotImplemented
+
+    return first
+
+
 # what pickle is handed for a value: the type that rebuilds it, and what that type is called with
 type Pickled = tuple[type, tuple[object]]
 
