@@ -31,9 +31,6 @@ from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
 from pyct.solver.symbols import leaf_sort
 
-# the sort of a part defined once, by the type of its value
-_DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
-
 
 def program(
     prefix: tuple[Branch, ...],
@@ -353,7 +350,7 @@ class _Program:
             return self.term(node[1])
         involves = self.lists.involves(node)
         operation = self.lists.scalar(node, kind) if involves else self._operation(node)
-        sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
+        sort = None if kind is None or not define else SORTS.get(kind)
         if sort is None:
             return operation
         name = f"e!{len(self.definitions)}"

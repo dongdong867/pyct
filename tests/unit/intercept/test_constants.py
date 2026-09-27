@@ -162,3 +162,54 @@ def test_the_work_grows_with_a_class_body_as_it_does_with_any_body() -> None:
 
     # four times the statements, about four times the work: one pass, not one per statement
     assert large < 4.5 * small
+
+
+def bools(source: str) -> frozenset[str]:
+    return literal_names(ast.parse(source)).bools
+
+
+def test_a_name_bound_to_bools_alone_is_read_as_one() -> None:
+    source = (
+        "READY = True\n"
+        "def f(flag: bool, other: 'bool', n: int, *rest: bool):\n"
+        "    done = n > 0\n"
+        "    kept: bool = not n\n"
+        "    (seen := n < 1)\n"
+        "    made = bool(n)\n"
+    )
+
+    # a gathered parameter holds a tuple or a dict, and an int parameter is no bool
+    assert bools(source) == {"READY", "flag", "other", "done", "kept", "seen", "made"}
+
+
+@pytest.mark.parametrize(
+    "binding",
+    [
+        "DONE = 1",
+        "DONE = f()",
+        "DONE = bool(a, b)",
+        "DONE = bool(x=a)",
+        "DONE += True",
+        "def f(DONE):\n    pass",
+        "def f(DONE: int):\n    pass",
+        "for DONE in xs:\n    pass",
+        "def f():\n    nonlocal DONE\n    DONE = g()",
+        "type DONE = int",
+        "def f[DONE]():\n    pass",
+        "class A:\n    global DONE\n    DONE = 3",
+    ],
+)
+def test_any_other_binding_makes_the_name_no_bool(binding: str) -> None:
+    assert "DONE" not in bools("DONE = a < b\n" + binding + "\n")
+
+
+def test_a_bool_the_builtin_makes_counts_only_while_the_module_leaves_bool_alone() -> None:
+    source = "def f(flag: bool, n):\n    made = bool(n)\n    done = n > 0\n"
+
+    assert bools(source) == {"flag", "made", "done"}
+    assert bools(source + "bool = int\n") == {"done"}
+    assert bools("def g(bool):\n    pass\n" + source) == {"done"}
+
+
+def test_a_star_import_leaves_no_name_a_bool() -> None:
+    assert bools("from m import *\nDONE = a < b\n") == frozenset()
