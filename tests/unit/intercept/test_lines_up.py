@@ -164,6 +164,29 @@ def test_a_compare_whose_left_side_spans_lines_lines_up(shape: str) -> None:
     assert layout(written) == layout(substituted)
 
 
+# modules whose first statement's first instruction is not at the statement's own start, each
+# with a substitution further down, so the module imports the names it calls
+FIRST_STATEMENTS = [
+    "@decorate\ndef f():\n    pass",
+    "@decorate\nclass C:\n    pass",
+    "__all__ = [\n    'a',\n    'b',\n]",
+    "TABLE = {\n    'a': 1,\n}",
+    "if (\n    a):\n    pass",
+    "with (\n    cm()):\n    pass",
+    "global x\nx = 1",
+    '"""doc"""\nfrom __future__ import annotations\n@decorate\ndef f():\n    pass',
+]
+
+
+@pytest.mark.parametrize("first", FIRST_STATEMENTS)
+def test_a_module_whose_first_statement_starts_late_lines_up(first: str) -> None:
+    source = first + "\ny = a in b\n"
+    written = compile(source, "<m>", "exec")
+    substituted = compile(substitute(ast.parse(source)), "<m>", "exec")
+
+    assert layout(written) == layout(substituted)
+
+
 def test_a_compare_whose_left_side_runs_on_a_later_line_lines_up() -> None:
     # `assert (` then the operand on the next line: the operand's first instruction is on the
     # later line, where the call's name goes too, so the compare's own line does not start first

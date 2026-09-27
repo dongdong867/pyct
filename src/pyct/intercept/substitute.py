@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import ast
 
-from pyct.intercept.positions import constants, first
+from pyct.intercept.positions import constants, first, statement_start
 
 # the name each operator calls
 _NAMES: dict[type[ast.cmpop], str] = {
@@ -68,6 +68,9 @@ _SUBSTITUTES = "pyct.core.substitutes"
 # the largest display whose constants are handed over; a larger one is Python's own lookup
 WRITTEN_MOST = 100
 
+# the nodes that open a scope of their own, whose bindings a class body does not hold
+_SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)
+
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
     ast.arg: "annotation",
@@ -84,33 +87,40 @@ def substitute(tree: ast.Module) -> ast.Module:
     expression, such as a long chain of `+`, needs no deeper Python stack
     than a shallow one. A tree with a substitution binds the names it calls.
     """
-    pending: list[ast.AST] = [tree]
+    pending: list[tuple[ast.AST, frozenset[str]]] = [(tree, frozenset())]
     classes: list[ast.ClassDef] = []
     substituted = False
     while pending:
-        node = pending.pop()
+        node, kept = pending.pop()
         if isinstance(node, ast.ClassDef):
             classes.append(node)
+            kept |= _bound_in(node)
         skipped = _ANNOTATIONS.get(type(node))
         for field, value in ast.iter_fields(node):
             if field == skipped:
                 continue
             if isinstance(value, list):
-                value[:] = [_visited(item, pending) for item in value]
+                value[:] = [_visited(item, pending, kept) for item in value]
             elif isinstance(value, ast.AST):
-                setattr(node, field, _visited(value, pending))
+                setattr(node, field, _visited(value, pending, kept))
         substituted = substituted or _calls_a_substitute(node)
     if substituted:
         _bind(tree, classes)
     return tree
 
 
-def _visited(node: object, pending: list[ast.AST]) -> object:
-    """The node, or the call that replaces it, queued so the walk goes on inside it."""
+def _visited(
+    node: object, pending: list[tuple[ast.AST, frozenset[str]]], kept: frozenset[str]
+) -> object:
+    """The node, or the call that replaces it, queued so the walk goes on inside it.
+
+    ``kept`` holds the names a class around the node binds itself; a compare
+    that would call one of them stays as written.
+    """
     if not isinstance(node, ast.AST):
         return node
-    replacement = _replacement(node) or node
-    pending.append(replacement)
+    replacement = _replacement(node, kept) or node
+    pending.append((replacement, kept))
     return replacement
 
 
@@ -118,10 +128,10 @@ def _calls_a_substitute(node: ast.AST) -> bool:
     return isinstance(node, ast.Name) and node.id in BOUND
 
 
-def _replacement(node: ast.AST) -> ast.Call | None:
+def _replacement(node: ast.AST, kept: frozenset[str]) -> ast.Call | None:
     """The call that replaces a compare of the three shapes, or None for any other node."""
     folded = _folded(node)
-    if folded is None:
+    if folded is None or _NAMES[folded[1]] in kept:
         return None
     compare, operator = folded
     left, right = compare.left, compare.comparators[0]
@@ -213,21 +223,35 @@ def _constant(value: tuple[object, ...] | frozenset[object], display: ast.expr) 
 def _bind(tree: ast.Module, classes: list[ast.ClassDef]) -> None:
     """Import the names into the module, and declare them global in every class body.
 
-    The import goes before the module's first statement that runs, on that
-    statement's line, which it shares, so it adds no line. A module of a
-    docstring and ``__future__`` imports alone runs nothing to substitute.
-    A ``global`` statement compiles to no instruction at all.
+    The import goes before the module's first statement that runs code, at
+    that code's first line and column, which it shares, so it adds no line.
+    A module of a docstring and ``__future__`` imports alone runs nothing to
+    substitute. A ``global`` statement compiles to no instruction at all; a
+    class body leaves out the names it binds itself.
     """
     body = tree.body
     start = _after_preamble(body, module=True)
-    where = body[start]
-    names = [_at(ast.alias(name=function, asname=name), where) for name, function in BOUND.items()]
-    imported = ast.ImportFrom(module=_SUBSTITUTES, names=names, level=0)
-    body.insert(start, _at(imported, where))
+    for index in range(start, len(body)):
+        found = statement_start(body[:start], body[index])
+        if found is not None:
+            body.insert(index, _imported(*found))
+            break
     for owner in classes:
-        place = _after_preamble(owner.body, module=False)
-        declared = ast.Global(names=list(BOUND))
-        owner.body.insert(place, _at(declared, owner.body[min(place, len(owner.body) - 1)]))
+        declared = [name for name in BOUND if name not in _bound_in(owner)]
+        if declared:
+            place = _after_preamble(owner.body, module=False)
+            where = owner.body[min(place, len(owner.body) - 1)]
+            owner.body.insert(
+                place, _at(ast.Global(names=declared), where.lineno, where.col_offset)
+            )
+
+
+def _imported(line: int, column: int) -> ast.ImportFrom:
+    """``from pyct.core.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
+    names = [
+        _at(ast.alias(name=function, asname=name), line, column) for name, function in BOUND.items()
+    ]
+    return _at(ast.ImportFrom(module=_SUBSTITUTES, names=names, level=0), line, column)
 
 
 def _after_preamble(body: list[ast.stmt], *, module: bool) -> int:
@@ -244,8 +268,31 @@ def _future(statement: ast.stmt) -> bool:
     return isinstance(statement, ast.ImportFrom) and statement.module == "__future__"
 
 
-def _at[Placed: ast.stmt | ast.alias](node: Placed, where: ast.stmt) -> Placed:
-    """The node placed at the start of a statement's first line, taking no room of its own."""
-    node.lineno = node.end_lineno = where.lineno
-    node.col_offset = node.end_col_offset = where.col_offset
+def _at[Placed: ast.stmt | ast.alias](node: Placed, line: int, column: int) -> Placed:
+    """The node placed at one line and column, taking no room of its own."""
+    node.lineno = node.end_lineno = line
+    node.col_offset = node.end_col_offset = column
     return node
+
+
+def _bound_in(owner: ast.ClassDef) -> frozenset[str]:
+    """The substituted names the class body binds in its own scope, which it keeps its own."""
+    bound: set[str] = set()
+    pending: list[ast.AST] = list(owner.body)
+    while pending:
+        node = pending.pop()
+        bound.update(_names_bound(node))
+        if not isinstance(node, _SCOPES):
+            pending.extend(ast.iter_child_nodes(node))
+    return frozenset(bound & set(BOUND))
+
+
+def _names_bound(node: ast.AST) -> list[str]:
+    """The names a node binds in the scope it runs in."""
+    if isinstance(node, ast.Name) and not isinstance(node.ctx, ast.Load):
+        return [node.id]
+    if isinstance(node, _SCOPES) and not isinstance(node, ast.Lambda):
+        return [node.name]
+    if isinstance(node, ast.alias):
+        return [node.asname or node.name.partition(".")[0]]
+    return []

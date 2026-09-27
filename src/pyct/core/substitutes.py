@@ -82,10 +82,7 @@ def _searched(item: object, written: tuple[object, ...]) -> bool:
     it; with the literal on the left, a plain `True` would answer a tracked
     bool, which is an int to it, and record nothing.
     """
-    for element in written:
-        if item == element:
-            return True
-    return False
+    return any(item == element for element in written)
 
 
 def not_in(item: object, container: object, written: tuple[object, ...] | None = None) -> object:

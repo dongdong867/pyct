@@ -208,3 +208,17 @@ def test_a_source_that_cannot_be_read_raises_what_the_read_raises(tmp_path: Path
 
     with pytest.raises(FileNotFoundError):
         module.code(tmp_path / "cache")
+
+
+def test_a_folder_that_fails_each_write_is_named_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def refused(source: str, target: str) -> None:
+        raise PermissionError(f"refused {source}")
+
+    monkeypatch.setattr(cache.os, "replace", refused)
+
+    for folder in ("a", "b", "c"):
+        Module(tmp_path / folder, "x = 1").code(tmp_path / "cache")
+
+    assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1

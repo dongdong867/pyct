@@ -136,8 +136,15 @@ def _own(found: os.stat_result) -> bool:
     return found.st_uid == os.getuid() and not found.st_mode & 0o022
 
 
-@functools.cache
+# the cache folders pyct has already said it cannot keep code in, in this process
+_WARNED: set[Path] = set()
+
+
 def _cannot_keep(root: Path, why: str) -> None:
+    """Say once per folder that code cannot be kept there, with the first reason met."""
+    if root in _WARNED:
+        return
+    _WARNED.add(root)
     logger.warning(
         "pyct cannot keep substituted code in %s (%s), so every run substitutes the target's "
         "package again; %s names another folder",

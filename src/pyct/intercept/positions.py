@@ -172,3 +172,28 @@ def _foldable(root: ast.expr) -> set[int]:
 
 def _parts(node: ast.expr) -> list[ast.expr]:
     return [child for child in ast.iter_child_nodes(node) if isinstance(child, ast.expr)]
+
+
+def statement_start(preamble: list[ast.stmt], statement: ast.stmt) -> tuple[int, int] | None:
+    """The line and column of the statement's first instruction, or None when it has none.
+
+    The running CPython answers: the statement is compiled after the
+    module's docstring and ``__future__`` imports, as it runs in the module,
+    and its first positioned instruction is read. A decorator, a value
+    spread over lines, or a parenthesized test puts it past the statement's
+    own start; a ``global`` statement has none.
+    """
+    module = ast.Module(body=[*preamble, statement], type_ignores=[])
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            code = compile(module, "<pyct probe>", "exec", dont_inherit=True)
+    except SyntaxError:
+        return None
+    lowest = min(part.lineno for part in ast.walk(statement) if hasattr(part, "lineno"))
+    for step in dis.get_instructions(code):
+        line = step.positions.lineno if step.positions else None
+        if step.opname != "RESUME" and line is not None and line >= lowest:
+            column = step.positions.col_offset if step.positions else None
+            return line, column or 0
+    return None
