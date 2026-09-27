@@ -114,8 +114,9 @@ def test_a_split_hands_back_strs_own_pieces_each_tracked_at_its_position(
     assert all(isinstance(part, ConcolicStr) for part in parts)
     assert [str.__str__(part) for part in parts] == list(plain)
     assert [part.expression for part in parts] == [["[]", whole, at] for at in range(len(plain))]
-    # partition asks a str subclass for its text where the separator is missing; that call is
-    # pyct's, on the plain value, so it is not the target's downgrade
+    # where partition's separator is missing, CPython hands the receiver back as its first
+    # piece; pyct splits the plain text, so building that piece reads no `__str__` of the
+    # target's
     assert sink == []
 
 

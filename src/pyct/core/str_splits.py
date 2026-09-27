@@ -97,10 +97,13 @@ def line_ends(_receiver: object, args: tuple[object, ...]) -> list[Expression] |
 def _on_the_plain_value(operation: Callable[..., Sequence[str]]) -> Callable[..., Sequence[str]]:
     """str's own split called on the plain text of the receiver and of each str argument.
 
-    Where nothing splits, CPython hands a str subclass back as its one
-    piece, partition hands back its separator as the middle one, and
-    partition asks a subclass for its text through `__str__`. On plain text
-    every piece is plain, and pyct's call records nothing.
+    CPython may hand back an argument itself as a piece: the receiver, from
+    partition where its separator is missing and from split where the
+    separator is longer than the string, and the separator, as partition's
+    middle piece. A tracked piece built from a tracked value reads its text
+    through its `__str__`, a downgrade the target never made, and a
+    downgrade's pieces would not be plain. On plain text every piece is
+    plain, and pyct's call records nothing.
     """
 
     def call(receiver: object, *args: object, **kwargs: object) -> Sequence[str]:
