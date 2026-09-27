@@ -5,7 +5,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core import numbers, str_cases, str_splits, str_walks, strs, values
+from pyct.core import numbers, str_cases, str_splits, str_walks, strs, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr
@@ -473,7 +473,7 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     # str_splits for the checks, cases and splits, and str_walks for the walk, so the scan
     # covers all six. A compare or a search in strs hands the call to a closure it holds, so
     # what a function holds counts as what it calls
-    files = {strs.__file__, numbers.__file__, values.__file__, str_cases.__file__}
+    files = {strs.__file__, numbers.__file__, values.__file__, texts.__file__, str_cases.__file__}
     files |= {str_splits.__file__, str_walks.__file__}
     written_here = written_in(ConcolicStr, files)
 

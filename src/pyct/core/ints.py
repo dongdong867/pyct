@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pyct.core import numbers
+from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import (
     INT_KEPT,
@@ -12,7 +12,6 @@ from pyct.core.numbers import (
     promoted,
 )
 from pyct.core.values import (
-    alone,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -99,8 +98,8 @@ class ConcolicInt(int):
 
     # its text is a tracked str, `["str", x]`, its decimal digits as int's repr writes them, and
     # so is a format with no spec; a spec pyct does not encode is int's own and a downgrade
-    __str__ = numbers.text(int.__repr__)
-    __format__ = downgraded(int, "__format__", first=alone(__str__))  # pyrefly: ignore[bad-override]
+    __str__ = texts.text(int.__repr__)
+    __format__ = downgraded(int, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
 
     # int's plain names that hand back the value itself, as `+x` does. `imag` and `denominator`
     # stay int's own constants, 0 and 1, and `is_integer` is kept; the rest are derived downgrades

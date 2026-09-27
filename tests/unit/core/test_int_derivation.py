@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from pyct.core import ints, numbers, values
+from pyct.core import ints, numbers, texts, values
 from pyct.core.ints import ConcolicInt
 from tests.unit.core.own_scan import without_the_helper, written_in
 
@@ -61,14 +61,15 @@ def test_the_derivation_wraps_every_untaught_operation_and_nothing_kept() -> Non
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
     # a call into int written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicInt's dunders are written in three files: its own, numbers for the operations it
-    # shares with a bool and values for the downgrade closures, so the scan covers all three.
-    # An operation hands the call to a closure it holds, so what a function holds counts
-    files = {ints.__file__, numbers.__file__, values.__file__}
+    # ConcolicInt's dunders are written in four files: its own, numbers for the operations it
+    # shares with a bool, values for the downgrade closures and texts for its text, so the scan
+    # covers all four. An operation hands the call to a closure it holds, so what a function
+    # holds counts
+    files = {ints.__file__, numbers.__file__, values.__file__, texts.__file__}
 
     # the scan read the compares, the arithmetic and a derived downgrade, so an empty answer
     # is not an empty scan
-    assert {"__lt__", "__add__", "__divmod__", "__pow__", "__bool__", "__and__"} <= (
+    assert {"__lt__", "__add__", "__divmod__", "__pow__", "__bool__", "__and__", "__str__"} <= (
         written_in(ConcolicInt, files).keys()
     )
     # these hand the value itself back and never call int, so they have nothing to guard

@@ -11,11 +11,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from pyct.core import numbers
+from pyct.core import numbers, texts
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.numbers import INT_KEPT, compare, operand
 from pyct.core.values import (
-    alone,
     built_plainly,
     copy_as_itself,
     downgrade_the_rest,
@@ -147,9 +146,9 @@ class ConcolicBool(int):
 
     # its text is a tracked str, `["str", b]`, `True` or `False` as bool's repr writes it, and so
     # is a format with no spec; a spec is the bool's own format and a downgrade
-    __str__ = numbers.text(_written)
+    __str__ = texts.text(_written)
     __format__ = downgraded(  # pyrefly: ignore[bad-override]
-        int, "__format__", calling=_formatted, first=alone(__str__)
+        int, "__format__", calling=_formatted, first=texts.alone(__str__)
     )
 
     def __new__(cls, value: bool, *, expression: Expression, sink: BranchSink) -> ConcolicBool:
