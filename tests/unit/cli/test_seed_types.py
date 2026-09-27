@@ -41,7 +41,9 @@ def items_as_text(xs: list[int]) -> None:
     return None
 
 
+# the text, read in this module and in the wrapper's: each builds a list[int] of its own
 items_as_text.__annotations__ = {"xs": "list[int]", "return": "None"}
+wrapped_items = wrapped_elsewhere(items_as_text)
 
 
 def stored_as_text(s: str, missing: object) -> None:
@@ -228,6 +230,15 @@ def counts_here(n: int) -> None:
 
 counts_here.__annotations__ = {"n": "Here", "return": "None"}
 wrapped_agreeing = wrapped_elsewhere(counts_here)
+
+
+def counts_items(n: list[int], m: int) -> None:
+    return None
+
+
+# a list of Number: a list of ints here and of strs in the wrapper's module
+counts_items.__annotations__ = {"n": "list[Number]", "m": "int", "return": "None"}
+wrapped_items_clashing = wrapped_elsewhere(counts_items)
 by_hand_agreeing = WrapsByHand(counts_here)
 
 
@@ -283,7 +294,7 @@ def test_checked_annotations_keeps_a_list_or_dict_of_what_it_checks() -> None:
 
 def test_checked_annotations_resolves_list_and_dict_text() -> None:
     # two namespaces build two list[int] objects from one text; they agree on what they ask
-    assert checked_annotations(items_as_text) == {"xs": Items(list, int)}
+    assert checked_annotations(wrapped_items) == {"xs": Items(list, int)}
 
 
 def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
@@ -334,6 +345,7 @@ def test_checked_annotations_keeps_text_one_module_knows_and_no_other_contradict
         pytest.param(class_method_clashing, id="class method"),
         pytest.param(static_clashing, id="static method"),
         pytest.param(wrapped_clashing, id="wraps decorator"),
+        pytest.param(wrapped_items_clashing, id="list of a name read two ways"),
         pytest.param(by_hand_clashing, id="wrapping object"),
         pytest.param(declared_clashing, id="declared signature"),
         pytest.param(MakingElsewhere, id="own init"),
