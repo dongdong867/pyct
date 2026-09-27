@@ -48,14 +48,16 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     cut to what it can.
 
     A prefix that names a float leaf is asked first with each such leaf held
-    finite; decision float-answer-finite-first. An ``Unsat`` that rests on
-    some of them being finite, as its unsat core says, is asked again with
-    those leaves free and the rest still held, until an ask answers
-    otherwise or its unsat rests on no held leaf. So a leaf is NaN or an
+    finite; decision float-answer-finite-first. Only an ``Unsat`` asks
+    again: once with the same leaves held and cvc5 asked for its unsat core,
+    which says which of them the unsat rests on, and then with those leaves
+    free and the rest still held. That repeats until an ask answers
+    otherwise or the core names no held leaf. So a leaf is NaN or an
     infinity only where no finite double serves it, whatever the others
-    need. Each ask after the first gets what the ones before left of
-    ``timeout``, so all stay inside the one limit, and one with nothing left
-    is a ``Timeout()`` without starting cvc5.
+    need. The core costs its ask time only after an unsat, since asking for
+    it slows some sat answers. Each ask after the first gets what the ones
+    before left of ``timeout``, so all stay inside the one limit, and one
+    with nothing left is a ``Timeout()`` without starting cvc5.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -65,19 +67,32 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     seed's values back as the solver's.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
+    deadline = monotonic() + timeout
     finite = float_leaves(prefix, leaves)
-    started = monotonic()
-    left = timeout
-    while True:
-        answer, core = _ask(program(prefix, leaves, finite=finite), left)
+    answer, _ = _ask(program(prefix, leaves, finite=finite), timeout)
+    while finite and isinstance(answer, Unsat):
+        cored = _ask_by(program(prefix, leaves, finite=finite, cores=True), deadline)
+        if cored is None:
+            return Timeout()
+        answer, core = cored
         freed = finite & core
-        if not freed:
+        if not isinstance(answer, Unsat) or not freed:
             return answer
         finite -= freed
-        left = timeout - (monotonic() - started)
-        if left <= 0:
-            logger.debug("no time left to ask cvc5 again with more doubles")
+        freer = _ask_by(program(prefix, leaves, finite=finite), deadline)
+        if freer is None:
             return Timeout()
+        answer, _ = freer
+    return answer
+
+
+def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:
+    """One ask with what is left before ``deadline``, or None with nothing left to ask with."""
+    left = deadline - monotonic()
+    if left <= 0:
+        logger.debug("no time left to ask cvc5 again with more doubles")
+        return None
+    return _ask(written, left)
 
 
 def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:

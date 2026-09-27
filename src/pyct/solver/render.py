@@ -83,7 +83,11 @@ class Program:
 
 
 def program(
-    prefix: tuple[Branch, ...], leaves: Mapping[str, type], *, finite: Collection[str] = ()
+    prefix: tuple[Branch, ...],
+    leaves: Mapping[str, type],
+    *,
+    finite: Collection[str] = (),
+    cores: bool = False,
 ) -> Program:
     """The whole little program for a path, with the table that reads its answer back.
 
@@ -94,9 +98,10 @@ def program(
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
     assertions (see `_Program`). Each float leaf in ``finite`` that the
-    prefix names is held to a finite double by an assertion named for its
-    symbol, and cvc5 is asked to dump the unsat core, so an unsat says which
-    of them it rests on.
+    prefix names is held to a finite double. With ``cores``, each of those
+    assertions is named for the leaf's symbol and cvc5 is asked to dump the
+    unsat core, so an unsat says which of them it rests on; that slows some
+    sat answers, so only a program asked after an unsat does it.
     """
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
@@ -107,10 +112,10 @@ def program(
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
     held = [name for name in constants if name in finite and leaves[name] is float]
-    lines = ["(set-option :dump-unsat-cores true)"] if held else []
+    lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
-    lines += [_held_finite(constants[name], symbols[name]) for name in held]
+    lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
     lines += body.definitions
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
@@ -129,9 +134,10 @@ def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> froz
     return frozenset(name for name in _symbols(prefix, order, seed) if leaves[name] is float)
 
 
-def _held_finite(constant: str, symbol: str) -> str:
-    """The assertion that holds one float leaf finite, named for the leaf's symbol."""
-    return f"(assert (! {floats.finite(constant)} :named {FINITE}{symbol}))"
+def _held_finite(constant: str, symbol: str | None) -> str:
+    """The assertion that holds one float leaf finite, named for the leaf's symbol if given."""
+    held = floats.finite(constant)
+    return f"(assert {held})" if symbol is None else f"(assert (! {held} :named {FINITE}{symbol}))"
 
 
 def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:

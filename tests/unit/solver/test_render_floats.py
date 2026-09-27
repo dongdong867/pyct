@@ -96,9 +96,13 @@ def test_an_operation_on_doubles_nothing_encodes_is_an_error(head: str) -> None:
 
 
 def _finite_lines(
-    prefix: tuple[Branch, ...], leaves: dict[str, type], finite: Collection[str]
+    prefix: tuple[Branch, ...],
+    leaves: dict[str, type],
+    finite: Collection[str],
+    *,
+    cores: bool = False,
 ) -> list[str]:
-    return program(prefix, leaves, finite=finite).text.splitlines()
+    return program(prefix, leaves, finite=finite, cores=cores).text.splitlines()
 
 
 def test_the_finite_ask_holds_each_float_leaf_it_names_finite_before_the_path() -> None:
@@ -106,17 +110,32 @@ def test_the_finite_ask_holds_each_float_leaf_it_names_finite_before_the_path() 
 
     lines = _finite_lines(prefix, {"n": int, "x": float, "y": float}, {"x", "y"})
 
+    # y is on no fork, so it is not declared or held, and n is an int. The first ask asks for
+    # no unsat core, which slows some sat answers
+    assert lines[:5] == [
+        "(set-logic ALL)",
+        f"(declare-const {N} Int)",
+        f"(declare-const {X} Float64)",
+        f"(assert {finite(X)})",
+        f"(assert (< {N} 3))",
+    ]
+    assert Y not in "\n".join(lines)
+
+
+def test_an_ask_for_the_core_names_each_held_leaf() -> None:
+    prefix = (fork(["<", "n", 3], taken=True), fork([">", "x", 2.5], taken=False))
+
+    lines = _finite_lines(prefix, {"n": int, "x": float}, {"x"}, cores=True)
+
     # each held leaf is named for its symbol, so cvc5's dumped unsat core says which of them
-    # the unsat rests on. y is on no fork, so it is not declared or held, and n is an int
-    assert lines[:6] == [
+    # the unsat rests on
+    assert lines[:5] == [
         "(set-option :dump-unsat-cores true)",
         "(set-logic ALL)",
         f"(declare-const {N} Int)",
         f"(declare-const {X} Float64)",
         f"(assert (! {finite(X)} :named finite!arg.x))",
-        f"(assert (< {N} 3))",
     ]
-    assert Y not in "\n".join(lines)
 
 
 def test_a_leaf_left_out_of_the_finite_ask_may_be_any_double() -> None:
@@ -124,7 +143,7 @@ def test_a_leaf_left_out_of_the_finite_ask_may_be_any_double() -> None:
 
     lines = _finite_lines(prefix, {"x": float, "y": float}, {"y"})
 
-    assert f"(assert (! {finite(Y)} :named finite!arg.y))" in lines
+    assert f"(assert {finite(Y)})" in lines
     assert f"fp.isNaN {X}" not in "\n".join(lines)
 
 
@@ -134,6 +153,7 @@ def test_a_finite_ask_holding_no_leaf_is_the_path_itself() -> None:
     plain = render(prefix, {"x": float})
     assert program(prefix, {"x": float}, finite=()).text == plain
     assert program(prefix, {"x": float}, finite={"n"}).text == plain
+    assert program(prefix, {"x": float}, finite=(), cores=True).text == plain
 
 
 def test_the_float_leaves_are_those_a_fork_names() -> None:

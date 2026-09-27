@@ -65,7 +65,12 @@ def asked(tmp_path: Path) -> list[list[str]]:
 
 
 def held(name: str) -> str:
-    """The assertion that holds one float leaf finite, named so an unsat core can say so."""
+    """The assertion that holds one float leaf finite, as an ask that wants no core writes it."""
+    return f"(assert {finite(f'|arg.{name}|')})"
+
+
+def named(name: str) -> str:
+    """The same assertion named for the leaf, so an unsat core can say it rests on it."""
     return f"(assert (! {finite(f'|arg.{name}|')} :named finite!arg.{name}))"
 
 
@@ -76,17 +81,18 @@ def test_a_float_path_is_asked_with_its_leaves_finite_first(
 
     assert ask(tmp_path, monkeypatch) == Sat({"x": 2.5})
 
-    # a finite answer is the answer, so cvc5 is asked once; y is on no fork, so nothing holds it
+    # a finite answer is the answer, so cvc5 is asked once, and for no core, which slows some
+    # sat answers; y is on no fork, so nothing holds it
     [program] = asked(tmp_path)
-    assert program[0] == "(set-option :dump-unsat-cores true)"
+    assert program[0] == "(set-logic ALL)"
     assert held("x") in program
-    assert held("y") not in program
+    assert "y|" not in "\n".join(program)
 
 
-def test_a_float_path_no_finite_double_takes_is_asked_again_with_the_leaf_free(
+def test_a_float_path_no_finite_double_takes_asks_for_the_core_then_frees_the_leaf(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, UNSAT_ON_X, f"sat\n((arg.x {NAN}))\n{NOT_UNKNOWN}")
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, f"sat\n((arg.x {NAN}))\n{NOT_UNKNOWN}")
 
     answer = ask(tmp_path, monkeypatch)
 
@@ -94,44 +100,57 @@ def test_a_float_path_no_finite_double_takes_is_asked_again_with_the_leaf_free(
     value = answer.model["x"]
     assert isinstance(value, float)
     assert math.isnan(value)
-    first, second = asked(tmp_path)
+    first, cored, freed = asked(tmp_path)
     assert held("x") in first
-    # nothing is left to hold finite, so the second ask is the path as it stands
-    assert "fp.isNaN" not in "\n".join(second)
-    assert "dump-unsat-cores" not in "\n".join(second)
+    # the same leaves held, and the core asked for, only now that the first ask was unsat
+    assert (cored[0], named("x") in cored) == ("(set-option :dump-unsat-cores true)", True)
+    # nothing is left to hold finite, so the last ask is the path as it stands
+    assert "fp.isNaN" not in "\n".join(freed)
+    assert "dump-unsat-cores" not in "\n".join(freed)
 
 
-def test_the_second_ask_frees_only_the_leaves_the_unsat_rests_on(
+def test_the_freed_ask_frees_only_the_leaves_the_unsat_rests_on(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, UNSAT_ON_X, f"sat\n((arg.x {NAN}))\n((arg.y {MINUS_ONE}))\n{NOT_UNKNOWN}")
+    sat = f"sat\n((arg.x {NAN}))\n((arg.y {MINUS_ONE}))\n{NOT_UNKNOWN}"
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, sat)
 
     answer = ask(tmp_path, monkeypatch, (["==", "x", "x"], [">", "y", 0.0]))
 
     assert isinstance(answer, Sat)
     assert answer.model["y"] == -1.0
-    first, second = asked(tmp_path)
+    first, cored, freed = asked(tmp_path)
     assert (held("x") in first, held("y") in first) == (True, True)
+    assert (named("x") in cored, named("y") in cored) == (True, True)
     # the unsat rested on x being finite alone, so y is still held finite
-    assert (held("x") in second, held("y") in second) == (False, True)
+    assert (held("x") in freed, held("y") in freed) == (False, True)
 
 
 def test_an_unsat_that_rests_on_no_leaf_being_finite_is_the_answer(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, UNSAT_ON_NOTHING)
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_NOTHING)
 
     assert ask(tmp_path, monkeypatch) == Unsat()
     # no double at all takes the path, so allowing more of them would ask for nothing
-    assert len(asked(tmp_path)) == 1
+    assert len(asked(tmp_path)) == 2
 
 
 def test_a_float_path_no_double_takes_is_unsat_once_every_leaf_is_free(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, UNSAT_ON_X, "unsat\n")
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n")
 
     assert ask(tmp_path, monkeypatch) == Unsat()
+    assert len(asked(tmp_path)) == 3
+
+
+def test_an_ask_for_the_core_that_decides_nothing_is_the_answer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, "unsat\n", "unknown\n(:reason-unknown timeout)\n", "unsat\n")
+
+    assert ask(tmp_path, monkeypatch) == Timeout()
     assert len(asked(tmp_path)) == 2
 
 
@@ -181,25 +200,33 @@ def test_each_ask_after_the_first_gets_what_is_left_of_the_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unsat_on_y = "unsat\n(\nfinite!arg.y\n)\n"
-    fake_cvc5(tmp_path, UNSAT_ON_X, unsat_on_y, "unsat\n")
-    _clock(monkeypatch, 100.0, 102.0, 103.5)
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n", unsat_on_y, "unsat\n")
+    _clock(monkeypatch, 100.0, 101.0, 102.0, 103.0, 103.5)
 
     ask(tmp_path, monkeypatch, (["==", "x", "x"], [">", "y", 0.0]), timeout=5.0)
 
-    limits = [(tmp_path / f"argv{n}").read_text().split()[-1] for n in range(3)]
-    assert limits == ["--tlimit-per=5000", "--tlimit-per=3000", "--tlimit-per=1500"]
+    # the first ask gets the whole limit, and each after it what is left before the deadline
+    limits = [(tmp_path / f"argv{n}").read_text().split()[-1] for n in range(5)]
+    assert limits == [
+        "--tlimit-per=5000",
+        "--tlimit-per=4000",
+        "--tlimit-per=3000",
+        "--tlimit-per=2000",
+        "--tlimit-per=1500",
+    ]
 
 
+@pytest.mark.parametrize("asks", [1, 2], ids=["before-the-core", "before-the-freed-ask"])
 def test_an_ask_with_no_time_left_is_a_timeout_without_cvc5(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, asks: int
 ) -> None:
-    fake_cvc5(tmp_path, UNSAT_ON_X, "unsat\n")
-    _clock(monkeypatch, 100.0, 105.0)
+    fake_cvc5(tmp_path, "unsat\n", UNSAT_ON_X, "unsat\n")
+    _clock(monkeypatch, 100.0, *([101.0] * (asks - 1)), 105.0)
 
     with caplog.at_level(logging.DEBUG, logger="pyct.solver.cvc5"):
         assert ask(tmp_path, monkeypatch, timeout=5.0) == Timeout()
 
-    assert len(asked(tmp_path)) == 1
+    assert len(asked(tmp_path)) == asks
     # every other timeout is logged where cvc5 is asked; this one asks nothing, so it says so
     assert caplog.records[-1].levelno == logging.DEBUG
     assert caplog.records[-1].getMessage() == "no time left to ask cvc5 again with more doubles"
