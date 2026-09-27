@@ -417,3 +417,15 @@ def test_a_target_that_ignores_sigchld_does_not_hang_pyct() -> None:
     result = run_briefly(IGNORES_SIGCHLD, '{"x": 0}')
 
     assert result.returncode is not None
+
+
+# a host may put a path object on sys.path; import skips it, and so does pyct's fresh start
+def test_a_fresh_pyct_process_takes_a_path_that_holds_a_path_object(tmp_path: Path) -> None:
+    env = site_in(tmp_path / "site", thread=True)
+    with (tmp_path / "site" / "sitecustomize.py").open("a") as site:
+        site.write("import pathlib, sys\nsys.path.append(pathlib.Path('/nowhere'))\n")
+
+    result = run_in(env, COUNTER, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert len(input_lines(result.stdout)) == 2, result.stdout

@@ -161,7 +161,9 @@ def _spawned(watch: ImportWatch, argv: Sequence[str], held: Iterable[int]) -> in
     os.set_inheritable(watch.fd, True)
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
-    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, json.dumps(sys.path), *argv]
+    # import reads only the str entries, and so does the fresh process
+    path = [entry for entry in sys.path if isinstance(entry, str)]
+    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, json.dumps(path), *argv]
     environment = {**os.environ, _HANDED: str(watch.fd)}
     return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
 
