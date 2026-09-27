@@ -9,24 +9,34 @@ list the part reaches more than once counts once, with its leaves. So N
 stays near the number of operations that built the part, however often the
 part repeats written out. A list the caller's ``is_leaf`` names is a leaf
 (see `printed_forks`), as an access that names a value inside an argument
-is the name the line's args find the value by: one node, written whole and
-never cut. N is ``None``, ``null`` on the line, when the
+is the name the line's args find the value by: one node, written whole and,
+within the line's budget, never cut. N is ``None``, ``null`` on the line, when the
 line's counting has spent `COUNTING_STEPS` before it is done: one budget of
 steps a line, which all of the line's cut parts share, so on a line with
 many cut parts a later one can have none. Only the printing is cut: the
 solver gets the whole condition. The stdout line and the stderr fork line
 both print what `printed_forks` hands them, cut once for the two
 (``README.md › Rules › the stdout line``).
+
+A line prints at most `LINE_LIMIT` nodes of its forks' expressions, each
+cut to `LIMIT` first. From the first fork whose expression would take the
+line past it, every fork's expression is one cut part, counted with the
+rest, and the fork keeps its place on the line. So a line's time is bounded
+by the distinct lists the kept forks and the first cut one reach, its number
+of forks, `LINE_LIMIT` and `COUNTING_STEPS` (see `_printed_all`).
 """
 
-import math
 from collections import deque
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression, IsLeaf
 
 # the most nodes a printed expression holds, as the line writes them
 LIMIT = 1000
+
+# the most nodes one line prints of its forks' expressions, all of them together
+LINE_LIMIT = 100_000
 
 # the head of a cut part, `["...", N]`
 CUT = "..."
@@ -88,6 +98,19 @@ class _Steps:
         self.left -= steps
 
 
+@dataclass(frozen=True)
+class PrintedForks:
+    """Each fork's expression as its line prints it, and where the line's budget ran out.
+
+    ``cut_from`` is the position of the first fork whose expression would
+    have taken the line past `LINE_LIMIT` nodes: that fork's expression and
+    every later one's is one cut part. None when every expression fits.
+    """
+
+    expressions: tuple[Expression, ...]
+    cut_from: int | None = None
+
+
 def _no_leaf(_part: Expression) -> bool:
     """No list is a leaf: every list is an operation, as when no seed says otherwise."""
     return False
@@ -101,10 +124,10 @@ def printed(expression: Expression) -> Expression:
     two pieces of itself doubles the expression written out on every pass,
     and it is counted without being written out.
     """
-    return _printed_all((expression,), _no_leaf)[0]
+    return _printed_all((expression,), _no_leaf).expressions[0]
 
 
-def printed_forks(forks: Sequence[Branch], is_leaf: IsLeaf = _no_leaf) -> tuple[Expression, ...]:
+def printed_forks(forks: Sequence[Branch], is_leaf: IsLeaf = _no_leaf) -> PrintedForks:
     """Each fork's expression as `printed` prints it, every list counted once for all the forks.
 
     A loop's forks each hold its string as that pass left it, so each holds
@@ -117,36 +140,75 @@ def printed_forks(forks: Sequence[Branch], is_leaf: IsLeaf = _no_leaf) -> tuple[
     return _printed_all(tuple(fork.expression for fork in forks), is_leaf)
 
 
-def _printed_all(expressions: tuple[Expression, ...], is_leaf: IsLeaf) -> tuple[Expression, ...]:
-    """Each expression whole within `LIMIT` nodes, else cut down to it, all counted together.
+def _printed_all(expressions: tuple[Expression, ...], is_leaf: IsLeaf) -> PrintedForks:
+    """Each expression whole within `LIMIT` nodes, else cut down to it, in order while the line
+    has room; from the first that would take it past `LINE_LIMIT`, each one cut part.
 
-    The cost, for L distinct lists holding E operands between them, F forks
-    and C = `COUNTING_STEPS`: the walk and the written sizes take O(L + E)
-    steps, cutting takes O(`LIMIT`) steps a fork, and counting what the cut
-    parts hold takes at most C steps, whatever the sharing, sorting a list's
-    runs adding at most a log factor. Counting what each part reaches is as
-    hard as finding two orthogonal vectors, so no count that is always exact
-    runs in less than about quadratic time; the limit on C is what bounds it.
-    So a line costs O(L + E + F * `LIMIT` + C log C).
+    Every cut part is counted together. The cost, for L distinct lists
+    holding E operands between them that the kept expressions and the first
+    one past the line's room reach, F forks and C = `COUNTING_STEPS`: the
+    walk and the written sizes take O(L + E) steps, cutting takes O(`LIMIT`)
+    steps a kept fork, and counting what the cut parts hold takes at most C
+    steps, whatever the sharing, sorting a list's runs adding at most a log
+    factor. Counting what each part reaches is as hard as finding two
+    orthogonal vectors, so no count that is always exact runs in less than
+    about quadratic time; the limit on C is what bounds it. So a line costs
+    O(L + E + F + K * `LIMIT` + C log C), K being the forks kept, whose
+    expressions print at most `LINE_LIMIT` nodes.
     """
-    written = _written(_walked(expressions, _Steps(math.inf), is_leaf)[0])
+    written: dict[int, int] = {}
     cuts: list[_Pending] = []
-    shown = tuple(
-        _cut(expression, written, cuts)
-        if isinstance(expression, list) and written.get(id(expression), 1) > LIMIT
-        else expression
-        for expression in expressions
-    )
+    shown: list[Expression] = []
+    room = LINE_LIMIT
+    for expression in expressions:
+        kept, nodes, cut = _printed_one(expression, written, is_leaf)
+        if nodes > room:
+            break
+        room -= nodes
+        shown.append(kept)
+        cuts += cut
+    cut_from = len(shown) if len(shown) < len(expressions) else None
+    shown += [_whole_cut(expression, is_leaf, cuts) for expression in expressions[len(shown) :]]
+    _count(cuts, is_leaf)
+    return PrintedForks(tuple(shown), cut_from)
+
+
+def _printed_one(
+    expression: Expression, written: dict[int, int], is_leaf: IsLeaf
+) -> tuple[Expression, int, list[_Pending]]:
+    """One expression as the line prints it, how many nodes that holds, and the parts it cut."""
+    if not isinstance(expression, list) or is_leaf(expression):
+        return expression, 1, []
+    size = _sized(expression, written, is_leaf)
+    if size <= LIMIT:
+        return expression, size, []
+    cuts: list[_Pending] = []
+    root, nodes = _cut(expression, written, cuts)
+    return root, nodes, cuts
+
+
+def _whole_cut(expression: Expression, is_leaf: IsLeaf, cuts: list[_Pending]) -> Expression:
+    """The expression as one cut part. A leaf, or a list ``is_leaf`` names, is one node."""
+    stand_in: list[Expression] = [CUT, 1]
+    if isinstance(expression, list) and not is_leaf(expression):
+        stand_in[1] = None
+        cuts.append((stand_in, expression))
+    return stand_in
+
+
+def _count(cuts: list[_Pending], is_leaf: IsLeaf) -> None:
+    """Write into each cut part how many distinct nodes it holds, within `COUNTING_STEPS`."""
     parts = tuple({id(part): part for _, part in cuts}.values())
     steps = _Steps(COUNTING_STEPS)
     distinct = _counted(*_walked(parts, steps, is_leaf), steps)
     for stand_in, part in cuts:
         stand_in[1] = distinct.get(id(part))
-    return shown
 
 
-def _cut(expression: _Node, written: dict[int, int], cuts: list[_Pending]) -> Expression:
-    """The top of the expression, opened breadth first while the line has room.
+def _cut(
+    expression: _Node, written: dict[int, int], cuts: list[_Pending]
+) -> tuple[Expression, int]:
+    """The top of the expression, opened breadth first while the line has room, and its nodes.
 
     Every part starts cut. Shallowest first, and under one operator its
     smaller operands before its larger ones, a cut part is written whole if
@@ -171,7 +233,7 @@ def _cut(expression: _Node, written: dict[int, int], cuts: list[_Pending]) -> Ex
             queue.extend(pending)
         else:
             cuts.append((slot, part))
-    return root
+    return root, spent
 
 
 def _opened(part: _Node, written: dict[int, int]) -> tuple[_Node, int, list[_Pending]]:
@@ -234,15 +296,28 @@ def _walked(
     return order, holders
 
 
-def _written(order: list[_Node]) -> dict[int, int]:
-    """How many nodes each list holds written out, keyed by its identity: what the line would
-    hold for it whole."""
-    written: dict[int, int] = {}
-    for node in order:
-        written[id(node)] = 1 + sum(
-            written.get(id(part), 1) if isinstance(part, list) else 1 for part in node[1:]
-        )
-    return written
+def _sized(expression: _Node, written: dict[int, int], is_leaf: IsLeaf) -> int:
+    """How many nodes the expression holds written out: what the line would hold for it whole.
+
+    Each list it reaches that ``written`` lacks is walked once, after the
+    lists it holds and without recursion, and its size kept in ``written``
+    by its identity, so forks that share a part walk it once between them.
+    """
+    stack = [(expression, False)]
+    while stack:
+        node, finished = stack.pop()
+        if finished:
+            written[id(node)] = 1 + sum(
+                written.get(id(part), 1) if isinstance(part, list) else 1 for part in node[1:]
+            )
+        elif id(node) not in written:
+            # a list being walked is not walked again by another part that holds it
+            written[id(node)] = 0
+            stack.append((node, True))
+            stack.extend(
+                (part, False) for part in node[1:] if isinstance(part, list) and not is_leaf(part)
+            )
+    return written[id(expression)]
 
 
 def _counted(order: list[_Node], holders: dict[int, int], steps: _Steps) -> dict[int, int]:

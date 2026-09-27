@@ -1,6 +1,6 @@
 {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0}
 {"set": "examples", "target": "examples.complex_structures.transaction_ledger_analysis::transaction_ledger_analysis", "seed": {"transactions": [{"amount": 100.0, "type": "credit"}, {"amount": 50.0, "type": "debit"}]}, "status": "differs", "only_legacy": [], "only_v2": [79]}
-{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [80, 88, 92], "only_v2": [96]}
+{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [88, 92], "only_v2": [100]}
 {"set": "examples", "target": "examples.library_black_box.datetime_classification::datetime_classification", "seed": {"date_str": "2024-06-15 14:30:00"}, "status": "differs", "only_legacy": [104, 105, 108, 109, 112], "only_v2": []}
 {"set": "examples", "target": "examples.library_black_box.json_config_validation::json_config_validation", "seed": {"config_str": "{\"mode\": \"production\", \"version\": \"1.0.0\"}"}, "status": "differs", "only_legacy": [92], "only_v2": []}
 {"set": "examples", "target": "examples.pure_numeric.tax_bracket_calculator::tax_bracket_calculator", "seed": {"income": 75000, "filing_status": "single"}, "status": "differs", "only_legacy": [], "only_v2": [33]}
@@ -9,24 +9,19 @@
 {"set": "examples", "target": "examples.string_constraints.email_validation::email_validation", "seed": {"email": "user@example.com"}, "status": "differs", "only_legacy": [], "only_v2": [88]}
 {"set": "examples", "target": "examples.string_constraints.semver_parsing::semver_parsing", "seed": {"version": "1.2.3"}, "status": "differs", "only_legacy": [85, 91, 95], "only_v2": []}
 {"set": "examples", "target": "examples.string_constraints.url_routing::url_routing", "seed": {"url": "https://example.com/api/v2/users"}, "status": "differs", "only_legacy": [123], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_parse::parse_number", "seed": {"s": "1"}, "status": "differs", "only_legacy": [14, 16], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_unprotected::parse_digit", "seed": {"c": "5"}, "status": "differs", "only_legacy": [17], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.str_format::format_number", "seed": {"x": 5}, "status": "differs", "only_legacy": [13], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_branch::matches_monday", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [13]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_non_ascii::matches_cafe", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.count_branch::has_two_ab", "seed": {"s": "xx"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_case_fold::in_lower_set", "seed": {"x": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
 {"set": "library", "target": "sympy.ntheory.egyptian_fraction::egypt_greedy", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [151]}
-{"set": "library", "target": "sympy.ntheory.modular::crt", "seed": {"m": 0, "v": 0, "symmetric": false, "check": true}, "status": "differs", "only_legacy": [86], "only_v2": []}
-{"set": "library", "target": "sympy.ntheory.primetest::is_square", "seed": {"n": 0, "prep": true}, "status": "differs", "only_legacy": [203], "only_v2": []}
 {"set": "library", "target": "yaml::YAMLObjectMetaclass", "seed": {"cls": 0, "name": 0, "bases": 0, "kwds": 0}, "status": "v2 failed", "only_legacy": [], "only_v2": [], "failures": {"v2": "exit 2: args (cls, name, bases, kwds) do not fit (name, bases, kwds): got an unexpected keyword argument 'cls'"}, "covered": []}
 {"set": "realworld", "target": "phonenumbers.phonenumberutil::parse", "seed": {"number": "+1 650 253 0000", "region": "US"}, "status": "differs", "only_legacy": [], "only_v2": [3021]}
 {"set": "realworld", "target": "urllib.parse::urlsplit", "seed": {"url": "https://user:pass@example.com:8080/path?q=1#frag"}, "status": "differs", "only_legacy": [], "only_v2": [514]}
 {"set": "realworld", "target": "validators.country::country_code", "seed": {"value": "US"}, "status": "differs", "only_legacy": [], "only_v2": [306, 317]}
 {"set": "realworld", "target": "validators.i18n.ru::ru_inn", "seed": {"value": "7707083893"}, "status": "differs", "only_legacy": [48, 61], "only_v2": []}
 {"set": "realworld", "target": "validators.url::url", "seed": {"value": "https://example.com/path?query=1#frag"}, "status": "differs", "only_legacy": [], "only_v2": [241]}
-{"set": "realworld", "target": "werkzeug.http::parse_content_range_header", "seed": {"value": "bytes 0-499/1234"}, "status": "differs", "only_legacy": [], "only_v2": [872, 875, 880, 883, 886, 888, 895]}
+{"set": "realworld", "target": "werkzeug.http::parse_content_range_header", "seed": {"value": "bytes 0-499/1234"}, "status": "differs", "only_legacy": [], "only_v2": [872, 875, 880, 883, 884, 886, 888, 895, 900]}
 {"set": "realworld", "target": "werkzeug.http::parse_options_header", "seed": {"value": "text/html; charset=utf-8; boundary=something"}, "status": "differs", "only_legacy": [], "only_v2": [483]}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}

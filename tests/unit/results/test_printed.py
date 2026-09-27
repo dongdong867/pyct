@@ -183,7 +183,7 @@ def test_forks_that_share_their_parts_are_each_printed_as_it_prints_alone() -> N
         )
         term = ["+", ["[:]", term, None, i], ["[:]", term, i + 1, None]]
 
-    written = printed_forks(forks)
+    written = printed_forks(forks).expressions
 
     assert written == tuple(printed(fork.expression) for fork in forks)
     assert any(_cuts(expression) for expression in written)
@@ -219,7 +219,7 @@ def test_an_access_to_a_value_inside_an_argument_is_written_whole() -> None:
     wide = _tree(2 * LIMIT)
     fork = Branch(expression=["==", ["+", access, 1], wide], taken=True, site=Site("m.py", 5, 7))
 
-    (written,) = printed_forks([fork], lambda part: part is access)
+    (written,) = printed_forks([fork], lambda part: part is access).expressions
 
     # the access is the name the line's args find the value by, one node however deep, and the
     # line cuts the rest of the condition around it
@@ -236,7 +236,7 @@ def test_a_cut_part_that_holds_an_access_counts_it_as_one_node() -> None:
         term = ["+", term, "'x'"]
     fork = Branch(expression=["==", term, "'q'"], taken=False, site=Site("m.py", 5, 7))
 
-    (written,) = printed_forks([fork], lambda part: part is access)
+    (written,) = printed_forks([fork], lambda part: part is access).expressions
 
     # a part k passes deep holds k `+` nodes, k `'x'` leaves and the access, one node however
     # many steps it takes
@@ -270,14 +270,15 @@ def _edit_loop(passes: int) -> list[Branch]:
 def test_a_thousand_passes_of_the_edit_loop_cut_to_a_short_line() -> None:
     forks = _edit_loop(1000)
 
-    written = printed_forks(forks)
+    written = printed_forks(forks).expressions
 
     # written out, the last condition holds about 3 ** 1000 nodes; each cut part says how many
-    # distinct nodes it holds, which is about ten for each pass that built it
+    # distinct nodes it holds, which is about ten for each pass that built it, a fork past the
+    # line's budget cut whole
     pairs = zip(written, forks, strict=True)
     counts = [count for shown, fork in pairs for count, _ in _cut_from(shown, fork.expression)]
     assert counts
-    assert all(2 < count < 10_000 for count in counts)
+    assert all(2 < count <= 10 * 1000 + 5 for count in counts)
     # the stdout line of an input whose one fork is the loop's last condition
     record = InputRecord(args={"s": "a" * 1000}, forks=(forks[-1],), covered_lines=frozenset({5}))
     coverage = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset({5, 7})})
@@ -299,7 +300,7 @@ def test_counting_cut_short_leaves_a_count_out_rather_than_wrong(
         monkeypatch.setattr("pyct.results.printed.COUNTING_STEPS", limit)
         counts = [
             pair
-            for shown, fork in zip(printed_forks(forks), forks, strict=True)
+            for shown, fork in zip(printed_forks(forks).expressions, forks, strict=True)
             for pair in _counts_from(shown, fork.expression)
         ]
         cut_short += any(count is None for count, _ in counts)
@@ -342,7 +343,7 @@ def _gathered(characters: int, string: Expression) -> list[Branch]:
 def test_gathered_pieces_count_each_node_they_reach_once(string: Expression) -> None:
     forks = _gathered(300, string)
 
-    written = printed_forks(forks)[-1]
+    written = printed_forks(forks).expressions[-1]
 
     # the gathered string reaches each piece, and each piece the one string it was taken of
     cuts = _cut_from(written, forks[-1].expression)
@@ -393,19 +394,25 @@ def _compared_then_gathered(characters: int, compares: int) -> list[Branch]:
     return forks
 
 
-def test_pieces_compared_many_times_then_gathered_are_counted_quickly() -> None:
+def test_pieces_compared_many_times_then_gathered_print_in_a_bounded_time() -> None:
     forks = _compared_then_gathered(16_000, 30)
 
     start = time.perf_counter()
-    written = printed_forks(forks)
+    shown = printed_forks(forks)
     spent = time.perf_counter() - start
 
-    # counted only below the part the last fork cuts, where the pieces sit side by side, in about
-    # 1 s, or 3 s under coverage; counted over every fork, the compares between the pieces made
-    # each join walk every piece before it, which took 30 s here
-    cuts = _cut_from(written[-1], forks[-1].expression)
-    assert cuts
-    assert all(count == _distinct(part) for count, part in cuts)
+    # the line keeps the forks that fit its budget, and cuts each later one whole, counted
+    # within the line's steps, in about 0.8 s. Counted over every fork, the
+    # compares between the pieces once made each join walk every piece before it, 30 s here
+    assert shown.cut_from is not None
+    counts = [
+        pair
+        for written, fork in zip(shown.expressions, forks, strict=True)
+        for pair in _counts_from(written, fork.expression)
+    ]
+    counted = [(count, part) for count, part in counts if count is not None]
+    assert counted and len(counted) < len(counts)
+    assert all(count == _distinct(part) for count, part in counted)
     assert spent < 15.0
 
 
@@ -451,7 +458,7 @@ def test_counting_the_orthogonal_vectors_shape_stops_at_its_limit() -> None:
     forks = _orthogonal_vectors(2048, 40, 4)
 
     start = time.perf_counter()
-    written = printed_forks(forks)
+    written = printed_forks(forks).expressions
     spent = time.perf_counter() - start
 
     # the count stops at its limit of steps: the parts it counted are exact, and the rest print
