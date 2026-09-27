@@ -163,7 +163,8 @@ def _inputs(call: Call, seed: Mapping[str, object], bounds: Bounds, told: _Told)
 
     The seed is copied, and its leaves noted, before the seed input runs.
     Every input, the seed's too, is handed a rebuild of that copy, so no
-    input changes what the solver reads or what a later input starts from.
+    input changes the leaves the solver reads or the copies a later input
+    starts from.
     """
     copied = Seed.of(seed)
     try:

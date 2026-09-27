@@ -25,10 +25,11 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     Python but not a number to bind: it has no ``<`` worth tracking.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
-    under, and every other value is copied, so the target gets arguments of
-    its own: a change it makes reaches neither the seed nor a later input.
-    A value under a key no access can name, a float key say, is copied the
-    same way and tracked nowhere (see ``_Walk``).
+    under, and every other value deepcopy can copy is copied, so a change the
+    target makes to a copy reaches neither the seed nor a later input. A
+    value under a key no access can name, a float key say, is copied the same
+    way and tracked nowhere; a value deepcopy refuses is handed on as it came
+    (see ``_Walk``).
     """
     return walked(seed, lambda value, access: _tracked(value, access, sink))
 
@@ -37,10 +38,10 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
 class Seed:
     """A run's seed as the walk copied it, and the values bind tracks in it.
 
-    Made once, before any input runs. No input is handed these objects: each
-    gets a rebuild of them, so neither they nor the leaves change during the
-    run, and every solve and every answer reads them rather than walking the
-    caller's seed again.
+    Made once, before any input runs. Each input is handed a rebuild of these
+    objects and never the dicts and lists here, which hold every leaf, so
+    those and the leaves stay as they are for the whole run. Every solve and
+    every answer reads them rather than walking the caller's seed again.
     """
 
     args: Mapping[str, object]
