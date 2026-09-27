@@ -270,14 +270,18 @@ def test_downgrades_an_untaught_float_operation() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    # an operator by its dunder, a method by its name; a bool beside a float is float's own
-    names = ["__pow__", "__int__", "__round__", "hex", "__str__", "__add__"]
-    # one call a line, from line 2 on, each at the statement's start
+    # an operator by its dunder, a method by its name; a bool beside a float is float's own.
+    # `int(x)` written in the target's package is a tracked int after its finite fork, no
+    # longer a downgrade (intercept-builtin-functions-follows-int-of-a-float)
+    at = "targets/floats/untaught.py"
     assert seed["downgrades"] == [
-        downgrade(name, 1, f"targets/floats/untaught.py:{line}:4")
-        for line, name in enumerate(names, start=2)
+        downgrade("__pow__", 1, f"{at}:2:4"),
+        downgrade("__round__", 1, f"{at}:4:4"),
+        downgrade("hex", 1, f"{at}:5:4"),
+        downgrade("__str__", 1, f"{at}:6:4"),
+        downgrade("__add__", 1, f"{at}:7:4"),
     ]
-    assert expressions(seed) == [[">", "x", 0.0]]
+    assert expressions(seed) == [["isfinite", "x"], [">", "x", 0.0]]
 
 
 # follow-floats-treats-a-mixed-equality-as-plain

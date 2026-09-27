@@ -33,6 +33,9 @@ class Tree:
     Apart from the prefix, the tree keeps every side any input took at each
     site, whatever came before it: a fork whose other side is in no input
     yet is a new side, and the pick tries those first (see `next`).
+
+    A pick whose ask ran to the solver's limit turns the rest of its path's
+    new sides shallowest first (see `timed_out`).
     """
 
     def __init__(self) -> None:
@@ -41,13 +44,18 @@ class Tree:
         self._aimed: set[ForkKey] = set()
         self._sides: set[tuple[ForkSite, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
-        # fork first. A side taken never becomes new again, so a fork leaves for good
+        # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
+        # forks sit together, so after a pick the rest of its path leads the queue. A side taken
+        # never becomes new again, so a fork leaves for good
         self._new: deque[Place] = deque()
         # where the oldest-path pick starts looking: the oldest path that may still hold an open
         # fork, and the deepest position on it that may, None before the pick first reaches the
         # path. A fork that closes never opens again, so every fork past this point is spent
         self._path = 0
         self._depth: int | None = None
+        # the path of the last pick, and the paths whose new sides a timeout turned
+        self._picked: int | None = None
+        self._turned: set[int] = set()
 
     def add(self, forks: tuple[Branch, ...]) -> None:
         """Record the path one input took. Its forks join the pool the next pick draws from."""
@@ -75,13 +83,14 @@ class Tree:
         """The path that takes the other side of the open fork the order picks next, and which
         path it extends, counted in the order ``add`` took them.
 
-        New side first, by decision fork-order-new-side-first: an open fork
-        whose other side no input took at its site comes first, oldest path
-        first and deepest fork first; otherwise the deepest open fork on the
-        oldest path. A loop's test takes both sides on a path that runs it, so
-        a loop that adds a pass on every input cannot starve the forks around
-        it, and the seed's last fork is the first pick unless its other side
-        already ran (flip-one-fork). The pick is the aim, so the fork is spent
+        New side first, by decision fork-order-shallowest-first-after-a-timeout:
+        an open fork whose other side no input took at its site comes first,
+        oldest path first and deepest fork first, or shallowest first on a
+        path a pick timed out on (`timed_out`); otherwise the deepest open
+        fork on the oldest path. A loop's test takes both sides on a path that
+        runs it, so a loop that adds a pass on every input cannot starve the
+        forks around it, and the seed's last fork is the first pick unless its
+        other side already ran (flip-one-fork). The pick is the aim, so the fork is spent
         whether or not the solver answers. Each order resumes where it last
         stopped, so a run's picks read each fork at most once in each.
         """
@@ -93,7 +102,27 @@ class Tree:
         path, depth = picked
         forks, keys = self._paths[path]
         self._aimed.add(keys[depth])
+        self._picked = path
         return plan(forks[: depth + 1], path)
+
+    def timed_out(self) -> None:
+        """The last pick's ask ran to the solver's limit: its path's other new sides, still
+        waiting, go shallowest first, once per path.
+
+        The ask for a fork holds the path up to it, so after one ran out of
+        time, the next deepest holds nearly the same and would likely run out
+        too, spending the budget on one input; the shallowest holds the
+        least. Decision fork-order-shallowest-first-after-a-timeout.
+        """
+        path = self._picked
+        if path is None or path in self._turned:
+            return
+        self._turned.add(path)
+        waiting: list[Place] = []
+        while self._new and self._new[0][0] == path:
+            waiting.append(self._new.popleft())
+        # extendleft puts them back in reverse: shallowest first
+        self._new.extendleft(waiting)
 
     def _next_new_side(self) -> Place | None:
         """The first fork waiting as a new side that is still open and still new.

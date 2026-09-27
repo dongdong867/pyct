@@ -185,7 +185,7 @@ def _finite(self: ConcolicFloat) -> None:
     NaN and OverflowError on an infinity, so the input that flips it raises,
     and its line lists the fork it died on.
     """
-    forked(self.sink, ["isfinite", self.expression], own(math.isfinite, self))
+    forked(self.sink, ["isfinite", self.expression], own(math.isfinite, self), raising=True)
 
 
 def _rounding(head: str, operation: Callable[[float], int]) -> Callable[[ConcolicFloat], Any]:
@@ -200,6 +200,11 @@ def _rounding(head: str, operation: Callable[[float], int]) -> Callable[[Concoli
         return numbers.tracked(own(operation, self), [head, self.expression], self.sink)
 
     return compute
+
+
+# `int(x)` on a tracked float, where the code writes it: a tracked int cut toward zero, carrying
+# `["int", x]`, after the same finite fork, as `pyct.core.conversions` hands it on
+truncated = _rounding("int", float.__int__)
 
 
 def _round() -> Callable[..., Any]:

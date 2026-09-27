@@ -7,7 +7,7 @@ from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.answer_size import longest_string
-from pyct.solver.checks import CHECKS
+from pyct.solver.checks import CHECKS, check, checks_by_string
 from pyct.solver.dag import Node, distinct
 from pyct.solver.declared import Leaves, Program, symbols
 from pyct.solver.heads import (
@@ -181,6 +181,8 @@ class _Program:
         # the strings read at fixed positions, each written once as its first letters (see
         # `letters`), and the letters' names once written
         self.spellings = Spellings(order, prefix, self._string)
+        # the checks each string is read by: a string one check reads is asked as a membership
+        self.checked = checks_by_string(order, self._string)
         self._write_each(order, holders, self._read_by_forms(order))
 
     def _write_each(self, order: list[Node], holders: dict[int, int], read: set[int]) -> None:
@@ -379,8 +381,9 @@ class _Program:
         rendered = [self._operand(part, kind) for part in operands]
         if (declared := TO_DECLARE.get(head)) is not None:
             return self._declared(declared, *rendered)
-        if (check := CHECKS.get(head)) is not None:
-            answer, fact = check(*rendered)
+        if head in CHECKS:
+            alone = self.checked.get(self._string(operands[0])) == {head}
+            answer, fact = check(head, *rendered, alone=alone)
             self._hold(fact)
             return answer
         if head in STRING_ORDERS and kind is str:

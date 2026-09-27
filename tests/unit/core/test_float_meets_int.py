@@ -217,7 +217,7 @@ def test_a_rounding_is_a_tracked_int_after_its_finite_fork(
     assert type(result) is ConcolicInt
     assert result.expression == [head, "x"]
     assert int(int.__index__(result)) == call(-2.5)
-    assert sink == [Branch(expression=["isfinite", "x"], taken=True, site=PROBE_SITE)]
+    assert sink == [Branch(expression=["isfinite", "x"], taken=True, site=PROBE_SITE, raising=True)]
 
 
 @pytest.mark.parametrize(
@@ -234,7 +234,9 @@ def test_a_value_that_cannot_round_lists_the_fork_it_died_on(
         _probe("def probe(f, r):\n    return r(f)\n")(x, call)
 
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=["isfinite", "x"], taken=False, site=PROBE_SITE)]
+    assert sink == [
+        Branch(expression=["isfinite", "x"], taken=False, site=PROBE_SITE, raising=True)
+    ]
 
 
 def test_round_half_to_even_is_pythons() -> None:
