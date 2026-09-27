@@ -22,7 +22,7 @@ dev = [
   "ruff>=0.12",
 ]
 # The libraries the compare tool's realworld and library sets run, at the versions legacy's
-# lock holds, so both sides import the same files. A development group: pyct never needs them
+# lock holds, so both sides import the same release. A development group: pyct never needs them
 compare-coverage = [
   "phonenumbers==8.13.51",
   "python-dateutil==2.9.0.post0",
