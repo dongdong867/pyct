@@ -216,13 +216,14 @@ def _digest(file: Path) -> str:
 def _library_failure(library: Library, installed: Installed | None, module: str) -> str | None:
     """Why the side's library is not the pinned one: the library, the pin, the side's version.
 
-    A pinned version that did not install the module's file does not provide the module.
+    A pinned version fails too when no file for the module is on its record of installed
+    files, or, for the standard library, in its folder.
     """
     version = None if installed is None else installed.version
     if version is None or not library.matches(version):
         return f"the entry pins {library.name} {library.version}; this side has {version or 'none'}"
     if installed is not None and not installed.provides:
-        return f"{library.name} {version} does not provide {module}"
+        return f"{library.name} {version} lists no file for {module}"
     return None
 
 

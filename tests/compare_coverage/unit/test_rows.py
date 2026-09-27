@@ -245,7 +245,7 @@ def test_a_pin_that_does_not_provide_the_module_fails_the_side() -> None:
     row = legacy_row(replace(other, library=replace(other.library, provides=False)))
 
     assert row.legacy is not None
-    assert row.legacy.failure == "werkzeug 3.1.3 does not provide w.http"
+    assert row.legacy.failure == "werkzeug 3.1.3 lists no file for w.http"
     assert row.legacy.covered == ()
 
 
