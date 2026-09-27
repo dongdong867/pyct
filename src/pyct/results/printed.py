@@ -7,9 +7,10 @@ the limit, the top of the expression is kept and each part cut from it is
 written ``["...", N]``, N being how many distinct nodes that part holds: a
 list the part reaches more than once counts once, with its leaves. So N
 stays near the number of operations that built the part, however often the
-part repeats written out. An access that names a value inside an argument
-is a leaf, the name the line's args find the value by: one node, written
-whole and never cut. N is ``None``, ``null`` on the line, when the
+part repeats written out. A list the caller's ``is_leaf`` names is a leaf
+(see `printed_forks`), as an access that names a value inside an argument
+is the name the line's args find the value by: one node, written whole and
+never cut. N is ``None``, ``null`` on the line, when the
 line's counting has spent `COUNTING_STEPS` before it is done: one budget of
 steps a line, which all of the line's cut parts share, so on a line with
 many cut parts a later one can have none. Only the printing is cut: the
