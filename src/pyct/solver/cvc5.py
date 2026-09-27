@@ -89,9 +89,10 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
     records it already has and says the solver failed. A ``sat`` whose model
-    has a value line pyct cannot read is an ``Unknown()``, warned about with
-    the line: a half-read model would quietly hand the seed's values back as
-    the solver's, and the fork is a miss rather than the run's end.
+    has a value line pyct cannot read, or names a constant the program did
+    not declare, is an ``Unknown()``, warned about with the reason: a
+    half-read model would quietly hand the seed's values back as the
+    solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     deadline = monotonic() + timeout
@@ -168,7 +169,12 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
 
 
 def _read(stdout: str, stderr: str, written: Program) -> Answer:
-    """What cvc5 said, a model named by the leaves; one pyct cannot read is an ``Unknown()``."""
+    """What cvc5 said, a sat model named by the leaves.
+
+    A sat model with a value line pyct cannot read, or a name the program
+    did not declare, is an ``Unknown()``; any other reply is what
+    ``_answer`` makes of it.
+    """
     try:
         answer = _answer(stdout, stderr)
         # cvc5 answered by the constants the program declared; the run reads leaves by name

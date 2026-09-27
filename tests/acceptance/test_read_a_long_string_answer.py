@@ -1,8 +1,8 @@
 """Acceptance tests for the read-a-long-string-answer story.
 
 Each test spawns ``python -P -m pyct`` through the harness. The first two run the real
-cvc5; the third puts a cvc5 on ``PATH`` that answers the first solve in a form pyct cannot
-read and hands every later one to the real cvc5.
+cvc5; the third puts a cvc5 on ``PATH`` that answers the first solve sat with a value line
+pyct cannot read and hands every later one to the real cvc5.
 """
 
 import shutil
@@ -17,7 +17,7 @@ EITHER_END = "targets.strs.long_answer::either_end"
 EMPTY = '{"s": ""}'
 # ``return "far"``, which only an s of 70,001 characters ending in z runs
 FAR = 3
-# ``if s[1_000_000:] != "":``, which only an s past 1,000,000 characters takes
+# ``if len(s) > 1_000_000:``, which only an s past 1,000,000 characters takes
 PAST_A_MILLION_FORK = (8, 7)
 
 # cvc5's long form of a string, a value line pyct cannot read as any string
@@ -84,6 +84,11 @@ def test_caps_a_string_answer() -> None:
 
     assert result.returncode == 0, result.stderr[-2000:]
     line, col = PAST_A_MILLION_FORK
+    seed = input_lines(result.stdout)[0]
+    assert seed["downgrades"] == [], seed
+    forks = seed["forks"]
+    assert isinstance(forks, list), seed
+    assert [fork["expression"] for fork in forks] == [[">", ["len", "s"], 1_000_000]], seed
     assert f"missed {LONG_ANSWER_FILE}:{line}:{col} unsat" in result.stderr.splitlines()
     summary = summary_line(result.stdout)
     assert summary["misses"] == [

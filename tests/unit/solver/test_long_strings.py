@@ -1,14 +1,16 @@
 """A string answer: held to the most characters an answer holds, and written by cvc5 in full up
 to there; decision answers-hold-at-most-a-million-items."""
 
+import json
 import logging
 import shutil
 from pathlib import Path
 
 import pytest
 
-from pyct.solver.answer import Unknown, Unsat
-from pyct.solver.answer_size import MOST_ITEMS
+from pyct.core.branch import Expression
+from pyct.solver.answer import Sat, Unknown, Unsat
+from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.cvc5 import solve
 from tests.unit.solver.test_cvc5 import NOT_UNKNOWN, ask, fake_cvc5, fork
 from tests.unit.solver.test_render import render
@@ -23,10 +25,6 @@ WITNESS = (
 )
 
 
-def test_an_answer_holds_at_most_a_million_items() -> None:
-    assert MOST_ITEMS == 1_000_000
-
-
 def test_a_string_leaf_is_held_to_the_most_characters_an_answer_holds() -> None:
     text = render((fork(["==", "s", "t"], taken=True),), {"s": str, "t": str, "n": int})
 
@@ -37,6 +35,20 @@ def test_a_string_leaf_is_held_to_the_most_characters_an_answer_holds() -> None:
         "(assert (<= (str.len |arg.s|) 1000000))",
         "(assert (<= (str.len |arg.t|) 1000000))",
     ]
+
+
+@pytest.mark.parametrize(
+    "access",
+    [
+        pytest.param(["[]", "items", 0], id="in a list"),
+        pytest.param(["[]", "config", "'name'"], id="in a dict"),
+    ],
+)
+def test_a_string_inside_an_argument_is_held_to_the_most_characters(access: Expression) -> None:
+    text = render((fork(["==", access, "'x'"], taken=True),), {json.dumps(access): str})
+
+    assert "(declare-const |leaf.0| String)" in text.splitlines()
+    assert longest_string("|leaf.0|") in text.splitlines()
 
 
 def test_a_leaf_of_another_type_is_not_held_to_a_length() -> None:
@@ -72,8 +84,8 @@ def test_a_value_line_pyct_cannot_read_is_unknown_and_warned_about_with_the_line
 def test_the_real_cvc5_hands_back_a_string_past_its_default_model_length() -> None:
     answer = solve((fork(["==", ["[:]", "s", 70000, None], "'z'"], taken=True),), {"s": str}, 10.0)
 
-    assert not isinstance(answer, Unknown | Unsat)
-    value = getattr(answer, "model", {}).get("s")
+    assert isinstance(answer, Sat), answer
+    value = answer.model["s"]
     assert isinstance(value, str)
     assert len(value) == 70_001 and value.endswith("z")
 
@@ -84,7 +96,8 @@ def test_the_real_cvc5_hands_back_a_string_of_the_most_characters() -> None:
 
     answer = solve(path, {"s": str}, 10.0)
 
-    value = getattr(answer, "model", {}).get("s")
+    assert isinstance(answer, Sat), answer
+    value = answer.model["s"]
     assert isinstance(value, str)
     assert len(value) == MOST_ITEMS and value.endswith("z")
 

@@ -5,7 +5,7 @@ def tail_is_z(s: str) -> str:
 
 
 def past_a_million(s: str) -> str:
-    if s[1_000_000:] != "":
+    if len(s) > 1_000_000:
         return "huge"
     return "fits"
 
