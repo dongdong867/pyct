@@ -15,6 +15,8 @@ import ast
 import dis
 import warnings
 
+from pyct.intercept.constants import Constants, literal_names
+
 # the Python releases whose code generator these rules were checked against, by the suite's
 # lines-up check. Substitution acts on these alone
 CHECKED_ON: frozenset[tuple[int, int]] = frozenset({(3, 12)})
@@ -39,26 +41,65 @@ _FIRST_FIELDS: dict[type[ast.expr], str] = {
 _FOLDABLE = (ast.Constant, ast.BinOp, ast.UnaryOp, ast.Tuple, ast.Subscript)
 
 
-def first(node: ast.expr) -> ast.expr:
-    """The part of an expression whose line CPython gives the expression's first instruction.
+class Parts:
+    """What a walk over one tree works out once: which parts may fold, and where each part's
+    first instruction is.
 
-    Every part of an expression on one line is on that line, so the walk
-    goes down only while the part spans lines. Which parts may fold is
-    worked out once for the whole expression, so a long chain costs one
-    pass.
+    A walk that substitutes every `+` of a long chain asks for the first
+    instruction of each link, and each link's is the one below it, so the
+    answer is kept for every part the search passed through, and the chain
+    costs one pass. Each part is kept with its answer, so no part the tree
+    let go of can lend its id to another.
     """
-    if node.lineno == node.end_lineno:
+
+    def __init__(self, root: ast.AST) -> None:
+        self.foldable = _foldable(root)
+        self._firsts: dict[int, tuple[ast.expr, ast.expr]] = {}
+        # worked out before the walk changes the tree, from the module as written
+        self.constants: Constants = literal_names(root)
+
+    def first(self, node: ast.expr) -> ast.expr:
+        """The part of an expression whose line CPython gives the expression's first instruction."""
+        passed: list[ast.expr] = []
+        while node.lineno != node.end_lineno:
+            if id(node) in self._firsts:
+                node = self._firsts[id(node)][1]
+                break
+            passed.append(node)
+            if isinstance(node, ast.Call) and not _method_call(node):
+                # CPython pushes the call's NULL at the callee's own position, before the callee
+                node = node.func
+                break
+            part = _evaluated_first(node, self.foldable)
+            if part is None:
+                break
+            node = part
+        for each in passed:
+            self._firsts[id(each)] = (each, node)
         return node
-    foldable = _foldable(node)
-    while node.lineno != node.end_lineno:
-        if isinstance(node, ast.Call) and not _method_call(node):
-            # CPython pushes the call's NULL at the callee's own position, before the callee
-            return node.func
-        part = _evaluated_first(node, foldable)
-        if part is None:
-            break
-        node = part
-    return node
+
+    def named(self, name: str, operand: ast.expr) -> ast.Name:
+        """A name to call, placed where the operand's first instruction is, so it adds no line.
+
+        A plain name, since CPython moves a method call's own instruction to
+        its attribute's line.
+        """
+        start = self.first(operand)
+        return ast.Name(
+            id=name,
+            ctx=ast.Load(),
+            lineno=start.lineno,
+            col_offset=start.col_offset,
+            end_lineno=start.lineno,
+            end_col_offset=start.col_offset,
+        )
+
+    def folded(self, node: ast.expr) -> tuple[object] | None:
+        """The one constant CPython folds the expression to, in a tuple, or None if it does not."""
+        if id(node) not in self.foldable:
+            return None
+        held = constants([node], node)
+        return None if held is None else (held[0],)
 
 
 def constants(elements: list[ast.expr], display: ast.expr) -> tuple[object, ...] | None:
@@ -148,18 +189,20 @@ def _first_element(display: ast.Tuple | ast.List | ast.Set) -> ast.expr | None:
     return elements[0]
 
 
-def _foldable(root: ast.expr) -> set[int]:
-    """The ids of the parts of the expression CPython may fold, each worked out once.
+def _foldable(root: ast.AST) -> set[int]:
+    """The ids of the expressions under the root CPython may fold, each worked out once.
 
     A part may fold when it is a constant, or an operator, tuple or
-    subscript whose every part may. The walk keeps its own stack.
+    subscript whose every part may. The walk keeps its own stack, and goes
+    through statements to the expressions they hold, so one pass serves a
+    whole module.
     """
-    order: list[ast.expr] = []
-    pending: list[ast.expr] = [root]
+    order: list[ast.AST] = []
+    pending: list[ast.AST] = [root]
     while pending:
         part = pending.pop()
         order.append(part)
-        pending.extend(_parts(part))
+        pending.extend(ast.iter_child_nodes(part))
     foldable: set[int] = set()
     for part in reversed(order):
         debug = isinstance(part, ast.Name) and part.id == "__debug__"

@@ -5,24 +5,21 @@ import time
 
 import pytest
 
+from pyct.core import substitutes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import SinkItem
 from pyct.core.hashed import SEARCHED_MOST
 from pyct.intercept.compiled import SubstitutionError, substituted_code
 from pyct.intercept.substitute import BOUND, substitute
 
-# the import a module with a substitution starts with
-BINDING = (
-    "from pyct.core.substitutes import is_ as __pyct_is__, is_not as __pyct_is_not__, "
-    "in_ as __pyct_in__, not_in as __pyct_not_in__, Searched as __pyct_searched__, "
-    "Identity as __pyct_identity__"
-)
+# how the import a module with a substitution starts with begins
+BINDING = "from pyct.core.substitutes import "
 
 
 def substituted(source: str) -> str:
     """The source as the transform leaves it, written back as Python, less its binding import."""
     lines = ast.unparse(substitute(ast.parse(source))).splitlines()
-    return "\n".join(line for line in lines if line != BINDING)
+    return "\n".join(line for line in lines if not line.startswith(BINDING))
 
 
 def statements(source: str) -> list[ast.stmt]:
@@ -66,13 +63,13 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
         "a is 1",
         "a is ...",
         "not (a is None)",
-        # a chained compare with no `in` link and no `is` link against True or False on its
-        # right, and every other operator
+        # a chained compare with no `in` link and no `is` link pyct takes, and an operator no
+        # plain number can hand over
         "a < b < c",
         "a < b is None",
         "None is a < b",
-        "a == b",
-        "not (a == b)",
+        "a == 1",
+        "not (a == 'x')",
         # a loop, a comprehension and a pattern hold `in` or `is` but no compare
         "for x in xs:\n    pass",
         "[x for x in xs]",
@@ -113,9 +110,9 @@ def test_other_code_is_left_as_written(source: str) -> None:
         ("None is a < b", "None is a < b"),
         ("a in b < c", "a in __pyct_searched__(b) < c"),
         ("a in b is c", "a in __pyct_searched__(b) in __pyct_identity__(c)"),
-        # an `in` link before an `is` against None stays Python's own, which CPython tests with
-        # a jump of its own that a call would change; an `is` link pyct takes hands it on
-        ("a in b is not None", "a in b is not None"),
+        # a link pyct takes before an `is` against None hands that `is` on to pyct too
+        ("a in b is not None", "a in __pyct_searched__(b) not in __pyct_identity__(None)"),
+        ("0 < x in s is None", "0 < x in __pyct_searched__(s) in __pyct_identity__(None)"),
         ("a is b is None", "a is b is None"),
         ("a is b is None < c in d", "a is b is None < c in __pyct_searched__(d)"),
         (
@@ -162,8 +159,16 @@ NOT_BOOL_NAMES: dict[str, str] = {
         "READY = 1 > 0\n\ndef g():\n    global READY\n    READY = 3\n\n"
         "def f(other):\n    return other is READY"
     ),
-    "a class-level name": (
-        "class A:\n    done = 1 > 0\n    def m(self, o):\n        return done is o"
+    "a parameter named bool": "def f(bool, flag: bool, other):\n    return flag is other",
+    "a star import": "from m import *\n\ndef f(flag: bool, other):\n    return flag is other",
+    "an assignment under nonlocal": (
+        "def f(o):\n    done = o > 1\n    def g():\n        nonlocal done\n        done = o\n"
+        "    return done is o"
+    ),
+    "a type alias": "done = True\ntype done = int\n\ndef f(o):\n    return done is o",
+    "a type parameter": "done = True\n\ndef f[done](o):\n    return done is o",
+    "a class body's global": (
+        "done = True\nclass A:\n    global done\n    done = 3\n\ndef f(o):\n    return done is o"
     ),
     "an unbound name": "def f(other):\n    return other is done",
 }
@@ -284,7 +289,18 @@ def test_each_call_takes_the_compare_s_position_and_its_name_the_first_operand_s
 
 def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
     assert all(name.startswith("__") and name.endswith("__") for name in BOUND)
-    assert set(BOUND.values()) == {"is_", "is_not", "in_", "not_in", "Searched", "Identity"}
+    assert BOUND == {
+        "__pyct_is__": "is_",
+        "__pyct_is_not__": "is_not",
+        "__pyct_in__": "in_",
+        "__pyct_not_in__": "not_in",
+        "__pyct_searched__": "Searched",
+        "__pyct_identity__": "Identity",
+        "__pyct_handed__": "handed",
+        "__pyct_call__": "call",
+        "__pyct_method__": "method",
+    }
+    assert all(hasattr(substitutes, function) for function in BOUND.values())
 
 
 def test_a_repeated_constant_is_handed_over_once_as_the_display_holds_it() -> None:
@@ -307,11 +323,18 @@ def test_the_names_are_imported_before_the_first_statement_that_runs_on_its_line
         "Assign",
     ]
     assert (body[2].lineno, body[2].end_lineno) == (4, 4)
-    assert ast.unparse(body[2]) == BINDING
+    assert ast.unparse(body[2]) == f"{BINDING}in_ as __pyct_in__"
+
+
+def test_a_module_imports_only_the_names_it_calls_in_the_order_bound() -> None:
+    body = substitute(ast.parse("y = a not in b\nz = x is True\nw = int(v)\n")).body
+
+    expected = "is_ as __pyct_is__, not_in as __pyct_not_in__, call as __pyct_call__"
+    assert ast.unparse(body[0]) == BINDING + expected
 
 
 def test_a_module_with_nothing_substituted_imports_nothing() -> None:
-    assert ast.unparse(substitute(ast.parse("x = a == b\n"))) == "x = a == b"
+    assert ast.unparse(substitute(ast.parse("x = a == 1\n"))) == "x = a == 1"
 
 
 def test_every_class_body_declares_the_names_global_after_its_docstring() -> None:
@@ -319,7 +342,7 @@ def test_every_class_body_declares_the_names_global_after_its_docstring() -> Non
     outer = statements(source)[0]
 
     assert isinstance(outer, ast.ClassDef)
-    assert isinstance(outer.body[1], ast.Global) and outer.body[1].names == list(BOUND)
+    assert isinstance(outer.body[1], ast.Global) and outer.body[1].names == ["__pyct_in__"]
     inner = outer.body[3]
     assert isinstance(inner, ast.ClassDef) and isinstance(inner.body[0], ast.Global)
 

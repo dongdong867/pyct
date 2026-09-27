@@ -37,20 +37,28 @@ def _truth(other: object) -> Expression | None:
     return other if isinstance(other, bool) else None
 
 
-def _logical(op: str, name: str) -> Callable[[ConcolicBool, object], object]:
+def _logical(
+    op: str, name: str, *, reflected: bool = False
+) -> Callable[[ConcolicBool, object], object]:
     """Python's `&`, `|` or `^` between two bools: a bool, on the conditions of both.
 
     A plain True or False is a literal, a tracked bool its condition. int's
     own operation answers an int even on two bools, so its answer is read as
-    the bool it is, as a compare's is. With an int on the other side it is
-    int's bitwise operation, which stays a downgrade (follow-integers).
+    the bool it is, as a compare's is. The expression keeps Python's written
+    order: a reflected method is called on the right operand, so `True & b`
+    is ["&", true, b]. With an int on the other side it is int's bitwise
+    operation, which stays a downgrade (follow-integers).
     """
-    followed = compare(op, getattr(int, name), _truth)
+    operation = getattr(int, name)
     downgrade = downgraded(int, name)
 
     def compute(self: ConcolicBool, other: object) -> object:
-        answer = followed(self, other)
-        return downgrade(self, other) if answer is NotImplemented else answer
+        form = _truth(other)
+        if form is None:
+            return downgrade(self, other)
+        sides = [form, self.expression] if reflected else [self.expression, form]
+        answer = bool(own(operation, self, other))
+        return ConcolicBool(answer, expression=[op, *sides], sink=self.sink)
 
     return compute
 
@@ -125,10 +133,15 @@ class ConcolicBool(int):
     as_integer_ratio = numbers.ratio(_the_int)
     from_bytes = built_plainly(bool, "from_bytes")  # pyrefly: ignore[bad-override]
 
-    # `&`, `|` and `^` between two bools answer a bool; with an int, a downgrade
+    # `&`, `|` and `^` between two bools answer a bool, either way round; with an int, a downgrade
     __and__ = _logical("&", "__and__")  # pyrefly: ignore[bad-override]
     __or__ = _logical("|", "__or__")  # pyrefly: ignore[bad-override]
     __xor__ = _logical("^", "__xor__")  # pyrefly: ignore[bad-override]
+    # Python asks for these only where a plain bool's own does not answer first, which is
+    # where pyct substitutes `True & b` (`pyct.core.substitutes`)
+    __rand__ = _logical("&", "__rand__", reflected=True)  # pyrefly: ignore[bad-override]
+    __ror__ = _logical("|", "__ror__", reflected=True)  # pyrefly: ignore[bad-override]
+    __rxor__ = _logical("^", "__rxor__", reflected=True)  # pyrefly: ignore[bad-override]
 
     # the text drops the condition, so it stays a downgrade, but it is the bool's text. An
     # f-string records this one entry: int's own would read `__str__` first

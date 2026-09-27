@@ -22,6 +22,8 @@ HUNDRED = "targets.bools.hundred::within"
 HUNDRED_FILE = str(REPO_ROOT / "targets" / "bools" / "hundred.py")
 BOOL_SEED = "targets.bools.bool_seed::truth"
 FALSE_BOOL_DIVISOR = "targets.bools.false_bool_divisor::share"
+BEFORE_NONE = "targets.bools.before_none::check"
+BEFORE_NONE_FILE = str(REPO_ROOT / "targets" / "bools" / "before_none.py")
 TWO_FLAGS = "targets.bools.two_flags::same"
 TWO_FLAGS_FILE = str(REPO_ROOT / "targets" / "bools" / "two_flags.py")
 
@@ -205,3 +207,15 @@ def test_two_bools_are_identical_when_they_are_equal() -> None:
     differ = [line for line in inputs if flag_of(line) != flag_of(line, "other")]
     assert any(6 in covered(line, TWO_FLAGS_FILE) for line in differ), inputs
     assert not any(5 in covered(line, TWO_FLAGS_FILE) for line in inputs)
+
+
+# follow-booleans-and-chained-compares-follows-in-and-is-inside-a-chain
+def test_a_bool_link_before_is_not_none_answers_as_plain_python() -> None:
+    result = run_pyct(BEFORE_NONE, '{"flag": true, "other": false}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # plain Python answers `True is True is not None`, so the seed takes the first branch
+    assert placed(inputs[0], 2) == [(7, "flag", True)]
+    assert 3 in covered(inputs[0], BEFORE_NONE_FILE)
+    assert any(5 in covered(line, BEFORE_NONE_FILE) for line in inputs)

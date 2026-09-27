@@ -2,11 +2,14 @@
 
 intercept-builtin-functions-lines-up-each-substituted-module-with-the-original. Each file of
 the corpus is compiled as written and as pyct substitutes it, and each pair of code objects
-must have the same lines, the same line starts in the same order, jump targets marked, and
-every conditional jump at the same line and column. A line start is where ``sys.monitoring``
-fires a line event, so these are the lines a run covers and the order it covers them in.
+must have the same lines, the same steps from one line to the next, and
+every conditional jump at the same position with the same target line, whichever conditional
+jump it is. A line start is where ``sys.monitoring`` fires a line event, so these are the lines
+a run covers and the order it covers them in. A fork's column is read from the positions, and
+which jumps guard a line from their positions and targets; nothing pyct reads names the jump's
+kind, so a fused None test that becomes a truth test on the same outcome lines up.
 
-The corpus is v2's own targets, four packages of the standard library, and a sample of real
+The corpus is v2's own targets, modules of the standard library, and a sample of real
 libraries: two whole, and the core of a large one with its tests, whose asserts spread one
 compare over several lines.
 """
@@ -35,12 +38,19 @@ CORPUS: dict[str, tuple[str | None, str]] = {
     "email": (None, str(STDLIB / "email")),
     "argparse": (None, str(STDLIB / "argparse.py")),
     "logging": (None, str(STDLIB / "logging")),
+    # modules where CPython copies a function's short last block into each branch
+    "random": (None, str(STDLIB / "random.py")),
+    "statistics": (None, str(STDLIB / "statistics.py")),
+    "_pydecimal": (None, str(STDLIB / "_pydecimal.py")),
+    "glob": (None, str(STDLIB / "glob.py")),
     "werkzeug": ("werkzeug", ""),
     "validators": ("validators", ""),
     "sympy.core": ("sympy", "core"),
 }
 
-type Layout = tuple[str, frozenset[int], list[tuple[int, bool]], list[tuple[str, object]]]
+type Layout = tuple[
+    str, frozenset[int], frozenset[tuple[int | None, int]], list[tuple[object, int | None]]
+]
 
 
 def files_of(group: str) -> list[Path]:
@@ -77,18 +87,98 @@ def line_starts(code: types.CodeType) -> list[tuple[int, bool]]:
     return starts
 
 
+# how control leaves an instruction without falling through to the next one
+_NO_FALLTHROUGH = frozenset(
+    {
+        "RETURN_VALUE",
+        "RETURN_CONST",
+        "RAISE_VARARGS",
+        "RERAISE",
+        "JUMP_FORWARD",
+        "JUMP_BACKWARD",
+        "JUMP_BACKWARD_NO_INTERRUPT",
+    }
+)
+_JUMPS = frozenset(dis.hasjrel) | frozenset(dis.hasjabs)
+
+
+def _successors(steps: list[dis.Instruction]) -> list[list[int]]:
+    """The indexes control can go to from each instruction: the next one, and a jump's target."""
+    at = {step.offset: index for index, step in enumerate(steps)}
+    found: list[list[int]] = []
+    for index, step in enumerate(steps):
+        after = [] if step.opname in _NO_FALLTHROUGH else [index + 1]
+        if step.opcode in _JUMPS and isinstance(step.argval, int) and step.argval in at:
+            after.append(at[step.argval])
+        found.append([each for each in after if each < len(steps)])
+    return found
+
+
+def _line(step: dis.Instruction) -> int | None:
+    """An instruction's line, or None for RESUME and an instruction with no line of its own."""
+    if step.opname == "RESUME" or step.positions is None:
+        return None
+    return step.positions.lineno
+
+
+def line_order(code: types.CodeType) -> frozenset[tuple[int | None, int]]:
+    """Which line can run right after which: each step from one line to another along the code.
+
+    A line start is where ``sys.monitoring`` fires a line event, so these
+    steps are the orders a run covers lines in, on every path. CPython copies
+    a short block that ends a function, such as its last ``return``, into
+    each branch that reaches it, and a longer one it jumps to instead; both
+    take the same steps, so two codes that differ only there line up. The
+    first line is a step from None, from RESUME, and an instruction with no
+    line of its own passes control on without a step.
+    """
+    steps = [step for step in dis.get_instructions(code) if step.opname != "CACHE"]
+    successors = _successors(steps)
+    order: set[tuple[int | None, int]] = set()
+    for index, step in enumerate(steps):
+        start = _line(step)
+        if start is None and step.opname != "RESUME":
+            continue
+        pending, seen = list(successors[index]), set()
+        while pending:
+            after = pending.pop()
+            if after not in seen:
+                seen.add(after)
+                reached = _line(steps[after])
+                if reached is None:
+                    pending.extend(successors[after])
+                elif reached != start:
+                    order.add((start, reached))
+    return frozenset(order)
+
+
+def conditional_jumps(code: types.CodeType) -> list[tuple[object, int | None]]:
+    """Each conditional jump's position and the line it jumps to, whichever of the family it is.
+
+    `POP_JUMP_IF_NONE` and `POP_JUMP_IF_FALSE` at one position to one line
+    are one jump here: CPython fuses an `is None` with its jump, and the same
+    test written as a truth test on the same outcome jumps the same way.
+    """
+    steps = list(dis.get_instructions(code))
+    lines = {step.offset: _line(step) for step in steps}
+    return sorted(
+        {
+            (step.positions, lines.get(step.argval))
+            for step in steps
+            if step.opname.startswith("POP_JUMP_IF")
+        },
+        key=repr,
+    )
+
+
 def layout(code: types.CodeType) -> list[Layout]:
-    """What a line tracer and a branch read off each code object: name, lines, starts, jumps."""
+    """What a line tracer and a branch read off each code object: name, lines, steps, jumps."""
     return [
         (
             each.co_name,
             frozenset(line for _, _, line in each.co_lines() if line),
-            line_starts(each),
-            [
-                (step.opname, step.positions)
-                for step in dis.get_instructions(each)
-                if step.opname.startswith("POP_JUMP_IF")
-            ],
+            line_order(each),
+            conditional_jumps(each),
         )
         for each in code_objects(code)
     ]
@@ -168,6 +258,49 @@ SPREAD_OUT = [
 ]
 
 
+# calls and operators spread over lines, one per rule for where their parts' instructions are
+CALLS_AND_OPERATORS_SPREAD_OUT = [
+    "int(\n x)",
+    "(\n int)(x)",
+    "builtins.int(\n x)",
+    "'abc'.find(\n s)",
+    "'abc'.find(s,\n 1)",
+    "map(\n int, xs)",
+    "'abc'.index(\n s)",
+    "(0.5 +\n b)",
+    "(0.5\n + b)",
+    "(True\n * n)",
+    "(0.5 + f(\n x))",
+    "(0.5 + a\n .b)",
+    "(-\n 0.5) - b",
+    "(0.5 +\n b +\n c)",
+    "(2.5 <\n b)",
+    "if (2.5 <\n b):\n pass",
+    "if int(\n x):\n pass",
+    "if 'abc'.startswith(\n s):\n pass",
+    "while (True\n != b):\n break",
+    "assert (\n 0.5) == b",
+    "x = 1.5 / (n if t else\n m)",
+    "y = not (False\n == b)",
+    "z = 0.5 + (x\n .bit_length())",
+    # a short last block CPython copies into each branch, which the substituted one outgrows
+    "if a:\n d = 1\nelse:\n d = 2\nreturn float(s)",
+    "if a:\n d = 1\nelse:\n d = 2\nreturn 1.5 / d",
+    "if a:\n d = 1\nelse:\n d = 2\nreturn 'x'.find(s)",
+]
+
+
+@pytest.mark.parametrize("shape", CALLS_AND_OPERATORS_SPREAD_OUT)
+def test_a_call_or_operator_spread_over_lines_lines_up(shape: str) -> None:
+    source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
+    written = compile(source, "<f>", "exec")
+    tree = substitute(ast.parse(source))
+    substituted = compile(tree, "<f>", "exec")
+
+    assert ast.dump(tree) != ast.dump(ast.parse(source)), shape
+    assert layout(written) == layout(substituted)
+
+
 @pytest.mark.parametrize("shape", SPREAD_OUT)
 def test_a_compare_whose_left_side_spans_lines_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
@@ -219,3 +352,42 @@ def test_each_operand_node_appears_once_in_the_substituted_tree() -> None:
 
     nodes = [id(node) for node in ast.walk(tree) if isinstance(node, ast.expr)]
     assert len(nodes) == len(set(nodes))
+
+
+def test_a_step_between_lines_that_changes_does_not_line_up() -> None:
+    # the same lines, run in another order: the check must see the difference
+    first = compile("def f(a, b):\n    x = (a,\n        b)\n", "<f>", "exec")
+    swapped = ast.parse("def f(a, b):\n    x = (a,\n        b)\n")
+    pair = swapped.body[0].body[0].value  # pyrefly: ignore[missing-attribute]
+    pair.elts[0].lineno = pair.elts[0].end_lineno = 3
+    pair.elts[1].lineno = pair.elts[1].end_lineno = 2
+    second = compile(swapped, "<f>", "exec")
+
+    assert layout(first) != layout(second)
+
+
+def _jump_kinds(code: types.CodeType) -> set[str]:
+    return {
+        step.opname
+        for each in code_objects(code)
+        for step in dis.get_instructions(each)
+        if step.opname.startswith("POP_JUMP_IF")
+    }
+
+
+def test_a_fused_none_test_that_becomes_a_truth_test_lines_up_and_nothing_wider() -> None:
+    source = (
+        "def f(flag: bool):\n    if True is flag is not None:\n        return 1\n    return 2\n"
+    )
+    written = compile(source, "<f>", "exec")
+    substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
+
+    # the one difference: the `is not None` jump is a truth test on the same outcome
+    assert _jump_kinds(written) == {"POP_JUMP_IF_FALSE", "POP_JUMP_IF_NONE"}
+    assert _jump_kinds(substituted) == {"POP_JUMP_IF_FALSE"}
+    assert layout(written) == layout(substituted)
+    # a jump at another column, or to another line, is still a difference
+    moved = compile(source.replace("if True", "if (True)"), "<f>", "exec")
+    assert layout(moved) != layout(written)
+    elsewhere = compile(source.replace("return 2", "pass\n    return 2"), "<f>", "exec")
+    assert layout(elsewhere) != layout(written)

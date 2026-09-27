@@ -92,7 +92,7 @@ def intercepting(interception: Interception) -> Iterator[None]:
 @functools.cache
 def _unchecked(release: tuple[int, int]) -> None:
     logger.warning(
-        "pyct intercepts `is True`, `in`, `len`, `ord` and `chr` on Python %s only; "
+        "pyct intercepts builtins and the operations it substitutes on Python %s only; "
         "on %d.%d the target runs as written",
         ", ".join(f"{major}.{minor}" for major, minor in sorted(CHECKED_ON)),
         *release,

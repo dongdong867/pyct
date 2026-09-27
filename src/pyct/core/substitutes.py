@@ -1,19 +1,28 @@
-"""What intercepted code calls: `is` and `in` where the target wrote them, and `len`, `ord`, `chr`.
+"""What intercepted code calls: `is`, `in`, conversions, a str literal's method and an operator
+with a float or bool literal on the left, or a name bound only to one, and `len`, `ord`, `chr`.
 
-`pyct.intercept` substitutes a compare the target writes with a call of one
-of these functions, through a name it binds in the module, such as
+`pyct.intercept` substitutes an operation the target writes with a call of
+one of these functions, through a name it binds in the module, such as
 ``__pyct_in__``, handing over the same operands in the same order. Python
-answers `is` without asking either operand, and tests the answer of `in`
-for truth before the target sees it, so a tracked value would lose its
-condition in both. Here a tracked value
-answers as it stands for, and any other operand gets Python's own answer
-and Python's own exception. Inside a chained compare, where each operand
-is evaluated once on Python's stack, the link keeps Python's own `in` and
-searches a container of this module's, `Searched` or `Identity`, which asks
-the same functions.
+answers `is` without asking either operand, tests the answer of `in` for
+truth before the target sees it, copies a conversion's answer into a plain
+number, never calls a method of a tracked str handed to a str literal's
+method, and lets a float or bool on the left answer an operator before a
+tracked int on the right is asked, so a tracked value would lose its
+condition in each. Here a tracked value answers as it stands for, and any
+other operand gets Python's own answer and Python's own exception. Inside
+a chained compare, where each operand is evaluated once on Python's stack,
+the link keeps Python's own `in` and searches a container of this module's,
+`Searched` or `Identity`, which asks the same functions.
 
-It also binds `len`, `ord` and `chr` in the module's builtins to the three
-functions `pyct.core.bound` holds, routers of the same kind.
+A call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` asks
+`call` for its callee first, and calls what it hands back: pyct's router
+for Python's own builtin, which `pyct.core.bound` holds beside the `len`,
+`ord` and `chr` it binds in the module's builtins, and the callee itself for
+anything else, so a function of the target's runs with no frame of pyct's
+above it. An operator's right side goes through `handed` (`pyct.core.handed`)
+before Python's own operator runs, so no frame of pyct's is above the
+target's own operator either.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -26,10 +35,12 @@ from __future__ import annotations
 import operator
 import types
 from collections.abc import Callable
-from typing import Any
+from typing import Any, cast
 
-from pyct.core import bound, strs
+from pyct.core import bound, str_literals, strs
 from pyct.core.bools import ConcolicBool
+from pyct.core.handed import PASSING as HANDED_PASSING
+from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.hashed import hashed, looked_up, tracked
 from pyct.core.strs import ConcolicStr
 
@@ -177,11 +188,55 @@ class Identity(_Link):
         return is_(_unlinked(item), self.held)
 
 
-# the tracked values core follows through each bound builtin, by their exact type, and the
-# function that follows them. A tracked value's `__len__` stays a downgrade, since Python's own
-# `len` makes its answer plain; pyct's asks core for the tracked length instead
+def call(callee: object, /) -> Any:
+    """What a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls.
+
+    ``callee`` is what the name the code wrote holds when the call runs.
+    Python's own builtin gets pyct's router for it (`bound.CALLED`), and
+    anything else, a function of the target's included, is handed back to
+    be called as written. Only the callee's identity is read.
+    """
+    router = bound.CALLED.get(id(callee))
+    return callee if router is None else router
+
+
+def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: object) -> Any:
+    """A call written ``"text".name(...)``, a str literal's method or one on a name bound only to
+    str literals, as ``receiver_method(...)``.
+
+    Given a tracked str, it runs as it runs on a tracked str holding the
+    literal's text (`str_literals.on_text`). Any other call is the method's own; one
+    with a keyword goes through str, as the written call reaches it, so a
+    refusal reads in the written call's words. Only the types of the method,
+    its receiver and the arguments are read.
+    """
+    for arg in args:
+        if type(arg) is ConcolicStr:
+            return _on_text(receiver_method, args, kwargs)
+    if not kwargs:
+        return receiver_method(*args)
+    for arg in kwargs.values():
+        if type(arg) is ConcolicStr:
+            return _on_text(receiver_method, args, kwargs)
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver_method) is types.BuiltinMethodType and type(receiver) is str:
+        return getattr(str, receiver_method.__name__)(receiver, *args, **kwargs)
+    return receiver_method(*args, **kwargs)
+
+
+def _on_text(
+    receiver_method: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
+) -> Any:
+    """A tracked str handed to a plain str's own method, as `str_literals.on_text` runs it."""
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver_method) is types.BuiltinMethodType and type(receiver) is str:
+        return str_literals.on_text(cast(types.BuiltinMethodType, receiver_method), *args, **kwargs)
+    return receiver_method(*args, **kwargs)
+
+
 # the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
-# `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
+# `ord`, `chr` or a conversion, or from the target's own `__contains__`, `__len__` or
+# `__int__`, is the target's
 PASSING: frozenset[types.CodeType] = (
     frozenset(
         function.__code__
@@ -190,11 +245,15 @@ PASSING: frozenset[types.CodeType] = (
             is_not,
             in_,
             not_in,
+            call,
+            method,
+            _on_text,
             Searched.__contains__,
             Identity.__contains__,
             # the one code object all six forwarded compares share
             _Link.__lt__,
         )
     )
+    | HANDED_PASSING
     | bound.PASSING
 )

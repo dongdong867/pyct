@@ -9,16 +9,13 @@ from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
-# own with no downgrade, silently. Sixteen on the floor version; a newer Python may add another
+# own with no downgrade, silently. Thirteen on the floor version; a newer Python may add another
 UNTAUGHT_OPERATIONS = (
     "__rpow__",
     "__lshift__",
     "__rlshift__",
     "__rshift__",
     "__rrshift__",
-    "__rand__",
-    "__ror__",
-    "__rxor__",
     "__invert__",
     "__int__",
     "__float__",
@@ -29,8 +26,9 @@ UNTAUGHT_OPERATIONS = (
     "to_bytes",
 )
 
-# what a bool teaches that an int leaves to int: `&`, `|` and `^` between two bools
-BOOLS_OWN = {"__and__", "__or__", "__xor__"}
+# what a bool teaches that an int leaves to int: `&`, `|` and `^` between two bools, either way
+# round
+BOOLS_OWN = {"__and__", "__or__", "__xor__", "__rand__", "__ror__", "__rxor__"}
 
 
 def _downgrades(cls: type) -> set[str]:
@@ -44,9 +42,9 @@ def _downgrades(cls: type) -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the sixteen are counted on the floor; a newer Python may define another int method",
+    reason="the thirteen are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_bool_downgrades_the_sixteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_bool_downgrades_the_thirteen_operations_it_has_not_taught() -> None:
     assert _downgrades(ConcolicBool) == set(UNTAUGHT_OPERATIONS)
 
 
