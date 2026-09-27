@@ -2,12 +2,12 @@
 
 intercept-builtin-functions-lines-up-each-substituted-module-with-the-original. Each file of
 the corpus is compiled as written and as pyct substitutes it, and each pair of code objects
-must have the same lines, the same steps from one line to the next, and
-every conditional jump at the same position with the same target line, whichever conditional
-jump it is. A line start is where ``sys.monitoring`` fires a line event, so these are the lines
-a run covers and the order it covers them in. A fork's column is read from the positions, and
-which jumps guard a line from their positions and targets; nothing pyct reads names the jump's
-kind, so a fused None test that becomes a truth test on the same outcome lines up.
+must have the same lines, the same steps from one line to the next, and the same conditional
+jumps, each copy counted, at the same position with the same target line and the same kind. A
+line start is where ``sys.monitoring`` fires a line event, so these are the lines a run covers
+and the order it covers them in. The one change of kind allowed is a fused None test, which a
+substituted `is None` link makes a truth test on the same outcome (see `jump_kind`). No other
+instruction is compared: substitution changes them.
 
 The corpus is v2's own targets, modules of the standard library, and a sample of real
 libraries: two whole, and the core of a large one with its tests, whose asserts spread one
@@ -49,7 +49,7 @@ CORPUS: dict[str, tuple[str | None, str]] = {
 }
 
 type Layout = tuple[
-    str, frozenset[int], frozenset[tuple[int | None, int]], list[tuple[object, int | None]]
+    str, frozenset[int], frozenset[tuple[int | None, int]], list[tuple[object, int | None, str]]
 ]
 
 
@@ -152,21 +152,56 @@ def line_order(code: types.CodeType) -> frozenset[tuple[int | None, int]]:
     return frozenset(order)
 
 
-def conditional_jumps(code: types.CodeType) -> list[tuple[object, int | None]]:
-    """Each conditional jump's position and the line it jumps to, whichever of the family it is.
+# the jumps a substituted `is None` link turns into, and what may sit between its test and jump
+_TRUTH_TESTS = frozenset({"POP_JUMP_IF_TRUE", "POP_JUMP_IF_FALSE"})
+_BETWEEN = frozenset({"SWAP", "COPY", "NOP", "CACHE", "EXTENDED_ARG"})
+# the steps that search `__pyct_identity__(None)`, as a substituted `is None` link compiles
+_NONE_LINK = ("__pyct_identity__", None, "CALL", "CONTAINS_OP")
 
-    `POP_JUMP_IF_NONE` and `POP_JUMP_IF_FALSE` at one position to one line
-    are one jump here: CPython fuses an `is None` with its jump, and the same
-    test written as a truth test on the same outcome jumps the same way.
+
+def jump_kind(opname: str, none_link: int | None) -> str:
+    """A conditional jump's kind, a truth test on a substituted `is None` link read as the None
+    test it stands for.
+
+    ``none_link`` is the argument of the `CONTAINS_OP` right before the jump
+    when it searches `__pyct_identity__(None)`, and None for any other jump.
+    `x in __pyct_identity__(None)` is true exactly when `x` is None, and
+    `not in` exactly when it is not. So `POP_JUMP_IF_TRUE` after `in`, or
+    `POP_JUMP_IF_FALSE` after `not in`, jumps when `x` is None, as
+    `POP_JUMP_IF_NONE` does, and the other two as `POP_JUMP_IF_NOT_NONE`.
+    Every other jump keeps its own kind, so a flipped outcome differs.
     """
-    steps = list(dis.get_instructions(code))
-    lines = {step.offset: _line(step) for step in steps}
+    if opname not in _TRUTH_TESTS or none_link is None:
+        return opname
+    jumps_on_none = (none_link == 0) == (opname == "POP_JUMP_IF_TRUE")
+    return "POP_JUMP_IF_NONE" if jumps_on_none else "POP_JUMP_IF_NOT_NONE"
+
+
+def _none_link(steps: list[dis.Instruction], jump: int) -> int | None:
+    """The `CONTAINS_OP` argument of a substituted `is None` link the jump tests, or None."""
+    if jump < 4:
+        return None
+    name, constant, call, contains = steps[jump - 4 : jump]
+    shape = (name.argval, constant.argval, call.opname, contains.opname)
+    loaded = name.opname.startswith("LOAD_") and constant.opname == "LOAD_CONST"
+    return contains.arg if loaded and shape == _NONE_LINK else None
+
+
+def conditional_jumps(code: types.CodeType) -> list[tuple[object, int | None, str]]:
+    """Each conditional jump's position, the line it jumps to and its kind, every copy kept.
+
+    CPython writes a loop's test twice, at its top and its end, so two copies
+    of one jump are two entries, and a code that drops one differs.
+    """
+    every = list(dis.get_instructions(code))
+    lines = {step.offset: _line(step) for step in every}
+    steps = [step for step in every if step.opname not in _BETWEEN]
     return sorted(
-        {
-            (step.positions, lines.get(step.argval))
-            for step in steps
+        (
+            (step.positions, lines.get(step.argval), jump_kind(step.opname, _none_link(steps, at)))
+            for at, step in enumerate(steps)
             if step.opname.startswith("POP_JUMP_IF")
-        },
+        ),
         key=repr,
     )
 
@@ -391,3 +426,31 @@ def test_a_fused_none_test_that_becomes_a_truth_test_lines_up_and_nothing_wider(
     assert layout(moved) != layout(written)
     elsewhere = compile(source.replace("return 2", "pass\n    return 2"), "<f>", "exec")
     assert layout(elsewhere) != layout(written)
+
+
+@pytest.mark.parametrize(
+    "test", ["True is flag is not None", "True is flag is None", "False or flag is True is None"]
+)
+def test_a_substituted_none_test_keeps_its_outcome(test: str) -> None:
+    source = f"def f(flag: bool):\n    if {test}:\n        return 1\n    return 2\n"
+    written = compile(source, "<f>", "exec")
+    substituted = compile(substitute(ast.parse(source)), "<f>", "exec")
+
+    assert layout(written) == layout(substituted)
+
+
+def test_a_flipped_outcome_or_a_dropped_copy_is_a_difference() -> None:
+    # `in` then a jump if true, and `not in` then a jump if false, jump when the value is None
+    assert jump_kind("POP_JUMP_IF_TRUE", 0) == "POP_JUMP_IF_NONE"
+    assert jump_kind("POP_JUMP_IF_FALSE", 1) == "POP_JUMP_IF_NONE"
+    assert jump_kind("POP_JUMP_IF_FALSE", 0) == "POP_JUMP_IF_NOT_NONE"
+    # the other outcome, a truth test on anything else, and the other None test all differ
+    assert jump_kind("POP_JUMP_IF_TRUE", 1) != "POP_JUMP_IF_NONE"
+    assert jump_kind("POP_JUMP_IF_FALSE", None) == "POP_JUMP_IF_FALSE"
+    assert jump_kind("POP_JUMP_IF_NOT_NONE", None) != jump_kind("POP_JUMP_IF_NONE", None)
+    # a loop's test is written twice, and both copies count
+    loop = compile("def f(x):\n    while x is not None:\n        x = g()\n", "<f>", "exec")
+    (inner,) = [each for each in loop.co_consts if isinstance(each, types.CodeType)]
+    jumps = conditional_jumps(inner)
+    assert len(jumps) == 2 and jumps[0] == jumps[1]
+    assert jumps[:1] != jumps
