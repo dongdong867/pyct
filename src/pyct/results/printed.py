@@ -7,8 +7,10 @@ the limit, the top of the expression is kept and each part cut from it is
 written ``["...", N]``, N being how many distinct nodes that part holds: a
 list the part reaches more than once counts once, with its leaves. So N
 stays near the number of operations that built the part, however often the
-part repeats written out. N is ``None``, ``null`` on the line, when counting
-it would take more than `COUNTING_STEPS`. Only the printing is cut: the
+part repeats written out. N is ``None``, ``null`` on the line, when the
+line's counting has spent `COUNTING_STEPS` before it is done: one budget of
+steps a line, which all of the line's cut parts share, so on a line with
+many cut parts a later one can have none. Only the printing is cut: the
 solver gets the whole condition. The stdout line and the stderr fork line
 both print what `printed_forks` hands them, cut once for the two
 (``README.md › Rules › the stdout line``).
