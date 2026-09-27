@@ -15,6 +15,9 @@ from dataclasses import dataclass
 # how many steps pass between two looks at the clock: a look costs a clock read, and a step
 # is a node, a line or an input, microseconds at most
 _EVERY = 256
+# the longest the analysis runs between two looks at the clock, which the tests hold it to: a
+# stop is seen at most this long after it comes
+LONGEST_STRETCH = 0.15
 
 
 def strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]) -> int:
@@ -55,6 +58,14 @@ class OutOfTimeError(BaseException):
     """
 
 
+class UnaffordableError(BaseException):
+    """Work no step can break into would run past the stop, so it was not started.
+
+    Not an OutOfTimeError: only the work asked about is left undone, and the
+    rest of the analysis goes on. A BaseException for the same reason.
+    """
+
+
 def never(_ahead: float = 0.0) -> bool:
     """A stop that never comes: the check for a run with no deadline."""
     return False
@@ -85,11 +96,18 @@ class Pace:
             self.step()
             yield item
 
+    def advance(self, steps: int) -> None:
+        """Take ``steps`` steps at once, as a loop that counts its own does."""
+        before = self.steps
+        self.steps += steps
+        if self.steps // _EVERY != before // _EVERY and self.late(0.0):
+            raise OutOfTimeError
+
     def afford(self, seconds: float) -> None:
-        """Raise OutOfTimeError now when work that cannot step, and may take ``seconds``,
+        """Raise UnaffordableError now when work that cannot step, and may take ``seconds``,
         would run past the stop."""
         if self.late(seconds):
-            raise OutOfTimeError
+            raise UnaffordableError
 
 
 def dominators(
@@ -119,12 +137,14 @@ def dominators(
 
 
 def intersect(a: int, b: int, idom: dict[int, int], number: dict[int, int], pace: Pace) -> int:
-    """The nearest node that dominates both ``a`` and ``b``, one step a climb."""
+    """The nearest node that dominates both ``a`` and ``b``, one step a climb, taken together."""
+    climbs = 0
     while a != b:
         while number[a] < number[b]:
-            pace.step()
+            climbs += 1
             a = idom[a]
         while number[b] < number[a]:
-            pace.step()
+            climbs += 1
             b = idom[b]
+    pace.advance(climbs)
     return a

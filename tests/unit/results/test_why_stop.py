@@ -15,7 +15,7 @@ import pytest
 
 from pyct.core.branch import Branch, Site
 from pyct.results import blocks, why
-from pyct.results.graphs import OutOfTimeError, Pace
+from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace, UnaffordableError
 from pyct.results.way import Flow
 from pyct.results.why import Reason, Run, Walked, explain
 
@@ -86,26 +86,27 @@ def test_a_step_that_runs_long_stops_at_its_next_check(
 ) -> None:
     file = module(tmp_path)
     marked = Flow.marked
+    # a clock that moves one unit a step, so the stop is seen by count, not by the machine's pace
+    now = [0]
+    monkeypatch.setattr(why, "clock", lambda: now[0])
 
     def slow(flow: Flow, *args: object) -> frozenset[int]:
-        # a step made of many small ones, each a tenth of a millisecond, with the pace between
-        # them: far slower than a real step, which is a node, a line or an input
+        # a step made of many small ones, with the pace between them
         for _ in range(100_000):
-            time.sleep(0.0001)
+            now[0] += 1
             flow.pace.step()
         return marked(flow, *args)  # pyrefly: ignore[bad-argument-type]
 
     monkeypatch.setattr(Flow, "marked", slow)
     walked = [Walked(forks=(), failed=True, lines=frozenset({2}))]
-    stop_at = time.monotonic() + 0.2
 
-    entries = explain(file, frozenset({3, 4, 5}), frozenset({2}), Run(walked, {}, stop_at=stop_at))
-    ended = time.monotonic()
+    entries = explain(file, frozenset({3, 4, 5}), frozenset({2}), Run(walked, {}, stop_at=2000))
 
     assert [(entry.lines, entry.reason) for entry in entries] == [
         ((3, 4, 5), Reason.NOT_WORKED_OUT)
     ]
-    assert ended - stop_at < 0.1, ended - stop_at
+    # the pace looks at the clock every 256 steps, so the stop is seen within 256 of it
+    assert 0 < now[0] - 2000 <= 256, now[0]
 
 
 def _joined(
@@ -224,9 +225,10 @@ def test_the_clock_is_read_often_through_each_large_shape(
 
     assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
     # a stop lands at the first read after it, so the longest stretch between two reads, or
-    # after the last, is the most the analysis runs past its stop; the grace is 0.5 s
+    # after the last, is the most the analysis runs past its stop, which the run sets that much
+    # before its grace ends
     longest = max(later - earlier for earlier, later in itertools.pairwise(marks))
-    assert longest < 0.15, longest
+    assert longest < LONGEST_STRETCH, longest
 
 
 def test_a_stop_lands_while_the_instructions_are_read(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -242,9 +244,10 @@ def test_a_stop_lands_while_the_instructions_are_read(monkeypatch: pytest.Monkey
 
     monkeypatch.setattr(blocks, "_op", reading)
 
-    # reading a large function's instructions is the first work that grows, so it checks too
+    # reading a large function's instructions is the first work that grows, so it checks too;
+    # the stop has come at the first check, and the label pass was asked for no time past it
     with pytest.raises(OutOfTimeError):
-        Flow(code, frozenset(), late=lambda _ahead: True)
+        Flow(code, frozenset(), late=lambda ahead: ahead == 0.0)
     assert len(read) < total, total
 
 
@@ -292,8 +295,8 @@ def test_a_function_whose_labels_cannot_be_read_before_the_stop_is_not_read(
         return ahead > 0.1
 
     # dis finds every jump's label before it hands out the first instruction, a pass no step
-    # can break into, so the stop is asked ahead of it
-    with pytest.raises(OutOfTimeError):
+    # can break into, so the stop is asked ahead of it, and the function alone is left
+    with pytest.raises(UnaffordableError):
         Flow(code, frozenset(), late=late)
     assert read == []
     assert asked[0] > 0.1
@@ -313,3 +316,26 @@ def test_the_label_pass_is_asked_for_no_less_than_it_takes() -> None:
     took = time.perf_counter() - started
 
     assert asked[0] >= took, (asked[0], took)
+
+
+def test_a_function_too_large_to_read_in_time_is_left_and_the_rest_worked_out(
+    tmp_path: Path,
+) -> None:
+    source, *_ = _ifs(8000, "")
+    small = 4 + 2 * 8000
+    source += "def small(x):\n    if x > 0:\n        return 1\n    return 0\n\n\n"
+    source += "def unused(x):\n    return x\n"
+    file = module(tmp_path, source)
+    covered = frozenset({2, 3, small - 1, small + 1, small + 3})
+    walked = [Walked((), False, covered)]
+    uncovered = frozenset({4, small + 2, small + 7})
+
+    # the big function's label pass is asked for more than the time left, so it alone is left
+    stop_at = time.monotonic() + 0.3
+    entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=stop_at))
+
+    assert [(entry.lines, entry.reason) for entry in entries] == [
+        ((4,), Reason.NOT_WORKED_OUT),
+        ((small + 2,), Reason.NO_FORK),
+        ((small + 7,), Reason.NOT_CALLED),
+    ]

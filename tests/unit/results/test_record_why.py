@@ -3,8 +3,12 @@
 import dataclasses
 from pathlib import Path
 
+import pytest
+
 from pyct.core.branch import Branch, ForkSite, Site
+from pyct.results import record
 from pyct.results.coverage import Coverage
+from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.record import (
     Aim,
     Environment,
@@ -16,7 +20,7 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
-from pyct.results.why import Condition, Reason, Tries, WhyEntry
+from pyct.results.why import Condition, Reason, Run, Tries, WhyEntry
 
 ENVIRONMENT = Environment(python="3.12.0", cvc5=None, platform="p", isolated=True)
 SOURCE = """\
@@ -79,3 +83,26 @@ def test_the_tries_at_a_condition_count_every_way_the_run_could_have_flipped_it(
     )
     # worked out once, on the first read
     assert result.why_uncovered is result.why_uncovered
+
+
+def test_the_analysis_stops_so_its_longest_stretch_still_ends_within_the_grace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    run = dataclasses.replace(run_of(str(file), Site(str(file), 3, 7)), deadline=100.0)
+    stops: list[float | None] = []
+
+    def explained(
+        _file: str, _uncovered: object, _covered: object, given: Run
+    ) -> tuple[WhyEntry, ...]:
+        stops.append(given.stop_at)
+        return ()
+
+    monkeypatch.setattr(record, "explain", explained)
+
+    assert run.why_uncovered == ()
+    # the stop is seen at the first clock read past it, at most one stretch later
+    [stop_at] = stops
+    assert stop_at is not None
+    assert stop_at + LONGEST_STRETCH <= 100.0 + record.ANALYSIS_GRACE

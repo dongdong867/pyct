@@ -10,6 +10,7 @@ from enum import StrEnum
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
+from pyct.results.graphs import LONGEST_STRETCH
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
 
 # how long past a run's deadline pyct goes on working out why lines were missed
@@ -204,15 +205,17 @@ class RunResult:
 
         Worked out the first time it is read, from the module's code and the
         run's inputs, so a caller that never reads it never pays for it. A
-        run with a deadline works causes out until half a second past it, so
-        it still ends within one second of it; the lines left then are not
-        worked out.
+        run with a deadline works causes out until at most half a second past
+        it, so it still ends within one second of it; the lines left then are
+        not worked out.
         """
         walked = [
             Walked(record.forks, record.failure is not None, record.covered_lines)
             for record in self.records
         ]
-        stop_at = None if self.deadline is None else self.deadline + ANALYSIS_GRACE
+        # the analysis sees its stop at most one stretch late, so it stops that much early
+        grace = ANALYSIS_GRACE - LONGEST_STRETCH
+        stop_at = None if self.deadline is None else self.deadline + grace
         run = Run(walked, _tries(self), stop_at=stop_at)
         covered = self.coverage.covered
         return tuple(

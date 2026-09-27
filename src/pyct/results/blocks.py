@@ -160,7 +160,8 @@ def _splits(ops: list[Op], raising: frozenset[tuple[int, int]]) -> frozenset[int
     Several instructions of one expression start where it starts, such as the
     ``10`` and the ``//`` of ``10 // d``; the fork is the operation's, which
     runs last, so it is the last of them in each run of one line. A test's
-    jump at the same column is the test's, never the operation's.
+    jump at the same column is the test's, never the operation's, and so is
+    the ``NOT_TAKEN`` 3.14 puts after it, at the test's place.
     """
     found: set[int] = set()
     line: int | None = None
@@ -168,7 +169,7 @@ def _splits(ops: list[Op], raising: frozenset[tuple[int, int]]) -> frozenset[int
     for op in reversed(ops):
         if op.line != line:
             line, seen = op.line, set()
-        if op.name in TESTS:
+        if op.name in TESTS or op.name == "NOT_TAKEN":
             continue
         if (op.line, op.col) in raising and op.col not in seen:
             found.add(op.offset)

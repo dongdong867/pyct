@@ -1,11 +1,12 @@
 """A line's way, read from the compiled code: the conditions every run passes to reach it."""
 
+import dis
 import textwrap
 import types
 
 import pytest
 
-from pyct.results.blocks import owners
+from pyct.results.blocks import TESTS, owners
 from pyct.results.way import Flow, Step, StepKind
 
 
@@ -79,13 +80,19 @@ def test_a_loop_body_needs_the_loop_to_go_on_and_a_for_loop_s_end_needs_it_to_ru
             x += 1
         return x
     """
-    flow = Flow(code_of(source), raising=frozenset())
+    code = code_of(source)
+    flow = Flow(code, raising=frozenset())
+    # 3.12 and 3.13 test the while loop at its top and again at its bottom, so it leaves by either
+    # and neither test's false side is every run's way on; 3.14 tests it once, at the top, so
+    # every run that goes past the loop took that test's false side
+    tests = [op for op in dis.get_instructions(code) if op.opname in TESTS]
+    repeated = sum(1 for op in tests if op.positions and op.positions.lineno == 2) > 1
+    left: tuple[Step, ...] = () if repeated else (condition(2, 10, False),)
 
     assert flow.way(3) == (condition(2, 10, True),)
-    assert flow.way(5) == (condition(4, 13, True),)
-    # the while loop leaves by its test at the top or at the bottom, so neither is every run's
-    # way on; the for loop with no break leaves only when its items run out
-    assert flow.way(6) == (condition(4, 13, False),)
+    assert flow.way(5) == (*left, condition(4, 13, True))
+    # the for loop with no break leaves only when its items run out
+    assert flow.way(6) == (*left, condition(4, 13, False))
 
 
 def test_a_raising_operation_s_fork_puts_the_lines_after_it_on_its_true_side() -> None:

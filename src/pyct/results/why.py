@@ -20,7 +20,7 @@ from enum import StrEnum
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
-from pyct.results.graphs import OutOfTimeError, Pace
+from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -153,7 +153,8 @@ def _work_out(
         if run.late():
             raise OutOfTimeError
         cause = seen.cause(line)
-        by_cause.setdefault(cause, []).append(line)
+        if cause is not None:
+            by_cause.setdefault(cause, []).append(line)
 
 
 def _with_lines(cause: WhyEntry, lines: list[int]) -> WhyEntry:
@@ -189,6 +190,8 @@ class _Seen:
     # keyed by the code's id: a large function's code is slow to hash, and `owners` keeps each
     # one alive for as long as this is
     flows: dict[int, _Walk] = field(default_factory=dict)
+    # the ids of the functions too large to read before the stop
+    left: set[int] = field(default_factory=set)
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
@@ -210,15 +213,25 @@ class _Seen:
         """The ids of the functions a covered line of which ran."""
         return frozenset(id(self.owners.get(line)) for line in self.covered)
 
-    def cause(self, line: int) -> WhyEntry:
-        """The one cause of an uncovered line. A line no function holds is the import's."""
+    def cause(self, line: int) -> WhyEntry | None:
+        """The one cause of an uncovered line. A line no function holds is the import's.
+
+        None for a line of a function too large to read before the stop: it
+        stays unplaced, so it is not worked out, and the next line goes on.
+        """
         code = self.owners.get(line)
         if code is None:
             return WhyEntry(file=self.file, lines=(), reason=Reason.IMPORT)
         if id(code) not in self._called:
             return WhyEntry(self.file, (), Reason.NOT_CALLED, function=code.co_qualname)
+        if id(code) in self.left:
+            return None
         if id(code) not in self.flows:
-            self.flows[id(code)] = _Walk.of(self, code)
+            try:
+                self.flows[id(code)] = _Walk.of(self, code)
+            except UnaffordableError:
+                self.left.add(id(code))
+                return None
         return self.flows[id(code)].cause_of(line)
 
 
