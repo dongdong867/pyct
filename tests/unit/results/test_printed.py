@@ -283,10 +283,12 @@ def test_gathered_pieces_count_each_node_they_reach_once(string: Expression) -> 
 
 
 @pytest.mark.parametrize("string", GATHERED_FROM.values(), ids=list(GATHERED_FROM))
-def test_forks_that_gather_many_pieces_are_counted_in_little_memory(
+def test_gathered_pieces_that_wait_below_the_cut_are_counted_in_little_memory(
     string: Expression,
 ) -> None:
-    forks = _gathered(5_000, string)
+    # the last fork alone: the count walks below the part it cuts, where every piece is
+    # numbered before the gathered strings that hold it, and waits for one of them to read it
+    forks = _gathered(10_000, string)[-1:]
 
     tracemalloc.start()
     try:
@@ -296,9 +298,9 @@ def test_forks_that_gather_many_pieces_are_counted_in_little_memory(
         tracemalloc.stop()
 
     # what a waiting piece reaches is kept as runs of the numbers it holds, its own nodes and the
-    # string's, so the memory grows with the pieces, about 8 MB here. Kept from the walk's first
-    # number, it grew with their square for pieces of s, 20 MB here. Kept from its own lowest
-    # number, it still did for pieces of s[1:], whose one list is numbered first, 17 MB here
+    # string's, so the memory grows with the pieces, about 7.6 MB here. Kept from the walk's
+    # first number, it grew with their square, 25 MB here for pieces of s. Kept from its own
+    # lowest number, it still did for pieces of s[1:], whose one list is numbered first, 19 MB
     assert peak < 12_000_000
 
 
