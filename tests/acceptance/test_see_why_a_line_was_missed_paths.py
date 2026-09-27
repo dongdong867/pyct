@@ -338,8 +338,6 @@ def test_a_generator_paused_at_a_yield_in_a_loop_is_suspended_and_one_that_raise
 
 
 # see-why-a-line-was-missed-stops-at-the-deadline
-# the stop's timer fires in this process, so coverage is paused for the test
-@pytest.mark.no_cover
 def test_the_lines_left_when_the_deadline_comes_are_not_worked_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

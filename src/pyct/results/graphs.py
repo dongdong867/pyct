@@ -1,9 +1,20 @@
-"""Graph walks the flow of a function is read with: orders, dominators, and lines as bits."""
+"""Graph walks the flow of a function is read with: orders, dominators, and lines as bits.
+
+Each walk takes the analysis's ``Pace``, which looks at the run's clock every
+so many steps and ends the analysis with ``OutOfTimeError`` once its stop has
+come. The stop is the analysis's own: it is raised only where a walk steps,
+never by a signal, so nothing else the process does meets it.
+"""
 
 from __future__ import annotations
 
 import functools
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
+
+# how many steps pass between two looks at the clock: a look costs a clock read, and a step
+# is a node, a line or an input, microseconds at most
+_EVERY = 256
 
 
 def strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]) -> int:
@@ -17,12 +28,14 @@ def strictly_after(parts: set[int], bits: tuple[list[int], list[int], list[int]]
     return after & ~back & ~same
 
 
-def postorder(successors: list[list[int]], *roots: int) -> list[int]:
+def postorder(successors: list[list[int]], *roots: int, pace: Pace | None = None) -> list[int]:
     """The nodes reachable from ``roots``, each after every node it leads to first."""
     order: list[int] = []
     seen = set(roots)
     stack: list[tuple[int, Iterator[int]]] = [(root, iter(successors[root])) for root in roots]
     while stack:
+        if pace is not None:
+            pace.step()
         node, pending = stack[-1]
         following = next((each for each in pending if each not in seen), None)
         if following is None:
@@ -47,14 +60,30 @@ def never() -> bool:
     return False
 
 
+@dataclass
+class Pace:
+    """The analysis's stop: every ``_EVERY`` steps it asks ``late`` whether the stop has come,
+    and raises OutOfTimeError when it has.
+
+    Each walk whose work grows with the function, the lines or the inputs
+    steps it once per node, line or input, so no walk runs long past the stop.
+    """
+
+    late: Callable[[], bool] = never
+    steps: int = 0
+
+    def step(self) -> None:
+        self.steps += 1
+        if self.steps % _EVERY == 0 and self.late():
+            raise OutOfTimeError
+
+
 def dominators(
-    successors: list[list[int]], root: int, number: dict[int, int], late: Callable[[], bool] = never
+    successors: list[list[int]], root: int, number: dict[int, int], pace: Pace | None = None
 ) -> dict[int, int]:
     """Each reachable node's immediate dominator, the root its own (Cooper, Harvey and Kennedy).
 
     ``number`` is each reachable node's place in the postorder from ``root``.
-    ``late`` is asked before each pass over the nodes, which is how the
-    work grows with the function.
     """
     order = sorted(number, key=number.__getitem__)
     predecessors: dict[int, list[int]] = {node: [] for node in order}
@@ -64,10 +93,10 @@ def dominators(
     idom = {root: root}
     changed = True
     while changed:
-        if late():
-            raise OutOfTimeError
         changed = False
         for node in reversed(order[:-1]):
+            if pace is not None:
+                pace.step()
             known = [each for each in predecessors[node] if each in idom]
             meet = functools.reduce(lambda a, b: intersect(a, b, idom, number), known)
             if idom.get(node) != meet:

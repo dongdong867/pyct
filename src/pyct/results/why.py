@@ -8,6 +8,7 @@ got past names the cause (``README.md › Rules › the summary line``).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import logging
 import time
@@ -20,7 +21,6 @@ from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError
-from pyct.results.stopping import stopping
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -122,11 +122,8 @@ def explain(
         return ()
     lines = sorted(uncovered)
     by_cause: dict[WhyEntry, list[int]] = {}
-    try:
-        with stopping(run.stop_at, clock):
-            _work_out(file, lines, covered, run, by_cause)
-    except OutOfTimeError:
-        pass
+    with contextlib.suppress(OutOfTimeError):
+        _work_out(file, lines, covered, run, by_cause)
     # a line is placed once its cause is known; whatever the stop left is not worked out
     placed = {line for held in by_cause.values() for line in held}
     left = [line for line in lines if line not in placed]
@@ -145,8 +142,9 @@ def _work_out(
 ) -> None:
     """Work out each line's cause into ``by_cause``, until the stop comes.
 
-    The stop comes as ``OutOfTimeError``, from the timer anywhere or from a
-    step's own clock check where no timer could be armed.
+    The stop comes as ``OutOfTimeError``, raised only where the analysis
+    looks at its clock: before each line, and at each step of a walk whose
+    work grows with the function, the lines or the inputs (``graphs.Pace``).
     """
     seen = _Seen.of(file, covered, run)
     for line in lines:

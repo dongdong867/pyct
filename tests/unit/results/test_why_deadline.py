@@ -10,7 +10,6 @@ import pytest
 from pyct.results import why as why_module
 from pyct.results.why import Reason, Run, Walked, WhyEntry, explain
 from pyct.results.why_render import why_json, why_line
-from tests.unit.deadline_fires import DEADLINE_FIRES
 
 SOURCE = """\
 def f(x):
@@ -32,10 +31,7 @@ def module(tmp_path: Path) -> str:
 
 
 def clock_after(monkeypatch: pytest.MonkeyPatch, reads: int) -> None:
-    """A clock that reads before the stop ``reads`` times, then past it for good.
-
-    The stop's timer reads it once as it arms, before any line.
-    """
+    """A clock that reads before the stop ``reads`` times, then past it for good."""
     ticks = itertools.chain(itertools.repeat(0.0, reads), itertools.repeat(10.0))
     monkeypatch.setattr(why_module, "clock", lambda: next(ticks))
 
@@ -46,7 +42,6 @@ def explained(file: str, stop_at: float | None) -> tuple[WhyEntry, ...]:
     return explain(file, uncovered, frozenset({2}), Run(walked, {}, stop_at=stop_at))
 
 
-@DEADLINE_FIRES
 def test_a_run_past_its_stop_puts_every_line_left_under_not_worked_out(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -58,13 +53,12 @@ def test_a_run_past_its_stop_puts_every_line_left_under_not_worked_out(
     assert entries == (WhyEntry(file=file, lines=(1, 3, 4, 5, 8, 9), reason=Reason.NOT_WORKED_OUT),)
 
 
-@DEADLINE_FIRES
 def test_the_lines_worked_out_before_the_stop_keep_their_causes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     file = module(tmp_path)
     # enough reads for the first lines, then the stop comes part way through
-    clock_after(monkeypatch, 4)
+    clock_after(monkeypatch, 3)
 
     entries = explained(file, stop_at=5.0)
 
@@ -86,7 +80,6 @@ def test_a_run_with_no_stop_works_out_every_line(
     assert Reason.NOT_WORKED_OUT not in {entry.reason for entry in entries}
 
 
-@DEADLINE_FIRES
 def test_a_stop_inside_one_line_s_work_leaves_that_line_and_the_rest_unworked(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -97,7 +90,7 @@ def test_a_stop_inside_one_line_s_work_leaves_that_line_and_the_rest_unworked(
     walked += [Walked(forks=(), failed=False, lines=frozenset({2}))]
     # the clock is read once per line and once per path's marks, and the four inputs are two
     # paths: the stop comes while the second path's marks are worked out
-    clock_after(monkeypatch, 3)
+    clock_after(monkeypatch, 2)
 
     entries = explain(str(file), frozenset({3, 4}), frozenset({2}), Run(walked, {}, stop_at=5.0))
 
@@ -122,7 +115,6 @@ def _joined(tmp_path: Path, tests: int) -> tuple[str, frozenset[int], frozenset[
     return str(file), bodies, covered
 
 
-@DEADLINE_FIRES
 def test_one_line_s_work_on_a_long_function_still_stops_near_the_stop(tmp_path: Path) -> None:
     file, bodies, covered = _joined(tmp_path, 3000)
     walked = [Walked(forks=(), failed=False, lines=covered)]

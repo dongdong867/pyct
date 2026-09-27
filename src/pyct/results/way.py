@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
 from pyct.results.graphs import (
-    OutOfTimeError,
+    Pace,
     dominators,
     intersect,
     never,
@@ -58,12 +58,14 @@ class Flow:
         raising: frozenset[tuple[int, int]],
         late: Callable[[], bool] = never,
     ) -> None:
-        graph = _Graph.of(code, raising)
+        self.pace = Pace(late)
+        graph = _Graph.of(code, raising, self.pace)
         self._graph = graph
-        self._late = late
-        self._order = {n: at for at, n in enumerate(postorder(graph.successors, graph.entry))}
-        self._idom = dominators(graph.successors, graph.entry, self._order, late)
-        self._normal = frozenset(postorder(graph.normal, graph.entry))
+        pace = self.pace
+        order = postorder(graph.successors, graph.entry, pace=pace)
+        self._order = {n: at for at, n in enumerate(order)}
+        self._idom = dominators(graph.successors, graph.entry, self._order, pace)
+        self._normal = frozenset(postorder(graph.normal, graph.entry, pace=pace))
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
 
@@ -98,10 +100,10 @@ class Flow:
         """
         found: set[int] = set()
         for line in set(lines):
-            if self._late():
-                raise OutOfTimeError
+            self.pace.step()
             self._mark_up(self._meet_of(self._holders(line)), found)
         for fork in set(forks):
+            self.pace.step()
             self._mark_up(self._meet_of(self._graph.forked(fork)), found)
         return frozenset(found)
 
@@ -109,6 +111,7 @@ class Flow:
         """Add ``node`` and every node that dominates it, stopping at one already found:
         everything above that is found too, so a run's lines cost its path, not its depth."""
         while node is not None and node not in found:
+            self.pace.step()
             found.add(node)
             node = None if node == self._graph.entry else self._idom[node]
 
@@ -129,9 +132,8 @@ class Flow:
         """
         steps = self._graph.steps
         held: dict[int, set[tuple[int, int, bool]]] = {}
-        for at, node in enumerate(sorted(self._idom, key=self._order.__getitem__)):
-            if at % 1024 == 0 and self._late():
-                raise OutOfTimeError
+        for node in sorted(self._idom, key=self._order.__getitem__):
+            self.pace.step()
             tests = held.setdefault(node, set())
             step = steps.get(node)
             if step is not None and step.kind is StepKind.CONDITION and len(tests) < 2:
@@ -190,10 +192,12 @@ class Flow:
                 held[each] |= 1 << at
         later = [0] * len(following)
         for each in reversed(range(len(following))):
+            self.pace.step()
             for next_ in following[each]:
                 later[each] |= held[next_] | later[next_]
         earlier = [0] * len(following)
         for each in range(len(following)):
+            self.pace.step()
             for back in preceding[each]:
                 earlier[each] |= held[back] | earlier[back]
         return frozenset(
@@ -206,7 +210,22 @@ class Flow:
     def _parts(self) -> tuple[dict[int, int], list[set[int]], list[set[int]]]:
         """Each reachable node's strongly connected part, numbered in the order a run meets
         them, and each part's following and preceding parts (Kosaraju's two passes)."""
+        part = self._part_of()
+        count = max(part.values(), default=-1) + 1
+        following: list[set[int]] = [set() for _ in range(count)]
+        preceding: list[set[int]] = [set() for _ in range(count)]
         graph = self._graph
+        for node, at in part.items():
+            self.pace.step()
+            for next_ in graph.successors[node]:
+                if part.get(next_, at) != at:
+                    following[at].add(part[next_])
+                    preceding[part[next_]].add(at)
+        return part, following, preceding
+
+    def _part_of(self) -> dict[int, int]:
+        """Each reachable node's strongly connected part, numbered in the order a run meets
+        them: Kosaraju's second pass, back from each node in the order the flow finishes them."""
         before = self._predecessors
         part: dict[int, int] = {}
         number = -1
@@ -217,19 +236,13 @@ class Flow:
             part[root] = number
             stack = [root]
             while stack:
+                self.pace.step()
                 node = stack.pop()
                 for back in before[node]:
                     if back in self._order and back not in part:
                         part[back] = number
                         stack.append(back)
-        following: list[set[int]] = [set() for _ in range(number + 1)]
-        preceding: list[set[int]] = [set() for _ in range(number + 1)]
-        for node, at in part.items():
-            for next_ in graph.successors[node]:
-                if part.get(next_, at) != at:
-                    following[at].add(part[next_])
-                    preceding[part[next_]].add(at)
-        return part, following, preceding
+        return part
 
     def straight(self, start: int, line: int) -> bool:
         """Whether a run that ran ``start`` goes on to ``line`` with no condition, no raise and
@@ -242,7 +255,8 @@ class Flow:
         ends = set(self._holders(line))
         holders = self._holders(start)
         return bool(holders) and all(
-            ends.intersection(postorder(self._plain, *self._plain[block])) for block in holders
+            ends.intersection(postorder(self._plain, *self._plain[block], pace=self.pace))
+            for block in holders
         )
 
     @functools.cached_property
@@ -309,7 +323,9 @@ class Flow:
 
     def _toward(self, line: int) -> frozenset[int]:
         if line not in self._towards:
-            self._towards[line] = frozenset(postorder(self._predecessors, *self._holders(line)))
+            self._towards[line] = frozenset(
+                postorder(self._predecessors, *self._holders(line), pace=self.pace)
+            )
         return self._towards[line]
 
     def _tested_before(self, node: int) -> tuple[int, int]:
@@ -342,10 +358,11 @@ class _Graph:
     yields: dict[int, int]
 
     @classmethod
-    def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]]) -> _Graph:
+    def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]], pace: Pace) -> _Graph:
         blocks, splits = blocks_of_code(code, raising)
         builder = _Builder(blocks)
         for index, block in enumerate(blocks):
+            pace.step()
             for target, step in exits(block, blocks, index, splits):
                 builder.join(index, builder.block_at(target), step)
         for start, covered in handler_ranges(code, blocks):
