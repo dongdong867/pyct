@@ -1,6 +1,7 @@
 import subprocess
 import sys
 import textwrap
+from unittest.mock import ANY
 
 import pytest
 
@@ -83,7 +84,7 @@ def test_a_method_neither_set_names_becomes_a_downgrade() -> None:
 
     assert value.untaught() == "the base type's"
 
-    assert sink == [Downgrade(name="untaught")]
+    assert sink == [Downgrade(name="untaught", site=ANY)]
     # the class body never wrote the name; the derivation is what put a wrapper under it
     assert "untaught" not in UNTAUGHT_BODY
     assert "untaught" in vars(Untaught)
@@ -97,7 +98,7 @@ def test_teaching_a_method_is_adding_its_name_to_the_class_body() -> None:
     assert Taught(taught_sink).taught() == "the concolic type's"
 
     # the two types differ in one line, and that line is the whole difference
-    assert untaught_sink == [Downgrade(name="taught")]
+    assert untaught_sink == [Downgrade(name="taught", site=ANY)]
     assert taught_sink == []
 
 
@@ -137,7 +138,7 @@ def test_a_name_the_base_type_inherits_is_wrapped_when_it_is_named() -> None:
     # object's __str__ answers by asking __repr__, which is neither named nor wrapped
     assert str(value) == repr(value)
 
-    assert sink == [Downgrade(name="__str__")]
+    assert sink == [Downgrade(name="__str__", site=ANY)]
 
 
 def test_a_raise_out_of_the_base_types_method_is_the_targets() -> None:
@@ -184,7 +185,7 @@ def test_a_downgrade_that_answers_with_its_receiver_hands_back_the_plain_value()
     # the value Python's own int holds, never the receiver that carries the condition
     assert type(result) is int
     assert result == 7
-    assert sink == [Downgrade(name="itself")]
+    assert sink == [Downgrade(name="itself", site=ANY)]
 
 
 # None in sys.modules makes importing that name raise, so a shared module that reached into
@@ -218,7 +219,7 @@ STAND_IN_ALONE = textwrap.dedent(
 
     downgrade_the_rest(Untaught, StandIn, kept=(), inherited=())
     sink = []
-    print(Untaught(sink).untaught(), sink)
+    print(Untaught(sink).untaught(), [item.name for item in sink])
     """
 )
 
@@ -231,4 +232,4 @@ def test_a_stand_in_derives_through_the_shared_module_alone() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "the base type's [Downgrade(name='untaught')]\n"
+    assert result.stdout == "the base type's ['untaught']\n"

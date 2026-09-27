@@ -130,8 +130,8 @@ def test_a_tracked_index_in_range_records_both_forks_taken(index: int) -> None:
     result = _probe()(_tracked(sink=sink), _n(index, sink))
 
     assert sink == [
-        Branch(expression=LONG_ENOUGH, taken=True, site=SITE),
-        Branch(expression=NOT_TOO_SHORT, taken=True, site=SITE),
+        Branch(expression=LONG_ENOUGH, taken=True, site=SITE, raising=True),
+        Branch(expression=NOT_TOO_SHORT, taken=True, site=SITE, raising=True),
     ]
     assert isinstance(result, ConcolicStr)
     assert result.expression == ["[]", "s", "n"]
@@ -154,7 +154,7 @@ def test_a_tracked_index_out_of_range_records_its_forks_and_raises_as_the_target
     assert raised_by_target(raised.value)
     forks = [LONG_ENOUGH, NOT_TOO_SHORT][: len(sides)]
     assert sink == [
-        Branch(expression=fork, taken=side, site=SITE)
+        Branch(expression=fork, taken=side, site=SITE, raising=True)
         for fork, side in zip(forks, sides, strict=True)
     ]
 
@@ -213,7 +213,7 @@ def test_a_raising_search_from_a_position_records_the_search_it_mirrors(
     assert isinstance(result, ConcolicInt)
     assert result.expression == [name, "s", repr(sub), "n"]
     assert int.__index__(result) == answer
-    assert sink == [Branch(expression=fork, taken=True, site=SITE)]
+    assert sink == [Branch(expression=fork, taken=True, site=SITE, raising=True)]
 
 
 @pytest.mark.parametrize(
@@ -239,4 +239,4 @@ def test_a_raising_search_from_a_position_that_finds_nothing_raises_after_its_fo
     # Python's own sentence, as plain Python words it in this run
     assert str(raised.value) == str(plain.value)
     assert raised_by_target(raised.value)
-    assert sink == [Branch(expression=fork, taken=False, site=SITE)]
+    assert sink == [Branch(expression=fork, taken=False, site=SITE, raising=True)]

@@ -5,6 +5,7 @@ import math
 import operator
 import sys
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -102,7 +103,7 @@ def test_an_untaught_operation_returns_a_plain_value_and_records_its_name(
 
     assert result == call(3)
     assert not isinstance(result, ConcolicInt)
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 @pytest.mark.parametrize(
@@ -170,7 +171,7 @@ def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], obj
 
     assert result == call(1)
     assert not isinstance(result, ConcolicInt)
-    assert sink == [Downgrade(name="__pow__")]
+    assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
 def test_a_float_exponent_is_floats_own_power_and_a_downgrade() -> None:
@@ -183,7 +184,7 @@ def test_a_float_exponent_is_floats_own_power_and_a_downgrade() -> None:
 
     assert type(result) is float
     assert result == 2.0
-    assert sink == [Downgrade(name="__pow__")]
+    assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
 def test_a_symbolic_exponent_is_a_downgrade() -> None:
@@ -195,7 +196,7 @@ def test_a_symbolic_exponent_is_a_downgrade() -> None:
     assert 2**x == 4
 
     # cvc5 takes a constant exponent only, so both spellings stay int's own
-    assert sink == [Downgrade(name="__pow__"), Downgrade(name="__rpow__")]
+    assert sink == [Downgrade(name="__pow__", site=ANY), Downgrade(name="__rpow__", site=ANY)]
 
 
 @pytest.mark.parametrize("call", IDENTITIES.values(), ids=list(IDENTITIES))
@@ -239,7 +240,7 @@ def test_int_of_a_concolic_int_is_a_downgrade() -> None:
     result = int(x)
 
     assert type(result) is int
-    assert sink == [Downgrade(name="__int__")]
+    assert sink == [Downgrade(name="__int__", site=ANY)]
 
 
 def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
@@ -247,7 +248,7 @@ def test_rounding_to_a_power_of_ten_is_a_downgrade() -> None:
     x = ConcolicInt.made(1234, expression="x", sink=sink)
 
     assert round(x, -2) == 1200
-    assert sink == [Downgrade(name="__round__")]
+    assert sink == [Downgrade(name="__round__", site=ANY)]
 
 
 def test_a_concolic_int_hashes_like_an_int_and_records_nothing() -> None:
@@ -371,9 +372,8 @@ def test_a_float_percent_conversion_is_a_float_downgrade(form: str) -> None:
 
     for tracked, plain in _tracked_values(sink):
         text = form % tracked
-
         assert (text, type(text)) == (form % plain, str)
-    assert sink == [Downgrade(name="__float__"), Downgrade(name="__float__")]
+    assert sink == [Downgrade(name="__float__", site=ANY), Downgrade(name="__float__", site=ANY)]
 
 
 @pytest.mark.parametrize("spec", ["d", "05d", "x", ">4", ","])
@@ -384,7 +384,7 @@ def test_a_format_spec_is_a_downgrade_named_format(spec: str) -> None:
     text = format(x, spec)
 
     assert (text, type(text)) == (format(1234, spec), str)
-    assert sink == [Downgrade(name="__format__")]
+    assert sink == [Downgrade(name="__format__", site=ANY)]
 
 
 def test_text_past_pythons_digit_limit_raises_as_the_targets() -> None:
@@ -464,7 +464,7 @@ def test_a_downgrade_hands_keywords_to_the_base_types_own_method() -> None:
 
     # to_bytes is a derived downgrade that takes keywords
     assert x.to_bytes(length=2, byteorder="big") == b"\x00\x03"
-    assert sink == [Downgrade(name="to_bytes")]
+    assert sink == [Downgrade(name="to_bytes", site=ANY)]
 
 
 def test_a_keyword_named_like_pycts_own_parameter_is_ints_own_raise() -> None:
@@ -496,4 +496,4 @@ def test_an_operation_the_other_type_answers_is_named_as_a_downgrade() -> None:
     assert x + Measured(1.5) == 3 + Measured(1.5)
 
     # its answer is plain, so x's condition is lost there and the operation is named
-    assert sink == [Downgrade(name="__add__")]
+    assert sink == [Downgrade(name="__add__", site=ANY)]

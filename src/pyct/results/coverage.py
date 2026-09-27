@@ -14,10 +14,15 @@ def executable_lines(file: str) -> frozenset[int]:
     module-level statements count too, though they run at import, not
     under a seed. Line 0 marks compiler-made instructions and is dropped.
     """
-    with open(file, encoding="utf-8") as source:
-        code = compile(source.read(), file, "exec")
+    code = compiled(file)
     lines = {line for code_object in _walk(code) for _, _, line in code_object.co_lines() if line}
     return frozenset(lines)
+
+
+def compiled(file: str) -> types.CodeType:
+    """The module's code, compiled from its source as the import compiles it."""
+    with open(file, encoding="utf-8") as source:
+        return compile(source.read(), file, "exec")
 
 
 def _walk(code: types.CodeType) -> Iterator[types.CodeType]:

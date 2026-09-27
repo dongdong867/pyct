@@ -8,7 +8,7 @@ import pytest
 
 from pyct.core import math_calls, substitutes
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Branch, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -89,6 +89,8 @@ def test_sqrt_records_its_fork_before_it_runs_taken_true_when_it_does_not_raise(
 
     assert repr(result) == repr(math.sqrt(value))
     assert expressions(sink) == [(["not", ["<", "x", 0.0]], True)]
+    # the fork is the one sqrt takes before it may raise
+    assert [item.raising for item in sink if isinstance(item, Branch)] == [True]
 
 
 @pytest.mark.parametrize("value", [-1.0, -5e-324, -math.inf])

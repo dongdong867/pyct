@@ -185,7 +185,7 @@ def _finite(self: ConcolicFloat) -> None:
     NaN and OverflowError on an infinity, so the input that flips it raises,
     and its line lists the fork it died on.
     """
-    forked(self.sink, ["isfinite", self.expression], own(math.isfinite, self))
+    forked(self.sink, ["isfinite", self.expression], own(math.isfinite, self), raising=True)
 
 
 def _rounding(head: str, operation: Callable[[float], int]) -> Callable[[ConcolicFloat], Any]:

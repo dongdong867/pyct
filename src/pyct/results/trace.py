@@ -19,6 +19,7 @@ from pyct.results.record import (
     SolverCounts,
     Stop,
 )
+from pyct.results.why_render import why_line
 
 
 def render_trace(
@@ -72,6 +73,7 @@ def _summary(result: RunResult) -> list[str]:
     coverage = result.coverage
     lines = [*_coverage(coverage), _solver(result.solver)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
+    lines += [why_line(entry) for entry in result.why_uncovered]
     return lines
 
 
@@ -137,8 +139,9 @@ def _aim(aim: Aim) -> str:
 
 
 def _downgrade(entry: DowngradeCount) -> str:
-    """One call is its bare name; a run of them carries how many."""
-    return entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    """One call is its bare name; a run of them carries how many. Either says where."""
+    counted = entry.name if entry.count == 1 else f"{entry.name} ×{entry.count}"
+    return f"{counted} at {_site(entry.site)}"
 
 
 def _fork(branch: Branch, expression: Expression) -> str:

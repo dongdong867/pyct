@@ -6,7 +6,7 @@ a set or a dict is followed element by element, and `in` and `is` are followed i
 compare. Each test runs pyct through the command line, as the rest of the story's tests do.
 """
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, input_lines, run_pyct
 from tests.acceptance.test_bools import at, expressions, failure_of, sides
 from tests.acceptance.test_ints import argument, forks_of
 
@@ -151,9 +151,8 @@ def test_follows_membership_up_to_a_hundred_items() -> None:
     assert at(seed, 6) == [["==", "n", k] for k in range(100)]
     assert all(fork["taken"] is False for fork in forks_of(seed))
     assert at(seed, 8) == []
-    downgrades = seed["downgrades"]
-    assert isinstance(downgrades, list), seed
-    assert [(item["name"], item["count"]) for item in downgrades] == [("__contains__", 1)]
+    # the loss is named where the target's `n in LARGE` runs
+    assert seed["downgrades"] == [downgrade("__contains__", 1, "targets/bools/hundred.py:8:7")]
     found = [line for line in inputs[1:] if 0 <= argument(line, "n") <= 99]
     assert any(7 in covered(line, HUNDRED_FILE) for line in found), inputs
 
