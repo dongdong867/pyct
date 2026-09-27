@@ -237,3 +237,18 @@ def test_access_name_reads_only_a_step_the_walk_takes() -> None:
     assert access_name(["+", "x", 1]) is None
     assert access_name("x") is None
     assert access_name([]) is None
+
+
+def test_a_list_reached_first_under_a_float_key_is_still_named_by_its_key() -> None:
+    shared = [0]
+    seed: dict[str, object] = {"d": {1.5: shared, "k": shared}}
+
+    args = bind(seed, [])
+
+    d = args["d"]
+    assert isinstance(d, dict)
+    # one copy for both paths, tracked under the one that names it
+    assert d[1.5] is d["k"]
+    assert isinstance(d["k"][0], ConcolicInt)
+    assert d["k"][0].expression == ["[]", ["[]", "d", "'k'"], 0]
+    assert leaves(seed) == {json.dumps(["[]", ["[]", "d", "'k'"], 0]): int}

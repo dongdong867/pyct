@@ -117,14 +117,19 @@ class _Walk:
     seed nested past Python's recursion limit is walked like any other. Each
     dict and list the walk rebuilds is remembered by the identity of the
     seed's own, so one reached again, by a second path or from inside
-    itself, is the same copy and is not walked twice: its values are named
-    by the first path in seed order.
+    itself, is the same copy. Its values are named by the first path in seed
+    order that names anything: a copy first reached under a key no access
+    can name is walked again, into the same copy, when a path that names it
+    reaches it. Each container is walked at most twice, so the walk ends.
     """
 
     def __init__(self, at_leaf: AtLeaf) -> None:
         self._at_leaf = at_leaf
-        # the seed's container, kept alive beside its copy so its identity is not reused
-        self._copies: dict[int, tuple[object, object]] = {}
+        # each copy by the identity of the seed's container, which is kept alive beside it so
+        # its identity is not reused, and the containers whose copies a path names
+        self._copies: dict[int, object] = {}
+        self._kept: list[object] = []
+        self._named: set[int] = set()
         self._pending: list[_Pending] = []
 
     def rebuilt(self, seed: Mapping[str, object]) -> dict[str, object]:
@@ -151,26 +156,30 @@ class _Walk:
             return self._at_leaf(value, access)
         if type(value) is not list and type(value) is not dict:
             return value
-        known = self._copies.get(id(value))
-        if known is not None:
-            return known[1]
-        if isinstance(value, list):
-            items: list[object] = [None] * len(value)
-            self._copies[id(value)] = (value, items)
-            self._later((item, _step(access, i), items, i) for i, item in enumerate(value))
-            return items
-        return self._copied_dict(value, access)
+        copy = self._copies.get(id(value))
+        if copy is None:
+            copy = [None] * len(value) if isinstance(value, list) else dict.fromkeys(value)
+            self._copies[id(value)] = copy
+            self._kept.append(value)
+        elif access is None or id(value) in self._named:
+            return copy
+        if access is not None:
+            self._named.add(id(value))
+        self._later(_items(value, access, copy))
+        return copy
 
-    def _copied_dict(self, value: dict[object, object], access: Expression | None) -> object:
-        """A dict's copy, keys in the seed's order, with each value queued to place.
 
-        A value is named by its key when the key can be written as a literal
-        (see ``_key``), and by nothing otherwise.
-        """
-        entries: dict[object, object] = dict.fromkeys(value)
-        self._copies[id(value)] = (value, entries)
-        self._later((item, _step(access, _key(key)), entries, key) for key, item in value.items())
-        return entries
+def _items(
+    value: list[object] | dict[object, object], access: Expression | None, copy: Any
+) -> Iterable[_Pending]:
+    """A container's values to place into its copy, each with the access one step in.
+
+    A dict's value is named by its key when the key can be written as a
+    literal (see ``_key``), and by nothing otherwise.
+    """
+    if isinstance(value, list):
+        return ((item, _step(access, i), copy, i) for i, item in enumerate(value))
+    return ((item, _step(access, _key(key)), copy, key) for key, item in value.items())
 
 
 class _Unnamed(Enum):
