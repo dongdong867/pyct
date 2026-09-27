@@ -39,8 +39,8 @@ USAGE = (
 )
 
 
-# how much deeper than a seed value an input's line nests a fork on it: the line, its forks, one
-# fork, its condition, and a few operations the target applies to the value
+# the levels the check allows between a seed value and Python's JSON writer: the line, its
+# forks, one fork, its condition, and a few operations the target applies to the value
 LINE_NESTING = 8
 
 
@@ -206,12 +206,12 @@ def parse_seed(seed_text: str) -> Mapping[str, object]:
 
 
 def _check_writable(seed: Mapping[str, object]) -> None:
-    """Refuse a seed nested deeper than Python can write an input's line for.
+    """Refuse a seed nested so deep that a line with a fork on its deepest value cannot be written.
 
     The line holds each fork on a value inside the seed a few levels below
     the value, and Python's JSON writer stops at a depth of its own. So the
-    check writes a list nested ``LINE_NESTING`` levels past the seed, the way
-    the line would, before any input runs.
+    check writes a list nested ``LINE_NESTING`` levels past the seed before
+    any input runs, which allows for a few operations on the value.
     """
     depth = _depth(seed)
     probe: list[object] = [0]
