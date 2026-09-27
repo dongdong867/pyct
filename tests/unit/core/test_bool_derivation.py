@@ -2,14 +2,14 @@ import sys
 
 import pytest
 
-from pyct.core import bools, numbers, values
+from pyct.core import bools, numbers, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.ints import ConcolicInt
 from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same
 # sets the production code does: a name that slipped out of the taught set would run as int's
-# own with no downgrade, silently. Thirteen on the floor version; a newer Python may add another
+# own with no downgrade, silently. Twelve on the floor version; a newer Python may add another
 UNTAUGHT_OPERATIONS = (
     "__rpow__",
     "__lshift__",
@@ -19,7 +19,6 @@ UNTAUGHT_OPERATIONS = (
     "__invert__",
     "__int__",
     "__float__",
-    "__str__",
     "__format__",
     "bit_count",
     "bit_length",
@@ -42,9 +41,9 @@ def _downgrades(cls: type) -> set[str]:
 
 @pytest.mark.skipif(
     sys.version_info[:2] != (3, 12),
-    reason="the thirteen are counted on the floor; a newer Python may define another int method",
+    reason="the twelve are counted on the floor; a newer Python may define another int method",
 )
-def test_a_concolic_bool_downgrades_the_thirteen_operations_it_has_not_taught() -> None:
+def test_a_concolic_bool_downgrades_the_twelve_operations_it_has_not_taught() -> None:
     assert _downgrades(ConcolicBool) == set(UNTAUGHT_OPERATIONS)
 
 
@@ -62,13 +61,13 @@ def test_a_bool_loses_what_an_int_loses_but_what_it_teaches_itself() -> None:
 
 def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None:
     # a call into int written without the helper leaves its raise blamed on pyct, silently.
-    # ConcolicBool's dunders are written in three files: its own, numbers for the operations it
-    # shares with an int and values for the downgrade closures, so the scan covers all three
-    files = {bools.__file__, numbers.__file__, values.__file__}
+    # ConcolicBool's dunders are written in four files: its own, numbers for the operations it
+    # shares with an int, values for the downgrade closures and texts for its text, so the scan
+    # covers all four
+    files = {bools.__file__, numbers.__file__, values.__file__, texts.__file__}
 
-    assert {"__lt__", "__add__", "__and__", "__round__", "__format__", "__invert__"} <= (
-        written_in(ConcolicBool, files).keys()
-    )
+    scanned = {"__lt__", "__add__", "__and__", "__round__", "__format__", "__invert__", "__str__"}
+    assert scanned <= written_in(ConcolicBool, files).keys()
     # a copy hands the value itself back, and `__repr__` reads the bool's own truth, which
     # cannot raise
     assert without_the_helper(ConcolicBool, files) == {"__copy__", "__deepcopy__", "__repr__"}

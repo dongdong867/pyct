@@ -66,6 +66,8 @@ RESULTS: Mapping[str, type | None] = {
     "float": float,
     "isint": bool,
     "isfloat": bool,
+    # the text `str` writes for an int or a bool
+    "str": str,
     "find": int,
     "rfind": int,
     "index": int,
@@ -185,6 +187,9 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("int", str): numerals.int_of,
     ("isint", str): numerals.is_int,
     ("isfloat", str): numerals.is_float,
+    # `str` of an int or a bool; a bool keeps its own sort here, as it does under `&`
+    ("str", int): numerals.text_of_int,
+    ("str", bool): numerals.text_of_bool,
     **{(head, str): form for head, form in CASES.items()},
 }
 

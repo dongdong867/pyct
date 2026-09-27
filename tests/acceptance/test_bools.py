@@ -229,11 +229,18 @@ def test_downgrades_an_untaught_bool_operation() -> None:
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     # `int(b)` written in the target's package is 1 or 0 with its condition, no longer a
-    # downgrade (intercept-builtin-functions-follows-int-of-a-bool)
-    names = ["__invert__", "__lshift__", "__and__", "__str__", "__format__"]
+    # downgrade (intercept-builtin-functions-follows-int-of-a-bool), and `str(b)` and `f"{b}"`
+    # are its text with its condition (follow-builtins-and-conversions-follows-str-of-a-bool)
+    names = ["__invert__", "__lshift__", "__and__"]
     assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
-    # `str(b)` and the f-string read `True`, so the `if b:` inside them runs and records the fork
-    assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [(8, [">", "x", 0])]
+    # `str(b)` and the f-string each record their compare, and read `True`, so the `if b:`
+    # inside them runs and records its fork
+    text: list[object] = ["==", ["str", [">", "x", 0]], "'True'"]
+    assert [(fork["line"], fork["expression"]) for fork in forks_of(seed)] == [
+        (7, text),
+        (7, text),
+        (8, [">", "x", 0]),
+    ]
 
 
 # follow-booleans-and-chained-compares-finds-the-failing-assert
