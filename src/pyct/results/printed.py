@@ -286,7 +286,8 @@ def _joined(reach: _Reach, other: _Reach, steps: _Steps) -> _Reach:
     for low, bits in sorted(reach + other):
         if runs and low <= end + _GAP:
             start, merged = runs[-1]
-            steps.spend((low - start + bits.bit_length()) // _BITS_PER_STEP)
+            width = max(merged.bit_length(), low - start + bits.bit_length())
+            steps.spend(width // _BITS_PER_STEP)
             runs[-1] = (start, merged | (bits << (low - start)))
         else:
             runs.append((low, bits))
