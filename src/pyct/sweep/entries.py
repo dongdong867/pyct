@@ -16,13 +16,14 @@ own body defines under a public name is listed too, and skipped until
 ``pyct run`` can call one.
 """
 
+import functools
 import inspect
 import os
 import pkgutil
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from types import ModuleType
+from types import FunctionType, ModuleType
 
 from pyct.sweep.seeds import NoSeedError, seed_of
 
@@ -162,7 +163,8 @@ class _Package:
         """The module of the package whose file holds the class's code, or None.
 
         A function the class body compiled says where the body is: its
-        compiled qualified name starts with the class's. The ``_make`` a named
+        compiled qualified name starts with the class's, a property's accessors
+        and a ``cached_property``'s function included. The ``_make`` a named
         tuple takes from Python claims the class's ``__qualname__`` but was
         compiled elsewhere, so it says nothing. A function borrowed from a
         same-named class elsewhere does match, so the first matching function
@@ -173,10 +175,8 @@ class _Package:
         """
         prefix = f"{cls.__qualname__}."
         matched = False
-        for value in list(vars(cls).values()):
-            target = function_of(value)
-            code = getattr(target, "__code__", None)
-            if getattr(code, "co_qualname", "").startswith(prefix):
+        for target in [part for value in list(vars(cls).values()) for part in _compiled(value)]:
+            if target.__code__.co_qualname.startswith(prefix):
                 matched = True
                 home = self._home_of(_code_file(target))
                 if home is not None:
@@ -239,6 +239,18 @@ def function_of(value: object) -> object | None:
     except Exception:
         return None
     return target if inspect.isfunction(target) else None
+
+
+def _compiled(value: object) -> list[FunctionType]:
+    """The Python functions a value in a class body holds: the value itself, a property's
+    getter, setter and deleter, or a ``cached_property``'s function."""
+    parts: list[object] = [value]
+    if isinstance(value, property):
+        parts = [value.fget, value.fset, value.fdel]
+    elif isinstance(value, functools.cached_property):
+        parts = [value.func]
+    found = [function_of(part) for part in parts]
+    return [target for target in found if isinstance(target, FunctionType)]
 
 
 def own_methods(cls: type) -> list[str]:
