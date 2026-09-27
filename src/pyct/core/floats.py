@@ -202,6 +202,11 @@ def _rounding(head: str, operation: Callable[[float], int]) -> Callable[[Concoli
     return compute
 
 
+# `int(x)` on a tracked float, where the code writes it: a tracked int cut toward zero, carrying
+# `["int", x]`, after the same finite fork, as `pyct.core.conversions` hands it on
+truncated = _rounding("int", float.__int__)
+
+
 def _round() -> Callable[..., Any]:
     """`round(x)` is a tracked int; `round(x, n)` rounds through a decimal string, a downgrade.
 
