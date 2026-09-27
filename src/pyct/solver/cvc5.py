@@ -4,12 +4,13 @@ import logging
 import math
 import subprocess
 from collections.abc import Mapping
+from dataclasses import dataclass
 from time import monotonic
 
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
-from pyct.solver.render import FINITE, Program, float_leaves, program
+from pyct.solver.render import BOUND, FINITE, Program, float_leaves, program
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,14 @@ GRACE_SECONDS = 1.0
 
 # the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
 LONGEST_WAIT_SECONDS = 2_147_483.0
+
+
+@dataclass(frozen=True)
+class _Core:
+    """What an unsat answer's core names: the leaves it holds finite, and whether a bound."""
+
+    leaves: frozenset[str] = frozenset()
+    bounded: bool = False
 
 
 def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float) -> Answer:
@@ -61,6 +70,11 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     the one limit, and one with nothing left is a ``Timeout()`` without
     starting cvc5.
 
+    A program that holds a bound some form is exact inside asks for the core
+    after an unsat too, and a core that names a bound is ``Unknown()``: past
+    the bound the form is not Python's, so that unsat says nothing about the
+    values there.
+
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
     records it already has and says the solver failed. The one exception is
@@ -71,13 +85,16 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     deadline = monotonic() + timeout
     finite = float_leaves(prefix, leaves)
-    answer, _ = _ask(program(prefix, leaves, finite=finite), timeout)
-    while finite and isinstance(answer, Unsat):
+    first = program(prefix, leaves, finite=finite)
+    answer, _ = _ask(first, timeout)
+    while (finite or first.bounded) and isinstance(answer, Unsat):
         cored = _ask_by(program(prefix, leaves, finite=finite, cores=True), deadline)
         if cored is None:
             return Timeout()
         answer, core = cored
-        freed = finite & core
+        freed = finite & core.leaves
+        if core.bounded:
+            return Unknown()
         if not isinstance(answer, Unsat) or not freed:
             return answer
         finite -= freed
@@ -88,7 +105,7 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     return answer
 
 
-def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:
+def _ask_by(written: Program, deadline: float) -> tuple[Answer, _Core] | None:
     """One ask with what is left before ``deadline``, or None with nothing left to ask with."""
     left = deadline - monotonic()
     if left <= 0:
@@ -97,11 +114,11 @@ def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] 
     return _ask(written, left)
 
 
-def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
+def _ask(written: Program, timeout: float) -> tuple[Answer, _Core]:
     """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds.
 
-    Also the leaves an unsat answer's core holds finite, when the program
-    held any.
+    Also what an unsat answer's core names, when the program named what it
+    held.
     """
     text = written.text + WHY
     argv = _argv(timeout)
@@ -117,7 +134,7 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        return Timeout(), frozenset()
+        return Timeout(), _Core()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Sat):
         # cvc5 answered by the constants the program declared; the run reads leaves by name
@@ -126,19 +143,21 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
-    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
+    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else _Core()
 
 
-def _core(stdout: str, written: Program) -> frozenset[str]:
-    """The leaves an unsat answer's dumped core holds finite, by their names.
+def _core(stdout: str, written: Program) -> _Core:
+    """What an unsat answer's dumped core names: the leaves it holds finite, and any bound.
 
     cvc5 prints the core right after the answer, its assertion names on one
     line or one per line; every other line after an unsat is a refusal that
-    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
+    names no assertion. A finite one's name is ``FINITE`` and the leaf's
+    symbol, and a bound's is ``BOUND`` and its index.
     """
     words = stdout.replace("(", " ").replace(")", " ").split()
     symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
-    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
+    leaves = frozenset(written.names_by_symbol[symbol] for symbol in symbols)
+    return _Core(leaves=leaves, bounded=any(word.startswith(BOUND) for word in words))
 
 
 def _argv(timeout: float) -> list[str]:

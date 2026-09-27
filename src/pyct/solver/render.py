@@ -2,6 +2,7 @@
 
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
+from functools import partial
 
 from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
@@ -9,7 +10,16 @@ from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
-from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, SORTS, STRING_ORDERS
+from pyct.solver.heads import (
+    BOUNDED,
+    FORMS,
+    OPERATORS,
+    POSITIONED,
+    RESULTS,
+    SORTS,
+    STRING_ORDERS,
+    WORKS_ON,
+)
 from pyct.solver.joined import joined
 from pyct.solver.literals import is_literal, literal_of, plain_operand, value
 from pyct.solver.recased import TO_DECLARE, Declared
@@ -23,6 +33,9 @@ _DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
 # unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
 # assertion's name never meets a constant
 FINITE = "finite!"
+
+# what names the assertion that holds a bound some form is exact inside, before its index
+BOUND = "bound!"
 
 
 @dataclass(frozen=True)
@@ -61,10 +74,14 @@ class Program:
 
     ``names_by_symbol`` holds each leaf's name, keyed by its constant's
     symbol without the bars, which is how a model names it back.
+    ``bounded`` says the program holds a bound that a form is exact inside,
+    such as a float floor division's: a sat answer is Python's, and an unsat
+    whose core names a bound says nothing about the values past it.
     """
 
     text: str
     names_by_symbol: Mapping[str, str]
+    bounded: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for.
@@ -97,10 +114,11 @@ def program(
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
     assertions (see `_Program`). Each float leaf in ``finite`` that the
-    prefix names is held to a finite double. With ``cores``, each of those
-    assertions is named for the leaf's symbol and cvc5 is asked to dump the
-    unsat core, so an unsat says which of them it rests on; that slows some
-    sat answers, so only a program asked after an unsat does it.
+    prefix names is held to a finite double, and each bound a form is exact
+    inside is held (see `Program`). With ``cores``, each of those assertions
+    is named, a finite one for the leaf's symbol, and cvc5 is asked to dump
+    the unsat core, so an unsat says which of them it rests on; that slows
+    some sat answers, so only a program asked after an unsat does it.
     """
     seed = _Leaves(kinds=leaves, constants={})
     prefix = joined(prefix, seed.holds)
@@ -111,16 +129,16 @@ def program(
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
     held = [name for name in constants if name in finite and leaves[name] is float]
-    lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
+    lines = ["(set-option :dump-unsat-cores true)"] if cores and (held or body.bounds) else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
     lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
-    lines += body.definitions
+    lines += body.definitions + _bounds(body.bounds, named=cores)
     lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
-    text = "\n".join(lines) + "\n"
-    return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
+    names = {symbol: name for name, symbol in symbols.items()}
+    return Program(text="\n".join(lines) + "\n", names_by_symbol=names, bounded=bool(body.bounds))
 
 
 def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> frozenset[str]:
@@ -131,6 +149,22 @@ def float_leaves(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> froz
     prefix = joined(prefix, seed.holds)
     order, _ = distinct(prefix, seed.holds)
     return frozenset(name for name in _symbols(prefix, order, seed) if leaves[name] is float)
+
+
+def _bounds(bounds: list[str], *, named: bool) -> list[str]:
+    """The assertion of each bound a form is exact inside, named by its index if asked.
+
+    A named bound goes through a literal of its own that implies it: cvc5
+    1.3.4 leaves a named bound out of the core it dumps where the core needs
+    it, and names the literal.
+    """
+    if not named:
+        return [f"(assert {bound})" for bound in bounds]
+    lines = []
+    for at, bound in enumerate(bounds):
+        lines += [f"(declare-const b!{at} Bool)", f"(assert (=> b!{at} {bound}))"]
+        lines.append(f"(assert (! b!{at} :named {BOUND}{at}))")
+    return lines
 
 
 def _held_finite(constant: str, symbol: str | None) -> str:
@@ -199,6 +233,7 @@ class _Program:
         self.unread = dict(holders)
         self.definitions: list[str] = []
         self.facts: set[str] = set()
+        self.bounds: list[str] = []
         for node in order:
             self.types[id(node)] = self._result(node)
         read = self._read_by_forms(order)
@@ -254,10 +289,14 @@ class _Program:
         """The type of an operation's operands, or None when none of them says.
 
         Python's own operators take two operands of one type here, so the
-        first that says decides it. A bool gives way to any other type, as
-        Python's bool meets an int as the int 1 or 0.
+        first that says decides it, but for two numbers: a float makes the
+        operation a float's, as Python converts an int that meets one. A bool
+        gives way to any other type, as Python's bool meets an int as the int
+        1 or 0.
         """
         kinds = [kind for part in operands if (kind := self.type_of(part))]
+        if float in kinds:
+            return float
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
@@ -266,6 +305,8 @@ class _Program:
         Two bools stay bools only under an operator bool has of its own, such
         as `&` or `==`; `+` or `<` on them works on the ints they are.
         """
+        if head in WORKS_ON:
+            return WORKS_ON[head]
         kind = self._operands_type(operands)
         return int if kind is bool and (head, bool) not in OPERATORS else kind
 
@@ -283,12 +324,24 @@ class _Program:
         return read
 
     def _form(self, node: Node) -> Callable[..., str] | None:
-        """The form that writes an operation on the type it works on, or None for an operator."""
+        """The form that writes an operation on the type it works on, or None for an operator.
+
+        A form exact only inside a bound writes its term, and its bound is held once.
+        """
         head, *operands = node
         if not isinstance(head, str):
             return None
         kind = self._kind(head, operands)
+        bounded = None if kind is None else BOUNDED.get((head, kind))
+        if bounded is not None:
+            return partial(self._bounded, bounded)
         return None if kind is None else FORMS.get((head, kind))
+
+    def _bounded(self, form: Callable[..., tuple[str, str]], *operands: str) -> str:
+        term, bound = form(*operands)
+        if bound not in self.bounds:
+            self.bounds.append(bound)
+        return term
 
     def _orders_strings(self, node: Node) -> bool:
         head, *operands = node
@@ -337,12 +390,15 @@ class _Program:
         return f"({_operator(head, kind)} {' '.join(rendered)})"
 
     def _operand(self, part: Expression, kind: type | None) -> str:
-        """An operand's term, where an operation on ints reads a bool as the int 1 or 0."""
+        """An operand's term, where an operation on ints reads a bool as the int 1 or 0, and
+        one on floats reads an int as the double Python converts it to."""
         if kind is int and isinstance(part, bool):
             return "1" if part else "0"
         term = self.term(part)
         if kind is int and self.type_of(part) is bool:
             return f"(ite {term} 1 0)"
+        if kind is float and self.type_of(part) is int:
+            return floats.from_int(term)
         return term
 
     def _declared(self, declared: Callable[[str, str], Declared], term: str) -> str:

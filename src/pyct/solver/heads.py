@@ -59,6 +59,9 @@ RESULTS: Mapping[str, type | None] = {
     # `/` answers a float in Python whatever numbers it divides
     "/": float,
     "is_integer": bool,
+    "isfinite": bool,
+    # a rounding answers an int, from a float
+    **dict.fromkeys(("floor", "ceil", "trunc", "round"), int),
     "find": int,
     "rfind": int,
     "index": int,
@@ -114,6 +117,9 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("abs", float): "fp.abs",
 }
 
+# the type a head works on whatever its operands are: Python's `/` divides two ints as floats
+WORKS_ON: Mapping[str, type] = {"/": float}
+
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
 # whether its operands swap. `a > b` is written `b < a`, the same term the target would have
 # met had it written that
@@ -148,7 +154,19 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("!=", float): floats.unequal,
     ("-", float): floats.minus,
     ("is_integer", float): floats.whole,
+    ("isfinite", float): floats.finite,
+    ("%", float): floats.modulo,
+    ("floor", float): floats.floor,
+    ("ceil", float): floats.ceil,
+    ("trunc", float): floats.trunc,
+    ("round", float): floats.rounded,
     **{(head, str): form for head, form in CASES.items()},
+}
+
+# a form exact only inside a bound, which answers its term and the bound, keyed as `FORMS` is.
+# Render holds the bound on the path (see `Program.bounded` in `solver/render.py`)
+BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
+    ("//", float): floats.floor_division,
 }
 
 # a string taken at positions or padded: the string arrives rendered, and each other operand as

@@ -276,14 +276,15 @@ def test_reports_going_off_course_where_the_run_stopped_forking() -> None:
     assert result.returncode == 0, result.stderr
     solved = second_line(result.stdout)
     # the seed takes ``x < 6`` then ``x < 5``; flipping the second under the first admits
-    # only x == 5, which divides by zero before the second fork is tested
+    # only x == 5, which indexes past the tuple before the second fork is tested: Python
+    # indexes a tuple by a tracked int without asking it, so the raise records no fork
     assert solved["aim"] == {"file": CUT_SHORT_FILE, "line": 4, "col": 11, "position": 1}
     # the detail is CPython's own sentence, and 3.14 shortened it, so only the kind
     # and the exception's name are pyct's to pin
     failure = solved["failure"]
     assert isinstance(failure, dict), solved
     assert failure["kind"] == "target_raised"
-    assert str(failure["detail"]).startswith("ZeroDivisionError:")
+    assert str(failure["detail"]).startswith("IndexError:")
     # the plan had two forks and the run recorded one, so the mismatch sits past the path
     assert solved["forks"] == [
         {"file": CUT_SHORT_FILE, "line": 2, "col": 7, "taken": True, "expression": ["<", "x", 6]}
