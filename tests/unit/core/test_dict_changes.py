@@ -162,7 +162,7 @@ def test_two_tracked_dicts_compare_by_the_left_one_s_keys() -> None:
     ]
 
 
-def test_copies_share_what_the_path_settled() -> None:
+def test_copies_look_keys_up_in_the_argument() -> None:
     config, sink = tracked({"a": 1})
 
     copied = config.copy()
@@ -170,7 +170,7 @@ def test_copies_share_what_the_path_settled() -> None:
     deep = copy.deepcopy(config)
     assert "a" in deep and type(deep) is ConcolicDict
 
-    assert forks(sink) == [(["in", "'a'", "config"], True)]
+    assert forks(sink) == [(["in", "'a'", "config"], True)] * 4
 
 
 def test_a_merge_either_way_is_a_tracked_dict_of_the_argument() -> None:

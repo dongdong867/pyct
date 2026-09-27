@@ -94,8 +94,9 @@ def test_adds_and_removes_a_named_key() -> None:
         (4, ["in", "'tip'", "order"], False),
         (6, ["in", "'total'", "order"], True),
     ]
-    presence = [fork for fork in seed if fork[1] == ["in", "'total'", "order"]]
-    assert len(presence) == 1, seed
+    # each lookup records its own fork, where it runs
+    presence = [fork[0] for fork in seed if fork[1] == ["in", "'total'", "order"]]
+    assert presence == [6, 8], seed
     assert fork_line(result.stderr, NAMED_KEY_FILE, 2, "'coupon' in order", False)
     orders = [dict_of(line, "order") for line in solved(lines)]
     assert any(list(order) == ["total", "coupon"] for order in orders), orders
@@ -404,3 +405,28 @@ def test_a_placed_walk_beside_a_bound_is_unknown_not_unsat() -> None:
     assert isinstance(misses, list)
     whys = {miss["why"] for miss in misses if miss["line"] == 48}
     assert whys and "unsat" not in whys, misses
+
+
+SETTLED = "targets.dicts.settled"
+SETTLED_FILE = str(DICTS / "settled.py")
+
+
+# see-why: a lookup of a key the path already asked about records its fork again, so the
+# condition that reads it names that fork and its tries, not `no fork`, which blames the program
+@pytest.mark.parametrize(
+    ("function", "seed", "at", "missed"),
+    [("only_a", {"a": 9}, (3, 24), 4), ("int_only", {"1": 9}, (11, 15), 12)],
+)
+def test_names_the_fork_of_a_key_the_path_asked_about_before(
+    function: str, seed: dict[str, int], at: tuple[int, int], missed: int
+) -> None:
+    result = run_pyct(f"{SETTLED}::{function}", json.dumps({"d": seed}), "--plateau", "5")
+
+    assert result.returncode == 0, result.stderr
+    causes = summary_line(result.stdout)["why_uncovered"]
+    assert isinstance(causes, list)
+    [cause] = [entry for entry in causes if missed in entry["lines"]]
+    line, col = at
+    assert cause["reason"] == "not taken", cause
+    assert cause["condition"] == {"file": SETTLED_FILE, "line": line, "col": col, "side": False}
+    assert cause["tries"]["unsat"] == 1, cause

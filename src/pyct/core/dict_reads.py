@@ -60,7 +60,9 @@ def settled_as(key: object) -> object:
 
 
 def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
-    """Whether the dict holds ``key``, recording the fork the first time the path asks.
+    """Whether the dict holds ``key``, recording the fork at each lookup, as a string's `in`
+    does, so each condition that reads it has a fork of its own: the path settles the answer
+    the first time it asks, and a later fork's flip asks for the same key.
 
     None when pyct does not follow this lookup, which the caller answers as Python does and
     names as a downgrade: a key of another kind, or a tracked key into a dict the target
@@ -72,9 +74,9 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     if written is None or (is_tracked(key) and self.changed):
         return None
     known = settled_as(key)
-    if plain(key) in self.changed or known in self.settled or proven(self, key):
+    if plain(key) in self.changed or proven(self, key):
         return held
-    self.settled[known] = held
+    self.settled.setdefault(known, held)
     given = self.shared.get(key) if type(key) in (str, int) else None
     written_given: Expression = None if given is None else ["given", given]
     fork = ["in", written, self.expression]

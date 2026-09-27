@@ -122,7 +122,7 @@ def _plain(value: object) -> object:
     return plain(value)
 
 
-def test_a_lookup_records_whether_the_key_is_there_the_first_time_the_path_asks() -> None:
+def test_a_lookup_records_whether_the_key_is_there_each_time_the_path_asks() -> None:
     config, sink = tracked({"total": 5})
 
     assert "coupon" not in config
@@ -134,6 +134,7 @@ def test_a_lookup_records_whether_the_key_is_there_the_first_time_the_path_asks(
         (["in", "'tip'", "config"], False),
         (["in", "'total'", "config"], True),
         ([">", ["[]", "config", "'total'"], 100], False),
+        (["in", "'total'", "config"], True),
         (["<", ["[]", "config", "'total'"], 0], False),
     ]
 
@@ -266,7 +267,7 @@ def test_a_tracked_key_is_looked_up_by_its_expression() -> None:
     read = config[name]
 
     assert type(read) is ConcolicInt and read.expression == ["[]", "config", "name"]
-    assert forks(sink) == [(["in", "name", "config"], True)]
+    assert forks(sink) == [(["in", "name", "config"], True)] * 2
 
 
 def test_a_tracked_key_into_a_changed_dict_is_python_s_answer() -> None:
