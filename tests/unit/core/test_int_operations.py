@@ -1,5 +1,6 @@
 import copy
 import dataclasses
+import json
 import math
 import operator
 from collections.abc import Callable
@@ -131,7 +132,8 @@ def test_a_taught_operation_answers_with_an_int_that_carries_the_expression(
     assert isinstance(result, ConcolicInt)
     # operator.index reads the plain value: `==` on the result would fork into the sink
     assert operator.index(result) == call(3)
-    assert result.expression == expression
+    # JSON tells the literal True from the int 1, where `==` on the lists does not
+    assert json.dumps(result.expression) == json.dumps(expression)
     assert result.sink is sink
     # arithmetic tests nothing for truth and loses nothing, so the sink stays empty
     assert sink == []
@@ -167,7 +169,7 @@ def test_a_bool_operand_is_the_int_1_or_0() -> None:
     result = x + True
 
     assert isinstance(result, ConcolicInt)
-    assert result.expression == ["+", "x", True]
+    assert json.dumps(result.expression) == json.dumps(["+", "x", True])
     assert int.__int__(result) == 4
     assert sink == []
 

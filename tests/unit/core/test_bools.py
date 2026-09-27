@@ -1,5 +1,6 @@
 """A tracked bool used as a number: the int 1 or 0, with the condition it stands for."""
 
+import json
 import math
 from collections.abc import Callable
 
@@ -103,7 +104,8 @@ def test_a_bools_arithmetic_is_the_ints_with_its_condition(
     result = call(*_conditions(sink))
 
     assert isinstance(result, ConcolicInt)
-    assert result.expression == node
+    # JSON tells the literal True from the int 1, where `==` on the lists does not
+    assert json.dumps(result.expression) == json.dumps(node)
     # int.__int__, not int(result): int() would record the loss this test is not about
     assert int.__int__(result) == call(1, 0)
     # arithmetic never tests for truth, and a taught operation loses nothing
@@ -119,7 +121,7 @@ def test_a_bools_compare_is_a_tracked_bool(
     result = call(*_conditions(sink))
 
     assert isinstance(result, ConcolicBool)
-    assert result.expression == node
+    assert json.dumps(result.expression) == json.dumps(node)
     # int.__bool__, not bool(result): bool() would record the fork this test is not about
     assert int.__bool__(result) is call(True, False)
     assert sink == []
@@ -134,7 +136,8 @@ def test_and_or_and_xor_between_two_bools_answer_a_tracked_bool(
     result = call(*_conditions(sink))
 
     assert isinstance(result, ConcolicBool)
-    assert result.expression == node
+    # a plain bool is the literal True or False, which render reads as a Bool, never the int 1
+    assert json.dumps(result.expression) == json.dumps(node)
     assert int.__bool__(result) is call(True, False)
     assert sink == []
 

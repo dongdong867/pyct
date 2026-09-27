@@ -1,3 +1,4 @@
+import json
 import operator
 from collections.abc import Callable
 
@@ -184,7 +185,8 @@ def test_a_plain_bool_divisor_divides_by_1_or_0(
 
     # a plain divisor has nothing to flip, so no zero fork is recorded
     assert isinstance(result, ConcolicInt)
-    assert result.expression == node
+    # JSON tells the literal True from the int 1, where `==` on the lists does not
+    assert json.dumps(result.expression) == json.dumps(node)
     assert int.__int__(result) == call(7)
     assert sink == []
 
@@ -195,8 +197,9 @@ def test_a_plain_bool_divisor_divides_by_1_or_0_in_divmod() -> None:
 
     quotient, remainder = divmod(x, True)
 
-    assert quotient.expression == ["//", "x", True]
-    assert remainder.expression == ["%", "x", True]
+    assert json.dumps([quotient.expression, remainder.expression]) == json.dumps(
+        [["//", "x", True], ["%", "x", True]]
+    )
     assert (int.__int__(quotient), int.__int__(remainder)) == (7, 0)
     assert sink == []
 

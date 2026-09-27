@@ -1,3 +1,4 @@
+import json
 from collections.abc import Callable
 
 import pytest
@@ -77,9 +78,9 @@ def test_a_compare_against_a_truth_value_reads_it_as_the_int_1_or_0() -> None:
     literal = x >= True
     condition = x >= (y < 5)
 
-    assert (literal.expression, condition.expression) == (
-        [">=", "x", True],
-        [">=", "x", ["<", "y", 5]],
+    # JSON tells the literal True from the int 1, where `==` on the lists does not
+    assert json.dumps([literal.expression, condition.expression]) == json.dumps(
+        [[">=", "x", True], [">=", "x", ["<", "y", 5]]]
     )
     assert int.__bool__(literal) is int.__bool__(condition) is True
     assert sink == []
@@ -121,7 +122,7 @@ def test_less_than_a_bool_is_a_compare_on_the_literal() -> None:
 
     result = x < True
 
-    assert result.expression == ["<", "x", True]
+    assert json.dumps(result.expression) == json.dumps(["<", "x", True])
     assert int.__bool__(result) is False
     assert sink == []
 
@@ -175,9 +176,8 @@ def test_a_compare_equals_the_bool_it_stands_for() -> None:
     same = (x < 10) == True  # noqa: E712
     other = (x < 100) != True  # noqa: E712
 
-    assert (same.expression, other.expression) == (
-        ["==", ["<", "x", 10], True],
-        ["!=", ["<", "x", 100], True],
+    assert json.dumps([same.expression, other.expression]) == json.dumps(
+        [["==", ["<", "x", 10], True], ["!=", ["<", "x", 100], True]]
     )
     assert (int.__bool__(same), int.__bool__(other)) == (True, False)
     # `==` against a bool never tests for truth
