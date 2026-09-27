@@ -25,6 +25,8 @@
 {"set": "v2", "target": "targets.intercept.identities::sides", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.intercept.identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.intercept.in_plain_text::pick", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.intercept.pieces_codes::item", "seed": {"words": ["ab"]}, "status": "differs", "only_legacy": [], "only_v2": [10, 11]}
+{"set": "v2", "target": "targets.intercept.pieces_codes::piece", "seed": {"s": "ab,c"}, "status": "differs", "only_legacy": [], "only_v2": [4, 5]}
 {"set": "v2", "target": "targets.intercept.positions::place", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.intercept.threaded_identity::check", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [18]}
 {"set": "v2", "target": "targets.intercept.type_errors::in_set", "seed": {"items": [1]}, "status": "differs", "only_legacy": [10], "only_v2": []}
