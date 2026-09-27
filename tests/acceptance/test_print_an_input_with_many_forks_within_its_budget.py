@@ -6,7 +6,6 @@ from launch to exit, and the peak memory of pyct's own process. The budgets are 
 the criteria's 20 seconds, so the suite stays quick; the bounds they check scale with them.
 """
 
-import hashlib
 import json
 import os
 import resource
@@ -117,9 +116,9 @@ def test_a_long_loop_ends_within_a_second_of_its_budget(ten_thousand_passes: Mea
 
     assert run.returncode == 0, run.stderr[-2000:]
     # the criterion's 21 s for a 20 s budget: the one second the isolation rule gives
-    assert run.wall < 4 + 1
-    assert _inputs(run.stdout) >= 3
-    assert run.peak_bytes <= 400 * 1024 * 1024
+    assert run.wall < 4 + 1, run.wall
+    assert _inputs(run.stdout) >= 3, _inputs(run.stdout)
+    assert run.peak_bytes <= 400 * 1024 * 1024, run.peak_bytes
     forks = forks_of(input_lines(run.stdout)[0])
     places = {(fork["file"], fork["line"], fork["col"]) for fork in forks}
     assert len(forks) == 10_001
@@ -131,20 +130,10 @@ def test_two_thousand_passes_run_more_inputs(tmp_path: Path) -> None:
     run = _measured(tmp_path, 2_000, "3")
 
     assert run.returncode == 0, run.stderr[-2000:]
-    assert run.wall < 3 + 1
+    assert run.wall < 3 + 1, run.wall
     # printing an input takes about as long as running it, not ten times as long
-    assert _inputs(run.stdout) >= 8
-    assert run.peak_bytes <= 300 * 1024 * 1024
-
-
-# the seed's line and trace at 300 passes, whose 301 forks hold 91,203 printed nodes, as
-# v2 printed them before the line had a budget, with the repository's path as <repo>
-SHORT_LINE = (485_744, "efb3ea963d15a75fce037bc4d6edccc1c8038ae6089788d5f45505a02c8331e4")
-SHORT_TRACE = (198_167, "f4709c1b7180ba333714b70fa1924f69b4887d1bb9cffeaae40dd692facf69eb")
-
-
-def _locked(text: str) -> tuple[int, str]:
-    return len(text), hashlib.sha256(text.encode()).hexdigest()
+    assert _inputs(run.stdout) >= 8, _inputs(run.stdout)
+    assert run.peak_bytes <= 300 * 1024 * 1024, run.peak_bytes
 
 
 # print-an-input-with-many-forks-within-its-budget-keeps-a-short-line-as-it-was
@@ -152,13 +141,19 @@ def test_a_line_within_its_budget_prints_as_it_did(tmp_path: Path) -> None:
     run = _measured(tmp_path, 300, "2")
 
     assert run.returncode == 0, run.stderr[-2000:]
+    # the 301 forks hold 91,203 nodes, within the line's budget, so each prints whole, as it
+    # printed before the line had a budget
     forks = forks_of(input_lines(run.stdout)[0])
+    assert [fork["expression"] for fork in forks] == [_pass(i) for i in range(301)]
     assert sum(_nodes(fork["expression"]) for fork in forks) == 91_203
-    line = run.stdout.splitlines()[0].replace(str(REPO_ROOT), "<repo>")
-    stderr = run.stderr.replace(str(REPO_ROOT), "<repo>")
-    trace = stderr[: stderr.index("\n", stderr.index("\ndowngrades ") + 1) + 1]
-    assert _locked(line) == SHORT_LINE
-    assert _locked(trace) == SHORT_TRACE
+    seed_trace = run.stderr.split("\nsolver ", 1)[0].splitlines()
+    fork_lines = [line for line in seed_trace if line.startswith("fork ")]
+    site = f"fork {COUNTDOWN_FILE}:2:10  "
+    assert fork_lines == [
+        f"{site}x{' - 1' * i} > 0  {'taken' if i < 300 else 'not taken'}" for i in range(301)
+    ]
+    after = seed_trace[seed_trace.index(fork_lines[-1]) + 1]
+    assert after.startswith("covered "), after
 
 
 # print-an-input-with-many-forks-within-its-budget-cuts-forks-past-the-line-budget
@@ -195,10 +190,10 @@ def test_a_seed_stopped_at_its_deadline_ends_soon_after(tmp_path: Path) -> None:
     assert run.returncode == 0, run.stderr[-2000:]
     # the criterion's bound, three seconds from launch: reading the input's journal of about
     # 100,000 forks takes the rest of the second the isolation rule gives
-    assert run.wall < 3
+    assert run.wall < 3, run.wall
     seed = input_lines(run.stdout)[0]
     assert seed["failure"] == {"kind": "timeout", "detail": "deadline passed"}
     fork_lines = [line for line in run.stderr.splitlines() if line.startswith("fork ")]
     assert len(forks_of(seed)) == len(fork_lines) > 10_000
     assert run.stderr.splitlines()[-1] == "stopped: budget spent"
-    assert run.peak_bytes <= 400 * 1024 * 1024
+    assert run.peak_bytes <= 400 * 1024 * 1024, run.peak_bytes

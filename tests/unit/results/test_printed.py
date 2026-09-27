@@ -412,7 +412,7 @@ def test_pieces_compared_many_times_then_gathered_print_in_a_bounded_time() -> N
     ]
     counted = [(count, part) for count, part in counts if count is not None]
     assert counted and len(counted) < len(counts)
-    assert all(count == _distinct(part) for count, part in counted[-50:])
+    assert all(count == _distinct(part) for count, part in counted)
     assert spent < 15.0
 
 

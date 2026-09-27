@@ -9,8 +9,8 @@ list the part reaches more than once counts once, with its leaves. So N
 stays near the number of operations that built the part, however often the
 part repeats written out. A list the caller's ``is_leaf`` names is a leaf
 (see `printed_forks`), as an access that names a value inside an argument
-is the name the line's args find the value by: one node, written whole and
-never cut. N is ``None``, ``null`` on the line, when the
+is the name the line's args find the value by: one node, written whole and,
+within the line's budget, never cut. N is ``None``, ``null`` on the line, when the
 line's counting has spent `COUNTING_STEPS` before it is done: one budget of
 steps a line, which all of the line's cut parts share, so on a line with
 many cut parts a later one can have none. Only the printing is cut: the
@@ -21,8 +21,9 @@ both print what `printed_forks` hands them, cut once for the two
 A line prints at most `LINE_LIMIT` nodes of its forks' expressions, each
 cut to `LIMIT` first. From the first fork whose expression would take the
 line past it, every fork's expression is one cut part, counted with the
-rest, and the fork keeps its place on the line. So a path of any length
-prints in a time its forks' places, `LINE_LIMIT` and `COUNTING_STEPS` bound.
+rest, and the fork keeps its place on the line. So a line's time is bounded
+by the distinct lists the kept forks and the first cut one reach, its number
+of forks, `LINE_LIMIT` and `COUNTING_STEPS` (see `_printed_all`).
 """
 
 from collections import deque

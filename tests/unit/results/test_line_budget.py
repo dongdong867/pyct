@@ -54,6 +54,34 @@ def test_forks_past_the_line_budget_print_one_cut_part_each() -> None:
     assert list(shown.expressions[315:]) == [[CUT, 2 * i + 3] for i in range(315, 401)]
 
 
+@pytest.mark.parametrize(
+    ("last", "cut_from"),
+    [
+        # 99,855 nodes and 144 leaves, then one more leaf: 100,000, which fills the line
+        ("y", None),
+        # the same, then a fork of two nodes: 100,001
+        (["-", "y"], 459),
+    ],
+    ids=["fills the line", "one node past it"],
+)
+def test_the_line_keeps_a_fork_that_fills_it_and_cuts_the_one_past(
+    last: Expression, cut_from: int | None
+) -> None:
+    leaves = [Branch(expression="y", taken=True, site=Site("m.py", 7, 3))] * 144
+    forks = [
+        *_countdown(314),
+        *leaves,
+        Branch(expression=last, taken=True, site=Site("m.py", 8, 3)),
+    ]
+
+    shown = printed_forks(forks)
+
+    # 99,855 nodes, then 144 leaves: 99,999, and the last fork one node or two
+    assert sum(_nodes(expression) for expression in shown.expressions[:459]) == 99_999
+    assert shown.cut_from == cut_from
+    assert shown.expressions[-1] == (last if cut_from is None else [CUT, 2])
+
+
 def test_a_fork_cut_to_the_cap_counts_what_it_prints_against_the_line() -> None:
     wide = [Branch(expression=_tree(2 * LIMIT), taken=True, site=Site("m.py", 5, 7))] * 200
 
