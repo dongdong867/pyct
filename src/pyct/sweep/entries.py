@@ -179,13 +179,19 @@ class _Package:
         return [seeded(home, name, vars(sys.modules[home])[name])]
 
     def _bound_entries(self, method: MethodType, found_in: str, found_as: str) -> list[Entry]:
-        """A bound method a public name holds, as ``random`` exposes ``randint``. ``pyct run``
-        calls it through that name, so it is named by the module that exposes it, when its
-        function's code is in the package; otherwise it is no entry, as any name from
-        outside the package."""
-        if self._home_of(_code_file(function_of(method.__func__))) is None:
+        """A bound method a public name holds, as ``random`` exposes ``randint``, when its
+        function's code is in the package; otherwise it is no entry, as any name from outside
+        the package. ``pyct run`` calls it through a name, so it is named by the module whose
+        file holds its function when that module exposes the same bound method, which keeps a
+        re-export to one row, and otherwise by the module where it was found."""
+        home = self._home_of(_code_file(function_of(method.__func__)))
+        if home is None:
             return []
-        return [seeded(found_in, found_as, method)]
+        names = _exposing(sys.modules[home], method)
+        if not names:
+            return [seeded(found_in, found_as, method)]
+        name = found_as if found_as in names else min(names)
+        return [seeded(home, name, method)]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
         home = self._class_home(cls)
@@ -251,6 +257,15 @@ class _Package:
         if own in names:
             return own
         return min(names, default=None)
+
+
+def _exposing(module: ModuleType, method: MethodType) -> list[str]:
+    """The public names under which ``module`` holds this very bound-method object."""
+    return [
+        name
+        for name, value in list(vars(module).items())
+        if value is method and not name.startswith("_")
+    ]
 
 
 def _unnamed(home: str, found_in: str, found_as: str) -> Entry:

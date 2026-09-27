@@ -206,6 +206,7 @@
     {"set": "v2", "module": "targets.sweep.borrowed.other", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.cannot_seed", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.defaults", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.dice.core", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.follows_all", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.forwarded.sub", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.generated.api", "left_out": "a sweep fixture"},

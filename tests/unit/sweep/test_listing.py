@@ -131,6 +131,11 @@ def test_an_entry_several_modules_give_is_one_row_and_rows_come_in_order() -> No
     )
 
 
+def test_a_bound_method_two_modules_export_is_one_row_under_the_module_of_its_code() -> None:
+    dice = "targets.sweep.dice"
+    assert list_package(dice) == (Row(f"{dice}.core", "roll", Status.LISTED, seed={"sides": 0}),)
+
+
 def test_a_line_the_lister_ends_part_way_is_no_line() -> None:
     script = DONE_AFTER + (
         'sys.stdout.write(\'{"importing": "p.m"}\\n{"entry": \')\nsys.stdout.flush()\nsys.exit(4)\n'
