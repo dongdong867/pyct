@@ -313,8 +313,9 @@ def _ending(waited: Waited, module: str | None, signaled: list[int]) -> int:
     for it, 128 and the signal's number, rather than raised again: that
     would have the system record a second crash, the watcher's own. Any
     other signal ends the watcher too, so a shell sees the same ending.
-    A SIGKILL after the watcher got a SIGTERM is the guard's, ending what
-    the SIGTERM could not, so it is the SIGTERM's ending.
+    A SIGKILL after the watcher got a SIGTERM is taken for the guard's,
+    ending what the SIGTERM could not, so it is read as the SIGTERM's
+    ending, whoever sent it.
     """
     if waited.signal == signal.SIGKILL and signal.SIGTERM in signaled:
         waited = Waited(signal=signal.SIGTERM, code=None)
