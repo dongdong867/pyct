@@ -181,17 +181,19 @@ class _Package:
     def _bound_entries(self, method: MethodType, found_in: str, found_as: str) -> list[Entry]:
         """A bound method a public name holds, as ``random`` exposes ``randint``, when its
         function's code is in the package; otherwise it is no entry, as any name from outside
-        the package. ``pyct run`` calls it through a name, so it is named by the module whose
-        file holds its function when that module exposes the same bound method, which keeps a
-        re-export to one row, and otherwise by the module where it was found."""
+        the package. ``pyct run`` calls it through a name, so a module that exposes it names
+        it: the module whose file holds its function when that module does, and otherwise the
+        first exposing module of the package in name order. Every module that exposes it then
+        gives the same name, so a re-export is one row."""
         home = self._home_of(_code_file(function_of(method.__func__)))
         if home is None:
             return []
-        names = _exposing(sys.modules[home], method)
-        if not names:
-            return [seeded(found_in, found_as, method)]
-        name = found_as if found_as in names else min(names)
-        return [seeded(home, name, method)]
+        exposing = [home, *sorted(set(self.files.values()) - {home})]
+        for module in exposing:
+            names = _exposing(sys.modules[module], method)
+            if names:
+                return [seeded(module, found_as if found_as in names else min(names), method)]
+        return [seeded(found_in, found_as, method)]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
         home = self._class_home(cls)

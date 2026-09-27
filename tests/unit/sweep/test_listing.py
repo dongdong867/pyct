@@ -136,6 +136,11 @@ def test_a_bound_method_two_modules_export_is_one_row_under_the_module_of_its_co
     assert list_package(dice) == (Row(f"{dice}.core", "roll", Status.LISTED, seed={"sides": 0}),)
 
 
+def test_a_bound_method_whose_code_module_exposes_it_not_is_one_row_under_the_first() -> None:
+    relayed = "targets.sweep.relayed"
+    assert list_package(relayed) == (Row(relayed, "parse", Status.LISTED, seed={"text": ""}),)
+
+
 def test_a_line_the_lister_ends_part_way_is_no_line() -> None:
     script = DONE_AFTER + (
         'sys.stdout.write(\'{"importing": "p.m"}\\n{"entry": \')\nsys.stdout.flush()\nsys.exit(4)\n'
