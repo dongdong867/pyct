@@ -106,6 +106,8 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
     "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
     "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "in-a-range": (["in", "port", ["range", 1, 65536]], "port in range(1, 65536)"),
+    "not-in-a-stepped-range": (["not in", 5, ["range", 0, "n", -2]], "5 not in range(0, n, -2)"),
     "tracked-index": (["[]", "s", "n"], "s[n]"),
     "long-enough-for-a-tracked-index": ([">", ["len", "s"], "n"], "len(s) > n"),
     "reversed": (["==", ["[:]", "s", None, None, -1], "'abc'"], "s[::-1] == 'abc'"),
@@ -120,6 +122,7 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "replace-once": (["replace", "s", "'a'", "'b'", 1], "s.replace('a', 'b', 1)"),
     "code": (["==", ["ord", "c"], 65], "ord(c) == 65"),
     "character": (["==", ["chr", "n"], "'z'"], "chr(n) == 'z'"),
+    "text": (["==", ["str", [">", "x", 0]], "'False'"], "str(x > 0) == 'False'"),
     "code-of-a-piece": (["ord", ["[]", "s", 0]], "ord(s[0])"),
     "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
     "method-on-a-piece": (
@@ -190,6 +193,16 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "trunc": (["==", ["trunc", "x"], -2], "math.trunc(x) == -2"),
     "round": (["==", ["round", "x"], 2], "round(x) == 2"),
     "finite": (["isfinite", "x"], "math.isfinite(x)"),
+    # the other `math` functions pyct follows, isclose's tolerances by the keywords Python takes
+    "sqrt": ([">", ["sqrt", "n"], 3.0], "math.sqrt(n) > 3.0"),
+    "copysign": (["<", ["copysign", 1.0, "x"], 0.0], "math.copysign(1.0, x) < 0.0"),
+    "isnan-of-fabs": (["isnan", ["fabs", "x"]], "math.isnan(math.fabs(x))"),
+    "isinf": (["isinf", "x"], "math.isinf(x)"),
+    "isclose": (
+        ["isclose", "x", 0.1, 1e-09, 0.0],
+        "math.isclose(x, 0.1, rel_tol=1e-09, abs_tol=0.0)",
+    ),
+    "not": (["not", ["<", "x", 0.0]], "not x < 0.0"),
 }
 
 

@@ -14,6 +14,8 @@ from pyct.solver.heads import (
     BOUNDED,
     FORMS,
     INDEXED,
+    MEMBERSHIPS,
+    ON_A_CHARACTER,
     OPERATORS,
     POSITIONED,
     POSITIONS_FROM,
@@ -21,6 +23,7 @@ from pyct.solver.heads import (
     SORTS,
     STRING_ORDERS,
     WORKS_ON,
+    operator,
 )
 from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
@@ -174,10 +177,11 @@ class _Program:
         `distinct`), so their terms are written before it, and no part waits on Python's stack
         for its operands."""
         for node in order:
-            if self.types[id(node)] is tuple:
-                # a tuple has no term of its own; a search reads its items' terms
-                # (`_operand_or_items`)
-                self.tuples[id(node)] = tuple(self.term(item) for item in node[1:])
+            if (kind := self.types[id(node)]) in (tuple, range):
+                # no term of its own: a search reads a tuple's items, a membership or an equality
+                # a range's Ints
+                item_term = self.term if kind is tuple else partial(self._operand, kind=int)
+                self.tuples[id(node)] = tuple(item_term(item) for item in node[1:])
                 continue
             define = holders[id(node)] > 1 or id(node) in read
             self.terms[id(node)] = self._written(node, define=define)
@@ -265,15 +269,14 @@ class _Program:
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
-        """The type an operation works on: its operands', with a bool read as the int 1 or 0.
-
-        Two bools stay bools only under an operator bool has of its own, such
-        as `&` or `==`; `+` or `<` on them works on the ints they are.
-        """
-        if head in WORKS_ON:
-            return WORKS_ON[head]
-        kind = self._operands_type(operands)
-        return int if kind is bool and (head, bool) not in OPERATORS else kind
+        """The type an operation works on: its operands', with a bool read as the int 1 or 0 but
+        under an operation bool has of its own, `&`, `==` or `str`, where it stays a bool, and a
+        membership in a range working on its ints."""
+        kind = WORKS_ON.get(head) or self._operands_type(operands)
+        if kind is range and head in MEMBERSHIPS:
+            return int
+        own = (head, bool) in OPERATORS or (head, bool) in FORMS
+        return int if kind is bool and not own else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
         """The parts a form reads: an operand of a form, a check, a piece, a split, a declared
@@ -304,7 +307,13 @@ class _Program:
         bounded = None if kind is None else BOUNDED.get((head, kind))
         if bounded is not None:
             return partial(self._bounded, bounded)
+        if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
+            return ON_A_CHARACTER[head]
         return None if kind is None else FORMS.get((head, kind))
+
+    def _character(self, part: Expression) -> bool:
+        """Whether a part is one character of a string, as `s[i]` hands it out."""
+        return isinstance(part, list) and part[0] == "[]" and self.type_of(part[1]) is str
 
     def _bounded(self, form: Callable[..., tuple[str, str]], *operands: str) -> str:
         """A bounded form's term, and its bound noted once.
@@ -380,7 +389,7 @@ class _Program:
             return answer
         if head in STRING_ORDERS and kind is str:
             return string_order(head, operands, rendered)
-        return f"({_operator(head, kind)} {' '.join(rendered)})"
+        return f"({operator(head, kind)} {' '.join(rendered)})"
 
     def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
         """Each operand's term; past the operands a search or a replace reads as terms, each
@@ -390,8 +399,8 @@ class _Program:
         return terms + [self._position(part) for part in operands[first:]]
 
     def _operand_or_items(self, part: Expression, kind: type | None) -> str | tuple[str, ...]:
-        """An operand's term, or a tuple's items' terms, which is all a tuple has."""
-        if isinstance(part, list) and self.type_of(part) is tuple:
+        """An operand's term, or a tuple's or a range's items' terms, which is all either has."""
+        if isinstance(part, list) and self.type_of(part) in (tuple, range):
             return self.tuples[id(part)]
         return self._operand(part, kind)
 
@@ -480,12 +489,3 @@ def _read(term: str, part: Expression) -> str:
     if not term:
         raise UnencodedError(f"pyct cannot render {part}: it is no value a condition reads")
     return term
-
-
-def _operator(head: str, kind: type | None) -> str:
-    """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
-    operator = OPERATORS.get((head, kind)) if kind is not None else None
-    if operator is None:
-        on = "anything" if kind is None else kind.__name__
-        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
-    return operator

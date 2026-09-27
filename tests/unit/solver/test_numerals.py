@@ -2,15 +2,20 @@
 
 import re
 import sys
+from collections.abc import Callable
 
 import pytest
 
+from pyct.core.branch import Branch, Expression, Site
 from pyct.solver import numerals
+from pyct.solver.answer import Unsat
+from pyct.solver.cvc5 import Sat, solve
 from pyct.solver.floats import literal
 from pyct.solver.strings import encode
-from tests.unit.solver.agreement import needs_cvc5
+from tests.unit.solver.agreement import SITE, needs_cvc5
 from tests.unit.solver.test_float_agreement import _same
 from tests.unit.solver.test_float_int_agreement import _values
+from tests.unit.solver.test_render import render
 
 # texts Python reads as an int, and texts it refuses, around each rule of its grammar: the spaces
 # it strips, a sign, underscores between digits, and the digits it counts against its limit
@@ -160,6 +165,52 @@ def test_cvc5_counts_the_digits_of_an_int_text_as_python_does(
     assert said == held
 
 
+# ints whose text cvc5 writes: zero, each sign, a power of ten, and one past a machine word
+TEXT_INTS = [0, 7, -7, -42, 10, 90, -100, 10**25, -(10**25) - 1]
+
+
+def _int_term(value: int) -> str:
+    return f"(- {-value})" if value < 0 else str(value)
+
+
+@needs_cvc5
+def test_cvc5_writes_each_int_as_python_writes_it() -> None:
+    said = _values("String", [numerals.text_of_int(_int_term(value)) for value in TEXT_INTS])
+
+    assert said == [str(value) for value in TEXT_INTS]
+
+
+@needs_cvc5
+def test_cvc5_writes_a_bool_as_python_writes_it() -> None:
+    said = _values("String", [numerals.text_of_bool(term) for term in ("true", "false")])
+
+    assert said == [str(True), str(False)]
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("expression", "holds"),
+    [
+        pytest.param(["==", ["str", "n"], "'-42'"], lambda n: str(n) == "-42", id="equal"),
+        pytest.param(
+            ["startswith", ["str", "n"], "'9'"], lambda n: str(n).startswith("9"), id="prefix"
+        ),
+        pytest.param(["==", ["len", ["str", "n"]], 3], lambda n: len(str(n)) == 3, id="length"),
+    ],
+)
+def test_cvc5_finds_an_int_whose_text_python_writes_so(
+    expression: Expression, holds: Callable[[int], bool]
+) -> None:
+    fork = Branch(expression=expression, taken=True, site=Site(file="m.py", line=2, col=7))
+
+    answer = solve((fork,), {"n": int}, 10.0)
+
+    assert isinstance(answer, Sat), answer
+    value = answer.model["n"]
+    assert isinstance(value, int)
+    assert holds(value)
+
+
 @needs_cvc5
 def test_a_text_past_ascii_reads_as_no_number() -> None:
     # Python reads Arabic-Indic digits and a no-break space; the encoding is exact for ASCII
@@ -216,3 +267,53 @@ def test_without_a_constant_past_its_bound_float_of_a_text_is_the_exact_term() -
 
     assert _values("Float64", [term]) == [2.5]
     assert _values("Bool", [bound]) == [True]
+
+
+@needs_cvc5
+def test_cvc5_reads_one_character_as_python_does() -> None:
+    characters = [chr(code) for code in range(128)]
+    digits = [character for character in characters if _read(int, character) is not None]
+
+    accepted = _values("Bool", [numerals.is_int_character(encode(c)) for c in characters])
+    read = _values("Int", [numerals.int_of_character(encode(c)) for c in digits])
+
+    assert accepted == [_read(int, character) is not None for character in characters]
+    assert read == [int(character) for character in digits]
+
+
+def _read_as_int(text: Expression) -> tuple[Branch, ...]:
+    """The forks of `int(text)` on a string Python reads, and of the int above 4."""
+    return (
+        Branch(expression=["isint", text], taken=True, site=SITE),
+        Branch(expression=[">", ["int", text], 4], taken=True, site=SITE),
+    )
+
+
+def test_a_character_of_a_string_is_read_as_one_digit() -> None:
+    """A loop's case, `int(ch)` for each character: no pass over the text, which cost cvc5
+    seconds for each character the path read."""
+    text = render(_read_as_int(["[]", "s", 3]), {"s": str})
+
+    assert '(str.in_re e!0 (re.range "0" "9"))' in text
+    assert "(str.to_int e!0)" in text
+    assert "str.replace_re_all" not in text
+
+
+def test_a_piece_of_a_split_is_read_by_the_whole_grammar() -> None:
+    """A piece Python builds holds any number of characters, as a version's parts do."""
+    text = render(_read_as_int(["[]", ["split", "s", "'.'"], 0]), {"s": str})
+
+    assert "str.replace_re_all" in text
+
+
+@needs_cvc5
+def test_a_digit_string_never_reads_as_a_negative_int() -> None:
+    """A version's case: a part of digits whose int is neither zero nor above it."""
+    prefix = (
+        Branch(expression=["isdigit", "s"], taken=True, site=SITE),
+        Branch(expression=["isint", "s"], taken=True, site=SITE),
+        Branch(expression=["==", ["int", "s"], 0], taken=False, site=SITE),
+        Branch(expression=[">", ["int", "s"], 0], taken=False, site=SITE),
+    )
+
+    assert isinstance(solve(prefix, {"s": str}, 5.0), Unsat)
