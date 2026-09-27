@@ -48,11 +48,17 @@ KINDS: Mapping[str, Ranges] = {
     "lower": LOWER,
     "underscore": ((0x5F, 0x5F),),
     "space": _SPACE_ITSELF,
-    "whitespace": _BLANKS,
-    "punctuation": ((0x21, 0x2F), (0x3A, 0x40), (0x5B, 0x5E), (0x60, 0x60), (0x7B, 0x7E)),
-    "control": ((0x00, 0x08), (0x0E, 0x1B), (0x7F, 0x7F)),
-    "unprintable": ((0x80, 0xA0), (0xAD, 0xAD)),
-    "wide": ((0xA1, 0xAC), (0xAE, LAST_CHARACTER)),
+    "whitespace_but_space": _BLANKS,
+    "punctuation_but_underscore": (
+        (0x21, 0x2F),
+        (0x3A, 0x40),
+        (0x5B, 0x5E),
+        (0x60, 0x60),
+        (0x7B, 0x7E),
+    ),
+    "control_but_whitespace": ((0x00, 0x08), (0x0E, 0x1B), (0x7F, 0x7F)),
+    "unprintable_past_ascii": ((0x80, 0xA0), (0xAD, 0xAD)),
+    "printable_past_ascii": ((0xA1, 0xAC), (0xAE, LAST_CHARACTER)),
 }
 
 
@@ -151,11 +157,13 @@ _ANSWERS: Mapping[str, Callable[[str], str]] = {
     "isnumeric": lambda term: _all(term, ["digit"]),
     "isalpha": lambda term: _all(term, ["upper", "lower"]),
     "isalnum": lambda term: _all(term, ["digit", "upper", "lower"]),
-    "isspace": lambda term: _all(term, ["space", "whitespace"]),
+    "isspace": lambda term: _all(term, ["space", "whitespace_but_space"]),
     "isupper": lambda term: _cased(term, "upper", "lower"),
     "islower": lambda term: _cased(term, "lower", "upper"),
-    "isascii": lambda term: _none(term, ["unprintable", "wide"]),
-    "isprintable": lambda term: _none(term, ["whitespace", "control", "unprintable"]),
+    "isascii": lambda term: _none(term, ["unprintable_past_ascii", "printable_past_ascii"]),
+    "isprintable": lambda term: _none(
+        term, ["whitespace_but_space", "control_but_whitespace", "unprintable_past_ascii"]
+    ),
     "istitle": _titled,
     "isidentifier": _identifier,
 }
