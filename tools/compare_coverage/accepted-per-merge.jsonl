@@ -16,6 +16,7 @@
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.arithmetic::count", "seed": {"x": 0.0, "y": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8]}
 {"set": "v2", "target": "targets.floats.body_mass::classify", "seed": {"h": 170, "w": 60}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.floats.divide_by_bools::ratio", "seed": {"n": 1, "m": 5}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.floats.floor_division::split", "seed": {"x": 0.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [6, 8, 11]}
 {"set": "v2", "target": "targets.floats.half_to_even::tie", "seed": {"x": 3.0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.floats.is_integer::whole", "seed": {"x": 2.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}

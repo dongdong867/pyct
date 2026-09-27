@@ -4,13 +4,12 @@ import logging
 import math
 import subprocess
 from collections.abc import Mapping
-from dataclasses import dataclass
 from time import monotonic
 
 from pyct.core.branch import Branch
 from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, model_from
 from pyct.solver.locate import locate
-from pyct.solver.render import BOUND, FINITE, Program, float_leaves, program
+from pyct.solver.render import FINITE, Program, float_leaves, program
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +31,6 @@ GRACE_SECONDS = 1.0
 
 # the longest wait Python's poll takes, 2**31 - 1 milliseconds, in whole seconds
 LONGEST_WAIT_SECONDS = 2_147_483.0
-
-
-@dataclass(frozen=True)
-class _Core:
-    """What an unsat answer's core names: the leaves it holds finite, and whether a bound."""
-
-    leaves: frozenset[str] = frozenset()
-    bounded: bool = False
 
 
 def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float) -> Answer:
@@ -70,10 +61,13 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     the one limit, and one with nothing left is a ``Timeout()`` without
     starting cvc5.
 
-    A program that holds a bound some form is exact inside asks for the core
-    after an unsat too, and a core that names a bound is ``Unknown()``: past
-    the bound the form is not Python's, so that unsat says nothing about the
-    values there.
+    A program that holds a bound some form is exact inside, as a float
+    floor division's, answers Python's inputs when it is sat. When it ends
+    unsat, the path is asked once more with the bounds left out and every
+    double allowed, where each form past its bound can be whatever Python
+    gives there: an unsat then is Python's, whatever core cvc5 picked, and
+    any other answer is ``Unknown()``, since a model past a bound may not be
+    Python's; decision float-floor-division-a-real-floor-inside-a-bound.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -87,25 +81,37 @@ def solve(prefix: tuple[Branch, ...], leaves: Mapping[str, type], timeout: float
     finite = float_leaves(prefix, leaves)
     first = program(prefix, leaves, finite=finite)
     answer, _ = _ask(first, timeout)
-    while (finite or first.bounded) and isinstance(answer, Unsat):
+    while finite and isinstance(answer, Unsat):
         cored = _ask_by(program(prefix, leaves, finite=finite, cores=True), deadline)
         if cored is None:
             return Timeout()
         answer, core = cored
-        freed = finite & core.leaves
-        if core.bounded:
-            return Unknown()
+        freed = finite & core
         if not isinstance(answer, Unsat) or not freed:
-            return answer
+            break
         finite -= freed
         freer = _ask_by(program(prefix, leaves, finite=finite), deadline)
         if freer is None:
             return Timeout()
         answer, _ = freer
+    if first.bounded and isinstance(answer, Unsat):
+        return _unbounded(prefix, leaves, deadline)
     return answer
 
 
-def _ask_by(written: Program, deadline: float) -> tuple[Answer, _Core] | None:
+def _unbounded(prefix: tuple[Branch, ...], leaves: Mapping[str, type], deadline: float) -> Answer:
+    """The path with its bounds left out and every double allowed: ``Unsat()`` if even that is.
+
+    Any other answer is ``Unknown()``, and one out of time a ``Timeout()``.
+    """
+    asked = _ask_by(program(prefix, leaves, bounded=False), deadline)
+    if asked is None:
+        return Timeout()
+    answer, _ = asked
+    return answer if isinstance(answer, Unsat | Timeout) else Unknown()
+
+
+def _ask_by(written: Program, deadline: float) -> tuple[Answer, frozenset[str]] | None:
     """One ask with what is left before ``deadline``, or None with nothing left to ask with."""
     left = deadline - monotonic()
     if left <= 0:
@@ -114,11 +120,11 @@ def _ask_by(written: Program, deadline: float) -> tuple[Answer, _Core] | None:
     return _ask(written, left)
 
 
-def _ask(written: Program, timeout: float) -> tuple[Answer, _Core]:
+def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds.
 
-    Also what an unsat answer's core names, when the program named what it
-    held.
+    Also the leaves an unsat answer's core holds finite, when the program
+    held any.
     """
     text = written.text + WHY
     argv = _argv(timeout)
@@ -134,7 +140,7 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, _Core]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        return Timeout(), _Core()
+        return Timeout(), frozenset()
     answer = _answer(finished.stdout, finished.stderr)
     if isinstance(answer, Sat):
         # cvc5 answered by the constants the program declared; the run reads leaves by name
@@ -143,21 +149,19 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, _Core]:
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
-    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else _Core()
+    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
 
 
-def _core(stdout: str, written: Program) -> _Core:
-    """What an unsat answer's dumped core names: the leaves it holds finite, and any bound.
+def _core(stdout: str, written: Program) -> frozenset[str]:
+    """The leaves an unsat answer's dumped core holds finite, by their names.
 
     cvc5 prints the core right after the answer, its assertion names on one
     line or one per line; every other line after an unsat is a refusal that
-    names no assertion. A finite one's name is ``FINITE`` and the leaf's
-    symbol, and a bound's is ``BOUND`` and its index.
+    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
     """
     words = stdout.replace("(", " ").replace(")", " ").split()
     symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
-    leaves = frozenset(written.names_by_symbol[symbol] for symbol in symbols)
-    return _Core(leaves=leaves, bounded=any(word.startswith(BOUND) for word in words))
+    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
 
 
 def _argv(timeout: float) -> list[str]:

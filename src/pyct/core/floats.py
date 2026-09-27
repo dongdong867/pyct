@@ -92,14 +92,14 @@ def _operand(other: object) -> Expression | None:
 
     A tracked float reads as its expression, and any other float as a
     literal of its plain value, so a float of the target's own prints as a
-    float. An int reads as an int does beside a float (`numbers.whole`), and
-    render converts it as Python does.
+    float. An int reads as an int does beside a float
+    (`numbers.int_beside_float`), and render converts it as Python does.
     """
     if isinstance(other, ConcolicFloat):
         return other.expression
     if isinstance(other, float):
         return float.__float__(other)
-    return numbers.whole(other)
+    return numbers.int_beside_float(other)
 
 
 type Binary = Callable[[ConcolicFloat, object], object]

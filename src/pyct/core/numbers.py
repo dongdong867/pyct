@@ -17,9 +17,9 @@ The registry is two functions: `enter(base, cls)` and `tracked(value,
 expression, sink)`. `operand` is the int family's rule, a tracked int's and
 a tracked bool's: it takes an int or a bool alone, as int's own operations
 do. `promoted` widens it for a tracked int, which meets a float as Python's
-int does, and `whole` is how a float reads an int. `compare`, `arithmetic`,
-`division` and `divmod_of` serve every number type and read the other side
-by the rule their caller passes, the int family's by default.
+int does, and `int_beside_float` is how a float reads an int. `compare`,
+`arithmetic`, `division` and `divmod_of` serve every number type and read
+the other side by the rule their caller passes, the int family's by default.
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ def plain_int(value: object) -> object:
     return int.__index__(cast(int, value)) if type(value) is tracked_int else value
 
 
-def whole(other: object) -> Expression | None:
+def int_beside_float(other: object) -> Expression | None:
     """How a float reads an int on the other side, or None for one it does not take.
 
     A tracked int reads as its expression and a plain int as itself, as the

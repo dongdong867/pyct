@@ -65,6 +65,7 @@
     {"set": "v2", "target": "targets.floats.body_mass::classify", "seed": {"h": 170, "w": 60}},
     {"set": "v2", "target": "targets.floats.cannot_round::f", "seed": {"x": 2.5}},
     {"set": "v2", "target": "targets.floats.divide::f", "seed": {"x": 7.0, "y": 2.0}},
+    {"set": "v2", "target": "targets.floats.divide_by_bools::ratio", "seed": {"n": 1, "m": 5}},
     {"set": "v2", "target": "targets.floats.divide_ints::f", "seed": {"n": 7, "m": 2}},
     {"set": "v2", "target": "targets.floats.divide_one::f", "seed": {"x": 2.0}},
     {"set": "v2", "target": "targets.floats.floor_divide::f", "seed": {"x": 7.0, "y": 2.0}},

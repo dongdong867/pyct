@@ -25,9 +25,11 @@ roundings to an int read the integral double back as an Int. An Int meets a
 double as Python converts it, rounding half to even (``from_int``).
 
 A form here names the parts it reads more than once with ``let``, as
-``m!``, ``q!``, ``f!``, ``e!``, ``r!``, ``x!`` and ``y!``: ``!`` is in no Python name and no
-constant render declares, and each operand arrives as a name or a literal,
-since render defines every part a form reads.
+``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``x!`` and ``y!``. None of them can
+capture a name in an operand, since render defines every part a form reads:
+an operand is a leaf's constant, a literal, a name render defined or
+declared, ``e!`` and a number and never one of these, or an int's
+conversion of one of those. ``!`` is in no Python name.
 """
 
 import math
@@ -171,7 +173,7 @@ def _zero_like_quotient(dividend: str, divisor: str) -> str:
     return f"(ite {same} {_ZERO} {_MINUS_ZERO})"
 
 
-def floor_division(dividend: str, divisor: str) -> tuple[str, str]:
+def floor_division(dividend: str, divisor: str, past: str | None = None) -> tuple[str, str]:
     """Python's ``//`` on two doubles, and the bound inside which the term is Python's.
 
     CPython's ``_float_div_mod`` divides the dividend less ``fmod``'s
@@ -183,9 +185,16 @@ def floor_division(dividend: str, divisor: str) -> tuple[str, str]:
     to the divisor's side, as CPython's steps do, and a signed zero
     otherwise; NaN, an infinite dividend or a zero divisor give NaN.
 
-    The bound holds on every path that divides: render asserts it, and an
-    unsat that rests on it is not an answer about Python (see
-    ``Program.bounded``).
+    Given ``past``, the term past the bound is that Float64 constant, which
+    render declares for this term alone, held only to what CPython's steps
+    always give there:
+    a whole double or an infinity, on the true quotient's side and at least
+    ``_PAST_LEAST`` in size, since its two roundings move a quotient that
+    large by a few parts in 2**52. Any other value reads as NaN. So the term
+    can be whatever Python gives past the bound, and an unsat on it holds for
+    every such value. Without ``past`` the term is the floor everywhere, for a
+    program that holds the bound, where the two agree and cvc5 answers far
+    faster (see ``Program.bounded``).
     """
     zero = _zero_like_quotient(dividend, divisor)
     floor_ = f"(let ((k! (to_int q!))) (ite (= k! 0) {zero} {from_int('k!')}))"
@@ -197,4 +206,21 @@ def floor_division(dividend: str, divisor: str) -> tuple[str, str]:
     finite = f"(ite (fp.isInfinite {divisor}) {past_infinity} {reals.format(floor_)})"
     inside = f"(and (< q! {QUOTIENT_BOUND}) (< (- {QUOTIENT_BOUND}) q!))"
     bound = f"(or {undefined} (fp.isInfinite {divisor}) {reals.format(inside)})"
-    return f"(ite {undefined} {_NAN} {finite})", bound
+    exact = f"(ite {undefined} {_NAN} {finite})"
+    if past is None:
+        return exact, bound
+    beyond = reals.format(f"(ite {_past_holds(past)} {past} {_NAN})")
+    return f"(ite {bound} {exact} {beyond})", bound
+
+
+# how large CPython's `//` is past the bound, at the least: a quotient of 2**50 or more, moved
+# by two roundings and a snap, stays far above this
+_PAST_LEAST = 2.0**49
+
+
+def _past_holds(past: str) -> str:
+    """What CPython's `//` always is past the bound, the true quotient named ``q!``."""
+    whole_or_infinite = f"(or (fp.isInfinite {past}) {whole(past)})"
+    above = f"(fp.geq {past} {literal(_PAST_LEAST)})"
+    below = f"(fp.leq {past} {literal(-_PAST_LEAST)})"
+    return f"(and {whole_or_infinite} (ite (> q! 0.0) {above} {below}))"

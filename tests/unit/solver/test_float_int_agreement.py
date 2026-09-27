@@ -39,9 +39,10 @@ ROUNDINGS: dict[str, tuple[Callable[[str], str], Callable[[float], int]]] = {
 }
 
 
-def _values(sort: str, terms: list[str]) -> list[object]:
-    """What cvc5 says each term is, each asked as a constant held equal to it."""
-    lines = ["(set-logic ALL)"]
+def _values(sort: str, terms: list[str], *declared: str) -> list[object]:
+    """What cvc5 says each term is, each asked as a constant held equal to it, after
+    ``declared``, the declarations the terms read."""
+    lines = ["(set-logic ALL)", *declared]
     for at, term in enumerate(terms):
         lines += [f"(declare-const v{at} {sort})", f"(assert (= v{at} {term}))"]
     lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(terms)))}))"]
@@ -74,10 +75,10 @@ def _inside(x: float, y: float) -> bool:
 @needs_cvc5
 def test_cvc5_agrees_with_python_to_the_bit_on_floor_division_inside_its_bound() -> None:
     pairs = _divided()
-    written = [floats.floor_division(literal(x), literal(y)) for x, y in pairs]
+    written = [floats.floor_division(literal(x), literal(y), "past") for x, y in pairs]
 
-    quotients = _values("Float64", [term for term, _ in written])
-    bounds = _values("Bool", [bound for _, bound in written])
+    quotients = _values("Float64", [term for term, _ in written], "(declare-const past Float64)")
+    bounds = _values("Bool", [bound for _, bound in written], "(declare-const past Float64)")
 
     # the bound is Python's own: it holds exactly where the true quotient is inside it
     assert bounds == [_inside(x, y) for x, y in pairs]

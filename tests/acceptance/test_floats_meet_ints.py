@@ -32,6 +32,7 @@ DIVIDE_INTS = "targets.floats.divide_ints::f"
 DIVIDE_ONE = "targets.floats.divide_one::f"
 FLOOR_DIVIDE = "targets.floats.floor_divide::f"
 CANNOT_ROUND = "targets.floats.cannot_round::f"
+DIVIDE_BY_BOOLS = "targets.floats.divide_by_bools::ratio"
 
 
 def whole(line: dict[str, object], name: str) -> int:
@@ -72,6 +73,24 @@ def test_follows_int_true_division() -> None:
     assert over, result.stdout
     assert all(type(whole(line, name)) is int for line in inputs for name in ("h", "w"))
     assert all(line["downgrades"] == [] for line in inputs)
+
+
+# follow-floats-follows-int-true-division
+def test_follows_int_true_division_by_a_bool() -> None:
+    result = run_pyct(DIVIDE_BY_BOOLS, '{"n": 1, "m": 5}')
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # a bool divides as the int 1 or 0 it is, and a tracked one forks on its own condition
+    assert expressions(inputs[0]) == [
+        [">", ["/", "n", True], 2.5],
+        [">", "m", 3],
+        [">", ["/", "n", [">", "m", 3]], 2.5],
+    ]
+    both = {True, False}
+    assert sides_by_line(inputs, ">") == {3: both, 5: both}
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+    assert reached(inputs)
 
 
 # follow-floats-mixes-ints-and-floats
