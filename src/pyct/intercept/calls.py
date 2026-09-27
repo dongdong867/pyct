@@ -1,4 +1,4 @@
-"""The calls pyct substitutes where the target writes them: conversions and a str literal's methods.
+"""The calls pyct substitutes where the target writes them: conversions and a str's methods.
 
 - A call written `int(...)`, `float(...)` or `bool(...)`, bare or after a
   dot as in `builtins.int(...)`, and a call written `map(...)` with one of
@@ -8,7 +8,9 @@
   arguments as written. So a name the target binds to its own keeps the
   target's meaning, and its function runs with no frame of pyct's above it.
 - A call written ``"text".name(...)``, a str literal's method, with at least
-  one argument, becomes ``__pyct_method__("text".name, ...)``.
+  one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
+  one on a name every binding of which in the module is a str literal
+  (`pyct.intercept.constants`).
 
 The callee is the call's own node, moved into the new call, so it is
 evaluated first, its attribute read once, then each argument in Python's

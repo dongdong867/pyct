@@ -1,4 +1,4 @@
-"""The operators pyct substitutes where the target writes them: a float or bool literal on the left.
+"""The operators pyct substitutes where the target writes them: a float or bool on the left.
 
 Python asks the left operand of an operator first, and a float or a bool
 answers plainly when a tracked int or bool is on the right, so that value is
@@ -6,20 +6,23 @@ never asked and its condition is lost: `0.5 + n`, `2.5 < n`, `True & b`.
 
 The shapes substituted are a binary operation written ``a op b``, with one
 of `+ - * / // % ** << >> & | ^`, and a compare written ``a op b`` with one
-of `< <= > >= == !=` alone, whose left side is a float or bool literal, or
-what CPython folds to one, such as ``-0.5``, and whose right side is not
+of `< <= > >= == !=` alone, whose left side is a float or bool literal,
+what CPython folds to one, such as ``-0.5``, or a name every binding of
+which in the module is such a literal and which is not read in a class's
+scope (`pyct.intercept.constants`), and whose right side is not
 one CPython folds to a constant or a display, a comprehension, an f-string
 or a lambda, which are never tracked. Nothing else is: not ``x op= n``, not
 a chained compare, and no operator with any other left side, so plain code
 runs as written.
 
-The right side becomes ``__pyct_handed__(b, a)``, the literal written again
-after it, and the operator itself stays Python's own
+The right side becomes ``__pyct_handed__(b, a)``, the literal, or the name,
+written again after it, and the operator itself stays Python's own
 (`pyct.core.handed`). The right side is the operation's own node, moved into
 the call, so it is evaluated once and in Python's order; the literal has
-nothing to evaluate. The name, the literal again and the call sit where the
-literal does, where CPython puts the operator's own instruction, so they add
-no line.
+nothing to evaluate, and a name read again is one more lookup of it. The
+router's name, the left side again and the call sit where the left side
+does, where CPython puts the operator's own instruction, so they add no
+line.
 """
 
 from __future__ import annotations

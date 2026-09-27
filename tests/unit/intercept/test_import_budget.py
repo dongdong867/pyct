@@ -1,7 +1,9 @@
 """The budget: with every module unchanged since pyct substituted it, an import costs at most
-25% more than Python's own import of the package as written.
+25% more than Python's own import of the package as written, or 1 ms more, whichever is more.
 
-A generated package of 200 modules, each with the compares pyct substitutes, is imported in
+The 1 ms is pyct's own fixed cost, which a package that imports in a few milliseconds would
+otherwise cross. A generated package of 200 modules, and one of 3, each module with every shape
+pyct substitutes, is imported in
 fresh interpreters: as written, from the bytecode Python keeps, and substituted, from pyct's
 cache. Each takes its best of nine, run in alternating pairs, so a slow moment of the machine
 counts against neither.
@@ -14,10 +16,13 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 from tests.acceptance.harness import COVERAGE_STARTUP
 
-MODULES = 200
-BUDGET = 1.25
+# what substitution may add to a warm import: a quarter of it, or pyct's fixed cost in seconds
+SHARE = 0.25
+FIXED = 0.001
 
 # one module: twenty functions, each with every shape pyct substitutes, an `in` on a set, an
 # `is True`, an `in` on a string, conversions, a str literal's method and a float literal on the
@@ -68,12 +73,25 @@ def imported(folder: Path, mode: str) -> float:
     return float(finished.stdout)
 
 
-def test_a_warm_substituted_import_costs_at_most_a_quarter_more(tmp_path: Path) -> None:
+def allowed(written: float) -> float:
+    """How long a substituted import may take, given how long the import as written took."""
+    return written + max(SHARE * written, FIXED)
+
+
+def test_the_allowance_is_a_quarter_or_the_fixed_cost_whichever_is_more() -> None:
+    assert allowed(0.012) == 0.012 + 0.003
+    assert allowed(0.002) == 0.002 + 0.001
+
+
+@pytest.mark.parametrize("modules", [200, 3])
+def test_a_warm_substituted_import_costs_at_most_a_quarter_or_1_ms_more(
+    tmp_path: Path, modules: int
+) -> None:
     package = tmp_path / "generated"
     package.mkdir()
-    lines = [f"from generated import m{n}" for n in range(MODULES)]
+    lines = [f"from generated import m{n}" for n in range(modules)]
     (package / "__init__.py").write_text("\n".join(lines) + "\n")
-    for n in range(MODULES):
+    for n in range(modules):
         (package / f"m{n}.py").write_text(MODULE)
     written_at = time.monotonic()
     # the first of each writes Python's bytecode and pyct's cache
@@ -87,4 +105,4 @@ def test_a_warm_substituted_import_costs_at_most_a_quarter_more(tmp_path: Path) 
     written = min(first for first, _ in pairs)
     substituted = min(second for _, second in pairs)
 
-    assert substituted <= BUDGET * written, (substituted, written)
+    assert substituted <= allowed(written), (substituted, written)

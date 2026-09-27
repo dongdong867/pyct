@@ -1,5 +1,5 @@
 """What intercepted code calls: `is`, `in`, conversions, a str literal's method and an operator
-with a float or bool literal on the left, where the target wrote them, and `len`, `ord`, `chr`.
+with a float or bool literal on the left, or a name bound only to one, and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes an operation the target writes with a call of
 one of these functions, through a name it binds in the module, such as
@@ -128,7 +128,8 @@ def call(callee: object, /) -> Any:
 
 
 def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: object) -> Any:
-    """A call written ``"text".name(...)``, a str literal's method, as ``receiver_method(...)``.
+    """A call written ``"text".name(...)``, a str literal's method or one on a name bound only to
+    str literals, as ``receiver_method(...)``.
 
     Given a tracked str, it runs as it runs on a tracked str holding the
     literal's text (`strs.on_text`). Any other call is the method's own; one

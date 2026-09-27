@@ -66,15 +66,8 @@ class Parts:
     def __init__(self, root: ast.AST) -> None:
         self.foldable = _foldable(root)
         self._firsts: dict[int, tuple[ast.expr, ast.expr]] = {}
-        self._constants: Constants | None = None
-        self._root = root
-
-    @property
-    def constants(self) -> Constants:
-        """The names the tree binds to literals alone, worked out on first use."""
-        if self._constants is None:
-            self._constants = literal_names(self._root)
-        return self._constants
+        # worked out before the walk changes the tree, from the module as written
+        self.constants: Constants = literal_names(root)
 
     def first(self, node: ast.expr) -> ast.expr:
         """The part of an expression whose line CPython gives the expression's first instruction."""

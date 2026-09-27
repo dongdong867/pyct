@@ -1,4 +1,4 @@
-"""A tracked number on the right of a float or bool literal, handed the operator Python runs.
+"""A tracked number on the right of a float or bool the code writes, handed Python's operator.
 
 Python asks the left operand of an operator first. A float or a bool on
 the left answers plainly when the right is a tracked int, which is an int
@@ -6,7 +6,8 @@ to it, and a bool answers so beside a tracked bool, so the tracked value is
 never asked and its condition is lost: `0.5 + n`, `2.5 < n`, `True & b`.
 
 `pyct.intercept` writes ``0.5 + n`` as ``0.5 + __pyct_handed__(n, 0.5)``,
-the literal written again beside the right operand, and Python's own `+`
+the literal written again beside the right operand, and ``RATE + n``, with
+``RATE`` bound only to a float, as ``RATE + __pyct_handed__(n, RATE)``, and Python's own `+`
 runs as written. `handed` hands back the right operand itself, unless it is
 a tracked int beside a float, or a tracked int or bool beside a bool: then
 it hands back a stand-in no number takes, so the left side's own operation
