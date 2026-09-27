@@ -317,4 +317,6 @@ def test_the_passing_frames_are_the_routers() -> None:
         "bool_",
         "map_",
         "itself",
+        # each `math` function's router
+        "route",
     }

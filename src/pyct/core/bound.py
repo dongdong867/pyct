@@ -1,5 +1,6 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
-`bool` and `map`: pyct's own routers, one table for all of them (`_FOLLOWED`).
+`bool` and `map`: pyct's own routers, one table for all of them (`_FOLLOWED`). `CALLED` also
+holds the router of each `math` function (`pyct.core.math_calls`).
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
@@ -29,7 +30,7 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core import codes, conversions, list_reads, strs
+from pyct.core import codes, conversions, list_reads, math_calls, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -156,9 +157,14 @@ def map_(*args: object, **kwargs: object) -> Any:
     return map(converter, *args[1:], **kwargs)  # pyrefly: ignore[no-matching-overload]
 
 
-# what a call written `int(...)`, `float(...)`, `bool(...)` or `map(...)` calls in place of
-# Python's own builtin, by the builtin's identity (see `pyct.core.substitutes.call`)
-CALLED: Mapping[int, Callable[..., object]] = {**_CONVERTERS, id(map): map_}
+# what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)` or with a `math`
+# function's name calls in place of Python's own function, by its identity (see
+# `pyct.core.substitutes.call`)
+CALLED: Mapping[int, Callable[..., object]] = {
+    **_CONVERTERS,
+    id(map): map_,
+    **math_calls.ROUTERS,
+}
 
 
 def _dressed(bound: Callable[..., object], python: Callable[..., object]) -> None:
@@ -183,7 +189,10 @@ for _python, _bound in BOUND.values():
 
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
 # `chr` or a conversion, or from the target's own `__len__` or `__int__`, is the target's
-PASSING: frozenset[types.CodeType] = frozenset(
-    function.__code__
-    for function in (len, ord, chr, _routed, int_, float_, bool_, map_, conversions.itself)
+PASSING: frozenset[types.CodeType] = (
+    frozenset(
+        function.__code__
+        for function in (len, ord, chr, _routed, int_, float_, bool_, map_, conversions.itself)
+    )
+    | math_calls.PASSING
 )

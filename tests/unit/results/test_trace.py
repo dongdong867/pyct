@@ -190,6 +190,16 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "trunc": (["==", ["trunc", "x"], -2], "math.trunc(x) == -2"),
     "round": (["==", ["round", "x"], 2], "round(x) == 2"),
     "finite": (["isfinite", "x"], "math.isfinite(x)"),
+    # the other `math` functions pyct follows, isclose's tolerances by the keywords Python takes
+    "sqrt": ([">", ["sqrt", "n"], 3.0], "math.sqrt(n) > 3.0"),
+    "copysign": (["<", ["copysign", 1.0, "x"], 0.0], "math.copysign(1.0, x) < 0.0"),
+    "isnan-of-fabs": (["isnan", ["fabs", "x"]], "math.isnan(math.fabs(x))"),
+    "isinf": (["isinf", "x"], "math.isinf(x)"),
+    "isclose": (
+        ["isclose", "x", 0.1, 1e-09, 0.0],
+        "math.isclose(x, 0.1, rel_tol=1e-09, abs_tol=0.0)",
+    ),
+    "not": (["not", ["<", "x", 0.0]], "not x < 0.0"),
 }
 
 
