@@ -272,7 +272,7 @@ def target_for(fn: object) -> Target:
 
 
 def test_checked_annotations_keeps_the_four_plain_types() -> None:
-    assert checked_annotations(four_plain_types, inspect.signature(four_plain_types)) == {
+    assert checked_annotations(target_for(four_plain_types)) == {
         "s": str,
         "n": int,
         "x": float,
@@ -281,17 +281,15 @@ def test_checked_annotations_keeps_the_four_plain_types() -> None:
 
 
 def test_checked_annotations_skips_the_return() -> None:
-    assert "return" not in checked_annotations(
-        four_plain_types, inspect.signature(four_plain_types)
-    )
+    assert "return" not in checked_annotations(target_for(four_plain_types))
 
 
 def test_checked_annotations_skips_an_annotation_that_asks_nothing() -> None:
-    assert checked_annotations(not_plain, inspect.signature(not_plain)) == {}
+    assert checked_annotations(target_for(not_plain)) == {}
 
 
 def test_checked_annotations_keeps_a_list_or_dict_of_what_it_checks() -> None:
-    assert checked_annotations(items, inspect.signature(items)) == {
+    assert checked_annotations(target_for(items)) == {
         "xs": Items(list, int),
         "cfg": Items(dict, Items(list, str)),
         "bare": Items(list, None),
@@ -301,23 +299,21 @@ def test_checked_annotations_keeps_a_list_or_dict_of_what_it_checks() -> None:
 
 def test_checked_annotations_resolves_list_and_dict_text() -> None:
     # two namespaces build two list[int] objects from one text; they agree on what they ask
-    assert checked_annotations(wrapped_items, inspect.signature(wrapped_items)) == {
-        "xs": Items(list, int)
-    }
+    assert checked_annotations(target_for(wrapped_items)) == {"xs": Items(list, int)}
 
 
 def test_checked_annotations_skips_a_parameter_with_no_annotation() -> None:
-    assert checked_annotations(no_annotation, inspect.signature(no_annotation)) == {}
+    assert checked_annotations(target_for(no_annotation)) == {}
 
 
 def test_checked_annotations_resolves_text_and_skips_only_what_it_cannot() -> None:
     # one bad name costs that parameter alone, not the whole function
-    assert checked_annotations(stored_as_text, inspect.signature(stored_as_text)) == {"s": str}
+    assert checked_annotations(target_for(stored_as_text)) == {"s": str}
 
 
 def test_checked_annotations_reads_a_class_target_at_its_init() -> None:
     # the class body says str, the parameter says int; the parameter is what a seed fills
-    assert checked_annotations(Point, inspect.signature(Point)) == {"n": int}
+    assert checked_annotations(target_for(Point)) == {"n": int}
 
 
 @pytest.mark.parametrize(
@@ -343,7 +339,7 @@ def test_checked_annotations_keeps_text_one_module_knows_and_no_other_contradict
     target: Callable[..., object], expected: dict[str, type]
 ) -> None:
     # every module the text could have been written in reads it, and exactly one answers
-    assert checked_annotations(target, inspect.signature(target)) == expected
+    assert checked_annotations(target_for(target)) == expected
 
 
 @pytest.mark.parametrize(
@@ -370,20 +366,18 @@ def test_checked_annotations_skips_text_two_modules_read_differently(
 ) -> None:
     # Number is an int in one candidate module and a str in the other, so n alone goes;
     # m, whose text both modules read as int, is still checked
-    assert checked_annotations(target, inspect.signature(target)) == {"m": int}
+    assert checked_annotations(target_for(target)) == {"m": int}
 
 
 def test_checked_annotations_ends_on_a_wrapped_cycle() -> None:
     # inspect stops at the declared signature and never walks the cycle below it, so
     # reading the namespaces is what meets it; a walk that did not stop would not end
-    assert checked_annotations(declared_over_a_cycle, inspect.signature(declared_over_a_cycle)) == {
-        "n": int
-    }
+    assert checked_annotations(target_for(declared_over_a_cycle)) == {"n": int}
 
 
 def test_checked_annotations_skips_an_annotation_that_only_claims_to_be_str() -> None:
     # equal to str is not str; keeping it would hand isinstance something that is not a type
-    assert checked_annotations(annotated_by_a_claim, inspect.signature(annotated_by_a_claim)) == {}
+    assert checked_annotations(target_for(annotated_by_a_claim)) == {}
 
 
 def test_check_seed_types_accepts_a_seed_that_fits_a_class_init() -> None:
