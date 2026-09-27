@@ -7,7 +7,7 @@ from pyct.core.branch import Branch, Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import PASSING, in_, is_, is_not, not_in
+from pyct.core.substitutes import in_, is_, is_not, not_in
 
 
 def expressions(sink: list[SinkItem]) -> list[object]:
@@ -138,10 +138,6 @@ def test_a_plain_value_in_a_literal_display_is_pythons_own_lookup() -> None:
 def test_an_unhashable_value_in_a_literal_display_raises_as_python_does() -> None:
     with pytest.raises(TypeError, match="unhashable"):
         in_([1], frozenset({1, 2}), (1, 2))
-
-
-def test_the_passing_frames_are_the_four_routers() -> None:
-    assert {code.co_name for code in PASSING} == {"is_", "is_not", "in_", "not_in"}
 
 
 def test_a_tracked_bool_searched_in_a_literal_display_of_bools_records_its_fork() -> None:

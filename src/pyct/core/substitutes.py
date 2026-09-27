@@ -1,4 +1,4 @@
-"""What substituted code calls: `is` and `in` where the target wrote them.
+"""What intercepted code calls: `is` and `in` where the target wrote them, and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes a compare the target writes with a call of one
 of these functions, through a name it binds in the module, such as
@@ -8,6 +8,9 @@ for truth before the target sees it, so a tracked value would lose its
 condition in both. Here a tracked value
 answers as it stands for, and any other operand gets Python's own answer
 and Python's own exception.
+
+It also binds `len`, `ord` and `chr` in the module's builtins to the three
+functions `pyct.core.bound` holds, routers of the same kind.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -19,7 +22,7 @@ from __future__ import annotations
 
 import types
 
-from pyct.core import strs
+from pyct.core import bound, strs
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -100,8 +103,11 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
     return item not in container  # pyrefly: ignore[not-iterable]
 
 
-# the frames blame reads through: a raise under one of them, from Python's own `in` or from
-# the target's own `__contains__`, is the target's
-PASSING: frozenset[types.CodeType] = frozenset(
-    function.__code__ for function in (is_, is_not, in_, not_in)
+# the tracked values core follows through each bound builtin, by their exact type, and the
+# function that follows them. A tracked value's `__len__` stays a downgrade, since Python's own
+# `len` makes its answer plain; pyct's asks core for the tracked length instead
+# the frames blame reads through: a raise under one of them, from Python's own `in`, `len`,
+# `ord` or `chr`, or from the target's own `__contains__` or `__len__`, is the target's
+PASSING: frozenset[types.CodeType] = (
+    frozenset(function.__code__ for function in (is_, is_not, in_, not_in)) | bound.PASSING
 )

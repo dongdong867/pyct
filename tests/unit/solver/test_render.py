@@ -334,6 +334,19 @@ def test_the_length_of_a_string_is_cvc5s_own() -> None:
     assert f"(assert (not (> (str.len {S}) 3)))" in text.splitlines()
 
 
+def test_a_character_s_code_and_a_code_s_character_are_cvc5s_own() -> None:
+    text = render(
+        (
+            fork(["==", ["ord", "s"], 65], taken=False),
+            fork(["==", ["chr", "x"], "'z'"], taken=True),
+        ),
+        {"s": str, "x": int},
+    )
+
+    assert f"(assert (not (= (str.to_code {S}) 65)))" in text.splitlines()
+    assert any(f"(str.from_code {X})" in line for line in text.splitlines()), text
+
+
 def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
     text = render(
         (
