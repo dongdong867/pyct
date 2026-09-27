@@ -154,6 +154,15 @@ def test_a_class_that_borrows_from_a_same_named_class_of_the_package_keeps_its_o
     ]
 
 
+def test_a_bound_method_is_named_by_the_module_that_exposes_it() -> None:
+    module = f"{SWEEP}.bound"
+    assert entries(module, module) == [
+        Entry(module, "roll", seed={"sides": 0}),
+        Entry(module, "make", seed={"seed": 0}),
+        Entry(module, "wrap", skip=f"a bound method of code outside {module}"),
+    ]
+
+
 def test_a_named_tuple_and_a_dataclass_are_named_by_their_own_file() -> None:
     # a named tuple's _make and _replace say they are its own, but their code is Python's
     module = f"{SWEEP}.tuples"

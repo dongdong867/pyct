@@ -10,7 +10,8 @@ one entry.
 A public name is one in ``__all__``, or, with no ``__all__``, one without a
 leading underscore. It holds an entry when it holds a function, looked at
 through ``__wrapped__``, or a class, whose code is in a ``.py`` file of a
-module of the swept package. A class is an entry when its constructor is
+module of the swept package, or a bound method of such code, named where it
+is found. A class is an entry when its constructor is
 Python code, since ``pyct run MODULE::Class`` calls it. Each method a class's
 own body defines under a public name is listed too, and skipped until
 ``pyct run`` can call one.
@@ -24,7 +25,7 @@ import pkgutil
 import sys
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
-from types import FunctionType, ModuleType
+from types import FunctionType, MethodType, ModuleType
 
 from pyct.sweep.seeds import NoSeedError, seed_of
 
@@ -156,6 +157,8 @@ class _Package:
         value = getattr(module, name)
         if isinstance(value, type):
             return self._class_entries(value, found_in, name)
+        if inspect.ismethod(value):
+            return self._bound_entries(value, found_in, name)
         target = function_of(value)
         if target is None:
             return []
@@ -174,6 +177,14 @@ class _Package:
         if name is None:
             return [_unnamed(home, found_in, found_as)]
         return [seeded(home, name, vars(sys.modules[home])[name])]
+
+    def _bound_entries(self, method: MethodType, found_in: str, found_as: str) -> list[Entry]:
+        """A bound method a public name holds, as ``random`` exposes ``randint``. ``pyct run``
+        calls it through that name, so it is named by the module that exposes it, when its
+        function's code is in the package; otherwise it is skipped, saying so."""
+        if self._home_of(_code_file(function_of(method.__func__))) is None:
+            return [Entry(found_in, found_as, skip=f"a bound method of code outside {self.name}")]
+        return [seeded(found_in, found_as, method)]
 
     def _class_entries(self, cls: type, found_in: str, found_as: str) -> list[Entry]:
         home = self._class_home(cls)
