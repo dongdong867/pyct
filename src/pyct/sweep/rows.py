@@ -21,7 +21,7 @@ LIMITS: Mapping[str, object] = {
 
 
 class Status(StrEnum):
-    """What became of a row's entry, or of a module that did not import."""
+    """What became of a row's entry, or of a module that did not import or could not be read."""
 
     RAN = "ran"
     FAILED = "failed"
@@ -31,7 +31,8 @@ class Status(StrEnum):
 
 @dataclass(frozen=True)
 class Row:
-    """One entry, or one module that did not import, whose ``name`` is None."""
+    """One entry, or one module that did not import or could not be read, whose ``name`` is
+    None."""
 
     module: str
     name: str | None
