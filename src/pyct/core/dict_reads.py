@@ -85,7 +85,11 @@ def proven(self: DictState, key: object) -> bool:
     as in `for k in sorted(d): d[k]` or Python's own `dict(d)`: the dict held it when the walk
     handed it out, and no store or removal since (``changed``) moved it, so no input takes the
     other side of the lookup. A walk hands out a copy of each key no code can write, so a key
-    the target writes as a literal is looked up as any other."""
+    the target writes as a literal is looked up as any other. A walk hands out only a plain str
+    or int, so any other key, a tracked one among them, is never one: it is refused before it
+    is hashed, which on a tracked key would compare it with a stored key and record a fork."""
+    if type(key) is not str and type(key) is not int:
+        return False
     return self.copies.get(key, MISSING) is key
 
 
@@ -96,6 +100,9 @@ def handout(self: DictState, key: object, pin: Expression) -> object:
     writes is the same object. Its lookup is recorded as any other, and holds where the walk
     read it (``pin``), so its other side is asked with that place and without it.
     """
+    if type(key) is not str and type(key) is not int:
+        # a key of another kind is never copied, so it is hashed no more than Python hashes it
+        return key
     copied = self.copies.get(key, MISSING)
     if copied is MISSING:
         copied = _copy(key)

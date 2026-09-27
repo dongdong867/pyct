@@ -1,7 +1,7 @@
 """The tracked dicts a path names, written for cvc5.
 
 A dict the seed names is declared by what the path asks of it (containers-arrays-counted-keys-
-and-read-places, dict-keys-named-held-or-made-up): a `Bool` for each key a fork names, in the
+and-copied-walk-keys, dict-keys-named-held-or-made-up): a `Bool` for each key a fork names, in the
 order the path first names it; an `Int` for how many of the input's other keys stay, from the
 first, so a smaller dict loses them from its end; an `Int` for how many keys pyct makes up to
 meet a count, for a dict whose keys are all strs; and its size, one `Int` with one defining

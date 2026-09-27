@@ -7,6 +7,8 @@ import pytest
 
 from pyct.core.branch import Branch
 from pyct.core.dicts import ConcolicDict
+from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_dicts import forks, tracked
 
 
@@ -68,3 +70,31 @@ def test_a_literal_lookup_after_a_walk_records_its_fork() -> None:
     assert looked in config
 
     assert forks(sink)[-1] == (["in", "'alpha'", "config"], True)
+
+
+def test_a_tracked_key_looked_up_after_a_walk_records_only_its_lookup() -> None:
+    # Python's own lookup of a tracked key compares it with a stored key of the same hash; the
+    # walk's copies are plain keys, so a tracked one is never compared with them
+    config, sink = tracked({"ab": 1})
+    numbers = ConcolicDict.made({1000: 1, 2000: 2}, "numbers", sink)
+    name = ConcolicStr.made("ab", "name", sink)
+    n = ConcolicInt.made(1000, "n", sink)
+
+    for _ in config:
+        pass
+    for _ in numbers:
+        pass
+    del sink[:]
+    assert name in config and n in numbers
+
+    assert forks(sink) == [(["in", "name", "config"], True), (["in", "n", "numbers"], True)]
+
+
+def test_popitem_hands_out_the_key_a_walk_handed_out() -> None:
+    # as in plain Python, where both are the one stored key object
+    config, _ = tracked({"ab": 1, "cd": 2})
+
+    walked = list(config)
+    popped, _ = config.popitem()
+
+    assert walked[-1] is popped

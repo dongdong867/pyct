@@ -19,7 +19,16 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade
-from pyct.core.dict_reads import POPPED, found, is_tracked, placed, present, value, written_key
+from pyct.core.dict_reads import (
+    POPPED,
+    found,
+    handout,
+    is_tracked,
+    placed,
+    present,
+    value,
+    written_key,
+)
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -161,7 +170,8 @@ def last_item(self: DictState) -> tuple[object, object]:
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
     self.dropped(key)
-    return key, handed
+    # the key a walk handed out for it, so a walk and popitem hand out one object, as in Python
+    return handout(self, key, None), handed
 
 
 def defaulted(self: DictState, key: object, default: object = None) -> object:

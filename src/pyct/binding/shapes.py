@@ -1,10 +1,10 @@
 """What the solver knows of a tracked list or dict in the input, and what it answers about one.
 
 A list's shape is the kind of the item at each position of the input, the shape of each list
-inside, and the kind of an item the solver adds (containers-arrays-counted-keys-and-read-places). An
-answer is the list's new length, the arrays the solver chose its items from, and the positions
-a fork on the path read, whose items take the solver's values; every other position keeps what
-the input had.
+inside, and the kind of an item the solver adds (containers-arrays-counted-keys-and-copied-walk-
+keys). An answer is the list's new length, the arrays the solver chose its items from, and the
+positions a fork on the path read, whose items take the solver's values; every other position
+keeps what the input had.
 
 A dict's shape is its keys in order, the kind of each value, and the kind of a value the
 solver adds. An answer is which keys a fork names the dict holds, how many of its other keys it
