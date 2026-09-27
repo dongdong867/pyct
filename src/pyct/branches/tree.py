@@ -30,6 +30,11 @@ class Tree:
         self._ids: dict[tuple[int, Site, bool], int] = {}
         self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
+        # where the next pick starts looking: the oldest path that may still hold an open fork,
+        # and the deepest position on it that may, None before the pick first reaches the path.
+        # A fork that closes never opens again, so every fork past this point is spent
+        self._path = 0
+        self._depth: int | None = None
 
     def add(self, forks: tuple[Branch, ...]) -> None:
         """Record the path one input took. Its forks join the pool the next pick draws from."""
@@ -42,19 +47,27 @@ class Tree:
         self._paths.append((forks, tuple(keys)))
 
     def next(self) -> Plan | None:
-        """The path that takes the other side of the deepest open fork on the newest path.
+        """The path that takes the other side of the deepest open fork on the oldest path.
 
-        Newest path first, deepest fork first, by decision
-        fork-order-newest-path-deepest-first: that fork shares the longest
-        concrete prefix with the path that just ran. The pick is the aim, so
-        the fork is spent whether or not the solver answers.
+        Oldest path first, deepest fork first, by decision
+        fork-order-oldest-path-deepest-first: every fork of a path is tried
+        before a newer path's, so a loop that adds a pass on every input
+        cannot starve the forks before it, and the seed's last fork is the
+        first pick (flip-one-fork). The pick is the aim, so the fork is spent
+        whether or not the solver answers. The search resumes where the last
+        one stopped, so a run's picks cost its forks once, not once a pick.
         """
-        for path in reversed(range(len(self._paths))):
-            forks, keys = self._paths[path]
-            for at in reversed(range(len(forks))):
-                if self._open(keys[at], forks[at].taken):
-                    self._aimed.add(keys[at])
-                    return plan(forks[: at + 1], path)
+        while self._path < len(self._paths):
+            forks, keys = self._paths[self._path]
+            depth = len(forks) - 1 if self._depth is None else self._depth
+            while depth >= 0 and not self._open(keys[depth], forks[depth].taken):
+                depth -= 1
+            if depth >= 0:
+                self._aimed.add(keys[depth])
+                self._depth = depth - 1
+                return plan(forks[: depth + 1])
+            self._path += 1
+            self._depth = None
         return None
 
     def _open(self, key: ForkKey, taken: bool) -> bool:
