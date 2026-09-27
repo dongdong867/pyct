@@ -9,7 +9,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Commands
 
-- test: `uv run pytest tests/ -v --cov` — healthy: every test passes, no fewer pass than on the base branch, and it prints `Required test coverage of … reached`: branch coverage of `pyct` and `tools`, subprocesses included, is at or above `fail_under` in pyproject.toml. Drop `--cov` for a quick run. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`). The compare tool's `legacy` tests build a checkout of `main` once per session, or reuse the one `PYCT_LEGACY_CHECKOUT` names; `-m "not legacy"` skips them
+- test: `uv run pytest tests/ -n 8 --cov` — healthy: every test passes, no fewer pass than on the base branch, the tests marked `serial` run last, one at a time, and it prints `Required test coverage of … reached`: branch coverage of `pyct` and `tools`, every worker and subprocess included, is at or above `fail_under` in pyproject.toml. Eight workers, about three minutes; `-n auto` uses every core. Drop `--cov` for a quick run, and `-n 8` to run in one process, as `uv run pytest tests/ --cov` does in about 15 minutes. A test that measures time against the machine's load takes `@pytest.mark.serial`. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`). The compare tool's `legacy` tests build a checkout of `main` once per session, shared by every worker, or reuse the one `PYCT_LEGACY_CHECKOUT` names; `-m "not legacy"` skips them
 - lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 2 kept, 0 broken.` Style, sizes, types, import layers, and the compare tool never importing pyct
 - format: `uv run ruff format src/ tests/ tools/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
@@ -51,6 +51,7 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── unit/         mirrors src/pyct/, one directory per layer
 │   ├── compare_coverage/  the compare tool's unit/ and acceptance/ tests, and a stub legacy engine
 │   ├── line_limits.py  the size rules ruff has no rule for, run by lint. Tested beside it
+│   ├── serial_last.py  a parallel run's scheduling: the tests marked serial run last, alone
 │   └── test_timeout.py  the per-test timeout ends a test stuck on coverage's lock
 ├── tools/            development tools outside pyct's layers. They never import pyct
 │   └── compare_coverage/  v2's coverage against legacy's, target by target. `python -m tools.compare_coverage`

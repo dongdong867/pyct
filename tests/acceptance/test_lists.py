@@ -401,6 +401,7 @@ def test_flips_after_thousands_of_passes() -> None:
     assert cut, "no fork after the appends was cut"
 
 
+@pytest.mark.serial
 # follow-lists-and-dicts-as-they-change-limits-an-answer-to-a-million-items
 def test_limits_an_answer_to_a_million_items() -> None:
     at_limit = run_pyct(f"{MILLION}::at_the_limit", '{"items": [0]}')
