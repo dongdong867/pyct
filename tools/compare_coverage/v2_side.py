@@ -39,7 +39,11 @@ class Stamp:
 
 @dataclass(frozen=True)
 class V2Side:
-    """``program`` starts this checkout's pyct; ``stamp`` is the checker's own environment."""
+    """``program`` starts this checkout's pyct; ``stamp`` is the checker's own environment.
+
+    ``program`` starts with the Python interpreter that runs pyct, such as ``python -P -m
+    pyct``, because that interpreter also reads an installed entry's library.
+    """
 
     program: tuple[str, ...]
     environment: Mapping[str, str]
@@ -62,7 +66,6 @@ class V2Side:
         )
         finished = run_command(Command(argv, request.root, self.environment), request.wait)
         report = read_report(finished, "stopped", self._report)
-        # the program's first word is the interpreter that runs pyct
         return with_library(report, self.program[0], request, self.environment)
 
     def _report(self, summary: dict[str, object]) -> SideReport:
