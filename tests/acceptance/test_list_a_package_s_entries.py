@@ -135,7 +135,7 @@ def test_leaves_out_names_that_are_not_its_own() -> None:
 
     assert result.returncode == 0, result.stderr
     listed = names(result.stdout)
-    for name in ("_helper", "RATE", "default_cart", "join", "sqrt"):
+    for name in ("_helper", "RATE", "default_cart", "join", "sqrt", "dedent"):
         assert name not in listed
 
 
