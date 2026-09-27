@@ -42,7 +42,7 @@ class PackageImportError(Exception):
     """The package itself did not import. The message says so, and how its import ended."""
 
 
-class _HungUp(BaseException):
+class _HangUpError(BaseException):
     """A SIGHUP, raised so the lister is stopped before sweep ends by it."""
 
 
@@ -98,7 +98,7 @@ def _signals_stop_the_lister() -> Generator[None]:
             signal.signal(number, handler)
     try:
         yield
-    except _HungUp:
+    except _HangUpError:
         signal.signal(signal.SIGHUP, signal.SIG_DFL)
         signal.raise_signal(signal.SIGHUP)
         raise
@@ -112,7 +112,7 @@ def _interrupt(number: int, frame: object) -> None:
 
 
 def _hang_up(number: int, frame: object) -> None:
-    raise _HungUp
+    raise _HangUpError
 
 
 def _listen(package: str, after: str | None, grace: float, lister: tuple[str, ...]) -> Heard:
