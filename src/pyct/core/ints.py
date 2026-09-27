@@ -4,14 +4,23 @@ from __future__ import annotations
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, promoted
-from pyct.core.values import copy_as_itself, downgrade_the_rest, forked, own, pickled
+from pyct.core.numbers import INT_INHERITED, INT_KEPT, compare, promoted
+from pyct.core.values import (
+    built_plainly,
+    copy_as_itself,
+    downgrade_the_rest,
+    forked,
+    own,
+    pickled,
+)
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
 # arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
-# itself. The tuples numbers holds name what is left to int on purpose, and the derivation at
-# the bottom of the file downgrades every other method int defines. What each operation
-# answers is tracked by the class numbers holds for its Python type.
+# itself. The attributes and the classmethod int defines are named there too, since the
+# derivation reads only methods called on a value (downgrades-class-body-taught-attributes-named).
+# The tuples numbers holds name what is left to int on purpose, and the derivation at the bottom
+# of the file downgrades every other method int defines. What each operation answers is tracked
+# by the class numbers holds for its Python type.
 
 
 def _itself(self: ConcolicInt) -> ConcolicInt:
@@ -78,6 +87,15 @@ class ConcolicInt(int):
     __ceil__ = _itself
     __round__ = numbers.rounded(_itself)
 
+    # int's plain names that hand back the value itself, as `+x` does. `imag` and `denominator`
+    # stay int's own constants, 0 and 1, and `is_integer` is kept; the rest are derived downgrades
+    real = property(_itself)  # pyrefly: ignore[bad-override]
+    numerator = property(_itself)  # pyrefly: ignore[bad-override]
+    conjugate = numbers.itself(int.conjugate, _itself)
+    as_integer_ratio = numbers.ratio(_itself)
+    # int's own would build this class from the value alone
+    from_bytes = built_plainly(int, "from_bytes")  # pyrefly: ignore[bad-override]
+
     def __new__(cls, value: int, *, expression: Expression, sink: BranchSink) -> ConcolicInt:
         self = super().__new__(cls, value)
         self.expression = expression
@@ -92,5 +110,5 @@ class ConcolicInt(int):
 # the class body above is everything ConcolicInt teaches. The rest of int, and the `__str__`
 # int inherits, differ only in the name they call and record, so the derivation writes them.
 # An int that Python computes is tracked as a ConcolicInt
-downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT + INT_NOT_YET, inherited=INT_INHERITED)
+downgrade_the_rest(ConcolicInt, int, kept=INT_KEPT, inherited=INT_INHERITED)
 numbers.enter(int, ConcolicInt)

@@ -20,6 +20,8 @@ do. `promoted` widens it for a tracked int, which meets a float as Python's
 int does, and `int_beside_float` is how a float reads an int. `compare`,
 `arithmetic`, `division` and `divmod_of` serve every number type and read
 the other side by the rule their caller passes, the int family's by default.
+`itself` and `ratio` serve the plain methods whose answer is the value itself,
+such as `x.conjugate()`.
 """
 
 from __future__ import annotations
@@ -38,7 +40,8 @@ from pyct.core.values import downgraded, own
 # once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
 # debugger read cost nothing. `__getattribute__` is kept for a harder reason: the downgrade
 # wrapper reads `self.sink`, which goes through `__getattribute__` itself, so a wrapped one
-# recurses on the first attribute read
+# recurses on the first attribute read. `is_integer` is kept because its answer is a constant,
+# True for every int, so it reads nothing of the value and loses no condition
 INT_KEPT = (
     "__hash__",
     "__repr__",
@@ -46,17 +49,7 @@ INT_KEPT = (
     "__new__",
     "__getattribute__",
     "__sizeof__",
-)
-
-# int's plain methods record nothing yet. The ticket that wraps them is
-# `report-a-plain-int-method-as-a-downgrade`; until it lands, these stay int's own
-INT_NOT_YET = (
-    "as_integer_ratio",
-    "bit_count",
-    "bit_length",
-    "conjugate",
     "is_integer",
-    "to_bytes",
 )
 
 # int inherits `__str__` from object, so reading what int itself defines never reaches it, and
@@ -355,5 +348,32 @@ def rounded(whole: Callable[[Any], object]) -> Callable[..., Any]:
         if ndigits is None or (digits and cast(int, ndigits) >= 0):
             return whole(self)
         return downgrade(self, ndigits)
+
+    return compute
+
+
+def itself(operation: Callable[..., object], whole: Callable[[Any], object]) -> Callable[..., Any]:
+    """A method whose answer is the value itself, as `whole` hands it back, so no node is added.
+
+    `whole` is what the type answers for the number it already is: an int
+    or a float hands itself back, a bool the int 1 or 0. The base type's own
+    method runs first on the arguments as the target wrote them, so a call it
+    refuses raises its own error, and its plain answer, the same number, is
+    dropped.
+    """
+
+    def compute(self: Number, /, *args: object, **kwargs: object) -> Any:
+        own(operation, self, *args, **kwargs)
+        return whole(self)
+
+    return compute
+
+
+def ratio(whole: Callable[[Any], object]) -> Callable[..., Any]:
+    """An int's `as_integer_ratio`: the value itself, as `whole` hands it back, over int's own 1."""
+
+    def compute(self: Number, /, *args: object, **kwargs: object) -> Any:
+        _, denominator = own(int.as_integer_ratio, self, *args, **kwargs)
+        return whole(self), denominator
 
     return compute

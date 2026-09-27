@@ -13,8 +13,9 @@ from typing import Any
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.numbers import INT_INHERITED, INT_KEPT, INT_NOT_YET, compare, operand
+from pyct.core.numbers import INT_INHERITED, INT_KEPT, compare, operand
 from pyct.core.values import (
+    built_plainly,
     copy_as_itself,
     downgrade_the_rest,
     downgraded,
@@ -110,6 +111,15 @@ class ConcolicBool(int):
     __ceil__ = _the_int
     __round__ = numbers.rounded(_the_int)
 
+    # int's plain names that hand back the number itself answer the int the bool is, as `+b`
+    # does. Its constants and its downgrades are int's, and its classmethod is bool's own, as
+    # plain Python answers `True.from_bytes(...)` with a bool
+    real = property(_the_int)  # pyrefly: ignore[bad-override]
+    numerator = property(_the_int)  # pyrefly: ignore[bad-override]
+    conjugate = numbers.itself(int.conjugate, _the_int)
+    as_integer_ratio = numbers.ratio(_the_int)
+    from_bytes = built_plainly(bool, "from_bytes")  # pyrefly: ignore[bad-override]
+
     # `&`, `|` and `^` between two bools answer a bool; with an int, a downgrade
     __and__ = _logical("&", "__and__")  # pyrefly: ignore[bad-override]
     __or__ = _logical("|", "__or__")  # pyrefly: ignore[bad-override]
@@ -136,5 +146,5 @@ class ConcolicBool(int):
 # the class body above is everything ConcolicBool teaches. The rest of int, and the `__str__`
 # int inherits, differ only in the name they call and record, so the derivation writes them.
 # A bool that Python computes, a compare's answer among them, is tracked as a ConcolicBool
-downgrade_the_rest(ConcolicBool, int, kept=INT_KEPT + INT_NOT_YET, inherited=INT_INHERITED)
+downgrade_the_rest(ConcolicBool, int, kept=INT_KEPT, inherited=INT_INHERITED)
 numbers.enter(bool, ConcolicBool)
