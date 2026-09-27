@@ -2,6 +2,8 @@
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
 [--solver-timeout SECONDS] [--in-process]``
+
+``pyct sweep PACKAGE --list``
 """
 
 from __future__ import annotations
@@ -12,13 +14,14 @@ import inspect
 import json
 import math
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
-from pyct.binding.annotations import Check, check_of, contradictions
+from pyct.binding.annotations import contradictions
 from pyct.binding.bind import access_name, leaves
 from pyct.binding.call import call_arguments, positional_only
+from pyct.binding.resolve import checked_annotations
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
@@ -37,11 +40,14 @@ from pyct.run.run import Tell, run
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.locate import SolverMissingError, locate
+from pyct.sweep.listing import PackageImportError, list_package
+from pyct.sweep.rows import closing, row_line, summary_line, told
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
     " [--solver-timeout SECONDS] [--in-process]"
 )
+SWEEP_USAGE = "pyct sweep PACKAGE --list"
 
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -66,6 +72,14 @@ class RunCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     in_process: bool = False
+
+
+@dataclass(frozen=True)
+class SweepCommand:
+    """What ``pyct sweep`` was asked for: the package, and whether only to list its entries."""
+
+    package: str
+    list_only: bool = False
 
 
 def entry() -> int:
@@ -112,6 +126,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     """
     try:
         command = parse_command(sys.argv[1:] if argv is None else argv)
+        if isinstance(command, SweepCommand):
+            return _sweep(command)
         with interception(command.spec):
             target, seed, limits = _checked(command, watch)
             result = run(
@@ -124,7 +140,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     except UsageError as error:
         print(error, file=sys.stderr)
         return 2
-    except (SolverMissingError, SolverAnswerError, TargetError) as error:
+    except (SolverMissingError, SolverAnswerError, TargetError, PackageImportError) as error:
         print(error, file=sys.stderr)
         return 1
     print(render_stop(result), end="", file=sys.stderr, flush=True)
@@ -150,6 +166,24 @@ def _checked(
     check_seed_types(target, seed)
     locate()
     return target, seed, limits
+
+
+def _sweep(command: SweepCommand) -> int:
+    """List the package's entries: each row on stdout with its stderr line, then the summary.
+
+    Running the entries is not built yet, so ``--list`` is required.
+    """
+    if not command.list_only:
+        raise UsageError(f"pyct sweep runs no entry yet; pass --list\nusage: {SWEEP_USAGE}")
+    rows = list_package(command.package)
+    for row in rows:
+        _line(row_line(row))
+        said = told(row)
+        if said is not None:
+            print(said, file=sys.stderr, flush=True)
+    print(closing(command.package, rows), end="", file=sys.stderr, flush=True)
+    _line(summary_line(command.package, rows))
+    return 0
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
@@ -188,10 +222,13 @@ def _is_a_bug(failure: Failure | None) -> bool:
     return failure is not None and failure.kind is FailureKind.PYCT_BUG
 
 
-def parse_command(argv: Sequence[str]) -> RunCommand:
+def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     """Read the argv. The seed may follow the target, or come through ``--args``."""
-    parser = _Parser(prog="pyct", usage=USAGE)
+    parser = _Parser(prog="pyct", usage=f"{USAGE}\n       {SWEEP_USAGE}")
     commands = parser.add_subparsers(dest="command", required=True)
+    sweep_parser = commands.add_parser("sweep", usage=SWEEP_USAGE)
+    sweep_parser.add_argument("package", metavar="PACKAGE")
+    sweep_parser.add_argument("--list", dest="list_only", action="store_true")
     run_parser = commands.add_parser("run", usage=USAGE, epilog=CACHE_HELP)
     run_parser.add_argument("target", metavar="MODULE::FUNCTION")
     run_parser.add_argument("seed", nargs="?", metavar="JSON")
@@ -201,6 +238,8 @@ def parse_command(argv: Sequence[str]) -> RunCommand:
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
     namespace = parser.parse_args(argv)
+    if namespace.command == "sweep":
+        return SweepCommand(package=namespace.package, list_only=namespace.list_only)
     if namespace.seed is not None and namespace.args_seed is not None:
         raise UsageError(f"give the seed once, after the target or through --args\nusage: {USAGE}")
     seed_text = namespace.seed if namespace.seed is not None else namespace.args_seed
@@ -340,144 +379,9 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
 
 
-def checked_annotations(target: Target) -> dict[str, Check]:
-    """The parameters whose annotation asks something of the seed, and what it asks.
-
-    What an annotation asks, and which annotations ask nothing, is
-    ``check_of``'s to say.
-
-    Each annotation is resolved on its own, so one name that does not resolve
-    costs that parameter alone rather than the whole function. An annotation
-    kept as text, which is what ``from __future__ import annotations`` leaves
-    behind, is resolved in every module the text could have been written in:
-    the target's, each wrapper's, and the one supplying an ``__init__``,
-    ``__new__`` or ``__call__`` the target did not write itself, a base's or
-    a metaclass's. It is kept only when every
-    module that knows the name reads it as asking the same. A name no module
-    resolves, or that two modules resolve differently, skips its own
-    parameter and no other. An annotation that asks nothing, such as
-    ``str | None`` or a class, is not kept.
-
-    The parameters come from the target's signature as the loader read it,
-    the same one ``check_seed_fits`` reads, so a class target is read at
-    its ``__init__`` and the seed checks do not read the signature again.
-    """
-    hints: dict[str, Check] = {}
-    for name, parameter in target.signature.parameters.items():
-        if parameter.annotation is inspect.Parameter.empty:
-            continue
-        check = _resolved(parameter.annotation, target.fn)
-        if check is not None:
-            hints[name] = check
-    return hints
-
-
-def _resolved(annotation: object, fn: Callable[..., object]) -> Check | None:
-    """What the annotation asks, or what every module that knows its text reads it as asking.
-
-    A namespace whose eval raises does not know the name and says nothing.
-    The answer stands only when something resolved it and everything that
-    did asks the same; a disagreement is no annotation, as any failure is.
-    Two modules can build two ``list[int]`` objects from one text, so they
-    agree on what the text asks rather than on the object.
-    """
-    if not isinstance(annotation, str):
-        return check_of(annotation)
-    answers: list[Check | None] = []
-    for names in _namespaces(fn):
-        try:
-            answers.append(check_of(eval(annotation, names)))
-        except Exception:
-            continue
-    if not answers or any(answer != answers[0] for answer in answers):
-        return None
-    return answers[0]
-
-
-def _namespaces(fn: object) -> list[dict[str, object]]:
-    """Every module's names the annotation text on ``fn`` could have been written against.
-
-    Which module ``inspect.signature`` took the text from is not knowable
-    from the outside: picking one went wrong round after round. So every
-    module that could have written it answers and agreement decides. An
-    extra namespace costs at most a skipped check; a missing one could
-    refuse a seed the target accepts.
-    """
-    if isinstance(fn, functools.partial):
-        return _namespaces(fn.func)
-    spaces: list[dict[str, object]] = []
-    for owner in _owners(fn):
-        for step in _chain(owner):
-            names = getattr(step, "__globals__", None)
-            # a slot wrapper such as object.__init__ carries none, and names nothing
-            if isinstance(names, dict):
-                spaces.append(names)
-    spaces.extend(_module_names(fn))
-    # by identity: a namespace reached twice is one namespace, and a dict is unhashable
-    return list({id(names): names for names in spaces}.values())
-
-
-def _owners(fn: object) -> list[object]:
-    """The callables whose globals could hold ``fn``'s annotation text.
-
-    A class is read at the ``__init__`` and ``__new__`` attribute lookup
-    gives, so an inherited one is the base's function, and at its
-    metaclass's ``__call__``, which ``inspect.signature`` prefers to both
-    when there is one. For an ordinary class that is ``type.__call__``, a
-    slot wrapper naming nothing. Which of the three ``inspect.signature``
-    picks is its business; all three are candidates here.
-
-    A callable object is a candidate beside its ``__call__``, because a
-    class-based decorator sets ``__wrapped__`` by hand and it hangs on the
-    object rather than on the method.
-    """
-    if isinstance(fn, type):
-        return [
-            getattr(fn, "__init__", None),
-            getattr(fn, "__new__", None),
-            getattr(type(fn), "__call__", None),  # noqa: B004 - the function, not a test
-        ]
-    method = getattr(fn, "__func__", None)
-    if method is not None:
-        return [method]
-    if not inspect.isroutine(fn):
-        return [fn, getattr(type(fn), "__call__", None)]  # noqa: B004 - the function, not a test
-    return [fn]
-
-
-def _chain(fn: object) -> list[object]:
-    """``fn`` and everything its ``__wrapped__`` chain reaches. A cycle ends the walk.
-
-    ``inspect.signature`` follows this chain, except that a wrapper
-    declaring its own ``__signature__`` stops it there. Walking the whole
-    chain covers the text wherever it was written, without asking which.
-    """
-    steps: list[object] = []
-    seen: set[int] = set()
-    step = fn
-    while step is not None and id(step) not in seen:
-        seen.add(id(step))
-        steps.append(step)
-        step = getattr(step, "__wrapped__", None)
-    return steps
-
-
-def _module_names(fn: object) -> list[dict[str, object]]:
-    """The names of the modules ``fn`` says it was written in.
-
-    A class and a callable object carry no globals of their own, so the
-    module each names is what stands in for them.
-    """
-    named = [getattr(fn, "__module__", None)]
-    if not isinstance(fn, type) and not inspect.isroutine(fn):
-        named.append(getattr(type(fn), "__module__", None))
-    modules = [sys.modules.get(name) for name in named if isinstance(name, str)]
-    return [vars(module) for module in modules if module is not None]
-
-
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
     """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target), seed)
+    lines = contradictions(checked_annotations(target.signature, target.fn), seed)
     if lines:
         raise UsageError("\n".join(lines))
 
@@ -495,4 +399,4 @@ class _Parser(argparse.ArgumentParser):
     """An argparse parser that raises UsageError instead of exiting."""
 
     def error(self, message: str) -> NoReturn:
-        raise UsageError(f"{message}\nusage: {USAGE}")
+        raise UsageError(f"{message}\nusage: {self.usage}")

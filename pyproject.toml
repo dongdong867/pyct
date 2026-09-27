@@ -113,7 +113,7 @@ name = "Layers"
 type = "layers"
 layers = [
   "pyct.cli",
-  "(pyct.sweep)",
+  "pyct.sweep",
   "(pyct.llm)",
   "pyct.run",
   "(pyct.rewrite)",
