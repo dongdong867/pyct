@@ -190,9 +190,8 @@ def answered_first(name: str, self: object, other: object) -> object:
     is a subclass of the left one's that defines that operation otherwise:
     `x > r` runs `type(r).__lt__` when the target's own class of `r`
     defines one. A tracked int stands where the target's plain int would, so
-    pyct asks it too, before anything of int's runs, and its answer is the
-    answer. A plain answer has lost the tracked int's condition, so the
-    operation is named as a downgrade. A tracked bool or float asks nothing,
+    pyct asks it too, before anything of int's runs (see `reflected_answer`).
+    A tracked bool or float asks nothing,
     as Python's bool and float do not: an int subclass subclasses neither.
     """
     reflected = _REFLECTED.get(name)
@@ -202,6 +201,21 @@ def answered_first(name: str, self: object, other: object) -> object:
     operation = getattr(kind, reflected)
     if operation is getattr(int, reflected):
         return NotImplemented
+    return reflected_answer(name, self, other, operation)
+
+
+def reflected_answer(
+    name: str, self: object, other: object, operation: Callable[..., object]
+) -> object:
+    """The right operand's own reflected operation, asked first as Python asks it, on a tracked
+    number on the left.
+
+    Its answer is the answer. A plain one has lost the tracked number's
+    condition, so the operation is named as a downgrade, as every loss is;
+    a tracked one, and NotImplemented, which hands the operation back,
+    record nothing. Each number type that asks a subclass first answers
+    through here.
+    """
     answer = own(operation, other, self)
     if answer is not NotImplemented and type(answer) not in _CLASSES:
         cast(Number, self).sink.append(Downgrade(name=name))
