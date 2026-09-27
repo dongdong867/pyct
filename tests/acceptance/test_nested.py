@@ -1,9 +1,10 @@
 """Acceptance tests for the follow-values-inside-dicts-and-lists child of the
 run-with-nested-arguments story.
 
-Each test spawns ``python -P -m pyct`` through the harness: a value inside an argument is
-followed only if the fork it built reaches the solver and the solver's answer runs in the
-seed's shape, so only a real run through the command line proves it.
+Each test of a run spawns ``python -P -m pyct`` through the harness: a value inside an
+argument is followed only if the fork it built reaches the solver and the solver's answer runs
+in the seed's shape, so only a real run through the command line proves it. The test of the
+accepted file reads that file.
 """
 
 import json
@@ -90,6 +91,12 @@ def server_of(line: dict[str, object]) -> dict[str, object]:
     return server
 
 
+def number(value: object) -> int:
+    """A value off a line that must be a JSON integer, narrowed so a comparison means something."""
+    assert isinstance(value, int) and not isinstance(value, bool), value
+    return value
+
+
 def items_of(line: dict[str, object]) -> list[object]:
     """A line's ``items`` list."""
     items = args_of(line)["items"]
@@ -134,8 +141,8 @@ def test_flips_two_values_inside_a_list() -> None:
     # every line's items holds two ints, so the comparisons below compare numbers
     assert all(len(pair) == 2 and all(type(v) is int for v in pair) for pair in pairs), pairs
     answers = [items_of(line) for line in solved(lines)]
-    assert any(int(str(first)) > 100 for first, _ in answers), answers
-    assert any(int(str(second)) < -50 for _, second in answers), answers
+    assert any(number(first) > 100 for first, _ in answers), answers
+    assert any(number(second) < -50 for _, second in answers), answers
     assert any(first == second for first, second in answers), answers
     # two values in one argument are two unknowns, each named by its index
     last = ["==", ["[]", "items", 0], ["[]", "items", 1]]
@@ -251,7 +258,7 @@ def test_gives_each_input_its_own_arguments(where: tuple[str, ...]) -> None:
     for line in lines:
         assert len(items_of(line)) == 1, line
         assert args_of(line)["config"] == {}, line
-    assert any(int(str(items_of(line)[0])) > 5 for line in solved(lines)), lines
+    assert any(number(items_of(line)[0]) > 5 for line in solved(lines)), lines
 
 
 # run-with-nested-arguments-leaves-other-annotations-unchecked
