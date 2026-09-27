@@ -129,7 +129,8 @@ def _printed_all(expressions: tuple[Expression, ...]) -> tuple[Expression, ...]:
         for expression in expressions
     )
     parts = tuple({id(part): part for _, part in cuts}.values())
-    distinct = _counted(*_walked(parts, steps := _Steps(COUNTING_STEPS)), steps)
+    steps = _Steps(COUNTING_STEPS)
+    distinct = _counted(*_walked(parts, steps), steps)
     for stand_in, part in cuts:
         stand_in[1] = distinct.get(id(part))
     return shown
