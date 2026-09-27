@@ -29,9 +29,6 @@ from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
 from pyct.solver.symbols import leaf_sort, leaf_symbol
 
-# the sort of a part defined once, by the type of its value
-_DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
-
 # what names the assertion that holds a float leaf finite, before the leaf's symbol, so the
 # unsat core cvc5 dumps says which leaves an unsat rests on. `!` is in no symbol, so the
 # assertion's name never meets a constant
@@ -349,7 +346,7 @@ class _Program:
         if kind is list:
             return self.term(node[1])
         operation = self._operation(node)
-        sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
+        sort = None if kind is None or not define else SORTS.get(kind)
         if sort is None:
             return operation
         name = f"e!{len(self.definitions)}"

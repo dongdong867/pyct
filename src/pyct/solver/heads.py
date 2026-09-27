@@ -28,7 +28,7 @@ from pyct.solver.strings import contains, not_contains, without_prefix, without_
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
 # name for the IEEE double, `(_ FloatingPoint 11 53)`
-SORTS: Mapping[type, str] = {int: "Int", str: "String", float: "Float64"}
+SORTS: Mapping[type, str] = {int: "Int", str: "String", float: "Float64", bool: "Bool"}
 
 # the type of the value each head builds, as Python has it, so a head above it knows what its
 # operands are: `+` joins two strs and adds two ints. None is a head whose value has its

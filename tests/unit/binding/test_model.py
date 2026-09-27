@@ -65,4 +65,8 @@ def test_the_model_keeps_a_list_that_holds_itself_one_list() -> None:
 def test_a_seed_holds_the_leaves_bind_tracks_in_it() -> None:
     seed = Seed.of({"items": [1, "a"], "flag": True})
 
-    assert seed.leaves == {json.dumps(["[]", "items", 0]): int, json.dumps(["[]", "items", 1]): str}
+    assert seed.leaves == {
+        json.dumps(["[]", "items", 0]): int,
+        json.dumps(["[]", "items", 1]): str,
+        "flag": bool,
+    }

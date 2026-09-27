@@ -269,8 +269,9 @@ def test_downgrades_an_untaught_float_operation() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    # an operator by its dunder, a method by its name; a bool beside a float is float's own
-    names = ["__pow__", "__int__", "__round__", "hex", "__str__", "__add__"]
+    # an operator by its dunder, a method by its name; a bool beside a float is the double 1.0
+    # or 0.0, which `x + True` follows (follow-booleans-and-chained-compares)
+    names = ["__pow__", "__int__", "__round__", "hex", "__str__"]
     assert seed["downgrades"] == [{"name": name, "count": 1} for name in names]
     assert expressions(seed) == [[">", "x", 0.0]]
 

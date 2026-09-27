@@ -7,12 +7,16 @@ from dataclasses import dataclass
 from pyct.solver import floats, strings
 
 # one value of a model, as cvc5 writes it: ((x 5)), ((x (- 6))), ((s "a""b\u{a}")) or
-# ((f (fp #b0 #b10000000000 #b0100...))). A name may come in bars, ((|x| 5)), which SMT-LIB
-# reads as the same name. A string value holds no bare quote, only a doubled one, so its closing
-# quote is the first lone one. A double's value is its three fields, which `floats.decode` reads
+# ((f (fp #b0 #b10000000000 #b0100...))) or ((b true)). A name may come in bars, ((|x| 5)),
+# which SMT-LIB reads as the same name. A string value holds no bare quote, only a doubled one,
+# so its closing quote is the first lone one. A double's value is its three fields, which
+# `floats.decode` reads
 VALUE_LINE = re.compile(
-    r'\(\(\|?(?P<name>[^\s()|]+)\|? (?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*"|\(fp [^()]*\))\)\)'
+    r"\(\(\|?(?P<name>[^\s()|]+)\|? "
+    r'(?P<value>\(- \d+\)|-?\d+|"(?:[^"]|"")*"|\(fp [^()]*\)|true|false)\)\)'
 )
+# how SMT-LIB writes each value of the Bool sort
+_BOOLS = {"true": True, "false": False}
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ class SolverAnswerError(Exception):
 
 
 def model_from(lines: Iterable[str]) -> dict[str, int | str | float]:
-    """The values cvc5 printed, as a name and an int, a str or a float each.
+    """The values cvc5 printed, as a name and an int, a bool, a str or a float each.
 
     A line pyct cannot read is an error rather than a skip: a model missing
     one of its leaves would quietly become the seed's value again.
@@ -73,7 +77,10 @@ def _value(line: str) -> tuple[str, int | str | float]:
 
 
 def _read(value: str) -> int | str | float:
-    """A value in quotes is a string, one in three fields a double, and any other an int."""
+    """A value in quotes is a string, one in three fields a double, `true` or `false` a bool,
+    and any other an int."""
+    if value in _BOOLS:
+        return _BOOLS[value]
     if value.startswith('"'):
         return strings.decode(value)
     if value.startswith("(fp "):

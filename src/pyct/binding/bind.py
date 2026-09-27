@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, TypeGuard
 
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -17,14 +18,14 @@ type AtLeaf = Callable[[int | float | str, Expression], object]
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, and every float argument, its access
-    and the sink.
+    """Give every int and str in the seed, at any depth, and every float and bool argument,
+    its access and the sink.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
     <key>]`` per step, so ``config["server"]["port"]`` is
-    ``["[]", ["[]", "config", "'server'"], "'port'"]``. A bool is an int to
-    Python but not a number to bind: it has no ``<`` worth tracking.
+    ``["[]", ["[]", "config", "'server'"], "'port'"]``. The seed decides the
+    type: JSON ``true`` is a tracked bool whatever the annotation says.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
     under, and every other value deepcopy can copy is copied, so a change the
@@ -125,12 +126,13 @@ def walked(seed: Mapping[str, object], at_leaf: AtLeaf) -> dict[str, object]:
 def _binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
     """Whether bind tracks this value at this access: the one rule the walk reads.
 
-    A float is tracked as an argument's own value. One inside a dict or a
-    list passes through plain until run-with-nested-arguments follows it.
+    A float and a bool are tracked as an argument's own value. One inside a
+    dict or a list passes through plain until run-with-nested-arguments
+    follows it.
     """
-    if isinstance(value, float):
+    if isinstance(value, float | bool):
         return isinstance(access, str)
-    return isinstance(value, int | str) and not isinstance(value, bool)
+    return isinstance(value, int | str)
 
 
 # the types whose values the walk hands on as they are: nothing can change one
@@ -299,4 +301,6 @@ def _tracked(value: int | float | str, access: Expression, sink: BranchSink) -> 
         return ConcolicStr(value, expression=access, sink=sink)
     if isinstance(value, float):
         return ConcolicFloat(value, expression=access, sink=sink)
+    if isinstance(value, bool):
+        return ConcolicBool(value, expression=access, sink=sink)
     return ConcolicInt(value, expression=access, sink=sink)

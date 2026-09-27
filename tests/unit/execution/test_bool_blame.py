@@ -22,7 +22,10 @@ FIXTURE = Path(__file__).resolve().parents[3] / "targets" / "trace" / "uncalled_
             id="round-as-the-int",
         ),
         pytest.param(lambda x: format(x > 0, "s"), id="format"),
-        pytest.param(lambda x: (x > 0) / 0, id="downgrade"),
+        pytest.param(lambda x: (x > 0) / 0, id="true-division"),
+        pytest.param(lambda x: (x > 0) / 0.0, id="true-division-by-a-float"),
+        pytest.param(lambda x: divmod(x > 0, 0.0), id="divmod-by-a-float"),
+        pytest.param(lambda x: (x > 0) << -1, id="downgrade"),
     ],
 )
 def test_execute_reports_a_raise_under_a_bools_own_operation_as_the_targets(
