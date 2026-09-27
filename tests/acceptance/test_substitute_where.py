@@ -25,7 +25,7 @@ CHECK = 'def check(x: int) -> str:\n    b = x > 5\n    if b is True:\n        re
 CHOOSE = (
     'def choose(x: int) -> str:\n    if x in {1, 5}:\n        return "picked"\n    return "other"\n'
 )
-# under either variable, Python writes no bytecode beside a module
+# either variable can keep Python's bytecode from beside a module
 BYTECODE_ELSEWHERE = ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")
 
 
