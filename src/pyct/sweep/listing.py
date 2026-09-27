@@ -112,6 +112,9 @@ def _interrupt(number: int, frame: object) -> None:
 
 
 def _hang_up(number: int, frame: object) -> None:
+    """Raise so the lister is stopped. A closing terminal can send a second SIGHUP, which is
+    ignored from here on so it cannot cut that short; the sweep then ends by the SIGHUP."""
+    signal.signal(signal.SIGHUP, signal.SIG_IGN)
     raise _HangUpError
 
 
