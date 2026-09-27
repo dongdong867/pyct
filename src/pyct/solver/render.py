@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
+from pyct.solver.answer import SolverAnswerError
 from pyct.solver.strings import (
     above,
     below,
@@ -129,8 +130,18 @@ class Program:
     names_by_symbol: Mapping[str, str]
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
-        """A model cvc5 wrote by constant, named by the leaves the constants were declared for."""
-        return {self.names_by_symbol[constant]: value for constant, value in model.items()}
+        """A model cvc5 wrote by constant, named by the leaves the constants were declared for.
+
+        A symbol the program did not declare is ``SolverAnswerError``, as any
+        value line pyct cannot read is: a guess would hand back a wrong input.
+        """
+        unknown = [symbol for symbol in model if symbol not in self.names_by_symbol]
+        if unknown:
+            named = ", ".join(unknown)
+            raise SolverAnswerError(
+                f"cvc5 answered about names the program did not declare: {named}"
+            )
+        return {self.names_by_symbol[symbol]: value for symbol, value in model.items()}
 
 
 def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:

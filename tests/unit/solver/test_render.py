@@ -5,6 +5,7 @@ import pytest
 
 from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
+from pyct.solver.answer import SolverAnswerError
 from pyct.solver.render import program
 from pyct.solver.strings import above, below, last_index, occurrences
 
@@ -354,3 +355,10 @@ def test_an_access_is_a_leaf_by_the_steps_binding_takes(monkeypatch: pytest.Monk
 
     assert "(declare-const |leaf.0| Int)" in text.splitlines()
     assert "(assert (> |leaf.0| 100))" in text.splitlines()
+
+
+def test_a_model_about_a_symbol_the_program_did_not_declare_is_unreadable() -> None:
+    written = program((fork(["<", "x", 10], taken=True),), {"x": int})
+
+    with pytest.raises(SolverAnswerError, match="arg.y"):
+        written.read({"arg.x": 3, "arg.y": 4})
