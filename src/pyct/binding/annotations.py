@@ -150,7 +150,7 @@ def _as_typed(value: object) -> str:
 
 
 def _escaped(character: str) -> str:
-    units = character.encode("utf-16-be")
+    units = character.encode("utf-16-be", "surrogatepass")
     return "".join(f"\\u{units[i]:02x}{units[i + 1]:02x}" for i in range(0, len(units), 2))
 
 

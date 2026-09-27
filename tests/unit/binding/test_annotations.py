@@ -169,14 +169,17 @@ def test_contradictions_writes_text_past_ascii_as_it_was_typed() -> None:
 
 
 def test_contradictions_escapes_what_a_terminal_cannot_show() -> None:
-    # a line separator, a C1 control and a bidi override would break or reorder the line
+    # a line separator, a C1 control and a bidi override would break or reorder the line, and a
+    # lone surrogate, which JSON's "\ud800" reads as, has no character to show
     checks: dict[str, Check] = {"xs": Items(list, int)}
+    seed = {"xs": ["a\u2028b", "\x85é\u202e", "\U000e0001", "\ud800"]}
 
-    lines = contradictions(checks, {"xs": ["a b", "\x85é‮", "\U000e0001"]})
+    lines = contradictions(checks, seed)
 
     assert lines == [
         'xs[0] must be an int, got "a\\u2028b"',
         'xs[1] must be an int, got "\\u0085é\\u202e"',
         'xs[2] must be an int, got "\\udb40\\udc01"',
+        'xs[3] must be an int, got "\\ud800"',
     ]
     assert all(len(line.splitlines()) == 1 for line in lines)
