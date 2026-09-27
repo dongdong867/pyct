@@ -1,11 +1,12 @@
-"""Python strs in SMT-LIB: a literal both ways, an order against a literal, and the searches.
+"""Python strs in SMT-LIB: a literal both ways, an order against a literal, the searches and
+the pieces.
 
 A literal is wrapped in double quotes, and a double quote inside it is
 written twice. A printable ASCII character other than the backslash is
 written as itself. Every other character up to U+2FFFF, the last one cvc5
 holds, is written as ``\\u{hex}`` with its code point in lowercase hex.
 cvc5 prints a value by the same rule, so reading one back undoes these
-steps. A literal outside double quotes, a piece that is none of the three
+steps. A literal outside double quotes, a token that is none of the three
 forms, or an escape past U+2FFFF is an error.
 
 An order between a string term and a literal is written letter by letter,
@@ -22,6 +23,16 @@ the expression holds them: the string and then the substring, but for
 so ``rfind`` and ``count`` read the reversed strings, and each term also
 states a bound Python's answer always meets, which cvc5 does not work out
 from the rest; decision string-search-clamped-over-the-reversed-string.
+
+A piece is written as the SMT-LIB term for the str Python builds: an index
+or a slice, a replace, and a removed prefix or suffix. A position arrives
+as the int it is, or None for a slice's missing bound, and the clamping
+Python does is written inside the term.
+
+A form may write an operand more than once. Render names every compound
+operand a form reads and defines it once, so a form is handed a name or a
+literal, and a piece of a piece grows the program by one level, not by a
+multiple of it.
 """
 
 import re
@@ -33,9 +44,9 @@ from pyct.core.strs import LAST_CHARACTER
 _FIRST_PRINTABLE = 0x20
 _LAST_PRINTABLE = 0x7E
 
-# one piece of a literal as cvc5 prints it: a doubled quote, an escape, or a printable ASCII
+# one token of a literal as cvc5 prints it: a doubled quote, an escape, or a printable ASCII
 # character that is neither the quote nor the backslash
-_PIECE = re.compile(r'(?P<quote>"")|\\u\{(?P<code>[0-9a-f]{1,5})\}|(?P<plain>[ !#-\[\]-~])')
+_TOKEN = re.compile(r'(?P<quote>"")|\\u\{(?P<code>[0-9a-f]{1,5})\}|(?P<plain>[ !#-\[\]-~])')
 
 
 def encode(value: str) -> str:
@@ -168,6 +179,61 @@ def occurrences(term: str, sub: str) -> str:
     )
 
 
+def character(term: str, index: int) -> str:
+    """``s[i]``: the character at i, a negative i counted back from the end.
+
+    It answers only past the fork that says s is long enough for i, so i is
+    in range wherever the term is read.
+    """
+    return f"(str.at {term} {_counted(term, index)})"
+
+
+def sliced(term: str, start: int | None, stop: int | None) -> str:
+    """``s[start:stop]``: Python's slice, each bound clamped to the string.
+
+    A missing start is 0 and a missing stop the length. A negative bound
+    counts back from the end, and a start that counts back past the
+    beginning is 0. ``str.substr`` gives the empty string for a start past
+    the end or a length of zero or less, and stops at the end of the string,
+    which is Python's clamping for the rest.
+    """
+    if start is None:
+        low = "0"
+    elif start >= 0:
+        low = str(start)
+    else:
+        back = _counted(term, start)
+        low = f"(ite (< {back} 0) 0 {back})"
+    high = _length(term) if stop is None else _counted(term, stop)
+    return f"(str.substr {term} {low} (- {high} {low}))"
+
+
+def _counted(term: str, position: int) -> str:
+    """A position counted from the start of the term: a negative one counts back from the end."""
+    return str(position) if position >= 0 else f"(- {_length(term)} {-position})"
+
+
+def replaced(term: str, old: str, new: str) -> str:
+    """``s.replace(old, new)``: every old, left to right and not overlapping, turned into new.
+
+    cvc5's ``str.replace_all`` is Python's replace for an old string of at
+    least one character, the one form core hands on.
+    """
+    return f"(str.replace_all {term} {old} {new})"
+
+
+def without_prefix(term: str, prefix: str) -> str:
+    """``s.removeprefix(prefix)``: s past the prefix when s starts with it, else s itself."""
+    rest = f"(str.substr {term} {_length(prefix)} (- {_length(term)} {_length(prefix)}))"
+    return f"(ite (str.prefixof {prefix} {term}) {rest} {term})"
+
+
+def without_suffix(term: str, suffix: str) -> str:
+    """``s.removesuffix(suffix)``: s up to the suffix when s ends with it, else s itself."""
+    rest = f"(str.substr {term} 0 (- {_length(term)} {_length(suffix)}))"
+    return f"(ite (str.suffixof {suffix} {term}) {rest} {term})"
+
+
 def _reversed(term: str) -> str:
     """A string term reversed.
 
@@ -195,24 +261,24 @@ def decode(literal: str) -> str:
     if len(literal) < 2 or literal[0] != '"' or literal[-1] != '"':
         raise ValueError(f"cvc5 prints a string value in double quotes, not {literal}")
     body = literal[1:-1]
-    pieces: list[str] = []
+    characters: list[str] = []
     at = 0
     while at < len(body):
-        piece = _PIECE.match(body, at)
-        if piece is None:
+        token = _TOKEN.match(body, at)
+        if token is None:
             raise ValueError(f"cvc5 prints no string value like {literal}")
-        pieces.append(_decoded(piece, literal))
-        at = piece.end()
-    return "".join(pieces)
+        characters.append(_decoded(token, literal))
+        at = token.end()
+    return "".join(characters)
 
 
-def _decoded(piece: re.Match[str], literal: str) -> str:
-    """One piece of a literal as the character it stands for."""
-    if piece["quote"] is not None:
+def _decoded(token: re.Match[str], literal: str) -> str:
+    """One token of a literal as the character it stands for."""
+    if token["quote"] is not None:
         return '"'
-    if piece["plain"] is not None:
-        return piece["plain"]
-    code = int(piece["code"], 16)
+    if token["plain"] is not None:
+        return token["plain"]
+    code = int(token["code"], 16)
     if code > LAST_CHARACTER:
         raise ValueError(f"cvc5 holds characters up to U+{LAST_CHARACTER:X}: {literal}")
     return chr(code)

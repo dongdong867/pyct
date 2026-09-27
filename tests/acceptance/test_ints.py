@@ -46,6 +46,7 @@ FLOOR_DIVISION = "targets.ints.floor_division::share"
 FLOOR_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "floor_division.py")
 REFLECTED_DIVISION = "targets.ints.reflected_division::share"
 REFLECTED_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_division.py")
+COUNTED_UP = "targets.ints.counted_up::count_up"
 
 
 def argument(line: dict[str, object], name: str) -> int:
@@ -341,3 +342,17 @@ def test_finds_the_division_by_zero_on_the_reflected_side() -> None:
 
     # `7 // y` runs int's reflected divide on y, and the fork is the same divisor's
     assert_the_zero_fork_was_flipped(result, REFLECTED_DIVISION_FILE)
+
+
+# follow-integers-flips-through-arithmetic
+def test_flips_through_a_sum_built_over_five_thousand_passes() -> None:
+    result = run_pyct(COUNTED_UP, '{"x": 0}')
+
+    # the sum nests five thousand additions deep, far past Python's recursion limit, and the
+    # line, the fork line and the solver each walk it
+    assert result.returncode == 0, result.stderr
+    seed, solved = two_lines(result.stdout)
+    assert [fork["taken"] for fork in forks_of(seed)] == [False]
+    assert argument(solved, "x") + 5000 > 5010
+    assert solved["mismatch_at"] is None
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"

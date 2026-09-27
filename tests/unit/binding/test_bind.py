@@ -5,7 +5,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 
 from pyct.binding.bind import access_name, bind, leaf_name, leaves
-from pyct.core.branch import SinkItem
+from pyct.core.branch import Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 
@@ -263,6 +263,20 @@ def test_access_name_reads_only_a_step_the_walk_takes() -> None:
     assert access_name(["+", "x", 1]) is None
     assert access_name("x") is None
     assert access_name([]) is None
+
+
+def test_access_name_reads_a_chain_of_steps_down_to_a_name_only() -> None:
+    deep: Expression = "s"
+    for _ in range(5000):
+        deep = ["+", deep, "' '"]
+
+    # an index on a string a loop built holds the whole string: it is no access, and the check
+    # reads a step of it, not the string written out, nested past Python's recursion limit
+    assert access_name(["[]", deep, 0]) is None
+    assert access_name(["[]", ["[]", "config", "'a'"], "'b'"]) == json.dumps(
+        ["[]", ["[]", "config", "'a'"], "'b'"]
+    )
+    assert access_name(["[]", "items", ["+", "i", 1]]) is None
 
 
 def test_a_list_reached_first_under_a_float_key_is_still_named_by_its_key() -> None:

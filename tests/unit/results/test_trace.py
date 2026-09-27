@@ -1,8 +1,11 @@
+import re
+
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
+from pyct.results.printed import LIMIT
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -72,9 +75,24 @@ INFIX: dict[str, tuple[Expression, str]] = {
         "config['server']['port'] < 1",
     ),
     "key-in-double-quotes": (["[]", "d", '"it\'s"'], 'd["it\'s"]'),
-    "index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
+    "item-index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
     "method-on-an-item": (["find", ["[]", "items", 0], "'x'"], "items[0].find('x')"),
     "index-of-a-condition": (["[]", ["+", "s", "t"], 0], "(s + t)[0]"),
+    "index": (["[]", "s", 0], "s[0]"),
+    "negative-index": (["[]", "s", -1], "s[-1]"),
+    "slice": (["[:]", "s", 1, 3], "s[1:3]"),
+    "slice-missing-stop": (["[:]", "s", 2, None], "s[2:]"),
+    "slice-missing-start": (["[:]", "s", None, -1], "s[:-1]"),
+    "length": ([">", ["len", "s"], 3], "len(s) > 3"),
+    "piece-inside-a-compare": (["==", ["[]", "s", 0], "'a'"], "s[0] == 'a'"),
+    "method-on-a-piece": (
+        ["removeprefix", ["[:]", "s", 1, None], "'x'"],
+        "s[1:].removeprefix('x')",
+    ),
+    "replace": (["replace", "s", "'a'", "'b'"], "s.replace('a', 'b')"),
+    "cut-part": (["==", ["...", 5000], "'abc'"], "...(5000 nodes) == 'abc'"),
+    "piece-of-a-cut-part": (["[]", ["...", 12], 0], "...(12 nodes)[0]"),
+    "uncounted-cut-part": (["==", ["...", None], "'abc'"], "...(? nodes) == 'abc'"),
 }
 
 
@@ -87,7 +105,8 @@ def test_render_trace_writes_the_condition_as_python_does(
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # a method call binds tighter than any operator, so it needs no parentheses of its own
+    # a method call, an index, a slice and len bind tighter than any operator, so none needs
+    # parentheses of its own
     assert lines[1] == f"fork m.py:5:7  {written}  taken"
 
 
@@ -321,3 +340,49 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
+
+
+def test_render_trace_writes_an_expression_past_the_cap_cut() -> None:
+    term: Expression = "s"
+    for _ in range(40):
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    # the fork line holds what the stdout line holds, each cut part as the distinct nodes it holds
+    assert lines[1].startswith("fork m.py:5:7  (")
+    assert lines[1].endswith(" == 'abc'  not taken")
+    assert " nodes)" in lines[1]
+    assert len(lines[1]) < 20_000
+
+
+def test_render_trace_writes_a_condition_nested_past_the_recursion_limit() -> None:
+    term: Expression = "x"
+    for _ in range(LIMIT - 1):
+        term = ["abs", term]
+    # LIMIT nodes, so the line prints it whole, nested deeper than Python's recursion limit
+    fork = Branch(expression=term, taken=True, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"x": 1}, forks=(fork,), covered_lines=frozenset({5}))
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    nested = LIMIT - 2
+    assert lines[1] == f"fork m.py:5:7  {'abs (' * nested}abs x{')' * nested}  taken"
+
+
+def test_render_trace_writes_a_string_built_over_five_thousand_passes() -> None:
+    term: Expression = "s"
+    for _ in range(5000):
+        term = ["+", term, "' '"]
+    fork = Branch(expression=["startswith", term, "'ok'"], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"s": "a"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    lines = render_trace(record, COVERAGE).splitlines()
+
+    # the top of the string is kept, one pass to a pair of parentheses, over the cut part
+    assert re.fullmatch(
+        r"fork m\.py:5:7  \(+\.\.\.\(\d+ nodes\)( \+ ' '\))+\.startswith\('ok'\)  not taken",
+        lines[1],
+    )

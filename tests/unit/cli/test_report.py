@@ -1,12 +1,16 @@
 import io
 import sys
+from collections.abc import Sequence
 
 import pytest
 
 from pyct.cli import _report
+from pyct.core.branch import Branch, Expression, IsLeaf, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
+from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord
+from pyct.results.trace import render_trace
 
 COVERAGE = Coverage(covered={"m.py": frozenset({5})}, lines={"m.py": frozenset(range(1, 8))})
 RECORD = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
@@ -61,3 +65,62 @@ def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPa
     _report(RECORD, COVERAGE)
 
     assert stdout.writes == [render(RECORD, COVERAGE) + "\n"]
+
+
+def _count_cuts(monkeypatch: pytest.MonkeyPatch, calls: list[str], module: str) -> None:
+    """Note each time ``module`` cuts a record's forks, by the module's name."""
+
+    def counted(forks: Sequence[Branch], *is_leaf: IsLeaf) -> tuple[Expression, ...]:
+        calls.append(module)
+        return printed_forks(forks, *is_leaf)
+
+    monkeypatch.setattr(f"{module}.printed_forks", counted)
+
+
+def test_report_cuts_the_forks_once_for_both_lines(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a loop's forks each hold the string of every pass before theirs, past the cap from the
+    # eighth pass on
+    term: Expression = "s"
+    forks: list[Branch] = []
+    for i in range(40):
+        forks.append(
+            Branch(expression=[">", ["len", term], i], taken=True, site=Site("m.py", 5, 7))
+        )
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    record = InputRecord(args={"s": "abc"}, forks=tuple(forks), covered_lines=frozenset({5}))
+    calls: list[str] = []
+    for module in ("pyct.cli", "pyct.results.jsonl", "pyct.results.trace"):
+        _count_cuts(monkeypatch, calls, module)
+
+    _report(record, COVERAGE)
+
+    # the report cuts the forks once and hands the cut to both lines, which cut none of their own
+    assert calls == ["pyct.cli"]
+    # and each line is what it would be alone
+    captured = capsys.readouterr()
+    assert captured.out == render(record, COVERAGE) + "\n"
+    assert captured.err == render_trace(record, COVERAGE)
+    assert " nodes)" in captured.err
+
+
+def test_report_writes_a_part_left_uncounted_as_null_and_a_question_mark(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # with no steps to count in, every part the line cuts is left uncounted
+    monkeypatch.setattr("pyct.results.printed.COUNTING_STEPS", 0)
+    term: Expression = "s"
+    for _ in range(40):
+        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
+    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
+
+    _report(record, COVERAGE)
+
+    captured = capsys.readouterr()
+    assert '["...", null]' in captured.out
+    assert '["...", 1' not in captured.out
+    fork_line = captured.err.splitlines()[1]
+    assert "...(? nodes)" in fork_line
+    assert "None" not in fork_line

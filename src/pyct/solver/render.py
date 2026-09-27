@@ -7,16 +7,23 @@ from dataclasses import dataclass
 from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import SolverAnswerError
+from pyct.solver.dag import Node, distinct
+from pyct.solver.joined import joined
 from pyct.solver.strings import (
     above,
     below,
+    character,
     contains,
     encode,
     ends_with,
     first_index,
     last_index,
     occurrences,
+    replaced,
+    sliced,
     starts_with,
+    without_prefix,
+    without_suffix,
 )
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet.
@@ -26,21 +33,58 @@ SORTS: Mapping[type, str] = {int: "Int", str: "String"}
 # parameter name holds neither
 _QUOTES = ("'", '"')
 
-# Python's spelling of an operator, and SMT-LIB's. This is the one place the two meet, so
-# a head that is missing raises here and names the gap, rather than handing cvc5 a program
-# it cannot parse, which comes back as `solver failed`.
-OPERATORS: Mapping[str, str] = {
-    "<": "<",
-    "<=": "<=",
-    ">": ">",
-    ">=": ">=",
-    "==": "=",
-    "!=": "distinct",
-    "+": "+",
-    "-": "-",
-    "*": "*",
-    "abs": "abs",
-    "**": "^",
+# the type of the value each head builds, as Python has it, so a head above it knows what its
+# operands are: `+` joins two strs and adds two ints. None is a head whose value has its
+# operands' type. Every head render writes has an entry, and a new type adds its own
+RESULTS: Mapping[str, type | None] = {
+    "<": bool,
+    "<=": bool,
+    ">": bool,
+    ">=": bool,
+    "==": bool,
+    "!=": bool,
+    "in": bool,
+    "startswith": bool,
+    "endswith": bool,
+    "+": None,
+    "-": None,
+    "*": None,
+    "**": None,
+    "abs": None,
+    "//": None,
+    "%": None,
+    "find": int,
+    "rfind": int,
+    "index": int,
+    "rindex": int,
+    "count": int,
+    "len": int,
+    "[]": str,
+    "[:]": str,
+    "replace": str,
+    "removeprefix": str,
+    "removesuffix": str,
+}
+
+# Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one
+# place the two meet, so a head that is missing raises here and names the gap, rather than
+# handing cvc5 a program it cannot parse, which comes back as `solver failed`.
+OPERATORS: Mapping[tuple[str, type], str] = {
+    ("<", int): "<",
+    ("<=", int): "<=",
+    (">", int): ">",
+    (">=", int): ">=",
+    ("==", int): "=",
+    ("!=", int): "distinct",
+    ("+", int): "+",
+    ("-", int): "-",
+    ("*", int): "*",
+    ("abs", int): "abs",
+    ("**", int): "^",
+    ("==", str): "=",
+    ("!=", str): "distinct",
+    ("+", str): "str.++",
+    ("len", str): "str.len",
 }
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
@@ -74,9 +118,9 @@ def _modulo(dividend: str, divisor: str) -> str:
 
 
 # an operation SMT-LIB has no operator for, or spells in another order, written out as the form
-# that means it. The operands arrive rendered, in the expression's order, so a form only joins
-# text.
-FORMS: Mapping[str, Callable[[str, str], str]] = {
+# that means it. The operands arrive rendered, as many as the expression holds and in its
+# order, so a form only joins text.
+FORMS: Mapping[str, Callable[..., str]] = {
     "//": _floor_division,
     "%": _modulo,
     "in": contains,
@@ -89,7 +133,18 @@ FORMS: Mapping[str, Callable[[str, str], str]] = {
     # find it mirrors
     "index": first_index,
     "rindex": last_index,
+    "replace": replaced,
+    "removeprefix": without_prefix,
+    "removesuffix": without_suffix,
 }
+
+# a piece taken at positions: the string arrives rendered, and each position as the plain int
+# it is, or None for a slice's missing bound, so the form sees its sign
+POSITIONED: Mapping[str, Callable[..., str]] = {"[]": character, "[:]": sliced}
+
+
+# the sort of a part defined once, by the type of its value
+_DEFINED_SORTS: Mapping[type, str] = {**SORTS, bool: "Bool"}
 
 
 @dataclass(frozen=True)
@@ -111,6 +166,10 @@ class _Leaves:
             return None if _is_literal(part) else part
         name = access_name(part)
         return name if name in self.kinds else None
+
+    def holds(self, part: Expression) -> bool:
+        """Whether a part is one of the seed's leaves, which a condition names and never opens."""
+        return self.named(part) is not None
 
     def kind(self, part: Expression) -> type | None:
         """The type of the leaf a part is, or None for anything else."""
@@ -145,35 +204,42 @@ class Program:
 
 
 def program(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> Program:
-    """The program for a path, with the table that reads its answer back.
+    """The whole little program for a path, with the table that reads its answer back.
 
-    Only the leaves the prefix mentions are declared, so the answer names
-    nothing the path did not depend on. ``leaves`` names each leaf as
-    ``pyct.binding`` does, and ``_symbol`` names its constant.
+    What to declare, what to define, what to assert, what to ask. Only the
+    leaves the prefix mentions are declared, so the answer names nothing the
+    path did not depend on. ``leaves`` names each leaf as ``pyct.binding``
+    does, and ``_symbol`` names its constant. Two pieces of one string side by
+    side are first written as the one piece they make (see `joined`), and a
+    part of the conditions written more than once is defined once before the
+    assertions (see `_Program`).
     """
-    symbols = _symbols(prefix, leaves)
+    seed = _Leaves(kinds=leaves, constants={})
+    prefix = joined(prefix, seed.holds)
+    order, holders = distinct(prefix, seed.holds)
+    symbols = _symbols(prefix, order, seed)
     constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
-    known = _Leaves(kinds=leaves, constants=constants)
+    # a leaf no sort declares is named before any term on it is written
     declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
+    body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders)
     lines = ["(set-logic ALL)"]
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
-    lines += [_assertion(fork, known) for fork in prefix]
+    lines += body.definitions
+    lines += [body.assertion(fork) for fork in prefix]
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     text = "\n".join(lines) + "\n"
     return Program(text=text, names_by_symbol={symbol: name for name, symbol in symbols.items()})
 
 
-def _symbols(prefix: tuple[Branch, ...], leaves: Mapping[str, type]) -> dict[str, str]:
+def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> dict[str, str]:
     """The symbol of each leaf the prefix names, in the order the seed bound them."""
-    known = _Leaves(kinds=leaves, constants={})
-    named: set[str] = set()
-    for fork in prefix:
-        named |= _names(fork.expression, known)
-    unknown = sorted(named - set(leaves))
+    parts = [fork.expression for fork in prefix] + [part for node in order for part in node[1:]]
+    named = {name for part in parts if (name := seed.named(part)) is not None}
+    unknown = sorted(named - set(seed.kinds))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {name: _symbol(name, index) for index, name in enumerate(leaves) if name in named}
+    return {name: _symbol(name, index) for index, name in enumerate(seed.kinds) if name in named}
 
 
 def _symbol(name: str, index: int) -> str:
@@ -197,16 +263,6 @@ def _symbol(name: str, index: int) -> str:
     return f"arg.{written}"
 
 
-def _names(expression: Expression, leaves: _Leaves) -> set[str]:
-    """Every leaf a condition names. A list leads with its operator, not a leaf."""
-    name = leaves.named(expression)
-    if name is not None:
-        return {name}
-    if isinstance(expression, list):
-        return {name for part in expression[1:] for name in _names(part, leaves)}
-    return set()
-
-
 def _sort(name: str, kind: type) -> str:
     sort = SORTS.get(kind)
     if sort is None:
@@ -214,39 +270,146 @@ def _sort(name: str, kind: type) -> str:
     return sort
 
 
-def _assertion(fork: Branch, leaves: _Leaves) -> str:
-    """The condition as the run met it: the side it took decides the negation."""
-    condition = _expression(fork.expression, leaves)
-    return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
+class _Program:
+    """A path's conditions, each part written once.
 
-
-def _expression(expression: Expression, leaves: _Leaves) -> str:
-    """One condition, operator first. A negative number is a subtraction from nothing."""
-    if isinstance(expression, bool):
-        return "true" if expression else "false"
-    if isinstance(expression, int):
-        return f"(- {-expression})" if expression < 0 else str(expression)
-    name = leaves.named(expression)
-    if name is not None:
-        return leaves.constants[name]
-    if isinstance(expression, str):
-        return encode(_value(expression))
-    head, *operands = expression
-    rendered = [_expression(part, leaves) for part in operands]
-    form = FORMS.get(head) if isinstance(head, str) else None
-    if form is not None and len(rendered) == 2:
-        return form(rendered[0], rendered[1])
-    if isinstance(head, str) and head in STRING_ORDERS and _on_strings(operands, leaves):
-        return _string_order(head, operands, rendered)
-    return "({} {})".format(_operator(head), " ".join(rendered))
-
-
-def _on_strings(operands: list[Expression], leaves: _Leaves) -> bool:
-    """Whether a compare's operands are strings: a string literal, or a leaf bound to a str.
-
-    Both operands of a compare are of one sort, so one string between them decides it.
+    Python holds a part it used twice as one list, so a string rebuilt from
+    two pieces of itself holds the old one twice, and written out the
+    condition doubles with each pass of the loop that built it. A part held
+    in more than one place is defined once, as ``(define-fun e!N () Sort …)``,
+    and named wherever it is read; so is a part a form reads, since a form
+    may write its operands more than once. ``!`` is in no Python name, so a
+    defined name never meets a parameter. The program then grows with the
+    number of distinct parts, not with the conditions written out.
     """
-    return any(_literal(part) is not None or leaves.kind(part) is str for part in operands)
+
+    def __init__(self, leaves: _Leaves, order: list[Node], holders: dict[int, int]) -> None:
+        self.leaves = leaves
+        self.types: dict[int, type | None] = {}
+        # each part's term, its defined name or the part written out, kept until every place
+        # that holds the part has read it: a chain held once keeps the text of its top alone
+        self.terms: dict[int, str] = {}
+        self.unread = dict(holders)
+        self.definitions: list[str] = []
+        for node in order:
+            self.types[id(node)] = self._result(node)
+        read = self._read_by_forms(order)
+        # each part comes after the parts it holds (see `distinct`), so their terms are written
+        # before it, and no part waits on Python's stack for its operands
+        for node in order:
+            define = holders[id(node)] > 1 or id(node) in read
+            self.terms[id(node)] = self._written(node, define=define)
+
+    def assertion(self, fork: Branch) -> str:
+        """The condition as the run met it: the side it took decides the negation."""
+        condition = self.term(fork.expression)
+        return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
+
+    def term(self, expression: Expression) -> str:
+        """One condition or a part of one: a leaf by its constant, a defined part by its name,
+        any other written out.
+
+        Each place that holds a part reads its term once, and the last read lets it go.
+        """
+        name = self.leaves.named(expression)
+        if name is not None:
+            return self.leaves.constants[name]
+        if not isinstance(expression, list):
+            return _leaf(expression)
+        key = id(expression)
+        self.unread[key] -= 1
+        return self.terms[key] if self.unread[key] else self.terms.pop(key)
+
+    def type_of(self, term: Expression) -> type | None:
+        """The type of a term's value, as Python has it, or None when nothing says.
+
+        A leaf has the type the seed bound, a literal its own, and an
+        operation the type `RESULTS` gives its head.
+        """
+        if self.leaves.holds(term):
+            return self.leaves.kind(term)
+        if isinstance(term, list):
+            return self.types[id(term)]
+        if isinstance(term, str):
+            return str
+        return None if term is None else type(term)
+
+    def _result(self, node: Node) -> type | None:
+        """The type of an operation's value, its operands already typed."""
+        head, *operands = node
+        if not isinstance(head, str) or head not in RESULTS:
+            return None
+        result = RESULTS[head]
+        return result if result is not None else self._operands_type(operands)
+
+    def _operands_type(self, operands: list[Expression]) -> type | None:
+        """The type of an operation's operands, or None when none of them says.
+
+        Python's own operators take two operands of one type here, so the
+        first that says decides it.
+        """
+        return next((kind for part in operands if (kind := self.type_of(part))), None)
+
+    def _read_by_forms(self, order: list[Node]) -> set[int]:
+        """The parts a form reads: an operand of a form, a piece, or an order on strings."""
+        read: set[int] = set()
+        for node in order:
+            head, *operands = node
+            if head in FORMS or head in POSITIONED or self._orders_strings(node):
+                read |= {id(part) for part in operands if isinstance(part, list)}
+        return read
+
+    def _orders_strings(self, node: Node) -> bool:
+        head, *operands = node
+        return head in STRING_ORDERS and self._operands_type(operands) is str
+
+    def _written(self, node: Node, *, define: bool) -> str:
+        """A part's term, its own parts already written: its name if it is defined, else itself.
+
+        A part to define is defined once, by name, when it has a sort to define it by.
+        """
+        operation = self._operation(node)
+        kind = self.types[id(node)]
+        sort = None if kind is None or not define else _DEFINED_SORTS.get(kind)
+        if sort is None:
+            return operation
+        name = f"e!{len(self.definitions)}"
+        self.definitions.append(f"(define-fun {name} () {sort} {operation})")
+        return name
+
+    def _operation(self, node: Node) -> str:
+        """An operation on its operands, as the form, the order or the operator that means it."""
+        head, *operands = node
+        if not isinstance(head, str):
+            raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+        if (positioned := POSITIONED.get(head)) is not None:
+            term, *positions = operands
+            return positioned(self.term(term), *(_position(part) for part in positions))
+        rendered = [self.term(part) for part in operands]
+        if (form := FORMS.get(head)) is not None:
+            return form(*rendered)
+        kind = self._operands_type(operands)
+        if head in STRING_ORDERS and kind is str:
+            return _string_order(head, operands, rendered)
+        return f"({_operator(head, kind)} {' '.join(rendered)})"
+
+
+def _leaf(leaf: str | int | bool | None) -> str:
+    """A number, a truth value or a string literal. A negative number is a subtraction."""
+    if leaf is None:
+        raise ValueError("pyct cannot render a missing bound outside a slice")
+    if isinstance(leaf, bool):
+        return "true" if leaf else "false"
+    if isinstance(leaf, int):
+        return f"(- {-leaf})" if leaf < 0 else str(leaf)
+    return encode(_value(leaf))
+
+
+def _position(part: Expression) -> int | None:
+    """A position in a piece, as the plain int it is, or None for a slice's missing bound."""
+    if part is None or (isinstance(part, int) and not isinstance(part, bool)):
+        return part
+    raise ValueError(f"pyct cannot render {part} as a position: core writes a plain int there")
 
 
 def _string_order(head: str, operands: list[Expression], rendered: list[str]) -> str:
@@ -284,9 +447,10 @@ def _value(literal: str) -> str:
     return value
 
 
-def _operator(head: Expression) -> str:
-    """How SMT-LIB spells the operator a condition leads with."""
-    operator = OPERATORS.get(head) if isinstance(head, str) else None
+def _operator(head: str, kind: type | None) -> str:
+    """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
+    operator = OPERATORS.get((head, kind)) if kind is not None else None
     if operator is None:
-        raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+        on = "anything" if kind is None else kind.__name__
+        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
     return operator

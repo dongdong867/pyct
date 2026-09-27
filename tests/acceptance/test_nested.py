@@ -224,9 +224,6 @@ def test_quotes_a_key_that_looks_like_an_index() -> None:
 
 
 # run-with-nested-arguments-indexes-a-string-inside-a-list
-@pytest.mark.xfail(
-    strict=True, reason="string indexing and its long-enough fork come with follow-string-pieces"
-)
 def test_indexes_a_string_inside_a_list() -> None:
     result = run_pyct(STRING_IN_LIST, '{"items": ["ab"]}')
 

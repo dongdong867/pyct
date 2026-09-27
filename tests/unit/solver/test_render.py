@@ -1,13 +1,20 @@
-import json
 from collections.abc import Callable, Mapping
 
 import pytest
 
-from pyct.binding import bind
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.answer import SolverAnswerError
-from pyct.solver.render import program
-from pyct.solver.strings import above, below, last_index, occurrences
+from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, program
+from pyct.solver.strings import (
+    above,
+    below,
+    character,
+    last_index,
+    occurrences,
+    replaced,
+    sliced,
+    without_prefix,
+    without_suffix,
+)
 
 SITE = Site(file="m.py", line=2, col=7)
 
@@ -111,9 +118,29 @@ def test_a_negative_divisor_reaches_the_forms_already_written_as_a_subtraction()
     )
 
 
+def test_an_operation_with_a_number_on_its_left_is_written_on_ints() -> None:
+    # core writes `10 - x` as the reflected subtraction, the number first
+    text = render((fork(["==", ["-", 10, "x"], 3], taken=True),), {"x": int})
+
+    assert "(assert (= (- 10 |arg.x|) 3))" in text.splitlines()
+
+
 def test_an_operator_nothing_encodes_is_an_error() -> None:
     with pytest.raises(ValueError, match="<<"):
         render((fork(["<<", "x", 1], taken=True),), {"x": int})
+
+
+def test_an_operator_nothing_encodes_is_an_error_where_it_is_held_twice() -> None:
+    part: Expression = ["<<", "x", 1]
+
+    # a part held twice is defined once, but one of no type is written out, naming its gap
+    with pytest.raises(ValueError, match="<< on int"):
+        render((fork(["==", part, part], taken=True),), {"x": int})
+
+
+def test_a_head_that_is_no_name_is_an_error() -> None:
+    with pytest.raises(ValueError, match="cannot render 7"):
+        render((fork([7, "x"], taken=True),), {"x": int})
 
 
 def test_a_leaf_no_fork_mentions_is_left_out() -> None:
@@ -128,7 +155,7 @@ def test_a_name_the_leaves_do_not_have_is_an_error() -> None:
 
 
 def test_a_leaf_of_a_type_nothing_can_declare_is_an_error() -> None:
-    with pytest.raises(ValueError, match="float"):
+    with pytest.raises(ValueError, match="cannot declare x: nothing solves a float"):
         render((fork(["<", "x", 10], taken=True),), {"x": float})
 
 
@@ -269,96 +296,203 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
     ]
 
 
-# a value inside an argument, as bind names it and as leaves keys it
-PORT: Expression = ["[]", ["[]", "config", "'server'"], "'port'"]
-FIRST: Expression = ["[]", "items", 0]
-SECOND: Expression = ["[]", "items", 1]
+# the constants the program declares for the parameters s, t and x
+S, T, X = "|arg.s|", "|arg.t|", "|arg.x|"
+
+# each piece as the expression carries it, and the term the program carries for it
+PIECES: dict[str, tuple[Expression, str]] = {
+    "index": (["[]", "s", 0], character(S, 0)),
+    # a negative index reaches its form as the number it is, not a subtraction already written
+    "negative-index": (["[]", "s", -1], character(S, -1)),
+    "slice": (["[:]", "s", 1, 3], sliced(S, 1, 3)),
+    "slice-missing-stop": (["[:]", "s", 2, None], sliced(S, 2, None)),
+    "slice-missing-start": (["[:]", "s", None, -1], sliced(S, None, -1)),
+    "plus": (["+", "s", "t"], f"(str.++ {S} {T})"),
+    "plus-literal-first": (["+", "'x'", "s"], f'(str.++ "x" {S})'),
+    "replace": (["replace", "s", "'a'", "t"], replaced(S, '"a"', T)),
+    "removeprefix": (["removeprefix", "s", "'x'"], without_prefix(S, '"x"')),
+    "removesuffix": (["removesuffix", "s", "t"], without_suffix(S, T)),
+    # the piece the index reads is defined once and read by its name
+    "piece-of-a-piece": (["[]", ["[:]", "s", 1, None], 0], character("e!0", 0)),
+}
 
 
-def test_a_value_inside_an_argument_is_declared_under_a_constant_of_its_own() -> None:
-    text = render((fork(["<", PORT, 1], taken=True),), {json.dumps(PORT): int})
+@pytest.mark.parametrize(("expression", "term"), PIECES.values(), ids=list(PIECES))
+def test_a_piece_is_written_as_the_term_that_means_it(expression: Expression, term: str) -> None:
+    text = render((fork(["==", expression, "'ab'"], taken=True),), {"s": str, "t": str})
 
-    assert text.splitlines() == [
-        "(set-logic ALL)",
-        "(declare-const |leaf.0| Int)",
-        "(assert (< |leaf.0| 1))",
-        "(check-sat)",
-        "(get-value (|leaf.0|))",
-    ]
+    assert f'(assert (= {term} "ab"))' in text.splitlines()
 
 
-def test_two_values_inside_one_argument_are_two_constants() -> None:
-    leaves = {"x": int, json.dumps(FIRST): int, json.dumps(SECOND): int}
+def test_the_length_of_a_string_is_cvc5s_own() -> None:
+    text = render((fork([">", ["len", "s"], 3], taken=False),), {"s": str})
 
-    text = render((fork(["==", FIRST, SECOND], taken=False),), leaves)
-
-    lines = text.splitlines()
-    assert lines[1:3] == ["(declare-const |leaf.1| Int)", "(declare-const |leaf.2| Int)"]
-    assert "(assert (not (= |leaf.1| |leaf.2|)))" in lines
+    assert f"(assert (not (> (str.len {S}) 3)))" in text.splitlines()
 
 
-def test_a_str_inside_an_argument_compares_as_a_string() -> None:
-    text = render((fork(["==", FIRST, "'x'"], taken=True),), {json.dumps(FIRST): str})
-
-    lines = text.splitlines()
-    assert "(declare-const |leaf.0| String)" in lines
-    assert '(assert (= |leaf.0| "x"))' in lines
-    ordered = render(
-        (fork(["<", FIRST, SECOND], taken=True),),
-        {
-            json.dumps(FIRST): str,
-            json.dumps(SECOND): str,
-        },
+def test_a_plus_on_ints_stays_arithmetic_beside_a_plus_on_strings() -> None:
+    text = render(
+        (
+            fork(["==", ["+", "s", "'a'"], "'ba'"], taken=True),
+            fork(["<", ["+", "x", 1], 3], taken=True),
+        ),
+        {"s": str, "x": int},
     )
-    assert "(assert (str.< |leaf.0| |leaf.1|))" in ordered.splitlines()
+
+    assert f'(assert (= (str.++ {S} "a") "ba"))' in text.splitlines()
+    assert f"(assert (< (+ {X} 1) 3))" in text.splitlines()
 
 
-def test_an_access_the_seed_does_not_hold_names_its_parameter_in_the_error() -> None:
-    # not a leaf, so an operation on items, and items is no leaf either
-    with pytest.raises(ValueError, match="items"):
-        render((fork(["<", ["[]", "items", 5], 1], taken=True),), {json.dumps(FIRST): int})
+def test_an_order_on_two_pieces_is_cvc5s_own() -> None:
+    # neither side is a literal or a name, so the heads alone say both sides are strings
+    text = render(
+        (fork([">=", ["[]", "s", 0], ["+", "t", "t"]], taken=True),), {"s": str, "t": str}
+    ).splitlines()
+
+    assert f"(define-fun e!0 () String {character(S, 0)})" in text
+    assert f"(define-fun e!1 () String (str.++ {T} {T}))" in text
+    assert "(assert (str.<= e!1 e!0))" in text
 
 
-def test_a_program_reads_its_answer_back_by_leaf() -> None:
-    leaves = {"x": int, "y": int, json.dumps(PORT): int}
-    path = (fork([">", ["+", "x", PORT], 1], taken=True),)
+def test_a_plus_on_two_pieces_joins_strings() -> None:
+    # `s.replace("a", "b") + s.removeprefix("x") == "bb"`: no name and no literal on the `+`
+    joined: Expression = ["+", ["replace", "s", "'a'", "'b'"], ["removeprefix", "s", "'x'"]]
 
-    written = program(path, leaves)
+    text = render((fork(["==", joined, "'bb'"], taken=True),), {"s": str})
 
-    # y is not on the path, so it is neither declared nor read
-    assert written.names_by_symbol == {"arg.x": "x", "leaf.2": json.dumps(PORT)}
-    assert written.read({"arg.x": 3, "leaf.2": 70000}) == {"x": 3, json.dumps(PORT): 70000}
-
-
-@pytest.mark.parametrize(
-    ("name", "constant"),
-    [
-        pytest.param("div", "|arg.div|", id="a word of the solver's own"),
-        pytest.param("café", "|arg.caf%C3%A9|", id="past ascii"),
-        # a **kwargs key need not be a name; a quoted symbol cannot hold `|` or a backslash
-        pytest.param("a|b\\c", "|leaf.0|", id="not an identifier"),
-    ],
-)
-def test_every_constant_is_quoted_under_pycts_own_prefix(name: str, constant: str) -> None:
-    text = render((fork([">", name, 3], taken=True),), {name: int})
-
-    assert f"(declare-const {constant} Int)" in text.splitlines()
-    assert f"(assert (> {constant} 3))" in text.splitlines()
+    both = f"{replaced(S, '"a"', '"b"')} {without_prefix(S, '"x"')}"
+    assert f'(assert (= (str.++ {both}) "bb"))' in text.splitlines()
 
 
-def test_an_access_is_a_leaf_by_the_steps_binding_takes(monkeypatch: pytest.MonkeyPatch) -> None:
-    # an attribute is a step binding may take next; the solver follows with no change of its own
-    monkeypatch.setattr(bind, "_STEPS", frozenset({"[]", "getattr"}))
-    limit: Expression = ["getattr", "rule", "'limit'"]
+@pytest.mark.parametrize("head", ["removeprefix", "removesuffix"])
+def test_a_piece_given_a_piece_defines_each_once(head: str) -> None:
+    string, affix = sliced(S, 1, None), sliced(T, 1, None)
 
-    text = render((fork([">", limit, 100], taken=True),), {json.dumps(limit): int})
+    text = render(
+        (fork(["==", [head, ["[:]", "s", 1, None], ["[:]", "t", 1, None]], "'x'"], taken=True),),
+        {"s": str, "t": str},
+    )
 
-    assert "(declare-const |leaf.0| Int)" in text.splitlines()
-    assert "(assert (> |leaf.0| 100))" in text.splitlines()
+    # the form reads both its string and what it removes more than once; each is defined once
+    # and read by its name
+    lines = text.splitlines()
+    assert f"(define-fun e!0 () String {string})" in lines
+    assert f"(define-fun e!1 () String {affix})" in lines
+    assert f'(assert (= {FORMS[head]("e!0", "e!1")} "x"))' in lines
+    assert (text.count(string), text.count(affix)) == (1, 1)
 
 
-def test_a_model_about_a_symbol_the_program_did_not_declare_is_unreadable() -> None:
-    written = program((fork(["<", "x", 10], taken=True),), {"x": int})
+def test_every_head_render_writes_says_what_type_its_value_is() -> None:
+    written = {head for head, _ in OPERATORS} | set(FORMS) | set(POSITIONED) | set(STRING_ORDERS)
 
-    with pytest.raises(SolverAnswerError, match="arg.y"):
-        written.read({"arg.x": 3, "arg.y": 4})
+    # a head with no entry cannot say whether a `+` or an order above it is on strings, and a
+    # wrong guess is a program cvc5 refuses, which stops the run on `solver failed`
+    assert written - set(RESULTS) == set()
+
+
+# a term each head builds, grouped by the type of its value in Python: `+` builds an int from
+# ints and a str from strs
+INT_TERMS: list[Expression] = [
+    ["+", "x", 1],
+    ["-", "x", 1],
+    ["*", "x", 2],
+    ["**", "x", 2],
+    ["abs", "x"],
+    ["//", "x", 2],
+    ["%", "x", 2],
+    ["find", "s", "'a'"],
+    ["rfind", "s", "'a'"],
+    ["index", "s", "'a'"],
+    ["rindex", "s", "'a'"],
+    ["count", "s", "'a'"],
+    ["len", "s"],
+]
+STR_TERMS: list[Expression] = [
+    ["+", "s", "'a'"],
+    ["[]", "s", 0],
+    ["[:]", "s", 1, None],
+    ["replace", "s", "'a'", "'b'"],
+    ["removeprefix", "s", "'a'"],
+    ["removesuffix", "s", "'a'"],
+]
+BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
+    ["in", "'a'", "s"],
+    ["startswith", "s", "'a'"],
+    ["endswith", "s", "'a'"],
+]
+TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "s": str, "t": str}
+
+
+def _head(term: Expression) -> str:
+    assert isinstance(term, list) and isinstance(term[0], str), term
+    return term[0]
+
+
+def _asserted(text: str) -> str:
+    """The one assertion a one-fork program holds."""
+    return next(line for line in text.splitlines() if line.startswith("(assert "))
+
+
+def test_every_head_in_the_table_has_a_term_of_its_type_here() -> None:
+    assert {_head(term) for term in INT_TERMS + STR_TERMS + BOOL_TERMS} == set(RESULTS)
+
+
+@pytest.mark.parametrize("term", INT_TERMS, ids=[_head(term) for term in INT_TERMS])
+def test_a_head_that_builds_an_int_is_ordered_as_an_int(term: Expression) -> None:
+    text = render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
+
+    assert _asserted(text).startswith("(assert (< ")
+
+
+@pytest.mark.parametrize("term", STR_TERMS, ids=[_head(term) for term in STR_TERMS])
+def test_a_head_that_builds_a_str_is_ordered_as_a_str(term: Expression) -> None:
+    text = render((fork(["<", term, "t"], taken=True),), TYPED_LEAVES)
+
+    assert _asserted(text).startswith("(assert (str.< ")
+
+
+@pytest.mark.parametrize("term", BOOL_TERMS, ids=[_head(term) for term in BOOL_TERMS])
+def test_a_head_that_builds_a_bool_is_no_operand_of_an_order(term: Expression) -> None:
+    # core never orders a truth value, so render refuses it rather than guess a sort
+    with pytest.raises(ValueError, match="on bool"):
+        render((fork(["<", term, "n"], taken=True),), TYPED_LEAVES)
+
+
+def test_a_position_that_is_not_a_plain_int_is_an_error() -> None:
+    with pytest.raises(ValueError, match="position"):
+        render((fork(["==", ["[]", "s", "n"], "'a'"], taken=True),), {"s": str, "n": int})
+
+
+def test_a_missing_bound_outside_a_slice_is_an_error() -> None:
+    with pytest.raises(ValueError, match="missing bound"):
+        render((fork(["==", "s", None], taken=True),), {"s": str})
+
+
+# a piece a loop takes of its own string on every pass, `s = s[1:]` and the like
+NESTINGS: dict[str, Callable[[Expression], Expression]] = {
+    "s = s[1:]": lambda term: ["[:]", term, 1, None],
+    "s = s[-3:-1]": lambda term: ["[:]", term, -3, -1],
+    "s = s[-1]": lambda term: ["[]", term, -1],
+    "s = s.removeprefix(' ')": lambda term: ["removeprefix", term, "' '"],
+    "s = s.removesuffix(t)": lambda term: ["removesuffix", term, "t"],
+}
+
+
+def _nested(nest: Callable[[Expression], Expression], depth: int) -> str:
+    """One fork on a piece nested ``depth`` passes deep, as the program writes it."""
+    term: Expression = "s"
+    for _ in range(depth):
+        term = nest(term)
+    return render((fork(["!=", term, "''"], taken=True),), {"s": str, "t": str})
+
+
+@pytest.mark.parametrize("nest", NESTINGS.values(), ids=list(NESTINGS))
+def test_a_piece_nested_thirty_deep_grows_the_program_by_one_level_at_a_time(
+    nest: Callable[[Expression], Expression],
+) -> None:
+    sizes = [len(_nested(nest, depth)) for depth in (28, 29, 30)]
+
+    # each form names its string once, so a pass adds the same text whatever lies below it,
+    # where writing the string out at every use doubles the text or more with each pass
+    assert sizes[2] - sizes[1] == sizes[1] - sizes[0]
+    assert sizes[2] < 30 * 200

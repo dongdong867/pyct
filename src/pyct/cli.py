@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.binding.annotations import Check, check_of, contradictions
+from pyct.binding.bind import access_name, leaves
 from pyct.binding.call import call_arguments, positional_only
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
@@ -25,6 +26,7 @@ from pyct.config.solver_timeout import SolverTimeout
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
+from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
 from pyct.run.isolation import Isolation
@@ -126,9 +128,15 @@ def _checked(command: RunCommand) -> tuple[Target, Mapping[str, object], Limits]
 
 
 def _report(record: InputRecord, coverage: Coverage) -> None:
-    """The trace a person reads first, then the one line tools read."""
-    print(render_trace(record, coverage), end="", file=sys.stderr, flush=True)
-    _line(render(record, coverage))
+    """The trace a person reads first, then the one line tools read.
+
+    Both print each fork's expression cut to the cap, and it is cut once for both.
+    An access to one of the input's values is a name, written whole.
+    """
+    names = leaves(record.args)
+    printed = printed_forks(record.forks, lambda part: access_name(part) in names)
+    print(render_trace(record, coverage, printed), end="", file=sys.stderr, flush=True)
+    _line(render(record, coverage, printed))
 
 
 def _line(text: str) -> None:

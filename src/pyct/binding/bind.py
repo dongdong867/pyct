@@ -76,13 +76,30 @@ _STEPS = frozenset({"[]"})
 def access_name(part: Expression) -> str | None:
     """The leaf name of a part of a condition that reads as an access, or None for any other.
 
-    Only a list headed by one of the steps the walk takes can be an access,
-    so only such a list is written out as JSON to be looked up. Whether the
-    seed holds that access is the caller's to ask.
+    Only a chain of the steps the walk takes, each key not a list, down to a
+    str can be an access, so only such a chain is written out as JSON to be
+    looked up. The chain is read in a loop first, so a part
+    that holds a long or shared expression costs a step or two, not the
+    expression written out. Whether the seed holds that access is the
+    caller's to ask.
     """
-    if isinstance(part, list) and part and isinstance(part[0], str) and part[0] in _STEPS:
-        return leaf_name(part)
-    return None
+    step: Expression = part
+    while _is_step(step):
+        step = step[1]
+    if step is part or not isinstance(step, str):
+        return None
+    return leaf_name(part)
+
+
+def _is_step(part: Expression) -> TypeGuard[list[Expression]]:
+    """Whether a part is one step of an access, ``["[]", <container>, <key>]``, its key no list."""
+    return (
+        isinstance(part, list)
+        and len(part) == 3
+        and isinstance(part[0], str)
+        and part[0] in _STEPS
+        and not isinstance(part[2], list)
+    )
 
 
 def leaf_name(access: Expression) -> str:
