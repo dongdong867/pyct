@@ -3,7 +3,8 @@ from collections.abc import Callable, Mapping
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
-from pyct.solver.render import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS, program
+from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
+from pyct.solver.render import program
 from pyct.solver.strings import (
     above,
     below,
