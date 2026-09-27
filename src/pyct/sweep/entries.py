@@ -21,7 +21,7 @@ import inspect
 import os
 import pkgutil
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass
 from types import FunctionType, ModuleType
 
@@ -89,14 +89,19 @@ def entries_in(module: ModuleType, found_in: str, package: str) -> Reading:
 def package_path(module: ModuleType) -> list[str] | None:
     """The folders a package's modules are in, or None for a plain module.
 
-    Read from the module's own names, not by asking it: a module-level
-    ``__getattr__`` that raises for any name it lacks would run and raise.
+    A plain module is read from its own names, not asked: a module-level
+    ``__getattr__`` that raises for any name it lacks would run and raise. An
+    object a package put in its own place, such as a module subclass that
+    forwards every name to the package, may hold no ``__path__`` of its own,
+    so it is asked, and a raise there is no path.
     """
     try:
         path = vars(module).get("__path__")
     except TypeError:
-        return None
-    return None if path is None else list(path)
+        path = None
+    if path is None and type(module) is not ModuleType:
+        path = _attribute(module, "__path__")
+    return list(path) if isinstance(path, Iterable) else None
 
 
 def _modules_below(module: ModuleType) -> set[str]:

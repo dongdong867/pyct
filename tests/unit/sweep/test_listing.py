@@ -72,6 +72,13 @@ def test_a_name_that_raises_when_read_costs_its_module_a_row_and_nothing_more() 
     )
 
 
+def test_a_package_that_forwards_to_itself_is_walked_below() -> None:
+    forwarded = "targets.sweep.forwarded"
+    assert list_package(forwarded) == (
+        Row(f"{forwarded}.sub", "below", Status.LISTED, seed={"n": 0}),
+    )
+
+
 def test_an_import_with_no_fact_within_the_grace_is_stopped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

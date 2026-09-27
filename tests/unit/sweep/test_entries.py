@@ -192,5 +192,8 @@ def test_a_package_path_is_read_without_asking_the_module() -> None:
 
     assert package_path(lazy) is None
     assert package_path(walk) == list(walk.__path__)
+    # a module object that forwards every name to the package it replaced
+    forwarded = importlib.import_module(f"{SWEEP}.forwarded")
+    assert package_path(forwarded) == list(forwarded.__path__)
     # an object a module put in its own place may have no names of its own at all
     assert package_path(typing.cast(types.ModuleType, object())) is None
