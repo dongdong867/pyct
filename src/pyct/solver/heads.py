@@ -58,7 +58,11 @@ RESULTS: Mapping[str, type | None] = {
     # `/` answers a float in Python whatever numbers it divides
     "/": float,
     "is_integer": bool,
-    "isfinite": bool,
+    # the `math` functions pyct follows: each answers a float or a bool, from floats
+    **dict.fromkeys(("sqrt", "fabs", "copysign"), float),
+    **dict.fromkeys(("isfinite", "isnan", "isinf", "isclose"), bool),
+    # a truth value negated, as `sqrt`'s fork is written
+    "not": bool,
     # a rounding answers an int, from a float
     **dict.fromkeys(("floor", "ceil", "trunc", "round"), int),
     # `int` and `float` of a number or of the text Python reads, and whether it reads the text
@@ -66,6 +70,8 @@ RESULTS: Mapping[str, type | None] = {
     "float": float,
     "isint": bool,
     "isfloat": bool,
+    # the text `str` writes for an int or a bool
+    "str": str,
     "find": int,
     "rfind": int,
     "index": int,
@@ -129,6 +135,11 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("*", float): "fp.mul RNE",
     ("/", float): "fp.div RNE",
     ("abs", float): "fp.abs",
+    ("sqrt", float): "fp.sqrt RNE",
+    ("fabs", float): "fp.abs",
+    ("isnan", float): "fp.isNaN",
+    ("isinf", float): "fp.isInfinite",
+    ("not", bool): "not",
 }
 
 
@@ -141,8 +152,12 @@ def operator(head: str, kind: type | None) -> str:
     return spelled
 
 
-# the type a head works on whatever its operands are: Python's `/` divides two ints as floats
-WORKS_ON: Mapping[str, type] = {"/": float}
+# the type a head works on whatever its operands are: Python's `/` divides two ints as floats,
+# and a `math` function reads an int as the double Python converts it to
+WORKS_ON: Mapping[str, type] = {
+    "/": float,
+    **dict.fromkeys(("sqrt", "fabs", "copysign", "isfinite", "isnan", "isinf", "isclose"), float),
+}
 
 # Python's order on two strings, read as a less-than: whether it takes equal strings, and
 # whether its operands swap. `a > b` is written `b < a`, the same term the target would have
@@ -182,6 +197,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("-", float): floats.minus,
     ("is_integer", float): floats.whole,
     ("isfinite", float): floats.finite,
+    ("copysign", float): floats.copysign,
+    ("isclose", float): floats.close,
     ("%", float): floats.modulo,
     ("floor", float): floats.floor,
     ("ceil", float): floats.ceil,
@@ -195,6 +212,9 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("int", str): numerals.int_of,
     ("isint", str): numerals.is_int,
     ("isfloat", str): numerals.is_float,
+    # `str` of an int or a bool; a bool keeps its own sort here, as it does under `&`
+    ("str", int): numerals.text_of_int,
+    ("str", bool): numerals.text_of_bool,
     **{(head, str): form for head, form in CASES.items()},
 }
 

@@ -339,6 +339,8 @@ def test_the_passing_frames_are_the_routers() -> None:
         "bool_",
         "map_",
         "itself",
+        # each `math` function's router
+        "route",
         # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a
         # link hands on to the next
         "__contains__",

@@ -55,6 +55,10 @@ FLOAT_TERMS: list[Expression] = [
     ["%", "f", 2.5],
     ["float", "x"],
     ["float", "s"],
+    # the `math` functions, on a float or an int, which each reads as a double
+    ["sqrt", "f"],
+    ["fabs", "x"],
+    ["copysign", "f", -1],
 ]
 # a tuple of prefixes, which only a search reads
 TUPLE_TERMS: list[Expression] = [["()", "'a'", "t"]]
@@ -66,6 +70,7 @@ STR_TERMS: list[Expression] = [
     ["removeprefix", "s", "'a'"],
     ["removesuffix", "s", "'a'"],
     ["chr", "x"],
+    ["str", "x"],
     *([head, "s"] for head in (*CASES, *TO_DECLARE)),
     *([head, "s", 3] for head in PADDINGS),
 ]
@@ -78,6 +83,10 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["endswith", "s", TUPLE_TERMS[0], "n"],
     ["is_integer", "f"],
     ["isfinite", "f"],
+    ["isnan", "f"],
+    ["isinf", "x"],
+    ["isclose", "f", "x", 1e-09, 0.0],
+    ["not", ["<", "x", 1]],
     ["isint", "s"],
     ["isfloat", "s"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),

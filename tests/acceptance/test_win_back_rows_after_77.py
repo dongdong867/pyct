@@ -12,6 +12,7 @@ DIGIT_CHECKSUM_FILE = str(REPO_ROOT / "targets" / "strs" / "digit_checksum.py")
 # each ``return``, and the digit doubled past 9
 DIGIT_CHECKSUM_LINES = {3, 10, 13, 14}
 
+
 def covered_in(stdout: str, file: str) -> set[int]:
     """The lines of one file any input ran."""
     lines: set[int] = set()
@@ -29,4 +30,3 @@ def test_flips_every_fork_of_a_loop_that_reads_each_character_as_an_int() -> Non
     assert covered_in(result.stdout, DIGIT_CHECKSUM_FILE) >= DIGIT_CHECKSUM_LINES, result.stdout
     solver = summary_line(result.stdout)["solver"]
     assert isinstance(solver, dict) and solver["timeout"] == 0, result.stdout
-
