@@ -33,7 +33,7 @@ import types
 from collections.abc import Callable
 from typing import Any, cast
 
-from pyct.core import bound, strs
+from pyct.core import bound, str_literals, strs
 from pyct.core import handed as handing
 from pyct.core.bools import ConcolicBool
 from pyct.core.floats import ConcolicFloat
@@ -132,7 +132,7 @@ def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: o
     str literals, as ``receiver_method(...)``.
 
     Given a tracked str, it runs as it runs on a tracked str holding the
-    literal's text (`strs.on_text`). Any other call is the method's own; one
+    literal's text (`str_literals.on_text`). Any other call is the method's own; one
     with a keyword goes through str, as the written call reaches it, so a
     refusal reads in the written call's words. Only the types of the method,
     its receiver and the arguments are read.
@@ -154,10 +154,10 @@ def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: o
 def _on_text(
     receiver_method: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
 ) -> Any:
-    """A tracked str handed to a plain str's own method, as `strs.on_text` runs it."""
+    """A tracked str handed to a plain str's own method, as `str_literals.on_text` runs it."""
     receiver = getattr(receiver_method, "__self__", None)
     if type(receiver_method) is types.BuiltinMethodType and type(receiver) is str:
-        return strs.on_text(cast(types.BuiltinMethodType, receiver_method), *args, **kwargs)
+        return str_literals.on_text(cast(types.BuiltinMethodType, receiver_method), *args, **kwargs)
     return receiver_method(*args, **kwargs)
 
 
