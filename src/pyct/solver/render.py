@@ -8,6 +8,7 @@ from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node, distinct
+from pyct.solver.ints import floor_division, modulo
 from pyct.solver.joined import joined
 from pyct.solver.strings import (
     above,
@@ -107,31 +108,12 @@ STRING_ORDERS: Mapping[str, tuple[bool, bool]] = {
 }
 
 
-def _euclidean_agrees(dividend: str, divisor: str) -> str:
-    """When SMT-LIB's division is already Python's: a positive divisor, or nothing left over."""
-    return f"(or (> {divisor} 0) (= (mod {dividend} {divisor}) 0))"
-
-
-# SMT-LIB's `div` and `mod` are Euclidean: the remainder is never negative. Python floors
-# toward minus infinity and its `%` takes the divisor's sign. The two agree when the divisor
-# is positive or the remainder is zero; otherwise Python's quotient is one lower and its
-# remainder is shifted by the divisor. Decision division-floor-correction-in-render.
-def _floor_division(dividend: str, divisor: str) -> str:
-    quotient = f"(div {dividend} {divisor})"
-    return f"(ite {_euclidean_agrees(dividend, divisor)} {quotient} (- {quotient} 1))"
-
-
-def _modulo(dividend: str, divisor: str) -> str:
-    remainder = f"(mod {dividend} {divisor})"
-    return f"(ite {_euclidean_agrees(dividend, divisor)} {remainder} (+ {remainder} {divisor}))"
-
-
 # an operation SMT-LIB has no operator for, or spells in another order, written out as the form
 # that means it. The operands arrive rendered, as many as the expression holds and in its
 # order, so a form only joins text.
 FORMS: Mapping[str, Callable[..., str]] = {
-    "//": _floor_division,
-    "%": _modulo,
+    "//": floor_division,
+    "%": modulo,
     "in": contains,
     "startswith": starts_with,
     "endswith": ends_with,
