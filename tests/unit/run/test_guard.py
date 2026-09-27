@@ -99,10 +99,14 @@ def test_the_guard_signals_no_pid_that_names_no_process() -> None:
         os._exit(0)
     os.waitpid(gone, 0)
     with guarding(gone) as (started, kept):
+        began = time.monotonic()
         os.close(kept)
         waited = started.wait()
+        took = time.monotonic() - began
 
     assert waited == Waited(signal=None, code=0)
+    # a guard that found the pid gone ends at once, rather than wait out the grace
+    assert took < STOP_GRACE / 2
 
 
 def test_the_guard_runs_in_a_process_group_of_its_own() -> None:

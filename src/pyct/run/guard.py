@@ -63,9 +63,11 @@ asked = os.read(0, 1)
 if not asked:
     send(signal.SIGTERM)
 deadline = time.monotonic() + grace
-while send(0) and time.monotonic() < deadline:
+while send(0):
+    if time.monotonic() >= deadline:
+        send(signal.SIGKILL)
+        break
     time.sleep(every)
-send(signal.SIGKILL)
 """
 
 
