@@ -18,30 +18,35 @@ from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import downgraded, own
 
 
-def _separator(receiver: object, value: object) -> Expression | None:
-    """A separator pyct encodes: None, for whitespace, or a plain str.
+def _parsed(
+    receiver: object, args: tuple[object, ...]
+) -> tuple[list[Expression], str | None, int] | None:
+    """A split pyct encodes, read once: its operands as the call wrote them, the separator's
+    text, None for whitespace, and the limit, -1 for none. Any other form is None.
 
-    The expression holds None, which the line prints as ``null``. An empty
-    str is Python's own ValueError, raised before a piece is built.
+    A separator is None or a plain str the solver holds, so nothing here
+    runs a method of a tracked one. The expression holds None, which the
+    line prints as ``null``. An empty separator is Python's own ValueError,
+    raised before a piece is built.
     """
-    return None if value is None else literal(value, type(receiver))
+    if len(args) > 2:
+        return None
+    separator = args[0] if args else None
+    written = None if separator is None else literal(separator, type(receiver))
+    if separator is not None and written is None:
+        return None
+    limit = position(args[1]) if len(args) == 2 else -1
+    if limit is None:
+        return None
+    text = None if separator is None else plain(separator)
+    operands: list[Expression] = [written, limit]
+    return operands[: len(args)], text, limit
 
 
 def separator_and_limit(receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """What a split pyct encodes was called with: nothing, a separator, and a plain int limit."""
-    if len(args) > 2:
-        return None
-    operands: list[Expression] = []
-    if args:
-        written = _separator(receiver, args[0])
-        if args[0] is not None and written is None:
-            return None
-        operands.append(written)
-    if len(args) == 2:
-        if (limit := position(args[1])) is None:
-            return None
-        operands.append(limit)
-    return operands
+    parsed = _parsed(receiver, args)
+    return None if parsed is None else parsed[0]
 
 
 def _overlaps_itself(separator: str) -> bool:
@@ -54,22 +59,21 @@ def from_the_right(receiver: object, args: tuple[object, ...]) -> list[Expressio
 
     With no limit, the solver reads an rsplit as the split it matches, which
     it is unless its separator overlaps itself: ``"aaa".rsplit("aa")`` is
-    ``["a", ""]`` where ``split`` finds ``["", "a"]``.
+    ``["a", ""]`` where ``split`` finds ``["", "a"]``. The check reads the
+    plain separator, so it records nothing on the target's line.
     """
-    operands = separator_and_limit(receiver, args)
-    limit = position(args[1]) if len(args) == 2 else None
-    separator = args[0] if args else None
-    unlimited = limit is None or limit < 0
-    if unlimited and isinstance(separator, str) and _overlaps_itself(separator):
+    parsed = _parsed(receiver, args)
+    if parsed is None:
         return None
-    return operands
+    operands, text, limit = parsed
+    return None if limit < 0 and text is not None and _overlaps_itself(text) else operands
 
 
 def one_separator(receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
     """partition's one operand, a plain str."""
-    if len(args) != 1 or args[0] is None:
+    if len(args) != 1:
         return None
-    written = _separator(receiver, args[0])
+    written = literal(args[0], type(receiver))
     return None if written is None else [written]
 
 

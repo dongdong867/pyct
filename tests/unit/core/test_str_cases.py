@@ -89,7 +89,7 @@ SPLITS: dict[str, tuple[Callable[[str], object], Expression]] = {
     "s.split(None, 1)": (lambda s: s.split(None, 1), ["split", "s", None, 1]),
     "s.split(',')": (lambda s: s.split(","), ["split", "s", "','"]),
     "s.rsplit(' ', 0)": (lambda s: s.rsplit(" ", 0), ["rsplit", "s", "' '", 0]),
-    "s.rsplit('aa')": (lambda s: s.rsplit(","), ["rsplit", "s", "','"]),
+    "s.rsplit(',')": (lambda s: s.rsplit(","), ["rsplit", "s", "','"]),
     "s.rsplit('aa', 1)": (lambda s: s.rsplit("aa", 1), ["rsplit", "s", "'aa'", 1]),
     "s.partition(',')": (lambda s: s.partition(","), ["partition", "s", "','"]),
     "s.partition('x')": (lambda s: s.partition("x"), ["partition", "s", "'x'"]),
@@ -200,3 +200,16 @@ def test_the_plain_text_of_anything_but_a_str_is_an_error() -> None:
     # core reads the text of a tracked str only; any other value is a pyct bug to name
     with pytest.raises(TypeError, match="not of int"):
         plain(1)
+
+
+def test_an_rsplit_on_a_tracked_separator_records_its_downgrade_and_nothing_else() -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr("xabyab", expression="s", sink=sink)
+    t = ConcolicStr("aba", expression="t", sink=sink)
+
+    for limit in (-1, 1):
+        s.rsplit(t, limit)
+    s.rsplit(t)
+
+    # whether the separator overlaps itself is pyct's question, asked of no tracked value
+    assert sink == [Downgrade(name="rsplit")] * 3

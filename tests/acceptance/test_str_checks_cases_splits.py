@@ -66,6 +66,7 @@ SPLIT_FAMILY_FORKS: list[tuple[int, list[object]]] = [
     (8, ["==", ["[]", ["partition", "s", "'='"], 2], "'on'"]),
     (10, ["==", ["[]", ["splitlines", "s"], 0], "'top'"]),
 ]
+TRACKED_RSPLIT = "targets.strs.tracked_rsplit::cut"
 SHOUTED_PAIR = "targets.strs.shouted_pair::pair"
 SHOUTED_PAIR_FILE = str(REPO_ROOT / "targets" / "strs" / "shouted_pair.py")
 
@@ -212,3 +213,15 @@ def test_reports_a_slow_encoding_as_a_miss(tmp_path: Path) -> None:
     assert f"missed {SHOUTED_PAIR_FILE}:2:7 timeout" in result.stderr.splitlines()
     assert _reported_taken(result.stdout) == []
     assert summary_line(result.stdout)["stopped"] == "budget spent"
+
+
+# follow-strings-records-an-untaught-method-as-a-downgrade, for an rsplit pyct does not encode
+def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() -> None:
+    result = run_pyct(TRACKED_RSPLIT, '{"s": "xabyab", "t": "aba"}')
+
+    assert result.returncode == 0, result.stderr
+    # the target made one rsplit call and no compare; pyct's own look at the separator adds
+    # nothing to its line
+    seed = first_line(result.stdout)
+    assert seed["forks"] == []
+    assert seed["downgrades"] == [{"name": "rsplit", "count": 1}]
