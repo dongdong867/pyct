@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
-from pyct.solver.answer_size import MOST_ITEMS
+from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.list_kinds import (
     ITEM_SORTS,
     ITEM_TYPES,
@@ -38,6 +38,7 @@ from pyct.solver.list_terms import (
     Least,
     Lin,
     Piece,
+    Read,
     Repeated,
     Shown,
     Stored,
@@ -134,6 +135,8 @@ class ListTerms(ListTyping, Slices):
         self.source = Origin()
         self.shared: Shared | None = None
         self.places: dict[int, int] = {}
+        # each str item read, whose term is held to the most characters an answer holds
+        self.strings: dict[str, None] = {}
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
 
@@ -219,21 +222,28 @@ class ListTerms(ListTyping, Slices):
             # a read of an item no term holds, a None or a list inside say, which a sort's
             # display writes: no fork reads it, so it has no term
             return ""
-        position = self.position(rest[0], piece)
-        context = self._context()
-        try:
-            found = read(piece, position, item, context)
-        except RenderTooLargeError as error:
-            passed = {self.places[at] for at in context.visited if at in self.places}
-            raise RenderTooLargeError(str(error), frozenset(passed)) from error
+        found = self._read(piece, self.position(rest[0], piece), item)
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
             self.guards.append(found.guard)
+        if item == "str":
+            self.strings[found.value] = None
         if isinstance(piece, Stored):
             self._present(piece.length, rest[0])
         self.reads.append((operand, rest[0]))
         return found.value
+
+    def _read(self, piece: Piece, position: Lin, item: str) -> Read:
+        """The item of that kind at ``position``. A read that runs past its steps names the list
+        parts it went through by their place in the order they were built, which a writing that
+        settles them knows them by."""
+        context = self._context()
+        try:
+            return read(piece, position, item, context)
+        except RenderTooLargeError as error:
+            passed = {self.places[at] for at in context.visited if at in self.places}
+            raise RenderTooLargeError(str(error), frozenset(passed)) from error
 
     def start_from(self, origin: Origin, constants: Mapping[str, str]) -> None:
         """Take the values of the input whose path this is, each int leaf by its constant, which
@@ -392,8 +402,10 @@ class ListTerms(ListTyping, Slices):
 
     def assertions(self) -> list[str]:
         """What the program asserts of the lists: each length at most a million, not negative,
-        each list the target repeats no longer, and each read's guard."""
+        each list the target repeats no longer, each read's guard, and each str item read no
+        longer than a string answer holds: the strings an answer hands out, and no others."""
         lengths = [f"(assert (<= 0 {length} {MOST_ITEMS}))" for length in self.bounded]
         held = [f"(assert (>= {length} {least}))" for length, least in self.present.items()]
         guards = [f"(assert {guard})" for guard in self.guards]
-        return lengths + self.capped + list(self.regime) + held + guards
+        strings = [longest_string(term) for term in self.strings]
+        return lengths + self.capped + list(self.regime) + held + guards + strings
