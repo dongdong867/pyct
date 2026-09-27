@@ -27,6 +27,10 @@ class Base(int):
     """A stand-in Python type a result could have."""
 
 
+class Reading(float):
+    """A stand-in Python type outside the int family, which nothing in pyct enters."""
+
+
 class Measured(float):
     """A stand-in tracked number outside the int family, as a tracked float will be."""
 
@@ -59,8 +63,8 @@ def test_a_result_is_tracked_by_the_class_its_own_type_entered() -> None:
 
 def test_a_type_nothing_entered_fails_where_it_is_tracked() -> None:
     # a quietly plain value would lose the condition without a word; this names the gap
-    with pytest.raises(LookupError, match="no tracked type is entered for float"):
-        numbers.tracked(2.5, ["/", "x", 2], [])
+    with pytest.raises(LookupError, match="no tracked type is entered for Reading"):
+        numbers.tracked(Reading(2.5), ["/", "x", 2], [])
 
 
 @pytest.mark.usefixtures("table")
@@ -81,7 +85,8 @@ def test_a_second_class_for_a_type_is_refused() -> None:
 
 @pytest.mark.usefixtures("table")
 def test_an_int_leaves_a_tracked_number_outside_its_family_to_that_number() -> None:
-    numbers.enter(float, Measured)
+    # entered for a stand-in type, so a tracked float entered for float leaves this test alone
+    numbers.enter(Reading, Measured)
     sink: list[SinkItem] = []
     x = ConcolicInt(5, expression="x", sink=sink)
     f = Measured(2.5, expression="f", sink=sink)
