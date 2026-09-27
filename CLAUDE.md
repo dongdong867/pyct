@@ -19,7 +19,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 
 ## Layout
 
-Ten flat packages under `src/pyct/`, one per layer, listed top to bottom in
+Eleven flat packages under `src/pyct/`, one per layer, listed top to bottom in
 import order. A package imports only what is below it; `import-linter`
 enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 
@@ -33,6 +33,8 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
 │   ├── run/          run(target, seed, *, limits, isolation, tell) -> RunResult.
 │   │                 Composition root for one run. isolation.py runs each input in a throwaway process
 │   ├── rewrite/      the LLM source rewrite, whole flow in one place
+│   ├── intercept/    the import hook: the target's package loads with `is True` and `in`
+│   │                 substituted by calls into core, kept in `.pyct_cache/` or `$PYCT_CACHE_DIR`
 │   ├── solver/       solve(prefix, leaves, timeout) -> Answer. The cvc5 subprocess.
 │   │                 The only place the word solve appears
 │   ├── branches/     the tree. The tree is the queue
@@ -58,8 +60,10 @@ enforces this. `cli.py` sits above the stack, `config` and `utils` below it.
     └── sweep/        packages and modules `pyct sweep` lists and runs
 ```
 
-`core` is the runtime behavior of a concolic value. `rewrite` is the source
-rewrite that makes Python call core at all.
+`core` is the runtime behavior of a concolic value. `intercept` makes the
+target's package call core where Python would not, through a fixed set of
+substitutions made as Python imports it. `rewrite` is the next paper's LLM
+source rewrite.
 
 ## Protocols
 

@@ -8,8 +8,9 @@ from types import ModuleType
 
 import pytest
 
+from pyct.intercept.hook import Interception, current
 from pyct.run.import_watch import ImportWatch
-from pyct.run.target import Target, TargetError, load_target
+from pyct.run.target import Target, TargetError, interception, load_target
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -155,3 +156,15 @@ def test_load_target_refuses_an_annotation_python_cannot_evaluate() -> None:
         inspect.signature(sys.modules["targets.load.annotated_for_type_checking"].f)
     reason = f"NameError: {unread.value}"
     assert str(refused.value) == f"cannot read the signature of {spec}: {reason}"
+
+
+def test_the_interception_of_a_spec_substitutes_its_module_s_package_into_the_cache_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PYCT_CACHE_DIR", str(tmp_path))
+
+    with interception("shop.cart::total"):
+        held = current()
+
+    assert held == Interception(module="shop.cart", cache=tmp_path)
+    assert current() is None
