@@ -1,5 +1,6 @@
 """The import hook: which modules it claims, how it loads them, and how long it stays."""
 
+import builtins
 import importlib
 import importlib.machinery
 import importlib.resources
@@ -12,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import substitutes
+from pyct.core import bound, substitutes
 from pyct.core.values import raised_by_target
 from pyct.intercept import hook
 from pyct.intercept.hook import Interception, current, intercepting
@@ -168,3 +169,97 @@ def test_a_python_release_the_suite_has_not_checked_runs_the_target_as_written(
     assert "__pyct_is__" not in helper.helper.__code__.co_names
     assert "on Python 3.0 only" in caplog.text
     hook._unchecked.cache_clear()
+
+
+SIZED = "def size(s):\n    return len(s), ord('a'), chr(98)\n"
+OWN_LEN = "def len(value):\n    return 7\n\n\ndef size(s):\n    return len(s)\n"
+
+
+def test_a_module_in_scope_runs_with_len_ord_and_chr_bound_in_its_builtins(package: Path) -> None:
+    (package / "sized.py").write_text(SIZED)
+
+    with intercepting(interception(package.parent)):
+        sized = importlib.import_module("pkghook.sized")
+
+    held = vars(sized)["__builtins__"]
+    assert [held[name] for name in ("len", "ord", "chr")] == [
+        bound.len,
+        bound.ord,
+        bound.chr,
+    ]
+    assert sized.size.__builtins__ is held
+    # every other name is Python's own, the module lists none of the three, and builtins holds
+    # Python's own still
+    assert {name: value for name, value in held.items() if name not in bound.BOUND} == {
+        name: value for name, value in vars(builtins).items() if name not in bound.BOUND
+    }
+    assert not {"len", "ord", "chr"} & set(dir(sized))
+    assert (builtins.len, builtins.ord, builtins.chr) == (len, ord, chr)
+    assert sized.size("abc") == (3, 97, "b")
+
+
+def test_a_module_s_own_len_keeps_its_meaning(package: Path) -> None:
+    (package / "own.py").write_text(OWN_LEN)
+
+    with intercepting(interception(package.parent)):
+        own_len = importlib.import_module("pkghook.own")
+
+    assert own_len.size("ab") == 7
+
+
+def test_a_module_in_scope_finds_what_builtins_holds_when_it_looks(
+    package: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (package / "sized.py").write_text(SIZED + "\n\ndef later():\n    return _\n")
+
+    def replaced(c: str) -> int:
+        return 0
+
+    with intercepting(interception(package.parent)):
+        sized = importlib.import_module("pkghook.sized")
+
+    # a name replaced or added after the module ran, as gettext.install adds `_`
+    monkeypatch.setattr(builtins, "ord", replaced)
+    monkeypatch.setattr(builtins, "_", "added", raising=False)
+    held = vars(sized)["__builtins__"]
+    assert sized.size("abc") == (3, 0, "b")
+    assert sized.later() == "added"
+    assert held["ord"] is replaced and held.get("ord") is replaced and "_" in held
+    assert held["len"] is bound.len and held.get("len") is bound.len
+    assert held.get("no such name", "absent") == "absent" and "no such name" not in held
+    with pytest.raises(KeyError):
+        held["no such name"]
+
+
+def test_a_write_through_a_module_s_builtins_reaches_builtins(package: Path) -> None:
+    (package / "sized.py").write_text(SIZED)
+    with intercepting(interception(package.parent)):
+        sized = importlib.import_module("pkghook.sized")
+
+    held = vars(sized)["__builtins__"]
+    try:
+        held["_pyct_probe"] = "written"
+        assert builtins._pyct_probe == "written"  # pyrefly: ignore[missing-attribute]
+    finally:
+        del held["_pyct_probe"]
+    assert not hasattr(builtins, "_pyct_probe") and "_pyct_probe" not in held
+
+
+def test_a_module_outside_the_scope_keeps_python_s_builtins(package: Path, tmp_path: Path) -> None:
+    (tmp_path / "outside.py").write_text(SIZED)
+
+    with intercepting(interception(package.parent)):
+        outside = importlib.import_module("outside")
+
+    assert outside.size.__builtins__ is vars(builtins)
+
+
+def test_a_reload_binds_the_builtins_again(package: Path) -> None:
+    (package / "sized.py").write_text(SIZED)
+    sized = importlib.import_module("pkghook.sized")
+    assert sized.size.__builtins__ is vars(builtins)
+
+    with intercepting(interception(package.parent)):
+        reloaded = importlib.reload(sized)
+
+    assert reloaded.size.__builtins__["len"] is bound.len
