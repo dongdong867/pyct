@@ -279,7 +279,7 @@ def test_checked_annotations_skips_the_return() -> None:
     assert "return" not in checked_annotations(four_plain_types)
 
 
-def test_checked_annotations_skips_an_annotation_that_is_not_plain() -> None:
+def test_checked_annotations_skips_an_annotation_that_asks_nothing() -> None:
     assert checked_annotations(not_plain) == {}
 
 
