@@ -17,6 +17,7 @@ from pyct.core.str_splits import (
     separator_and_limit,
     split_up,
 )
+from pyct.core.str_walks import walk
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches, the
@@ -377,6 +378,9 @@ class ConcolicStr(str):
     rsplit = split_up("rsplit", from_the_right)  # pyrefly: ignore[bad-override]
     partition = split_up("partition", one_separator)  # pyrefly: ignore[bad-override]
     splitlines = split_up("splitlines", line_ends)  # pyrefly: ignore[bad-override]
+
+    # a walk hands out each character as a tracked str, one fork a pass (see `walk`)
+    __iter__ = walk
 
     def __new__(cls, value: str, *, expression: Expression, sink: BranchSink) -> ConcolicStr:
         self = super().__new__(cls, value)
