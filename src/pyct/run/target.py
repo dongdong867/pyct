@@ -19,6 +19,7 @@ from pyct.run.import_watch import ImportWatch
 # reads by its message alone
 _INSPECT_S_OWN = (ValueError, TypeError)
 
+
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
 
