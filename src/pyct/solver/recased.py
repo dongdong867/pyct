@@ -21,10 +21,11 @@ from pyct.solver.strings import length
 # slower at a short string asked of the result, measured at 16
 HEAD = 8
 
-# the code points of the ASCII letters, each case from its first to its last
-_UPPER_CODES = (0x41, 0x5A)
-_LOWER_CODES = (0x61, 0x7A)
-_CASE_SHIFT = 0x20
+# the code points of the ASCII letters, each case from its first to its last, as the checks
+# class them
+(_UPPER_CODES,) = UPPER
+(_LOWER_CODES,) = LOWER
+_CASE_SHIFT = _LOWER_CODES[0] - _UPPER_CODES[0]
 
 # a declared string: the value's term, and the condition that holds it to Python's answer
 type Declared = tuple[str, str]

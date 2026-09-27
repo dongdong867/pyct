@@ -35,8 +35,11 @@ DIGITS: Ranges = ((0x30, 0x39),)
 UPPER: Ranges = ((0x41, 0x5A),)
 LOWER: Ranges = ((0x61, 0x7A),)
 LETTERS: Ranges = (*UPPER, *LOWER)
-# tab to carriage return, the four separators \x1c to \x1f, and the space
-SPACE: Ranges = ((0x09, 0x0D), (0x1C, 0x20))
+# tab to carriage return and the four separators \x1c to \x1f: whitespace but the space
+_BLANKS: Ranges = ((0x09, 0x0D), (0x1C, 0x1F))
+_SPACE_ITSELF: Ranges = ((0x20, 0x20),)
+# what isspace takes, and what strip and split() take away: one set, as in Python
+SPACE: Ranges = (*_BLANKS, *_SPACE_ITSELF)
 
 # the kinds of character, apart from each other and together every character cvc5 holds
 KINDS: Mapping[str, Ranges] = {
@@ -44,8 +47,8 @@ KINDS: Mapping[str, Ranges] = {
     "upper": UPPER,
     "lower": LOWER,
     "underscore": ((0x5F, 0x5F),),
-    "space": ((0x20, 0x20),),
-    "whitespace": ((0x09, 0x0D), (0x1C, 0x1F)),
+    "space": _SPACE_ITSELF,
+    "whitespace": _BLANKS,
     "punctuation": ((0x21, 0x2F), (0x3A, 0x40), (0x5B, 0x5E), (0x60, 0x60), (0x7B, 0x7E)),
     "control": ((0x00, 0x08), (0x0E, 0x1B), (0x7F, 0x7F)),
     "unprintable": ((0x80, 0xA0), (0xAD, 0xAD)),
