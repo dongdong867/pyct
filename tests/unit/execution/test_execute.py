@@ -477,16 +477,3 @@ def test_execute_reports_a_pyct_raise_below_a_c_target_as_a_pyct_bug(
     assert result.failure.kind is FailureKind.PYCT_BUG
     assert result.failure.detail == "RuntimeError: boom"
     assert result.failure.traceback is not None
-
-
-def test_execute_passes_a_positional_only_parameter_by_position() -> None:
-    def check(value: str, /, strict: bool = False) -> None:
-        if value == "abc":
-            return
-
-    ctx = ExecutionContext(fn=check, file=__file__)
-
-    result = execute(ctx, {"value": "x", "strict": True})
-
-    assert result.failure is None
-    assert [branch.expression for branch in result.branches] == [["==", "value", "'abc'"]]

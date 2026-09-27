@@ -30,11 +30,16 @@ class ExecutionContext:
     KeyboardInterrupt, or another BaseException that is neither an Exception
     nor SystemExit, is a raise like any other and ends the call as one. In
     pyct's own process it may be the person's Ctrl-C, so it passes through.
+
+    ``positional`` is the parameters the call passes by position, read once
+    from the signature ``load_target`` took; with none, every value goes by
+    name.
     """
 
     fn: Callable[..., object]
     file: str
     alone: bool = False
+    positional: tuple[inspect.Parameter, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -102,10 +107,10 @@ class _Ending:
 def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | None) -> _Ending:
     """Call the target and keep how it ended, for ``_failure`` to write once the sink is read.
 
-    A positional-only parameter is passed by position, read from the
-    signature as ``load_target`` reads it.
+    A positional-only parameter is passed by position, as ``ctx.positional``
+    names it.
     """
-    positional, keywords = call_arguments(inspect.signature(ctx.fn), bound)
+    positional, keywords = call_arguments(ctx.positional, bound)
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:

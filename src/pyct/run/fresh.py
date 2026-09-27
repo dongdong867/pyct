@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
+from pyct.binding.call import positional_only
 from pyct.core.branch import PYCT_DIR
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
@@ -94,7 +95,9 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
     with os.fdopen(request, "rb") as handed:
         sys.path[:] = pickle.load(handed)
         spec, file, args, until = pickle.load(handed)
-    ctx = ExecutionContext(fn=load_target(spec).fn, file=file, alone=True)
+    target = load_target(spec)
+    positional = positional_only(target.signature)
+    ctx = ExecutionContext(fn=target.fn, file=file, alone=True, positional=positional)
     return execute(ctx, args, until, watch=watch).failure
 
 

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.binding.annotations import Check, check_of, contradictions
-from pyct.binding.call import call_arguments
+from pyct.binding.call import call_arguments, positional_only
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
@@ -255,7 +255,7 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
     A positional-only parameter is named too, and bound by position, as the
     call will pass it.
     """
-    positional, keywords = call_arguments(signature, seed)
+    positional, keywords = call_arguments(positional_only(signature), seed)
     try:
         signature.bind(*positional, **keywords)
     except TypeError as error:
