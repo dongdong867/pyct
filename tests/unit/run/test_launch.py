@@ -172,6 +172,20 @@ def test_a_ctrl_c_while_importing_ends_the_watcher_as_the_command_s_process_ende
     assert capsys.readouterr().err == ""
 
 
+def exits() -> None:
+    os._exit(3)
+
+
+def test_an_exit_while_importing_is_reported_though_the_watcher_got_a_signal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # the watcher notes the SIGINT, but the command's process ends by its own exit
+    code = launch(signaled_while_importing(signal.SIGINT, exits), ARGV)
+
+    assert code == 1
+    assert capsys.readouterr().err == f"cannot import {MODULE}: exited with code 3\n"
+
+
 def test_a_sigterm_to_the_watcher_goes_on_to_the_command_s_process(
     raised: list[int], capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -13,9 +13,9 @@ the command's process ended: with its exit code, or by its signal.
 A Ctrl-C reaches both processes, since the terminal signals its whole
 foreground group, so the watcher only notes it and the command's process
 ends as it does on any Ctrl-C. A SIGTERM is sent to one process, so the
-watcher notes it and passes it on. An ending the watcher was signaled for
-is the signal's, not the import's, so the watcher then ends the same way
-as the command's process.
+watcher notes it and passes it on. When the command's process ends by a
+signal the watcher got too, that ending is the signal's, not the
+import's, so the watcher ends the same way.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def _watch(child: Child, watch: ImportWatch, held: Iterable[int]) -> int:
             waited = child.wait()
     finally:
         child.end()
-    return _ending(waited, watch.module(), bool(signaled))
+    return _ending(waited, watch.module(), signaled)
 
 
 @contextlib.contextmanager
@@ -92,9 +92,13 @@ def _noting(signaled: list[int], child: Child, held: Iterable[int]) -> Generator
             signal.signal(number, signal.SIG_DFL if handler is None else handler)
 
 
-def _ending(waited: Waited, module: str | None, signaled: bool) -> int:
-    """The watcher's exit code, once the command's process has ended, or its end by a signal."""
-    if module is not None and not signaled:
+def _ending(waited: Waited, module: str | None, signaled: list[int]) -> int:
+    """The watcher's exit code, once the command's process has ended, or its end by a signal.
+
+    An ending while the page names a module is that import's, unless a
+    signal the watcher got too ended the command's process.
+    """
+    if module is not None and waited.signal not in signaled:
         print(f"cannot import {module}: {how(waited)}", file=sys.stderr, flush=True)
         return 1
     if waited.signal is not None:
