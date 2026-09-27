@@ -27,7 +27,7 @@ from typing import Any
 
 from pyct.core import numbers
 from pyct.core.branch import BranchSink, Expression
-from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # not the target's path: `__hash__`, `__repr__`, the pickling hook and the rest of the object
 # plumbing, so a dict key and a debugger read cost nothing. `__getattribute__` is kept for a
@@ -193,6 +193,7 @@ class ConcolicFloat(float):
     __hash__ = float.__hash__
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
+    __reduce_ex__, __reduce__ = pickled(float)
 
     # each takes any operand and hands one outside the float family to float, so its signature
     # is not float's; the override breaks float's on purpose
