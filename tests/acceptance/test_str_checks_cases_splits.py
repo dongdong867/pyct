@@ -68,6 +68,12 @@ SPLIT_FAMILY_FORKS: list[tuple[int, list[object]]] = [
     (10, ["==", ["[]", ["splitlines", "s"], 0], "'top'"]),
 ]
 TRACKED_RSPLIT = "targets.strs.tracked_rsplit::cut"
+SPLIT_FORMS = "targets.strs.split_forms::read"
+# the seed's forks in ``read``: a split on whitespace with a limit, and a line kept with its end
+SPLIT_FORMS_FORKS: list[tuple[int, list[object]]] = [
+    (2, ["==", ["[]", ["split", "s", None, 1], 0], "'GET'"]),
+    (4, ["==", ["[]", ["splitlines", "s", True], 0], "'a\\n'"]),
+]
 LONG_RSPLIT = "targets.strs.long_rsplit::head"
 SHOUTED_PAIR = "targets.strs.shouted_pair::pair"
 SHOUTED_PAIR_FILE = str(REPO_ROOT / "targets" / "strs" / "shouted_pair.py")
@@ -247,3 +253,22 @@ def test_an_rsplit_with_a_large_limit_ends_within_the_budget() -> None:
     # run: cvc5 1.3.4 does not answer them in it, and pyct stops it a second past its limit
     assert all(why in ("timeout", "unknown") for _, why in misses_of(result.stdout))
     assert elapsed < 3 + 1 + 2, elapsed
+
+
+# beside follow-strings-follows-the-split-family: a None separator and a flag cross from the
+# forked child that ran the input
+def test_a_null_separator_and_a_kept_line_end_cross_from_the_child() -> None:
+    result = run_pyct(SPLIT_FORMS, '{"s": "x y"}')
+
+    assert result.returncode == 0, result.stderr
+    environment = summary_line(result.stdout)["environment"]
+    assert isinstance(environment, dict) and environment["isolated"] is True, environment
+    inputs = input_lines(result.stdout)
+    assert [(fork["line"], fork["expression"]) for fork in forks_of(inputs[0])] == (
+        SPLIT_FORMS_FORKS
+    )
+    assert sides_of(inputs) == {
+        (line, repr(expression), taken)
+        for line, expression in SPLIT_FORMS_FORKS
+        for taken in (True, False)
+    }
