@@ -264,11 +264,14 @@ def test_an_rsplit_with_a_large_limit_renders_in_size_and_memory_that_grow_with_
         return render((fork(condition, taken=False),), {"s": str})
 
     tracemalloc.start()
-    started = time.perf_counter()
-    text = rendered(2000)
-    elapsed = time.perf_counter() - started
-    _, peak = tracemalloc.get_traced_memory()
-    tracemalloc.stop()
+    try:
+        started = time.perf_counter()
+        text = rendered(2000)
+        elapsed = time.perf_counter() - started
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        # left on, tracing would slow every timed test after this one
+        tracemalloc.stop()
 
     # the reversed string is walked once, each step naming the last, so twice the limit is
     # about twice the text: 0.6 MB on a separator and 1.7 MB on whitespace at 2,000
