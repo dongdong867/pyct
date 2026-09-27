@@ -125,6 +125,20 @@ def test_reaches_a_fork_before_a_loop() -> None:
     assert covers(big[0], BEFORE_A_LOOP_FILE, 3)
 
 
+# follow-loops-and-ranges-flips-a-new-side-before-a-long-loop
+def test_flips_a_new_side_before_a_long_loop() -> None:
+    result = run_pyct(BEFORE_A_LOOP, '{"x": 200, "y": 0}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # both sides of the loop's test ran in the seed, and `y > 100` never went the other way,
+    # so the second input flips it, ahead of the loop's two hundred passes
+    second = inputs[1]
+    assert second["aim"] == {"file": BEFORE_A_LOOP_FILE, "line": 2, "col": 7, "position": 0}
+    assert number(second, "y") > 100
+    assert covers(second, BEFORE_A_LOOP_FILE, 3)
+
+
 # follow-loops-and-ranges-counts-through-a-loop
 def test_counts_through_a_loop() -> None:
     result = run_pyct(COUNT_A, '{"s": "ab"}', "--budget", "10")
