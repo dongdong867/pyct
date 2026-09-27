@@ -3,12 +3,19 @@
 Legacy and v2 are both packages named ``pyct`` with different dependencies, so they never
 share an interpreter; only JSON crosses (decision legacy-oracle-through-one-adapter). Before
 any target runs, ``probe`` checks that DIR's interpreter imports legacy's engine.
+
+Legacy's line tracer leaves a ``.pyct-cov.*`` file in the temp folder for each input it runs,
+and main is never changed. So every legacy process runs with ``TMPDIR``, ``TEMP`` and ``TMP``
+naming a folder of its own inside the checker's temp folder, removed once the process ends,
+however it ends.
 """
 
+import contextlib
 import json
 import math
 import platform
-from collections.abc import Mapping
+import tempfile
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +53,9 @@ PROBE = (
     "print(json.dumps({'python': platform.python_version(), 'engine': found, 'file': file}))\n"
 )
 
+# where Python's tempfile, and so legacy's line tracer, looks for the temp folder
+TEMP_VARIABLES = ("TMPDIR", "TEMP", "TMP")
+
 
 class LegacyCheckoutError(Exception):
     """``--legacy`` is missing, or names a folder where legacy's engine cannot be imported."""
@@ -54,6 +64,13 @@ class LegacyCheckoutError(Exception):
 def interpreter(checkout: Path) -> Path:
     """The interpreter of the checkout's own environment."""
     return checkout / ".venv" / "bin" / "python"
+
+
+@contextlib.contextmanager
+def own_temp(environment: Mapping[str, str]) -> Iterator[dict[str, str]]:
+    """``environment`` with its temp folder a new one, removed when the block ends."""
+    with tempfile.TemporaryDirectory(prefix="pyct-legacy-") as folder:
+        yield {**environment, **dict.fromkeys(TEMP_VARIABLES, folder)}
 
 
 @dataclass(frozen=True)
@@ -80,10 +97,11 @@ class LegacySide:
         }
         python = str(interpreter(self.checkout))
         argv = (python, "-P", str(ADAPTER), json.dumps(payload))
-        finished = run_command(Command(argv, request.root, self.environment), request.wait)
-        return with_library(
-            read_report(finished, "covered", _report), python, request, self.environment
-        )
+        with own_temp(self.environment) as environment:
+            finished = run_command(Command(argv, request.root, environment), request.wait)
+            return with_library(
+                read_report(finished, "covered", _report), python, request, environment
+            )
 
 
 def _report(line: dict[str, object]) -> SideReport:
@@ -126,13 +144,13 @@ def _probe_answer(checkout: Path, environment: Mapping[str, str], wait: float) -
     python = interpreter(checkout)
     if not python.exists():
         raise LegacyCheckoutError(f"--legacy {checkout}: no environment at {python}\n{RECIPE}")
-    command = Command((str(python), "-P", "-c", PROBE), checkout, environment)
-    try:
-        finished = run_command(command, wait)
-    except OSError as error:
-        raise LegacyCheckoutError(
-            f"--legacy {checkout}: cannot start {python}: {error.strerror}\n{RECIPE}"
-        ) from error
+    with own_temp(environment) as own:
+        try:
+            finished = run_command(Command((str(python), "-P", "-c", PROBE), checkout, own), wait)
+        except OSError as error:
+            raise LegacyCheckoutError(
+                f"--legacy {checkout}: cannot start {python}: {error.strerror}\n{RECIPE}"
+            ) from error
     answer = result_line(finished.stdout, "engine") if finished.returncode == 0 else None
     if finished.stopped_after is not None:
         raise LegacyCheckoutError(
