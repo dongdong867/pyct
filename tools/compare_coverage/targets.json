@@ -205,6 +205,7 @@
     {"set": "v2", "module": "targets.sweep.follows_all", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.generated.api", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.generated.factory", "left_out": "a sweep fixture"},
+    {"set": "v2", "module": "targets.sweep.lazyall._impl", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.methods", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.not_its_own", "left_out": "a sweep fixture"},
     {"set": "v2", "module": "targets.sweep.nothing", "left_out": "a sweep fixture"},

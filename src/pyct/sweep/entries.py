@@ -86,6 +86,7 @@ class _Package:
     def __init__(self, name: str) -> None:
         self.name = name
         self.files = _files(name)
+        self.modules = len(sys.modules)
         self.holders: dict[str, dict[int, list[str]]] = {}
 
     def entries(self, module: ModuleType, found_in: str, name: str) -> list[Entry]:
@@ -138,8 +139,18 @@ class _Package:
         return self._home_of(getattr(sys.modules.get(cls.__module__), "__file__", None))
 
     def _home_of(self, file: object) -> str | None:
-        """The module of the package whose file ``file`` is, or None."""
-        return self.files.get(os.path.realpath(file)) if isinstance(file, str) else None
+        """The module of the package whose file ``file`` is, or None.
+
+        Reading a name can import a module, as a module's ``__getattr__`` that
+        loads its API on first use does, so the files are read again when the
+        count of imported modules has changed since they were last read.
+        """
+        if not isinstance(file, str):
+            return None
+        if len(sys.modules) != self.modules:
+            self.files = _files(self.name)
+            self.modules = len(sys.modules)
+        return self.files.get(os.path.realpath(file))
 
     def _name_in(self, home: str, target: object) -> str | None:
         """The name ``home`` gives ``target``: its own name when that holds it, else the first."""

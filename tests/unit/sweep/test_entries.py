@@ -46,6 +46,11 @@ def test_only_functions_and_classes_of_the_package_are_entries() -> None:
     assert entries(module, module) == [Entry(module, "Cart", seed={"owner": ""})]
 
 
+def test_a_name_that_loads_its_module_when_read_is_named_by_that_module() -> None:
+    lazy = f"{SWEEP}.lazyall"
+    assert entries(lazy, lazy) == [Entry(f"{lazy}._impl", "compute", seed={"n": 0})]
+
+
 def test_all_decides_the_public_names() -> None:
     assert public_names(importlib.import_module(f"{SWEEP}.follows_all")) == ["a", "_b"]
 
