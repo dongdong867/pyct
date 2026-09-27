@@ -453,38 +453,3 @@ def test_a_walk_after_many_stores_writes_its_size_at_once() -> None:
     assert sum(1 for _ in config) == 10_001
     # the scan measured 6.96 s here when each fork summed every change
     assert time.monotonic() - started < 2.0
-
-
-def test_a_lookup_of_the_key_a_walk_is_at_records_no_fork() -> None:
-    # every input that walks to a key looks that same key up, so no input takes the other side
-    config, sink = tracked({"a": 1, "b": 2})
-
-    assert [config[key] for key in config] == [1, 2]
-    assert [config.get(key) for key in reversed(config)] == [2, 1]
-
-    assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "in"] == []
-
-
-@pytest.mark.parametrize(
-    "merge",
-    [dict, lambda c: {**c}, lambda c: {}.update(c), lambda c: {"z": 0} | dict(c)],
-    ids=["dict", "unpacked", "update", "merged"],
-)
-def test_python_s_own_merge_looks_up_what_it_walked_with_no_fork(merge: Any) -> None:
-    config, sink = tracked({"a": 1, "b": 2})
-
-    merge(config)
-
-    assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "in"] == []
-    assert len(forks(sink)) == 3
-
-
-def test_a_literal_lookup_after_a_walk_records_its_fork() -> None:
-    config, sink = tracked({"alpha": 1})
-
-    for _ in config:
-        pass
-    looked = "".join(["al", "pha"])  # the target's own text, not the key the walk handed out
-    assert looked in config
-
-    assert forks(sink)[-1] == (["in", "'alpha'", "config"], True)

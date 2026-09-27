@@ -74,6 +74,10 @@ def made_up_match(term: str, taken: Collection[object], made: str) -> str:
     )
 
 
+class LookupsTooManyError(ProgramTooLargeError):
+    """A path's tracked-key lookups ran past the steps the solve's limit gives them."""
+
+
 class Keyed:
     """The terms of a dict's keys and of the values under them: mixed into ``DictTerms``, which
     sets what they read.
@@ -94,12 +98,13 @@ class Keyed:
     spent: int
     most_lookups: int | None
 
-    def _step(self, found: Tracked, typed: type | None) -> None:
-        """Count one call of a tracked key's lookup, as many steps as the keys it may equal. A
-        program past its steps is given up before cvc5 grows it out of reach."""
-        self.spent += len(found.candidates(typed)) + 1
+    def _step(self, found: Tracked, typed: type | None, calls: int) -> None:
+        """Count the calls of a tracked key's lookup or read, each as many steps as the keys it
+        may equal and one more, as cvc5 writes each call out. A program past its steps is given
+        up before cvc5 grows it out of reach."""
+        self.spent += calls * (len(found.candidates(typed)) + 1)
         if self.most_lookups is not None and self.spent > self.most_lookups:
-            raise ProgramTooLargeError(
+            raise LookupsTooManyError(
                 f"tracked-key lookups ran past {self.most_lookups} steps into the dict's keys"
             )
 
@@ -129,7 +134,7 @@ class Keyed:
         The keys are written once, in a function each lookup calls, so a path's program grows
         with its keys and its lookups, not with the one times the other.
         """
-        self._step(found, typed)
+        self._step(found, typed, 1)
         name = found.constant(f"has.{_sort_word(typed)}")
         if name not in self.functions:
             options = [self._equals(found, key) for key in found.candidates(typed)]
@@ -149,7 +154,8 @@ class Keyed:
         once, as functions each read calls.
         """
         term, typed = keyed
-        self._step(found, typed)
+        # a read calls two functions: whether the key's value is of the kind read, and the value
+        self._step(found, typed, 2)
         word = f"{_sort_word(typed)}.{kind}"
         fits, read = found.constant(f"fits.{word}"), found.constant(f"read.{word}")
         if read not in self.functions:

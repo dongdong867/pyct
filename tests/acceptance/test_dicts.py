@@ -43,8 +43,11 @@ LENGTH = "targets.dicts.length::check"
 INT_KEYS = "targets.dicts.int_keys"
 LAST_ITEM = "targets.dicts.last_item::check"
 WALKED = "targets.dicts.walked_then_asked::check"
+WALKED_MODULE = "targets.dicts.walked_then_asked"
 WALKED_FILE = str(DICTS / "walked_then_asked.py")
 WALK_BACK = "targets.dicts.walk_back::check"
+SHAPES = "targets.dicts.walk_shapes"
+SHAPES_FILE = str(DICTS / "walk_shapes.py")
 LENGTH_FILE = str(DICTS / "length.py")
 
 # a walk over a dict has no limit on its passes, so a run over a target that walks one ends when
@@ -312,16 +315,23 @@ def test_popitem_keeps_the_key_it_read() -> None:
 
 # follow-dicts-as-they-change: a walk is not a lookup, so the first lookup after it records
 # whether its key is there, and the solver is asked for the other side. Nothing reads the value
-# the walk read at `a`'s place, so another key may stand there: `{"d": {"b": 1}}` reaches the
-# target, and so does an answer with a made-up key in `a`'s place
-def test_a_lookup_after_a_walk_records_its_fork() -> None:
-    result = run_pyct(WALKED, '{"d": {"a": 1}}', *UNTIL_NO_GAIN)
+# the walk read at the key's place, so another key may stand there: `{"d": {"b": 1}}` reaches
+# the target. A one-character key is the very object Python gives the literal `"a"`, so pyct
+# cannot tell the lookup from one of the walk's own: its flip is a named miss, never an answer
+# that leaves the plan
+@pytest.mark.parametrize(("name", "key", "line"), [("check_long", "alpha", 12), ("check", "a", 4)])
+def test_a_lookup_after_a_walk_records_its_fork(name: str, key: str, line: int) -> None:
+    result = run_pyct(f"{WALKED_MODULE}::{name}", json.dumps({"d": {key: 1}}), *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert (4, ["in", "'a'", "d"], True) in listed(lines[0])
-    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
-    assert 5 in covered_of(lines)[WALKED_FILE], lines
+    assert (line, ["in", repr(key), "d"], True) in listed(lines[0])
+    assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list)
+    reached = line + 1 in covered_of(lines)[WALKED_FILE]
+    # the literal "alpha" is not the walk's own object: an answer reaches the target
+    assert reached if len(key) > 1 else reached or line in {m["line"] for m in misses}, misses
 
 
 # follow-dicts-as-they-change: one more pass of a walk from the end needs a key ahead of the
@@ -336,3 +346,61 @@ def test_a_walk_from_the_end_reports_a_pass_it_cannot_write_as_unknown() -> None
     assert isinstance(misses, list)
     assert (2, "unknown") in {(miss["line"], miss["why"]) for miss in misses}, misses
     assert (2, "unsat") not in {(miss["line"], miss["why"]) for miss in misses}, misses
+
+
+# follow-dicts-as-they-change: a lookup of a key a walk handed out, even after the walk ended,
+# is one no input can fail: it records no fork, so no answer that flips it leaves the plan
+@pytest.mark.parametrize("name", ["sorted_walk", "listed_walk"])
+@pytest.mark.parametrize("key", ["alpha", "a"])
+def test_a_lookup_of_a_walked_key_after_the_walk_leaves_no_plan(name: str, key: str) -> None:
+    result = run_pyct(f"{SHAPES}::{name}", json.dumps({"d": {key: 1}}), *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    lookups = [f for f in listed(lines[0]) if isinstance(f[1], list) and f[1][0] == "in"]
+    # a one-character key has no copy of its own: its lookup is recorded, given its place
+    assert lookups == ([] if len(key) > 1 else lookups), lookups
+    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
+
+
+# follow-dicts-as-they-change: a literal the target writes is looked up as any other, though
+# Python shares its object with the walk's key: its fork is recorded, never silently skipped
+def test_a_literal_python_shares_with_a_walked_key_records_its_fork() -> None:
+    result = run_pyct(f"{SHAPES}::literal_in_walk", '{"d": {"a": 1}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert (23, ["in", "'a'", "d"], True) in listed(lines[0])
+    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list)
+    # `{"d": {"b": 1}}` takes the other side; where no answer pyct writes is found, it is a miss
+    assert 25 in covered_of(lines)[SHAPES_FILE] or 23 in {m["line"] for m in misses}, misses
+
+
+# follow-dicts-as-they-change: a key nothing reads the value of may go from where a walk passed
+# it, and popitem's key may be a made-up one where nothing reads what it returned
+@pytest.mark.parametrize(
+    ("name", "seed", "line"),
+    [("listed", '{"d": {"a": 0, "c": 0, "b": 0}}', 32), ("popped", '{"d": {"a": 1}}', 40)],
+)
+def test_a_key_no_fork_reads_is_free_to_go(name: str, seed: str, line: int) -> None:
+    result = run_pyct(f"{SHAPES}::{name}", seed, *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert line in covered_of(lines)[SHAPES_FILE], lines
+    assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
+
+
+# follow-dicts-as-they-change: a path whose walk keeps a key in place and whose float floor
+# division runs past its bound is asked without both, and a model there is `unknown`, not the
+# `unsat` of the program that held them
+def test_a_placed_walk_beside_a_bound_is_unknown_not_unsat() -> None:
+    result = run_pyct(f"{SHAPES}::bounded", '{"d": {"a": 1}, "x": 1.0}', "--budget", "20")
+
+    assert result.returncode == 0, result.stderr
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list)
+    whys = {miss["why"] for miss in misses if miss["line"] == 48}
+    assert whys and "unsat" not in whys, misses

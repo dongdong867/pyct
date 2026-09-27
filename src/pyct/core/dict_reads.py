@@ -11,17 +11,18 @@ A walk over the keys, the values or the items records `[">", size, j]` for each 
 and once more, taken false, where it ends, in insertion order. Each key it hands out is plain,
 and each value as the dict holds it: an argument's value tracked, the target's own as it is.
 A walk is not a lookup, so it settles nothing; each fork it records carries which key it read
-at its place (``placed``), so an answer keeps that key there, as a read keeps a list's item.
+at its place (``placed``), so an answer keeps that key there, as a read keeps a list's item. It
+hands out its own copy of each key, so a lookup of that very object, whenever it runs, is one no
+input fails and records no fork (``proven``); a key Python shares with the target's literals has
+no copy, and its lookup is recorded given the place the walk read it (``handout``).
 """
 
 from __future__ import annotations
 
 import json
-import sys
-import types
 from collections.abc import Callable, Iterator
 
-from pyct.core.branch import PYCT_DIR, Downgrade, Expression
+from pyct.core.branch import Downgrade, Expression
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
@@ -74,28 +75,44 @@ def present(self: DictState, key: object, name: str) -> bool | None:
     if plain(key) in self.changed or known in self.settled or proven(self, key):
         return held
     self.settled[known] = held
-    return forked(self.sink, ["in", written, self.expression], held, name)
+    given = self.shared.get(key) if type(key) in (str, int) else None
+    written_given: Expression = None if given is None else ["given", given]
+    return forked(self.sink, ["in", written, self.expression], held, name, written_given)
 
 
 def proven(self: DictState, key: object) -> bool:
-    """Whether a walk of this dict just showed it holds ``key``, so no input takes the other
-    side of the lookup: the very key a walk is stopped at, as in `for k in d: d[k]`, or one a
-    walk handed out to the code that started it, as Python's own `dict(d)` and `{**d}` look up
-    each key they walked. A key the target writes as a literal after a walk is looked up as any
-    other."""
-    entry = self.handed.get(id(key))
-    if entry is None or entry[0] is not key:
-        return False
-    return self.holding.get(id(key)) is key or entry[1] == outside_caller()
+    """Whether the key is the very object a walk of this dict handed out, whenever the walk ran,
+    as in `for k in sorted(d): d[k]` or Python's own `dict(d)`: the dict held it when the walk
+    handed it out, and no store or removal since (``changed``) moved it, so no input takes the
+    other side of the lookup. A walk hands out a copy of each key no code can write, so a key
+    the target writes as a literal is looked up as any other."""
+    return self.copies.get(key, MISSING) is key
 
 
-def outside_caller() -> tuple[int, int]:
-    """The innermost frame outside pyct, and the instruction it runs: the code that called into
-    the dict, the target's or a library's, as C code between the two leaves no frame."""
-    frame: types.FrameType | None = sys._getframe(1)
-    while frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR):
-        frame = frame.f_back
-    return (0, -1) if frame is None else (id(frame), frame.f_lasti)
+def handout(self: DictState, key: object, pin: Expression) -> object:
+    """The key a walk hands out for a stored key: its own copy, the same for every walk.
+
+    A key Python shares, a one-character str or a small int, has no copy: a literal the target
+    writes is the same object. Its lookup is recorded as any other, and holds where the walk
+    read it (``pin``), so its other side is asked with that place and without it.
+    """
+    copied = self.copies.get(key, MISSING)
+    if copied is MISSING:
+        copied = _copy(key)
+        if copied is not key:
+            self.copies[key] = copied
+    if copied is key and pin is not None:
+        self.shared[key] = pin
+    return copied
+
+
+def _copy(key: object) -> object:
+    """A new object equal to a str or int key, or the key itself where Python shares one."""
+    if type(key) is str and len(key) > 1:
+        return "".join([key[:1], key[1:]])
+    if type(key) is int:
+        return int.__add__(int.__add__(key, 1), -1)
+    return key
 
 
 def found(self: DictState, key: object, name: str) -> bool:
@@ -165,7 +182,7 @@ def truth(self: DictState) -> bool:
 
 
 def key_of(self: DictState, key: object) -> object:
-    return key
+    return self.copies.get(key, key)
 
 
 def value_of(self: DictState, key: object) -> object:
@@ -173,7 +190,7 @@ def value_of(self: DictState, key: object) -> object:
 
 
 def item_of(self: DictState, key: object) -> object:
-    return key, dict.__getitem__(self, key)
+    return self.copies.get(key, key), dict.__getitem__(self, key)
 
 
 def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[object]:
@@ -182,16 +199,16 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
     self.walked_at = caller(depth)
-    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST, outside_caller()))
+    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
     """A walk over the dict from its last key, forking as a walk from the first does."""
-    return _walked(self, reversed(dict.keys(self)), pick, (name, LAST, outside_caller()))
+    return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
 
 
 # the end a walk starts from, which says what keeps a key it reads at its place, and popitem's,
-# which reads from the last and removes what it read
+# which reads the last key and removes it
 FIRST, LAST, POPPED = "walked", "last", "popped"
 
 
@@ -217,12 +234,12 @@ def placed(self: DictState, key: object, end: str) -> Expression:
 
 
 def _walked(
-    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str, tuple[int, int]]
+    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str]
 ) -> Iterator[object]:
     """Each key in Python's own order: Python's own iterator raises where the dict changes size
     while it walks. A change made without the dict's methods turns the walk plain there. Each
-    key handed out is noted, and so is the key the walk is stopped at (see ``proven``)."""
-    name, end, started = how
+    key is handed out as the walk's own copy of it (see ``handout``)."""
+    name, end = how
     at = 0
     while True:
         key = own(next, keys, MISSING)
@@ -231,12 +248,8 @@ def _walked(
         pin = None if key is MISSING else placed(self, key, end)
         if not forked(self.sink, [">", self.size_term(), at], key is not MISSING, name, pin):
             return
-        self.handed[id(key)] = (key, started)
-        self.holding[id(key)] = key
-        try:
-            yield pick(self, key)
-        finally:
-            self.holding.pop(id(key), None)
+        handout(self, key, pin)
+        yield pick(self, key)
         at += 1
     while key is not MISSING:
         yield plain_pick(pick, self, key)

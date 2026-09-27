@@ -340,15 +340,29 @@ def test_a_key_no_fork_reads_the_value_of_may_go_from_its_place() -> None:
 
 
 @needs_cvc5
-def test_the_keys_a_walk_passed_stay_or_the_fork_is_unknown() -> None:
-    # the walk passed a and b, which no fork names: a key named later comes in only past them
-    forks = (
+def test_a_key_a_walk_passed_that_no_fork_reads_may_go() -> None:
+    # the walk passed a and b, and no fork reads either value: `{"a": 0, "z": 0}` takes the path
+    solved = answered(
+        {"config": {"a": 0, "b": 0}},
         kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
         kept([">", ["len", "config"], 1], ["walked", "config", "'b'"]),
         fork([">", ["len", "config"], 2], taken=False),
         fork(["in", "'z'", "config"]),
     )
-    seed = Seed.of({"config": {"a": 0, "b": 0}})
+
+    config = solved["config"]
+    assert isinstance(config, dict) and "z" in config and len(config) == 2
+
+
+@needs_cvc5
+def test_a_given_place_holds_whatever_a_fork_reads() -> None:
+    # `for k in d: if "a" in d:` on `{"a": 1}`: "a" is the walk's own object, so the flip of the
+    # lookup is asked with a at its place, unsat, and then without, where a model is unknown
+    forks = (
+        kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
+        kept(["in", "'a'", "config"], ["given", ["walked", "config", "'a'"]], taken=False),
+    )
+    seed = Seed.of({"config": {"a": 1}})
 
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unknown)
 
@@ -449,3 +463,31 @@ def test_tracked_key_lookups_inside_their_steps_are_asked() -> None:
     seed, forks = lookups(5, 100)
 
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers(), seed.values), Sat)
+
+
+@needs_cvc5
+def test_a_placed_walk_beside_a_bound_is_asked_without_both_and_is_unknown() -> None:
+    # `x // 1.0 == 1e300` holds for `x = 1e300` past the bound a float floor division is exact
+    # inside, so the ask without the walk's places must also leave the bound out
+    forks = (
+        kept([">", ["len", "d"], 0], ["walked", "d", "'a'"]),
+        fork([">", ["[]", "d", "'a'"], 5], taken=False),
+        fork([">", ["len", "d"], 1], taken=False),
+        fork(["==", ["//", "x", 1.0], 1e300]),
+    )
+    seed = Seed.of({"d": {"a": 1}, "x": 1.0})
+
+    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers(), seed.values), Unknown)
+
+
+@needs_cvc5
+def test_popitem_whose_result_nothing_reads_pops_a_key_no_fork_names() -> None:
+    # `d.popitem()` and then `"z" in d`: an added z would be popped, so a made-up key goes last
+    solved = answered(
+        {"d": {"a": 1}},
+        kept(["!=", ["len", "d"], 0], ["popped", "d", "'a'"]),
+        fork(["in", "'z'", "d"]),
+    )
+
+    d = solved["d"]
+    assert isinstance(d, dict) and "z" in d and list(d)[-1] != "z"

@@ -43,10 +43,11 @@ class DictState(dict):
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
     walked_at: tuple[int, int] | None
-    # each key a walk handed out, by its identity: the key itself, and the code and instruction
-    # that started the walk; and the keys a walk is stopped at now (see ``dict_reads.proven``)
-    handed: dict[int, tuple[object, tuple[int, int]]]
-    holding: dict[int, object]
+    # the copy of each stored key every walk hands out, so a lookup of that very object comes
+    # from a walk; and, for a key Python shares, which no copy can stand for, where a walk read
+    # it (see ``dict_reads.proven``)
+    copies: dict[object, object]
+    shared: dict[object, Expression]
 
     @classmethod
     def made(
@@ -62,8 +63,8 @@ class DictState(dict):
         made.grown = 0
         made.shadow = dict(items)
         made.walked_at = None
-        made.handed = {}
-        made.holding = {}
+        made.copies = {}
+        made.shared = {}
         return made
 
     def size(self) -> int:
