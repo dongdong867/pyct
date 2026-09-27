@@ -25,6 +25,8 @@ CHECK = 'def check(x: int) -> str:\n    b = x > 5\n    if b is True:\n        re
 CHOOSE = (
     'def choose(x: int) -> str:\n    if x in {1, 5}:\n        return "picked"\n    return "other"\n'
 )
+# under either variable, Python writes no bytecode beside a module
+BYTECODE_ELSEWHERE = ("PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX")
 
 
 def forks_at(line: dict[str, object]) -> list[tuple[str, int, object, object]]:
@@ -97,8 +99,9 @@ def test_leaves_the_target_s_folder_as_it_was(tmp_path: Path) -> None:
     package.mkdir()
     (package / "__init__.py").write_text("")
     (package / "check.py").write_text(CHECK)
-    # plain Python imports it first, so its __pycache__ holds the bytecode Python wrote
-    writes = {key: value for key, value in os.environ.items() if key != "PYTHONDONTWRITEBYTECODE"}
+    # plain Python imports it first, so its __pycache__ holds the bytecode Python wrote,
+    # with neither variable set
+    writes = {key: value for key, value in os.environ.items() if key not in BYTECODE_ELSEWHERE}
     subprocess.run(
         [sys.executable, "-c", "import tidy.check"],
         cwd=tmp_path,
