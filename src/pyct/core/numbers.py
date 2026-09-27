@@ -14,9 +14,11 @@ before any value is built; a result whose type nothing entered raises
 `LookupError` rather than coming back plain.
 
 The registry is two functions: `enter(base, cls)` and `tracked(value,
-expression, sink)`. The operand rule and the builders below are the int
-family's, a tracked int's and a tracked bool's: they take an int or a bool
-alone, as int's own operations do. Another number type enters its class
+expression, sink)`. `operand`, and `arithmetic`, `division` and `divmod_of`,
+which read their other side through it, are the int family's, a tracked
+int's and a tracked bool's: they take an int or a bool alone, as int's own
+operations do. `compare` serves every concolic type and reads the other
+side by the rule its caller passes. Another number type enters its class
 and reads its operands by its own rule.
 """
 
