@@ -2,6 +2,7 @@ import importlib
 import sys
 import types
 import typing
+from pathlib import Path
 
 import pytest
 
@@ -13,6 +14,7 @@ from pyct.sweep.entries import (
     Unread,
     entries_in,
     function_of,
+    modules_in,
     package_path,
     public_names,
 )
@@ -206,3 +208,7 @@ def test_a_package_path_is_read_without_asking_the_module() -> None:
     assert package_path(forwarded) == list(forwarded.__path__)
     # an object a module put in its own place may have no names of its own at all
     assert package_path(typing.cast(types.ModuleType, object())) is None
+
+
+def test_a_folder_that_cannot_be_read_holds_no_module(tmp_path: Path) -> None:
+    assert modules_in([str(tmp_path / "gone")]) == []

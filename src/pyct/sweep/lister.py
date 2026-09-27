@@ -11,6 +11,8 @@ which walks on past it and never imports it again.
 It walks PACKAGE and, below it, every module whose name's every part is an
 identifier that does not start with ``_`` and is not ``test`` or ``tests``,
 in name order.
+A folder with no ``__init__.py`` below a package is walked as the namespace
+package Python imports it as.
 PACKAGE itself is walked whatever its name. A package that does not import
 is not walked below. With ``--after``, a module up to that one was listed
 by an earlier process: a package on the way to it is imported again to
@@ -37,14 +39,13 @@ import argparse
 import importlib
 import json
 import os
-import pkgutil
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from types import ModuleType
 from typing import TextIO
 
-from pyct.sweep.entries import Reading, Unread, entries_in, package_path
+from pyct.sweep.entries import Reading, Unread, entries_in, modules_in, package_path
 
 # parts of a module name below the package that leave the module out of the walk
 LEFT_OUT = frozenset({"test", "tests"})
@@ -123,8 +124,7 @@ def _modules_below(module: ModuleType, name: str) -> list[str]:
     path = package_path(module)
     if path is None:
         return []
-    names = sorted(found.name for found in pkgutil.iter_modules(path, f"{name}."))
-    return [name for name in names if _walked(name.rpartition(".")[2])]
+    return [f"{name}.{part}" for part in modules_in(path) if _walked(part)]
 
 
 def _walked(part: str) -> bool:

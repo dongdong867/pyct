@@ -92,3 +92,18 @@ def test_a_module_whose_getattr_raises_is_read_to_the_end_by_one_lister() -> Non
     lazy = f"{unread}.lazy"
     assert {"importing": lazy} in facts
     assert facts[-1] == {"done": True}, said
+
+
+def test_a_folder_with_no_init_is_walked_as_a_namespace_package() -> None:
+    spaced = "targets.sweep.spaced"
+    facts, _ = lister(spaced)
+
+    assert facts == [
+        {"importing": spaced},
+        {"importing": f"{spaced}.plain"},
+        {"importing": f"{spaced}.plain.mod"},
+        entry(f"{spaced}.plain.mod", "spread", {"n": 0}),
+        {"importing": f"{spaced}.top"},
+        entry(f"{spaced}.top", "top", {"n": 0}),
+        {"done": True},
+    ]

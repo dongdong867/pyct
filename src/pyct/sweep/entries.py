@@ -16,6 +16,7 @@ own body defines under a public name is listed too, and skipped until
 ``pyct run`` can call one.
 """
 
+import contextlib
 import functools
 import inspect
 import os
@@ -107,7 +108,29 @@ def package_path(module: ModuleType) -> list[str] | None:
 def _submodule_names(module: ModuleType) -> set[str]:
     """The names of the modules one level below a package, or none for a plain module."""
     path = package_path(module)
-    return set() if path is None else {found.name for found in pkgutil.iter_modules(path)}
+    return set() if path is None else set(modules_in(path))
+
+
+def modules_in(path: list[str]) -> list[str]:
+    """The names of the modules in a package's folders: those ``pkgutil`` finds, and each
+    folder with no ``__init__.py`` whose name Python can import, as a namespace package."""
+    names = {found.name for found in pkgutil.iter_modules(path)}
+    for folder in path:
+        with contextlib.suppress(OSError):
+            names.update(_namespace_folders(folder))
+    return sorted(names)
+
+
+def _namespace_folders(folder: str) -> list[str]:
+    """The folders in ``folder`` with an identifier name and no ``__init__.py``."""
+    with os.scandir(folder) as found:
+        return [
+            entry.name
+            for entry in found
+            if entry.name.isidentifier()
+            and entry.is_dir()
+            and not os.path.exists(os.path.join(entry.path, "__init__.py"))
+        ]
 
 
 def public_names(module: ModuleType) -> list[str]:
