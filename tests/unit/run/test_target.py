@@ -95,40 +95,45 @@ def test_load_target_names_the_module_on_the_watch_while_it_imports(
 
 
 def refused_as_python_refuses(spec: str) -> None:
-    """``load_target`` refuses ``spec`` with the reason plain Python gives in this run.
+    """``load_target`` refuses ``spec`` with the message plain Python gives in this run.
 
-    The reason is one line: the first line of Python's message that holds
-    anything, or the exception's type name when none does.
+    For inspect's own refusals, whose words CPython changes between
+    versions; each is one line.
     """
     with pytest.raises(TargetError) as refused:
         load_target(spec)
 
     module, name = spec.split("::")
-    with pytest.raises(BaseException) as unread:
+    with pytest.raises((ValueError, TypeError)) as unread:
         inspect.signature(getattr(sys.modules[module], name))
-    lines = [line for line in str(unread.value).splitlines() if line.strip()]
-    reason = lines[0] if lines else type(unread.value).__name__
-    assert str(refused.value) == f"cannot read the signature of {spec}: {reason}"
+    assert str(refused.value) == f"cannot read the signature of {spec}: {unread.value}"
 
 
 @pytest.mark.parametrize(
     "name",
-    [
-        "pick",
-        "partial_max",
-        "looped",
-        "bad_signature",
-        "wrong_signature_type",
-        "builtin_alias",
-        "odd_callable",
-        "no_message",
-        "two_line_message",
-        "blank_first_line",
-        "exits_while_read",
-    ],
+    ["pick", "partial_max", "looped", "bad_signature", "wrong_signature_type", "builtin_alias"],
 )
 def test_load_target_refuses_a_target_whose_signature_python_cannot_read(name: str) -> None:
     refused_as_python_refuses(f"targets.load.unreadable_signatures::{name}")
+
+
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        pytest.param("odd_callable", "'__wrapped__'", id="a-bare-key"),
+        pytest.param("no_message", "RuntimeError", id="no-message"),
+        pytest.param("two_line_message", "first line", id="two-lines"),
+        pytest.param("blank_first_line", "after a blank line", id="a-blank-first-line"),
+        pytest.param("exits_while_read", "0", id="an-exit"),
+    ],
+)
+def test_load_target_gives_one_line_that_is_never_empty(name: str, reason: str) -> None:
+    spec = f"targets.load.unreadable_signatures::{name}"
+
+    with pytest.raises(TargetError) as refused:
+        load_target(spec)
+
+    assert str(refused.value) == f"cannot read the signature of {spec}: {reason}"
 
 
 @pytest.mark.skipif(
