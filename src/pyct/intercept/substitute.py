@@ -14,9 +14,10 @@ nodes, moved into the call and never copied, so each is evaluated once and
 in Python's order: the left, then the right, then the test.
 
 The module binds those names itself, in an import placed before its first
-statement that runs, after its docstring and its ``__future__`` imports and
-on that statement's own line, so the code has them in whatever namespace
-runs it: an import, ``runpy``, or a reload. A class body declares them
+statement that runs code, after its docstring and its ``__future__``
+imports and at that statement's first instruction
+(`positions.statement_start`), so it adds no line and the code has them in
+whatever namespace runs it: an import, ``runpy``, or a reload. A class body declares them
 global, so a namespace a metaclass prepares is never asked for them. The
 names are reserved for pyct (`pyct.intercept`).
 
