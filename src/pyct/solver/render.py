@@ -8,6 +8,7 @@ from pyct.binding.bind import access_name
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.answer import SolverAnswerError
+from pyct.solver.answer_size import longest_string
 from pyct.solver.checks import CHECKS
 from pyct.solver.dag import Node, distinct
 from pyct.solver.heads import (
@@ -136,6 +137,7 @@ def program(
     lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
+    lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
     lines += [_held_finite(constants[name], symbols[name] if cores else None) for name in held]
     lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if bounded]
     lines += [body.assertion(fork) for fork in prefix]
