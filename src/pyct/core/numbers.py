@@ -262,15 +262,21 @@ def promoted(operation: Callable[..., object]) -> tuple[Callable[..., object], R
     name = _mirrored(operation.__name__)
     mirror = getattr(float, name)
 
-    def floats_own(other: object) -> bool:
-        # a tracked float's mirror is followed, and float's own answers it
+    def floats_own(other: object, *rest: object) -> bool:
+        # a tracked float's mirror is followed, and float's own answers it. A three-argument
+        # pow is the subclass's own when it defines either power, as Python's slot is then
         kind = type(other)
-        return kind is float or kind in _CLASSES or getattr(kind, name) is mirror
+        if kind is float or kind in _CLASSES:
+            return True
+        names = (name, _mirrored(name)) if rest else (name,)
+        return all(getattr(kind, each) is getattr(float, each) for each in names)
 
     def answer(self: object, other: object, /, *rest: object) -> object:
         if not isinstance(other, float):
             return operation(self, other, *rest)
-        return mirror(other, plain_int(self), *rest) if floats_own(other) else NotImplemented
+        if not floats_own(other, *rest):
+            return NotImplemented
+        return mirror(other, plain_int(self), *rest)
 
     def rule(other: object) -> Expression | None:
         if not isinstance(other, float):

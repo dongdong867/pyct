@@ -345,6 +345,13 @@ class Coy(float):
         return NotImplemented
 
 
+class Fwd(float):
+    """A float that defines its own forward power alone."""
+
+    def __pow__(self, other: object, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
+        return NotImplemented
+
+
 # the type name Python's message gives the int on the left, which pyct's names ConcolicInt
 # (name-int-in-a-tracked-int-s-type-error)
 PLAIN_INT_NAME = ("'int'", "'ConcolicInt'")
@@ -352,8 +359,8 @@ PLAIN_INT_NAME = ("'int'", "'ConcolicInt'")
 
 @pytest.mark.parametrize(
     "operation",
-    [lambda n: n ** Coy(2.0), lambda n: pow(n, Dial(2.0), 5)],
-    ids=["declined-power", "three-argument-power"],
+    [lambda n: n ** Coy(2.0), lambda n: pow(n, Dial(2.0), 5), lambda n: pow(n, Fwd(2.0), 5)],
+    ids=["declined-power", "three-argument-power", "three-argument-forward-power"],
 )
 def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     operation: Callable[[Any], Any],
