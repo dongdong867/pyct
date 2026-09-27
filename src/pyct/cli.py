@@ -94,7 +94,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     input.
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, import, seed present, seed fits, seed types, cvc5.
+    solver timeout, import and signature, seed present, seed fits, seed
+    types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
@@ -334,7 +335,7 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
         raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
 
 
-def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
+def checked_annotations(target: Target) -> dict[str, Check]:
     """The parameters whose annotation asks something of the seed, and what it asks.
 
     What an annotation asks, and which annotations ask nothing, is
@@ -352,14 +353,15 @@ def checked_annotations(fn: Callable[..., object]) -> dict[str, Check]:
     parameter and no other. An annotation that asks nothing, such as
     ``str | None`` or a class, is not kept.
 
-    The parameters come from the signature, the same source ``check_seed_fits``
-    reads, so a class target is read at its ``__init__``.
+    The parameters come from the target's signature as the loader read it,
+    the same one ``check_seed_fits`` reads, so a class target is read at
+    its ``__init__`` and the seed checks do not read the signature again.
     """
     hints: dict[str, Check] = {}
-    for name, parameter in inspect.signature(fn).parameters.items():
+    for name, parameter in target.signature.parameters.items():
         if parameter.annotation is inspect.Parameter.empty:
             continue
-        check = _resolved(parameter.annotation, fn)
+        check = _resolved(parameter.annotation, target.fn)
         if check is not None:
             hints[name] = check
     return hints
@@ -470,7 +472,7 @@ def _module_names(fn: object) -> list[dict[str, object]]:
 
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
     """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = contradictions(checked_annotations(target.fn), seed)
+    lines = contradictions(checked_annotations(target), seed)
     if lines:
         raise UsageError("\n".join(lines))
 
