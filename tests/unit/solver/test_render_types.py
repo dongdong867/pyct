@@ -5,7 +5,7 @@ import pytest
 from pyct.core.branch import Expression
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
-from pyct.solver.heads import FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
+from pyct.solver.heads import BOUNDED, FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
 from pyct.solver.recased import TO_DECLARE
 from pyct.solver.splits import SPLITS
 from tests.unit.solver.test_render import fork, render
@@ -13,6 +13,7 @@ from tests.unit.solver.test_render import fork, render
 
 def test_every_head_render_writes_says_what_type_its_value_is() -> None:
     written = {head for head, _ in OPERATORS} | {head for head, _ in FORMS}
+    written |= {head for head, _ in BOUNDED}
     written |= set(POSITIONED) | set(STRING_ORDERS)
     written |= set(CHECKS) | set(SPLITS) | set(TO_DECLARE)
 
@@ -37,6 +38,7 @@ INT_TERMS: list[Expression] = [
     ["rindex", "s", "'a'"],
     ["count", "s", "'a'"],
     ["len", "s"],
+    *([head, "f"] for head in ("floor", "ceil", "trunc", "round")),
 ]
 FLOAT_TERMS: list[Expression] = [
     ["+", "f", 1.5],
@@ -45,6 +47,8 @@ FLOAT_TERMS: list[Expression] = [
     ["*", "f", 2.0],
     ["/", "f", 2.0],
     ["abs", "f"],
+    ["//", "f", 2.5],
+    ["%", "f", 2.5],
 ]
 STR_TERMS: list[Expression] = [
     ["+", "s", "'a'"],
@@ -62,6 +66,7 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
     ["is_integer", "f"],
+    ["isfinite", "f"],
     *([op, ["<", "x", 1], ["<", "n", 1]] for op in ("&", "|", "^")),
     *([head, "s"] for head in CHECKS),
 ]

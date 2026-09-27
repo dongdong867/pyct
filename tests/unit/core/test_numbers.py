@@ -3,13 +3,12 @@
 import subprocess
 import sys
 import textwrap
-from unittest.mock import ANY
 
 import pytest
 
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, SinkItem
+from pyct.core.branch import BranchSink, Expression, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 
@@ -89,35 +88,36 @@ def test_a_second_class_for_a_type_is_refused() -> None:
 
 
 @pytest.mark.usefixtures("table")
-def test_an_int_leaves_a_tracked_number_outside_its_family_to_that_number() -> None:
+def test_an_int_reads_a_tracked_number_of_a_float_type_by_its_expression() -> None:
     # entered for a stand-in type, so a tracked float entered for float leaves this test alone
     numbers.enter(Reading, Measured)
     sink: list[SinkItem] = []
     x = ConcolicInt(5, expression="x", sink=sink)
     f = Measured(2.5, expression="f", sink=sink)
 
-    # int's own answers NotImplemented to a float, so Python asks the float, as it does unwatched
+    # int's own answers NotImplemented to a float, and float's mirrored operation answers, as
+    # Python's does; the int keeps the condition on both sides
+    less = x < f
+    total = x + f
+
     assert numbers.operand(f) is None
-    assert (x < f) is False
-    assert (x == f) is False
-    assert type(x + f) is float and x + f == 7.5
-    assert type(x // f) is float and x // f == 2.0
-    # no fork and no downgrade: nothing int's side taught ran
+    assert isinstance(less, ConcolicBool) and less.expression == ["<", "x", "f"]
+    assert type(total) is ConcolicFloat and total.expression == ["+", "x", "f"]
+    assert repr(total) == "7.5"
     assert sink == []
 
 
 # a tracked int against a tracked float, both ways, and the answer Python gives on the plain
 # values: 2**53 + 1 is no double, so an int read as a float first would answer the first two
-# wrong
+# wrong, and CPython compares an int past 48 bits by calling the int's own methods
 CROSSED: list[tuple[str, int, float, bool]] = [
     (">", 2**53 + 1, 2.0**53, True),
     ("==", 2**53 + 1, 2.0**53, False),
+    ("<", -(2**53) - 1, -(2.0**53), True),
     ("<", 5, 2.5, False),
     (">=", 2, 2.5, False),
     ("!=", 3, 3.0, False),
 ]
-# the compare Python asks the float for when an int on the left answers NotImplemented
-MIRRORED = {">": "__lt__", "==": "__eq__", "<": "__gt__", ">=": "__le__", "!=": "__ne__"}
 
 
 @pytest.mark.parametrize(("op", "n", "f", "answer"), CROSSED, ids=[case[0] for case in CROSSED])
@@ -128,21 +128,15 @@ def test_a_tracked_int_meets_a_tracked_float_with_pythons_own_answer(
     x = ConcolicInt(n, expression="x", sink=sink)
     y = ConcolicFloat(f, expression="y", sink=sink)
 
-    # int's side answers NotImplemented to a float, and the float answers as float does, with
-    # a downgrade, until follow-floats-that-meet-ints teaches the crossing
     crossed = {">": x > y, "==": x == y, "<": x < y, ">=": x >= y, "!=": x != y}[op]
+    mirrored = {">": y < x, "==": y == x, "<": y > x, ">=": y <= x, "!=": y != x}[op]
 
-    assert crossed is answer
-    assert numbers.operand(y) is None
-    assert Downgrade(name=MIRRORED[op], site=ANY) in sink
-    # CPython compares a float with an int past 48 bits by its integral part, as an int, and
-    # that asks the tracked int: its fork is on x and a plain int, on the side Python took,
-    # never on y read as an int
-    conditions = [item.expression for item in sink if isinstance(item, Branch)]
-    assert all(
-        isinstance(condition, list) and condition[1] == "x" and type(condition[2]) is int
-        for condition in conditions
-    )
+    assert isinstance(crossed, ConcolicBool) and isinstance(mirrored, ConcolicBool)
+    assert crossed.expression == [op, "x", "y"]
+    assert int.__bool__(crossed) is answer and int.__bool__(mirrored) is answer
+    # float's own compare reads the int's plain value, so the int's own methods, which CPython
+    # calls on an int past 48 bits, record no fork and no downgrade
+    assert sink == []
 
 
 def test_an_operand_reads_as_a_number_does() -> None:

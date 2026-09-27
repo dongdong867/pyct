@@ -15,7 +15,6 @@ from pyct.core.values import raised_by_target
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {
-    "__truediv__": lambda x: x / 2,
     "__lshift__": lambda x: x << 1,
     "__rshift__": lambda x: x >> 1,
     "__and__": lambda x: x & 1,
@@ -188,14 +187,17 @@ def test_a_power_the_solver_cannot_take_is_a_downgrade(call: Callable[[int], obj
     assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
-def test_a_float_exponent_is_floats_own_power() -> None:
+def test_a_float_exponent_is_floats_own_power_and_a_downgrade() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(4, expression="x", sink=sink)
 
-    # int itself answers NotImplemented to a float exponent and float takes over, so the
-    # condition is lost on the other side and nothing here records it
-    assert x**0.5 == 2.0
-    assert sink == []
+    # no solver operation gives CPython's pow to the last bit, so float's own answers and the
+    # loss is named, where int's own NotImplemented would hand it to float silently
+    result = x**0.5
+
+    assert type(result) is float
+    assert result == 2.0
+    assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
 def test_a_symbolic_exponent_is_a_downgrade() -> None:
@@ -425,7 +427,12 @@ def test_an_operation_the_other_type_answers_records_nothing() -> None:
     sink: list[SinkItem] = []
     x = ConcolicInt(3, expression="x", sink=sink)
 
-    # int cannot add a float, so float's reflected add answers and int's own never did
-    assert x + 1.5 == 4.5
+    class Measured(float):
+        def __radd__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
+            return "measured"
+
+    # a float of the target's own that adds itself otherwise than float is asked, as Python
+    # asks it for a plain int, and int's own never answered
+    assert x + Measured(1.5) == "measured"
 
     assert sink == []

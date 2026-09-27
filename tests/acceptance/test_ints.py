@@ -150,16 +150,18 @@ def test_keeps_bit_operations_as_downgrades() -> None:
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
-# follow-integers-keeps-true-division-as-a-downgrade
-def test_keeps_true_division_as_a_downgrade() -> None:
+# follow-integers-keeps-true-division-as-a-downgrade, until follow-floats-that-meet-ints taught
+# `/` (follow-floats-follows-int-true-division)
+def test_follows_true_division_into_a_float() -> None:
     result = run_pyct(TRUE_DIVISION, '{"x": 4}')
 
     assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
-    assert seed["downgrades"] == [downgrade("__truediv__", 1, "targets/ints/true_division.py:2:7")]
-    # `x / 2` is a plain float, so the compare after it is Python's own and forks nothing
-    assert seed["forks"] == []
-    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+    seed, solved = two_lines(result.stdout)
+    assert seed["downgrades"] == []
+    # `x / 2` is a tracked float, and the compare after it is a fork the solver flips
+    assert [fork["expression"] for fork in forks_of(seed)] == [[">", ["/", "x", 2], 1]]
+    args = solved["args"]
+    assert isinstance(args, dict) and type(args["x"]) is int and args["x"] / 2 <= 1
 
 
 # follow-integers-flips-through-arithmetic
