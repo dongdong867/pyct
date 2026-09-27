@@ -8,6 +8,7 @@
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_case_fold::in_lower_set", "seed": {"x": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
+{"set": "v2", "target": "targets.flip.hard_forks_last::triage", "seed": {"n": 1, "s": "a", "t": "b", "u": "c"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.flip.order::order", "seed": {"s": "a", "t": "b"}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.arithmetic::count", "seed": {"x": 0.0, "y": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8]}
