@@ -75,7 +75,7 @@ class Parts:
                 node = self._firsts[id(node)][1]
                 break
             passed.append(node)
-            if isinstance(node, ast.Call) and not _method_call(node):
+            if isinstance(node, ast.Call) and not method_call(node):
                 # the call's NULL at the callee's own position, or after 3.12 the callee's first
                 node = node.func
                 if _NULL_BEFORE_CALLEE:
@@ -161,7 +161,7 @@ def _evaluated_first(node: ast.expr, foldable: set[int]) -> ast.expr | None:
     return None if field is None else getattr(node, field)
 
 
-def _method_call(call: ast.Call) -> bool:
+def method_call(call: ast.Call) -> bool:
     """Whether CPython compiles the call as a method call, evaluating its object first."""
     unpacked = any(isinstance(arg, ast.Starred) for arg in call.args) or any(
         keyword.arg is None for keyword in call.keywords

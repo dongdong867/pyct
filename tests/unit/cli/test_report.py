@@ -8,7 +8,7 @@ from pyct.cli import _report
 from pyct.core.branch import Branch, Expression, IsLeaf, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
-from pyct.results.printed import printed_forks
+from pyct.results.printed import PrintedForks, printed_forks
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace
 
@@ -70,7 +70,7 @@ def test_report_writes_the_line_and_its_end_at_once(monkeypatch: pytest.MonkeyPa
 def _count_cuts(monkeypatch: pytest.MonkeyPatch, calls: list[str], module: str) -> None:
     """Note each time ``module`` cuts a record's forks, by the module's name."""
 
-    def counted(forks: Sequence[Branch], *is_leaf: IsLeaf) -> tuple[Expression, ...]:
+    def counted(forks: Sequence[Branch], *is_leaf: IsLeaf) -> PrintedForks:
         calls.append(module)
         return printed_forks(forks, *is_leaf)
 
@@ -124,3 +124,22 @@ def test_report_writes_a_part_left_uncounted_as_null_and_a_question_mark(
     fork_line = captured.err.splitlines()[1]
     assert "...(? nodes)" in fork_line
     assert "None" not in fork_line
+
+
+def test_report_counts_an_access_to_a_value_inside_an_argument_as_one_node(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # `s = items[0]`, then `s = s + 1` over 600 passes: every cut part reaches the access
+    access: Expression = ["[]", "items", 0]
+    term: Expression = access
+    for _ in range(600):
+        term = ["+", term, 1]
+    fork = Branch(expression=["==", term, 0], taken=False, site=Site("m.py", 5, 7))
+    record = InputRecord(args={"items": [1]}, forks=(fork,), covered_lines=frozenset({5}))
+
+    _report(record, COVERAGE)
+
+    # a part k passes deep holds k `+` nodes, k `1` leaves and the access, one node
+    names = printed_forks(record.forks, lambda part: part == access)
+    assert capsys.readouterr().out == render(record, COVERAGE, names) + "\n"
+    assert render(record, COVERAGE, names) != render(record, COVERAGE)

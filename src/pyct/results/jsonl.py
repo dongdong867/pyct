@@ -1,12 +1,12 @@
 """The JSON lines other tools read from stdout: one per input, then one for the run."""
 
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import printed_forks
+from pyct.results.printed import PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -18,15 +18,13 @@ from pyct.results.record import (
 )
 
 
-def render(
-    record: InputRecord, coverage: Coverage, printed: Sequence[Expression] | None = None
-) -> str:
+def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None = None) -> str:
     """One line, no newline inside; line numbers sorted so the text is stable.
 
     ``printed`` is each fork's expression as `printed_forks` cut it, for a
     caller that cut them once for this line and the trace alike.
     """
-    expressions = printed_forks(record.forks) if printed is None else printed
+    expressions = (printed_forks(record.forks) if printed is None else printed).expressions
     payload = {
         "args": record.args,
         "forks": [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)],
