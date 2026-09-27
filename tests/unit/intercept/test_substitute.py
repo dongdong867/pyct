@@ -5,6 +5,8 @@ import time
 
 import pytest
 
+from pyct.core.bools import ConcolicBool
+from pyct.core.branch import SinkItem
 from pyct.core.hashed import SEARCHED_MOST
 from pyct.intercept.compiled import SubstitutionError, substituted_code
 from pyct.intercept.substitute import BOUND, substitute
@@ -35,10 +37,6 @@ def statements(source: str) -> list[ast.stmt]:
     [
         ("a is True", "__pyct_is__(a, True)"),
         ("a is not False", "__pyct_is_not__(a, False)"),
-        # `is` between two operands neither of which is a constant
-        ("a is b", "__pyct_is__(a, b)"),
-        ("a.b is not f()", "__pyct_is_not__(a.b, f())"),
-        ("not (a is b)", "__pyct_is_not__(a, b)"),
         ("True is a", "__pyct_is__(True, a)"),
         ("a in b", "__pyct_in__(a, b)"),
         ("a not in b", "__pyct_not_in__(a, b)"),
@@ -60,6 +58,11 @@ def test_each_shape_becomes_a_call_of_its_function(source: str, expected: str) -
         # `is` with anything but the constants True and False, a value equal to one included
         "a is None",
         "None is not a",
+        # `is` between two operands neither of which is known to hold a bool
+        "a is b",
+        "a.b is not f()",
+        "not (a is b)",
+        "a < b is c",
         "a is 1",
         "a is ...",
         "not (a is None)",
@@ -103,7 +106,6 @@ def test_other_code_is_left_as_written(source: str) -> None:
         # the one the call holds
         ("True is flag < 3", "True in __pyct_identity__(flag) < 3"),
         ("True is flag is other", "True in __pyct_identity__(flag) in __pyct_identity__(other)"),
-        ("a < b is c", "a < b in __pyct_identity__(c)"),
         ("0 < False is not flag", "0 < False not in __pyct_identity__(flag)"),
         # a link of any other operator is left to Python, and after a searched link it meets
         # the operand the call holds: a compare runs on it, and an `is` reads it through pyct
@@ -111,15 +113,93 @@ def test_other_code_is_left_as_written(source: str) -> None:
         ("None is a < b", "None is a < b"),
         ("a in b < c", "a in __pyct_searched__(b) < c"),
         ("a in b is c", "a in __pyct_searched__(b) in __pyct_identity__(c)"),
-        # a link before an `is` against None stays Python's own, which CPython tests with a
-        # jump of its own that a call would change
+        # an `in` link before an `is` against None stays Python's own, which CPython tests with
+        # a jump of its own that a call would change; an `is` link pyct takes hands it on
         ("a in b is not None", "a in b is not None"),
         ("a is b is None", "a is b is None"),
         ("a is b is None < c in d", "a is b is None < c in __pyct_searched__(d)"),
+        (
+            "True is flag is not None",
+            "True in __pyct_identity__(flag) not in __pyct_identity__(None)",
+        ),
+        (
+            "flag is True is not None",
+            "flag in __pyct_identity__(True) not in __pyct_identity__(None)",
+        ),
     ],
 )
 def test_an_in_or_is_link_of_a_chain_searches_through_pyct(source: str, expected: str) -> None:
     assert substituted(source) == expected
+
+
+# a lone `is` between two operands, one a name that holds a bool wherever the code binds it
+BOOL_NAMES: dict[str, str] = {
+    "a parameter annotated bool": "def f(flag: bool, other):\n    return flag is other",
+    "an annotation kept as text": "def f(flag: 'bool', other):\n    return other is not flag",
+    "a compare's answer": "def f(x, other):\n    done = x > 0\n    return done is other",
+    "a negation": "def f(x, other):\n    done = not x\n    return other is done",
+    "a bool() call": "def f(x, other):\n    done = bool(x)\n    return done is other",
+    "a literal": "def f(other):\n    done = False\n    return done is other",
+    "a walrus": "def f(x, other):\n    (done := x < 1)\n    return done is other",
+    "a module-level name": "READY = 1 > 0\n\ndef f(other):\n    return other is READY",
+    "a chain": "def f(flag: bool, other):\n    return 1 == flag is other",
+    "a chain after an in": "def f(x, flag: bool):\n    return x in s is flag",
+}
+# the same shapes where a binding of the name is not a bool, or the name is not bound there
+NOT_BOOL_NAMES: dict[str, str] = {
+    "a parameter annotated int": "def f(flag: int, other):\n    return flag is other",
+    "a parameter bound again": (
+        "def f(flag: bool, other):\n    flag = g()\n    return flag is other"
+    ),
+    "a name bound twice": (
+        "def f(x, other):\n    done = x > 0\n    done += 1\n    return done is other"
+    ),
+    "a loop target": (
+        "def f(xs, other):\n    for done in xs:\n        pass\n    return done is other"
+    ),
+    "a tuple target": "def f(other):\n    done, rest = True, 1\n    return done is other",
+    "a module name set elsewhere": (
+        "READY = 1 > 0\n\ndef g():\n    global READY\n    READY = 3\n\n"
+        "def f(other):\n    return other is READY"
+    ),
+    "a class-level name": (
+        "class A:\n    done = 1 > 0\n    def m(self, o):\n        return done is o"
+    ),
+    "an unbound name": "def f(other):\n    return other is done",
+}
+
+
+@pytest.mark.parametrize("source", BOOL_NAMES.values(), ids=list(BOOL_NAMES))
+def test_an_is_on_a_name_that_holds_a_bool_is_pyct_s(source: str) -> None:
+    assert "__pyct_is" in substituted(source) or "__pyct_identity__" in substituted(source)
+
+
+@pytest.mark.parametrize("source", NOT_BOOL_NAMES.values(), ids=list(NOT_BOOL_NAMES))
+def test_an_is_on_any_other_name_is_python_s_own(source: str) -> None:
+    assert substituted(source) == ast.unparse(ast.parse(source))
+
+
+# chains whose `is` links pyct takes before an `is` against None, and plain Python's answer for
+# a bool `flag` and `other` both True
+BEFORE_NONE: list[str] = [
+    "True is flag is not None",
+    "flag is True is not None",
+    "flag is other is not None",
+]
+
+
+@pytest.mark.parametrize("chain", BEFORE_NONE)
+def test_a_bool_link_before_an_is_against_none_answers_as_plain_python(chain: str) -> None:
+    source = f"def f(flag: bool, other: bool):\n    return {chain}\n"
+    namespace: dict[str, object] = {}
+    exec(compile(substitute(ast.parse(source)), "<f>", "exec"), namespace)
+    sink: list[SinkItem] = []
+    flag = ConcolicBool(True, expression="flag", sink=sink)
+    other = ConcolicBool(True, expression="other", sink=sink)
+
+    plain: dict[str, object] = {}
+    exec(compile(source, "<f>", "exec"), plain)
+    assert namespace["f"](flag, other) is plain["f"](True, True) is True  # pyrefly: ignore
 
 
 def test_a_chain_link_s_call_takes_its_operand_s_position() -> None:

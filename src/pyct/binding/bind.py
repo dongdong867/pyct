@@ -18,8 +18,8 @@ from pyct.core.strs import ConcolicStr
 
 
 def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, and every float argument, its access
-    and the sink, and every list the walk names its form.
+    """Give every int and str in the seed, at any depth, and every float and bool argument,
+    its access and the sink, and every list the walk names its form.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,

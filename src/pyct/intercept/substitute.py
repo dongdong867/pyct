@@ -2,9 +2,10 @@
 
 Three shapes, each a compare with one operator:
 
-- ``a is True``, ``a is not False``, ``True is a``, ``a is b``: `is` or
-  `is not` with no constant on either side but True or False, so ``a is
-  None`` stays Python's own;
+- ``a is True``, ``a is not False``, ``True is a``, ``flag is b``: `is` or
+  `is not` with True or False on one side, or a name that holds a bool
+  (`bool_names`), and no other constant, so ``a is None`` and ``a is b``
+  stay Python's own;
 - ``a in b`` and ``a not in b``;
 - ``not`` over one of those, folded into the other operator as CPython's
   optimizer folds it, so ``not (a in b)`` is ``a not in b``.
@@ -56,6 +57,7 @@ from __future__ import annotations
 import ast
 
 from pyct.core.hashed import SEARCHED_MOST
+from pyct.intercept.bool_names import bool_names
 from pyct.intercept.positions import constants, first, statement_start
 
 # the name each operator calls
@@ -106,6 +108,7 @@ def substitute(tree: ast.Module) -> ast.Module:
     expression, such as a long chain of `+`, needs no deeper Python stack
     than a shallow one. A tree with a substitution binds the names it calls.
     """
+    named = bool_names(tree)
     pending: list[ast.AST] = [tree]
     classes: list[ast.ClassDef] = []
     substituted = False
@@ -118,20 +121,20 @@ def substitute(tree: ast.Module) -> ast.Module:
             if field == skipped:
                 continue
             if isinstance(value, list):
-                value[:] = [_visited(item, pending) for item in value]
+                value[:] = [_visited(item, pending, named) for item in value]
             elif isinstance(value, ast.AST):
-                setattr(node, field, _visited(value, pending))
+                setattr(node, field, _visited(value, pending, named))
         substituted = substituted or _calls_a_substitute(node)
     if substituted:
         _bind(tree, classes)
     return tree
 
 
-def _visited(node: object, pending: list[ast.AST]) -> object:
+def _visited(node: object, pending: list[ast.AST], named: frozenset[int]) -> object:
     """The node, or the call that replaces it, queued so the walk goes on inside it."""
     if not isinstance(node, ast.AST):
         return node
-    replacement = _replacement(node) or node
+    replacement = _replacement(node, named) or node
     pending.append(replacement)
     return replacement
 
@@ -140,32 +143,32 @@ def _calls_a_substitute(node: ast.AST) -> bool:
     return isinstance(node, ast.Name) and node.id in BOUND
 
 
-def _replacement(node: ast.AST) -> ast.expr | None:
+def _replacement(node: ast.AST, named: frozenset[int]) -> ast.expr | None:
     """The call that replaces a compare of the three shapes, the chain that replaces a chained
     compare with a link to search, or None for any other node."""
     if isinstance(node, ast.Compare) and len(node.ops) > 1:
-        return _chain(node)
+        return _chain(node, named)
     folded = _folded(node)
     if folded is None:
         return None
     compare, operator = folded
     left, right = compare.left, compare.comparators[0]
-    if operator in (ast.Is, ast.IsNot) and (_other_constant(left) or _other_constant(right)):
+    if operator in (ast.Is, ast.IsNot) and not _pyct_s_identity(left, right, named):
         return None
     function = _function(_NAMES[operator], left)
     arguments = [left, right] if operator in (ast.Is, ast.IsNot) else [left, *_container(right)]
     return ast.copy_location(ast.Call(func=function, args=arguments, keywords=[]), compare)
 
 
-def _chain(compare: ast.Compare) -> ast.Compare | None:
+def _chain(compare: ast.Compare, named: frozenset[int]) -> ast.Compare | None:
     """The chain with each link to search handed to pyct, or None when it has none."""
     ops, comparators = list(compare.ops), list(compare.comparators)
     lefts = [compare.left, *compare.comparators[:-1]]
     held = False
     for index, (operator, right) in enumerate(zip(compare.ops, compare.comparators, strict=True)):
         # an `is` link is pyct's after a link pyct took, whose call's operand the chain hands on
-        # as its left, and wherever neither side is a constant but True or False
-        ours = held or not (_other_constant(lefts[index]) or _other_constant(right))
+        # as its left, and where `_pyct_s_identity` says
+        ours = held or _pyct_s_identity(lefts[index], right, named)
         link = (
             None
             if _before_python_s_identity(compare, index)
@@ -181,15 +184,18 @@ def _chain(compare: ast.Compare) -> ast.Compare | None:
 
 
 def _before_python_s_identity(compare: ast.Compare, index: int) -> bool:
-    """Whether the link after this one is an `is` against a constant other than True or False.
+    """Whether this is an `in` link whose next link is an `is` against a constant other than
+    True or False.
 
     Python answers that link itself, on the operand this link hands on, and
     CPython tests it with a jump of its own, `POP_JUMP_IF_NONE` say, which a
-    call of pyct's in its place would change. So this link is Python's own
-    too.
+    call of pyct's in its place would change. Python's own `in` gives the
+    same answer, so this link is Python's own too, and only its forks are
+    lost. An `is` link pyct takes keeps its answer, the bool's, and hands the
+    next link on: that `is` is pyct's, and its jump a plain one.
     """
     following = index + 1
-    if following >= len(compare.ops):
+    if following >= len(compare.ops) or not isinstance(compare.ops[index], ast.In | ast.NotIn):
         return False
     is_link = isinstance(compare.ops[following], ast.Is | ast.IsNot)
     return is_link and _other_constant(compare.comparators[following])
@@ -238,6 +244,18 @@ def _folded(node: ast.AST) -> tuple[ast.Compare, type[ast.cmpop]] | None:
     if operator not in _NEGATED:
         return None
     return node, _NEGATED[operator] if negated else operator
+
+
+def _pyct_s_identity(left: ast.expr, right: ast.expr, named: frozenset[int]) -> bool:
+    """Whether an `is` between the two is pyct's: True or False on a side, or a name that holds
+    a bool (`bool_names`), with no other constant on either side.
+
+    Any other `is` is Python's own, so plain identity code runs as fast as
+    written; two tracked bools that no such name holds answer by identity.
+    """
+    if _other_constant(left) or _other_constant(right):
+        return False
+    return _is_bool(left) or _is_bool(right) or id(left) in named or id(right) in named
 
 
 def _other_constant(node: ast.expr) -> bool:

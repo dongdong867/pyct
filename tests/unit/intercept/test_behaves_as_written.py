@@ -28,10 +28,14 @@ PROGRAMS: dict[str, str] = {
     "is False": "answer = note('a', a) is False",
     "is not True": "answer = note('a', a) is not True",
     "True is": "answer = True is note('a', a)",
-    "is": "answer = note('a', a) is note('b', b)",
-    "is not": "answer = note('a', a) is not note('b', b)",
-    "chain is": "answer = note('c', 0) != note('a', a) is note('b', b)",
-    "chain is then is None": "answer = note('a', a) is note('b', b) is None < note('c', 1) in [1]",
+    "is bool name": "held = note('a', a) == 1\nanswer = held is note('b', b)",
+    "is not bool name": "held = not note('a', a)\nanswer = note('b', b) is not held",
+    "chain is bool name": "held = note('a', a) == 1\nanswer = note('c', 0) != held is note('b', b)",
+    "chain in then is None": (
+        "answer = note('a', a) in note('b', b) is None < note('c', 1) in [1]"
+    ),
+    "chain True is then is not None": "answer = True is note('a', a) is not None",
+    "chain is True then is not None": "answer = note('a', a) is True is not None",
     "False is not": "answer = False is not note('a', a)",
     "not is": "answer = not (note('a', a) is True)",
     "not not is": "answer = not not (note('a', a) is False)",
