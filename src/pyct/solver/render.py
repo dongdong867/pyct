@@ -16,6 +16,7 @@ from pyct.solver.letters import Key, Spellings, fixed_position
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import above, below, encode
+from pyct.solver.symbols import leaf_sort, leaf_symbol
 
 # what opens a string literal in an expression: repr writes one in either quote, and a
 # parameter name holds neither
@@ -98,7 +99,7 @@ def program(
     What to declare, what to define, what to assert, what to ask. Only the
     leaves the prefix mentions are declared, so the answer names nothing the
     path did not depend on. ``leaves`` names each leaf as ``pyct.binding``
-    does, and ``_symbol`` names its constant. Two pieces of one string side by
+    does, and ``leaf_symbol`` names its constant. Two pieces of one string side by
     side are first written as the one piece they make (see `joined`), and a
     part of the conditions written more than once is defined once before the
     assertions (see `_Program`). Each float leaf in ``finite`` that the
@@ -113,7 +114,7 @@ def program(
     symbols = _symbols(prefix, order, seed)
     constants = {name: f"|{symbol}|" for name, symbol in symbols.items()}
     # a leaf no sort declares is named before any term on it is written
-    declared = [(constant, _sort(name, leaves[name])) for name, constant in constants.items()]
+    declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
     body = _Program(_Leaves(kinds=leaves, constants=constants), order, holders, prefix)
     held = [name for name in constants if name in finite and leaves[name] is float]
     lines = ["(set-option :dump-unsat-cores true)"] if held and cores else []
@@ -151,35 +152,9 @@ def _symbols(prefix: tuple[Branch, ...], order: list[Node], seed: _Leaves) -> di
     unknown = sorted(named - set(seed.kinds))
     if unknown:
         raise ValueError(f"the path names what the seed does not bind: {', '.join(unknown)}")
-    return {name: _symbol(name, index) for index, name in enumerate(seed.kinds) if name in named}
-
-
-def _symbol(name: str, index: int) -> str:
-    """A leaf's symbol, written inside bars: ``arg.<name>`` for a name that is an identifier.
-
-    The prefix keeps every symbol apart from the solver's own words, which
-    a parameter may be named as, ``div`` say: cvc5 refuses to declare one,
-    bars or not. Each character past ASCII is written as its UTF-8 bytes,
-    ``%C3%A9`` for ``é``, so the program stays ASCII. Any other name is
-    ``leaf.<n>``, n its position among the seed's leaves: a value inside an
-    argument is named by its access, which holds brackets, quotes, and any
-    character a key holds, ``|`` and the backslash among them, which not
-    even a quoted symbol can.
-    """
-    if not name.isidentifier():
-        return f"leaf.{index}"
-    written = "".join(
-        character if character.isascii() else "".join(f"%{byte:02X}" for byte in character.encode())
-        for character in name
-    )
-    return f"arg.{written}"
-
-
-def _sort(name: str, kind: type) -> str:
-    sort = SORTS.get(kind)
-    if sort is None:
-        raise ValueError(f"pyct cannot declare {name}: nothing solves a {kind.__name__} yet")
-    return sort
+    return {
+        name: leaf_symbol(name, index) for index, name in enumerate(seed.kinds) if name in named
+    }
 
 
 class _Program:
