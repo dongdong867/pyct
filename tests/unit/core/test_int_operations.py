@@ -321,20 +321,59 @@ def test_text_joined_around_an_int_is_plain_and_records_nothing() -> None:
     assert sink == []
 
 
-# the `%` forms that write the text themselves: `%d` and its kin read the int without calling it,
-# and a width or a precision pads or cuts the text `__str__` hands back into a new plain str
-PERCENT_PLAIN = ["%d", "%i", "%x", "%o", "%c", "%r", "%5s", "%.1s", "n=%s"]
+# the `%` forms that write the text themselves: every integer conversion, with any flag, width or
+# precision, reads the number without calling any of its methods; `%r` and `%a` read the kept
+# `__repr__`; and a width or a precision on `%s` pads or cuts the text `__str__` hands back into
+# a new plain str
+INTEGER_CONVERSIONS = ["%d", "%i", "%u", "%o", "%x", "%X", "%c"]
+PERCENT_PLAIN = [
+    *INTEGER_CONVERSIONS,
+    "%5d",
+    "%-5i",
+    "%+d",
+    "% d",
+    "%05u",
+    "%#o",
+    "%#x",
+    "%#X",
+    "%.3d",
+    "%3c",
+    "%r",
+    "%a",
+    "%5s",
+    "%.1s",
+    "n=%s",
+]
+# the float conversions, which convert the number through its `__float__`
+FLOAT_CONVERSIONS = ["%e", "%E", "%f", "%F", "%g", "%G", "%.2f", "%10.3e"]
+
+
+def _tracked_values(sink: list[SinkItem]) -> list[tuple[object, int | bool]]:
+    """A tracked int and a tracked bool, beside the plain value each is."""
+    x = ConcolicInt(65, expression="x", sink=sink)
+    return [(x, 65), (x > 0, True)]
 
 
 @pytest.mark.parametrize("form", PERCENT_PLAIN)
 def test_a_percent_form_that_writes_the_text_itself_is_plain_and_silent(form: str) -> None:
     sink: list[SinkItem] = []
-    x = ConcolicInt(65, expression="x", sink=sink)
 
-    text = form % x
+    for tracked, plain in _tracked_values(sink):
+        text = form % tracked
 
-    assert (text, type(text)) == (form % 65, str)
+        assert (text, type(text)) == (form % plain, str)
     assert sink == []
+
+
+@pytest.mark.parametrize("form", FLOAT_CONVERSIONS)
+def test_a_float_percent_conversion_is_a_float_downgrade(form: str) -> None:
+    sink: list[SinkItem] = []
+
+    for tracked, plain in _tracked_values(sink):
+        text = form % tracked
+
+        assert (text, type(text)) == (form % plain, str)
+    assert sink == [Downgrade(name="__float__"), Downgrade(name="__float__")]
 
 
 @pytest.mark.parametrize("spec", ["d", "05d", "x", ">4", ","])
