@@ -17,6 +17,8 @@
 {"set": "v2", "target": "targets.floats.half_to_even::tie", "seed": {"x": 3.0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.floats.is_integer::whole", "seed": {"x": 2.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.literals::count", "seed": {"x": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.floats.math_of_int::bare_root", "seed": {"n": 1}, "status": "differs", "only_legacy": [], "only_v2": [13]}
+{"set": "v2", "target": "targets.floats.math_of_int::root", "seed": {"n": 1}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.floats.nan_beside_finite::count", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.floats.nan_or_infinity::kind", "seed": {"x": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.floats.plain_methods::keep_and_lose", "seed": {"f": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4, 6]}
