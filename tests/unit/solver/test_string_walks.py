@@ -107,3 +107,17 @@ def test_cvc5_answers_a_walk_then_a_read_far_past_it_inside_a_second(passes: int
     s = answer.model["s"]
     assert isinstance(s, str) and s[far] == "b"
     assert not disagrees(walked, answer, PYTHON_HEADS, [], 0)
+
+
+@needs_cvc5
+def test_a_read_past_the_letters_of_a_short_string_is_the_empty_string() -> None:
+    # `s[0]` and `s[1]` are spelled, and `s[9]` reads the rest; with s at most one long, the
+    # rest is empty, so no s has a z at 9
+    path = (
+        _fork(["==", ["[]", "s", 0], "'a'"], taken=False),
+        _fork(["==", ["[]", "s", 1], "'b'"], taken=False),
+        _fork([">", ["len", "s"], 1], taken=False),
+        _fork(["==", ["[]", "s", 9], "'z'"], taken=True),
+    )
+
+    assert isinstance(solve(path, {"s": str}, 10.0), Unsat)
