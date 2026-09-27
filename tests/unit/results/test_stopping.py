@@ -1,5 +1,6 @@
 """The stop timer: the cause analysis ends at its stop wherever it is, and leaves nothing armed."""
 
+import gc
 import signal
 import textwrap
 import time
@@ -113,3 +114,42 @@ def test_the_lines_left_by_a_stop_that_fired_are_each_in_one_entry(
 
     assert sorted(line for entry in entries for line in entry.lines) == [1, 3, 4, 5]
     assert {entry.reason for entry in entries} == {Reason.NOT_WORKED_OUT}
+
+
+class _Finalized:
+    """An object a target left behind, whose finalizer runs when the collector finds it."""
+
+    def __del__(self) -> None:
+        # the stop lands here, where Python prints and drops what a finalizer raises
+        time.sleep(0.3)
+
+
+@DEADLINE_FIRES
+# the finalizer's swallowed stop is the point of the test: Python reports it as unraisable
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+def test_a_stop_a_finalizer_swallowed_comes_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = module(tmp_path)
+    slow = Flow.marked
+
+    def collecting(flow: Flow, *args: object) -> frozenset[int]:
+        # a long step with no clock check, during which the target's garbage is collected
+        left = _Finalized()
+        left.me = left  # pyrefly: ignore[missing-attribute]
+        del left
+        gc.collect()
+        time.sleep(1.5)
+        return slow(flow, *args)  # pyrefly: ignore[bad-argument-type]
+
+    monkeypatch.setattr(Flow, "marked", collecting)
+    walked = [Walked(forks=(), failed=True, lines=frozenset({2}))]
+    stop_at = time.monotonic() + 0.1
+
+    entries = explain(file, frozenset({3, 4, 5}), frozenset({2}), Run(walked, {}, stop_at=stop_at))
+    ended = time.monotonic()
+
+    assert {entry.reason for entry in entries} == {Reason.NOT_WORKED_OUT}
+    # the first stop is lost in the finalizer's 0.3 s sleep; the next comes soon after it
+    assert ended - stop_at < 0.5, ended - stop_at
+    assert armed() == 0

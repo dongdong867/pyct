@@ -2,6 +2,7 @@
 
 import itertools
 import textwrap
+import threading
 from pathlib import Path
 
 import pytest
@@ -133,3 +134,39 @@ def test_one_line_s_work_on_a_long_function_still_stops_near_the_stop(tmp_path: 
     # every line is in one entry however far the analysis got, and it ended near the stop
     assert sorted(line for entry in entries for line in entry.lines) == sorted(bodies)
     assert ended - stop_at < 0.5, ended - stop_at
+
+
+def _long_generator(tmp_path: Path, tests: int) -> tuple[str, frozenset[int], list[Walked]]:
+    """A generator with ``tests`` ifs before its yield and 20 lines after it, one input per if
+    body, each left at the yield: the file, the lines left, the inputs."""
+    ifs = "".join(f"    if x == {k}:\n        y += {k}\n" for k in range(tests))
+    after = "".join(f"    y += {k}\n" for k in range(20))
+    file = tmp_path / "long.py"
+    file.write_text(f"def gen(x):\n    y = 0\n{ifs}    yield y\n{after}    yield y\n")
+    yield_line = 3 + 2 * tests
+    tested = frozenset(range(3, yield_line, 2))
+    walked = [
+        Walked(forks=(), failed=False, lines=frozenset({2, yield_line, 4 + 2 * k}) | tested)
+        for k in range(tests)
+    ]
+    return str(file), frozenset(range(yield_line + 1, yield_line + 22)), walked
+
+
+def test_off_the_main_thread_the_clock_checks_still_stop_the_analysis(tmp_path: Path) -> None:
+    # no timer can be armed off the main thread, so each step's own clock check is the bound
+    file, uncovered, walked = _long_generator(tmp_path, 1600)
+    covered = frozenset().union(*(each.lines for each in walked))
+    ended: list[float] = []
+    stop_at = why_module.clock() + 1.5
+
+    def analyse() -> None:
+        entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=stop_at))
+        ended.append(why_module.clock())
+        assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
+
+    thread = threading.Thread(target=analyse)
+    thread.start()
+    thread.join(timeout=30)
+
+    assert ended, "the analysis did not finish"
+    assert ended[0] - stop_at < 0.5, ended[0] - stop_at

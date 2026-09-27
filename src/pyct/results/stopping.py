@@ -8,7 +8,8 @@ only where it can be: with a stop, on the process's main thread, which is
 the one signals reach, and with no other real-time timer pending. pyct's
 own deadline alarm runs only around a call, never while causes are worked
 out, so the two never meet; where a timer cannot be armed, the analysis's
-own clock checks still stop it.
+own clock checks still stop it: between lines, and inside each step whose
+cost grows with the function or with the inputs.
 """
 
 from __future__ import annotations
@@ -25,10 +26,15 @@ from pyct.results.graphs import OutOfTimeError
 # a stop already past still has to fire, and setitimer(0) would cancel instead
 _AT_ONCE = 1e-6
 
+# how soon a stop comes again after one a finalizer swallowed: Python prints and drops what a
+# `__del__`, a weakref callback or a collected generator's close raises
+_AGAIN = 0.05
+
 
 @contextmanager
 def stopping(stop_at: float | None, now: Callable[[], float]) -> Iterator[None]:
-    """Raise OutOfTimeError inside the block when ``now()`` reaches ``stop_at``, once.
+    """Raise OutOfTimeError inside the block when ``now()`` reaches ``stop_at``, and again
+    every ``_AGAIN`` seconds until the block ends, since a finalizer can swallow one.
 
     The timer is disarmed and the previous handler restored on the way out,
     however the block ends. It fires only while the block runs: a signal that
@@ -40,7 +46,7 @@ def stopping(stop_at: float | None, now: Callable[[], float]) -> Iterator[None]:
     armed = [True]
     previous = signal.signal(signal.SIGALRM, _handler(armed))
     try:
-        signal.setitimer(signal.ITIMER_REAL, max(stop_at - now(), _AT_ONCE))
+        signal.setitimer(signal.ITIMER_REAL, max(stop_at - now(), _AT_ONCE), _AGAIN)
         try:
             yield
         finally:
@@ -57,13 +63,12 @@ def _free() -> bool:
 
 
 def _handler(armed: list[bool]) -> Callable[[int, types.FrameType | None], None]:
-    """What SIGALRM runs: raise the stop while the block runs, and nothing after it."""
+    """What SIGALRM runs: raise the stop each time while the block runs, and nothing after it."""
 
     # the tests that fire the timer run without coverage, which a raise from a signal handler
     # can hang (tests/unit/deadline_fires.py)
     def fire(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
         if armed[0]:
-            armed[0] = False
             _stop()
 
     return fire

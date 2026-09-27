@@ -320,7 +320,13 @@ class _Walk:
         )
 
     def _last_lines(self, each: _Input, line: int) -> list[int]:
-        """The lines an input ran toward the line that no later line it ran came after."""
+        """The lines an input ran toward the line that no later line it ran came after.
+
+        Asked once per input by ``_suspended`` and ``_raised_out``, so it checks
+        the stop: off the main thread no timer can, and the loop grows with the inputs.
+        """
+        if self.seen.run.late():
+            raise OutOfTimeError
         ran = each.lines & self.flow.reaching_lines(line)
         key = (ran, self.flow.run_of(line))
         if key not in self._lasts:
