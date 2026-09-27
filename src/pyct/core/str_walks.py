@@ -9,7 +9,6 @@ string, and flipping an earlier pass a shorter one
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
@@ -32,8 +31,8 @@ def walk(s: ConcolicStr) -> Iterator[ConcolicStr]:
     """
     length = own(str.__len__, s)
     measured: Expression = ["len", s.expression]
-    for at in itertools.count():
-        if not forked(s.sink, [">", measured, at], at < length):
-            return
+    at = 0
+    while forked(s.sink, [">", measured, at], at < length):
         character = own(str.__getitem__, s, at)
         yield type(s)(character, expression=["[]", s.expression, at], sink=s.sink)
+        at += 1
