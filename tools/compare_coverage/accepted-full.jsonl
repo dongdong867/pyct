@@ -1,39 +1,42 @@
 {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0}
-{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [80, 84, 88, 92], "only_v2": []}
-{"set": "examples", "target": "examples.deep_path_dependency.state_machine_validator::state_machine_validator", "seed": {"events": "create,pay,ship,deliver"}, "status": "differs", "only_legacy": [56, 62], "only_v2": []}
+{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [80, 88, 92], "only_v2": []}
 {"set": "examples", "target": "examples.hash_encoding.base64_payload_classification::base64_payload_classification", "seed": {"payload": "eyJrZXkiOiAidmFsdWUifQ=="}, "status": "differs", "only_legacy": [71], "only_v2": []}
 {"set": "examples", "target": "examples.hash_encoding.credit_card_validation::credit_card_validation", "seed": {"number": "4111111111111111"}, "status": "differs", "only_legacy": [101, 105, 109, 111, 114], "only_v2": []}
 {"set": "examples", "target": "examples.library_black_box.datetime_classification::datetime_classification", "seed": {"date_str": "2024-06-15 14:30:00"}, "status": "differs", "only_legacy": [96, 104, 105, 108, 109, 112], "only_v2": []}
-{"set": "examples", "target": "examples.library_black_box.json_config_validation::json_config_validation", "seed": {"config_str": "{\"mode\": \"production\", \"version\": \"1.0.0\"}"}, "status": "differs", "only_legacy": [85, 92], "only_v2": []}
+{"set": "examples", "target": "examples.library_black_box.json_config_validation::json_config_validation", "seed": {"config_str": "{\"mode\": \"production\", \"version\": \"1.0.0\"}"}, "status": "differs", "only_legacy": [87, 92], "only_v2": []}
 {"set": "examples", "target": "examples.library_black_box.regex_data_extraction::regex_data_extraction", "seed": {"text": "Call 555-123-4567 for info"}, "status": "differs", "only_legacy": [86], "only_v2": []}
 {"set": "examples", "target": "examples.mixed_type_synergy.access_control_checker::access_control_checker", "seed": {"role": "editor", "resource": "/api/data", "trust_level": 50}, "status": "differs", "only_legacy": [26], "only_v2": []}
 {"set": "examples", "target": "examples.mixed_type_synergy.discount_engine::discount_engine", "seed": {"price": 100, "quantity": 2, "coupon": "SAVE10"}, "status": "differs", "only_legacy": [35, 38, 41], "only_v2": []}
 {"set": "examples", "target": "examples.pure_numeric.tax_bracket_calculator::tax_bracket_calculator", "seed": {"income": 75000, "filing_status": "single"}, "status": "differs", "only_legacy": [36, 39], "only_v2": []}
 {"set": "examples", "target": "examples.pure_numeric.triangle_classification::triangle_classification", "seed": {"a": 3, "b": 4, "c": 5}, "status": "differs", "only_legacy": [24, 27], "only_v2": []}
-{"set": "examples", "target": "examples.solver_hard.string_similarity_classification::string_similarity_classification", "seed": {"s1": "listen", "s2": "silent"}, "status": "differs", "only_legacy": [62, 65, 77, 78], "only_v2": []}
+{"set": "examples", "target": "examples.solver_hard.string_similarity_classification::string_similarity_classification", "seed": {"s1": "listen", "s2": "silent"}, "status": "differs", "only_legacy": [62, 77, 78], "only_v2": []}
 {"set": "examples", "target": "examples.string_constraints.email_validation::email_validation", "seed": {"email": "user@example.com"}, "status": "differs", "only_legacy": [82, 86], "only_v2": [88]}
-{"set": "examples", "target": "examples.string_constraints.log_level_routing::log_level_routing", "seed": {"log_line": "[2024-01-15 10:30:45] ERROR: Connection failed"}, "status": "differs", "only_legacy": [95, 101], "only_v2": []}
-{"set": "examples", "target": "examples.string_constraints.semver_parsing::semver_parsing", "seed": {"version": "1.2.3"}, "status": "differs", "only_legacy": [85, 91, 95, 102], "only_v2": []}
+{"set": "examples", "target": "examples.string_constraints.log_level_routing::log_level_routing", "seed": {"log_line": "[2024-01-15 10:30:45] ERROR: Connection failed"}, "status": "differs", "only_legacy": [101], "only_v2": []}
+{"set": "examples", "target": "examples.string_constraints.semver_parsing::semver_parsing", "seed": {"version": "1.2.3"}, "status": "differs", "only_legacy": [85, 91, 95], "only_v2": []}
 {"set": "examples", "target": "examples.string_constraints.url_routing::url_routing", "seed": {"url": "https://example.com/api/v2/users"}, "status": "differs", "only_legacy": [101, 109, 111, 123, 125], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_parse::parse_number", "seed": {"s": "1"}, "status": "differs", "only_legacy": [14, 16], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.int_unprotected::parse_digit", "seed": {"c": "5"}, "status": "differs", "only_legacy": [17], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.length_check::check_length", "seed": {"s": ""}, "status": "differs", "only_legacy": [14, 15, 16], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.builtins.str_format::format_number", "seed": {"x": 5}, "status": "differs", "only_legacy": [13], "only_v2": []}
+{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_branch::matches_monday", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [13]}
+{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.case_fold_non_ascii::matches_cafe", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.count_branch::has_two_ab", "seed": {"s": "xx"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_chain_productive::chain_with_distinct_paths", "seed": {"x": "none"}, "status": "differs", "only_legacy": [26, 27, 28, 29, 30, 31, 32], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_set::matches_color", "seed": {"x": "none"}, "status": "differs", "only_legacy": [18], "only_v2": []}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.membership_single::in_single_set", "seed": {"x": "z"}, "status": "differs", "only_legacy": [18], "only_v2": []}
-{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [17, 19]}
+{"set": "fixtures", "target": "tests.acceptance.fixtures.strings.multi_rewrite::multi_rewrite", "seed": {"text": "", "marker": ""}, "status": "differs", "only_legacy": [], "only_v2": [15, 17, 19]}
 {"set": "fixtures", "target": "tests.acceptance.fixtures.strings.substr_concrete_start::slice_with_symbolic_end", "seed": {"s": "hello world", "n": 8}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "library", "target": "sympy.ntheory.egyptian_fraction::egypt_greedy", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [151]}
 {"set": "library", "target": "sympy.ntheory.modular::crt", "seed": {"m": 0, "v": 0, "symmetric": false, "check": true}, "status": "differs", "only_legacy": [86], "only_v2": []}
 {"set": "library", "target": "sympy.ntheory.primetest::is_square", "seed": {"n": 0, "prep": true}, "status": "differs", "only_legacy": [203], "only_v2": []}
 {"set": "library", "target": "yaml::YAMLObjectMetaclass", "seed": {"cls": 0, "name": 0, "bases": 0, "kwds": 0}, "status": "v2 failed", "only_legacy": [], "only_v2": [], "failures": {"v2": "exit 2: args (cls, name, bases, kwds) do not fit (name, bases, kwds): got an unexpected keyword argument 'cls'"}, "covered": []}
 {"set": "realworld", "target": "phonenumbers.phonenumberutil::parse", "seed": {"number": "+1 650 253 0000", "region": "US"}, "status": "differs", "only_legacy": [2936], "only_v2": [3021]}
-{"set": "realworld", "target": "validators.country::country_code", "seed": {"value": "US"}, "status": "differs", "only_legacy": [303, 314, 315], "only_v2": []}
+{"set": "realworld", "target": "validators.country::country_code", "seed": {"value": "US"}, "status": "differs", "only_legacy": [314, 315], "only_v2": [306]}
 {"set": "realworld", "target": "validators.i18n.ru::ru_inn", "seed": {"value": "7707083893"}, "status": "differs", "only_legacy": [48, 61, 63], "only_v2": []}
+{"set": "realworld", "target": "validators.url::url", "seed": {"value": "https://example.com/path?query=1#frag"}, "status": "differs", "only_legacy": [236], "only_v2": []}
+{"set": "realworld", "target": "werkzeug.http::parse_content_range_header", "seed": {"value": "bytes 0-499/1234"}, "status": "differs", "only_legacy": [], "only_v2": [872, 875, 880, 883, 886, 888, 895]}
 {"set": "realworld", "target": "werkzeug.http::parse_dict_header", "seed": {"value": "realm=\"test\", nonce=\"abc123\", qop=\"auth\""}, "status": "differs", "only_legacy": [366, 369, 370], "only_v2": []}
-{"set": "realworld", "target": "werkzeug.http::parse_range_header", "seed": {"value": "bytes=0-499, 500-999"}, "status": "differs", "only_legacy": [811, 813, 815, 816, 818, 829], "only_v2": []}
+{"set": "realworld", "target": "werkzeug.http::parse_options_header", "seed": {"value": "text/html; charset=utf-8; boundary=something"}, "status": "differs", "only_legacy": [], "only_v2": [483]}
 {"set": "v2", "target": "targets.bools.counts::tally", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 6]}
 {"set": "v2", "target": "targets.floats.above::rate", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.arithmetic::count", "seed": {"x": 0.0, "y": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8]}
@@ -63,6 +66,8 @@
 {"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}, "status": "differs", "only_legacy": [21], "only_v2": []}
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [3], "only_v2": [7]}
+{"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]}
+{"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [14, 18, 20, 23, 24, 25]}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.find_from_position::check", "seed": {"s": "abcx"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.length_check::check", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [4], "only_v2": []}
@@ -70,8 +75,11 @@
 {"set": "v2", "target": "targets.strs.nothing_to_fill::format_empty", "seed": {"s": "x"}, "status": "differs", "only_legacy": [11], "only_v2": []}
 {"set": "v2", "target": "targets.strs.nothing_to_fill::mod_empty", "seed": {"s": "x"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.padded::pad", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.strs.past_ascii_upper::shout", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}, "status": "differs", "only_legacy": [], "only_v2": [7, 9]}
 {"set": "v2", "target": "targets.strs.rebuilt::rebuild", "seed": {"s": "aaaaaaaaaaaaaaaaaa"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.strs.search::kind", "seed": {"s": "a=#", "t": "!"}, "status": "differs", "only_legacy": [], "only_v2": [11, 13, 17, 19]}
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [5, 7, 9, 11]}
+{"set": "v2", "target": "targets.strs.split_forms::read", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.strs.split_keyword::split_on_comma", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [5], "only_v2": []}
