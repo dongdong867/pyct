@@ -14,7 +14,10 @@ before any value is built; a result whose type nothing entered raises
 `LookupError` rather than coming back plain.
 
 The registry is two functions: `enter(base, cls)` and `tracked(value,
-expression, sink)`. A number type needs nothing else from it.
+expression, sink)`. The operand rule and the builders below are the int
+family's, a tracked int's and a tracked bool's: they take an int or a bool
+alone, as int's own operations do. Another number type enters its class
+and reads its operands by its own rule.
 """
 
 from __future__ import annotations
@@ -100,14 +103,17 @@ def tracked(value: object, expression: Expression, sink: BranchSink) -> Any:
 
 
 def operand(other: object) -> Expression | None:
-    """How a number reads the other side of an operation, or None for one it does not take.
+    """How an int or a bool reads the other side of an operation, or None for one it does not take.
 
-    A tracked number reads as its expression. A plain int reads as itself,
-    and so does a plain bool, the int 1 or 0, as the literal True or False.
+    It takes the int family alone, as int's own operations do. A tracked int
+    or bool reads as its expression. A plain int reads as itself, and so
+    does a plain bool, the int 1 or 0, as the literal True or False. Any
+    other value, a tracked number of another type included, is None, so the
+    operation answers NotImplemented and Python asks the other operand.
     """
-    if type(other) in _CLASSES:
-        return cast(Number, other).expression
-    return other if isinstance(other, int) else None
+    if not isinstance(other, int):
+        return None
+    return cast(Number, other).expression if type(other) in _CLASSES else other
 
 
 def zero_fork(divisor: object) -> None:

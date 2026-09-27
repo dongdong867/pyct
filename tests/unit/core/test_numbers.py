@@ -27,6 +27,17 @@ class Base(int):
     """A stand-in Python type a result could have."""
 
 
+class Measured(float):
+    """A stand-in tracked number outside the int family, as a tracked float will be."""
+
+    expression: Expression
+
+    def __new__(cls, value: float, *, expression: Expression, sink: BranchSink) -> "Measured":
+        self = super().__new__(cls, value)
+        self.expression = expression
+        return self
+
+
 @pytest.fixture
 def table(monkeypatch: pytest.MonkeyPatch) -> None:
     """A copy of the table for one test, so an entry made here is gone after it."""
@@ -66,6 +77,23 @@ def test_a_second_class_for_a_type_is_refused() -> None:
     # two classes for one type would make the answer depend on which module Python read last
     with pytest.raises(ValueError, match="int is already tracked by ConcolicInt"):
         numbers.enter(int, Tracked)
+
+
+@pytest.mark.usefixtures("table")
+def test_an_int_leaves_a_tracked_number_outside_its_family_to_that_number() -> None:
+    numbers.enter(float, Measured)
+    sink: list[SinkItem] = []
+    x = ConcolicInt(5, expression="x", sink=sink)
+    f = Measured(2.5, expression="f", sink=sink)
+
+    # int's own answers NotImplemented to a float, so Python asks the float, as it does unwatched
+    assert numbers.operand(f) is None
+    assert (x < f) is False
+    assert (x == f) is False
+    assert type(x + f) is float and x + f == 7.5
+    assert type(x // f) is float and x // f == 2.0
+    # no fork and no downgrade: nothing int's side taught ran
+    assert sink == []
 
 
 def test_an_operand_reads_as_a_number_does() -> None:
