@@ -44,13 +44,13 @@ def test_every_module_gets_its_row_whatever_its_import_did() -> None:
     )
 
 
-def test_an_import_with_no_fact_within_the_grace_is_stopped(tmp_path: Path) -> None:
+def test_an_import_with_no_fact_within_the_grace_is_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     pids = tmp_path / "pids"
-    os.environ["SWEEP_PIDS_FILE"] = str(pids)
-    try:
-        rows = list_package(STALL, grace=2)
-    finally:
-        del os.environ["SWEEP_PIDS_FILE"]
+    monkeypatch.setenv("SWEEP_PIDS_FILE", str(pids))
+
+    rows = list_package(STALL, grace=2)
 
     assert rows == (
         failed(f"{STALL}.hangs", "did not finish in 2 s"),
