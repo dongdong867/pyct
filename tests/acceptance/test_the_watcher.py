@@ -303,7 +303,7 @@ def test_a_fresh_pyct_process_gives_the_target_the_path_a_forked_one_does(
     assert paths[True] == paths[False]
 
 
-# pyct's process started fresh gets the lifeline too: killing the watcher ends it and its input
+# pyct's process started fresh is guarded too: killing the watcher ends it and its input
 def test_a_sigkill_to_pyct_ends_a_fresh_pyct_process_and_its_input(tmp_path: Path) -> None:
     pid_file = tmp_path / "pid"
     env = site_in(tmp_path / "site", thread=True)
@@ -364,7 +364,7 @@ def test_a_stop_the_import_catches_and_returns_from_still_ends_the_run(tmp_path:
 
 
 # a Ctrl-C after a SIGTERM reaches pyct's group, not its guard, which still ends the run;
-# forked or started fresh, pyct's process starts its guard with a different signal mask
+# forked or started fresh, the watcher starts the guard beside pyct's process the same way
 @pytest.mark.parametrize("thread", [False, True], ids=["forked", "fresh"])
 def test_a_ctrl_c_during_the_grace_leaves_the_guard_to_end_the_run(
     thread: bool, tmp_path: Path
