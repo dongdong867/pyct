@@ -6,14 +6,13 @@ leaves coverage.py out: its start-up imports much of the standard library before
 the import path, which would hide a module pyct imports late.
 """
 
-import os
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
 from tests.acceptance.harness import input_lines, run_pyct, summary_line
-from tests.acceptance.sweeping import row_named, sweep
+from tests.acceptance.sweeping import environment, row_named, sweep
 
 FORKS = 'def f(x: int) -> str:\n    if x > 3:\n        return "big"\n    return "small"\n'
 # a daemon thread that sleeps, as a host's instrumentation starts one
@@ -58,7 +57,8 @@ def plain_python(folder: Path, code: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, "-P", "-c", PLAIN_PYTHON + code],
         cwd=folder,
-        env={k: v for k, v in os.environ.items() if k != "PYTHONPATH"},
+        # unmeasured: coverage.py's start-up would import datetime and more ahead of the folder
+        env=environment(measured=False),
         capture_output=True,
         text=True,
         check=False,
