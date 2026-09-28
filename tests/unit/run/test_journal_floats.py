@@ -5,7 +5,8 @@ import math
 import pytest
 
 from pyct.core.branch import Branch, Site
-from pyct.run.journal import JournalWriter, read
+from pyct.run.journal import JournalWriter
+from pyct.run.journal_reader import read
 from pyct.run.run import run
 from pyct.run.target import load_target
 

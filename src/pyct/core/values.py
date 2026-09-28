@@ -224,8 +224,9 @@ def _written(value: _Sinked, held: object, name: str) -> Pickled:
 # written by `pyct.core.bases` once every tracked class exists. A tracked value reports its row
 # as its class, and its class called outside pyct's construction builds that type's value
 BASES: dict[type, type] = {}
-# the same rows by the tracked class's identity, for code that meets any class, as the `type`
-# router does: reading a class's identity runs none of its code, where hashing it may
+# the same rows by the tracked class's identity, and each dict view's Python type, for code
+# that meets any class, as the `type` router does: reading a class's identity runs none of its
+# code, where hashing it may
 BASES_BY_ID: dict[int, type] = {}
 
 # what each base type is called with for a plain value of its own, when not with nothing

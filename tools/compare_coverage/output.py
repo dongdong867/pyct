@@ -3,7 +3,8 @@
 stdout carries one JSON line per row as each finishes, then one summary line, which has
 ``statuses`` and no ``target``. stderr carries one table line per row, then the totals. Each
 side of a row says whether its report was ``reused`` from an earlier run, and the summary and
-the totals count the rows whose legacy side was.
+the totals count the rows whose legacy side was. Each side also says how long it ran, to a
+tenth of a second.
 """
 
 import json
@@ -43,6 +44,7 @@ def row_line(row: Row) -> str:
             "change": row.change,
             "left_out": row.left_out,
             "library": row.library,
+            "widened": row.widened,
         }
     )
 
@@ -58,6 +60,7 @@ def _side(view: SideView | None) -> dict[str, object] | None:
         "failure": view.failure,
         "library": view.library,
         "reused": view.reused,
+        "seconds": None if view.seconds is None else round(view.seconds, 1),
     }
 
 
@@ -97,18 +100,23 @@ def table_line(row: Row) -> str:
     parts = [row.set, row.target or str(row.file)]
     if row.v2 is not None and row.legacy is not None:
         parts += [_side_text("v2", row.v2, row), _side_text("legacy", row.legacy, row)]
-    parts.append(row.status.value if row.record is None else f"{row.status.value}, {row.record}")
+    marks = [row.status.value] if row.record is None else [row.status.value, row.record]
+    if row.widened:
+        marks.append("widened")
+    parts.append(", ".join(marks))
     details = _details(row)
     return "  ".join(parts + ["; ".join(details)] if details else parts)
 
 
 def _side_text(name: str, view: SideView, row: Row) -> str:
-    """The side's lines and how it stopped, and for an installed entry the version it has."""
+    """The side's lines and how it stopped, for an installed entry the version it has, and
+    how long it ran."""
     stopped = view.stopped or "no stop"
     inputs = "?" if view.inputs is None else view.inputs
     covered = f"covered {len(view.covered)} of {len(row.own_lines)}"
     library = "" if row.library is None else f", {_library_text(row.library, view.library)}"
-    return f"{name} {covered} ({stopped}, {inputs} inputs{library})"
+    seconds = "" if view.seconds is None else f", {view.seconds:.1f} s"
+    return f"{name} {covered} ({stopped}, {inputs} inputs{library}{seconds})"
 
 
 def _library_text(pin: str, version: str | None) -> str:

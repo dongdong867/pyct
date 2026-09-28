@@ -20,7 +20,8 @@ from pyct.execution.deadline import DeadlineError, deadline, own_the_alarm
 from pyct.results.failure import FailureKind
 from pyct.run import child
 from pyct.run.child import serve, settle
-from pyct.run.journal import CAPACITY, JournalWriter, read
+from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal_reader import read
 from pyct.run.process import STOP_SIGNALS
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
 

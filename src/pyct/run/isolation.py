@@ -13,8 +13,9 @@ pyct's objects instead of copying every page they sit on (1.15 ms against
 so a freeze a ``run()`` caller made stays the caller's.
 
 The child writes each fact of its call into a journal in shared memory (see
-``journal``), and pyct's process reads it once the child has ended, however
-it ended (see ``process``).
+``journal``), and pyct's process reads it as the child writes it and once
+the child has ended, however it ended (see ``journal_reader`` and
+``process``).
 
 A copy of a process can hang on a lock another thread held at the copy.
 So just before each input, pyct counts the threads its process runs, as
@@ -49,7 +50,8 @@ from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, flush_streams, serve
 from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
-from pyct.run.journal import CAPACITY, JournalWriter, read
+from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
 from pyct.run.target import Target
 from pyct.run.threads import running
@@ -174,8 +176,9 @@ def in_a_child(
         return execute(ctx, args, until, watch=watch).failure
 
     with _journal() as buffer:
-        waited = watched(functools.partial(_forked, buffer, call), until)
-        return ending(read(buffer), waited)
+        reader = JournalReader(buffer)
+        waited = watched(functools.partial(_forked, buffer, call), until, reader.look)
+        return ending(reader.finish(), waited)
 
 
 @contextlib.contextmanager

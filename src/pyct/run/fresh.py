@@ -41,7 +41,8 @@ from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
-from pyct.run.journal import CAPACITY, JournalWriter, read
+from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import load_target
 
@@ -82,8 +83,9 @@ def in_a_fresh_interpreter(
     handed = _request(fresh.spec, fresh.file, args, until)
     with _journal() as (journal, buffer), handed as request:
         start = functools.partial(_spawned, request, journal, fresh.hash_seed)
-        waited = watched(start, until)
-        return ending(read(buffer), waited)
+        reader = JournalReader(buffer)
+        waited = watched(start, until, reader.look)
+        return ending(reader.finish(), waited)
 
 
 def main(request: int, journal: int) -> NoReturn:

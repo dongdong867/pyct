@@ -10,7 +10,8 @@ import sys
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.record import DowngradeCount
-from pyct.run.journal import JournalWriter, read
+from pyct.run.journal import JournalWriter
+from pyct.run.journal_reader import read
 from tests.unit.interrupted import Interrupt, at_every_line
 
 SITE = Site(file="t.py", line=3, col=7)

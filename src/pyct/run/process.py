@@ -19,7 +19,10 @@ pyct's process sets no timer and takes no signal for that: it waits for the
 system's notice that the process ended (see ``exits``), with the kill's
 instant as the wait's limit, or asks every millisecond where the system
 gives none. Only then does it reap, or kill and reap, in one thread, so
-nothing lands after the wait or between a reap and a kill.
+nothing lands after the wait or between a reap and a kill. The wait breaks
+off every ``LOOK_EVERY`` seconds for a look at the facts written so far,
+in the same thread, so the facts of an input that runs long are mostly
+read by the time it ends.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
@@ -43,7 +46,7 @@ from pyct.execution.execute import ExecutionResult
 from pyct.execution.stops import Stopped
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.exits import ends_by
-from pyct.run.journal import Reading
+from pyct.run.journal_reader import Reading
 
 # the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
 # SIGINT, and SIGTERM, which the command's process stops on (see ``launch``)
@@ -51,6 +54,13 @@ STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
 
 # how often pyct asks whether an input's process ended, where the system gives no notice
 _POLL = 0.001
+
+# how long pyct waits between two looks at the facts an input's process has written so far,
+# while it runs and while the looks keep up with it: a process that ends sooner is read once it
+# ended. A look that says it fell behind is followed at once. Between two looks pyct asks whether
+# the process ended, and kills it at its instant, so a look's own bound, such as the journal
+# reader's `LOOK_BYTES`, bounds how late a kill lands
+LOOK_EVERY = 0.01
 
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
@@ -103,11 +113,16 @@ class Waited:
         return cls(signal=None, code=os.WEXITSTATUS(status), killed=killed)
 
 
-def watched(start: Callable[[], int], until: float | None) -> Waited:
+def watched(
+    start: Callable[[], int], until: float | None, look: Callable[[], bool] | None = None
+) -> Waited:
     """Start the input's process with ``start``, which returns its pid, and wait for it to end.
 
     ``until`` is the input's deadline, a monotonic instant; the process is
     killed ``KILL_GRACE`` after it. ``None`` waits as long as it runs.
+    ``look`` runs every ``LOOK_EVERY`` seconds while the process runs, or at
+    once when the last look says it fell behind, as reading the facts it
+    has written so far does (see ``journal_reader``).
 
     A Ctrl-C, or another signal in ``STOP_SIGNALS``, is held from before the
     start until pyct holds the pid inside the guard that ends the process on
@@ -120,7 +135,7 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
         # a signal held here goes on as the block ends, with the process in the guard's hands
         with _stops_held():
             child = Child(start())
-        return child.wait(None if until is None else until + KILL_GRACE)
+        return child.wait(None if until is None else until + KILL_GRACE, look)
     finally:
         if child is not None:
             child.end()
@@ -162,17 +177,35 @@ class Child:
         self.status: int | None = None
         self.killed = False
 
-    def wait(self, kill_at: float | None = None) -> Waited:
+    def wait(self, kill_at: float | None = None, look: Callable[[], bool] | None = None) -> Waited:
         """Wait for the process to end, and read how it did.
 
         With ``kill_at``, a monotonic instant, a process still running then
-        is killed. ``None`` waits as long as it runs.
+        is killed. ``None`` waits as long as it runs. ``look`` runs every
+        ``LOOK_EVERY`` seconds while it waits.
         """
-        if kill_at is not None and not self._ends_by(kill_at):
+        if not self._ends_before(kill_at, look):
             self.kill_if_running()
         if self.status is None:
             _, self.status = os.waitpid(self.pid, 0)
         return Waited.of(self.status, killed=self.killed)
+
+    def _ends_before(self, kill_at: float | None, look: Callable[[], bool] | None) -> bool:
+        """Whether the process ends before ``kill_at``, running ``look`` every ``LOOK_EVERY``,
+        or at once after a look that fell behind, and asking between any two.
+
+        With neither, the process is left to end, and the caller reaps it.
+        """
+        if look is None:
+            return kill_at is None or self._ends_by(kill_at)
+        behind = False
+        while True:
+            step = time.monotonic() + (0 if behind else LOOK_EVERY)
+            if kill_at is not None and step >= kill_at:
+                return self._ends_by(kill_at)
+            if self._ends_by(step):
+                return True
+            behind = look()
 
     def _ends_by(self, instant: float) -> bool:
         """Whether the process ends by the monotonic ``instant``, by the system's notice.
