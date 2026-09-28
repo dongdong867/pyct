@@ -2,6 +2,7 @@
 
 import os
 import platform
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -40,6 +41,50 @@ def test_the_build_asks_uv_for_this_python(tmp_path: Path) -> None:
 
     args = (tmp_path / "args").read_text().split()
     assert args[args.index("--python") + 1] == platform.python_version()
+
+
+def test_the_build_hands_uv_neither_variable_that_names_the_caller_s_environment(
+    tmp_path: Path,
+) -> None:
+    # an agent points UV_PROJECT_ENVIRONMENT at a scratch environment; uv would sync legacy there
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    uv = fake / "uv"
+    uv.write_text(f'#!/bin/sh\nenv > "{tmp_path / "environment"}"\n')
+    uv.chmod(0o755)
+    scratch = str(tmp_path / "scratch")
+    path = f"{fake}:{os.environ['PATH']}"
+    caller = {**os.environ, "PATH": path, "UV_PROJECT_ENVIRONMENT": scratch, "VIRTUAL_ENV": scratch}
+    checkout = tmp_path / "legacy"
+    checkout.mkdir()
+
+    build_legacy_checkout(checkout, caller)
+
+    lines = (tmp_path / "environment").read_text().splitlines()
+    names = {line.partition("=")[0] for line in lines}
+    assert "UV_PROJECT_ENVIRONMENT" not in names
+    assert "VIRTUAL_ENV" not in names
+    assert f"PATH={path}" in lines
+
+
+@pytest.mark.legacy
+@pytest.mark.timeout(180)
+def test_the_build_leaves_the_caller_s_environment_unchanged(tmp_path: Path) -> None:
+    scratch = tmp_path / "scratch"
+    subprocess.run(
+        ["uv", "venv", "-q", str(scratch), "--python", platform.python_version()],
+        check=True,
+        capture_output=True,
+    )
+    before = sorted(scratch.rglob("*"))
+    caller = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(scratch), "VIRTUAL_ENV": str(scratch)}
+    checkout = tmp_path / "legacy"
+    checkout.mkdir()
+
+    build_legacy_checkout(checkout, caller)
+
+    assert (checkout / ".venv" / "bin" / "python").exists()
+    assert sorted(scratch.rglob("*")) == before
 
 
 def test_threads_sharing_a_folder_build_the_checkout_once(tmp_path: Path) -> None:
