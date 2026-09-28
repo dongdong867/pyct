@@ -12,6 +12,7 @@ import sys
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
 from tests.acceptance.test_bools import failure_of, sides
 from tests.acceptance.test_ints import argument, forks_of
+from tests.acceptance.test_return_a_real_bool_from_a_bool_method import sited
 from tests.acceptance.test_strs import text
 from tests.acceptance.test_substitute_is_and_in import compiled_total, covered_of, plain_lines
 
@@ -21,13 +22,6 @@ SPREAD_OPERAND_FILE = INTERCEPT / "spread_operand.py"
 WARNING = "pyct intercepts builtins"
 
 
-def placed(line: dict[str, object]) -> list[tuple[object, ...]]:
-    """Each fork on a printed line: its line, column, expression and side."""
-    return [
-        (fork["line"], fork["col"], fork["expression"], fork["taken"]) for fork in forks_of(line)
-    ]
-
-
 # substitute-on-every-supported-python-records-is-true-and-in-on-each-release
 def test_records_is_true_and_in_on_each_release() -> None:
     result = run_pyct(f"{RELEASES}::f", '{"x": 0, "s": "zz"}')
@@ -35,7 +29,7 @@ def test_records_is_true_and_in_on_each_release() -> None:
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
     seed = inputs[0]
-    assert placed(seed) == [
+    assert sited(seed) == [
         (2, 7, [">", "x", 0], False),
         (4, 7, ["in", "s", "'abc'"], False),
     ]
@@ -55,7 +49,7 @@ def test_follows_a_conversion_on_each_release() -> None:
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
-    assert placed(inputs[0]) == [(10, 11, ["isint", "s"], True)]
+    assert sited(inputs[0]) == [(10, 11, ["isint", "s"], True)]
     assert inputs[0]["downgrades"] == []
     assert sides(inputs[1:], ["isint", "s"]) == {False}
 
@@ -80,7 +74,7 @@ def test_covers_a_spread_operand_as_written() -> None:
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
     expression = ["in", ["strip", "s"], "'abc'"]
-    assert placed(inputs[0]) == [(5, 7, expression, False)]
+    assert sited(inputs[0]) == [(5, 7, expression, False)]
     assert sides(inputs[1:], expression) == {True}
     for line in inputs:
         assert covered_of(line, SPREAD_OPERAND_FILE) == plain_lines(

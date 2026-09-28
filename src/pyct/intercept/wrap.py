@@ -18,8 +18,8 @@ as they are.
 Python looks a name up in a builtins mapping that is not exactly a dict
 through its ``__getitem__``, one Python call per builtin name the module
 reads: its global names, an ``import`` statement's ``__import__`` and a
-``class`` statement's ``__build_class__`` on CPython 3.12. Every method a
-dict has reads and writes ``builtins`` as it is now, as the module's
+``class`` statement's ``__build_class__``. Every method a dict has reads
+and writes ``builtins`` as it is now, as the module's
 ``__builtins__`` does in plain Python, where it is ``builtins``' own dict. A
 copy of ``builtins`` it holds as well, kept in step with every write made
 through it, serves only C code that reads a dict's storage without its

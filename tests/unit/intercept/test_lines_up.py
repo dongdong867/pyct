@@ -313,6 +313,18 @@ NEGATED_TESTS = [
 ]
 
 
+# a `not` over a compare pyct substitutes, inside a `__bool__` method's return
+NEGATED_RETURNS = ["return (not x in c) and y", "return (not x is True) or y"]
+
+
+@pytest.mark.parametrize("shape", NEGATED_RETURNS)
+def test_a_negated_compare_in_a_bool_method_s_return_lines_up(shape: str) -> None:
+    source = f"class A:\n    def __bool__(self):\n        {shape}\n"
+
+    assert "__pyct_truth__" in ast.unparse(substitute(ast.parse(source)))
+    assert lined_up(source, "<m>")
+
+
 @pytest.mark.parametrize("shape", NEGATED_TESTS)
 def test_a_negated_compare_pyct_substitutes_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"

@@ -15,6 +15,7 @@ import ast
 import dis
 import types
 from collections.abc import Iterator
+from typing import TypeGuard
 
 from pyct.intercept.substitute import BOUND, substitute
 
@@ -156,37 +157,44 @@ def _none_link(steps: list[dis.Instruction], jump: int) -> int | None:
     return contains.arg if loaded and shape == _NONE_LINK else None
 
 
-# the names of pyct's calls that answer a `not in` or an `is not`
+# the names of pyct's calls that answer a `not in` or an `is not`, and of the call a `return` in
+# a `__bool__` method hands its value to, which keeps that value's truth
 _NEGATIONS = frozenset(name for name, bound in BOUND.items() if bound in ("not_in", "is_not"))
+_TRUTH = frozenset(name for name, bound in BOUND.items() if bound == "truth")
 
 
 def negations(tree: ast.AST) -> frozenset[Span]:
-    """Where each call the substituted tree makes for a `not in` or an `is not` is."""
+    """Where each call the substituted tree makes for a `not in` or an `is not` is, and each
+    `__bool__` return's call around one, whose value is the negation's."""
     return frozenset(
         (node.lineno, node.end_lineno, node.col_offset, node.end_col_offset)
         for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id in _NEGATIONS
+        if _calls(node, _NEGATIONS)
+        or (_calls(node, _TRUTH) and len(node.args) == 1 and _calls(node.args[0], _NEGATIONS))
     )
 
 
-def _negated(steps: list[dis.Instruction], jump: int, negations: frozenset[Span]) -> bool:
+def _calls(node: ast.AST, names: frozenset[str]) -> TypeGuard[ast.Call]:
+    """Whether the node is a call of one of the names."""
+    return isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in names
+
+
+def _negated(steps: list[dis.Instruction], jump: int, negated_at: frozenset[Span]) -> bool:
     """Whether the test the jump follows answers a `not in` or an `is not`."""
     if jump < 1:
         return False
     test = steps[jump - 1]
     if test.opname in ("CONTAINS_OP", "IS_OP"):
         return test.arg == 1
-    return test.opname == "CALL" and tuple(test.positions or ()) in negations
+    return test.opname == "CALL" and tuple(test.positions or ()) in negated_at
 
 
 def conditional_jumps(
-    code: types.CodeType, negations: frozenset[Span] = frozenset()
+    code: types.CodeType, negated_at: frozenset[Span] = frozenset()
 ) -> list[tuple[object, int | None, str]]:
     """Each conditional jump's position, the line it jumps to and its kind, every copy kept.
 
-    ``negations`` places pyct's calls for a `not in` or an `is not`, in code
+    ``negated_at`` places pyct's calls for a `not in` or an `is not`, in code
     substituted. CPython writes a ``finally`` body twice, once for each way
     out of the ``try``, so two copies of one jump are two entries, and a code
     that drops one differs.
@@ -202,7 +210,7 @@ def conditional_jumps(
                 jump_kind(
                     step.opname,
                     _none_link(steps, at),
-                    negated=_negated(steps, at, negations),
+                    negated=_negated(steps, at, negated_at),
                 ),
             )
             for at, step in enumerate(steps)
@@ -212,17 +220,17 @@ def conditional_jumps(
     )
 
 
-def layout(code: types.CodeType, negations: frozenset[Span] = frozenset()) -> list[Layout]:
+def layout(code: types.CodeType, negated_at: frozenset[Span] = frozenset()) -> list[Layout]:
     """What a line tracer and a branch read off each code object: name, lines, steps, jumps.
 
-    ``negations`` places pyct's calls for a `not in` or an `is not`, in code substituted.
+    ``negated_at`` places pyct's calls for a `not in` or an `is not`, in code substituted.
     """
     return [
         (
             each.co_name,
             frozenset(line for _, _, line in each.co_lines() if line),
             line_order(each),
-            conditional_jumps(each, negations),
+            conditional_jumps(each, negated_at),
         )
         for each in code_objects(code)
     ]
