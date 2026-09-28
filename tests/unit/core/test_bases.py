@@ -44,7 +44,13 @@ def test_the_table_holds_each_tracked_class_and_its_base_type() -> None:
         ConcolicDict: dict,
         ConcolicRange: range,
     } == BASES
-    assert {id(tracked): base for tracked, base in BASES.items()} == BASES_BY_ID
+    # the `type` router reads a dict's views too, as Python's view types, which have no row
+    views = {
+        id(ConcolicKeys): type({}.keys()),
+        id(ConcolicValues): type({}.values()),
+        id(ConcolicItems): type({}.items()),
+    }
+    assert {id(tracked): base for tracked, base in BASES.items()} | views == BASES_BY_ID
 
 
 def names(kind: type) -> tuple[str, str, str]:
