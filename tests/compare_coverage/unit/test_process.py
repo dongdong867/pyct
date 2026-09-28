@@ -4,12 +4,21 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from tools.compare_coverage.process import Command, run_command, side_environment
+from tools.compare_coverage.process import (
+    Command,
+    Finished,
+    StoppedError,
+    allow_commands,
+    run_command,
+    side_environment,
+    stop_every_command,
+)
 
 PYTHON = sys.executable
 
@@ -125,3 +134,27 @@ def test_a_side_runs_without_pythonpath_or_coverage_startup() -> None:
     }
 
     assert side_environment(base) == {"PATH": "/bin", "COVERAGE_FILE": "kept"}
+
+
+def test_stopping_every_command_ends_one_another_thread_waits_on_and_refuses_more(
+    tmp_path: Path,
+) -> None:
+    finished: list[Finished] = []
+    waiter = threading.Thread(
+        target=lambda: finished.append(run_command(command(tmp_path, "sleep", "60"), wait=60))
+    )
+    started = time.monotonic()
+    waiter.start()
+    time.sleep(0.5)
+
+    try:
+        stop_every_command()
+        waiter.join(timeout=10)
+        with pytest.raises(StoppedError):
+            run_command(command(tmp_path, "true"), wait=5)
+    finally:
+        allow_commands()
+
+    assert finished[0].returncode == -signal.SIGKILL
+    assert time.monotonic() - started < 10
+    assert run_command(command(tmp_path, "true"), wait=5).returncode == 0

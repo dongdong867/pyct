@@ -3,7 +3,13 @@
 Before any target runs, the checks go in this order, each leaving stdout empty: the flags
 and the files they name (exit 2), the legacy checkout (exit 2), then cvc5 (exit 1), as
 ``pyct run`` checks its command line before the machine. The limit flags take the names and
-the rules ``pyct run`` gives them. Ctrl-C stops the running side and exits 130.
+the rules ``pyct run`` gives them. Ctrl-C stops every running side and exits 130.
+
+``--jobs N`` runs up to N rows at once. Legacy results are kept in ``--cache DIR``, by default
+``$PYCT_COMPARE_CACHE`` or the user's cache folder, and reused while nothing a row's legacy
+side depends on changed (``cache.py`` says what that is). ``--clear-cache`` removes every
+kept result first, and ``--refresh-budget-spent`` runs again each legacy side kept after it
+spent its budget.
 """
 
 import argparse
@@ -23,6 +29,7 @@ from tools.compare_coverage.accepted import (
     key_of,
     read_records,
 )
+from tools.compare_coverage.cache import Cache, clear, default_folder, run_context
 from tools.compare_coverage.compare import Facts, Run, Sides, Streams, compare
 from tools.compare_coverage.entries import (
     LIST_FILE,
@@ -35,11 +42,17 @@ from tools.compare_coverage.entries import (
 )
 from tools.compare_coverage.environment import (
     SolverMissingError,
+    changes,
     commit,
     cvc5_version,
     locate_cvc5,
 )
-from tools.compare_coverage.legacy_side import LegacyCheckoutError, LegacySide, probe
+from tools.compare_coverage.legacy_side import (
+    LegacyCheckoutError,
+    LegacySide,
+    installed_distributions,
+    probe,
+)
 from tools.compare_coverage.process import side_environment
 from tools.compare_coverage.sides import Limits
 from tools.compare_coverage.v2_side import Stamp, V2Side
@@ -47,7 +60,11 @@ from tools.compare_coverage.v2_side import Stamp, V2Side
 USAGE = (
     "python -m tools.compare_coverage --legacy DIR [--set NAME]... [--target MODULE::NAME]..."
     " [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS] [--accepted FILE [--accept]]"
+    " [--jobs N] [--cache DIR] [--clear-cache] [--refresh-budget-spent]"
 )
+
+# rows that run at once when --jobs is not given, measured on the per-merge gate
+DEFAULT_JOBS = 4
 
 # this checkout: its targets are the v2 set's, and its pyct is the v2 side
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -59,7 +76,7 @@ class UsageError(Exception):
 
 @dataclass(frozen=True)
 class Flags:
-    """The command line as given, before any check."""
+    """The command line as given, before any check. ``cache`` is ``None`` for the default."""
 
     legacy: Path | None
     sets: tuple[str, ...]
@@ -67,6 +84,10 @@ class Flags:
     limits: Limits
     accepted: Path | None
     accept: bool
+    jobs: int = DEFAULT_JOBS
+    cache: Path | None = None
+    clear_cache: bool = False
+    refresh_budget_spent: bool = False
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -111,15 +132,38 @@ def prepare(argv: Sequence[str], environ: Mapping[str, str]) -> tuple[Run, Sides
         facts=facts,
         unlisted=unlisted_files(target_list, scanned, roots),
         accepted=accepted,
+        jobs=flags.jobs,
     )
-    return run, _sides(flags.legacy, environment)
+    legacy = LegacySide(flags.legacy, environment, _cache(flags, facts, environ))
+    return run, _sides(legacy, environment)
 
 
-def _sides(legacy: Path, environment: Mapping[str, str]) -> Sides:
+def _sides(legacy: LegacySide, environment: Mapping[str, str]) -> Sides:
     v2 = V2Side(
         program=(sys.executable, "-P", "-m", "pyct"), environment=environment, stamp=Stamp.here()
     )
-    return Sides(v2=v2, legacy=LegacySide(checkout=legacy, environment=environment))
+    return Sides(v2=v2, legacy=legacy)
+
+
+def _cache(flags: Flags, facts: Facts, environ: Mapping[str, str]) -> Cache | None:
+    """Where legacy results are kept, cleared first if asked, or ``None`` when legacy's commit
+    is not known."""
+    assert flags.legacy is not None  # probe refuses a missing checkout
+    folder = flags.cache or default_folder(environ, Path.home())
+    try:
+        (folder / "legacy").mkdir(parents=True, exist_ok=True)
+        if flags.clear_cache:
+            clear(folder)
+    except OSError as error:
+        raise UsageError(f"cannot keep legacy results in {folder}: {error.strerror}") from error
+    context = run_context(
+        facts.commits["legacy"],
+        changes(flags.legacy),
+        facts.python["legacy"],
+        facts.cvc5,
+        installed_distributions(flags.legacy),
+    )
+    return None if context is None else Cache(folder, context, flags.refresh_budget_spent)
 
 
 def _accepted(flags: Flags, target_list: TargetList) -> Accepted | None:
@@ -139,16 +183,7 @@ def _accepted(flags: Flags, target_list: TargetList) -> Accepted | None:
 
 def parse_flags(argv: Sequence[str]) -> Flags:
     """The flags, with each limit checked as ``pyct run`` checks it."""
-    parser = _Parser(prog="python -m tools.compare_coverage", usage=USAGE)
-    parser.add_argument("--legacy", type=Path, metavar="DIR")
-    parser.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME")
-    parser.add_argument("--target", dest="targets", action="append", default=[])
-    parser.add_argument("--budget", default="30", metavar="SECONDS")
-    parser.add_argument("--plateau", default="5", metavar="N")
-    parser.add_argument("--solver-timeout", default="10", metavar="SECONDS")
-    parser.add_argument("--accepted", type=Path, metavar="FILE")
-    parser.add_argument("--accept", action="store_true")
-    given = parser.parse_args(argv)
+    given = _parser().parse_args(argv)
     limits = Limits(
         budget=_seconds(given.budget, "--budget"),
         plateau=_whole(given.plateau, "--plateau"),
@@ -162,6 +197,10 @@ def parse_flags(argv: Sequence[str]) -> Flags:
         limits=limits,
         accepted=given.accepted,
         accept=given.accept,
+        jobs=_whole(given.jobs, "--jobs"),
+        cache=None if given.cache is None else given.cache.resolve(),
+        clear_cache=given.clear_cache,
+        refresh_budget_spent=given.refresh_budget_spent,
     )
 
 
@@ -186,6 +225,24 @@ def _whole(text: str, flag: str) -> int:
     if number <= 0:
         raise UsageError(refusal)
     return number
+
+
+def _parser() -> "_Parser":
+    """The flags' parser. Each number is taken as text, for ``parse_flags`` to check."""
+    parser = _Parser(prog="python -m tools.compare_coverage", usage=USAGE)
+    parser.add_argument("--legacy", type=Path, metavar="DIR")
+    parser.add_argument("--set", dest="sets", action="append", default=[], metavar="NAME")
+    parser.add_argument("--target", dest="targets", action="append", default=[])
+    parser.add_argument("--budget", default="30", metavar="SECONDS")
+    parser.add_argument("--plateau", default="5", metavar="N")
+    parser.add_argument("--solver-timeout", default="10", metavar="SECONDS")
+    parser.add_argument("--accepted", type=Path, metavar="FILE")
+    parser.add_argument("--accept", action="store_true")
+    parser.add_argument("--jobs", default=str(DEFAULT_JOBS), metavar="N")
+    parser.add_argument("--cache", type=Path, metavar="DIR")
+    parser.add_argument("--clear-cache", action="store_true")
+    parser.add_argument("--refresh-budget-spent", action="store_true")
+    return parser
 
 
 class _Parser(argparse.ArgumentParser):

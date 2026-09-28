@@ -14,7 +14,9 @@ from tools.compare_coverage.output import (
 from tools.compare_coverage.rows import Row, SideView, Status
 
 V2 = SideView(file="/t.py", covered=(2, 3), stopped="no fork to flip", inputs=2, failure=None)
-LEGACY = SideView(file="/t.py", covered=(2, 3, 5), stopped="exhausted", inputs=4, failure=None)
+LEGACY = SideView(
+    file="/t.py", covered=(2, 3, 5), stopped="exhausted", inputs=4, failure=None, reused=True
+)
 DIFFERS = Row(
     set="v2",
     status=Status.DIFFERS,
@@ -28,6 +30,26 @@ DIFFERS = Row(
 )
 NOT_LISTED = Row(set="fixtures", status=Status.NOT_LISTED, file="/u.py")
 
+# each side of DIFFERS as its row line gives it
+V2_LINE = {
+    "file": "/t.py",
+    "covered": [2, 3],
+    "stopped": "no fork to flip",
+    "inputs": 2,
+    "failure": None,
+    "library": None,
+    "reused": False,
+}
+LEGACY_LINE = {
+    "file": "/t.py",
+    "covered": [2, 3, 5],
+    "stopped": "exhausted",
+    "inputs": 4,
+    "failure": None,
+    "library": None,
+    "reused": True,
+}
+
 
 def test_a_row_line_holds_every_field_of_the_row() -> None:
     assert json.loads(row_line(DIFFERS)) == {
@@ -39,22 +61,8 @@ def test_a_row_line_holds_every_field_of_the_row() -> None:
         "status": "differs",
         "only_legacy": [5],
         "only_v2": [],
-        "v2": {
-            "file": "/t.py",
-            "covered": [2, 3],
-            "stopped": "no fork to flip",
-            "inputs": 2,
-            "failure": None,
-            "library": None,
-        },
-        "legacy": {
-            "file": "/t.py",
-            "covered": [2, 3, 5],
-            "stopped": "exhausted",
-            "inputs": 4,
-            "failure": None,
-            "library": None,
-        },
+        "v2": V2_LINE,
+        "legacy": LEGACY_LINE,
         "record": None,
         "change": None,
         "left_out": None,
@@ -102,6 +110,7 @@ def test_the_summary_line_has_counts_limits_commits_and_environment_and_no_targe
 
     assert "target" not in line
     assert line["statuses"]["differs"] == 1
+    assert line["legacy_reused"] == 1
     assert line["limits"] == limits
     assert line["commits"] == {"v2": "abc", "legacy": None}
     assert line["environment"] == {
@@ -160,7 +169,7 @@ def test_a_table_line_for_an_installed_entry_names_each_sides_version() -> None:
 
 
 def test_the_totals_line_gives_every_count() -> None:
-    assert totals_line([NOT_LISTED]) == (
-        "totals: same 0, differs 0, v2 failed 0, legacy failed 0, both failed 0, "
-        "not listed 1, left out 0, accepted 0, changed 0"
+    assert totals_line([NOT_LISTED, DIFFERS]) == (
+        "totals: same 0, differs 1, v2 failed 0, legacy failed 0, both failed 0, "
+        "not listed 1, left out 0, accepted 0, changed 0, legacy reused 1"
     )

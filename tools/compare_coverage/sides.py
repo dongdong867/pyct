@@ -64,6 +64,7 @@ class SideReport:
     """What a side said: the file it loaded, its raw lines there, how it stopped, and failure.
 
     ``library`` is the requested library as the side has it, for an installed entry.
+    ``reused`` is true when the report is one kept from an earlier run, not a new run's.
     """
 
     file: str | None = None
@@ -72,6 +73,7 @@ class SideReport:
     inputs: int | None = None
     failure: str | None = None
     library: Installed | None = None
+    reused: bool = False
 
 
 class Side(Protocol):

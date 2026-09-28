@@ -42,7 +42,8 @@ class Status(StrEnum):
 class SideView:
     """One side in a row: the file it loaded, its lines cut to the body, how it stopped.
 
-    ``library`` is the version of an installed entry's library the side has.
+    ``library`` is the version of an installed entry's library the side has. ``reused`` is
+    true when the side's report was kept from an earlier run.
     """
 
     file: str | None
@@ -51,6 +52,7 @@ class SideView:
     inputs: int | None
     failure: str | None
     library: str | None = None
+    reused: bool = False
 
 
 @dataclass(frozen=True)
@@ -191,6 +193,7 @@ def _view(report: SideReport, file: Path | None, body: Body, entry: Entry) -> Si
         inputs=report.inputs,
         failure=failure or report.failure or _file_failure(report, file, library),
         library=None if report.library is None else report.library.version,
+        reused=report.reused,
     )
 
 

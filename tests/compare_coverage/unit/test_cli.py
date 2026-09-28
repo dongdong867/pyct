@@ -8,11 +8,13 @@ import pytest
 
 from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage import cli
+from tools.compare_coverage.cache import Cache
 from tools.compare_coverage.cli import Flags, UsageError, main, parse_flags
 from tools.compare_coverage.compare import exit_code
 from tools.compare_coverage.entries import Unlisted
+from tools.compare_coverage.legacy_side import LegacySide
 from tools.compare_coverage.rows import Row, Status
-from tools.compare_coverage.sides import Limits
+from tools.compare_coverage.sides import Limits, SideReport
 
 
 def test_no_flags_but_legacy_give_pyct_runs_default_limits() -> None:
@@ -47,11 +49,29 @@ def test_sets_and_targets_repeat() -> None:
         (["--plateau", "x"], "--plateau must be a whole number above zero, got 'x'"),
         (["--solver-timeout", "-1"], "--solver-timeout must be a finite number of seconds"),
         (["--budget"], "expected one argument"),
+        (["--jobs", "0"], "--jobs must be a whole number above zero, got '0'"),
+        (["--jobs", "two"], "--jobs must be a whole number above zero, got 'two'"),
     ],
 )
 def test_a_limit_pyct_run_would_refuse_is_refused(flags: list[str], says: str) -> None:
     with pytest.raises(UsageError, match=says):
         parse_flags(flags)
+
+
+def test_the_run_and_cache_flags_are_read() -> None:
+    flags = parse_flags(
+        ["--jobs", "3", "--cache", "a/../kept", "--clear-cache", "--refresh-budget-spent"]
+    )
+
+    assert (flags.jobs, flags.cache) == (3, Path.cwd() / "kept")
+    assert flags.clear_cache and flags.refresh_budget_spent
+
+
+def test_with_no_run_or_cache_flag_rows_run_at_once_and_the_cache_is_the_default() -> None:
+    flags = parse_flags([])
+
+    assert (flags.jobs, flags.cache) == (cli.DEFAULT_JOBS, None)
+    assert not (flags.clear_cache or flags.refresh_budget_spent)
 
 
 @pytest.fixture
@@ -100,6 +120,57 @@ def test_prepare_scans_only_the_named_sets(
 
     assert by_set.unlisted == (Unlisted("v2", new),)
     assert by_target.unlisted == ()
+
+
+def legacy_of(prepared: tuple[object, object]) -> LegacySide:
+    legacy = prepared[1].legacy  # type: ignore[attr-defined]
+    assert isinstance(legacy, LegacySide)
+    return legacy
+
+
+def test_prepare_keeps_legacy_results_in_the_default_folder_for_a_git_checkout(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path], own_cache: Path
+) -> None:
+    stub_checkout.commit()
+
+    run, sides = cli.prepare(["--legacy", str(stub_checkout.path), "--jobs", "2"], os.environ)
+
+    cache = legacy_of((run, sides)).cache
+    assert isinstance(cache, Cache)
+    assert (cache.folder, cache.refresh_budget_spent, run.jobs) == (own_cache, False, 2)
+
+
+def test_prepare_keeps_nothing_for_a_checkout_with_no_commit(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path]
+) -> None:
+    prepared = cli.prepare(["--legacy", str(stub_checkout.path)], os.environ)
+
+    assert legacy_of(prepared).cache is None
+
+
+def test_prepare_clears_the_named_cache_before_any_row(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path], tmp_path: Path
+) -> None:
+    stub_checkout.commit()
+    kept = Cache(folder=tmp_path / "kept", context="c")
+    kept.put("k", SideReport(), tmp_path)
+    legacy = ["--legacy", str(stub_checkout.path), "--cache", str(tmp_path / "kept")]
+
+    prepared = cli.prepare([*legacy, "--clear-cache", "--refresh-budget-spent"], os.environ)
+
+    assert kept.get("k", tmp_path) is None
+    cache = legacy_of(prepared).cache
+    assert cache is not None and cache.refresh_budget_spent
+
+
+def test_a_cache_folder_that_cannot_be_made_is_refused_before_any_row(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path], tmp_path: Path
+) -> None:
+    (tmp_path / "file").write_text("")
+    legacy = ["--legacy", str(stub_checkout.path)]
+
+    with pytest.raises(UsageError, match="cannot keep legacy results in"):
+        cli.prepare([*legacy, "--cache", str(tmp_path / "file" / "cache")], os.environ)
 
 
 def test_ctrl_c_exits_130(monkeypatch: pytest.MonkeyPatch) -> None:
