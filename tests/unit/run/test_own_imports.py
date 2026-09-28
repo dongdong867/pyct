@@ -184,3 +184,13 @@ def test_loading_the_finder_imports_no_module_of_its_own() -> None:
     )
 
     assert result.stdout == "['pyct.run.own_imports']\n", result.stdout
+
+
+def test_a_standard_library_folder_named_through_a_link_holds_the_standard_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    link = tmp_path / "link"
+    link.symlink_to(os.path.dirname(os.__file__))
+    monkeypatch.setattr(sys, "path", [str(link), str(tmp_path)])
+
+    assert own_imports._standard_entries() == [str(link)]

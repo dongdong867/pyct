@@ -67,6 +67,35 @@ READS_ITS_OWN = (
     '        return "big"\n'
     '    return "small"\n'
 )
+# the idna codec's first use imports stringprep, from the folder under plain Python; each target
+# forks on 7 when that import raised and on 3 when it did not, once through a str literal's method
+# and once through a tracked str's, each of which pyct's core runs in the target's place
+ENCODES = (
+    "def mark(text: str) -> int:\n"
+    "    try:\n"
+    '        text.encode("idna")\n'
+    "    except RuntimeError:\n"
+    "        return 7\n"
+    "    return 3\n"
+    "\n"
+    "\n"
+    "def literal(x: int) -> str:\n"
+    "    try:\n"
+    '        "ab".encode("idna")\n'
+    "    except RuntimeError:\n"
+    "        limit = 7\n"
+    "    else:\n"
+    "        limit = 3\n"
+    "    if x > limit:\n"
+    '        return "big"\n'
+    '    return "small"\n'
+    "\n"
+    "\n"
+    "def tracked(s: str) -> str:\n"
+    "    if len(s) > mark(s):\n"
+    '        return "long"\n'
+    '    return "short"\n'
+)
 FORKS = 'def f(x: int) -> str:\n    if x > 3:\n        return "big"\n    return "small"\n'
 
 
@@ -121,6 +150,7 @@ def test_reads_each_failure_past_every_stdlib_name(tmp_path: Path) -> None:
 
     assert ran.returncode == 0, ran.stderr
     failures = failure_by_x(ran.stdout)
+    assert len(input_lines(ran.stdout)) == 6, ran.stdout
     assert sorted(failures) == [0, 1, 2, 3, 4, 5], ran.stdout
     assert failures[0] is None
     assert all(failures[x] is not None for x in range(1, 6)), failures
@@ -186,3 +216,23 @@ def test_lets_the_target_import_its_own_sysconfig(tmp_path: Path) -> None:
     forks = inputs[0]["forks"]
     assert isinstance(forks, list), ran.stdout
     assert [fork["expression"] for fork in forks] == [[">", "x", 7]], forks
+
+
+# keep-pyct-s-late-imports-from-the-target-s-folder-lets-a-str-method-import-from-the-folder
+def test_lets_a_str_method_import_from_the_folder(tmp_path: Path) -> None:
+    folder = folder_of(tmp_path, {"stringprep.py": raising("stringprep"), "enc.py": ENCODES})
+    plain = plain_python(folder, "import enc; print(enc.mark('ab'))")
+
+    literal = run_from(folder, "enc::literal")
+    tracked = run_pyct(
+        "enc::tracked", "--args", '{"s": "ab"}', "--budget", "10", cwd=folder, timeout=60
+    )
+
+    assert plain.returncode == 0, plain.stderr
+    mark = int(plain.stdout)
+    for ran, subject in ((literal, "x"), (tracked, ["len", "s"])):
+        assert ran.returncode == 0, ran.stderr
+        forks = input_lines(ran.stdout)[0]["forks"]
+        assert isinstance(forks, list), ran.stdout
+        assert [fork["expression"] for fork in forks] == [[">", subject, mark]], forks
+        assert "SHADOW stringprep" in ran.stderr, ran.stderr
