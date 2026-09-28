@@ -8,7 +8,18 @@ Legacy's line tracer leaves a ``.pyct-cov.*`` file in the temp folder for each i
 and main is never changed. So every legacy process runs with ``TMPDIR``, ``TEMP`` and ``TMP``
 naming a folder of its own inside the checker's temp folder. The folder is removed once the
 process exits, fails, is stopped at its deadline or is stopped by Ctrl-C. A checker that is
-itself killed leaves its one folder, found by its ``pyct-legacy-`` prefix.
+itself killed leaves the folder of each legacy side it was running, found by its
+``pyct-legacy-`` prefix.
+
+With a cache, the side answers from a result kept by an earlier run when there is one, and
+keeps each new answer: one from a process that exited 0 and, for an installed entry, said
+which copy of the library it has, whose report has no failure or failed with legacy's stop
+``timeout``. Legacy fails that way when it spends its budget or when the child running an
+input dies with the input pending: some targets end so by design, but a child killed for
+another reason, such as for lack of memory, ends so too. Such a report is refreshed as a
+budget-spent one is, and until then a plain run reuses it. Any other failed side, whether
+stopped past its wait, exited otherwise, failed in legacy another way or failed its probe, is
+not kept, so each run tries it again.
 """
 
 import contextlib
@@ -20,6 +31,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
+from tools.compare_coverage.cache import BUDGET_SPENT, Cache
 from tools.compare_coverage.process import Command, run_command
 from tools.compare_coverage.sides import (
     Limits,
@@ -67,6 +79,12 @@ def interpreter(checkout: Path) -> Path:
     return checkout / ".venv" / "bin" / "python"
 
 
+def installed_distributions(checkout: Path) -> tuple[str, ...]:
+    """The ``NAME-VERSION.dist-info`` folders of the checkout's own environment, sorted."""
+    found = (checkout / ".venv" / "lib").glob("python*/site-packages/*.dist-info")
+    return tuple(sorted(folder.name for folder in found))
+
+
 @contextlib.contextmanager
 def own_temp(environment: Mapping[str, str]) -> Iterator[dict[str, str]]:
     """``environment`` with its temp folder a new one, removed when the block exits or raises."""
@@ -76,10 +94,14 @@ def own_temp(environment: Mapping[str, str]) -> Iterator[dict[str, str]]:
 
 @dataclass(frozen=True)
 class LegacySide:
-    """Runs the adapter with the checkout's interpreter, in the entry's root."""
+    """Runs the adapter with the checkout's interpreter, in the entry's root.
+
+    ``cache`` keeps its answers between runs, or is ``None`` to run every entry.
+    """
 
     checkout: Path
     environment: Mapping[str, str]
+    cache: Cache | None = None
 
     def given(self, limits: Limits) -> Mapping[str, float]:
         """Legacy takes whole seconds per solve, so the solver timeout is rounded up."""
@@ -90,6 +112,19 @@ class LegacySide:
         }
 
     def run(self, request: SideRequest) -> SideReport:
+        if self.cache is None:
+            return self._answer(request)[0]
+        key = self.cache.key(request, self.given(request.limits))
+        kept = self.cache.get(key, request.root)
+        if kept is not None:
+            return kept
+        report, answered = self._answer(request)
+        if answered:
+            self.cache.put(key, report, request.root)
+        return report
+
+    def _answer(self, request: SideRequest) -> tuple[SideReport, bool]:
+        """The side's report, and whether it is legacy's answer, as the module docstring says."""
         payload = {
             "target": request.target,
             "seed": request.seed,
@@ -100,9 +135,12 @@ class LegacySide:
         argv = (python, "-P", str(ADAPTER), json.dumps(payload))
         with own_temp(self.environment) as environment:
             finished = run_command(Command(argv, request.root, environment), request.wait)
-            return with_library(
+            report = with_library(
                 read_report(finished, "covered", _report), python, request, environment
             )
+        probed = request.library is None or report.library is not None
+        kept_failure = report.failure is None or report.stopped == BUDGET_SPENT
+        return report, finished.returncode == 0 and probed and kept_failure
 
 
 def _report(line: dict[str, object]) -> SideReport:

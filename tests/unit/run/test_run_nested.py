@@ -1,5 +1,6 @@
 """run() on nested seeds: values only a caller can give, and what each input is handed, per mode."""
 
+import pickle
 import threading
 from collections.abc import Mapping
 
@@ -13,14 +14,12 @@ from pyct.run import run as run_module
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
+from tests.nesting import nested_dict, refused_depth
 
 # where an input runs, in a child process of its own or in the caller's
 WHERE = [Isolation.FORK, Isolation.IN_PROCESS]
 # and in a fresh interpreter, which imports the target by name
 EVERYWHERE = [*WHERE, Isolation.FRESH]
-
-# deeper than pickle recurses before it gives up, and within what JSON reads
-PICKLE_DEPTH = 9000
 
 
 @pytest.mark.parametrize("isolation", WHERE)
@@ -55,11 +54,9 @@ def test_run_never_changes_the_callers_seed_under_a_float_key() -> None:
 
 
 def test_run_stops_cleanly_on_a_seed_too_deep_to_hand_to_a_fresh_interpreter() -> None:
-    # pickle recurses once per level, so a seed this deep cannot cross to a new interpreter,
-    # while a child process of pyct's own inherits it as it is
-    seed: dict[str, object] = {"a": 0}
-    for _ in range(PICKLE_DEPTH - 1):
-        seed = {"a": seed}
+    # pickle recurses once per level, so a seed as deep as it refuses here cannot cross to a
+    # new interpreter, while a child process of pyct's own inherits it as it is
+    seed = nested_dict(refused_depth(lambda depth: pickle.dumps(nested_dict(depth))))
     target = load_target("targets.nested.deep::check")
 
     result = run(target, {"config": seed}, isolation=Isolation.FRESH)
