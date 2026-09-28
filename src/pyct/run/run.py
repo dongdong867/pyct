@@ -90,9 +90,9 @@ def _platform() -> str:
     ``sys.modules`` under one of them, as pyexpat puts its ``errors``. A
     module another thread imports meanwhile, such as a thread a host's
     ``sitecustomize`` started, stays, and so does a package of the read's
-    that such a module lies under. platform keeps what it read, so no later read imports them
-    again. The read also runs one or two short commands, ``uname -p`` among
-    them, about 10 ms in all.
+    that such a module lies under. platform keeps what it read, so no later
+    read imports them again. The read also runs one or two short commands,
+    ``uname -p`` among them, about 10 ms in all.
     """
     before = set(sys.modules)
     noted = _Noted()
