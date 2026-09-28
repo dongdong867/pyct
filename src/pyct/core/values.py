@@ -232,6 +232,21 @@ BASES_BY_ID: dict[int, type] = {}
 _EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
 
 
+def named_as(cls: type, base: type) -> None:
+    """Give a class of pyct's the name, qualified name and module of a type Python has.
+
+    Python writes a value's type into a message from its real class, which
+    ``__class__`` does not reach, as in `'int' object is not subscriptable`,
+    and from 3.14 some messages with the module and qualified name as well.
+    So a message on a tracked value names what it names on a plain one
+    (tracked-classes-carry-their-base-type-s-names). pyct tells its classes
+    apart by identity, never by name.
+    """
+    cls.__name__ = base.__name__
+    cls.__qualname__ = base.__qualname__
+    cls.__module__ = base.__module__
+
+
 def base_value(kind: type) -> object:
     """A plain value of a base type, as Python's own ``kind`` builds one: from nothing, or from
     0 for a range. What Python says of it names its type in Python's words."""

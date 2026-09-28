@@ -366,11 +366,6 @@ class Fwd(float):
         return NotImplemented
 
 
-# the type name Python's message gives the int on the left, which pyct's names ConcolicInt
-# (name-int-in-a-tracked-int-s-type-error)
-PLAIN_INT_NAME = ("'int'", "'ConcolicInt'")
-
-
 @pytest.mark.parametrize(
     "operation",
     [lambda n: n ** Coy(2.0), lambda n: pow(n, Fwd(2.0), 5)],
@@ -387,8 +382,8 @@ def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     with pytest.raises(TypeError) as raised:
         operation(n)
 
-    # Python's own message, not float's, with only the left operand's type name apart
-    assert str(raised.value) == str(plain.value).replace(*PLAIN_INT_NAME, 1)
+    # Python's own message, not float's
+    assert str(raised.value) == str(plain.value)
     assert sink == []
 
 
@@ -412,6 +407,6 @@ def test_a_three_argument_power_asks_a_float_subclass_where_python_does(modulus:
     plain = answer_or_error(lambda: pow(7, Dial(2.0), modulus))  # pyrefly: ignore[no-matching-overload]
     plain_answer, plain_error = plain
     assert answer == plain_answer
-    assert error == (plain_error and plain_error.replace(*PLAIN_INT_NAME, 1))
+    assert error == plain_error
     # Dial's answer is plain, so the condition is lost and named; a raise records nothing
     assert sink == ([] if plain_error else [Downgrade(name="__pow__", site=ANY)])

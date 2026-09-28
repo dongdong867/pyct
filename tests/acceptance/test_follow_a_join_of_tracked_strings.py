@@ -296,9 +296,7 @@ def test_a_literal_bound_separator_rebound_elsewhere_raises_as_python_does() -> 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     separator: Any = b"-"
-    # bytes' own join names the tracked str's class, as every message Python writes with a type's
-    # name does until name-int-in-a-tracked-int-s-type-error; the rest is Python's
-    detail = str(failure_detail(seed)).replace("ConcolicStr", "str")
+    detail = failure_detail(seed)
     assert detail == raised_by_python(lambda: separator.join(["a", "b"])), seed
 
 

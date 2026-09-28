@@ -384,16 +384,15 @@ def test_a_range_equals_nothing_but_a_range_as_python_s_does() -> None:
     assert sink == []
 
 
-def test_an_order_between_ranges_names_the_stand_in_where_python_names_range() -> None:
+def test_an_order_between_ranges_names_range_as_python_does() -> None:
     sink: list[SinkItem] = []
 
     with pytest.raises(TypeError) as raised:
         assert _range(_int(2, sink, "n")) < _range(_int(3, sink, "m"))  # pyrefly: ignore
     with pytest.raises(TypeError) as plain:
         assert range(2) < range(3)  # pyrefly: ignore[unsupported-operation]
-    # Python writes the real class's name, so a tracked range's reads `ConcolicRange`
-    # (name-int-in-a-tracked-int-s-type-error takes it)
-    assert str(raised.value) == str(plain.value).replace("'range'", "'ConcolicRange'")
+    # Python writes the real class's name, which the stand-in carries from range
+    assert str(raised.value) == str(plain.value)
     assert sink == []
 
 

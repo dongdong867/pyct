@@ -335,6 +335,6 @@ def test_a_number_on_the_left_of_plus_is_refused_by_python_and_records_nothing()
     with pytest.raises(TypeError) as raised:
         1 + _tracked(sink=sink)
 
-    # Python's own sentence, naming the tracked str's type where plain Python names str
-    assert str(raised.value) == str(plain.value).replace("'str'", "'ConcolicStr'")
+    # Python's own sentence, naming the tracked str's type as plain Python names str
+    assert str(raised.value) == str(plain.value)
     assert sink == []
