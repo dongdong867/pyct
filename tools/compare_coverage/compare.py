@@ -1,17 +1,24 @@
 """``compare``: one row per entry, then the summary, and the exit code a merge gate reads.
 
-Entries run in list order, one at a time, and within a row the v2 side runs before the
-legacy side, never beside it. Sides that run one after the other get the same machine, so a
-budget means the same on both. Each row prints as soon as it finishes. A side's trouble is
-its row's failure, never an error of the run, so every entry gets its row.
+Up to ``jobs`` rows run at once, each in a thread of its own, and within a row the v2 side
+runs before the legacy side, never beside it. With one job, entries run in list order, one at
+a time, so the two sides of a row get the same machine and a budget means the same on both.
+With more, each side shares the machine with whatever rows run beside it then, so a row that
+ends near its budget can end otherwise than it does one at a time. Rows print
+in list order whatever order they finish in, each as soon as it and every row before it has
+finished. A side's trouble is its row's failure, never an error of the run, so every entry
+gets its row. Anything that ends the run early, Ctrl-C among them, stops every side still
+running, and no side starts after it.
 
 An entry in an installed library runs from an empty folder of its own, so no file of either
 checkout can stand in for the library's. Its file is known only once each side says where its
 copy of the library is, so its own lines are read after both sides ran.
 """
 
+import contextlib
 import tempfile
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
@@ -20,6 +27,7 @@ from tools.compare_coverage.accepted import Accepted, mark, passes, rewritten, w
 from tools.compare_coverage.body import Body, BodyError, read_body
 from tools.compare_coverage.entries import Entry, Library, Origin, SetSpec, Unlisted, entry_file
 from tools.compare_coverage.output import Facts, row_line, summary_line, table_line, totals_line
+from tools.compare_coverage.process import allow_commands, stop_every_command
 from tools.compare_coverage.rows import (
     Files,
     Reports,
@@ -49,6 +57,7 @@ class Run:
 
     ``grace`` is how long past the budget a side runs before it is stopped. ``unlisted`` are
     the files no entry names. ``accepted`` is the file of accepted differences, if given.
+    ``jobs`` is how many rows run at once.
     """
 
     entries: tuple[Entry, ...]
@@ -59,6 +68,7 @@ class Run:
     grace: float = GRACE_SECONDS
     unlisted: tuple[Unlisted, ...] = ()
     accepted: Accepted | None = None
+    jobs: int = 1
 
 
 @dataclass(frozen=True)
@@ -77,11 +87,13 @@ def compare(run: Run, sides: Sides, streams: Streams) -> int:
     """Print every row and the summary, rewrite the accepted file if asked, give the exit code."""
     records = {} if run.accepted is None else run.accepted.records
     rows: list[Row] = []
-    for row in _rows(run, sides):
-        marked = mark(row, records, run.roots)
-        print(row_line(marked), file=streams.out, flush=True)
-        print(table_line(marked), file=streams.err, flush=True)
-        rows.append(marked)
+    # closed however the loop ends, so rows still running stop before the run goes on up
+    with contextlib.closing(_rows(run, sides)) as found:
+        for row in found:
+            marked = mark(row, records, run.roots)
+            print(row_line(marked), file=streams.out, flush=True)
+            print(table_line(marked), file=streams.err, flush=True)
+            rows.append(marked)
     limits = {"v2": sides.v2.given(run.limits), "legacy": sides.legacy.given(run.limits)}
     print(summary_line(rows, limits, run.facts), file=streams.out, flush=True)
     print(totals_line(rows), file=streams.err, flush=True)
@@ -99,11 +111,33 @@ def exit_code(rows: list[Row], accepting: bool) -> int:
     return 0 if accepting or all(passes(row) for row in rows) else 1
 
 
-def _rows(run: Run, sides: Sides) -> Iterator[Row]:
-    for entry in run.entries:
-        yield _row(entry, run, sides)
+def _rows(run: Run, sides: Sides) -> Generator[Row]:
+    # a run stopped before this one refused new commands until now
+    allow_commands()
+    if run.jobs == 1:
+        for entry in run.entries:
+            yield _row(entry, run, sides)
+    else:
+        yield from _rows_at_once(run, sides)
     for unlisted in run.unlisted:
         yield unlisted_row(unlisted)
+
+
+def _rows_at_once(run: Run, sides: Sides) -> Generator[Row]:
+    """Every entry's row, up to ``run.jobs`` running at once, in list order.
+
+    Whatever ends the wait early stops every side still running and refuses any new one
+    before it goes on up, and the pool's threads then end before the run does.
+    """
+    with ThreadPoolExecutor(max_workers=run.jobs, thread_name_prefix="row") as pool:
+        try:
+            futures = [pool.submit(_row, entry, run, sides) for entry in run.entries]
+            for future in futures:
+                yield future.result()
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            stop_every_command()
+            raise
 
 
 def _row(entry: Entry, run: Run, sides: Sides) -> Row:

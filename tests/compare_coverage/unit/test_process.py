@@ -4,12 +4,22 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
 import pytest
 
-from tools.compare_coverage.process import Command, run_command, side_environment
+from tools.compare_coverage import process
+from tools.compare_coverage.process import (
+    Command,
+    Finished,
+    StoppedError,
+    allow_commands,
+    run_command,
+    side_environment,
+    stop_every_command,
+)
 
 PYTHON = sys.executable
 
@@ -125,3 +135,63 @@ def test_a_side_runs_without_pythonpath_or_coverage_startup() -> None:
     }
 
     assert side_environment(base) == {"PATH": "/bin", "COVERAGE_FILE": "kept"}
+
+
+def sleeping_in_a_thread(tmp_path: Path) -> tuple[threading.Thread, list[Finished]]:
+    """A thread waiting on a long command, once the command runs, and where it puts its end."""
+    finished: list[Finished] = []
+    waiter = threading.Thread(
+        target=lambda: finished.append(run_command(command(tmp_path, "sleep", "60"), wait=60))
+    )
+    waiter.start()
+    deadline = time.monotonic() + 10
+    while not process._RUNNING:
+        assert time.monotonic() < deadline, "the command never started"
+        time.sleep(0.05)
+    return waiter, finished
+
+
+def test_stopping_every_command_ends_one_another_thread_waits_on_and_refuses_more(
+    tmp_path: Path,
+) -> None:
+    started = time.monotonic()
+    waiter, finished = sleeping_in_a_thread(tmp_path)
+
+    try:
+        stop_every_command()
+        waiter.join(timeout=10)
+        with pytest.raises(StoppedError):
+            run_command(command(tmp_path, "true"), wait=5)
+    finally:
+        allow_commands()
+
+    assert finished[0].returncode == -signal.SIGKILL
+    assert time.monotonic() - started < 10
+    assert run_command(command(tmp_path, "true"), wait=5).returncode == 0
+
+
+def test_a_group_the_system_refuses_to_signal_does_not_stop_the_others(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # macOS refuses to signal a group whose every member exited and is not yet reaped
+    ended = subprocess.Popen(["true"], start_new_session=True)
+    ended.wait()
+    real_killpg = os.killpg
+
+    def killpg(pid: int, sig: int) -> None:
+        if pid == ended.pid:
+            raise PermissionError(1, "Operation not permitted")
+        real_killpg(pid, sig)
+
+    monkeypatch.setattr(process.os, "killpg", killpg)
+    waiter, finished = sleeping_in_a_thread(tmp_path)
+    process._RUNNING.add(ended)
+
+    try:
+        stop_every_command()
+        waiter.join(timeout=10)
+    finally:
+        process._RUNNING.discard(ended)
+        allow_commands()
+
+    assert finished[0].returncode == -signal.SIGKILL
