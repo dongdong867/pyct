@@ -153,7 +153,7 @@ class Rev(int):
         return "Rev's own shift"
 
     def __rpow__(self, other: object, modulus: object = None) -> str:
-        return "Rev's own power"
+        return ("Rev's own power", modulus)
 
     def __rfloordiv__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
         # the int on the left, handed back as it came: tracked under pyct
@@ -230,18 +230,23 @@ def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() ->
     assert result == 7 + Shy(2)
 
 
-def test_a_three_argument_power_asks_an_int_subclass_where_python_does() -> None:
+# a modulus Python takes, one it refuses, and a negative one, each handed to the subclass as it is
+MODULI = [5, 0, -3]
+
+
+@pytest.mark.parametrize("modulus", MODULI)
+def test_a_three_argument_power_asks_an_int_subclass_where_python_does(modulus: int) -> None:
     # Python asks the right operand's reflected power for a three-argument pow from 3.14, so
     # plain Python in this run says whether Rev's own answers
     sink: list[SinkItem] = []
     n = ConcolicInt.made(7, expression="n", sink=sink)
 
-    result = pow(n, Rev(2), 5)
+    answer, error = answer_or_error(lambda: pow(n, Rev(2), modulus))
 
-    expected = pow(7, Rev(2), 5)
-    assert result == expected and type(result) is type(expected)
-    # Rev's answer and int's own modular power are both plain, so the condition is lost and named
-    assert sink == [Downgrade(name="__pow__", site=ANY)]
+    assert (answer, error) == answer_or_error(lambda: pow(7, Rev(2), modulus))
+    # Rev's answer and int's own modular power are both plain, so the condition is lost and
+    # named; a raise records nothing
+    assert sink == ([] if error else [Downgrade(name="__pow__", site=ANY)])
 
 
 def test_a_reflected_call_on_the_tracked_int_asks_the_int_subclass_nothing() -> None:
@@ -289,7 +294,7 @@ class Dial(float):
         return "Dial's own shift"
 
     def __rpow__(self, other: object, modulus: object = None) -> str:  # pyrefly: ignore[bad-override]
-        return "Dial's own power"
+        return ("Dial's own power", modulus)
 
     def __gt__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
         return "Dial's own compare"
@@ -388,22 +393,23 @@ def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
 
 
 def answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
-    """What a call answers, or the text of the TypeError it raises."""
+    """What a call answers, or the type and text of the TypeError or ValueError it raises."""
     try:
         return call(), None
-    except TypeError as error:
-        return None, str(error)
+    except (TypeError, ValueError) as error:
+        return None, f"{type(error).__name__}: {error}"
 
 
-def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> None:
+@pytest.mark.parametrize("modulus", MODULI)
+def test_a_three_argument_power_asks_a_float_subclass_where_python_does(modulus: int) -> None:
     # int declines a float, and Python asks the float subclass's reflected power next for a
     # three-argument pow from 3.14, so plain Python in this run says whether Dial's own answers
     sink: list[SinkItem] = []
     n = ConcolicInt.made(7, expression="n", sink=sink)
 
-    answer, error = answer_or_error(lambda: pow(n, Dial(2.0), 5))
+    answer, error = answer_or_error(lambda: pow(n, Dial(2.0), modulus))  # pyrefly: ignore[no-matching-overload]
 
-    plain = answer_or_error(lambda: pow(7, Dial(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    plain = answer_or_error(lambda: pow(7, Dial(2.0), modulus))  # pyrefly: ignore[no-matching-overload]
     plain_answer, plain_error = plain
     assert answer == plain_answer
     assert error == (plain_error and plain_error.replace(*PLAIN_INT_NAME, 1))

@@ -8,7 +8,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.values import raised_by_target
-from tests.unit.core.test_subclass_operands import answer_or_error
+from tests.unit.core.test_subclass_operands import MODULI, answer_or_error
 
 # each taught arithmetic operation with a plain float: the call, and the node it builds. Each
 # keeps Python's written order, so a reflected one reads as the target wrote it
@@ -187,7 +187,7 @@ class Gauge(float):
         return ("gauge %", float.__float__(other))
 
     def __rpow__(self, other: float, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
-        return ("gauge **", float.__float__(other))
+        return ("gauge **", float.__float__(other), modulus)
 
     def __rsub__(self, other: float) -> object:  # pyrefly: ignore[bad-override]
         return NotImplemented
@@ -221,15 +221,16 @@ def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
     assert sink == [Downgrade(name=name, site=ANY)]
 
 
-def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> None:
+@pytest.mark.parametrize("modulus", MODULI)
+def test_a_three_argument_power_asks_a_float_subclass_where_python_does(modulus: int) -> None:
     # Python asks the right operand's reflected power for a three-argument pow from 3.14, so
     # plain Python in this run says whether Gauge's own answers or float's own raises
     sink: list[SinkItem] = []
     x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
-    answer, error = answer_or_error(lambda: pow(x, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    answer, error = answer_or_error(lambda: pow(x, Gauge(2.0), modulus))  # pyrefly: ignore[no-matching-overload]
 
-    plain = answer_or_error(lambda: pow(2.5, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    plain = answer_or_error(lambda: pow(2.5, Gauge(2.0), modulus))  # pyrefly: ignore[no-matching-overload]
     assert (answer, error) == plain
     # Gauge's answer is plain, so x's condition is lost there and named; a raise records nothing
     assert sink == ([] if error else [Downgrade(name="__pow__", site=ANY)])
