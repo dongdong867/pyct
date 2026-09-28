@@ -48,10 +48,19 @@ class DictState(dict):
     # it (see ``dict_reads.proven``)
     copies: dict[object, object]
     shared: dict[object, Expression]
+    # whether the argument's annotation is `dict[int, X]`, whose made-up keys are ints: a key
+    # pyct does not follow that may equal an int turns such a dict plain (see
+    # ``dict_reads.unfollowed``)
+    int_keyed: bool
 
     @classmethod
     def made(
-        cls, items: dict[object, object], expression: Expression | None, sink: BranchSink
+        cls,
+        items: dict[object, object],
+        expression: Expression | None,
+        sink: BranchSink,
+        *,
+        int_keyed: bool = False,
     ) -> Self:
         """A tracked dict of these items and this argument, nothing settled or changed yet."""
         # dict's own, since the class called with a value builds a plain dict
@@ -66,6 +75,7 @@ class DictState(dict):
         made.walked_at = None
         made.copies = {}
         made.shared = {}
+        made.int_keyed = int_keyed
         return made
 
     def size(self) -> int:
@@ -129,7 +139,7 @@ class DictState(dict):
     def derived(self, items: dict[object, object]) -> DictState:
         """A new tracked dict of the same argument: these items, and what this one settled and
         changed, the argument's settled keys shared."""
-        made = type(self).made(items, self.expression, self.sink)
+        made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
         made.settled = self.settled
         made.changed = dict(self.changed)
         made.grown = self.grown

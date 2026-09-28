@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterator
 
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, caller_site
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.ints import ConcolicInt
@@ -44,6 +45,39 @@ def written_key(key: object) -> Expression | None:
     if type(key) is ConcolicStr or type(key) is ConcolicInt:
         return key.expression
     return None
+
+
+def int_key(key: object) -> object:
+    """The int a plain key equals and hashes as, which makes Python's lookup of it that int's:
+    an integral float, or a bool or other int subclass that keeps int's `__eq__` and
+    `__hash__`, an IntEnum member among them. Any other key as it is."""
+    kind = type(key)
+    if isinstance(key, float) and kind is float:
+        return int(key) if key.is_integer() else key
+    if kind is int or not isinstance(key, int) or kind is ConcolicInt or kind is ConcolicBool:
+        return key
+    if kind.__eq__ is int.__eq__ and kind.__hash__ is int.__hash__:
+        return int.__int__(key)
+    return key
+
+
+def unfollowed(self: DictState, key: object, name: str) -> None:
+    """Name a lookup pyct does not follow as a downgrade, and turn the dict plain where the key
+    may equal a key pyct makes up (see ``may_equal_made_up``)."""
+    if may_equal_made_up(self, key):
+        self.lose(name)
+    else:
+        self.sink.append(Downgrade(name=name, site=caller_site()))
+
+
+def may_equal_made_up(self: DictState, key: object) -> bool:
+    """Whether a key pyct does not follow may equal a key pyct makes up, which no fork names:
+    in a ``dict[int, X]``, a key whose value is an int or an integral float, a tracked bool or
+    float or an int with its own `__hash__` among them."""
+    bare = plain(key)
+    if not self.int_keyed or written_key(int_key(key)) is not None:
+        return False
+    return isinstance(bare, int) or (type(bare) is float and float.is_integer(bare))
 
 
 def is_tracked(key: object) -> bool:
@@ -135,15 +169,17 @@ def _copy(key: object) -> object:
 def found(self: DictState, key: object, name: str, *, raising: bool = False) -> bool:
     """Whether the dict holds ``key``, answered and recorded where pyct follows the lookup, and
     otherwise Python's answer, named ``name``: a key of another kind is Python's to hash."""
-    if written_key(key) is None:
-        answer = own(dict.__contains__, self, key)
+    looked = int_key(key)
+    if written_key(looked) is None:
+        # a tracked key's plain value, so Python's lookup records no `==` the target never wrote
+        answer = own(dict.__contains__, self, plain(key))
         if self.expression is not None:
-            self.sink.append(Downgrade(name=name, site=caller_site()))
+            unfollowed(self, key, name)
         return answer
-    bare = plain(key)
+    bare = plain(looked)
     if not self.holds(name, bare):
         return dict.__contains__(self, bare)
-    answer = present(self, key, name, raising=raising)
+    answer = present(self, looked, name, raising=raising)
     if answer is None:
         self.sink.append(Downgrade(name=name, site=caller_site()))
         return dict.__contains__(self, bare)

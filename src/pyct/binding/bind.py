@@ -5,7 +5,7 @@ from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
 from typing import TypeGuard
 
-from pyct.binding.annotations import Check, Items
+from pyct.binding.annotations import Check, Items, int_keys
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.bools import ConcolicBool
@@ -18,7 +18,9 @@ from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 
 
-def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
+def bind(
+    seed: Mapping[str, object], sink: BranchSink, checks: Mapping[str, Check] | None = None
+) -> dict[str, object]:
     """Give every int and str in the seed, at any depth, and every float and bool argument,
     its access and the sink, and every list the walk names its form.
 
@@ -36,10 +38,11 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     target makes to a copy reaches neither the seed nor a later input. A
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
-    (see ``Walk``).
+    (see ``Walk``). ``checks`` is what each parameter's annotation asks, which marks a
+    ``dict[int, X]`` dict as one whose made-up keys are ints.
     """
     tracker = _Tracker(sink)
-    args = Walk(tracker).rebuilt(seed)
+    args = Walk(tracker).rebuilt(seed, checks)
     # each list's items are placed after the list is made, so what pyct saw of them is noted
     # once the walk is done, before the target can touch any
     for made in tracker.lists:
@@ -75,7 +78,8 @@ class _Tracker:
     def mapped(
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
-        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink)
+        keyed = int_keys(place.check)
+        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink, int_keyed=keyed)
         self.dicts.append(made)
         return made, dict(value)
 

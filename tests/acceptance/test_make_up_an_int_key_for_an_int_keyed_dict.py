@@ -8,9 +8,18 @@ line writes each as JSON text, and ``--args`` reads it back as the int.
 import json
 import re
 
+import pytest
+
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 from tests.acceptance.test_dicts import UNTIL_NO_GAIN, dict_of
-from tests.acceptance.test_lists import args_of, covered_of, listed, number, solved
+from tests.acceptance.test_lists import (
+    args_of,
+    covered_of,
+    downgrade_names,
+    listed,
+    number,
+    solved,
+)
 
 DICTS = REPO_ROOT / "targets" / "dicts"
 MADE_UP_INTS = "targets.dicts.made_up_ints"
@@ -129,3 +138,83 @@ def test_keeps_str_keys_elsewhere() -> None:
         e for e in str_keyed.stderr.splitlines() if e.startswith(f"missed {MADE_UP_INTS_FILE}:3:")
     ]
     assert len(missed) == 2 and all(entry.endswith(" unsat") for entry in missed), missed
+
+
+INT_EQUAL = "targets.dicts.int_equal_keys"
+INT_EQUAL_FILE = str(DICTS / "int_equal_keys.py")
+
+
+def _own_lines(lines: list[dict[str, object]]) -> list[int]:
+    return covered_of(lines).get(INT_EQUAL_FILE, [])
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: a plain key Python's lookup makes the same as an int,
+# an IntEnum member, a bool or an integral float, is looked up as that int, so its fork names the
+# int and a made-up key skips it; every answer takes the side it was aimed at
+@pytest.mark.parametrize(
+    ("function", "forks", "lines"),
+    [
+        ("enum_key", [(14, ["in", 0, "d"], False)], [14, 15, 16, 17, 18]),
+        (
+            "bool_keys",
+            [(22, ["in", 1, "d"], False), (24, ["in", 0, "d"], False)],
+            [22, 23, 24, 26, 27, 28],
+        ),
+        ("float_key", [(32, ["in", 1, "d"], False)], [32, 33, 34, 35, 36]),
+    ],
+)
+def test_a_key_equal_to_an_int_is_looked_up_as_the_int(
+    function: str, forks: list[tuple[object, object, object]], lines: list[int]
+) -> None:
+    result = run_pyct(f"{INT_EQUAL}::{function}", '{"d": {}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert listed(printed[0])[: len(forks)] == forks, listed(printed[0])
+    assert all(line["downgrades"] == [] for line in printed), printed
+    assert [line["mismatch_at"] for line in solved(printed)] == [None] * len(solved(printed))
+    assert set(lines) <= set(_own_lines(printed)), _own_lines(printed)
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: a store or a removal under such a key looks it up as
+# the int too, so a made-up key skips it and no answer leaves the plan
+@pytest.mark.parametrize(
+    ("function", "fork", "line"),
+    [
+        ("stored_float", (56, ["in", 1, "d"], False), 58),
+        ("popped_bool", (63, ["in", 1, "d"], False), 65),
+    ],
+)
+def test_a_change_under_a_key_equal_to_an_int_names_the_int(
+    function: str, fork: tuple[object, object, object], line: int
+) -> None:
+    result = run_pyct(f"{INT_EQUAL}::{function}", '{"d": {}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert listed(printed[0])[0] == fork, listed(printed[0])
+    assert all(line["downgrades"] == [] for line in printed), printed
+    assert [line["mismatch_at"] for line in solved(printed)] == [None] * len(solved(printed))
+    assert line in _own_lines(printed), _own_lines(printed)
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: a key with its own `__hash__`, and a tracked bool key,
+# stay downgrades; either may equal a made-up int, so the dict turns plain there, and no answer
+# leaves the plan through a made-up key
+@pytest.mark.parametrize(
+    ("function", "seed", "downgrade"),
+    [
+        ("own_hash_key", {"d": {}}, "__contains__"),
+        ("tracked_bool", {"b": False, "d": {}}, "__contains__"),
+        ("own_hash_stored", {"d": {}}, "__setitem__"),
+    ],
+)
+def test_a_key_pyct_does_not_follow_stays_a_downgrade(
+    function: str, seed: dict[str, object], downgrade: str
+) -> None:
+    result = run_pyct(f"{INT_EQUAL}::{function}", json.dumps(seed), *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert downgrade_names(printed[0])[:1] == [downgrade], printed[0]
+    assert [line["mismatch_at"] for line in solved(printed)] == [None] * len(solved(printed))
