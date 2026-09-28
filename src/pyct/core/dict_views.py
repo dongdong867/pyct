@@ -29,8 +29,26 @@ _KEPT = ("__repr__", "__getattribute__", "__init__", "__sizeof__", "__new__")
 _INHERITED = ("__str__", "__format__")
 
 
+def _python_type(self: _View) -> type:
+    """The class a view reports: Python's view type, read from its view of an empty dict."""
+    return type(self.python({}))
+
+
+def _assigned_class(self: _View, kind: object) -> None:
+    """`object.__setattr__(v, "__class__", kind)`: made on Python's own view of an empty dict,
+    which refuses it in its own words. `v.__class__ = kind` is the view's `__setattr__`'s."""
+    own(setattr, self.python({}), "__class__", kind)
+
+
 class _View:
     """What the three views share: the dict they read, its size, and Python's own view."""
+
+    # Python's view type, as `isinstance`, singledispatch and a class pattern read it, as each
+    # tracked class reports its base type. It reads the class and never the dict, so it
+    # records nothing. `type(v)` still reads the real class, which is how pyct tells a view
+    # apart; the `type` router answers Python's view type in the target's package
+    # (read-a-dict-view-s-type-as-python-s)
+    __class__ = property(_python_type, _assigned_class)  # pyrefly: ignore[bad-override]
 
     # the view Python's dict hands out for this one, read on the dict's storage
     python: Any = None
