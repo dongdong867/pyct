@@ -26,7 +26,7 @@ LONG_SUM = REPO_ROOT / "targets" / "isolate" / "long_sum.py"
 def spin_until(instant: float) -> None:
     """Spin until the monotonic ``instant``, in a frame of its own, as pyct calls the target.
 
-    On 3.13 a signal handled at a ``while`` loop's backward jump raises from an
+    From 3.13 a signal handled at a loop's backward jump can raise from an
     offset outside the frame's exception table, so the ``with``, ``finally``
     or ``except`` around the loop is skipped, and an ``except`` body leaves
     its exception set for the thread. A loop in a frame of its own keeps

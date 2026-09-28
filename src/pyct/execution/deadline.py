@@ -98,8 +98,8 @@ class _Hold:
     been. ``in_pyct`` counts the times it was held for landing in pyct's own
     frames, a count of its own that never starts ``since``. ``before`` is the
     exception Python showed as handled when the block began: the caller's,
-    or one a frame left set as it ended. On 3.13 a signal handled at a
-    ``while`` loop's backward jump raises from an offset outside the frame's
+    or one a frame left set as it ended. From 3.13 a signal handled at a
+    loop's backward jump can raise from an offset outside the frame's
     exception table, so an ``except`` body around the loop leaves its
     exception set for the thread. It is not on its way out of the block, so
     no alarm waits for it.
