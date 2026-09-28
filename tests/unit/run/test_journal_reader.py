@@ -4,8 +4,13 @@ The writer and the reader share a plain bytearray here, and the test moves betwe
 hand, so each case pins what a look has read by what reading the journal at the end finds.
 """
 
+import mmap
+
+import pytest
+
 from pyct.core.branch import Branch, Site
 from pyct.results.record import DowngradeCount
+from pyct.run import journal_reader
 from pyct.run.journal import LINE, RECORDS, JournalWriter
 from pyct.run.journal_reader import JournalReader, read
 
@@ -163,3 +168,67 @@ def test_the_forks_of_one_place_share_one_site() -> None:
     first, second = reader.finish().branches
 
     assert first.site is second.site
+
+
+def test_a_count_that_grew_after_a_look_keeps_its_growth_when_another_entry_follows() -> None:
+    buffer, writer, reader = shared()
+    writer.downgrade("__xor__", SITE, 1)
+    writer.line(2)
+    reader.look()
+    reader.look()
+    for count in range(2, 1001):
+        writer.downgrade("__xor__", SITE, count)
+    writer.downgrade("__abs__", Site("t.py", 4, 1), 1)
+    reader.look()
+    reader.look()
+
+    reading = reader.finish()
+
+    assert reading.downgrades == (
+        DowngradeCount("__xor__", 1000, SITE),
+        DowngradeCount("__abs__", 1, Site("t.py", 4, 1)),
+    )
+    assert reading == read(buffer)
+
+
+def test_the_forks_a_look_read_before_a_record_it_cannot_read_are_kept_once() -> None:
+    buffer, writer, reader = shared()
+    reader.look()
+    writer.fork(FORK)
+    writer.fork(FORK)
+    at = int.from_bytes(buffer[0:8], "little")
+    writer.line(3)
+    writer.fork(FORK)
+    buffer[at + KIND] = 99
+    reader.look()
+    reader.look()
+
+    reading = reader.finish()
+
+    assert reading.branches == (FORK, FORK)
+    assert reading.problem == f"could not read the input's facts at byte {at}"
+    assert reading == read(buffer)
+
+
+def test_a_stop_during_a_look_leaves_the_journal_free_to_unmap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def stopped(payload: memoryview) -> object:
+        raise KeyboardInterrupt
+
+    # written apart, as the input's process writes it, so only the reader holds a view here
+    written, _, _ = shared()
+    JournalWriter(written).fork(FORK)
+    buffer = mmap.mmap(-1, len(written))
+    buffer[:] = written
+    reader = JournalReader(buffer)
+    reader.look()
+    monkeypatch.setattr(journal_reader, "_decoded", stopped)
+
+    try:
+        reader.look()
+    except KeyboardInterrupt:
+        # the stop's frames still hold what the look was reading when it landed
+        buffer.close()
+
+    assert buffer.closed

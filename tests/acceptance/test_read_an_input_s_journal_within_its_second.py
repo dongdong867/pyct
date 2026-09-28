@@ -26,7 +26,7 @@ from pyct.core.branch import Branch, Site
 from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
-from pyct.run.journal import RECORDS, JournalWriter
+from pyct.run.journal import NUMBER, RECORDS, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import ending, watched
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, input_lines, run_pyct
@@ -47,12 +47,14 @@ _BASELINE_PER_FORK = 2_000
 
 _CUT = re.compile(r"cut the expressions of (\d+) forks, from position (\d+) on,")
 
-# a target whose one input downgrades one operation many times over, then raises
+# a target whose one input downgrades one operation many times over, long enough for pyct to
+# look at its journal as the count grows, then downgrades another once and raises
 _DOWNGRADES_THEN_RAISES = """\
 def f(x: int) -> int:
-    for i in range(1000):
+    for i in range(300_000):
         c = x ^ i
-    raise ValueError(f"stopped after {c}")
+    d = x ^ 5
+    raise ValueError(f"stopped after {c} and {d}")
 """
 
 # what each run printed at b85bbc4a and at 62e9e5cd alike: stdout's digest, then stderr's
@@ -70,8 +72,8 @@ _PRINTED = {
         "44b5be1336fdbe05052b8d3c06264074fe13914d0e2f45f139fb16144fe5f352",
     ),
     "downgrades": (
-        "329cf4c8d40735d5bafea1e953a22ec8a2fee1528b5f940a023c72a039d41c59",
-        "0667ac43e613cdb49c5f74c35e4416fc4a180875583fd260a6326e2c3a1e6164",
+        "becff47e5cae3b959bc6bf7c7fdea3a7ce45be6e02526cc5dc5d5fa2d0327e2f",
+        "7d5ccb5a680da358334c9f851ccd98c8e73f01cd70d3c7eda4ef9cd400d6881e",
     ),
 }
 
@@ -264,9 +266,8 @@ def test_an_unreadable_record_ends_its_input_as_a_pyct_bug_with_the_facts_before
 
     def breaks(buffer: mmap.mmap, writer: JournalWriter) -> None:
         _facts_before(writer)
-        # the next line's record, its kind made one the journal has none of, then looked at
-        writer.line(99)
-        buffer[at + 4] = 99
+        # a record of a kind the journal has none of, committed as a whole, then looked at
+        writer._record(99, NUMBER.pack(99))
         time.sleep(_PAUSE)
         writer.line(100)
         writer.end(None)

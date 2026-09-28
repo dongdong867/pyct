@@ -12,12 +12,14 @@ from tests.unit.run.test_process import sleeper
 
 def test_pyct_looks_while_the_process_runs() -> None:
     looks: list[float] = []
+    started = time.monotonic()
 
     waited = watched(lambda: sleeper(0.3), None, lambda: looks.append(time.monotonic()))
 
+    waited_for = time.monotonic() - started
     assert waited == Waited(signal=None, code=0, killed=False)
-    # a look every 10 ms over 0.3 s; a loaded machine makes fewer, never none
-    assert 2 <= len(looks) <= 0.3 / LOOK_EVERY + 1
+    # a look every 10 ms at most over the wait; a loaded machine makes fewer, never none
+    assert 2 <= len(looks) <= waited_for / LOOK_EVERY + 1
 
 
 def test_pyct_looks_until_it_kills_a_process_past_its_deadline() -> None:

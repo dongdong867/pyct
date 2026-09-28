@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import struct
+from collections.abc import Buffer
 from dataclasses import dataclass, field
 
 from pyct.core.branch import Branch, Expression, Site
@@ -110,7 +111,9 @@ class JournalReader:
             (mark,) = WORD.unpack_from(view, COMMITTED * WORD.size)
             try:
                 self._at = self._facts.take_all(view, self._at, self._seen)
-            except _UnreadableError:
+            except _UnreadableError as error:
+                # the records before it are taken; the end reads on from this one
+                self._at = error.at
                 self._looking = False
             if RECORDS <= mark <= len(view):
                 self._seen = max(self._seen, mark)
@@ -189,10 +192,15 @@ class _Facts:
             start = at + HEAD.size
             if start + length > end:
                 raise _UnreadableError(at)
+            payload = view[start : start + length]
             try:
-                self._take(at, kind, view[start : start + length])
+                self._take(at, kind, payload)
             except (ValueError, TypeError, struct.error) as error:
                 raise _UnreadableError(at) from error
+            finally:
+                # a stop raised meanwhile keeps this frame, and a live slice would keep the
+                # journal from being unmapped
+                payload.release()
             at = start + padded(length)
         return at
 
@@ -206,6 +214,8 @@ class _Facts:
         elif kind == LINE:
             self.lines.add(NUMBER.unpack(payload)[0])
         elif kind in (DOWNGRADE, CARRY_ON):
+            # the entry before stopped growing when the writer began this one
+            self.recount(payload.obj)
             self._downgrade(bytes(payload), carries_on=kind == CARRY_ON)
             self.counted_at = at
         elif kind == START:
@@ -232,8 +242,9 @@ class _Facts:
         else:
             self.downgrades.append(entry)
 
-    def recount(self, view: memoryview) -> None:
-        """Read the last entry's count again: the writer grows it in place while it repeats."""
+    def recount(self, view: Buffer) -> None:
+        """Read the last entry's count again: the writer grows it in place while it repeats, so
+        a look can have read it short."""
         if self.counted_at is None:
             return
         (count,) = WORD.unpack_from(view, self.counted_at + HEAD.size)
