@@ -196,11 +196,11 @@ def _walked(item: Tracked, elements: Iterator[object]) -> bool:
     tracked value is no subclass of its type, and the condition is lost; so
     the tracked value is put on the left of every such element, an exact
     int, float or str included, and answers with the same bool and a fork,
-    the element written as its plain value. Any other element is compared as Python compares it, so an
-    element with its own `__eq__` answers first. The base type's own walk
-    is read, so a subclass's `__iter__` never runs where Python's `in` would
-    not run it, and a deque changed during the walk raises as its own
-    search does.
+    the element written as its plain value. Any other element is compared
+    as Python compares it, so an element with its own `__eq__` answers
+    first. The base type's own walk is read, so a subclass's `__iter__`
+    never runs where Python's `in` would not run it, and a deque changed
+    during the walk raises as its own search does.
     """
     bases = _ANSWERED_PLAINLY.get(type(item), ())
     for element in elements:

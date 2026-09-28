@@ -39,14 +39,18 @@ def test_the_literal_is_its_plain_text() -> None:
 def test_equality_records_its_fork() -> None:
     sink: list[SinkItem] = []
 
-    assert bool(tracked("a", sink) == OwnIter("a")) == ("a" == OwnIter("a"))
+    text = "a"
+
+    assert bool(tracked(text, sink) == OwnIter("a")) == (text == OwnIter("a"))
     assert expressions(sink) == [(["==", "s", "'a'"], True)]
 
 
 def test_an_order_compare_records_its_fork() -> None:
     sink: list[SinkItem] = []
 
-    assert bool(tracked("a", sink) < OwnIter("b")) == ("a" < OwnIter("b"))
+    text = "a"
+
+    assert bool(tracked(text, sink) < OwnIter("b")) == (text < OwnIter("b"))
     assert expressions(sink) == [(["<", "s", "'b'"], True)]
 
 
@@ -54,15 +58,16 @@ def test_startswith_reads_the_prefix_as_its_text() -> None:
     sink: list[SinkItem] = []
 
     assert bool(tracked("ab", sink).startswith(OwnIter("a"))) == "ab".startswith(OwnIter("a"))
-    [(expression, _)] = expressions(sink)
-    assert "'a'" in written(expression)
+    forks = expressions(sink)
+    assert len(forks) == 1
+    assert "'a'" in written(forks[0])
 
 
 def test_find_reads_the_needle_as_its_text() -> None:
     sink: list[SinkItem] = []
 
     found = tracked("ab", sink).find(OwnIter("b"))
-    assert int(found) == "ab".find(OwnIter("b"))
+    assert found == "ab".find(OwnIter("b"))
     assert "'b'" in written(found.expression)  # pyrefly: ignore[missing-attribute]
 
 
