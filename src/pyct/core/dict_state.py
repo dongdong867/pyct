@@ -48,9 +48,9 @@ class DictState(dict):
     # it (see ``dict_reads.proven``)
     copies: dict[object, object]
     shared: dict[object, Expression]
-    # whether the argument's annotation is `dict[int, X]`, whose made-up keys are ints: a key
-    # pyct does not follow that may equal an int turns such a dict plain (see
-    # ``dict_reads.may_equal_made_up``)
+    # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,
+    # named or made up: a key pyct does not follow that may equal an int turns such a dict
+    # plain (see ``dict_reads.may_equal_added``)
     int_keyed: bool
 
     @classmethod

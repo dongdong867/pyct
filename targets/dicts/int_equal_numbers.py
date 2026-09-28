@@ -62,3 +62,18 @@ def str_keyed_tracked_bool(b: bool, d: dict[int, int]):
     if len(d) > 1:
         return 2
     return 0
+
+
+def tracked_bool_then_named(b: bool, d: dict[int, int]):
+    if b in d:
+        return 1
+    if 1 in d:
+        return 2
+    return 0
+
+
+def merged_fraction(d: dict[int, int]):
+    joined = {fractions.Fraction(0): 1} | d
+    if len(joined) > 1:
+        return 1
+    return 0

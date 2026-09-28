@@ -78,8 +78,8 @@ class _Tracker:
     def mapped(
         self, value: dict[object, object], place: Place
     ) -> tuple[dict[object, object], dict[object, object]]:
-        # a dict that makes up int keys: its annotation says int, and it holds only ints
-        keyed = int_keys(place.check) and all(type(key) is int for key in value)
+        # a dict the solver adds int keys to, named or made up: its annotation says int
+        keyed = int_keys(place.check)
         made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink, int_keyed=keyed)
         self.dicts.append(made)
         return made, dict(value)

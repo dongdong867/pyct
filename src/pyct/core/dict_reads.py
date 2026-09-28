@@ -64,18 +64,18 @@ def int_key(key: object) -> object:
 
 def looked_up_unfollowed(self: DictState, key: object, name: str) -> None:
     """Name a lookup pyct does not follow as a downgrade, and turn the dict plain where the key
-    may equal a key pyct makes up (see ``may_equal_made_up``)."""
-    if may_equal_made_up(self, key):
+    may equal an int key the solver adds (see ``may_equal_added``)."""
+    if may_equal_added(self, key):
         self.lose(name)
     else:
         self.sink.append(Downgrade(name=name, site=caller_site()))
 
 
-def may_equal_made_up(self: DictState, key: object) -> bool:
-    """Whether a key pyct does not follow may equal a key pyct makes up, which no fork names:
-    in a dict that makes up int keys, any number but a plain float that is not integral, a
-    tracked bool or float, a Fraction, a Decimal or an int with its own `__hash__` among them,
-    and any key whose `==` is its own."""
+def may_equal_added(self: DictState, key: object) -> bool:
+    """Whether a key pyct does not follow may equal an int key the solver adds, one a fork
+    names or one pyct makes up, which that key's lookup does not name: in a ``dict[int, X]``,
+    any number but a plain float that is not integral, a tracked bool or float, a Fraction, a
+    Decimal or an int with its own `__hash__` among them, and any key whose `==` is its own."""
     if not self.int_keyed or written_key(int_key(key)) is not None:
         return False
     if type(key) is float:
@@ -85,9 +85,10 @@ def may_equal_made_up(self: DictState, key: object) -> bool:
     return isinstance(bare, numbers.Number) or type(bare).__eq__ not in _APART_FROM_INTS
 
 
-# the `==` of each builtin type whose values never equal an int, and object's, which is `is`
+# the `==` of str, bytes, tuple, frozenset and None, whose values never equal an int, and
+# object's, which is `is`
 _APART_FROM_INTS = frozenset(
-    kind.__eq__ for kind in (object, str, bytes, bytearray, tuple, frozenset, type(None))
+    kind.__eq__ for kind in (object, str, bytes, tuple, frozenset, type(None))
 )
 
 

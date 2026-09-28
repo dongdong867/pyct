@@ -259,13 +259,34 @@ def test_setdefault_and_a_merge_name_the_int(
     assert line in covered_of(printed).get(INT_EQUAL_NUMBERS_FILE, []), covered_of(printed)
 
 
-# make-up-an-int-key-for-an-int-keyed-dict: a `dict[int, X]` holding a str key makes up no key,
-# so a tracked bool key leaves it followed, and its count's fork is recorded
-def test_a_dict_that_makes_up_no_key_stays_followed_past_a_tracked_bool() -> None:
-    seed = '{"b": false, "d": {"a": 1}}'
-    result = run_pyct(f"{INT_EQUAL_NUMBERS}::str_keyed_tracked_bool", seed, *UNTIL_NO_GAIN)
+# make-up-an-int-key-for-an-int-keyed-dict: a `dict[int, X]` holding a str key makes up no key, but
+# the solver may still add an int key a fork names, which a tracked bool may equal, so the bool
+# turns the dict plain whatever keys it holds, and no answer leaves the plan
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("str_keyed_tracked_bool", {"b": False, "d": {"a": 1}}),
+        ("tracked_bool_then_named", {"b": True, "d": {"a": 1}}),
+    ],
+)
+def test_a_tracked_bool_turns_an_int_annotated_dict_plain_whatever_it_holds(
+    function: str, seed: dict[str, object]
+) -> None:
+    result = run_pyct(f"{INT_EQUAL_NUMBERS}::{function}", json.dumps(seed), *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     printed = input_lines(result.stdout)
-    assert (62, [">", ["len", "d"], 1], False) in listed(printed[0]), listed(printed[0])
     assert downgrade_names(printed[0]) == ["__contains__"], printed[0]
+    assert listed(printed[0]) == [], listed(printed[0])
+    assert [entry["mismatch_at"] for entry in solved(printed)] == [None] * len(solved(printed))
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: a merge that turns the dict plain turns what it
+# builds plain too, so no fork reads a merged dict a made-up key could change unseen
+def test_a_merge_with_a_key_pyct_does_not_follow_builds_a_plain_dict() -> None:
+    result = run_pyct(f"{INT_EQUAL_NUMBERS}::merged_fraction", '{"d": {}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert listed(printed[0]) == [], listed(printed[0])
+    assert [entry["mismatch_at"] for entry in solved(printed)] == [None] * len(solved(printed))

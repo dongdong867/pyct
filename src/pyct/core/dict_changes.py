@@ -25,7 +25,7 @@ from pyct.core.dict_reads import (
     handout,
     int_key,
     is_tracked,
-    may_equal_made_up,
+    may_equal_added,
     placed,
     present,
     recorded,
@@ -89,7 +89,7 @@ def as_python(
     """A change under a key pyct does not follow: Python's own, and a downgrade named ``name``,
     with whether the key was there noted from the dict itself, so the size stays the dict's.
     ``named`` says the call's own lookup already named it, so the call is named once. A key
-    that may equal a key pyct makes up turns the dict plain (see ``may_equal_made_up``)."""
+    that may equal an int key the solver adds turns the dict plain (see ``may_equal_added``)."""
     bare = plain(key)
     held = own(dict.__contains__, self, bare)
     answer = own(change)
@@ -97,7 +97,7 @@ def as_python(
         self.sink.append(Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
         self.settled.setdefault(bare, held)
-    if may_equal_made_up(self, key):
+    if may_equal_added(self, key):
         self.turn_plain()
     return answer
 
@@ -254,4 +254,7 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
         if not held:
             made.changed[plain(looked)] = True
             made.grown += 1
+    if self.expression is None:
+        # a key the dict could not follow turned it plain, and what it built holds that key
+        made.turn_plain()
     return made
