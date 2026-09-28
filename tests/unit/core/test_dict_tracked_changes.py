@@ -304,14 +304,15 @@ def test_a_walk_compares_no_store_that_put_its_key_last_again() -> None:
 
 def test_a_shared_key_a_walk_handed_out_is_compared_as_any_other() -> None:
     config, sink = tracked({"c": 0})
-    name = ConcolicStr.made("a", "name", sink)
+    name = ConcolicStr.made("b", "name", sink)
     config[name] = 7
+    # the walk hands out "b", a key Python shares with the literal below
     list(config)
 
-    assert "b" not in config
+    assert "b" in config
 
-    assert (["==", "name", "'b'"], False) in forks(sink)
-    hold_against_python(sink, {"config": {"c": 0}, "name": "a"})
+    assert (["==", "name", "'b'"], True) in forks(sink)
+    hold_against_python(sink, {"config": {"c": 0}, "name": "b"})
 
 
 def test_a_plain_lookup_reads_only_the_changes_after_its_key_s_own() -> None:
