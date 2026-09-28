@@ -73,6 +73,7 @@
 {"set": "v2", "target": "targets.floats.plain_methods::keep_and_lose", "seed": {"f": 0.5}, "status": "differs", "only_legacy": [], "only_v2": [4, 6]}
 {"set": "v2", "target": "targets.floats.rounding::round_off", "seed": {"x": 0.5, "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [7, 9, 11, 13]}
 {"set": "v2", "target": "targets.floats.rounding_exact::hit", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.floats.searched_members::ratios", "seed": {"f": 3.0}, "status": "differs", "only_legacy": [], "only_v2": [14]}
 {"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.truth_test::tell", "seed": {"x": 1.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.intercept.across::spread", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [17]}
@@ -117,6 +118,8 @@
 {"set": "v2", "target": "targets.ints.pickled::each_type", "seed": {"n": 3, "s": "ab"}, "status": "differs", "only_legacy": [], "only_v2": [25, 27, 29]}
 {"set": "v2", "target": "targets.ints.plain_methods::as_its_int", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [38]}
 {"set": "v2", "target": "targets.ints.plain_methods::keep", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [13, 15, 17, 19]}
+{"set": "v2", "target": "targets.ints.searched_deques::not_queued", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [24]}
+{"set": "v2", "target": "targets.ints.searched_floats::ratios", "seed": {"x": 7}, "status": "differs", "only_legacy": [], "only_v2": [19]}
 {"set": "v2", "target": "targets.ints.searched_members::chained", "seed": {"x": 7}, "status": "differs", "only_legacy": [], "only_v2": [57]}
 {"set": "v2", "target": "targets.ints.searched_members::members", "seed": {"x": 7}, "status": "differs", "only_legacy": [], "only_v2": [39]}
 {"set": "v2", "target": "targets.ints.searched_members::not_known", "seed": {"x": 1}, "status": "differs", "only_legacy": [], "only_v2": [45]}
@@ -188,6 +191,10 @@
 {"set": "v2", "target": "targets.strs.reversed_text::mirror", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.search::kind", "seed": {"s": "a=#", "t": "!"}, "status": "differs", "only_legacy": [], "only_v2": [11, 13, 17, 19]}
 {"set": "v2", "target": "targets.strs.search_from_position::hits", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4, 6, 8, 10, 12, 14]}
+{"set": "v2", "target": "targets.strs.searched_members::colors", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [34]}
+{"set": "v2", "target": "targets.strs.searched_members::modes", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [40]}
+{"set": "v2", "target": "targets.strs.searched_members::not_tagged", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [46]}
+{"set": "v2", "target": "targets.strs.searched_members::touchy", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [58]}
 {"set": "v2", "target": "targets.strs.six_compares::count", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [5, 7, 9, 11]}
