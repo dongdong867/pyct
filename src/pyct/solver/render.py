@@ -19,6 +19,7 @@ from pyct.solver.heads import (
     OPERATORS,
     POSITIONED,
     POSITIONS_FROM,
+    READ_BY_A_FORM,
     RESULTS,
     SORTS,
     STRING_ORDERS,
@@ -32,6 +33,7 @@ from pyct.solver.literals import leaf_term, plain_operand, string_order
 from pyct.solver.program_text import program_text
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
+from pyct.solver.str_joins import COUNTED, counted, expanded
 from pyct.solver.symbols import leaf_sort
 
 
@@ -95,11 +97,11 @@ def program(
 def _path(
     prefix: tuple[Branch, ...], leaves: Mapping[str, type], origin: Origin
 ) -> tuple[tuple[Branch, ...], list[Node], dict[int, int], dict[str, str]]:
-    """The path as the program writes it: joins of string pieces written as one, each distinct
-    part in order with how many places hold it, and each leaf, list and dict it names by
-    symbol."""
+    """The path as written: joins spelled out, pieces side by side as one, each distinct part in
+    order with how many places hold it, and each leaf, list and dict it names by symbol."""
     shapes = origin.shapes
     seed = Leaves(kinds=leaves, constants={}, lists=shapes, dicts=origin.dicts)
+    prefix = expanded(prefix, seed.holds, lambda part: origin.values.get(seed.named(part) or ""))
     listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
     containers = (TrackedList, TrackedDict)
     prefix = joined(
@@ -289,7 +291,7 @@ class _Program:
                 read |= {id(part) for part in self.lists.operands(node)}
             elif (
                 self._form(node) is not None
-                or _read_by_a_form(node[0])
+                or node[0] in READ_BY_A_FORM
                 or self._orders_strings(node)
             ):
                 read |= {id(part) for part in node[1:] if isinstance(part, list)}
@@ -368,6 +370,8 @@ class _Program:
         head, *operands = node
         if not isinstance(head, str):
             raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+        if head == COUNTED:
+            return counted(operands[0], self.term(operands[0]), operands[1])
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
@@ -476,11 +480,6 @@ class _Program:
         if fact != "true" and fact not in self.facts:
             self.facts.add(fact)
             self.definitions.append(f"(assert {fact})")
-
-
-def _read_by_a_form(head: Expression) -> bool:
-    """Whether an operation's operands are read by a form of one head whatever their type."""
-    return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
 
 
 def _read(term: str, part: Expression) -> str:

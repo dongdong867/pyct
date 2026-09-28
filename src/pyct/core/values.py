@@ -207,22 +207,22 @@ BASES_BY_ID: dict[int, type] = {}
 _EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
 
 
+def base_value(kind: type) -> object:
+    """A plain value of a base type, as Python's own ``kind`` builds one: from nothing, or from
+    0 for a range. What Python says of it names its type in Python's words."""
+    return kind(*_EMPTY.get(kind, ()))
+
+
 def _base_class(self: object) -> type:
     """The class a tracked value reports: its base type, as Python's own value reads it."""
     return BASES[type(self)]
-
-
-def _plain_of(self: object) -> object:
-    """A plain value of the base type a tracked value reports, for Python to answer in its words."""
-    base = BASES[type(self)]
-    return base(*_EMPTY.get(base, ()))
 
 
 def _assigned_class(self: object, kind: object) -> None:
     """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
     error, in its words, as it refuses every class for an int, float, str, bool, list or range.
     """
-    own(setattr, _plain_of(self), "__class__", kind)
+    own(setattr, base_value(BASES[type(self)]), "__class__", kind)
 
 
 def refused_set(self: object, name: str, value: object, /) -> None:
@@ -236,12 +236,12 @@ def refused_set(self: object, name: str, value: object, /) -> None:
     object plumbing, so nothing is recorded
     (tracked-numbers-refuse-attributes-on-a-plain-number).
     """
-    own(setattr, _plain_of(self), name, value)
+    own(setattr, base_value(BASES[type(self)]), name, value)
 
 
 def refused_delete(self: object, name: str, /) -> None:
     """`del v.name` on a tracked number: made on a plain number of its base type, as a set is."""
-    own(delattr, _plain_of(self), name)
+    own(delattr, base_value(BASES[type(self)]), name)
 
 
 # a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
