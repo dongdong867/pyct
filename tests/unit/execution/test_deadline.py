@@ -64,13 +64,19 @@ def test_an_alarm_due_as_the_block_begins_raises_in_none_of_threading_s_frames()
 
 
 @DEADLINE_FIRES
-def test_a_block_whose_instant_has_passed_runs_none_of_its_body() -> None:
+def test_a_block_whose_instant_has_passed_runs_none_of_its_body(counting: list[int]) -> None:
+    before = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
     ran: list[bool] = []
 
     with pytest.raises(DeadlineError), deadline(time.monotonic() - 1):
         ran.append(True)
 
     assert ran == []
+    # the way in undoes the block: the host's handler is back, never called, and no thread is left
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert counting == []
+    assert threading.active_count() == threads
 
 
 @DEADLINE_FIRES

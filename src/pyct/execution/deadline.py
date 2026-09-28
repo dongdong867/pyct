@@ -286,7 +286,7 @@ class _Sent:
             self.watcher.start()
             if time.monotonic() >= self.at:
                 # the instant came before the block: it raises here, where no lock is held
-                _raise_deadline(signal.SIGALRM, None)
+                _raise_deadline(signal.SIGALRM, None)  # pragma: no cover
             # inside the try: a stop Python handles as this returns undoes the block too
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
         except BaseException:
@@ -361,7 +361,7 @@ class _Sent:
         in or out."""
         edge = frame
         while edge is not None:
-            if edge.f_code in _WAY_IN_OR_OUT:
+            if edge.f_code is _WAY_IN or edge.f_code is _WAY_OUT:
                 return False
             edge = edge.f_back
         return _under(frame, self.home)
@@ -393,7 +393,8 @@ class _Sent:
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
 
-_WAY_IN_OR_OUT = frozenset({_Sent.__enter__.__code__, _Sent.__exit__.__code__})
+_WAY_IN = _Sent.__enter__.__code__
+_WAY_OUT = _Sent.__exit__.__code__
 
 # the signals a person stops a run with, held while the watcher starts and while the way out runs
 _STOPS = frozenset({signal.SIGINT, signal.SIGTERM})
