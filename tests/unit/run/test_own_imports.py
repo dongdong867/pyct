@@ -10,6 +10,7 @@ import importlib
 import os
 import sys
 import sysconfig
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType
@@ -107,7 +108,19 @@ def test_the_target_s_own_module_comes_from_its_folder(
 ) -> None:
     monkeypatch.delitem(sys.modules, "colorsys", raising=False)
     (folder / "colorsys.py").write_text(TARGET)
+    load_target("target::f")
 
+    # a second target in the same process, as in-process callers of run() load them
     target = load_target("colorsys::f")
 
     assert target.file == str(folder / "colorsys.py")
+
+
+def test_an_import_with_no_frame_past_the_standard_library_s_is_python_s(folder: Path) -> None:
+    load_target("target::f")
+    # a thread that runs the standard library's code alone
+    thread = threading.Thread(target=importlib.import_module, args=("difflib",))
+    thread.start()
+    thread.join()
+
+    assert getattr(sys.modules["difflib"], "MARK", None) == "folder"

@@ -84,6 +84,18 @@ def syntax_error_line() -> str:
     return result.stdout.strip()
 
 
+def failure_by_x(stdout: str) -> dict[int, object]:
+    """Each input's failure, by the ``x`` it ran with."""
+    by_x: dict[int, object] = {}
+    for line in input_lines(stdout):
+        args = line["args"]
+        assert isinstance(args, dict), line
+        x = args["x"]
+        assert isinstance(x, int), line
+        by_x[x] = line["failure"]
+    return by_x
+
+
 # keep-pyct-s-late-imports-from-the-target-s-folder-reads-each-failure-past-every-stdlib-name
 def test_reads_each_failure_past_every_stdlib_name(tmp_path: Path) -> None:
     shadows = {f"{name}.py": raising(name) for name in sys.stdlib_module_names}
@@ -95,7 +107,7 @@ def test_reads_each_failure_past_every_stdlib_name(tmp_path: Path) -> None:
     )
 
     assert ran.returncode == 0, ran.stderr
-    failures = {line["args"]["x"]: line["failure"] for line in input_lines(ran.stdout)}
+    failures = failure_by_x(ran.stdout)
     assert sorted(failures) == [0, 1, 2, 3, 4, 5], ran.stdout
     assert failures[0] is None
     assert all(failures[x] is not None for x in range(1, 6)), failures
