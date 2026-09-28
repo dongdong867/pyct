@@ -8,13 +8,15 @@ accepted file reads that file.
 """
 
 import json
+import os
 import re
+import subprocess
+import sys
 
 import pytest
 
-from pyct.cli import LINE_NESTING
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
-from tests.nesting import nested_list, nested_text, refused_depth
+from tests.nesting import nested_text
 
 DICT_VALUES = "targets.nested.dict_values::check"
 DICT_VALUES_FILE = str(REPO_ROOT / "targets" / "nested" / "dict_values.py")
@@ -353,15 +355,32 @@ def test_flips_a_fork_on_a_parameter_named_past_ascii() -> None:
     assert [args_of(line)["café"] for line in solved(input_lines(result.stdout))] == ["é"]
 
 
+def _seed_limits_of_a_process_started_as_pyct() -> tuple[int, int]:
+    """`tests.nesting.seed_limits` in a process started as the harness starts pyct's.
+
+    Each limit follows the stack below the reader and the writer, and a test process runs
+    them under more frames than pyct's own does.
+    """
+    env = {**os.environ, "PYTHONPATH": str(REPO_ROOT)}
+    probe = [sys.executable, "-P", "-m", "tests.nesting"]
+    result = subprocess.run(
+        probe, cwd=REPO_ROOT, env=env, capture_output=True, text=True, check=True
+    )
+    write, read = result.stdout.split()
+    return int(write), int(read)
+
+
 # run-with-nested-arguments: a seed nested past what a line can hold is refused before it runs
 def test_refuses_a_seed_too_deep_to_write_back() -> None:
-    # twice the seed depth this process cannot write a line for, since pyct's own process runs
-    # under fewer frames and writes a little deeper; its reader may refuse the seed first, and
-    # either refusal comes before any input runs
-    depth = 2 * refused_depth(lambda depth: json.dumps(nested_list(depth + LINE_NESTING)))
+    write, read = _seed_limits_of_a_process_started_as_pyct()
+    if write >= read:
+        pytest.skip("this Python refuses to read a seed before it is too deep to write")
+
+    # inside the window, so a frame or two more or less in pyct's process still lands in it
+    depth = (write + read) // 2
     result = run_pyct(DEEP, '{"config": ' + nested_text(depth - 1) + "}")
 
     assert result.returncode == 2, result.stderr[-2000:]
     assert result.stdout == ""
-    assert "too deep" in result.stderr
+    assert "too deep for pyct to write" in result.stderr
     assert "Traceback" not in result.stderr

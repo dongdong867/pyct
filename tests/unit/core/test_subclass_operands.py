@@ -387,7 +387,7 @@ def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     assert sink == []
 
 
-def _answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
+def answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
     """What a call answers, or the text of the TypeError it raises."""
     try:
         return call(), None
@@ -401,9 +401,9 @@ def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> Non
     sink: list[SinkItem] = []
     n = ConcolicInt.made(7, expression="n", sink=sink)
 
-    answer, error = _answer_or_error(lambda: pow(n, Dial(2.0), 5))
+    answer, error = answer_or_error(lambda: pow(n, Dial(2.0), 5))
 
-    plain = _answer_or_error(lambda: pow(7, Dial(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    plain = answer_or_error(lambda: pow(7, Dial(2.0), 5))  # pyrefly: ignore[no-matching-overload]
     plain_answer, plain_error = plain
     assert answer == plain_answer
     assert error == (plain_error and plain_error.replace(*PLAIN_INT_NAME, 1))

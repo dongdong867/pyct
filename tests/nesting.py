@@ -5,7 +5,10 @@ count of levels; from 3.14 it stops them when the stack runs low, so the depth d
 releases and machines. A test reads it here, in its own process, instead of writing one down.
 """
 
+import json
 from collections.abc import Callable
+
+from pyct.cli import LINE_NESTING
 
 
 def refuses(call: Callable[[int], object], depth: int) -> bool:
@@ -53,3 +56,19 @@ def nested_dict(depth: int) -> dict[str, object]:
 def nested_text(depth: int) -> str:
     """`nested_dict` as JSON text: an object nesting ``depth`` objects deep, its own among them."""
     return '{"a": ' * depth + "0" + "}" * depth
+
+
+def seed_limits() -> tuple[int, int]:
+    """The smallest seed depths this process refuses: to write each input's line, and to read.
+
+    pyct's check writes a list ``LINE_NESTING`` levels deeper than the seed.
+    """
+    write = refused_depth(lambda depth: json.dumps(nested_list(depth + LINE_NESTING)))
+    read = refused_depth(lambda depth: json.loads(nested_text(depth)))
+    return write, read
+
+
+if __name__ == "__main__":
+    # run as `python -P -m tests.nesting`, as the acceptance harness runs pyct, for a test that
+    # needs the limits of a process started as pyct's is
+    print(*seed_limits())

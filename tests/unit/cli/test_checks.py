@@ -1,10 +1,8 @@
 import inspect
-import json
 
 import pytest
 
 from pyct.cli import (
-    LINE_NESTING,
     UsageError,
     check_seed_fits,
     check_spec,
@@ -15,7 +13,7 @@ from pyct.cli import (
 )
 from pyct.config.budget import Budget
 from pyct.config.plateau import Plateau
-from tests.nesting import nested_list, nested_text, refused_depth, refuses
+from tests.nesting import nested_text, seed_limits
 
 
 def classify(x: int) -> str:
@@ -136,17 +134,16 @@ def test_parse_seed_takes_a_seed_nested_thousands_deep() -> None:
 
 
 def test_parse_seed_refuses_a_seed_too_deep_for_python_to_read() -> None:
-    depth = refused_depth(lambda depth: json.loads(nested_text(depth)))
+    _, read = seed_limits()
 
     with pytest.raises(UsageError, match="too deep for Python to read"):
-        parse_seed(nested_text(depth))
+        parse_seed(nested_text(read))
 
 
 def test_parse_seed_refuses_a_seed_too_deep_to_write() -> None:
-    # the check writes a list ``LINE_NESTING`` levels deeper than the seed
-    depth = refused_depth(lambda depth: json.dumps(nested_list(depth + LINE_NESTING)))
-    if refuses(lambda depth: json.loads(nested_text(depth)), depth):
+    write, read = seed_limits()
+    if write >= read:
         pytest.skip("this Python refuses to read a seed before it is too deep to write")
 
     with pytest.raises(UsageError, match="too deep for pyct to write"):
-        parse_seed(nested_text(depth))
+        parse_seed(nested_text(write))

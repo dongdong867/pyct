@@ -8,6 +8,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.values import raised_by_target
+from tests.unit.core.test_subclass_operands import answer_or_error
 
 # each taught arithmetic operation with a plain float: the call, and the node it builds. Each
 # keeps Python's written order, so a reflected one reads as the target wrote it
@@ -226,20 +227,12 @@ def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> Non
     sink: list[SinkItem] = []
     x = ConcolicFloat.made(2.5, expression="x", sink=sink)
 
-    answer, error = _answer_or_error(lambda: pow(x, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    answer, error = answer_or_error(lambda: pow(x, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
 
-    plain = _answer_or_error(lambda: pow(2.5, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    plain = answer_or_error(lambda: pow(2.5, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
     assert (answer, error) == plain
     # Gauge's answer is plain, so x's condition is lost there and named; a raise records nothing
     assert sink == ([] if error else [Downgrade(name="__pow__", site=ANY)])
-
-
-def _answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
-    """What a call answers, or the text of the TypeError it raises."""
-    try:
-        return call(), None
-    except TypeError as error:
-        return None, str(error)
 
 
 def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:
