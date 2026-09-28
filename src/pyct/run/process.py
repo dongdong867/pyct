@@ -15,15 +15,18 @@ With a deadline, the process's own SIGALRM ends a Python hang at the
 deadline, finally blocks included, so its line is the same as in pyct's
 process. A call inside C, or a target that catches the alarm, never ends
 that way, so pyct kills the process ``KILL_GRACE`` after the deadline.
-pyct blocks in ``waitpid``; its own SIGALRM handler kills and does not
-raise, so Python retries the wait, which then returns the killed
-process's status. A handler that raised could land after the wait had
-already reaped the process and lose its status.
+pyct's process sets no timer and takes no signal for that: it waits for the
+system's notice that the process ended (see ``exits``), with the kill's
+instant as the wait's limit, or asks every millisecond where the system
+gives none. Only then does it reap, or kill and reap, in one thread, so
+nothing lands after the wait or between a reap and a kill.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
-also holds pyct's process-wide stop: ``Stopped``, which a SIGTERM raises,
-and the mark that refuses every input after it.
+also holds pyct's process-wide stop: raising ``Stopped`` for a SIGTERM, and
+the mark that refuses every input after it. ``Stopped`` itself lives in
+``pyct.execution.stops``, so the deadline below can tell it from a raise of
+the target's own.
 """
 
 from __future__ import annotations
@@ -31,32 +34,27 @@ from __future__ import annotations
 import contextlib
 import os
 import signal
+import time
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from typing import NoReturn
 
-from pyct.execution.deadline import alarm
 from pyct.execution.execute import ExecutionResult
+from pyct.execution.stops import Stopped
 from pyct.results.failure import Failure, FailureKind
+from pyct.run.exits import ends_by
 from pyct.run.journal import Reading
 
 # the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
 # SIGINT, and SIGTERM, which the command's process stops on (see ``launch``)
 STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
 
+# how often pyct asks whether an input's process ended, where the system gives no notice
+_POLL = 0.001
+
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
 KILL_GRACE = 0.5
-
-
-class Stopped(BaseException):
-    """pyct's process was told to stop, by a SIGTERM (see ``launch``).
-
-    A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
-    it through and ends each process pyct started on the way out. Target
-    code that catches BaseException can catch it and go on, so a stop also
-    refuses every input after it (see ``refuse_after_a_stop``).
-    """
 
 
 # whether this process was told to stop; once it was, no input starts
@@ -122,8 +120,7 @@ def watched(start: Callable[[], int], until: float | None) -> Waited:
         # a signal held here goes on as the block ends, with the process in the guard's hands
         with _stops_held():
             child = Child(start())
-        with alarm(None if until is None else until + KILL_GRACE, child.kill_if_running):
-            return child.wait()
+        return child.wait(None if until is None else until + KILL_GRACE)
     finally:
         if child is not None:
             child.end()
@@ -165,17 +162,32 @@ class Child:
         self.status: int | None = None
         self.killed = False
 
-    def wait(self) -> Waited:
-        """Wait for the process to end, and read how it did."""
-        try:
-            _, status = os.waitpid(self.pid, 0)
-        except ChildProcessError:
-            # the kill timer found the process ended and reaped it first
-            if self.status is None:
-                raise
-            status = self.status
-        self.status = status
-        return Waited.of(status, killed=self.killed)
+    def wait(self, kill_at: float | None = None) -> Waited:
+        """Wait for the process to end, and read how it did.
+
+        With ``kill_at``, a monotonic instant, a process still running then
+        is killed. ``None`` waits as long as it runs.
+        """
+        if kill_at is not None and not self._ends_by(kill_at):
+            self.kill_if_running()
+        if self.status is None:
+            _, self.status = os.waitpid(self.pid, 0)
+        return Waited.of(self.status, killed=self.killed)
+
+    def _ends_by(self, instant: float) -> bool:
+        """Whether the process ends by the monotonic ``instant``, by the system's notice.
+
+        Where the system gives no notice, it asks every ``_POLL`` seconds.
+        """
+        noticed = ends_by(self.pid, instant)
+        if noticed is not None:
+            return noticed
+        while not self.ended():
+            left = instant - time.monotonic()
+            if left <= 0:
+                return False
+            time.sleep(min(left, _POLL))
+        return True
 
     def ended(self) -> bool:
         """Whether the process has ended, without waiting. One that has is reaped here.
@@ -185,7 +197,7 @@ class Child:
         return not self.send_if_running(0)
 
     def kill_if_running(self, *_: object) -> None:
-        """Kill the process unless it has ended. The kill timer's handler: it never raises."""
+        """Kill the process unless it has ended, which reaps it and keeps its status instead."""
         if self.send_if_running(signal.SIGKILL):
             self.killed = True
 

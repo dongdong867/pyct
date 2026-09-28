@@ -23,6 +23,8 @@ from pyct.core.values import (
     forked,
     own,
     pickled,
+    refused_delete,
+    refused_set,
 )
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
@@ -121,13 +123,18 @@ class ConcolicInt(int):
 
     # the class called with a value is int's own, a plain int; pyct builds a tracked one
     __new__ = as_base
+    # a plain int takes no attribute: a set or a delete is Python's own refusal, pyct's names too
+    __setattr__ = refused_set
+    __delattr__ = refused_delete
 
     @classmethod
     def made(cls, value: int, expression: Expression, sink: BranchSink) -> Self:
         """A tracked int of this value and form: how pyct builds one."""
         made = int.__new__(cls, value)
-        made.expression = expression
-        made.sink = sink
+        # the value refuses a set, as a plain one does, so pyct writes its fields straight in
+        fields = made.__dict__
+        fields["expression"] = expression
+        fields["sink"] = sink
         return made
 
     def __bool__(self) -> bool:

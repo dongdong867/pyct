@@ -35,6 +35,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.binding.call import positional_only
+from pyct.binding.resolve import checked_annotations
 from pyct.core.branch import PYCT_ROOT
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
@@ -99,7 +100,8 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
     with _intercepting(interception):
         target = load_target(spec)
         positional = positional_only(target.signature)
-        ctx = ExecutionContext(fn=target.fn, file=file, alone=True, positional=positional)
+        checks = checked_annotations(target.signature, target.fn)
+        ctx = ExecutionContext(target.fn, file, alone=True, positional=positional, checks=checks)
         return execute(ctx, args, until, watch=watch).failure
 
 

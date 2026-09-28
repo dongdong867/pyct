@@ -3,9 +3,10 @@
 A literal key a fork names is its own `Bool`. A tracked key equals a key the dict holds when it
 equals one the input holds, still kept, one the path names, held, or one pyct makes up: `pyct`
 and a number n, written as `str.from_int` writes it, not a text the dict holds or a fork names,
-and among the first ``made`` such texts (dict-keys-named-held-or-made-up). A value read under a
-tracked key is the value under the key it equals; under a made-up key, one value declared for
-them all.
+and among the first ``made`` such texts; under ``dict[int, X]``, a non-negative int the dict does
+not hold and no fork names, among the first ``made`` such ints (dict-keys-named-held-or-made-up-
+by-key-type). A value read under a tracked key is the value under the key it equals; under a
+made-up key, one value declared for them all.
 """
 
 from __future__ import annotations
@@ -72,6 +73,15 @@ def made_up_match(term: str, taken: Collection[object], made: str) -> str:
         f"(and (str.prefixof {encode(MADE_UP)} {term}) (>= {number} 1) "
         f"(= {suffix} (str.from_int {number})) {apart} (<= (- {number} (+ 0 0 {before})) {made}))"
     )
+
+
+def made_up_int_match(term: str, taken: Collection[object], made: str) -> str:
+    """Whether an int term equals one of the first ``made`` made-up int keys: a non-negative
+    int not in ``taken``, with fewer than ``made`` such ints below it."""
+    skipped = sorted({key for key in taken if type(key) is int and key >= 0})
+    before = " ".join(f"(ite (< {leaf_term(n)} {term}) 1 0)" for n in skipped)
+    apart = " ".join(f"(not (= {term} {leaf_term(n)}))" for n in skipped)
+    return f"(and (>= {term} 0) {apart} (< (- {term} (+ 0 0 {before})) {made}))"
 
 
 class LookupsTooManyError(ProgramTooLargeError):
@@ -143,9 +153,10 @@ class Keyed:
         self._step(found, typed, term, name)
         if name not in self.functions:
             options = [self._equals(found, key) for key in found.candidates(typed)]
-            if typed is str and found.shape.makes_up:
+            if typed is found.shape.made_type and found.shape.makes_up:
                 taken = {*found.shape.keys, *found.named}
-                options.append(made_up_match("k", taken, found.constant("made")))
+                match = made_up_int_match if typed is int else made_up_match
+                options.append(match("k", taken, found.constant("made")))
             self._function(name, typed, "Bool", f"(or false {' '.join(options)})")
         return f"({name} {term})"
 

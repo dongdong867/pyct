@@ -24,6 +24,7 @@ from collections.abc import Callable
 from typing import NoReturn
 
 from pyct.execution.blame import one_line
+from pyct.execution.deadline import own_the_alarm
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import JournalWriter
 from pyct.run.process import STOP_SIGNALS
@@ -63,12 +64,15 @@ def settle(writer: JournalWriter) -> None:
 
     Each signal pyct's process stops on takes its default action here, as in
     a fresh interpreter, so a Ctrl-C or a SIGTERM ends the input's process
-    at once. A process the target forks from this one writes nothing to the
-    journal: only the input's own process speaks for the input.
+    at once. SIGALRM is the deadline's alone from here on, so no alarm of
+    the call's can end the process or raise after the call. A process the
+    target forks from this one writes nothing to the journal: only the
+    input's own process speaks for the input.
     """
     for number in STOP_SIGNALS:
         signal.signal(number, signal.SIG_DFL)
     signal.pthread_sigmask(signal.SIG_UNBLOCK, STOP_SIGNALS)
+    own_the_alarm()
     _empty_stdin()
     _stdout_to_stderr()
     os.register_at_fork(after_in_child=writer.detach)
