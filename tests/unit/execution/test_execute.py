@@ -3,6 +3,7 @@ import functools
 import math
 import signal
 import sys
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -34,10 +35,9 @@ def _load_fixture() -> Callable[..., object]:
     return _load(FIXTURE, "classify")
 
 
-def _overflow_on_arming(which: int, seconds: float) -> None:
-    """A setitimer that fails only the arming; the cancel is setitimer(..., 0) and must run."""
-    if seconds:
-        raise OverflowError("timestamp out of range for platform time_t")
+def _no_thread(thread: threading.Thread) -> None:
+    """A thread start that fails, as the system can refuse one: no watcher for the deadline."""
+    raise RuntimeError("can't start new thread")
 
 
 def test_execute_returns_the_lines_the_call_ran() -> None:
@@ -424,15 +424,15 @@ def test_execute_reports_a_raise_before_the_target_ran_as_a_pyct_bug(
 ) -> None:
     ctx = ExecutionContext(fn=_load_fixture(), file=str(FIXTURE))
     before = signal.getsignal(signal.SIGALRM)
-    # the timer is armed before the target is called, so the traceback has no frame of its own
-    monkeypatch.setattr(signal, "setitimer", _overflow_on_arming)
+    # the deadline is set before the target is called, so the traceback has no frame of its own
+    monkeypatch.setattr(threading.Thread, "start", _no_thread)
 
     result = execute(ctx, {"x": 1}, time.monotonic() + 1)
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.PYCT_BUG
     assert result.failure.traceback is not None
-    # the cancel on the way out ran, so the handler pyct installed is gone again
+    # the way out ran, so the handler pyct installed is gone again
     assert signal.getsignal(signal.SIGALRM) is before
 
 
@@ -453,7 +453,7 @@ def test_execute_reports_a_raise_before_a_c_target_ran_as_a_pyct_bug(
 ) -> None:
     near = functools.partial(math.isclose, rel_tol=0.0)
     ctx = ExecutionContext(fn=near, file=str(FIXTURE))
-    monkeypatch.setattr(signal, "setitimer", _overflow_on_arming)
+    monkeypatch.setattr(threading.Thread, "start", _no_thread)
 
     result = execute(ctx, {"a": 1, "b": 1}, time.monotonic() + 1)
 

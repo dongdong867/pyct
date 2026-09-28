@@ -191,7 +191,7 @@ def test_a_process_that_ends_before_the_deadline_is_left_to_end() -> None:
     waited = watched(lambda: sleeper(0), time.monotonic() + 5)
 
     assert waited == Waited(signal=None, code=0, killed=False)
-    # the kill timer is gone with the process
+    # pyct's process armed no timer for the kill
     assert signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0)
 
 
@@ -311,13 +311,13 @@ def reaped() -> int:
     return pid
 
 
-def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept(
+def test_a_process_the_kill_found_ended_is_read_from_what_it_kept(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = exited(monkeypatch)
     child = Child(FAKE_PID)
 
-    # the timer fires after the process ended and before the wait reaped it
+    # the kill comes after the process ended and before the wait reaped it
     child.kill_if_running()
     waited = child.wait()
 
@@ -325,7 +325,7 @@ def test_a_process_the_kill_timer_found_ended_is_read_from_what_it_kept(
     assert process.killed == []
 
 
-def test_the_kill_timer_leaves_a_process_it_already_read_alone(
+def test_the_kill_leaves_a_process_it_already_read_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     process = exited(monkeypatch)
@@ -337,14 +337,14 @@ def test_the_kill_timer_leaves_a_process_it_already_read_alone(
     assert process.killed == []
 
 
-def test_the_kill_timer_leaves_a_process_the_wait_reaped_alone(
+def test_the_kill_leaves_a_process_the_wait_reaped_alone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     pid = reaped()
     killed: list[int] = []
     monkeypatch.setattr(os, "kill", lambda pid, sig: killed.append(pid))
 
-    # the wait reaped it, and the timer fired before the status was kept
+    # the wait reaped it before the status was kept, and the kill comes after
     Child(pid).kill_if_running()
 
     assert killed == []

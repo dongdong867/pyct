@@ -27,6 +27,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
+from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
@@ -108,6 +109,8 @@ def entry() -> int:
     outlives it to say so (see ``pyct.run.launch``). Tests call ``main`` in
     their own process instead.
     """
+    # pyct owns the processes the shell starts, so its deadline takes SIGALRM for good
+    own_the_alarm()
     argv = sys.argv[1:]
     return launch(functools.partial(main, argv), argv)
 

@@ -6,8 +6,9 @@ import inspect
 import sys
 import types
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from pyct.binding.annotations import Check
 from pyct.binding.bind import bind
 from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch
@@ -33,13 +34,15 @@ class ExecutionContext:
 
     ``positional`` is the parameters the call passes by position, read once
     from the signature ``load_target`` took; with none, every value goes by
-    name.
+    name. ``checks`` is what each parameter's annotation asks, which says the
+    key type of each dict the call binds.
     """
 
     fn: Callable[..., object]
     file: str
     alone: bool = False
     positional: tuple[inspect.Parameter, ...] = ()
+    checks: Mapping[str, Check] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -75,7 +78,7 @@ def execute(
     """
     tally = Tally(watch)
     tally.go_live()
-    bound = bind(args, tally)
+    bound = bind(args, tally, ctx.checks)
     tracer = _LineTracer(ctx.file, tally)
     tracer.start()
     try:
@@ -126,7 +129,7 @@ def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | Non
 def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
     """The failure a raise ended the call with, or None for a call that returned."""
     error = ending.error
-    # the timer can land in pyct's own frames too, so the kind is by type, before the rest
+    # the alarm can land in pyct's own frames too, so the kind is by type, before the rest
     if isinstance(error, DeadlineError):
         # only a fired alarm reaches here, and those tests run without coverage
         return Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")  # pragma: no cover

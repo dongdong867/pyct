@@ -33,7 +33,9 @@ def covered_in(stdout: str, file: str) -> set[int]:
 
 @pytest.mark.serial
 def test_flips_every_fork_of_a_loop_that_reads_each_character_as_an_int() -> None:
-    result = run_pyct(DIGIT_CHECKSUM, '{"number": "41111111"}', "--budget", "5")
+    # every fork is flipped in about 4 s on an idle machine, and the run ends on its own; the
+    # budget leaves a loaded machine room, where a shorter one cut its last solves as timeouts
+    result = run_pyct(DIGIT_CHECKSUM, '{"number": "41111111"}', "--budget", "20")
 
     assert result.returncode == 0, result.stderr
     assert covered_in(result.stdout, DIGIT_CHECKSUM_FILE) >= DIGIT_CHECKSUM_LINES, result.stdout
