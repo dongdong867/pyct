@@ -39,6 +39,10 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.locate import locate, version
 
 _NO_LIMITS = Limits()
+# the platform the summary line names, read as this module imports: the first read imports modules
+# of its own, such as plistlib on macOS, and pyct's modules all import before a target's folder
+# joins the import path, so these come from pyct's interpreter and never from that folder
+_PLATFORM = platform.platform()
 
 # what a caller does with an input the moment it is finished
 type Report = Callable[[InputRecord, Coverage], None]
@@ -219,7 +223,7 @@ def _environment(cvc5: str | None, isolated: bool) -> Environment:
     return Environment(
         python=platform.python_version(),
         cvc5=cvc5,
-        platform=platform.platform(),
+        platform=_PLATFORM,
         isolated=isolated,
     )
 

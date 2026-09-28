@@ -138,8 +138,9 @@ def test_lets_the_target_import_its_own(tmp_path: Path) -> None:
 
     run = ran_to_the_end(result, "uses")
     assert ran.returncode == 0, ran.stderr
-    seed = input_lines(ran.stdout)[0]
-    assert [fork["expression"] for fork in seed["forks"]] == [[">", "x", 7]], seed
+    forks = input_lines(ran.stdout)[0]["forks"]
+    assert isinstance(forks, list), ran.stdout
+    assert [fork["expression"] for fork in forks] == [[">", "x", 7]], forks
     key = str((folder / "uses.py").resolve())
     under_the_if = 6
     assert under_the_if in run["covered"][key], run
