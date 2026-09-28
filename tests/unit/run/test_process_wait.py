@@ -14,7 +14,8 @@ from collections.abc import Callable, Generator
 
 import pytest
 
-from pyct.run.process import Waited, watched
+from pyct.run import exits
+from pyct.run.process import KILL_GRACE, Waited, watched
 from tests.unit.run.test_process import sleeper
 
 
@@ -124,3 +125,70 @@ def test_a_kqueue_that_cannot_watch_the_process_raises_and_ends_it(
     # the process was killed and reaped on the way out
     with pytest.raises(ChildProcessError):
         os.waitpid(started[0], os.WNOHANG)
+
+
+def refused(pid: int) -> int:
+    """A pidfd_open the system refuses, as a kernel before 5.3 or a syscall filter does."""
+    raise OSError(errno.ENOSYS, os.strerror(errno.ENOSYS))
+
+
+def forbidden(pid: int) -> int:
+    """A pidfd_open that fails for a reason other than a missing or refused call."""
+    raise OSError(errno.EMFILE, os.strerror(errno.EMFILE))
+
+
+@pytest.mark.parametrize("pidfd_open", [refused, None], ids=["refused", "missing"])
+@pytest.mark.parametrize(
+    ("seconds", "expected"),
+    [
+        (0.0, Waited(signal=None, code=0, killed=False)),
+        (10.0, Waited(signal=signal.SIGKILL, code=None, killed=True)),
+    ],
+    ids=["ends-before-the-kill", "runs-past-the-kill"],
+)
+def test_a_system_with_no_exit_notice_is_asked_until_the_kill(
+    monkeypatch: pytest.MonkeyPatch,
+    pidfd_open: Callable[[int], int] | None,
+    seconds: float,
+    expected: Waited,
+) -> None:
+    monkeypatch.delattr(select, "kqueue", raising=False)
+    if pidfd_open is None:
+        monkeypatch.delattr(os, "pidfd_open", raising=False)
+    else:
+        monkeypatch.setattr(os, "pidfd_open", pidfd_open, raising=False)
+    started = time.monotonic()
+
+    waited = watched(lambda: sleeper(seconds), started + 0.1)
+
+    assert waited == expected
+    assert time.monotonic() - started < 1
+
+
+def test_a_pidfd_that_fails_otherwise_raises_and_ends_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr(select, "kqueue", raising=False)
+    monkeypatch.setattr(os, "pidfd_open", forbidden, raising=False)
+    started: list[int] = []
+
+    def start() -> int:
+        started.append(sleeper(10))
+        return started[0]
+
+    with pytest.raises(OSError, match="files"):
+        watched(start, time.monotonic() + 5)
+
+    with pytest.raises(ChildProcessError):
+        os.waitpid(started[0], os.WNOHANG)
+
+
+def test_a_long_wait_waits_in_steps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(exits, "LONGEST_WAIT", 0.02)
+    started = time.monotonic()
+
+    waited = watched(lambda: sleeper(10), started + 0.1)
+
+    took = time.monotonic() - started
+    assert waited == Waited(signal=signal.SIGKILL, code=None, killed=True)
+    assert 0.1 + KILL_GRACE <= took < 0.1 + KILL_GRACE + 0.5

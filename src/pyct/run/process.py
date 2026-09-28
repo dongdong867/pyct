@@ -16,10 +16,10 @@ deadline, finally blocks included, so its line is the same as in pyct's
 process. A call inside C, or a target that catches the alarm, never ends
 that way, so pyct kills the process ``KILL_GRACE`` after the deadline.
 pyct's process sets no timer and takes no signal for that: it waits for the
-system's notice that the process ended, kqueue's on macOS and the BSDs and
-a pidfd's on Linux, with the kill's instant as the wait's limit. Only then
-does it reap, or kill and reap, in one thread, so nothing lands after the
-wait or between a reap and a kill.
+system's notice that the process ended (see ``exits``), with the kill's
+instant as the wait's limit, or asks every millisecond where the system
+gives none. Only then does it reap, or kill and reap, in one thread, so
+nothing lands after the wait or between a reap and a kill.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
@@ -30,10 +30,7 @@ and the mark that refuses every input after it.
 from __future__ import annotations
 
 import contextlib
-import errno
-import math
 import os
-import select
 import signal
 import time
 from collections.abc import Callable, Generator
@@ -42,11 +39,15 @@ from typing import NoReturn
 
 from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
+from pyct.run.exits import ends_by
 from pyct.run.journal import Reading
 
 # the signals whose handler may raise in pyct's process and end what it is doing: a Ctrl-C's
 # SIGINT, and SIGTERM, which the command's process stops on (see ``launch``)
 STOP_SIGNALS = frozenset({signal.SIGINT, signal.SIGTERM})
+
+# how often pyct asks whether an input's process ended, where the system gives no notice
+_POLL = 0.001
 
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
@@ -174,11 +175,26 @@ class Child:
         With ``kill_at``, a monotonic instant, a process still running then
         is killed. ``None`` waits as long as it runs.
         """
-        if kill_at is not None and not _ends_by(self.pid, kill_at):
+        if kill_at is not None and not self._ends_by(kill_at):
             self.kill_if_running()
         if self.status is None:
             _, self.status = os.waitpid(self.pid, 0)
         return Waited.of(self.status, killed=self.killed)
+
+    def _ends_by(self, instant: float) -> bool:
+        """Whether the process ends by the monotonic ``instant``, by the system's notice.
+
+        Where the system gives no notice, it asks every ``_POLL`` seconds.
+        """
+        noticed = ends_by(self.pid, instant)
+        if noticed is not None:
+            return noticed
+        while not self.ended():
+            left = instant - time.monotonic()
+            if left <= 0:
+                return False
+            time.sleep(min(left, _POLL))
+        return True
 
     def ended(self) -> bool:
         """Whether the process has ended, without waiting. One that has is reaped here.
@@ -236,49 +252,6 @@ class Child:
             os.kill(self.pid, signal.SIGKILL)
             _, status = os.waitpid(self.pid, 0)
         self.status = status
-
-
-def _ends_by(pid: int, instant: float) -> bool:
-    """Whether the process ``pid``, one of pyct's not yet reaped, ends by the monotonic ``instant``.
-
-    The system tells of the exit itself: kqueue where the system has it,
-    macOS and the BSDs, and a pidfd elsewhere, Linux 5.3 or later.
-    """
-    left = max(instant - time.monotonic(), 0.0)
-    if hasattr(select, "kqueue"):
-        return _kqueue_says(pid, left)
-    return _pidfd_says(pid, left)
-
-
-def _kqueue_says(pid: int, left: float) -> bool:
-    """Whether kqueue tells of the process's exit within ``left`` seconds."""
-    queue = select.kqueue()
-    try:
-        exit_note = select.kevent(
-            pid,
-            filter=select.KQ_FILTER_PROC,
-            flags=select.KQ_EV_ADD | select.KQ_EV_ONESHOT,
-            fflags=select.KQ_NOTE_EXIT,
-        )
-        events = queue.control([exit_note], 1, left)
-    finally:
-        queue.close()
-    for event in events:
-        # a process that already ended cannot be watched, and says so as ESRCH
-        if event.flags & select.KQ_EV_ERROR and event.data != errno.ESRCH:
-            raise OSError(event.data, os.strerror(event.data))
-    return bool(events)
-
-
-def _pidfd_says(pid: int, left: float) -> bool:
-    """Whether the process's pidfd reads as ready, as it does once the process ended, in time."""
-    notice = os.pidfd_open(pid)  # pyrefly: ignore[missing-attribute]
-    try:
-        poller = select.poll()
-        poller.register(notice, select.POLLIN)
-        return bool(poller.poll(math.ceil(left * 1000)))
-    finally:
-        os.close(notice)
 
 
 def ending(reading: Reading, waited: Waited) -> ExecutionResult:

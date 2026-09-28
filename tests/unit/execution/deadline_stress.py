@@ -29,15 +29,24 @@ def count(number: int, frame: types.FrameType | None) -> None:
     calls[0] += 1
 
 
+def spin_until(stop: float) -> None:
+    """The block's work, in a frame of its own, as pyct calls the target."""
+    while time.monotonic() < stop:
+        pass
+
+
 def block(tally: dict[str, int]) -> None:
-    """One block ending near its instant, then a few steps after it, where no alarm belongs."""
+    """One block ending near its instant, then a few steps after it, where no alarm belongs.
+
+    The spin runs in a function of its own: on 3.13, the closing jump of a loop
+    that ends a ``with`` body lies outside every ``try`` around it, so an alarm
+    handled there would leave them all.
+    """
     try:
         at = time.monotonic() + AHEAD
         try:
             with deadline(at):
-                stop = at + random.uniform(-NOISE, NOISE)
-                while time.monotonic() < stop:
-                    pass
+                spin_until(at + random.uniform(-NOISE, NOISE))
         except DeadlineError:
             tally["raised"] += 1
         for _ in range(50):

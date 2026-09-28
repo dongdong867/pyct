@@ -23,7 +23,9 @@ has ended. How the signal comes depends on who owns the process:
   thread sends it to the main thread with ``pthread_kill``, under a lock and
   only while the block runs. The way out stops the sends under that lock
   and takes a signal still on its way before the handler goes back, so none
-  comes after it.
+  comes after it. The watcher needs the GIL to send, so a C call that holds
+  it, such as a regular expression's backtracking, runs to its end first,
+  and a Python loop's alarm lands some milliseconds late.
 
 A target that catches ``BaseException`` swallows the one alarm, and a call
 inside C never returns to Python for the alarm to raise in. Nothing here can
@@ -62,7 +64,7 @@ def deadline(at: float | None) -> AbstractContextManager[None]:
     """Raise DeadlineError at the monotonic instant ``at``. ``None`` sets nothing."""
     if at is None:
         return nullcontext()
-    if signal.getsignal(signal.SIGALRM) is _owned:
+    if _OWNER.owns:
         return _Timed(at)
     return _Sent(at)
 
@@ -72,26 +74,32 @@ def own_the_alarm() -> None:
 
     The handler is never put back, so a late signal finds it and does
     nothing. The input's process runs one call, so no late signal can land
-    in a later block either.
+    in a later block either. A handler the target's import installs is
+    replaced again as the call begins.
     """
+    _OWNER.owns = True
     signal.signal(signal.SIGALRM, _owned)
 
 
 @dataclass
-class _Running:
-    """Whether a block of the owning process's deadline runs: the handler raises only then."""
+class _Owner:
+    """Whether this process owns SIGALRM, and whether a block of its deadline runs now.
 
-    now: bool = False
+    The handler raises only while a block runs.
+    """
+
+    owns: bool = False
+    running: bool = False
 
 
-_RUNNING = _Running()
+_OWNER = _Owner()
 
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
     """SIGALRM's handler in a process that owns it: raise once, and only inside a block."""
-    if _RUNNING.now:
-        _RUNNING.now = False
+    if _OWNER.running:
+        _OWNER.running = False
         raise DeadlineError
 
 
@@ -102,12 +110,14 @@ class _Timed:
         self.at = at
 
     def __enter__(self) -> None:
-        _RUNNING.now = True
+        if signal.getsignal(signal.SIGALRM) is not _owned:
+            signal.signal(signal.SIGALRM, _owned)
+        _OWNER.running = True
         signal.setitimer(signal.ITIMER_REAL, max(self.at - time.monotonic(), _AT_ONCE))
 
     def __exit__(self, *_: object) -> None:
         # first, before any call: a signal from here on raises nothing
-        _RUNNING.now = False
+        _OWNER.running = False
         signal.setitimer(signal.ITIMER_REAL, 0)
 
 
@@ -115,11 +125,18 @@ class _Sent:
     """A deadline a watcher thread sends, in a process whose SIGALRM handler pyct borrows.
 
     ``armed`` holds from the handler's install until the way out begins, and
-    the watcher sends only while it holds, under ``lock``. The handler raises
-    once, only while it holds, only in the frames the block runs, and never
-    over a Ctrl-C on its way out: the block's frame is the one that entered
-    it, and a signal that lands as ``__exit__`` begins, before its first
-    line, is past the block.
+    the watcher sends only while it holds, under ``lock``, and while this
+    deadline's handler is SIGALRM's. The handler raises once, only for its
+    own watcher's signal, only while ``armed`` holds, only in the frames the
+    block runs, and never over a Ctrl-C on its way out: the block's frame is
+    the one that entered it, and a signal that lands as ``__exit__`` begins,
+    before its first line, is past the block.
+
+    A Ctrl-C or a SIGTERM is held on this thread while the watcher starts
+    and while the way out runs, and goes on once it is done, so it neither
+    lands inside the thread's start or its end nor cuts the way out short.
+    The watcher starts with them held, so the system hands them to another
+    thread only when the caller runs one.
     """
 
     def __init__(self, at: float) -> None:
@@ -127,51 +144,82 @@ class _Sent:
         self.armed = False
         self.sent = False
         self.lock = threading.Lock()
-        self.done = threading.Event()
+        # held until the way out lets the watcher go; a C lock, so letting go runs no Python
+        self.cancel = threading.Lock()
         self.main = threading.get_ident()
         self.home: types.FrameType | None = None
         self.previous: Handler = signal.SIG_DFL
-        self.watcher = threading.Thread(target=self._watch, name="pyct deadline", daemon=True)
+        self.handler = self._fire
+        self.watcher: threading.Thread | None = None
 
     def __enter__(self) -> None:
         self.home = sys._getframe(1)
         self.previous = _restorable(signal.getsignal(signal.SIGALRM))
+        held = signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
         try:
-            signal.signal(signal.SIGALRM, self._fire)
+            self.cancel.acquire()
+            signal.signal(signal.SIGALRM, self.handler)
             self.armed = True
+            self.watcher = threading.Thread(target=self._watch, name="pyct deadline", daemon=True)
             self.watcher.start()
+            # inside the try: a signal Python handles as this returns is the block's too
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
         except BaseException:
-            # the alarm that lands here, as the block begins, is the block's: it goes on
-            # from the with statement once all of this is undone
-            self.__exit__()
+            # first, before any call. The alarm that lands here, as the block begins, is the
+            # block's: it goes on from the with statement once all of this is undone
+            self.armed = False
+            self._way_out()
+            signal.pthread_sigmask(signal.SIG_SETMASK, held)
             raise
 
     def __exit__(self, *_: object) -> None:
         # first, before any call: from here on the handler raises nothing
         self.armed = False
-        with self.lock:
-            # a send under way has ended, and the watcher sends none after this
-            pass
-        self._put_back()
-        self.done.set()
-        if self.watcher.ident is not None:
-            self.watcher.join()
-        self.home = None
+        held: set[signal.Signals | int] | None = None
+        try:
+            held = signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
+            self._way_out()
+        finally:
+            if held is not None:
+                signal.pthread_sigmask(signal.SIG_SETMASK, held)
+
+    def _way_out(self) -> None:
+        """Stop the sends, put the process's own handler back, and end the watcher."""
+        self.armed = False
+        try:
+            with self.lock:
+                # a send under way has ended, and the watcher sends none after this
+                pass
+            self._let_go()
+            self._put_back()
+        finally:
+            self._let_go()
+            if self.watcher is not None and self.watcher.ident is not None:
+                self.watcher.join()
+            # the thread is freed here, where no Ctrl-C lands in its finalizer
+            self.watcher = None
+            self.home = None
+
+    def _let_go(self) -> None:
+        """Let the watcher end now rather than at the instant. Letting go twice does nothing."""
+        if self.cancel.locked():
+            self.cancel.release()
 
     def _watch(self) -> None:
         """Send SIGALRM to the main thread at the instant, unless the block has ended."""
         wait = min(max(self.at - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
-        if self.done.wait(wait):
+        if self.cancel.acquire(timeout=wait):
             return
         with self.lock:
-            if self.armed:
+            # the handler check keeps a signal from a handler a way out cut short left behind
+            if self.armed and signal.getsignal(signal.SIGALRM) is self.handler:
                 self.sent = True
                 signal.pthread_kill(self.main, signal.SIGALRM)
 
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
-        """SIGALRM's handler while the block runs: raise once, only inside it."""
-        if not self.armed or not self._in_block(frame):
+        """SIGALRM's handler while the block runs: raise once, for its own watcher, inside it."""
+        if not (self.sent and self.armed and self._in_block(frame)):
             return
         # a Ctrl-C the alarm lands on goes on; a DeadlineError would take its place
         if isinstance(sys.exception(), KeyboardInterrupt):
@@ -196,10 +244,11 @@ class _Sent:
         its handler. The mask holds a pending one while ``sigwait`` takes it.
         ``signal.signal`` runs a waiting one through this deadline's handler,
         which raises nothing now, before it swaps. Another signal's handler,
-        a Ctrl-C's, can raise there first, so the swap runs once more, then
-        that raise goes on. A raise before the swap leaves this deadline's
-        handler, which raises nothing now, rather than let the previous one
-        meet a signal still pending; the mask comes back either way.
+        a Ctrl-C's that another thread took, can raise there first, so the
+        swap runs once more, then that raise goes on. A raise before the swap
+        leaves this deadline's handler, which raises nothing now, rather than
+        let the previous one meet a signal still pending; the mask comes back
+        either way.
         """
         held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
         try:
@@ -216,6 +265,9 @@ class _Sent:
 
 
 _WAY_OUT = _Sent.__exit__.__code__
+
+# the signals a person stops a run with, held while the watcher starts and while the way out runs
+_STOPS = frozenset({signal.SIGINT, signal.SIGTERM})
 
 
 def _restorable(handler: Handler | None) -> Handler:

@@ -13,7 +13,7 @@ import sys
 import threading
 import time
 import types
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 
 import pytest
@@ -154,7 +154,7 @@ def call_under(guard: AbstractContextManager[None]) -> None:
 
 
 @DEADLINE_FIRES
-def test_an_alarm_after_a_way_out_a_ctrl_c_cut_short_raises_nothing() -> None:
+def test_an_alarm_after_a_way_out_a_ctrl_c_cut_short_ends_no_later_call() -> None:
     before = signal.getsignal(signal.SIGALRM)
     guard = deadline(time.monotonic() + 0.05)
     way_out = type(guard).__exit__.__code__
@@ -171,10 +171,78 @@ def test_an_alarm_after_a_way_out_a_ctrl_c_cut_short_raises_nothing() -> None:
     finally:
         sys.settrace(previous)
     try:
-        # the watcher still sends its alarm, which lands here, outside the block
-        time.sleep(0.2)
+        # the next call's block spans the instant the first one's watcher sends at
+        with deadline(time.monotonic() + 10):
+            time.sleep(0.2)
     finally:
         signal.signal(signal.SIGALRM, before)
+
+
+def test_a_ctrl_c_as_the_handler_goes_back_still_lets_it_go_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    before = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
+    swap = signal.signal
+    interrupted: list[bool] = []
+
+    def interrupt_once(number: int, handler: object) -> object:
+        if number == signal.SIGALRM and handler is before and not interrupted:
+            interrupted.append(True)
+            # a Ctrl-C's handler, run by signal.signal before it swaps, raises
+            raise KeyboardInterrupt
+        return swap(number, handler)  # pyrefly: ignore[bad-argument-type]
+
+    monkeypatch.setattr(signal, "signal", interrupt_once)
+
+    with pytest.raises(KeyboardInterrupt), deadline(time.monotonic() + 10):
+        pass
+
+    assert interrupted
+    assert signal.getsignal(signal.SIGALRM) is before
+    # the watcher ended with the block, not at its instant
+    assert threading.active_count() == threads
+
+
+def ctrl_c_as_the_watcher_starts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send the main thread a Ctrl-C from a new thread, while the main one waits for it to start."""
+    real = threading.Thread._bootstrap_inner  # pyrefly: ignore[missing-attribute]
+    main = threading.get_ident()
+
+    def interrupted(thread: threading.Thread) -> None:
+        signal.pthread_kill(main, signal.SIGINT)
+        time.sleep(0.05)
+        real(thread)
+
+    monkeypatch.setattr(threading.Thread, "_bootstrap_inner", interrupted)
+
+
+def ctrl_c_as_the_watcher_ends(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Send the main thread a Ctrl-C as it begins to wait for a thread to end."""
+    real = threading.Thread.join
+    main = threading.get_ident()
+
+    def interrupted(thread: threading.Thread, timeout: float | None = None) -> None:
+        signal.pthread_kill(main, signal.SIGINT)
+        real(thread, timeout)
+
+    monkeypatch.setattr(threading.Thread, "join", interrupted)
+
+
+@pytest.mark.parametrize("when", [ctrl_c_as_the_watcher_starts, ctrl_c_as_the_watcher_ends])
+def test_a_ctrl_c_as_the_watcher_starts_or_ends_comes_once_all_is_undone(
+    monkeypatch: pytest.MonkeyPatch, when: Callable[[pytest.MonkeyPatch], None]
+) -> None:
+    before = signal.getsignal(signal.SIGALRM)
+    threads = threading.active_count()
+    when(monkeypatch)
+
+    # a KeyboardInterrupt, not the RuntimeError a Ctrl-C inside the thread's start makes
+    with pytest.raises(KeyboardInterrupt), deadline(time.monotonic() + 10):
+        pass
+
+    assert signal.getsignal(signal.SIGALRM) is before
+    assert threading.active_count() == threads
 
 
 def test_blocks_that_end_as_their_alarm_comes_keep_it_inside() -> None:
@@ -199,26 +267,3 @@ def test_blocks_that_end_as_their_alarm_comes_keep_it_inside() -> None:
         tally = json.loads(stdout)
         assert tally["escaped"] == 0, (case, tally)
         assert tally["calls"] == 0, (case, tally)
-
-
-def test_a_ctrl_c_as_the_handler_goes_back_still_lets_it_go_back(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    before = signal.getsignal(signal.SIGALRM)
-    swap = signal.signal
-    interrupted: list[bool] = []
-
-    def interrupt_once(number: int, handler: object) -> object:
-        if number == signal.SIGALRM and handler is before and not interrupted:
-            interrupted.append(True)
-            # a Ctrl-C's handler, run by signal.signal before it swaps, raises
-            raise KeyboardInterrupt
-        return swap(number, handler)  # pyrefly: ignore[bad-argument-type]
-
-    monkeypatch.setattr(signal, "signal", interrupt_once)
-
-    with pytest.raises(KeyboardInterrupt), deadline(time.monotonic() + 10):
-        pass
-
-    assert interrupted
-    assert signal.getsignal(signal.SIGALRM) is before

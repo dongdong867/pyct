@@ -108,3 +108,22 @@ def test_the_input_s_deadline_starts_no_thread() -> None:
         child._EXIT(0 if running == 1 else 1)
 
     assert settled_then(count_threads) == 0
+
+
+def hang_after_an_import_takes_sigalrm() -> None:
+    # the target's import installs a SIGALRM handler of its own
+    signal.signal(signal.SIGALRM, lambda number, frame: None)
+    running = 0
+    try:
+        with deadline(time.monotonic() + 0.05):
+            running = threading.active_count()
+            while True:
+                pass
+    except DeadlineError:
+        child._EXIT(0 if running == 1 else 2)
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_the_input_s_process_keeps_the_alarm_its_target_s_import_took() -> None:
+    assert settled_then(hang_after_an_import_takes_sigalrm) == 0

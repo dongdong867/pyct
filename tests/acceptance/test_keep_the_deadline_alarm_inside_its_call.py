@@ -3,7 +3,8 @@
 The first four criteria each make ``run()`` calls for 30 seconds in a process of
 their own, ``tests/acceptance/deadline_race.py``, whose SIGALRM handler is
 SIG_DFL or a counting one of its own. The four processes start together the
-first time a test asks for one, so the four tests take about 30 seconds in all.
+first time a test asks for one, so the four tests take about 30 seconds in all,
+in the one worker of a parallel run that holds this module.
 The last criterion runs pyct from the command line.
 """
 
@@ -18,6 +19,9 @@ import pytest
 
 from targets.isolate.hangs_with_finally import MARKER
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, first_line, run_pyct, summary_line
+
+# one worker holds the races, so a parallel run starts each race process once
+pytestmark = pytest.mark.xdist_group("deadline-races")
 
 # how long each race process makes runs
 RACE_SECONDS = 30
