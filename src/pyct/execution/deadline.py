@@ -247,8 +247,10 @@ class _Sent:
     that lands as ``__exit__`` begins, before its first line, is past it,
     and one that lands in ``__enter__``, as ``Thread.start`` waits on a
     lock of threading's own, is not yet in it. A raise there can skip the
-    lock's taking back, so its ``with`` releases it unlocked; the watcher
-    sends again ``_AGAIN`` later, into the block.
+    lock's taking back, so its ``with`` releases it unlocked. A block whose
+    instant has come by the end of ``__enter__`` raises there instead, as
+    the block begins; otherwise the watcher sends again ``_AGAIN`` later,
+    into the block.
 
     A Ctrl-C or a SIGTERM is held on this thread while the watcher starts
     and while the way out runs, and goes on once it is done, so it neither
@@ -282,7 +284,10 @@ class _Sent:
             self.armed = True
             self.watcher = threading.Thread(target=self._watch, name="pyct deadline", daemon=True)
             self.watcher.start()
-            # inside the try: a Ctrl-C Python handles as this returns undoes the block too
+            if time.monotonic() >= self.at:
+                # the instant came before the block: it raises here, where no lock is held
+                _raise_deadline(signal.SIGALRM, None)
+            # inside the try: a stop Python handles as this returns undoes the block too
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
         except BaseException:
             # first, before any call. A raise that lands here, as the block begins, goes on

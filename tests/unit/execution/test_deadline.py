@@ -53,14 +53,24 @@ def test_deadline_fires_at_once_when_the_instant_has_passed() -> None:
 
 
 @DEADLINE_FIRES
-def test_an_alarm_due_as_the_block_begins_lands_inside_it() -> None:
+def test_an_alarm_due_as_the_block_begins_raises_in_none_of_threading_s_frames() -> None:
     # the watcher sends at once, as Thread.start waits on a lock of threading's own; a raise
     # there can skip that lock's taking back, and its with statement then releases it unlocked
     with pytest.raises(DeadlineError) as raised, deadline(time.monotonic() - 1):
         spin_until(time.monotonic() + 5)
 
-    landed = [frame.name for frame in traceback.extract_tb(raised.value.__traceback__)]
-    assert "spin_until" in landed, landed
+    files = [frame.filename for frame in traceback.extract_tb(raised.value.__traceback__)]
+    assert threading.__file__ not in files, files
+
+
+@DEADLINE_FIRES
+def test_a_block_whose_instant_has_passed_runs_none_of_its_body() -> None:
+    ran: list[bool] = []
+
+    with pytest.raises(DeadlineError), deadline(time.monotonic() - 1):
+        ran.append(True)
+
+    assert ran == []
 
 
 @DEADLINE_FIRES
