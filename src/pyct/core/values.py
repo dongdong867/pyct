@@ -112,7 +112,8 @@ class _Sinked(Protocol):
 
 # what a type may answer before its base type's own operation, given the operation's name, the
 # tracked value, the other operand and any modulus: an answer, or NotImplemented to go on to the
-# base type's
+# base type's. Its arguments are left unchecked because a Protocol taking the modulus would make
+# `texts.alone`, which answers `__format__` and never meets one, take a parameter it never uses
 type First = Callable[..., object]
 
 

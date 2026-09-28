@@ -3,7 +3,9 @@
 The `ConcolicFloat` body below is the taught set: the compares, the truth
 test, `+ - * / // %` and `divmod`, the unary operations, the four roundings
 to an int and `is_integer` stay symbolic, `real` and `conjugate` are the
-value itself, `fromhex` is float's own, and a copy is the value itself.
+value itself, `fromhex` is float's own, `from_number`, where the running
+Python's float has it, converts a tracked float to itself, and a copy is
+the value itself.
 `_KEPT` names what is left to float on purpose. `_INHERITED` names what
 float inherits rather than defines, which the derivation at the bottom of
 the file downgrades along with every other method float defines. What each
