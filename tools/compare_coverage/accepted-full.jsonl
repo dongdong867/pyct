@@ -5,7 +5,7 @@
 {"set": "examples", "target": "examples.library_black_box.json_config_validation::json_config_validation", "seed": {"config_str": "{\"mode\": \"production\", \"version\": \"1.0.0\"}"}, "status": "differs", "only_legacy": [92], "only_v2": []}
 {"set": "examples", "target": "examples.pure_numeric.tax_bracket_calculator::tax_bracket_calculator", "seed": {"income": 75000, "filing_status": "single"}, "status": "differs", "only_legacy": [], "only_v2": [33]}
 {"set": "examples", "target": "examples.solver_hard.pattern_matching_dispatcher::pattern_matching_dispatcher", "seed": {"pattern": "*.py", "text": "main.py"}, "status": "differs", "only_legacy": [], "only_v2": [91]}
-{"set": "examples", "target": "examples.solver_hard.string_similarity_classification::string_similarity_classification", "seed": {"s1": "listen", "s2": "silent"}, "status": "differs", "only_legacy": [], "only_v2": [68, 72]}
+{"set": "examples", "target": "examples.solver_hard.string_similarity_classification::string_similarity_classification", "seed": {"s1": "listen", "s2": "silent"}, "status": "differs", "only_legacy": [], "only_v2": [68], "varies": {"only_legacy": [], "only_v2": [72]}}
 {"set": "examples", "target": "examples.string_constraints.email_validation::email_validation", "seed": {"email": "user@example.com"}, "status": "differs", "only_legacy": [], "only_v2": [88]}
 {"set": "examples", "target": "examples.string_constraints.semver_parsing::semver_parsing", "seed": {"version": "1.2.3"}, "status": "differs", "only_legacy": [85, 91, 95], "only_v2": []}
 {"set": "examples", "target": "examples.string_constraints.url_routing::url_routing", "seed": {"url": "https://example.com/api/v2/users"}, "status": "differs", "only_legacy": [123], "only_v2": []}
