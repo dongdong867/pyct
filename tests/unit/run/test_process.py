@@ -15,7 +15,7 @@ from pyct.core.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run import process
-from pyct.run.journal import Reading
+from pyct.run.journal_reader import Reading
 from pyct.run.process import (
     KILL_GRACE,
     Child,
