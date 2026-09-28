@@ -286,3 +286,14 @@ def test_a_join_that_reads_to_a_split_s_end_leaves_no_plan(target: str, seed: st
     answers = solved(input_lines(result.stdout))
     assert answers, result.stdout
     assert all(line["mismatch_at"] is None for line in answers), answers
+
+
+# follow-a-join-of-tracked-strings-leaves-a-separator-read-at-run-time-to-python: a name bound only
+# to a str literal in its module, rebound to bytes from another, joins as Python joins
+def test_a_literal_bound_separator_rebound_elsewhere_raises_as_python_does() -> None:
+    result = run_pyct("targets.strs.rebinds_separator::call", '{"s": "a"}')
+
+    assert result.returncode == 0, result.stderr
+    seed = first_line(result.stdout)
+    separator: Any = b"-"
+    assert failure_detail(seed) == raised_by_python(lambda: separator.join(["a", "b"])), seed

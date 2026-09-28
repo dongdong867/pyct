@@ -428,6 +428,8 @@
     {"set": "v2", "target": "targets.strs.printed_methods::check", "seed": {"s": "b", "n": 0}},
     {"set": "v2", "target": "targets.strs.rebuilt::rebuild", "seed": {"s": "aaaaaaaaaaaaaaaaaa"}},
     {"set": "v2", "target": "targets.strs.replace_once::mark", "seed": {"s": "q", "t": "q"}},
+    {"set": "v2", "target": "targets.strs.rebound_separator::join_by_sep", "seed": {"s": "a"}},
+    {"set": "v2", "target": "targets.strs.rebinds_separator::call", "seed": {"s": "a"}},
     {"set": "v2", "target": "targets.strs.request_line::method", "seed": {"line": "POST /x"}},
     {"set": "v2", "target": "targets.strs.reversed_between::back", "seed": {"s": "abcd", "n": 0}},
     {"set": "v2", "target": "targets.strs.reversed_text::mirror", "seed": {"s": "x"}},
