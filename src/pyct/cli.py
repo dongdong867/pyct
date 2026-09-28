@@ -239,7 +239,9 @@ def _report(record: InputRecord, coverage: Coverage) -> None:
     if names.keys() <= record.args.keys():
         printed = printed_forks(record.forks)
     else:
-        printed = printed_forks(record.forks, lambda part: access_name(part) in names)
+        # each part's access, once: a path through a deep dict names every step of its chain
+        known: dict[int, str | None] = {}
+        printed = printed_forks(record.forks, lambda part: access_name(part, known) in names)
     print(render_trace(record, coverage, printed), end="", file=sys.stderr, flush=True)
     _line(render(record, coverage, printed))
 

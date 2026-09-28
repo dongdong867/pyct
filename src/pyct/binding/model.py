@@ -3,7 +3,7 @@
 from collections.abc import Mapping
 
 from pyct.binding.bind import Noted, Seed, leaf_name
-from pyct.binding.shapes import ListAnswer, ListShape, resized
+from pyct.binding.shapes import DictAnswer, ListAnswer, ListShape, rekeyed, resized
 from pyct.binding.walk import Place, Walk
 
 
@@ -13,23 +13,26 @@ def apply(origin: Seed, model: Mapping[str, object]) -> Seed:
 
     The model names each leaf as ``Seed`` does, with its value, and each tracked list a fork
     read, a row inside one too, with its answer: a new length, and the solver's values at the
-    positions a fork read. A value the model does not name keeps what that input had, and so
-    does every position of a list no fork read; a position the solver added holds what it
-    answered, or starts empty. A leaf name the input does not hold is an error, because the
-    solver would be answering about a value that does not exist. The rebuild is the one walk
-    of the input an answer costs: it notes the new input's leaves and lists as it goes.
+    positions a fork read. It names each tracked dict a fork read with the keys it holds. A
+    value the model does not name keeps what that input had, and so does every position of a
+    list no fork read; a position the solver added holds what it answered, or starts empty. A
+    leaf name the input does not hold is an error, because the solver would be answering about
+    a value that does not exist. The rebuild is the one walk of the input an answer costs: it
+    notes the new input's leaves, lists and dicts as it goes.
     """
     unknown = [
         name
         for name, value in model.items()
-        if name not in origin.leaves and not isinstance(value, ListAnswer)
+        if name not in origin.leaves and not isinstance(value, ListAnswer | DictAnswer)
     ]
     if unknown:
         named = ", ".join(unknown)
         raise ValueError(f"the model names values the input does not hold: {named}")
     applied = _Applied(origin, model)
     args = Walk(applied).rebuilt(origin.args, origin.checks)
-    return Seed(args, applied.leaves, applied.shapes(), origin.checks, applied.values)
+    return Seed(
+        args, applied.leaves, applied.shapes(), origin.checks, applied.values, applied.dicts
+    )
 
 
 class _Applied(Noted):
@@ -59,6 +62,18 @@ class _Applied(Noted):
         made, _ = super().listed(items, place)
         if shape is not None:
             self.input_shapes[id(made)] = shape
+        return made, items
+
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        name = leaf_name(place.access)
+        shape = self.origin.dicts.get(name)
+        answer = self.model.get(name)
+        items = dict(value)
+        if isinstance(answer, DictAnswer) and shape is not None:
+            items = rekeyed(items, answer, shape)
+        made, _ = super().mapped(items, place)
         return made, items
 
     def _shape(self, name: str, place: Place) -> ListShape | None:

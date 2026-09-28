@@ -172,14 +172,19 @@ def test_a_float_inside_an_argument_passes_through_plain(isolation: Isolation) -
 
     result = run(target, {"config": {"ratio": 0.25, "count": 1}}, isolation=isolation)
 
-    assert [record.failure for record in result.records] == [None, None]
-    seeded, solved = result.records
-    assert [fork.expression for fork in seeded.forks] == [[">", ["[]", "config", "'count'"], 3]]
-    assert not seeded.downgrades
-    config = solved.args["config"]
-    assert isinstance(config, dict)
-    assert type(config["ratio"]) is float and config["ratio"] == 0.25
-    assert solved.mismatch_at is None
+    seeded, *solved = result.records
+    # each key is looked up first, and the float's compare records nothing
+    assert [fork.expression for fork in seeded.forks] == [
+        ["in", "'ratio'", "config"],
+        ["in", "'count'", "config"],
+        [">", ["[]", "config", "'count'"], 3],
+    ]
+    assert not seeded.downgrades and solved
+    for record in solved:
+        config = record.args["config"]
+        assert isinstance(config, dict)
+        assert "ratio" not in config or type(config["ratio"]) is float, config
+        assert config.get("ratio", 0.25) == 0.25 and record.mismatch_at is None
 
 
 def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None:
