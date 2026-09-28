@@ -10,8 +10,10 @@ import pytest
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import SinkItem
+from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
+from pyct.core.handed import handed
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.ranges import ConcolicRange, ranged
@@ -43,6 +45,26 @@ def test_the_table_holds_each_tracked_class_and_its_base_type() -> None:
         ConcolicRange: range,
     } == BASES
     assert {id(tracked): base for tracked, base in BASES.items()} == BASES_BY_ID
+
+
+def names(kind: type) -> tuple[str, str, str]:
+    """What Python writes into a message for a value of this class: its name, qualified name and
+    module."""
+    return kind.__name__, kind.__qualname__, kind.__module__
+
+
+def test_each_tracked_class_carries_its_base_type_s_names() -> None:
+    views = [
+        (ConcolicKeys, type({}.keys())),
+        (ConcolicValues, type({}.values())),
+        (ConcolicItems, type({}.items())),
+    ]
+    for tracked, base in [*BASES.items(), *views]:
+        assert names(tracked) == names(base)
+    # the stand-in a float or bool on the left hands a tracked int or bool is named as that is
+    number, flag = ConcolicInt.made(1, "n", []), ConcolicBool.made(True, "b", [])
+    for stand_in, base in [(handed(number, 0.5), int), (handed(flag, True), bool)]:
+        assert names(type(stand_in)) == names(base)
 
 
 def test_a_tracked_value_reports_its_base_type_as_its_class() -> None:
