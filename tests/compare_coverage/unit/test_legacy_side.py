@@ -207,7 +207,13 @@ def test_a_budget_spent_answer_reruns_when_refreshing(
 
 
 @pytest.mark.parametrize(
-    "script", [{"exit": 3, "say": "boom"}, {"sleep": 5}], ids=["exited", "stopped"]
+    "script",
+    [
+        {"exit": 3, "say": "boom"},
+        {"sleep": 5},
+        {"success": False, "stopped": "error", "error": "boom"},
+    ],
+    ids=["exited", "stopped", "legacy failed"],
 )
 def test_a_side_that_did_not_answer_is_not_kept(
     stub_checkout: StubCheckout, tmp_path: Path, script: dict[str, object]

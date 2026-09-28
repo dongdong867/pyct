@@ -9,7 +9,7 @@ import pytest
 
 from tools.compare_coverage.cache import (
     Cache,
-    Legacy,
+    LegacyFacts,
     clear,
     default_folder,
     run_context,
@@ -185,7 +185,7 @@ def test_the_default_folder_is_the_variable_else_the_user_cache(tmp_path: Path) 
     assert default_folder({}, home) == home / ".cache" / "pyct" / "compare-coverage"
 
 
-LEGACY = Legacy(
+LEGACY = LegacyFacts(
     checkout=Path("/legacy"),
     commit="abc",
     changes="d",

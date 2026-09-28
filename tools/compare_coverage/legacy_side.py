@@ -12,9 +12,10 @@ itself killed leaves the folder of each legacy side it was running, found by its
 ``pyct-legacy-`` prefix.
 
 With a cache, the side answers from a result kept by an earlier run when there is one, and
-keeps each new answer: one from a process that exited 0 and, for an installed entry, said
-which copy of the library it has. A side stopped past its wait, one that exited otherwise, or
-one whose probe failed is not an answer of legacy's, so it is not kept.
+keeps each new answer that did not fail: one from a process that exited 0 with a report of
+no failure and, for an installed entry, said which copy of the library it has. A failed side,
+whether stopped past its wait, exited otherwise, failed in legacy or failed its probe, is not
+kept, so each run tries it again.
 """
 
 import contextlib
@@ -134,7 +135,7 @@ class LegacySide:
                 read_report(finished, "covered", _report), python, request, environment
             )
         probed = request.library is None or report.library is not None
-        return report, finished.returncode == 0 and probed
+        return report, finished.returncode == 0 and probed and report.failure is None
 
 
 def _report(line: dict[str, object]) -> SideReport:

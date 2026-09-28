@@ -163,6 +163,18 @@ def test_prepare_clears_the_named_cache_before_any_row(
     assert cache is not None and cache.refresh_budget_spent
 
 
+def test_accepting_reruns_every_kept_budget_spent_legacy_side(
+    stub_checkout: StubCheckout, small_list: tuple[Path, Path], tmp_path: Path
+) -> None:
+    stub_checkout.commit()
+    accepted = ["--accepted", str(tmp_path / "accepted.jsonl"), "--accept"]
+
+    prepared = cli.prepare(["--legacy", str(stub_checkout.path), *accepted], os.environ)
+
+    cache = legacy_of(prepared).cache
+    assert cache is not None and cache.refresh_budget_spent
+
+
 def test_a_cache_folder_that_cannot_be_made_is_refused_before_any_row(
     stub_checkout: StubCheckout, small_list: tuple[Path, Path], tmp_path: Path
 ) -> None:

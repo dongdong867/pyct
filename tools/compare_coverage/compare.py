@@ -112,6 +112,8 @@ def exit_code(rows: list[Row], accepting: bool) -> int:
 
 
 def _rows(run: Run, sides: Sides) -> Generator[Row]:
+    # a run stopped before this one refused new commands until now
+    allow_commands()
     if run.jobs == 1:
         for entry in run.entries:
             yield _row(entry, run, sides)
@@ -127,8 +129,6 @@ def _rows_at_once(run: Run, sides: Sides) -> Generator[Row]:
     Whatever ends the wait early stops every side still running and refuses any new one
     before it goes on up, and the pool's threads then end before the run does.
     """
-    # a run stopped before this one refused new commands until now
-    allow_commands()
     with ThreadPoolExecutor(max_workers=run.jobs, thread_name_prefix="row") as pool:
         try:
             futures = [pool.submit(_row, entry, run, sides) for entry in run.entries]

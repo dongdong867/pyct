@@ -9,7 +9,7 @@ the rules ``pyct run`` gives them. Ctrl-C stops every running side and exits 130
 ``$PYCT_COMPARE_CACHE`` or the user's cache folder, and reused while nothing a row's legacy
 side depends on changed (``cache.py`` says what that is). ``--clear-cache`` removes every
 kept result first, and ``--refresh-budget-spent`` runs again each legacy side kept after it
-spent its budget.
+spent its budget, as ``--accept`` always does.
 """
 
 import argparse
@@ -29,7 +29,7 @@ from tools.compare_coverage.accepted import (
     key_of,
     read_records,
 )
-from tools.compare_coverage.cache import Cache, Legacy, clear, default_folder, run_context
+from tools.compare_coverage.cache import Cache, LegacyFacts, clear, default_folder, run_context
 from tools.compare_coverage.compare import Facts, Run, Sides, Streams, compare
 from tools.compare_coverage.entries import (
     LIST_FILE,
@@ -162,7 +162,7 @@ def _cache_folder(flags: Flags, environ: Mapping[str, str]) -> Path:
 def _cache(flags: Flags, facts: Facts, folder: Path) -> Cache | None:
     """Legacy results kept in ``folder``, or ``None`` when a fact they depend on is not known."""
     assert flags.legacy is not None  # probe refuses a missing checkout
-    legacy = Legacy(
+    legacy = LegacyFacts(
         checkout=flags.legacy,
         commit=facts.commits["legacy"],
         changes=changes(flags.legacy),
@@ -171,7 +171,9 @@ def _cache(flags: Flags, facts: Facts, folder: Path) -> Cache | None:
         installed=installed_distributions(flags.legacy),
     )
     context = run_context(legacy)
-    return None if context is None else Cache(folder, context, flags.refresh_budget_spent)
+    # a record --accept writes never rests on a budget-spent side a loaded run once gave
+    refresh = flags.refresh_budget_spent or flags.accept
+    return None if context is None else Cache(folder, context, refresh)
 
 
 def _accepted(flags: Flags, target_list: TargetList) -> Accepted | None:

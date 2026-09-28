@@ -13,7 +13,10 @@ import time
 from pathlib import Path
 from subprocess import PIPE
 
+import pytest
+
 from tests.compare_coverage.acceptance.checker import (
+    ONE_CHECK_ENTRY,
     REPO_ROOT,
     a_run,
     checker_environment,
@@ -29,7 +32,7 @@ from tools.compare_coverage.cache import Cache
 from tools.compare_coverage.compare import Sides
 from tools.compare_coverage.entries import Entry
 from tools.compare_coverage.legacy_side import LegacySide
-from tools.compare_coverage.process import side_environment
+from tools.compare_coverage.process import allow_commands, side_environment, stop_every_command
 
 # in the order targets.json lists them, the order rows print in
 FOUR = (
@@ -144,6 +147,22 @@ def test_ctrl_c_stops_every_row_running_at_once(
     assert checker.returncode == 130, stderr
     assert list(system.iterdir()) == []
     assert all(gone(call["pid"]) for call in calls)
+
+
+@pytest.mark.parametrize("jobs", [1, 2])
+def test_a_run_after_a_stopped_one_runs_its_sides(stub_checkout: StubCheckout, jobs: int) -> None:
+    """speed-up-the-compare-run-runs-rows-at-once"""
+    legacy = LegacySide(stub_checkout.path, side_environment(os.environ))
+    run = a_run([ONE_CHECK_ENTRY], roots(stub_checkout.path), jobs=jobs)
+    stop_every_command()
+
+    try:
+        _, found, _ = compare_on(run, Sides(v2=v2_side(), legacy=legacy))
+    finally:
+        allow_commands()
+
+    assert [(row["v2"]["failure"], row["legacy"]["failure"]) for row in found] == [(None, None)]
+    assert len(stub_checkout.calls()) == 1
 
 
 def wait_for_calls(stub_checkout: StubCheckout, count: int) -> list[dict[str, object]]:

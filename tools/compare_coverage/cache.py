@@ -76,7 +76,7 @@ def default_folder(environ: Mapping[str, str], home: Path) -> Path:
 
 
 @dataclass(frozen=True)
-class Legacy:
+class LegacyFacts:
     """What every legacy result of one run depends on, ``None`` where it could not be read.
 
     ``checkout`` is the checkout's path: an installed entry's report names files in its
@@ -92,7 +92,7 @@ class Legacy:
     installed: tuple[str, ...]
 
 
-def run_context(legacy: Legacy) -> str | None:
+def run_context(legacy: LegacyFacts) -> str | None:
     """The part of every key one run shares, or ``None`` when a fact of it is not known."""
     known = (legacy.commit, legacy.changes, legacy.python, legacy.cvc5)
     if any(fact is None for fact in known):
