@@ -25,6 +25,9 @@ from pyct.core.values import downgraded, own
 # with no more separators than the limit, or fewer words (see `solver/splits.py`)
 LONGEST_WALK = 16
 
+# the splits that hand back a tracked list; `partition` hands back a tuple of three
+LISTED_SPLITS = frozenset({"split", "rsplit", "splitlines"})
+
 # each method's arguments in the order Python takes them by position, with the default Python
 # gives one left out; partition takes no keyword
 _KEYWORDS: dict[str, tuple[tuple[str, object], ...]] = {

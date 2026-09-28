@@ -151,6 +151,14 @@ def worded(term: str, limit: int, index: int) -> Piece:
     return _let(bounds, piece), _let(bounds[:-1], f"(>= a!{index} 0)")
 
 
+def words_count(term: str) -> str:
+    """How many words the string has, as one term: a word starts where a character that is
+    not whitespace follows whitespace, or the start, and each such pair is removed once."""
+    spaced = f'(str.++ " " {term})'
+    starts = f'(str.replace_re_all {spaced} (re.++ {_SPACE} {_NOT_SPACE}) "")'
+    return f"(div (- (str.len {spaced}) (str.len {starts})) 2)"
+
+
 def words_past(term: str, index: int) -> str:
     """That the string has more than ``index`` words: whitespace, then ``index`` runs of
     characters that are not whitespace each followed by whitespace, then one more such
@@ -252,11 +260,7 @@ def unwalked_bound(term: str, separator: str | None, limit: int) -> str:
     """That an rsplit whose limit is past `LONGEST_WALK` splits the string as the split with no
     limit does: the string has no more separators than the limit, or fewer words."""
     if separator is None:
-        # a word starts where a character that is not whitespace follows whitespace, or the start
-        spaced = f'(str.++ " " {term})'
-        starts = f'(str.replace_re_all {spaced} (re.++ {_SPACE} {_NOT_SPACE}) "")'
-        words = f"(div (- (str.len {spaced}) (str.len {starts})) 2)"
-        return f"(< {words} {limit})"
+        return f"(< {words_count(term)} {limit})"
     # a literal replace, which cvc5 answered at once where the same count as a regular
     # expression ran past its limit
     kept = f'(str.len (str.replace_all {term} {encode(separator)} ""))'
@@ -314,8 +318,6 @@ def right_piece(term: str, head: str, operands: tuple[object, ...], back: int) -
     steps = limit if walked else back + 1
     walk = _words_back(steps) if separator is None else _separators_back(separator, steps)
     bindings, _, pieces = walk
-    if back >= len(pieces):
-        return '""'
     return _let([("r!", f"(str.rev {term})"), *bindings], pieces[back])
 
 

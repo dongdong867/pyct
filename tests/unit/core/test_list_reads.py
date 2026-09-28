@@ -133,6 +133,19 @@ def test_a_tracked_index_into_a_split_s_list_is_a_downgrade(changed: bool) -> No
     assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
 
 
+def test_a_tracked_index_into_a_list_that_holds_a_piece_keeps_its_forks() -> None:
+    items, sink = tracked(["q"])
+    piece = ConcolicStr.made("a", expression=["[]", ["split", "s", "','"], 0], sink=sink)
+    items.append(piece)
+
+    item = items[ConcolicInt.made(0, expression="i", sink=sink)]
+
+    # the list is the argument's, changed: only a split's own list is read at positions the
+    # path writes
+    assert isinstance(item, ConcolicStr)
+    assert downgrades(sink) == [] and len(forks(sink)) == 2
+
+
 def test_a_position_from_the_start_of_a_mixed_argument_is_read_by_its_position() -> None:
     items, sink = tracked([1, "a", None])
 

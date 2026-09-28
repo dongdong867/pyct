@@ -9,13 +9,21 @@ writes for each form, exact for every string. That holds wherever the lists writ
 compare, a fork or the branch of a read.
 
 Only a length that meets anything else, a clamp a slice writes, a tracked int, another split's
-length, is a named count, tied to the pieces up to a bound: the count is the number of pieces
-there below the bound, and the piece at the bound is not. So an answer holds no more pieces
-than the bound, and a path that needs more is a miss.
+length, is a named count. On whitespace it is one term, the words the string has, exact on
+every string. Otherwise it is tied to the pieces up to a bound: two past the largest number
+the path compares a length with, or past the input's own count, at most `MOST_BOUND`. The
+count is the number of pieces there below the bound, and the piece at the bound is not, so an
+answer holds no more pieces than the bound.
 
 A piece is read at a number from the start, at a number from the end, which a walk of the
 reversed string reads where one does (`splits.right_piece`), and at any other position as a
 choice among the pieces below the bound.
+
+A program that holds a count to its bound, or reads a piece among those below it, says so
+(``Splits.bounded``), and an unsat to it is asked once more loosened: each count tied only to
+the pieces below the bound, with no bound on it, and no piece read among those below it. An
+unsat to that is the path's, and anything else a miss that says it is not
+(`solver.cvc5._loosened`). So a path that needs more pieces than the bound is never `unsat`.
 """
 
 from __future__ import annotations
@@ -25,7 +33,8 @@ from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
 from pyct.core.str_splits import LONGEST_WALK
-from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, nested
+from pyct.solver.list_reader import ProgramTooLargeError
+from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.literals import plain_operand
 from pyct.solver.splits import (
     SPLITS,
@@ -34,18 +43,21 @@ from pyct.solver.splits import (
     right_piece,
     split_piece,
     unwalked_bound,
+    words_count,
     words_past,
 )
 
 # a piece always there, counted
 TRUE_ONE = "1"
 
-# the most pieces a count is tied to: a longer tie takes cvc5 past its limit anyway
-MOST_TIED = 32
-
 # how many pieces past the largest number the path compares a length with a count is tied to:
 # one more than any fork asks for
 BOUND_PAST = 2
+
+# the most pieces a count is tied to, and a piece chosen among: the program grows with the
+# square of the bound, since each piece is a walk to it, and past about ten a tie takes cvc5 to
+# its limit anyway. A path that needs more is asked loosened (see the module docstring)
+MOST_BOUND = 34
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -57,23 +69,23 @@ _ORDERS: Mapping[str, tuple[bool, bool]] = {
 }
 
 
-def negated(condition: str) -> str:
-    """The condition's negation, a constant turned over here."""
-    if condition in (TRUE, FALSE):
-        return FALSE if condition == TRUE else TRUE
-    return f"(not {condition})"
-
-
-@dataclass
+@dataclass(frozen=True)
 class SplitList:
     """One split's list: the string's term, the method and its plain operands, the name its
-    count goes by where a term reads it, and the most pieces that count is tied to."""
+    count goes by where a term reads it, and the most pieces that count is tied to.
+
+    ``bounds`` is where the list notes its count when the program holds it to the bound, shared
+    by the path's splits; with ``hold`` false the program is the loosened one, which holds no
+    count to a bound and reads no piece among those below it.
+    """
 
     term: str
     head: str
     operands: tuple[object, ...]
     count: str
     bound: int
+    bounds: list[str]
+    hold: bool = True
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -138,16 +150,35 @@ class SplitList:
         return f"(= {counts[0]} {counts[1]})"
 
     def tie(self) -> list[str]:
-        """What the count is: the pieces there below the bound, and none at it."""
+        """What the count is: on whitespace, the words the string has, at most the limit's
+        pieces; otherwise the pieces there below the bound, and none at it. Loosened, the count
+        is only past each number below the bound where that piece is there."""
+        if self._words():
+            return [f"(assert (= {self.count} {self._words_count()}))"]
+        beyond = self.past(self.bound)
+        if beyond != FALSE and not self.hold:
+            tied = [f"(= (> {self.count} {at}) {self.past(at)})" for at in range(self.bound)]
+            return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)]
         present = [self.past(at) for at in range(self.bound)]
         flags = [TRUE_ONE if there == TRUE else f"(ite {there} 1 0)" for there in present]
         kept = [flag for flag, there in zip(flags, present, strict=True) if there != FALSE]
         total = "0" if not kept else kept[0] if len(kept) == 1 else f"(+ {' '.join(kept)})"
         tied = [f"(assert (= {self.count} {total}))"]
-        beyond = self.past(self.bound)
         if beyond != FALSE:
+            self.bounds.append(self.count)
             tied.append(f"(assert {negated(beyond)})")
         return tied
+
+    def _words_count(self) -> str:
+        """How many words the string has, at most one past the limit when there is one."""
+        words, limit = words_count(self.term), self.limit()
+        return words if limit < 0 else f"(ite (< {words} {limit + 1}) {words} {limit + 1})"
+
+    def _bounded(self) -> None:
+        """Note a piece chosen among those below the bound; the loosened program reads none."""
+        if not self.hold:
+            raise ProgramTooLargeError("a piece past a split's bound has no term")
+        self.bounds.append(self.count)
 
     def read(self, position: Lin, kind: str, least: Least) -> Read:
         """The piece at ``position``, and when it is there."""
@@ -174,6 +205,7 @@ class SplitList:
     def _counted_back(self, back: int) -> Read:
         """Piece ``back`` from the end as the piece from the start it is for each count below
         the bound, chosen by which piece is the last there."""
+        self._bounded()
         branches = [
             (both(self.past(at + back), negated(self.past(at + back + 1))), self.piece(at))
             for at in range(self.bound)
@@ -187,6 +219,7 @@ class SplitList:
 
     def _chosen(self, position: Lin, least: Least) -> Read:
         """The piece at a position a term writes, among those below the bound."""
+        self._bounded()
         branches = [(f"(= {position.text()} {at})", self.piece(at)) for at in range(self.bound)]
         value = nested(branches[:-1], branches[-1][1])
         return Read(value, both(compare(position, Lin(self.bound), least), self.restriction()))
@@ -205,15 +238,23 @@ class Splits:
         self.bound = BOUND_PAST
         self.emitted: list[str] = []
         self.given: Callable[[Expression], object] = lambda part: None
+        self.hold = True
+        self.bounds: list[str] = []
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
-        """The most pieces a count is tied to: past every number a fork compares with."""
+        """The most pieces a count is tied to: past every number a fork compares a length
+        with, at most `MOST_BOUND`."""
         numbers = [0]
         for fork in prefix:
             expression = fork.expression
-            if isinstance(expression, list) and len(expression) == 3:
+            if isinstance(expression, list) and len(expression) == 3 and _measures(expression):
                 numbers += [part for part in expression[1:] if type(part) is int]
-        self.bound = min(max(numbers), MOST_TIED) + BOUND_PAST
+        self.bound = min(max(numbers) + BOUND_PAST, MOST_BOUND)
+
+    @property
+    def bounded(self) -> bool:
+        """Whether the program holds a count to its bound or reads a piece among those below."""
+        return bool(self.bounds)
 
     def made(self, node: list[Expression], term: str) -> tuple[SplitList, int | None]:
         """A split's list, its string's term ``term``, and how many pieces Python makes of the
@@ -222,8 +263,9 @@ class Splits:
         plain = tuple(plain_operand(part) for part in operands)
         text = self.given(string)
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
-        bound = self.bound if held is None else max(self.bound, held + BOUND_PAST)
-        listed = SplitList(term, str(head), plain, f"count!{len(self.lists)}!", bound)
+        bound = self.bound if held is None else max(self.bound, min(held + BOUND_PAST, MOST_BOUND))
+        count = f"count!{len(self.lists)}!"
+        listed = SplitList(term, str(head), plain, count, bound, self.bounds, self.hold)
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
@@ -271,3 +313,8 @@ class Splits:
             ties += tie
             pending += [other for other in self.lists if other in "\n".join(tie)]
         return declared, ties
+
+
+def _measures(expression: list[Expression]) -> bool:
+    """Whether a fork compares a list's length, ``[op, ["len", items], n]`` either way round."""
+    return any(isinstance(part, list) and part[:1] == ["len"] for part in expression[1:])

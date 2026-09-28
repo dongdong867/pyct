@@ -311,6 +311,7 @@ class ListTerms(ListTyping, Slices):
                 self.origin[constant] = value
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
+        self.splits.hold = origin.hold
 
     def _context(self) -> Context:
         return Context(
@@ -441,8 +442,9 @@ class ListTerms(ListTyping, Slices):
 
     @property
     def held(self) -> bool:
-        """Whether the program holds the length of a list the target repeats."""
-        return bool(self.capped)
+        """Whether the program holds the length of a list the target repeats, or a split's
+        count to its bound (see ``split_lists``)."""
+        return bool(self.capped) or self.splits.bounded
 
     def asked(self) -> list[str]:
         """What the program asks cvc5 for about the lists: each length and array it declared,

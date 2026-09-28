@@ -17,6 +17,7 @@ from typing import TypeGuard
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Expression
+from pyct.core.str_splits import LISTED_SPLITS
 
 # the sort of the items of each kind a read takes, and the type render gives such a read
 ITEM_SORTS: Mapping[str, str] = {"int": "Int", "str": "String"}
@@ -58,7 +59,7 @@ type TypeOf = Callable[[Expression], type | None]
 _LIST_HEADS = frozenset({"[]", "len", "[,]", "+", "*", "[:]"})
 
 # the splits whose list is tracked, each a list of strs; `partition` hands back a tuple
-SPLIT_HEADS = frozenset({"split", "rsplit", "splitlines"})
+SPLIT_HEADS = LISTED_SPLITS
 
 
 class TrackedList:

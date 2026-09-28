@@ -27,6 +27,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
+from pyct.core.str_splits import LISTED_SPLITS
 from pyct.core.values import forked, own
 
 # one change, made the same way on the items and on the shadow
@@ -45,11 +46,6 @@ def position(key: object) -> Expression | None:
     return key.expression if type(key) is ConcolicInt else None
 
 
-# the splits whose list pyct tracks: a piece of one is read at a position the path writes, so
-# a tracked index into such a list, or into a list made from one, is not followed
-_SPLITS = frozenset({"split", "rsplit", "splitlines"})
-
-
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
     whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
@@ -59,15 +55,23 @@ def follows(self: ListState, key: object) -> bool:
     return plain_index(key) is not None
 
 
+# the heads that build a list from the lists among their operands; a display or a read of an
+# item builds none, so a piece it holds makes no list of it a split's
+_BUILT_FROM = frozenset({"+", "*", "[:]"})
+
+
 def _from_a_split(form: Expression | None) -> bool:
-    """Whether a list's form holds a split's list anywhere."""
+    """Whether a list's form is a split's list, or a list built from one: a split's piece is
+    read at a position the path writes, so a tracked index into such a list is not followed."""
     stack = [form]
     while stack:
         part = stack.pop()
-        if isinstance(part, list) and part:
-            if isinstance(part[0], str) and part[0] in _SPLITS:
-                return True
-            stack.extend(part[1:])
+        if not isinstance(part, list) or not part or not isinstance(part[0], str):
+            continue
+        if part[0] in LISTED_SPLITS:
+            return True
+        if part[0] in _BUILT_FROM:
+            stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
     return False
 
 

@@ -219,8 +219,14 @@ def _by_count(difference: Lin, or_equal: bool, counts: Counts) -> str | None:
     if factor == 1:
         return past(beyond - difference.const)
     # a number less the count is past `beyond` where the count is not past the rest, less one
-    held = past(difference.const - beyond - 1)
-    return FALSE if held == TRUE else TRUE if held == FALSE else f"(not {held})"
+    return negated(past(difference.const - beyond - 1))
+
+
+def negated(condition: str) -> str:
+    """The condition's negation, a constant turned over here."""
+    if condition in (TRUE, FALSE):
+        return FALSE if condition == TRUE else TRUE
+    return f"(not {condition})"
 
 
 def equal(position: Lin, at: int, least: Least) -> str:
