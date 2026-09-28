@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from pyct.core import bound
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.ints import ConcolicInt
@@ -178,6 +179,62 @@ def test_len_where_pyct_binds_it_is_the_size_term() -> None:
     assert views == [2, 2, 2]
     assert all(type(view) is ConcolicInt for view in views)
     assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(("start", "filled"), [({}, False), ({"a": 0}, True)])
+@pytest.mark.parametrize(
+    "read",
+    [lambda c: c, lambda c: c.keys(), lambda c: c.values(), lambda c: c.items()],
+    ids=["dict", "keys", "values", "items"],
+)
+def test_pyct_s_bool_is_the_truth_test_untested(
+    start: dict[str, int], filled: bool, read: Callable[[Any], object]
+) -> None:
+    config, sink = tracked(start)
+
+    truth = bound.bool_(read(config))
+
+    # the condition `if config:` tests, recorded only where the target tests it
+    assert isinstance(truth, ConcolicBool) and int.__bool__(truth) is filled
+    assert truth.expression == ["!=", ["len", "config"], 0]
+    assert forks(sink) == [] and downgrades(sink) == []
+    assert bool(truth) is filled
+    assert forks(sink) == [(["!=", ["len", "config"], 0], filled)]
+
+
+def test_pyct_s_bool_keeps_the_size_the_dict_had_at_the_call() -> None:
+    config, sink = tracked({})
+    config["a"] = 0
+
+    truth = bound.bool_(config)
+    config["b"] = 1
+
+    assert truth.expression == ["!=", ["+", ["len", "config"], 1], 0]
+    assert int.__bool__(truth) is True
+    assert forks(sink) == [(["in", "'a'", "config"], False), (["in", "'b'", "config"], False)]
+
+
+def test_pyct_s_bool_of_a_dict_whose_form_stopped_describing_it_is_plain() -> None:
+    config, sink = tracked({})
+    dict.__setitem__(config, "z", 0)
+
+    truth = bound.bool_(config)
+
+    assert truth is True
+    assert downgrades(sink) == ["__bool__"] and forks(sink) == []
+    assert bound.bool_(config.keys()) is True and downgrades(sink) == ["__bool__"]
+
+
+def test_pyct_s_bool_through_map_is_each_dict_s_truth() -> None:
+    sink: list[SinkItem] = []
+    rows = [ConcolicDict.made({}, ["[]", "cfgs", at], sink) for at in range(2)]
+
+    truths = list(bound.map_(bool, rows))
+
+    assert [truth.expression for truth in truths] == [
+        ["!=", ["len", ["[]", "cfgs", at]], 0] for at in range(2)
+    ]
+    assert forks(sink) == []
 
 
 def test_python_s_len_is_a_downgrade_but_for_a_walk_s_own_guess() -> None:

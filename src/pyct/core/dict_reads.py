@@ -246,6 +246,20 @@ def truth(self: DictState) -> bool:
     return forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0)
 
 
+def condition(self: DictState) -> object:
+    """`bool(config)` where pyct routes `bool`: the condition `if config:` tests, as a tracked
+    bool that records no fork, so the fork is recorded where the target tests it.
+
+    It holds the dict's size term at the call, which a later change replaces rather than edits.
+    A dict with no form, or one whose form stopped describing it, gives Python's plain answer,
+    naming `__bool__` as `if config:` does.
+    """
+    filled = self.size() != 0
+    if not self.holds("__bool__"):
+        return filled
+    return ConcolicBool.made(filled, ["!=", self.size_term(), 0], self.sink)
+
+
 def key_of(self: DictState, key: object) -> object:
     return self.copies.get(key, key)
 
