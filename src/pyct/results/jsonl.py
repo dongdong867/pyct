@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pyct.core.branch import Branch, Expression
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.printed import PrintedForks, printed_forks
+from pyct.results.printed import CUT, PrintedForks, printed_forks
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -26,9 +26,8 @@ def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None
     caller that cut them once for this line and the trace alike.
     """
     expressions = (printed_forks(record.forks) if printed is None else printed).expressions
-    payload = {
-        "args": record.args,
-        "forks": [_fork(*pair) for pair in zip(record.forks, expressions, strict=True)],
+    head = json.dumps({"args": record.args})
+    rest = {
         "covered": _numbers(coverage.covered),
         "total": dict(coverage.total),
         "failure": _failure(record.failure),
@@ -37,7 +36,9 @@ def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None
         "aim": _aim(record.aim),
         "mismatch_at": record.mismatch_at,
     }
-    return json.dumps(payload)
+    # as json.dumps writes the whole line, with the forks written here, each site's text once
+    forks = _forks(record.forks, expressions)
+    return f'{head[:-1]}, "forks": [{forks}], {json.dumps(rest)[1:]}'
 
 
 def render_summary(result: RunResult) -> str:
@@ -126,6 +127,36 @@ def _failure(failure: Failure | None) -> dict[str, str] | None:
     if failure is None:
         return None
     return {"kind": failure.kind.value, "detail": failure.detail}
+
+
+def _forks(forks: tuple[Branch, ...], expressions: tuple[Expression, ...]) -> str:
+    """The forks as json.dumps writes a list of `_fork`'s dicts, without the brackets.
+
+    A site's text, with the side, is made once however many forks name it,
+    since a loop's path names one site on every pass. The forks hold their
+    sites while this runs, so no id is reused.
+    """
+    at: dict[tuple[int, bool], str] = {}
+    written: list[str] = []
+    for branch, expression in zip(forks, expressions, strict=True):
+        key = (id(branch.site), branch.taken)
+        head = at.get(key)
+        if head is None:
+            head = at[key] = json.dumps(_fork(branch, None)).removesuffix("null}")
+        written.append(f"{head}{_expression(expression)}}}")
+    return ", ".join(written)
+
+
+def _expression(expression: Expression) -> str:
+    """An expression as json.dumps writes it. A cut part is written here, which is most forks'
+    expression on a long line."""
+    if type(expression) is list and len(expression) == 2 and expression[0] == CUT:
+        count = expression[1]
+        if count is None:
+            return '["...", null]'
+        if type(count) is int:
+            return f'["...", {count}]'
+    return json.dumps(expression)
 
 
 def _fork(branch: Branch, expression: Expression) -> dict[str, object]:
