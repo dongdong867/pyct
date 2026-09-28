@@ -93,11 +93,16 @@ class Op:
     line: int | None
     col: int | None
     arg: int | None = None
-    # whether a jump lands here, the True or False a LOAD_CONST pushes, and the compare a truth
-    # test reads
-    joined: bool = False
+    # where the instruction's source ends, the True or False a LOAD_CONST pushes, and the
+    # compare a truth test reads
+    end: tuple[int, int] | None = None
     flag: bool | None = None
     reads: Reads | None = None
+
+    @property
+    def at(self) -> tuple[int, int] | None:
+        """Where the instruction's source starts, or None when it has no position."""
+        return None if self.line is None or self.col is None else (self.line, self.col)
 
 
 # every opcode dis lists as a jump: `hasjump` from 3.13, `hasjrel` and `hasjabs` before it. Pseudo
@@ -185,7 +190,7 @@ def _op(instruction: dis.Instruction, before: list[Op]) -> Op:
         line=None if positions is None else positions.lineno,
         col=None if positions is None else positions.col_offset,
         arg=instruction.arg,
-        joined=instruction.is_jump_target,
+        end=_end(positions),
         flag=value if instruction.opname == "LOAD_CONST" and isinstance(value, bool) else None,
         reads=_reads(instruction, before),
     )
@@ -205,33 +210,45 @@ def _reads(instruction: dis.Instruction, before: list[Op]) -> Reads | None:
     return Reads(compare.name, compare.arg == 1, _flag(before, at))
 
 
-def _flag(before: list[Op], compare: int) -> bool | None:
-    """The True or False the code loads as a compare's right operand, or as its left one.
-
-    The right operand ends right before the compare, and starts where,
-    walking back, its instructions have pushed one value more than they took.
-    The left operand ends right before that. An operand a jump runs through,
-    or one a jump lands in, is no constant.
-    """
-    start = _right_start(before, compare)
-    if start is None or before[start].joined or before[compare].joined:
+def _end(positions: dis.Positions | None) -> tuple[int, int] | None:
+    if positions is None or positions.end_lineno is None or positions.end_col_offset is None:
         return None
-    if start == compare - 1 and before[start].flag is not None:
-        return before[start].flag
-    return before[start - 1].flag if start > 0 else None
+    return positions.end_lineno, positions.end_col_offset
 
 
-def _right_start(before: list[Op], compare: int) -> int | None:
-    """Where a compare's right operand starts, or None when a jump runs through it."""
-    pushed = 0
+def _flag(before: list[Op], compare: int) -> bool | None:
+    """The True or False the code loads as a compare's whole right operand, or its whole left.
+
+    Read from the compare's own source span, which its operands' instructions
+    lie inside: the right operand alone is the constant loaded right before the
+    compare that ends where the compare ends, and the left one alone is the one
+    instruction of the compare that starts where the compare starts. Anything
+    else, a constant inside a larger operand or an operand the span does not
+    show whole, is no constant.
+    """
+    op = before[compare]
+    if op.line is None or op.col is None or op.end is None:
+        return None
+    start, end = (op.line, op.col), op.end
+    right = before[compare - 1] if compare else None
+    if right is not None and right.flag is not None and right.end == end:
+        return right.flag
+    starting = [each for each in _inside(before, compare, start, end) if each.at == start]
+    return starting[0].flag if len(starting) == 1 else None
+
+
+def _inside(
+    before: list[Op], compare: int, start: tuple[int, int], end: tuple[int, int]
+) -> list[Op]:
+    """The instructions right before a compare whose source lies inside its span, back to the
+    first that does not."""
+    found: list[Op] = []
     for at in range(compare - 1, -1, -1):
-        op = before[at]
-        if op.target is not None or (op.joined and at != compare - 1 and pushed < 1):
-            return None
-        pushed += dis.stack_effect(dis.opmap[op.name], op.arg, jump=False)
-        if pushed == 1:
-            return at
-    return None
+        each = before[at]
+        if each.at is None or each.end is None or each.at < start or each.end > end:
+            break
+        found.append(each)
+    return found
 
 
 def _splits(ops: list[Op], raising: frozenset[tuple[int, int]]) -> frozenset[int]:

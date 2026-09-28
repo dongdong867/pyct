@@ -201,8 +201,8 @@ class _Seen:
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
-        # inputs that took one path are one input to every question asked of them; a step an
-        # input and a fork, since one input may hold many
+        # inputs that took one path are one input to every question asked of them; one step
+        # for each input and each of its forks, since one input may hold many
         pace = Pace(run.late)
         inputs = tuple(
             dict.fromkeys(

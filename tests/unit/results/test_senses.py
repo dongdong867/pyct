@@ -8,6 +8,7 @@ import types
 
 import pytest
 
+from pyct.results import senses
 from pyct.results.senses import Seen, against_the_forks, heads_of
 from pyct.results.way import Flow, Step, StepKind
 
@@ -68,7 +69,10 @@ IS_TESTS = [
     ("False is (x < 9)", {">"}, False),
     ("False is c(x)", {">"}, False),
     ("True is not x.real", {">"}, False),
-    # an operand a jump runs through is no constant, so no input shows the sense: `is`
+    # a lone True or False against an operand a jump runs through, on either side
+    ("(c if b else x) is False", {">"}, False),
+    ("False is (c if b else x)", {">"}, False),
+    # an operand whose value a jump decides is no constant, so no input shows the sense: `is`
     ("(b or False) is x", {">"}, True),
     ("x is (b or True)", {">"}, True),
 ]
@@ -79,6 +83,29 @@ def test_an_is_test_against_a_bool_reads_as_the_code_says(
     test: str, heads: set[str], side: bool
 ) -> None:
     assert body_side(test, heads, []) == side
+
+
+def test_a_statement_before_the_test_lends_it_no_constant() -> None:
+    # 3.13 and 3.14 load both locals of `x is b` in one instruction, after `n = False`
+    source = "def f(x, b):\n    n = False\n    if x is b:\n        return n\n    return 2\n"
+    (code,) = [each for each in compile(source, "m.py", "exec").co_consts if _is_code(each)]
+    flow = Flow(code, frozenset())
+
+    reads = [step.reads for step in flow.sides().values() if step.reads is not None]
+
+    assert reads and all(each.flag is None for each in reads)
+
+
+def test_the_inputs_are_not_read_when_no_is_test_is_against_a_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read: list[object] = []
+    monkeypatch.setattr(senses, "_taken_at", lambda *args: read.append(args) or {})
+    flow = flow_of("x is not True")
+
+    against_the_forks(flow, {(2, 7): frozenset({">"})}, [took_the_body(False)])
+
+    assert read == []
 
 
 def took_the_body(taken: bool) -> Seen:

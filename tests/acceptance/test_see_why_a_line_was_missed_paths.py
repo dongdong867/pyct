@@ -197,6 +197,9 @@ NEGATED = [
     ("is_false_no_else", '{"x": 0}', 96, (95, 7, False), 1),
     ("while_is_not_true", '{"x": 0}', 105, (104, 10, False), 1),
     ("false_is_compare", '{"x": 0}', 121, (120, 7, False), 1),
+    ("pair_one", '{"x": 0, "flag": true}', 133, (132, 7, True), 1),
+    ("ifexp_is_false", '{"x": 0}', 142, (141, 7, False), 2),
+    ("false_is_ifexp", '{"x": 0}', 151, (150, 7, False), 2),
 ]
 
 

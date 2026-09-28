@@ -120,3 +120,33 @@ def false_is_compare(x: int) -> int:
     if False is (x < 9):
         n += 1
     return n
+
+
+def pair_one(x: int, flag: bool) -> int:
+    if x > 5:
+        return 0
+    if not flag:
+        return 5
+    v = x > 9
+    n = False
+    if v is flag:
+        return n
+    return 2
+
+
+def ifexp_is_false(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    if (x < 9 if x > 0 else x < 8) is False:
+        n += 1
+    return n
+
+
+def false_is_ifexp(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    if False is (x < 9 if x > 0 else x < 8):
+        n += 1
+    return n

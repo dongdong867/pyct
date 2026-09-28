@@ -51,7 +51,7 @@ def against_the_forks(
         if step.reads is not None:
             tests.setdefault(((step.line, step.col), step.reads), []).append((node, step))
     # the inputs are asked only of an `is` against a name, and read only at those tests' sites
-    named = {site for site, reads in tests if _named(reads) and site in heads}
+    named = {site for site, reads in tests if _asks_inputs(reads, heads.get(site, frozenset()))}
     shown = _Shown(flow, seen, frozenset(named))
     swapped: list[int] = []
     for (site, reads), sides in flow.pace.each(tests.items()):
@@ -66,16 +66,17 @@ def _other_way(reads: Reads, heads: frozenset[str], shown: _Shown, site: At, sid
         return (heads & _MEMBERSHIP == {"not in"}) != reads.negated
     if not heads:
         return reads.negated
-    if reads.flag is not None:
+    if not _asks_inputs(reads, heads):
         # the fork is the operand's truth, which `is False` and `is not True` read the other way
         return (reads.flag is False) != reads.negated
     agrees = shown.agree(site, sides)
     return reads.negated if agrees is None else not agrees
 
 
-def _named(reads: Reads) -> bool:
-    """Whether a test is an `is` against something other than a True or False the code loads."""
-    return reads.name == "IS_OP" and reads.flag is None
+def _asks_inputs(reads: Reads, heads: frozenset[str]) -> bool:
+    """Whether the inputs decide a test: an `is` where a fork was recorded, against something
+    other than a True or False the code loads."""
+    return reads.name == "IS_OP" and reads.flag is None and bool(heads)
 
 
 class _Shown:
