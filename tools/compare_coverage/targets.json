@@ -398,6 +398,7 @@
     {"set": "v2", "target": "targets.strs.joins::of_a_stripped_split", "seed": {"s": "x,y"}},
     {"set": "v2", "target": "targets.strs.joins::of_split_pieces", "seed": {"s": "x,y"}},
     {"set": "v2", "target": "targets.strs.joins::of_the_first_piece", "seed": {"s": "q,r"}},
+    {"set": "v2", "target": "targets.strs.joins::of_the_first_lowered_piece", "seed": {"s": "q,r"}},
     {"set": "v2", "target": "targets.strs.joins::of_the_tail", "seed": {"s": "a,x,y"}},
     {"set": "v2", "target": "targets.strs.joins::of_three_split_pieces", "seed": {"s": "x,y"}},
     {"set": "v2", "target": "targets.strs.joins::of_what_it_is_given", "seed": {"sep": "-", "n": 5}},

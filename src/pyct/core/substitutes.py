@@ -316,29 +316,29 @@ def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: obj
         return method(receiver_method, *args, **kwargs)
     items = args[0]
     if type(items) not in TRACKED_CLASSES:
-        items = _read(receiver_method, items)
+        items = _read(items)
+        if items is None:
+            # Python's join makes any TypeError `iter` raises its own refusal, which this raises
+            return receiver_method(None)
         for item in items:
             if type(item) in TRACKED_CLASSES:
                 break
         else:
             return receiver_method(items)
-    receiver = getattr(receiver_method, "__self__", None)
-    if type(receiver_method) is not types.BuiltinMethodType or type(receiver) is not str:
-        return receiver_method(items)
-    return str_joins.joined(receiver, items, ConcolicStr)
+    # the call-site substitution hands a join on a str literal alone, so its receiver is one
+    receiver = cast(types.BuiltinMethodType, receiver_method).__self__
+    return str_joins.joined(cast(str, receiver), items, ConcolicStr)
 
 
-def _read(receiver_method: Callable[..., object], items: object) -> list[object] | tuple[object]:
+def _read(items: object) -> list[object] | tuple[object] | None:
     """What a join reads, as Python's own join reads it: a list or a tuple as it is, and any
-    other iterable into a list, its `__iter__` called once. Python's join raises its own refusal
-    for any TypeError `iter` raises, so it is asked to refuse a value that is not iterable."""
+    other iterable into a list, its `__iter__` called once; None where `iter` raises TypeError."""
     if type(items) is list or type(items) is tuple:
         return cast("list[object]", items)
     try:
         iterator = iter(items)  # pyrefly: ignore[no-matching-overload]
     except TypeError:
-        receiver_method(None)
-        raise
+        return None
     return list(iterator)
 
 

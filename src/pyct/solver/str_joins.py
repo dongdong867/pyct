@@ -132,8 +132,6 @@ def _pieces_in(items: list[Expression], is_leaf: IsLeaf) -> list[tuple[Node, int
         match part:
             case ["[]", [str() as head, *_] as split, int() as at] if head in SPLITS:
                 found.append((split, at))
-            case [str() as head, *_] if head in SPLITS:
-                pass
             case _:
                 stack.extend(part[1:])
     return found

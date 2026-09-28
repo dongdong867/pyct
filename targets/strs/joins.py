@@ -105,3 +105,12 @@ def of_a_stripped_split(s):
             return "comma"
         return "joined"
     return "other"
+
+
+def of_the_first_lowered_piece(s):
+    if "-".join(s.lower().split(",")[:1]) == "a":
+        return "joined"
+    if "," in s:
+        if s.endswith("z"):
+            return "ends"  # first lowered piece
+    return "other"
