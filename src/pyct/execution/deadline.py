@@ -91,15 +91,18 @@ def own_the_alarm() -> None:
 class _Owner:
     """Whether this process owns SIGALRM, and the block of its deadline that runs now, if any.
 
-    The handler raises only while a block runs, and only once its instant
-    has come: a signal the timer of an earlier block posts late, into a
-    later block, comes before that block's instant, since a timer never
-    fires early.
+    The handler raises only while a block runs, only once its instant has
+    come, and only in the frames under ``home``, the frame that entered the
+    block. A signal the timer of an earlier block posts late, into a later
+    block, comes before that block's instant, since a timer never fires
+    early. A signal that comes after a Ctrl-C cut a block's way out short
+    lands outside the block's frames.
     """
 
     owns: bool = False
     running: bool = False
     at: float = 0.0
+    home: types.FrameType | None = None
 
 
 _OWNER = _Owner()
@@ -111,9 +114,19 @@ _EARLY = 0.001
 # the tests that fire the alarm run without coverage, which a raise here can hang
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
     """SIGALRM's handler in a process that owns it: raise once, only inside a block, in time."""
-    if _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY:
+    in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
+    if in_time and _under(frame, _OWNER.home):
         _OWNER.running = False
         _raise_deadline(signal_number, frame)
+
+
+def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:  # pragma: no cover
+    """Whether ``frame`` is ``home`` or runs under it."""
+    while frame is not None:
+        if frame is home:
+            return True
+        frame = frame.f_back
+    return False
 
 
 def _raise_deadline(signal_number: int, frame: types.FrameType | None) -> NoReturn:
@@ -128,16 +141,23 @@ class _Timed:
         self.at = at
 
     def __enter__(self) -> None:
-        if signal.getsignal(signal.SIGALRM) is not _owned:
-            signal.signal(signal.SIGALRM, _owned)
-        _OWNER.at = self.at
-        _OWNER.running = True
-        signal.setitimer(signal.ITIMER_REAL, max(self.at - time.monotonic(), _AT_ONCE))
+        _OWNER.home = sys._getframe(1)
+        try:
+            if signal.getsignal(signal.SIGALRM) is not _owned:
+                signal.signal(signal.SIGALRM, _owned)
+            _OWNER.at = self.at
+            _OWNER.running = True
+            signal.setitimer(signal.ITIMER_REAL, max(self.at - time.monotonic(), _AT_ONCE))
+        except BaseException:
+            # a Ctrl-C as the timer is armed: the block never began, so nothing of it is left
+            self.__exit__()
+            raise
 
     def __exit__(self, *_: object) -> None:
         # first, before any call: a signal from here on raises nothing
         _OWNER.running = False
         signal.setitimer(signal.ITIMER_REAL, 0)
+        _OWNER.home = None
 
 
 class _Sent:
@@ -248,13 +268,12 @@ class _Sent:
 
     def _in_block(self, frame: types.FrameType | None) -> bool:  # pragma: no cover
         """Whether ``frame`` runs in the block: under the frame that entered it, not its way out."""
-        while frame is not None:
-            if frame.f_code is _WAY_OUT:
+        way_out = frame
+        while way_out is not None:
+            if way_out.f_code is _WAY_OUT:
                 return False
-            if frame is self.home:
-                return True
-            frame = frame.f_back
-        return False
+            way_out = way_out.f_back
+        return _under(frame, self.home)
 
     def _put_back(self) -> None:
         """Put the process's own handler back, taking first a signal the watcher sent.

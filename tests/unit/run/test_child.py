@@ -3,9 +3,12 @@
 import mmap
 import os
 import signal
+import sys
 import threading
 import time
+import types
 from collections.abc import Callable
+from contextlib import AbstractContextManager
 
 import pytest
 
@@ -141,3 +144,64 @@ def late_alarm_into_the_next_block() -> None:
 
 def test_a_late_alarm_in_a_process_pyct_owns_leaves_the_next_block_running() -> None:
     assert settled_then(late_alarm_into_the_next_block) == 0
+
+
+def call_under(guard: AbstractContextManager[None]) -> None:
+    """A call under a deadline, held by a frame of its own, as pyct's call of the target is."""
+    with guard:
+        time.sleep(0.001)
+
+
+def spin_after_the_call() -> None:
+    """Run past the deadline outside any block, where pyct's own clean-up would run."""
+    end = time.monotonic() + 0.3
+    while time.monotonic() < end:
+        pass
+
+
+def ctrl_c_as_the_timer_is_armed() -> None:
+    real = signal.setitimer
+
+    def arm_then_interrupt(
+        which: int, seconds: float, interval: float = 0.0, /
+    ) -> tuple[float, float]:
+        armed = real(which, seconds, interval)
+        if seconds:
+            # a Ctrl-C Python handles as setitimer returns
+            raise KeyboardInterrupt
+        return armed
+
+    signal.setitimer = arm_then_interrupt
+    try:
+        call_under(deadline(time.monotonic() + 0.1))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.setitimer = real
+    spin_after_the_call()
+
+
+def ctrl_c_as_the_way_out_begins() -> None:
+    guard = deadline(time.monotonic() + 0.1)
+    way_out = type(guard).__exit__.__code__
+
+    def interrupt(frame: types.FrameType, event: str, arg: object) -> None:
+        if event == "call" and frame.f_code is way_out:
+            raise KeyboardInterrupt
+
+    sys.settrace(interrupt)
+    try:
+        call_under(guard)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        sys.settrace(None)
+    spin_after_the_call()
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+@pytest.mark.parametrize("step", [ctrl_c_as_the_timer_is_armed, ctrl_c_as_the_way_out_begins])
+def test_a_ctrl_c_at_a_block_s_edge_leaves_no_alarm_to_raise_after_it(
+    step: Callable[[], None],
+) -> None:
+    assert settled_then(step) == 0
