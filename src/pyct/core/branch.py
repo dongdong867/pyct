@@ -53,6 +53,8 @@ class Branch:
     input that holds once the fork went the way it went: which key a walk over a dict read at
     its place (see ``core.dict_reads``). The solver asserts it wherever a path keeps the fork,
     and drops it where the path flips it. Neither is part of the fork, and neither is printed.
+    ``decided`` says what the path already recorded decides the side, so no input takes the
+    other one and no pick aims at it, as a walk's check of a size its stores already hold.
     """
 
     expression: Expression
@@ -61,6 +63,7 @@ class Branch:
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
     holds: Expression = field(default=None, compare=False)
+    decided: bool = field(default=False, compare=False)
 
     @property
     def where(self) -> ForkSite:

@@ -1,6 +1,7 @@
 """cvc5 held against Python where a string is read as a number: `int(s)` and `float(s)`."""
 
 import re
+import subprocess
 import sys
 from collections.abc import Callable
 
@@ -317,3 +318,89 @@ def test_a_digit_string_never_reads_as_a_negative_int() -> None:
     )
 
     assert isinstance(solve(prefix, {"s": str}, 5.0), Unsat)
+
+
+# the work cvc5 may spend on an ask, in its own resource units, which count the same on a busy
+# machine: each of these asks answers in under 100,000, and took 1,000,000 to 3,000,000 without
+# the fact and the plain digits in the grammar
+_LITTLE_WORK = 300_000
+
+
+def _within_little_work(prefix: tuple[Branch, ...]) -> str:
+    """What cvc5 answers about a path inside ``_LITTLE_WORK``: unknown past it."""
+    return subprocess.run(
+        ["cvc5", "--lang", "smt", "--quiet", f"--rlimit={_LITTLE_WORK}"],
+        input=render(prefix, {"s": str}),
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split("\n")[0]
+
+
+# a string of at most five digits, and `int` of it: the negated row's path
+_FIVE_DIGITS_AT_MOST = (
+    Branch(expression=["isdigit", "s"], taken=True, site=SITE),
+    Branch(expression=[">", ["len", "s"], 5], taken=False, site=SITE),
+)
+
+
+@needs_cvc5
+@pytest.mark.parametrize("value", [100000, 200000])
+def test_a_digit_string_of_at_most_five_characters_never_reads_as_six_digits(
+    value: int,
+) -> None:
+    """The negated row's case: an int no string of at most five digits reads, answered with
+    little work, in time for the shallow forks after it."""
+    prefix = (
+        *_FIVE_DIGITS_AT_MOST,
+        Branch(expression=["isint", "s"], taken=True, site=SITE),
+        Branch(expression=["==", ["int", "s"], value], taken=True, site=SITE),
+    )
+
+    assert isinstance(solve(prefix, {"s": str}, 10.0), Unsat)
+    assert _within_little_work(prefix) == "unsat"
+
+
+@needs_cvc5
+def test_the_fact_about_an_int_text_holds_for_every_text() -> None:
+    texts = [*INT_TEXTS, *(chr(code) for code in range(128)), "9" * 20, "1" + "0" * 20, "٣"]
+
+    said = _values("Bool", [numerals.int_fact(encode(text)) for text in texts])
+
+    assert said == [True] * len(texts)
+
+
+@needs_cvc5
+def test_a_digit_string_of_at_most_five_characters_is_always_read_as_an_int() -> None:
+    """The negated row's other case: no string of at most five digits is one `int` refuses,
+    answered with little work."""
+    prefix = (*_FIVE_DIGITS_AT_MOST, Branch(expression=["isint", "s"], taken=False, site=SITE))
+
+    assert isinstance(solve(prefix, {"s": str}, 10.0), Unsat)
+    assert _within_little_work(prefix) == "unsat"
+
+
+def _asserted_facts(text: str) -> list[str]:
+    """The lines of a program that assert the fact about an int text."""
+    return [line for line in text.splitlines() if "(str.to_int d!)" in line]
+
+
+def test_the_fact_is_held_once_for_each_string_read_as_an_int() -> None:
+    prefix = (
+        Branch(expression=[">", ["int", "s"], 4], taken=True, site=SITE),
+        Branch(expression=["<", ["int", "s"], 9], taken=True, site=SITE),
+        Branch(expression=[">", ["int", "t"], 4], taken=True, site=SITE),
+    )
+
+    facts = _asserted_facts(render(prefix, {"s": str, "t": str}))
+
+    assert len(facts) == 2
+    assert all(line.startswith("(assert (let ((d! ") for line in facts)
+    assert ["|arg.s|" in line for line in facts] == [True, False]
+    assert ["|arg.t|" in line for line in facts] == [False, True]
+
+
+def test_a_character_read_as_an_int_holds_no_fact() -> None:
+    text = render(_read_as_int(["[]", "s", 3]), {"s": str})
+
+    assert _asserted_facts(text) == []

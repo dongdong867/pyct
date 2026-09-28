@@ -14,6 +14,17 @@ def fork(line: int, *, taken: bool) -> Branch:
     )
 
 
+def test_a_decided_fork_is_never_aimed_at() -> None:
+    tree = Tree()
+    decided = Branch(["<", "x", 2], True, Site(file="m.py", line=2, col=7), decided=True)
+    tree.add((decided, fork(3, taken=True)))
+
+    picks = list(iter(tree.next, None))
+
+    assert [picked.aim.position for picked in picks] == [1]
+    assert tree.untried() == {}
+
+
 def test_an_empty_tree_has_nothing_to_aim_at() -> None:
     assert Tree().next() is None
 

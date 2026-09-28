@@ -5,7 +5,8 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, SinkItem
+from pyct.core.branch import Branch, Expression, SinkItem
+from pyct.core.dict_changes import MOST_TRACKED_CHANGES
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -13,6 +14,11 @@ from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.python_forms import evaluate
 from tests.unit.core.test_dicts import downgrades, forks, hold_against_python, plain_dict, tracked
+
+
+def part(expression: Expression, at: int) -> Expression:
+    """One part of an expression that is a list, None for a leaf."""
+    return expression[at] if isinstance(expression, list) else None
 
 
 def test_a_plain_lookup_after_a_tracked_store_asks_whether_it_is_that_key() -> None:
@@ -172,12 +178,127 @@ def test_a_tracked_pop_from_a_changed_dict_reads_the_argument_under_the_key() ->
     hold_against_python(sink, {"config": {"a": 1, "b": 2}, "name": "a"})
 
 
-def test_a_merge_on_the_left_keeps_its_own_keys_apart() -> None:
+@pytest.mark.parametrize(
+    ("change", "name"),
+    [
+        (lambda config, n, m: config.update({n: 1, m: 2}), "update"),
+        (lambda config, n, m: {n: 1, "x": 2} | config, "__ror__"),
+        (lambda config, n, m: config | {n: 1, m: 2}, "__or__"),
+    ],
+    ids=["update", "ror", "or"],
+)
+def test_a_tracked_key_among_others_stays_python_s(change: Any, name: str) -> None:
     config, sink = tracked({})
-    name = ConcolicStr.made("a", "name", sink)
+    first = ConcolicStr.made("a", "n", sink)
+    second = ConcolicStr.made("b", "m", sink)
 
-    merged = {name: 1, "x": 2} | config
+    change(config, first, second)
 
-    assert (["==", "name", "'x'"], False) in forks(sink)
-    assert moves_a_fork(sink, {"config": {}, "name": "x"})
-    assert plain_dict(merged) == {"a": 1, "x": 2}
+    # Python compared the keys as it built them, recording a fork only where the hashes met
+    assert name in downgrades(sink)
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
+
+
+def test_past_the_most_tracked_changes_a_change_is_python_s() -> None:
+    config, sink = tracked({})
+    keys = [ConcolicStr.made(f"k{j}", f"n{j}", sink) for j in range(MOST_TRACKED_CHANGES + 1)]
+
+    for key in keys[:-1]:
+        config[key] = 1
+    assert downgrades(sink) == []
+    config[keys[-1]] = 1
+
+    assert downgrades(sink) == ["__setitem__"]
+
+
+def test_popitem_removes_the_key_a_tracked_store_put_last() -> None:
+    config, sink = tracked({})
+    name = ConcolicStr.made("b", "name", sink)
+
+    config[name] = 5
+    config.popitem()
+    assert "b" not in config
+
+    assert (["==", "name", "'b'"], True) in forks(sink)
+    # there Python keeps "b": the store put "a" last, and popitem took it
+    assert moves_a_fork(sink, {"config": {"b": 2}, "name": "a"})
+
+
+def test_popitem_of_an_argument_s_key_asks_whether_a_tracked_store_was_over_it() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+    name = ConcolicStr.made("b", "name", sink)
+
+    config[name] = 0
+    config.popitem()
+
+    compared = [
+        item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == "=="
+    ]
+    assert [(item.expression, item.taken) for item in compared] == [(["==", "name", "'b'"], True)]
+    assert compared[0].holds == ["given", ["popped", "config", "'b'"]]
+
+
+def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    name = ConcolicStr.made("ab", "name", sink)
+
+    config[name] = 0
+    list(config)
+
+    walked = [item for item in sink if isinstance(item, Branch)][1:]
+    compares = [item for item in walked if part(item.expression, 0) == "=="]
+    sizes = [item for item in walked if part(item.expression, 0) == ">"]
+    assert [item.holds for item in compares] == [
+        ["given", ["walked", "config", "'ab'"]],
+        ["given", ["walked", "config", "'cd'"]],
+    ]
+    assert [item.holds for item in sizes] == [
+        ["walked", "config", "'ab'"],
+        ["walked", "config", "'cd'"],
+        None,
+    ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda config, n, m: (config.__setitem__(n, 1), config.__setitem__(n, 2)),
+        lambda config, n, m: (config.__setitem__(n, 1), config.__setitem__(m, 2)),
+        lambda config, n, m: config.pop(n, None),
+    ],
+    ids=["twice", "aliased", "removed"],
+)
+def test_a_walk_compares_no_key_the_path_keeps_apart(change: Any) -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    change(config, ConcolicStr.made("zz", "n", sink), ConcolicStr.made("zz", "m", sink))
+    before = len(forks(sink))
+
+    list(config)
+
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[before:])
+
+
+def test_a_walk_decides_the_places_its_stores_already_fill() -> None:
+    config, sink = tracked({"a": 1})
+    config["x"] = 5
+    config["y"] = 6
+
+    list(config)
+
+    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
+    assert [(part(item.expression, 2), item.decided) for item in sizes] == [
+        (0, True),
+        (1, True),
+        (2, False),
+        (3, False),
+    ]
+
+
+def test_popitem_decides_a_size_its_stores_hold() -> None:
+    config, sink = tracked({})
+    config["x"] = 5
+
+    config.popitem()
+
+    checked = [item for item in sink if isinstance(item, Branch)][-1]
+    assert checked.expression == ["!=", ["+", ["len", "config"], 1], 0] and checked.decided

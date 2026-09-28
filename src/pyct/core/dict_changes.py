@@ -32,6 +32,7 @@ from pyct.core.dict_reads import (
     int_key,
     is_tracked,
     may_equal_added,
+    own_key,
     placed,
     present,
     recorded,
@@ -81,38 +82,36 @@ def plain_key(key: object) -> bool:
     return type(key) is str or type(key) is int
 
 
+# the most changes under a tracked key one dict follows: each later lookup compares its key with
+# every one, so past this many a change under a tracked key is Python's own and a downgrade
+MOST_TRACKED_CHANGES = 16
+
+
 def followed(self: DictState, key: object) -> bool:
     """Whether a change under ``key`` is followed: a plain str or int, or a tracked key of the
-    kind the dict's keys are, an int under `dict[int, X]` and a str elsewhere."""
-    return plain_key(key) or type(key) is (ConcolicInt if self.int_keyed else ConcolicStr)
+    kind the dict's keys are, an int under `dict[int, X]` and a str elsewhere, while the dict
+    follows fewer than ``MOST_TRACKED_CHANGES`` such changes."""
+    if plain_key(key):
+        return True
+    kind = ConcolicInt if self.int_keyed else ConcolicStr
+    return type(key) is kind and self.tracked_changes < MOST_TRACKED_CHANGES
 
 
-def _joined_key(self: DictState, made: DictState, key: object, before: list[object]) -> None:
+def _joined_key(self: DictState, made: DictState, key: object, crowded: bool) -> None:
     """One of ``other``'s keys in ``other | config``, looked up in the dict: a key it does not
-    hold is one ``made`` adds. ``before`` holds ``other``'s keys the dict follows so far."""
+    hold is one ``made`` adds. A tracked key among others (``crowded``) is Python's own and a
+    downgrade: Python compared it with them as it built ``other``, where only equal hashes
+    record a fork, so an answer that makes two of them equal leaves the plan."""
     looked = int_key(key)
-    if followed(self, looked):
-        _apart(self, looked, before)
-        before.append(looked)
+    tracked: Expression = None
+    if followed(self, looked) and not (crowded and is_tracked(looked)):
         held = looked_up_to_change(self, looked, "__ror__")
-        tracked, away = under(looked), apart(self, looked, held)
+        tracked = under(looked)
     else:
         held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, key)))
-        tracked, away = None, False
     if not held:
-        made.logged(plain(looked), True, tracked, apart=away)
-        made.grown += 1
-
-
-def _apart(self: DictState, key: object, before: list[object]) -> None:
-    """Record that a key of ``other | config`` is none of ``other``'s keys before it, where
-    either is tracked: Python built ``other`` with its keys apart, which the answer keeps."""
-    bare = plain(key)
-    for earlier in before:
-        if type(plain(earlier)) is type(bare) and (is_tracked(key) or is_tracked(earlier)):
-            pair = (key, earlier) if is_tracked(key) else (earlier, key)
-            fork = ["==", written_key(pair[0]), written_key(pair[1])]
-            recorded(self, Branch(fork, False, caller_site(), False, "__ror__"))
+        made.logged(plain(looked), True, tracked)
+        made.__dict__["grown"] += 1
 
 
 def followed_tracked(self: DictState, key: object) -> bool:
@@ -135,10 +134,13 @@ def looked_up_to_change(self: DictState, key: object, name: str) -> bool:
     return held
 
 
-def apart(self: DictState, key: object, held: bool) -> bool:
-    """Whether a change's lookup found a tracked key apart from every key of the argument: no
-    change before it decided the lookup, and the argument does not hold it."""
-    return is_tracked(key) and plain(key) not in self.changed and not held
+def stored_under(self: DictState, key: object) -> Expression:
+    """The expression of the tracked key the latest change under ``key`` was made under, None
+    when that change was under a plain key."""
+    for under_key, changed, _ in reversed(self.log):
+        if type(changed) is type(key) and changed == key:
+            return under_key
+    return None
 
 
 def holds_key(self: DictState, key: object, name: str) -> bool:
@@ -178,21 +180,36 @@ def store(self: DictState, key: object, stored: object, name: str, *, named: boo
     """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
     says the call's own lookup already named it (see ``as_python``). A key Python's lookup
     makes the same as an int is looked up as that int, and stored as it is."""
+    if _stored_plainly(self, key, stored, name):
+        return
     looked = int_key(key)
+    if not followed(self, looked):
+        stored_as_python(self, key, stored, (name, named))
+        return
+    looked_up_to_change(self, looked, name)
     bare = plain(looked)
+    own(dict.__setitem__, self, bare if is_tracked(looked) else key, stored)
+    self.noted(bare, stored, under(looked))
+
+
+def _stored_plainly(self: DictState, key: object, stored: object, name: str) -> bool:
+    """Whether a store is Python's own and the dict notes nothing of it: the form no longer
+    describes the dict, or the value is one no expression holds, which turns it plain."""
     if not holds_key(self, key, name):
         own(dict.__setitem__, self, key, stored)
-        return
+        return True
     if not holdable(stored):
         own(dict.__setitem__, self, key, stored)
         self.lose(name)
-        return
-    if followed(self, looked):
-        held = looked_up_to_change(self, looked, name)
-        away = apart(self, looked, held)
-        own(dict.__setitem__, self, bare if is_tracked(looked) else key, stored)
-        self.noted(bare, stored, under(looked), apart=away)
-        return
+        return True
+    return False
+
+
+def stored_as_python(self: DictState, key: object, stored: object, how: tuple[str, bool]) -> None:
+    """A store pyct does not follow: Python's own, named as ``as_python`` names it, and noted
+    under the key's plain value. ``how`` is the call's name and whether its lookup named it."""
+    name, named = how
+    bare = plain(int_key(key))
     as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named)
     self.noted(bare, stored)
 
@@ -242,9 +259,10 @@ def last_item(self: DictState) -> tuple[object, object]:
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
     pin = None if key is MISSING else placed(self, key, POPPED)
-    fork = Branch(
-        ["!=", self.size_term(), 0], key is not MISSING, caller_site(), True, "popitem", pin
-    )
+    # a size its stores already hold above zero decides the check (see ``Branch.decided``)
+    held = key is not MISSING
+    decided = held and self.grown > 0
+    fork = Branch(["!=", self.size_term(), 0], held, caller_site(), True, "popitem", pin, decided)
     if not recorded(self, fork):
         return own(dict.popitem, self)
     if not self.holds("popitem", key):
@@ -252,7 +270,9 @@ def last_item(self: DictState) -> tuple[object, object]:
     handed_in_place(self, key, "popitem", pin)
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
-    self.dropped(key)
+    # the target's own key is the one its latest store put last: under a tracked key, the key
+    # that one names
+    self.dropped(key, stored_under(self, key) if own_key(self, key) else None)
     # the key a walk handed out for it, so a walk and popitem hand out one object, as in Python
     return handout(self, key, None), handed
 
@@ -283,15 +303,22 @@ def update(self: DictState, name: str, *args: Any, **kwargs: Any) -> None:
     """
     taken: dict[object, object] = {}
     own(dict.update, taken, *args, **kwargs)
+    crowded = len(taken) > 1
     for key, stored in dict.items(taken):
-        store(self, key, stored, name)
+        # a tracked key among others is Python's own (see ``_joined_key``)
+        if crowded and is_tracked(int_key(key)):
+            if not _stored_plainly(self, key, stored, name):
+                stored_as_python(self, key, stored, (name, False))
+        else:
+            store(self, key, stored, name)
 
 
 def emptied(self: DictState) -> None:
     """``config.clear()``: the dict is ``{}``, a plain dict, and nothing of the input is in it."""
     dict.clear(self)
-    self.shadow = {}
-    self.expression = None
+    fields = self.__dict__
+    fields["shadow"] = {}
+    fields["expression"] = None
 
 
 def merged(self: DictState, other: object, *, reflected: bool = False) -> object:
@@ -318,16 +345,17 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
     keys looked up in the dict so the size is known, until a key the dict cannot follow turns
     it plain, and then the dict built from it too. A tracked key it follows goes in as its
     plain value, as a store puts it, so no key Python compares later is a tracked one."""
+    crowded = len(other) > 1
     keyed = {
-        plain(key) if followed_tracked(self, key) else key: held for key, held in other.items()
+        plain(key) if followed_tracked(self, key) and not crowded else key: held
+        for key, held in other.items()
     }
     made = self.derived({**keyed, **self.storage()})
-    before: list[object] = []
     for key in other:
         if self.expression is None:
             # a key the dict could not follow turned it plain: it records nothing more
             break
-        _joined_key(self, made, key, before)
+        _joined_key(self, made, key, crowded)
     if self.expression is None:
         # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()

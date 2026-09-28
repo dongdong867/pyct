@@ -12,6 +12,7 @@ from pyct.solver.declared import Leaves, Program, symbols
 from pyct.solver.dicts import DictTerms, TrackedDict
 from pyct.solver.heads import (
     BOUNDED,
+    FACTS,
     FORMS,
     INDEXED,
     MEMBERSHIPS,
@@ -300,7 +301,8 @@ class _Program:
     def _form(self, node: Node) -> Callable[..., str] | None:
         """The form that writes an operation on the type it works on, or None for an operator.
 
-        A form exact only inside a bound writes its term, and its bound is held once.
+        A form exact only inside a bound writes its term, and its bound is held once. A form
+        with a fact about its value, but for one on a character, holds the fact once.
         """
         head, *operands = node
         if not isinstance(head, str):
@@ -311,7 +313,14 @@ class _Program:
             return partial(self._bounded, bounded)
         if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
             return ON_A_CHARACTER[head]
-        return None if kind is None else FORMS.get((head, kind))
+        form = None if kind is None else FORMS.get((head, kind))
+        fact = None if kind is None else FACTS.get((head, kind))
+        return form if form is None or fact is None else partial(self._with_fact, form, fact)
+
+    def _with_fact(self, form: Callable[..., str], fact: Callable[..., str], *operands: str) -> str:
+        """A form's term, and the fact about its value held once."""
+        self._hold(fact(*operands))
+        return form(*operands)
 
     def _character(self, part: Expression) -> bool:
         """Whether a part is one character of a string, as `s[i]` hands it out."""

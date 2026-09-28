@@ -75,6 +75,9 @@ class Tree:
             parent = self._ids.setdefault((parent, fork.site, fork.taken), len(self._ids))
             keys.append(key)
             self._sides.add((fork.site, fork.raising, fork.taken))
+            if fork.decided:
+                # no input takes its other side: spent as it arrives (see ``Branch.decided``)
+                self._aimed.add(key)
         index = len(self._paths)
         self._paths.append((forks, tuple(keys)))
         self._new.extend(

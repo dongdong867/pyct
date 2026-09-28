@@ -17,10 +17,19 @@ from typing import Any
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
-from pyct.core.branch import Downgrade, Expression, caller_site
+from pyct.core.branch import Downgrade, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
-from pyct.core.values import REPORTED_CLASS, as_base, downgrade_the_rest, downgraded, forked, own
+from pyct.core.values import (
+    REPORTED_CLASS,
+    as_base,
+    downgrade_the_rest,
+    downgraded,
+    forked,
+    own,
+    refused_delete,
+    refused_set,
+)
 
 # not the target's path: `__repr__`, the object plumbing, and `__init__`, which a target calls
 # only to fill the list anew, a change made without the methods that the next operation
@@ -161,7 +170,7 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
         sides.reverse()
     (left_form, left, left_seen), (right_form, right, right_seen) = sides
     made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form])
-    made.kinds = self.kinds | kinds
+    made.__dict__["kinds"] = self.kinds | kinds
     return made
 
 
@@ -207,7 +216,7 @@ def _deep_copied(self: ListState, memo: dict[int, object]) -> object:
     items = [copy.deepcopy(item, memo) for item in self.storage()]
     list.extend(made, items)
     if isinstance(made, ListState):
-        made.shadow = list(items)
+        made.__dict__["shadow"] = list(items)
     return made
 
 
@@ -228,9 +237,9 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     )
     storage, shadow = self.storage(), self.shadow
     list.__setitem__(self, slice(None), [storage[at] for at in placed])
-    self.shadow = [shadow[at] for at in placed]
-    shown: list[Expression] = ["[,]", *(["[]", self.expression, at] for at in placed)]
-    self.expression = shown
+    fields = self.__dict__
+    fields["shadow"] = [shadow[at] for at in placed]
+    fields["expression"] = ["[,]", *(["[]", self.expression, at] for at in placed)]
 
 
 def _truth(self: ListState) -> bool:
@@ -279,6 +288,9 @@ class ConcolicList(ListState):
     # called with a value is list's own, a plain list, since pyct builds one through `made`
     __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
     __new__ = as_base
+    # a plain list takes no attribute: a set or a delete is Python's own refusal, pyct's names too
+    __setattr__ = refused_set
+    __delattr__ = refused_delete
 
     # the form's reads and walks: an index records whether the list is long enough first
     __getitem__ = _item  # pyrefly: ignore[bad-override]

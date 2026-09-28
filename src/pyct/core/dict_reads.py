@@ -32,7 +32,7 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, caller_site
-from pyct.core.dict_state import MISSING, DictState
+from pyct.core.dict_state import MISSING, Change, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -147,7 +147,7 @@ def after_changes(
     written: Expression,
     how: tuple[str, bool, Expression],
     *,
-    held: bool = False,
+    handed: bool = False,
 ) -> bool | None:
     """Whether the dict holds ``key`` by a change the target made, the latest first, or None
     when no change decides it and the argument's own keys do.
@@ -157,32 +157,50 @@ def after_changes(
     `["==", "n", "'b'"]`, the side Python took, at the lookup's own site; a key equal to the
     change's decides. Keys of different kinds never are equal, and one expression always is.
     ``how`` is the lookup's name, whether Python may raise after it, and what each fork it
-    records keeps of the input (see ``Branch.holds``). A key the argument ``held`` is apart
-    from each tracked key whose change found it none of the argument's.
+    records keeps of the input (see ``Branch.holds``). A key a walk ``handed`` out is compared
+    only with the tracked stores that may be over it (see ``over_the_argument``).
     """
     bare = plain(key)
     tracked = is_tracked(key)
-    if not tracked and not self.retracked:
+    if not tracked and not self.tracked_changes:
         return self.changed.get(bare)
-    apart: list[Expression] = []
-    for under, changed, stored, apart_from_argument in reversed(self.log):
-        if type(changed) is not type(bare) or (held and apart_from_argument):
+    unequal: list[Expression] = []
+    for change in reversed(self.log):
+        under, changed, stored = change
+        if type(changed) is not type(bare):
             continue
         if under is None and not tracked:
             if changed == bare:
                 return stored
             continue
+        if handed and not over_the_argument(self, change):
+            continue
         other = written_key(changed) if under is None else under
         if other == written:
             return stored
-        if other in apart:
-            continue
-        equal = changed == bare
-        fork = ["==", written, other] if tracked else ["==", other, written]
-        if recorded(self, Branch(fork, equal, caller_site(), how[1], how[0], how[2])):
-            return stored
-        apart.append(other)
+        if other not in unequal:
+            pair = [written, other] if tracked else [other, written]
+            if _compared(self, pair, changed == bare, how):
+                return stored
+            unequal.append(other)
     return None
+
+
+def _compared(
+    self: DictState, pair: list[Expression], equal: bool, how: tuple[str, bool, Expression]
+) -> bool:
+    """Record whether two keys are equal, the tracked one first, and answer whether they are."""
+    name, raising, holds = how
+    return recorded(self, Branch(["==", *pair], equal, caller_site(), raising, name, holds))
+
+
+def over_the_argument(self: DictState, change: Change) -> bool:
+    """Whether a change is a store under a tracked key that may be over one of the argument's
+    keys: the path did not settle that the argument lacks the key's value. A walk that hands out
+    an argument's key compares it only with these; a removal under a tracked key stays Python's
+    own there, since an answer that removes another key walks another key in its place."""
+    under, changed, stored = change
+    return under is not None and stored and self.settled.get(changed) is not False
 
 
 def recorded(self: DictState, branch: Branch) -> bool:
@@ -341,7 +359,7 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
 
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
-    self.walked_at = caller(depth)
+    self.__dict__["walked_at"] = caller(depth)
     return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
 
 
@@ -370,10 +388,9 @@ def placed(self: DictState, key: object, end: str) -> Expression:
     written = written_key(key)
     if written is None:
         return None
-    target_s = own_key(self, key)
-    if end in (LAST, POPPED):
-        return None if target_s else [end, self.expression, written]
-    return ["exactly", self.expression] if target_s else ["walked", self.expression, written]
+    if own_key(self, key):
+        return None if end in (LAST, POPPED) else ["exactly", self.expression]
+    return [end if end in (LAST, POPPED) else "walked", self.expression, written]
 
 
 def own_key(self: DictState, key: object) -> bool:
@@ -384,13 +401,12 @@ def own_key(self: DictState, key: object) -> bool:
 
 def compared_in_place(self: DictState, key: object) -> bool:
     """Whether a key of the argument a walk or popitem hands out may be one a tracked key
-    changed: a tracked key whose change found it among the argument's keys. The target's own
-    key is wherever its store put it."""
-    if not self.retracked or written_key(key) is None or own_key(self, key):
+    stored over (see ``over_the_argument``). The target's own key is wherever its store put
+    it."""
+    if not self.tracked_changes or written_key(key) is None or own_key(self, key):
         return False
     return any(
-        under is not None and not apart and type(changed) is type(key)
-        for under, changed, _, apart in self.log
+        type(change[1]) is type(key) and over_the_argument(self, change) for change in self.log
     )
 
 
@@ -402,7 +418,7 @@ def handed_in_place(self: DictState, key: object, name: str, pin: Expression) ->
     its plain place, so its flip may still end the walk sooner."""
     if compared_in_place(self, key):
         holds: Expression = None if pin is None else ["given", pin]
-        after_changes(self, key, written_key(key), (name, False, holds), held=True)
+        after_changes(self, key, written_key(key), (name, False, holds), handed=True)
 
 
 def _walked(
@@ -419,7 +435,13 @@ def _walked(
             break
         pin = None if key is MISSING else placed(self, key, end)
         fork = Branch(
-            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, pin
+            [">", self.size_term(), at],
+            key is not MISSING,
+            caller_site(),
+            False,
+            name,
+            pin,
+            decided=key is not MISSING and self.grown > at,
         )
         if not recorded(self, fork):
             return
@@ -442,5 +464,6 @@ def hinted(self: DictState, depth: int = 3) -> bool:
     """Whether a `__len__` call is Python's own guess at the size of a walk it just started:
     `list(config)`, `sorted` and `tuple` start a walk and then ask the size, in the same call of
     the same code. Only the first ask after a walk starts can be that guess."""
-    started, self.walked_at = self.walked_at, None
+    started = self.walked_at
+    self.__dict__["walked_at"] = None
     return started is not None and started == caller(depth)

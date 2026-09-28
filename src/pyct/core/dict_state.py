@@ -25,9 +25,8 @@ from pyct.core.list_state import plain
 MISSING = object()
 
 # one change the target made: the expression of the tracked key it was made under, None under a
-# plain key; the key's plain value; whether the change stored the key (True) or removed it; and
-# whether its lookup found the tracked key none of the argument's, so apart from each of them
-type Change = tuple[Expression, object, bool, bool]
+# plain key; the key's plain value; and whether the change stored the key (True) or removed it
+type Change = tuple[Expression, object, bool]
 
 
 class DictState(dict):
@@ -37,16 +36,18 @@ class DictState(dict):
     plain: a change made without its methods left the form behind for good, or the target
     emptied it. ``settled`` holds, by each key the path asked about, whether the argument held
     it; ``changed`` whether the dict holds each key the target stored (True) or removed (False).
+    The dict refuses a set, as a plain one does, so pyct writes these fields straight into its
+    ``__dict__``.
     """
 
     expression: Expression | None
     sink: BranchSink
     settled: dict[object, bool]
     changed: dict[object, bool]
-    # every change in the order the target made it, and whether any was under a tracked key,
+    # every change in the order the target made it, and how many were under a tracked key,
     # which a later lookup compares its own key with (see ``dict_reads.after_changes``)
     log: list[Change]
-    retracked: bool
+    tracked_changes: int
     # how many keys the dict holds past the argument's own: each change's, kept as it happens
     grown: int
     shadow: dict[object, object]
@@ -76,18 +77,19 @@ class DictState(dict):
         # dict's own, since the class called with a value builds a plain dict
         made = dict.__new__(cls)
         dict.update(made, items)
-        made.expression = expression
-        made.sink = sink
-        made.settled = {}
-        made.changed = {}
-        made.log = []
-        made.retracked = False
-        made.grown = 0
-        made.shadow = dict(items)
-        made.walked_at = None
-        made.copies = {}
-        made.shared = {}
-        made.int_keyed = int_keyed
+        fields = made.__dict__
+        fields["expression"] = expression
+        fields["sink"] = sink
+        fields["settled"] = {}
+        fields["changed"] = {}
+        fields["log"] = []
+        fields["tracked_changes"] = 0
+        fields["grown"] = 0
+        fields["shadow"] = dict(items)
+        fields["walked_at"] = None
+        fields["copies"] = {}
+        fields["shared"] = {}
+        fields["int_keyed"] = int_keyed
         return made
 
     def size(self) -> int:
@@ -144,7 +146,7 @@ class DictState(dict):
         Each tracked int, str and bool is its value from now on; a list or a dict inside,
         tracked in its own right, stays where it is.
         """
-        self.expression = None
+        self.__dict__["expression"] = None
         for key, value in dict.items(self.storage()):
             dict.__setitem__(self, key, plain(value))
 
@@ -152,33 +154,29 @@ class DictState(dict):
         """A new tracked dict of the same argument: these items, and what this one settled and
         changed, the argument's settled keys shared."""
         made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
-        made.settled = self.settled
-        made.changed = dict(self.changed)
-        made.log = list(self.log)
-        made.retracked = self.retracked
-        made.grown = self.grown
+        fields = made.__dict__
+        fields["settled"] = self.settled
+        fields["changed"] = dict(self.changed)
+        fields["log"] = list(self.log)
+        fields["tracked_changes"] = self.tracked_changes
+        fields["grown"] = self.grown
         return made
 
-    def noted(
-        self, key: object, value: object, tracked: Expression = None, *, apart: bool = False
-    ) -> None:
+    def noted(self, key: object, value: object, tracked: Expression = None) -> None:
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
         still says whether it held the key before, which is how the size grew. ``tracked`` is
-        the expression of the tracked key the change was made under, and ``apart`` says the
-        argument holds no key equal to it."""
-        self.grown += key not in self.shadow
+        the expression of the tracked key the change was made under."""
+        self.__dict__["grown"] += key not in self.shadow
         self.shadow[key] = value
-        self.logged(key, True, tracked, apart=apart)
+        self.logged(key, True, tracked)
 
     def dropped(self, key: object, tracked: Expression = None) -> None:
         """Note a removal the dict's own method made."""
-        self.grown -= key in self.shadow
+        self.__dict__["grown"] -= key in self.shadow
         self.shadow.pop(key, None)
         self.logged(key, False, tracked)
 
-    def logged(
-        self, key: object, stored: bool, tracked: Expression = None, *, apart: bool = False
-    ) -> None:
+    def logged(self, key: object, stored: bool, tracked: Expression = None) -> None:
         """Log a change, whether it stored the key or removed it.
 
         A change under a tracked key drops the walks' copies: the solver may make that key a
@@ -186,7 +184,7 @@ class DictState(dict):
         a copy handed out before it asks again.
         """
         self.changed[key] = stored
-        self.log.append((tracked, key, stored, apart))
+        self.log.append((tracked, key, stored))
         if tracked is not None:
-            self.retracked = True
+            self.__dict__["tracked_changes"] += 1
             self.copies.clear()
