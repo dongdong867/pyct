@@ -7,6 +7,7 @@ downgrade named by the method, or a classmethod that answers as the base type's 
 
 import types
 from collections.abc import Callable
+from typing import Any
 from unittest.mock import ANY
 
 import pytest
@@ -277,3 +278,54 @@ def test_fromhex_through_a_tracked_float_is_floats_own(build: Callable[[float], 
 
     assert type(answer) is float and answer == 4.0
     assert sink == []
+
+
+def _raised(call: Callable[[], object]) -> BaseException:
+    """What a call raises, so a tracked value's raise is read beside a plain value's."""
+    with pytest.raises(Exception) as raised:
+        call()
+    return raised.value
+
+
+# a set and a delete of each kind of name: a new one, pyct's own, one the number has, and the
+# plumbing Python reads a value's attributes through
+_SET_OR_DELETE: dict[str, Callable[[object], object]] = {
+    "set a new name": lambda x: setattr(x, "foo", 1),
+    "delete a new name": lambda x: delattr(x, "foo"),
+    "set the sink": lambda x: setattr(x, "sink", None),
+    "delete the expression": lambda x: delattr(x, "expression"),
+    "set real": lambda x: setattr(x, "real", 1),
+    "delete real": lambda x: delattr(x, "real"),
+    "set the dict": lambda x: setattr(x, "__dict__", {}),
+}
+
+
+@pytest.mark.parametrize("change", _SET_OR_DELETE.values(), ids=_SET_OR_DELETE)
+@pytest.mark.parametrize(
+    ("cls", "value"),
+    [(ConcolicInt, 3), (ConcolicBool, True), (ConcolicFloat, 2.5)],
+    ids=["int", "bool", "float"],
+)
+def test_a_set_or_a_delete_raises_what_the_plain_number_raises(
+    cls: type[ConcolicInt] | type[ConcolicBool] | type[ConcolicFloat],
+    value: Any,
+    change: Callable[[object], object],
+) -> None:
+    sink: list[SinkItem] = []
+    tracked = cls.made(value, "x", sink)
+
+    raised = _raised(lambda: change(tracked))
+    plain = _raised(lambda: change(value))
+
+    assert (type(raised), str(raised)) == (type(plain), str(plain))
+    assert raised_by_target(raised)
+    # pyct's own fields are where it wrote them, and the refusal recorded nothing
+    assert tracked.expression == "x" and tracked.sink is sink
+    assert sink == []
+
+
+def test_the_int_a_bool_is_keeps_how_its_text_reads_it() -> None:
+    number = +ConcolicBool.made(True, "b", [])
+
+    assert type(number) is ConcolicInt
+    assert number.as_int == ["int", "b"]
