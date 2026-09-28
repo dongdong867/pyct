@@ -32,13 +32,10 @@ such paths each ran to the limit: the fork is `unknown` at once (``Splits.refute
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
-from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LONGEST_WALK, measured_splits
+from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
-from pyct.solver.literals import plain_operand
 from pyct.solver.splits import (
     SPLITS,
     left_count,
@@ -102,16 +99,6 @@ class LoosenedReadError(Exception):
     input's count, or on a string an rsplit past its walk is held to. The ask is a miss."""
 
 
-# how each order on two ints reads as a compare of the lower with the higher: whether the
-# operands swap, and whether they may be equal
-_ORDERS: Mapping[str, tuple[bool, bool]] = {
-    "<": (False, False),
-    "<=": (False, True),
-    ">": (True, False),
-    ">=": (True, True),
-}
-
-
 @dataclass(frozen=True)
 class SplitList:
     """One split's list: the string's term, the method and its plain operands, the name its
@@ -131,6 +118,7 @@ class SplitList:
     hold: bool = True
     input_count: int | None = None
     back_among_counts: bool = False
+    input_text: str | None = None
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -224,6 +212,8 @@ class SplitList:
         if read_from_the_end and self._separated() and self.hold:
             return self._counted_tie()
         beyond = self._there(self.bound)
+        if beyond != FALSE and self.hold and self._pinned():
+            return self._pinned_tie(), True
         if beyond != FALSE and not self.hold:
             tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
             return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)], False
@@ -235,6 +225,31 @@ class SplitList:
         if beyond != FALSE:
             tied.append(f"(assert {negated(beyond)})")
         return tied, beyond != FALSE
+
+    def _pinned(self) -> bool:
+        """Whether a count tied by walks is held to the input's own count: where the input's
+        own pieces, not a number the path compares with, take the bound past
+        `MOST_WALKED_PAST`, a tie of that many walks ran past the limit (17 lines, 24 pieces on
+        `--`), so the count is read as Python counted the input's string, and a path that needs
+        another count is asked loosened."""
+        count = self.input_count
+        return count is not None and self.bound == count + BOUND_PAST > MOST_WALKED_PAST
+
+    def _pinned_tie(self) -> list[str]:
+        """The count as the input's own, and the string as one with that many pieces: on a
+        separator by memberships, which answered 24 pieces on `--` where the walks and a replace
+        term ran past the limit; on lines and words as the input's own string, since 17 lines
+        counted by their walks or by a replace term ran past the limit, where origin/v2, whose
+        length is plain, answers at once."""
+        count, text = self.input_count, self.input_text
+        assert count is not None and text is not None
+        separator = self.operands[0] if self._separated() else None
+        if isinstance(separator, str):
+            fewer = negated(separators_past(self.term, separator, count))
+            exact = both(separators_past(self.term, separator, count - 1), fewer)
+        else:
+            exact = f"(= {self.term} {encode(text)})"
+        return [f"(assert (= {self.count} {count}))", f"(assert {exact})"]
 
     def _counted_tie(self) -> tuple[list[str], bool]:
         """A separator split's count as one replace term, held to the bound by one membership
@@ -363,125 +378,3 @@ class SplitList:
         branches = [(f"(= {position.text()} {at})", self.piece(at)) for at in range(self.bound)]
         value = nested(branches[:-1], branches[-1][1])
         return Read(value, both(compare(position, Lin(self.bound), least), self.restriction()))
-
-
-class Splits:
-    """The splits' lists of one path: each by its count's name and by its part, how a compare
-    reads each count, each count a term of the program reads, and the value the input holds
-    for a part it names as it is (a string a split splits, say), which render gives."""
-
-    def __init__(self) -> None:
-        self.lists: dict[str, SplitList] = {}
-        self.parts: dict[int, str] = {}
-        self.counts: dict[str, Callable[[int], str]] = {}
-        self.emitted: list[str] = []
-        self.given: Callable[[Expression], object] = lambda part: None
-        self.hold = True
-        self.back_among_counts = False
-        # whether a read from the end put its piece where the input's own few pieces put it,
-        # and each count whose list the path reads from the end
-        self.fixed_few = False
-        self.backs: set[str] = set()
-        # each count a tie or a read holds the program by, and whether the held program's own
-        # forks need more pieces than a count's bound
-        self.bounds: set[str] = set()
-        self.refuted = False
-        # the largest number a fork compares each split's length with, by the split's part
-        self.numbers: dict[int, int] = {}
-
-    def learn(self, prefix: tuple[Branch, ...]) -> None:
-        """The largest number a fork compares each split's list's length with, or the length
-        of a list built from it."""
-        for fork in prefix:
-            expression = fork.expression
-            if not isinstance(expression, list) or len(expression) != 3:
-                continue
-            numbers = [part for part in expression[1:] if type(part) is int]
-            for split, start in measured_splits(expression):
-                most = [number + start for number in numbers]
-                self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *most])
-
-    @property
-    def bounded(self) -> bool:
-        """Whether the program holds a count to its bound or reads a piece among those below."""
-        return bool(self.bounds)
-
-    def made(self, node: list[Expression], term: str) -> SplitList:
-        """A split's list, its string's term ``term``, with how many pieces Python makes of the
-        string in the input whose path this is, where the input holds it as it is."""
-        head, string, *operands = node
-        plain = tuple(plain_operand(part) for part in operands)
-        text = self.given(string)
-        held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
-        most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
-        bound = min(most, MOST_BOUND)
-        count = f"count!{len(self.lists)}!"
-        choose = self.back_among_counts
-        listed = SplitList(term, str(head), plain, count, bound, self.hold, held, choose)
-        self.lists[listed.count] = listed
-        self.parts[id(node)] = listed.count
-        self.counts[listed.count] = listed.past
-        return listed
-
-    def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
-        """A split's piece at ``position``, noting whether the read holds the program."""
-        read = listed.read(position, kind, least)
-        if listed.from_the_end(position):
-            self.backs.add(listed.count)
-        if read.held:
-            self.bounds.add(listed.count)
-        self.fixed_few |= read.fixes_a_few
-        return read.found
-
-    def flags(self) -> dict[str, bool]:
-        """What a program's splits say of it: that its held asks cannot be sat, and that a read
-        from the end fixed a few pieces (see `solver.cvc5`)."""
-        return {"refuted": self.refuted, "fixed_few": self.fixed_few}
-
-    def count_of(self, node: list[Expression]) -> str:
-        """The name of a split's count."""
-        return self.parts[id(node)]
-
-    def reads(self, term: Lin) -> bool:
-        """Whether a term adds a split's count."""
-        return any(atom in self.counts for atom, _ in term.atoms)
-
-    def compare(self, head: str, left: Lin, right: Lin) -> str | None:
-        """``left head right`` where a side adds a split's count: whether the split holds a
-        piece, where the other side is a number; None for any other compare.
-
-        The least values the path's own forks give are not read here: this compare is one of
-        those forks, which the program asserts.
-        """
-        if head not in (*_ORDERS, "==", "!=") or not (self.reads(left) or self.reads(right)):
-            return None
-        if head in ("==", "!="):
-            below = compare(left, right, {}, or_equal=True, counts=self.counts)
-            same = both(below, compare(right, left, {}, or_equal=True, counts=self.counts))
-            return same if head == "==" else negated(same)
-        swap, or_equal = _ORDERS[head]
-        low, high = (right, left) if swap else (left, right)
-        return compare(low, high, {}, or_equal=or_equal, counts=self.counts)
-
-    def tied(self, lines: list[str], least: Least) -> tuple[list[str], list[str]]:
-        """Each count a line of the program reads, declared, and tied to its split's pieces;
-        a tie may read another split's count, which is tied as well. A count held to a bound
-        below the least its path's forks give it refutes the held program."""
-        text = "\n".join(lines)
-        pending = [count for count in self.lists if count in text]
-        declared: list[str] = []
-        ties: list[str] = []
-        while pending:
-            count = pending.pop()
-            if count in self.emitted:
-                continue
-            self.emitted.append(count)
-            listed = self.lists[count]
-            tie, held = listed.tie(count in self.backs)
-            if held:
-                self.bounds.add(count)
-                self.refuted |= least.get(count, 0) > listed.bound
-            declared.append(f"(declare-const {count} Int)")
-            ties += tie
-            pending += [other for other in self.lists if other in "\n".join(tie)]
-        return declared, ties

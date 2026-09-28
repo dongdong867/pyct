@@ -51,7 +51,7 @@ from pyct.solver.list_terms import (
     equal,
     shape_guard,
 )
-from pyct.solver.split_lists import Splits
+from pyct.solver.split_paths import Splits
 
 __all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
 

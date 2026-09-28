@@ -387,3 +387,30 @@ def test_a_count_no_read_from_the_end_needs_past_its_bound_is_a_miss_at_once() -
 
     # tied by walks, the held ask is unsat past the bound of 6 and the loosened one says so
     assert isinstance(answer, Unknown), answer
+
+
+# a count that meets a tracked int with no read from the end, on an input with many pieces
+MANY_PIECES: dict[str, tuple[Expression, str]] = {
+    "seventeen lines": (["splitlines", "s"], "a\n" * 16 + "x"),
+    "twenty-four pieces on a separator that overlaps itself": (
+        ["split", "s", "'--'"],
+        "--".join(["a"] * 24),
+    ),
+}
+
+
+@needs_cvc5
+@pytest.mark.parametrize(("split", "text"), MANY_PIECES.values(), ids=list(MANY_PIECES))
+def test_a_count_of_many_pieces_that_meets_a_term_is_answered(
+    split: list[Expression], text: str
+) -> None:
+    path = (fork(["==", ["len", split], "n"], taken=True),)
+    seed = Seed.of({"s": text, "n": 0})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the count is the input's own, held, where a tie of that many walks ran past the limit
+    assert isinstance(answer, Sat), answer
+    args = apply(seed, answer.model).args
+    operands: list[Any] = [part[1:-1] if isinstance(part, str) else part for part in split[2:]]
+    assert len(getattr(str(args["s"]), str(split[0]))(*operands)) == args["n"], args
