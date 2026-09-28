@@ -35,6 +35,10 @@ STUB_ENGINE = Path(__file__).with_name("stub_engine.py")
 # runs longer fails that test before its timeout marker, 180 s, would end the whole session
 BUILD_SECONDS = 150
 
+# the variables that name the caller's environment: uv would sync legacy's packages into the one
+# UV_PROJECT_ENVIRONMENT names, and warns about VIRTUAL_ENV, rather than the checkout's own
+CALLER_ENVIRONMENT = ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV")
+
 
 @dataclass(frozen=True)
 class StubCheckout:
@@ -107,9 +111,7 @@ def legacy_checkout(tmp_path_factory: pytest.TempPathFactory) -> Path:
     folder = tmp_path_factory.getbasetemp()
     if os.environ.get("PYTEST_XDIST_WORKER"):
         folder = folder.parent
-    # the checkout's own environment, not this one: uv would warn and ignore it anyway
-    environment = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
-    return built_once(folder / "legacy", lambda path: build_legacy_checkout(path, environment))
+    return built_once(folder / "legacy", lambda path: build_legacy_checkout(path, os.environ))
 
 
 def built_once(checkout: Path, build: Callable[[Path], None]) -> Path:
@@ -131,7 +133,9 @@ def built_once(checkout: Path, build: Callable[[Path], None]) -> Path:
 
 
 def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> None:
-    """Extract main into ``checkout`` and install its environment. A failure says what uv said."""
+    """Extract main into ``checkout`` and install its own environment, whatever environment
+    ``environment`` names. A failure says what uv said."""
+    own = {name: value for name, value in environment.items() if name not in CALLER_ENVIRONMENT}
     archive = subprocess.run(
         ["git", "archive", "main"], cwd=REPO_ROOT, capture_output=True, check=True
     )
@@ -143,7 +147,7 @@ def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> Non
                 *("--extra", "library", "--python", platform.python_version()),
             ],
             cwd=checkout,
-            env=dict(environment),
+            env=own,
             capture_output=True,
             text=True,
             check=True,
