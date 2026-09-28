@@ -19,8 +19,10 @@ version cannot be read has no context, and nothing of its is kept.
 Each result is one JSON file, ``legacy/KEY.json`` in the cache folder, written whole before it
 is renamed into place, so rows that run at once never read half of one. Its paths under the
 row's root are read back under the root of the run that reads it, so checkouts at other paths
-share results. A result whose legacy side spent its budget is kept too, failed or not;
-``refresh_budget_spent`` runs such a row's legacy side again and keeps the new result.
+share results. A result whose legacy side stopped on ``timeout`` is kept too, failed or not;
+that stop covers a spent budget and a child that died with an input pending.
+``refresh_budget_spent`` runs such a row's legacy side again and keeps the new result; until
+then a plain run reuses it.
 """
 
 import ast

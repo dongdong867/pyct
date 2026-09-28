@@ -123,7 +123,7 @@ def _stop(process: subprocess.Popen[bytes]) -> None:
     """Kill the command's whole process group. A group already gone needs nothing.
 
     The group keeps its id while any member runs, so no other process can hold that id then.
-    macOS refuses to signal the group of a command that has exited and is not yet reaped
+    macOS refuses to signal a group whose every member has exited and is not yet reaped
     (EPERM); nothing of it runs then, so that group needs nothing either.
     """
     with contextlib.suppress(ProcessLookupError, PermissionError):

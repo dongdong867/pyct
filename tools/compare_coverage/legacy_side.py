@@ -13,10 +13,13 @@ itself killed leaves the folder of each legacy side it was running, found by its
 
 With a cache, the side answers from a result kept by an earlier run when there is one, and
 keeps each new answer: one from a process that exited 0 and, for an installed entry, said
-which copy of the library it has, whose report has no failure or failed on legacy's own
-budget stop (``timeout``), as some targets do by design. Such a report is refreshed as a
-budget-spent one is. Any other failed side, whether stopped past its wait, exited otherwise,
-failed in legacy another way or failed its probe, is not kept, so each run tries it again.
+which copy of the library it has, whose report has no failure or failed with legacy's stop
+``timeout``. Legacy fails that way when it spends its budget or when the child running an
+input dies with the input pending: some targets end so by design, but a child killed for
+another reason, such as for lack of memory, ends so too. Such a report is refreshed as a
+budget-spent one is, and until then a plain run reuses it. Any other failed side, whether
+stopped past its wait, exited otherwise, failed in legacy another way or failed its probe, is
+not kept, so each run tries it again.
 """
 
 import contextlib

@@ -173,7 +173,7 @@ def test_stopping_every_command_ends_one_another_thread_waits_on_and_refuses_mor
 def test_a_group_the_system_refuses_to_signal_does_not_stop_the_others(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # macOS refuses to signal the group of a command that exited and is not yet reaped
+    # macOS refuses to signal a group whose every member exited and is not yet reaped
     ended = subprocess.Popen(["true"], start_new_session=True)
     ended.wait()
     real_killpg = os.killpg
