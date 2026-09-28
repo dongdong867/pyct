@@ -23,6 +23,19 @@ from tests.acceptance.harness import REPO_ROOT
 LONG_SUM = REPO_ROOT / "targets" / "isolate" / "long_sum.py"
 
 
+def spin_until(instant: float) -> None:
+    """Spin until the monotonic ``instant``, in a frame of its own, as pyct calls the target.
+
+    On 3.13 a signal handled at a ``while`` loop's backward jump raises from an
+    offset outside the frame's exception table, so the ``with``, ``finally``
+    or ``except`` around the loop is skipped, and an ``except`` body leaves
+    its exception set for the thread. A loop in a frame of its own keeps
+    the caller's ``with``, ``try`` and ``except`` out of that.
+    """
+    while time.monotonic() < instant:
+        pass
+
+
 def interrupted_call(name: str) -> float:
     """Run the target ``name`` under a deadline a Ctrl-C lands after, as a person presses one.
 

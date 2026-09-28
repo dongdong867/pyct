@@ -23,20 +23,7 @@ from pyct.execution.deadline import _HOLD_AT_MOST as HOLD_AT_MOST
 from pyct.execution.deadline import DeadlineError, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
-from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
-
-
-def spin_until(instant: float) -> None:
-    """Spin until the monotonic ``instant``, in a frame of its own, as pyct calls the target.
-
-    On 3.13 the closing jump of a loop that ends a ``with`` body, or an
-    ``except`` body, lies outside the frame's exception table. An alarm raised
-    there leaves the frame without the ``with``'s exit, and leaves the
-    exception the ``except`` handled set for the thread. A loop in a frame of
-    its own keeps the test's ``with`` and ``except`` out of that.
-    """
-    while time.monotonic() < instant:
-        pass
+from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
 
 
 @pytest.fixture
@@ -367,3 +354,25 @@ def test_a_ctrl_c_handled_before_the_block_holds_no_alarm_back() -> None:
             spin_until(started + 2)
 
     assert time.monotonic() - started < 0.3
+
+
+@DEADLINE_FIRES
+def test_a_ctrl_c_raised_in_a_block_begun_inside_a_handled_one_still_holds_the_alarm() -> None:
+    started = time.monotonic()
+
+    try:
+        raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        with pytest.raises(DeadlineError), deadline(started + 0.05):
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                # a new stop on its way out of the target: the alarm waits for it
+                spin_until(started + 0.15)
+                handled = time.monotonic()
+            # a hang, bounded so the test fails rather than waits when no alarm comes
+            spin_until(started + 2)
+
+    took = time.monotonic() - started
+    assert handled - started >= 0.15
+    assert took < 1, took
