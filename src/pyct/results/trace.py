@@ -32,7 +32,7 @@ def render_trace(
     """
     shown = printed_forks(record.forks) if printed is None else printed
     lines = _head(record)
-    lines += [_fork(*pair) for pair in zip(record.forks, shown.expressions, strict=True)]
+    lines += _forks(record.forks, shown.expressions)
     lines += _cut_forks(len(record.forks), shown.cut_from)
     lines += _coverage(coverage)
     lines += _ended(record.failure)
@@ -65,7 +65,7 @@ def render_stop(result: RunResult) -> str:
 
 def _written(lines: list[str]) -> str:
     """One fact per line, each line ending in a newline. This is the whole trace's shape."""
-    return "".join(f"{line}\n" for line in lines)
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def _summary(result: RunResult) -> list[str]:
@@ -144,10 +144,22 @@ def _downgrade(entry: DowngradeCount) -> str:
     return f"{counted} at {_site(entry.site)}"
 
 
-def _fork(branch: Branch, expression: Expression) -> str:
-    """Where it forked, what it tested, cut to the cap as the stdout line cuts it, and the side."""
-    side = "taken" if branch.taken else "not taken"
-    return f"fork {_site(branch.site)}  {_infix(expression)}  {side}"
+def _forks(forks: tuple[Branch, ...], expressions: tuple[Expression, ...]) -> list[str]:
+    """Each fork's line: where it forked, what it tested, cut to the cap as the stdout line cuts
+    it, and the side.
+
+    A site's text is made once per site however many forks name it, since a loop's path names
+    one site on every pass. The forks hold their sites while this runs, so no id is reused.
+    """
+    at: dict[int, str] = {}
+    lines: list[str] = []
+    for branch, expression in zip(forks, expressions, strict=True):
+        site = at.get(id(branch.site))
+        if site is None:
+            site = at[id(branch.site)] = f"fork {_site(branch.site)}  "
+        side = "taken" if branch.taken else "not taken"
+        lines.append(f"{site}{_infix(expression)}  {side}")
+    return lines
 
 
 def _cut_forks(forks: int, cut_from: int | None) -> list[str]:

@@ -14,7 +14,7 @@ from pyct.intercept.hook import Interception, intercepting
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import fresh
 from pyct.run.fresh import _journal, _request, fresh_for, in_a_fresh_interpreter, main
-from pyct.run.journal import read
+from pyct.run.journal_reader import read
 from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import load_target
 
