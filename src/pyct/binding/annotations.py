@@ -1,6 +1,7 @@
 """What an annotation asks of a seed value, and every value in a seed that contradicts it."""
 
 import json
+import re
 import types
 import typing
 from collections.abc import Iterable, Mapping
@@ -12,6 +13,20 @@ PLAIN: tuple[type, ...] = (str, int, float, bool)
 # the kind of None, which a union of plain types may hold beside them: JSON's null
 NONE = type(None)
 
+# an int key as JSON writes it: the text an input's line holds for a dict's int key
+_INT_TEXT = re.compile(r"0|-?[1-9][0-9]*")
+
+
+def int_keys(check: "Check | None") -> bool:
+    """Whether a dict's annotation names int keys, which the seed binding reads its keys as."""
+    return isinstance(check, Items) and check.kind is dict and check.keys is int
+
+
+def reads_as_int(key: object) -> bool:
+    """Whether a key is the text JSON writes for an int, which a ``dict[int, X]`` reads back as
+    the int."""
+    return type(key) is str and _INT_TEXT.fullmatch(key) is not None
+
 
 @dataclass(frozen=True)
 class Items:
@@ -19,10 +34,15 @@ class Items:
 
     ``each`` is None when the annotation's items ask nothing pyct checks, a
     bare ``list`` or ``list[Any]`` say, and then only the kind is checked.
+    ``keys`` is a dict's key type as the annotation names it, ``str`` when it
+    names none. A dict whose keys are not strs is not checked, since JSON
+    keys are always strings; its keys are read back by it instead (see
+    ``walk``).
     """
 
     kind: type
     each: "Check | None"
+    keys: object = str
 
 
 @dataclass(frozen=True)
@@ -43,8 +63,8 @@ def check_of(annotation: object) -> Check | None:
     by identity, so an annotation that merely compares equal to one is not
     it. A list or dict annotation asks for the kind whatever its items are
     (see ``_of_items``). JSON keys are always strings, so a dict annotation
-    whose key type is not ``str`` asks nothing. Every other annotation, a
-    union among them, asks nothing.
+    whose key type is not ``str`` checks nothing, and only says the key type.
+    Every other annotation, a union among them, asks nothing.
     """
     for plain in PLAIN:
         if annotation is plain:
@@ -59,6 +79,9 @@ def check_of(annotation: object) -> Check | None:
         return Items(dict, None)
     if origin is dict and len(arguments) == 2 and arguments[0] is str:
         return Items(dict, _of_items(arguments[1]))
+    if origin is dict and len(arguments) == 2:
+        values = _of_items(arguments[1]) if arguments[0] is int else None
+        return Items(dict, values, keys=arguments[0])
     return None
 
 
@@ -104,6 +127,8 @@ def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> l
 
 def _refused(check: Check, value: object, written: str) -> list[str]:
     """The lines for one value and everything under it. ``written`` is its access."""
+    if isinstance(check, Items) and check.keys is not str:
+        return []
     if isinstance(check, type):
         check = OneOf((check,))
     if isinstance(check, OneOf):

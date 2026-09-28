@@ -1,15 +1,16 @@
 """Turn a seed dict into the arguments the target is called with."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
 from typing import TypeGuard
 
 from pyct.binding.annotations import Check, Items
-from pyct.binding.shapes import ListShape, shaped
+from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import kinds_of
@@ -27,7 +28,8 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     ``["[]", ["[]", "config", "'server'"], "'port'"]``. The seed decides the
     type: JSON ``true`` is a tracked bool whatever the annotation says. A list the
     walk names is a tracked list whose form is its access, so its length and
-    its changes are followed too.
+    its changes are followed too, and a dict the walk names is a tracked dict
+    of that access, so its keys and its changes are.
 
     Every dict and list the walk reaches is rebuilt, whatever key it sits
     under, and every other value deepcopy can copy is copied, so a change the
@@ -43,6 +45,8 @@ def bind(seed: Mapping[str, object], sink: BranchSink) -> dict[str, object]:
     for made in tracker.lists:
         made.shadow = made.storage()
         made.kinds = kinds_of(made.shadow)
+    for mapped in tracker.dicts:
+        mapped.shadow = mapped.storage()
     return args
 
 
@@ -52,6 +56,7 @@ class _Tracker:
     def __init__(self, sink: BranchSink) -> None:
         self.sink = sink
         self.lists: list[ConcolicList] = []
+        self.dicts: list[ConcolicDict] = []
 
     def scalar(self, value: int | float | str, place: Place) -> object:
         if isinstance(value, str):
@@ -67,6 +72,13 @@ class _Tracker:
         self.lists.append(made)
         return made, list(value)
 
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        made = ConcolicDict.made(dict.fromkeys(value), place.access, self.sink)
+        self.dicts.append(made)
+        return made, dict(value)
+
 
 @dataclass(frozen=True)
 class Seed:
@@ -74,7 +86,9 @@ class Seed:
 
     ``leaves`` names each int and str the solver declares on its own: a parameter, or a value
     inside a dict. ``lists`` names each tracked list the solver declares as a length and its
-    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``checks``
+    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``dicts``
+    names each tracked dict, a dict inside a list among them, with its keys, whose presence
+    and count the solver declares. ``checks``
     is what each parameter's annotation asks of it, which says the kind of an item the solver
     adds to a list with none to go by, for this input and each answer made from it. The target
     is never called with the dicts and lists here: ``bind`` rebuilds them for each call. So
@@ -88,13 +102,18 @@ class Seed:
     checks: Mapping[str, Check] = field(default_factory=dict)
     # each leaf's value in this input, which settles how a list the path changed was cut
     values: Mapping[str, object] = field(default_factory=dict)
+    dicts: Mapping[str, DictShape] = field(default_factory=dict)
 
     @classmethod
     def of(cls, args: Mapping[str, object], checks: Mapping[str, Check] | None = None) -> "Seed":
-        """The arguments copied, and their leaves and lists noted, in one walk."""
+        """The arguments copied, and their leaves, lists and dicts noted, in one walk."""
         noted = Noted()
         copied = Walk(noted).rebuilt(args, checks)
-        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values)
+        return cls(copied, noted.leaves, noted.shapes(), checks or {}, noted.values, noted.dicts)
+
+    def containers(self) -> dict[str, ListShape | DictShape]:
+        """Each tracked list and dict with its shape, by name: what the solver declares."""
+        return {**self.lists, **self.dicts}
 
 
 class Noted:
@@ -108,6 +127,8 @@ class Noted:
         # each tracked list in the order the walk made it: its copy, its name or the list and
         # position it is a row of, and what its annotation asks of each item
         self.made: list[tuple[list[object], str | tuple[int, int], Check | None]] = []
+        # each tracked dict by its name, with its keys and the kinds of its values
+        self.dicts: dict[str, DictShape] = {}
 
     def scalar(self, value: int | float | str, place: Place) -> object:
         return self.noted(value, place)
@@ -128,6 +149,12 @@ class Noted:
         each = check.each if isinstance(check, Items) and check.kind is list else None
         self.made.append((made, where, each))
         return made, list(value)
+
+    def mapped(
+        self, value: dict[object, object], place: Place
+    ) -> tuple[dict[object, object], dict[object, object]]:
+        self.dicts[leaf_name(place.access)] = dict_shaped(value, place.check)
+        return dict.fromkeys(value), dict(value)
 
     def shapes(self) -> dict[str, ListShape]:
         """Each list's shape, its rows first: the walk made every row after its list."""
@@ -157,7 +184,9 @@ def leaves(seed: Mapping[str, object]) -> dict[str, type]:
 _STEPS = frozenset({"[]"})
 
 
-def access_name(part: Expression) -> str | None:
+def access_name(
+    part: Expression, known: MutableMapping[int, str | None] | None = None
+) -> str | None:
     """The leaf name of a part of a condition that reads as an access, or None for any other.
 
     Only a chain of the steps the walk takes, each key not a list, down to a
@@ -166,13 +195,24 @@ def access_name(part: Expression) -> str | None:
     that holds a long or shared expression costs a step or two, not the
     expression written out. Whether the seed holds that access is the
     caller's to ask.
+
+    ``known`` holds the name found for each part already asked about, by its identity: the
+    loop stops at one, so a path that names every access of a deep chain reads each step once.
+    The answer goes into it.
     """
+    memo: MutableMapping[int, str | None] = {} if known is None else known
+    if id(part) in memo:
+        return memo[id(part)]
     step: Expression = part
-    while _is_step(step):
+    while _is_step(step) and id(step[1]) not in memo:
         step = step[1]
-    if step is part or not isinstance(step, str):
-        return None
-    return leaf_name(part)
+    below = step[1] if _is_step(step) else step
+    if _is_step(step):
+        reached = memo[id(below)] is not None
+    else:
+        reached = step is not part and isinstance(step, str)
+    memo[id(part)] = name = leaf_name(part) if reached else None
+    return name
 
 
 def _is_step(part: Expression) -> TypeGuard[list[Expression]]:

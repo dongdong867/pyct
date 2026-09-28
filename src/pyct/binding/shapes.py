@@ -1,18 +1,22 @@
-"""What the solver knows of a tracked list in the input, and what it answers about one.
+"""What the solver knows of a tracked list or dict in the input, and what it answers about one.
 
 A list's shape is the kind of the item at each position of the input, the shape of each list
-inside, and the kind of an item the solver adds (lists-and-dicts-as-arrays-with-a-length). An
-answer is the list's new length, the arrays the solver chose its items from, and the positions
-a fork on the path read, whose items take the solver's values; every other position keeps what
-the input had.
+inside, and the kind of an item the solver adds (containers-arrays-counted-keys-and-copied-walk-
+keys). An answer is the list's new length, the arrays the solver chose its items from, and the
+positions a fork on the path read, whose items take the solver's values; every other position
+keeps what the input had.
+
+A dict's shape is its keys in order, the kind of each value, and the kind of a value the
+solver adds. An answer is which keys a fork names the dict holds, how many of its other keys it
+keeps, and how many keys pyct makes up to meet a count.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 
-from pyct.binding.annotations import NONE, Check, Items, OneOf
+from pyct.binding.annotations import NONE, Check, Items, OneOf, int_keys, reads_as_int
 from pyct.core.list_state import kind_of
 
 # the kinds an added item takes from an annotation's item type, when the items do not say
@@ -139,3 +143,110 @@ def _item(items: list[object], answer: ListAnswer, shape: ListShape, at: int) ->
 
 # an added list or dict starts empty
 _STARTS: Mapping[str, Callable[[], object]] = {"list": list, "dict": dict}
+
+
+@dataclass(frozen=True)
+class DictShape:
+    """A tracked dict of the input: its keys in order, the kind of each value, and what the
+    solver adds (dict-keys-named-held-or-made-up).
+
+    ``fill`` is the kind of a value the solver adds under a key a fork names or one pyct makes
+    up. ``int_keys`` says its annotation is ``dict[int, X]``, whose keys ``--args`` reads back as
+    ints: an input's line writes a key as JSON text, so the solver adds an int key only there,
+    and there no str key that reads as an int (see ``adds``). Only a dict whose keys are all
+    strs gets made-up keys.
+    """
+
+    keys: tuple[object, ...]
+    kinds: tuple[str, ...]
+    fill: str = "none"
+    int_keys: bool = False
+
+    @property
+    def makes_up(self) -> bool:
+        """Whether the solver may add made-up keys: the dict's keys are all strs."""
+        return all(type(key) is str for key in self.keys)
+
+    def adds(self, key: object) -> bool:
+        """Whether the solver may add this key: one an answer's line reads back as itself
+        through ``--args``."""
+        if type(key) is int:
+            return self.int_keys
+        return type(key) is str and not (self.int_keys and reads_as_int(key))
+
+
+def dict_shaped(items: dict[object, object], check: Check | None) -> DictShape:
+    """The shape of a dict of the input. ``check`` is what the dict's own annotation asks of
+    it, when it has one."""
+    each = check.each if isinstance(check, Items) and check.kind is dict else None
+    kinds = tuple(kind_of(value) for value in dict.values(items))
+    fill = kinds[0] if kinds and kinds.count(kinds[0]) == len(kinds) else annotated(each)
+    keys = tuple(dict.keys(items))
+    return DictShape(keys=keys, kinds=kinds, fill=fill, int_keys=int_keys(check))
+
+
+@dataclass(frozen=True)
+class DictAnswer:
+    """What the solver answered about one tracked dict.
+
+    ``present`` says, for each key a fork on the path names, in the order the path first names
+    it, whether the dict holds it. ``kept`` is how many of the input's other keys it keeps, from
+    the first: a smaller dict loses them from its end. ``made`` is how many keys pyct makes up,
+    and ``values`` what the solver answered for a value under an added key.
+    """
+
+    present: Mapping[object, bool] = field(default_factory=dict)
+    kept: int = 0
+    made: int = 0
+    values: Mapping[object, object] = field(default_factory=dict)
+
+
+# a made-up key is this, then a count from 1
+MADE_UP = "pyct"
+
+
+def made_up(taken: Collection[object], count: int) -> list[str]:
+    """The first ``count`` made-up keys, `pyct1`, `pyct2` and on, skipping any text in
+    ``taken``: the keys the dict holds and the keys a fork names."""
+    keys: list[str] = []
+    number = 0
+    while len(keys) < count:
+        number += 1
+        key = f"{MADE_UP}{number}"
+        if key not in taken:
+            keys.append(key)
+    return keys
+
+
+def rekeyed(
+    items: dict[object, object], answer: DictAnswer, shape: DictShape
+) -> dict[object, object]:
+    """The items of a dict with the keys the solver answered.
+
+    The input's keys come first, in their order: one a fork names stays when the answer holds
+    it, and the others stay as far as ``kept`` reaches. Then the added keys a fork names, in the
+    order the path names them, and then the made-up keys. An added value holds what the solver
+    answered, or its kind's own zero, or starts empty.
+    """
+    rebuilt: dict[object, object] = {}
+    unnamed = 0
+    for key, value in dict.items(items):
+        if key in answer.present:
+            keep = answer.present[key]
+        else:
+            keep, unnamed = unnamed < answer.kept, unnamed + 1
+        if keep:
+            rebuilt[key] = value
+    added = [key for key, held in answer.present.items() if held and key not in items]
+    added += made_up({*items, *answer.present}, answer.made)
+    for key in added:
+        rebuilt[key] = answer.values.get(key, _filled(shape.fill))
+    return rebuilt
+
+
+def _filled(kind: str) -> object:
+    """A value the solver adds and answers nothing about: its kind's zero, or an empty list or
+    dict, or None."""
+    if kind in _ADDED:
+        return _ADDED[kind]
+    return _STARTS[kind]() if kind in _STARTS else None

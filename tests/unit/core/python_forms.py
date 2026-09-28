@@ -2,11 +2,13 @@
 
 A tracked list's form is the Python expression that builds it from the arguments, so the tests
 hold it against Python by evaluating it here: a list display, `+`, `*`, an index, a slice with
-or without a step, `len`, unary `-`, a parameter's name and a literal.
+or without a step, `len`, unary `-`, a parameter's name and a literal. A fork on a dict is held
+the same way, so `in`, binary `-` and the compares are evaluated too.
 """
 
 import ast
-from collections.abc import Mapping
+import operator
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from pyct.core.branch import Expression
@@ -56,8 +58,22 @@ def _apply(head: str, values: list[Any]) -> object:
     if head == "-" and len(values) == 1:
         return -values[0]
     left, right = values
-    if head == "+":
-        return left + right
-    if head == "*":
-        return left * right
+    if head == "in":
+        return left in right
+    if head in _BINARY:
+        return _BINARY[head](left, right)
     raise ValueError(f"no Python meaning for {head}")
+
+
+# the operators a fork on a list or a dict is written with, by their head
+_BINARY: Mapping[str, Callable[[Any, Any], object]] = {
+    "+": operator.add,
+    "-": operator.sub,
+    "*": operator.mul,
+    "==": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+}

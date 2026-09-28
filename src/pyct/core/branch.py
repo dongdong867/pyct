@@ -49,7 +49,10 @@ class Branch:
     tells whose side a fork took.
 
     ``lost_as`` names the operation that took it, which a call that is over names its loss by
-    when a value it kept records one (see ``execution.tally``). It is no part of the fork.
+    when a value it kept records one (see ``execution.tally``). ``holds`` is a fact about the
+    input that holds once the fork went the way it went: which key a walk over a dict read at
+    its place (see ``core.dict_reads``). The solver asserts it wherever a path keeps the fork,
+    and drops it where the path flips it. Neither is part of the fork, and neither is printed.
     """
 
     expression: Expression
@@ -57,6 +60,7 @@ class Branch:
     site: Site
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
+    holds: Expression = field(default=None, compare=False)
 
     @property
     def where(self) -> ForkSite:

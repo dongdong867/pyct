@@ -32,8 +32,10 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core import codes, conversions, list_reads, math_calls, ranges, strs
+from pyct.core import codes, conversions, dict_reads, list_reads, math_calls, ranges, strs
 from pyct.core.bools import ConcolicBool
+from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -46,12 +48,22 @@ from pyct.core.values import BASES_BY_ID
 # builtin plain Python found
 _LEN, _ORD, _CHR = len, ord, chr
 
+# a view's size is its dict's
+_VIEWED: Callable[[Any], object] = lambda view: dict_reads.length(view._mapping)  # noqa: E731
+
 # the tracked values core follows through each builtin, by their exact type, and the function
 # that follows them: the three bound in the module's builtins, the conversions a call written
 # `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`), and `range`, which
 # follows a tracked int in any of its arguments and is handed all of them
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] = {
-    _LEN: {ConcolicStr: strs.length, ConcolicList: list_reads.length},
+    _LEN: {
+        ConcolicStr: strs.length,
+        ConcolicList: list_reads.length,
+        ConcolicDict: dict_reads.length,
+        ConcolicKeys: _VIEWED,
+        ConcolicValues: _VIEWED,
+        ConcolicItems: _VIEWED,
+    },
     _ORD: {ConcolicStr: codes.code},
     _CHR: {ConcolicInt: codes.character},
     int: {
@@ -88,7 +100,7 @@ def _routed(
 
 
 def len(*args: object, **kwargs: object) -> object:
-    # a tracked string's or list's length is a tracked int, `["len", s]`. Its docstring is
+    # a tracked string's, list's or dict's length is a tracked int, `["len", s]`. Its docstring is
     # Python's own (see `_dressed`)
     return _routed(_LEN, args, kwargs)
 

@@ -7,6 +7,7 @@ Each tracked type adds its row here.
 
 from pyct.core import values
 from pyct.core.bools import ConcolicBool
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -20,6 +21,7 @@ _ROWS: dict[type, type] = {
     ConcolicStr: str,
     ConcolicBool: bool,
     ConcolicList: list,
+    ConcolicDict: dict,
     ConcolicRange: range,
 }
 values.BASES.update(_ROWS)

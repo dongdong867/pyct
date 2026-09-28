@@ -5,7 +5,7 @@ import pytest
 from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.binding.shapes import ArrayValue, ListAnswer, ListShape
+from pyct.binding.shapes import ArrayValue, DictAnswer, DictShape, ListAnswer, ListShape, made_up
 
 
 def test_the_model_replaces_the_keys_it_names_and_leaves_the_rest() -> None:
@@ -110,3 +110,54 @@ def test_a_list_inside_a_list_grows_and_an_added_one_starts_empty() -> None:
 
     assert apply(seed, rows).args == {"grid": [[6], []]}
     assert seed.lists["grid"].rows[0].fill == "int"
+
+
+def test_a_seed_notes_each_dict_with_its_keys_and_the_kind_of_an_added_value() -> None:
+    seed = Seed.of(
+        {"config": {"a": 1, "b": 2}, "mixed": {"a": 1, "b": "x"}, "empty": {}},
+        {"empty": Items(dict, str)},
+    )
+
+    assert seed.dicts == {
+        "config": DictShape(keys=("a", "b"), kinds=("int", "int"), fill="int"),
+        "mixed": DictShape(keys=("a", "b"), kinds=("int", "str"), fill="none"),
+        "empty": DictShape(keys=(), kinds=(), fill="str"),
+    }
+    assert seed.containers() == {**seed.lists, **seed.dicts}
+
+
+def test_a_dict_keeps_its_named_keys_as_answered_and_its_others_from_the_first() -> None:
+    seed = Seed.of({"config": {"a": 1, "b": 2, "c": 3, "d": 4}})
+    answer = DictAnswer(present={"b": False, "z": True, "y": False}, kept=2, made=1)
+
+    applied = apply(seed, {"config": answer})
+
+    config = applied.args["config"]
+    assert isinstance(config, dict)
+    assert config == {"a": 1, "c": 3, "z": 0, "pyct1": 0}
+    assert list(config) == ["a", "c", "z", "pyct1"]
+    assert applied.dicts["config"].keys == ("a", "c", "z", "pyct1")
+
+
+def test_an_added_value_holds_the_solver_s_answer_or_its_kind_s_zero() -> None:
+    seed = Seed.of({"s": {"k": "v"}, "rows": {"k": [1]}, "none": {}})
+    answers = {
+        "s": DictAnswer(present={"n": True}, kept=1, values={"n": "w"}, made=1),
+        "rows": DictAnswer(present={"n": True}, kept=1),
+        "none": DictAnswer(made=2),
+    }
+
+    applied = apply(seed, answers)
+
+    assert applied.args == {
+        "s": {"k": "v", "n": "w", "pyct1": ""},
+        "rows": {"k": [1], "n": []},
+        "none": {"pyct1": None, "pyct2": None},
+    }
+
+
+def test_a_made_up_key_skips_every_text_the_dict_holds_or_a_fork_names() -> None:
+    assert made_up({"pyct1", "pyct3", "a"}, 3) == ["pyct2", "pyct4", "pyct5"]
+    assert made_up(set(), 0) == []
+    assert DictShape(keys=("a", 1), kinds=(), fill="none").makes_up is False
+    assert DictShape(keys=(), kinds=(), fill="none").makes_up is True

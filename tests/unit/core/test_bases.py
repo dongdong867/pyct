@@ -10,6 +10,7 @@ import pytest
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import SinkItem
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -26,6 +27,7 @@ def tracked_values(sink: list[SinkItem]) -> list[tuple[object, type]]:
         (ConcolicStr.made("a", "s", sink), str),
         (ConcolicBool.made(True, "b", sink), bool),
         (ConcolicList.made([1], "xs", sink), list),
+        (ConcolicDict.made({"a": 1}, "d", sink), dict),
         (ranged(ConcolicInt.made(3, "n", sink)), range),
     ]
 
@@ -37,6 +39,7 @@ def test_the_table_holds_each_tracked_class_and_its_base_type() -> None:
         ConcolicStr: str,
         ConcolicBool: bool,
         ConcolicList: list,
+        ConcolicDict: dict,
         ConcolicRange: range,
     } == BASES
     assert {id(tracked): base for tracked, base in BASES.items()} == BASES_BY_ID
@@ -99,6 +102,9 @@ def test_the_class_itself_is_still_a_class() -> None:
         (ConcolicList, ([1],), [1]),
         (ConcolicList, ("ab",), ["a", "b"]),
         (ConcolicList, (), []),
+        (ConcolicDict, ({"a": 1},), {"a": 1}),
+        (ConcolicDict, ([("a", 1)],), {"a": 1}),
+        (ConcolicDict, (), {}),
         (ConcolicRange, (3,), range(3)),
         (ConcolicRange, (1, 9, 2), range(1, 9, 2)),
     ],
@@ -125,6 +131,8 @@ def test_a_tracked_class_called_with_keywords_builds_as_its_base_type_does() -> 
         (ConcolicInt, (1,), {"expression": "n"}),
         (ConcolicStr, ("a",), {"expression": "s", "sink": []}),
         (ConcolicList, (5,), {}),
+        (ConcolicDict, (5,), {}),
+        (ConcolicDict, ([1],), {}),
         (ConcolicRange, (), {}),
         (ConcolicRange, ("a",), {}),
     ],
@@ -155,7 +163,7 @@ def test_a_copy_is_the_value_itself_and_a_pickle_the_plain_value() -> None:
     sink: list[SinkItem] = []
 
     for value, base in tracked_values(sink):
-        if base is not list:
+        if base is not list and base is not dict:
             assert copy.copy(value) is value and copy.deepcopy(value) is value
         loaded = pickle.loads(pickle.dumps(value))
         assert type(loaded) is base and loaded == value
