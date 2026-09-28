@@ -218,8 +218,9 @@ def update(self: DictState, name: str, *args: Any, **kwargs: Any) -> None:
 def emptied(self: DictState) -> None:
     """``config.clear()``: the dict is ``{}``, a plain dict, and nothing of the input is in it."""
     dict.clear(self)
-    self.shadow = {}
-    self.expression = None
+    fields = self.__dict__
+    fields["shadow"] = {}
+    fields["expression"] = None
 
 
 def merged(self: DictState, other: object, *, reflected: bool = False) -> object:
@@ -257,7 +258,7 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
         if not held:
             made.changed[plain(looked)] = True
-            made.grown += 1
+            made.__dict__["grown"] += 1
     if self.expression is None:
         # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()

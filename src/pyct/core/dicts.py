@@ -28,6 +28,8 @@ from pyct.core.values import (
     downgrade_the_rest,
     forked,
     own,
+    refused_delete,
+    refused_set,
 )
 
 # not the target's path: `__repr__`, the object plumbing, and `__init__`, which a target calls
@@ -124,7 +126,7 @@ def _deep_copied(self: DictState, memo: dict[int, object]) -> object:
     }
     dict.update(made, items)
     if isinstance(made, DictState):
-        made.shadow = dict(items)
+        made.__dict__["shadow"] = dict(items)
     return made
 
 
@@ -207,6 +209,9 @@ class ConcolicDict(DictState):
     # called with a value is dict's own, a plain dict, since pyct builds one through `made`
     __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
     __new__ = as_base
+    # a plain dict takes no attribute: a set or a delete is Python's own refusal, pyct's names too
+    __setattr__ = refused_set
+    __delattr__ = refused_delete
 
     # the lookups, each recording whether the key is there the first time the path asks
     __getitem__ = _item  # pyrefly: ignore[bad-override]

@@ -44,12 +44,14 @@ def bind(
     tracker = _Tracker(sink)
     args = Walk(tracker).rebuilt(seed, checks)
     # each list's items are placed after the list is made, so what pyct saw of them is noted
-    # once the walk is done, before the target can touch any
+    # once the walk is done, before the target can touch any. Each refuses a set, as a plain
+    # one does, so the fields go straight into its `__dict__`
     for made in tracker.lists:
-        made.shadow = made.storage()
-        made.kinds = kinds_of(made.shadow)
+        fields = made.__dict__
+        fields["shadow"] = made.storage()
+        fields["kinds"] = kinds_of(fields["shadow"])
     for mapped in tracker.dicts:
-        mapped.shadow = mapped.storage()
+        mapped.__dict__["shadow"] = mapped.storage()
     return args
 
 

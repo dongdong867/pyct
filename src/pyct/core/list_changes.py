@@ -76,8 +76,9 @@ def made(self: ListState, change: Change, form: Expression, kinds: frozenset[str
     """Make a change Python's own way, then on the shadow, and take on its form."""
     answer = own(change, self)
     change(self.shadow)
-    self.expression = form
-    self.kinds = self.kinds | kinds
+    fields = self.__dict__
+    fields["expression"] = form
+    fields["kinds"] = self.kinds | kinds
     return answer
 
 
@@ -206,8 +207,9 @@ def remove(self: ListState, value: object, found: int | None) -> None:
 def clear(self: ListState) -> None:
     """``items.clear()``: the list is ``[]``, a plain list, and nothing of the input is in it."""
     list.clear(self)
-    self.shadow = []
-    self.expression = None
+    fields = self.__dict__
+    fields["shadow"] = []
+    fields["expression"] = None
 
 
 def reverse(self: ListState) -> None:
