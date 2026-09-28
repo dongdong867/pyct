@@ -208,6 +208,11 @@ def test_a_range_is_written_after_the_lines_and_read_back(tmp_path: Path) -> Non
         {"only_legacy": [], "only_v2": "4"},
         {"only_legacy": [], "only_v2": [4.0]},
         {"only_legacy": [], "only_v2": [5]},
+        {"only_legacy": [], "only_v2": []},
+        {"only_legacy": [3], "only_v2": [4]},
+        {"only_legacy": [3], "only_v2": [4], "reason": ""},
+        {"only_legacy": [], "only_v2": [4], "reason": "timing"},
+        {"only_legacy": [3], "only_v2": [4], "reason": 7},
     ],
 )
 def test_a_range_that_is_not_two_lists_of_new_lines_is_refused(
@@ -220,9 +225,57 @@ def test_a_range_that_is_not_two_lists_of_new_lines_is_refused(
         read_records(file, False, LIMITS)
 
 
-def test_a_range_on_a_failed_record_is_refused(tmp_path: Path) -> None:
+@pytest.mark.parametrize("varies", [RANGE_LINE["varies"], {"only_legacy": [], "only_v2": []}])
+def test_a_range_on_a_failed_record_is_refused(tmp_path: Path, varies: object) -> None:
     failed = {**RANGE_LINE, "status": "legacy failed", "failures": {"legacy": "x"}, "covered": []}
-    file = a_file(tmp_path, json.dumps(failed))
+    file = a_file(tmp_path, json.dumps(failed | {"varies": varies}))
 
     with pytest.raises(RecordsError, match=rf"--accepted: {file} line 2 is not a record"):
         read_records(file, False, LIMITS)
+
+
+# a line only legacy covered that a person accepted as timing, with the reason written down
+HAND = Varies(only_legacy=(3,), only_v2=(4, 6), reason="v2 misses 3 only when its budget ends")
+
+
+def test_a_range_of_lines_only_legacy_covered_is_read_and_written_with_its_reason(
+    tmp_path: Path,
+) -> None:
+    record = replace(EXACT, varies=HAND)
+    file = tmp_path / "accepted.jsonl"
+
+    write_records(file, LIMITS, [record])
+
+    varies = json.loads(file.read_text().splitlines()[1])["varies"]
+    assert varies == {"only_legacy": [3], "only_v2": [4, 6], "reason": HAND.reason}
+    assert read_records(file, False, LIMITS) == {record.key: record}
+
+
+def test_accept_never_widens_the_lines_only_legacy_covered() -> None:
+    """keep-a-budget-bound-compare-row-stable-accept-keeps-legacy-lines-exact"""
+    lost = replace(showing(5, legacy=SPENT), only_legacy=(3,))
+
+    (replaced,) = rewritten(accepting(EXACT), [lost], ROOTS, BUDGET)
+
+    assert replaced == replace(EXACT, only_legacy=(3,))
+    assert mark(lost, {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False
+
+
+def test_accept_widens_v2_lines_beside_a_legacy_range_a_person_wrote() -> None:
+    record = replace(EXACT, varies=HAND)
+    row = replace(showing(5, 7, legacy=SPENT), only_legacy=(3,))
+
+    (widened,) = rewritten(accepting(record), [row], ROOTS, BUDGET)
+
+    assert widened == replace(record, varies=replace(HAND, only_v2=(4, 6, 7)))
+    assert mark(row, {record.key: record}, ROOTS, BUDGET).widened is True
+
+
+def test_a_row_is_marked_widened_only_when_accept_widens_its_record() -> None:
+    """keep-a-budget-bound-compare-row-stable-accept-widens-a-budget-bound-record"""
+    spent = showing(4, 5, 6, legacy=SPENT)
+
+    assert mark(spent, {EXACT.key: EXACT}, ROOTS, BUDGET).widened is True
+    assert mark(spent, {EXACT.key: EXACT}, ROOTS).widened is False
+    assert mark(showing(4, 5, 6), {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False
+    assert mark(showing(5, legacy=SPENT), {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False

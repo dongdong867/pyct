@@ -87,7 +87,8 @@ class Row:
     """One entry compared, one file no entry names, or one entry left out.
 
     ``record`` is ``accepted`` or ``changed`` when an accepted file holds a record for the
-    row, and ``change`` then says what changed.
+    row, and ``change`` then says what changed. ``widened`` is true for a changed row whose
+    record ``--accept`` widens rather than replaces.
     """
 
     set: str
@@ -104,6 +105,7 @@ class Row:
     record: str | None = None
     change: str | None = None
     library: str | None = None
+    widened: bool = False
 
 
 def left_out_row(entry: Entry, file: Path) -> Row:

@@ -86,11 +86,13 @@ class Streams:
 def compare(run: Run, sides: Sides, streams: Streams) -> int:
     """Print every row and the summary, rewrite the accepted file if asked, give the exit code."""
     records = {} if run.accepted is None else run.accepted.records
+    # under --accept a changed row says whether its record is widened
+    accepting = run.accepted is not None and run.accepted.accept
     rows: list[Row] = []
     # closed however the loop ends, so rows still running stop before the run goes on up
     with contextlib.closing(_rows(run, sides)) as found:
         for row in found:
-            marked = mark(row, records, run.roots)
+            marked = mark(row, records, run.roots, run.limits.budget if accepting else None)
             print(row_line(marked), file=streams.out, flush=True)
             print(table_line(marked), file=streams.err, flush=True)
             rows.append(marked)

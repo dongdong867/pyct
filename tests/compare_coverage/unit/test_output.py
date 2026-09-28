@@ -69,7 +69,15 @@ def test_a_row_line_holds_every_field_of_the_row() -> None:
         "change": None,
         "left_out": None,
         "library": None,
+        "widened": False,
     }
+
+
+def test_a_row_accept_widened_says_so_beside_its_change() -> None:
+    row = replace(DIFFERS, record="changed", change="only v2 was 4, now 3, 4", widened=True)
+
+    assert json.loads(row_line(row))["widened"] is True
+    assert "  differs, changed, widened  changed: only v2 was 4, now 3, 4" in table_line(row)
 
 
 def test_a_row_with_no_sides_has_null_sides() -> None:

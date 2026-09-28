@@ -244,6 +244,20 @@ def test_a_side_legacy_failed_on_its_own_timeout_is_kept_and_refreshed_when_aske
     assert not refreshed.reused
 
 
+def test_a_kept_side_that_ran_its_whole_budget_reruns_when_refreshing_whatever_its_stop(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    stub_checkout.script({ONE_CHECK: {"lines": [2], "stopped": "exhausted", "sleep": 1.2}})
+    one_second = SideRequest(ONE_CHECK, {"x": 0}, REPO_ROOT, Limits(budget=1.0), 60)
+    cached_side(stub_checkout, tmp_path).run(one_second)
+
+    reused = cached_side(stub_checkout, tmp_path).run(one_second)
+    refreshed = cached_side(stub_checkout, tmp_path, refresh=True).run(one_second)
+
+    assert len(stub_checkout.calls()) == 2
+    assert reused.reused and not refreshed.reused
+
+
 def test_a_side_whose_library_probe_failed_is_not_kept(
     stub_checkout: StubCheckout, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

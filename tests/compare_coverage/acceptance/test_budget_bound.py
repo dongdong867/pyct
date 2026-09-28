@@ -1,10 +1,12 @@
 """Acceptance tests for keep-a-budget-bound-compare-row-stable: a row that varies with its budget.
 
-v2 is a fake ``pyct run`` that covers lines 2, 3 and 4 of ``one_check`` at once, and legacy is
+v2 is a fake ``pyct run`` that covers lines 2, 3 and 4 of ``one_check``, or the lines a test
+gives it, at once, and legacy is
 the stub engine, so each row's lines are exact. A stub ``sleep`` past a 1 s budget makes the
 legacy side run its whole budget; without it, both sides end well inside a 10 s one.
 """
 
+import json
 import os
 import sys
 from dataclasses import replace
@@ -35,13 +37,14 @@ from tools.compare_coverage.v2_side import Stamp, V2Side
 
 type Row = dict[str, Any]
 
-# stands in for pyct run: a summary line covering lines 2, 3 and 4 of one_check, stamped as here
+# stands in for pyct run: a summary line covering the lines in LINES_FILE, stamped as here
 COVERS = """\
-import json, platform
+import json, os, platform
+lines = json.load(open(os.environ["LINES_FILE"]))
 print(json.dumps({
     "stopped": "no fork to flip",
     "inputs": 2,
-    "covered": {%r: [2, 3, 4]},
+    "covered": {%r: lines},
     "environment": {"python": platform.python_version(), "platform": platform.platform()},
 }))
 """
@@ -61,7 +64,8 @@ class Checker:
     def __init__(self, stub: StubCheckout, tmp_path: Path) -> None:
         fake = tmp_path / "fake_pyct.py"
         fake.write_text(COVERS % ONE_CHECK_FILE)
-        environment = side_environment(os.environ)
+        self.lines = tmp_path / "lines.json"
+        environment = {**side_environment(os.environ), "LINES_FILE": str(self.lines)}
         v2 = V2Side(
             program=(sys.executable, str(fake)), environment=environment, stamp=Stamp.here()
         )
@@ -70,8 +74,15 @@ class Checker:
         self.file = tmp_path / "accepted.jsonl"
         self.roots = roots(stub.path)
 
-    def run(self, legacy_lines: list[int], limits: Limits, accept: bool = False) -> tuple[int, Row]:
+    def run(
+        self,
+        legacy_lines: list[int],
+        limits: Limits,
+        accept: bool = False,
+        v2: list[int] | None = None,
+    ) -> tuple[int, Row]:
         """The exit and the row; legacy sleeps past the budget when ``limits`` is ``SPENT``."""
+        self.lines.write_text(json.dumps([2, 3, 4] if v2 is None else v2))
         sleep = 1.2 if limits == SPENT else 0
         self.stub.script({ONE_CHECK: {"lines": legacy_lines, "sleep": sleep}})
         run = a_run([ONE_CHECK_ENTRY], self.roots, limits=limits, grace=30.0)
@@ -122,10 +133,23 @@ def test_accept_widens_a_budget_bound_record(stub_checkout: StubCheckout, tmp_pa
     code, row = checker.run([2], SPENT, accept=True)
 
     assert row["legacy"]["seconds"] >= SPENT.budget
-    assert (row["only_v2"], row["record"], code) == ([3, 4], "changed", 0), row
+    assert (row["only_v2"], row["record"], row["widened"], code) == ([3, 4], "changed", True, 0)
     assert read_records(checker.file) == [FOUR_OR_THREE]
     code, row = checker.run([2, 3], SPENT)
     assert (row["record"], code) == ("accepted", 0), row
+
+
+def test_accept_keeps_legacy_lines_exact(stub_checkout: StubCheckout, tmp_path: Path) -> None:
+    """keep-a-budget-bound-compare-row-stable-accept-keeps-legacy-lines-exact"""
+    checker = Checker(stub_checkout, tmp_path)
+    checker.records(FOUR, limits=SPENT)
+
+    code, row = checker.run([2, 3, 4], SPENT, accept=True, v2=[2, 3])
+
+    assert (row["only_legacy"], row["record"], row["widened"], code) == ([4], "changed", False, 0)
+    assert read_records(checker.file) == [FOUR | {"only_legacy": [4], "only_v2": []}]
+    code, row = checker.run([2, 3], SPENT)
+    assert (row["record"], code) == ("changed", 1), row
 
 
 def test_a_same_row_inside_the_range_passes(stub_checkout: StubCheckout, tmp_path: Path) -> None:

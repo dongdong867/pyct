@@ -44,6 +44,7 @@ def row_line(row: Row) -> str:
             "change": row.change,
             "left_out": row.left_out,
             "library": row.library,
+            "widened": row.widened,
         }
     )
 
@@ -99,7 +100,8 @@ def table_line(row: Row) -> str:
     parts = [row.set, row.target or str(row.file)]
     if row.v2 is not None and row.legacy is not None:
         parts += [_side_text("v2", row.v2, row), _side_text("legacy", row.legacy, row)]
-    parts.append(row.status.value if row.record is None else f"{row.status.value}, {row.record}")
+    marks = [row.status.value, *([row.record] if row.record else []), *["widened"][: row.widened]]
+    parts.append(", ".join(marks))
     details = _details(row)
     return "  ".join(parts + ["; ".join(details)] if details else parts)
 

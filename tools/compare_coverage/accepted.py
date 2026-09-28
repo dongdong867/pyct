@@ -19,12 +19,15 @@ they are in, and the exception type and message as they were. A row keeps the te
   ``varies``, ``{only_legacy, only_v2}``: the lines some accepted runs showed and others did
   not, beside ``only_legacy`` and ``only_v2``, which every one showed. A ``same`` or
   ``differs`` row matches it when each list of its lines holds the record's and nothing
-  outside them and ``varies`` (decision compare-budget-bound-rows-accept-a-range).
+  outside them and ``varies`` (decision compare-budget-bound-rows-widen-only-v2-lines). A
+  line only legacy covered is one v2 misses: only a person puts it in ``varies``, with
+  ``reason`` saying why it is timing.
 - ``--accept`` rewrites FILE after the last row, with the run's limits first: a row that
   matches its record keeps it as it was; a ``same`` or ``differs`` row where a side ran its
-  whole budget widens a ``differs`` record it does not match to take in its lines; any other
-  row this run produced replaces its record, a ``same``, ``left out`` or ``not listed`` row
-  leaving none. Records for entries this run did not run stay, and a record whose entry the
+  whole budget, and whose lines only legacy covered fit the record, widens a ``differs``
+  record it does not match to take in its lines only v2 covered, and says ``widened``; any
+  other row this run produced replaces its record, a ``same``, ``left out`` or ``not listed``
+  row leaving none. Records for entries this run did not run stay, and a record whose entry the
   list no longer holds is dropped.
 """
 
@@ -58,10 +61,15 @@ class RecordsError(Exception):
 
 @dataclass(frozen=True)
 class Varies:
-    """The lines a record's row showed in some accepted runs and not in others."""
+    """The lines a record's row showed in some accepted runs and not in others.
+
+    ``--accept`` adds only lines only v2 covered. A line only legacy covered is one v2 misses,
+    so only a person adds it, and ``reason`` says why it is timing and not a loss.
+    """
 
     only_legacy: tuple[int, ...] = ()
     only_v2: tuple[int, ...] = ()
+    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -194,16 +202,22 @@ def _record(line: str, where: str) -> Record:
 
 
 def _varies(raw: dict[str, object]) -> Varies:
-    """The record's ``varies``, both lists, or none when the line has no such key."""
+    """The record's ``varies``: two lists, not both empty, and a reason with legacy lines only.
+
+    None when the line has no such key.
+    """
     if "varies" not in raw:
         return Varies()
     varies = raw["varies"]
-    if not isinstance(varies, dict) or set(varies) != {"only_legacy", "only_v2"}:
+    if not isinstance(varies, dict) or set(varies) - {"reason"} != {"only_legacy", "only_v2"}:
         raise ValueError(f"varies must hold only_legacy and only_v2, got {varies!r}")
-    lists = (varies["only_legacy"], varies["only_v2"])
-    if not all(isinstance(lines, list) for lines in lists):
-        raise ValueError(f"varies must hold two lists of lines, got {varies!r}")
-    return Varies(only_legacy=tuple(lists[0]), only_v2=tuple(lists[1]))
+    lists, reason = (varies["only_legacy"], varies["only_v2"]), varies.get("reason")
+    if not all(isinstance(lines, list) for lines in lists) or not any(lists):
+        raise ValueError(f"varies must hold two lists of lines, not both empty: {varies!r}")
+    written = isinstance(reason, str) and bool(reason)
+    if bool(lists[0]) != written or (reason is not None and not written):
+        raise ValueError(f"varies needs a reason exactly when only legacy lines vary: {varies!r}")
+    return Varies(only_legacy=tuple(lists[0]), only_v2=tuple(lists[1]), reason=reason)
 
 
 def _well_formed(record: Record) -> bool:
@@ -230,10 +244,12 @@ def _range_fits(record: Record) -> bool:
     return record.status == Status.DIFFERS.value and apart
 
 
-def mark(row: Row, records: Mapping[Key, Record], roots: Roots) -> Row:
+def mark(row: Row, records: Mapping[Key, Record], roots: Roots, budget: float | None = None) -> Row:
     """The row marked ``accepted`` or ``changed`` against its record, or as it was without one.
 
-    ``roots`` are the checkouts this run's paths are under, for the row's stable reasons.
+    ``roots`` are the checkouts this run's paths are under, for the row's stable reasons. With
+    ``budget``, the run's under ``--accept``, a changed row also says whether ``--accept``
+    widens its record rather than replacing it.
     """
     if row.target is None or row.seed is None:
         return row
@@ -241,7 +257,9 @@ def mark(row: Row, records: Mapping[Key, Record], roots: Roots) -> Row:
     if record is None:
         return row
     change = _change(record, row, roots)
-    return replace(row, record="accepted" if change is None else "changed", change=change)
+    widened = change is not None and budget is not None and _widens(record, row, budget)
+    record_mark = "accepted" if change is None else "changed"
+    return replace(row, record=record_mark, change=change, widened=widened)
 
 
 def _change(record: Record, row: Row, roots: Roots) -> str | None:
@@ -366,20 +384,17 @@ def _next_record(old: Record | None, row: Row, roots: Roots, budget: float) -> R
 
 
 def _widens(old: Record, row: Row, budget: float) -> bool:
+    """A budget-bound ``same`` or ``differs`` row whose lines only legacy covered fit ``old``."""
     lines = old.status == Status.DIFFERS.value and row.status in COMPARED
-    return lines and budget_bound(row, budget)
+    legacy = _within(old.only_legacy, old.varies.only_legacy, row.only_legacy)
+    return lines and legacy and budget_bound(row, budget)
 
 
 def _widened(old: Record, row: Row) -> Record:
-    """``old`` taking in the row's lines: every line either showed and the other did not varies."""
-    legacy = _span(old.only_legacy, old.varies.only_legacy, row.only_legacy)
-    v2 = _span(old.only_v2, old.varies.only_v2, row.only_v2)
-    return replace(
-        old,
-        only_legacy=legacy[0],
-        only_v2=v2[0],
-        varies=Varies(only_legacy=legacy[1], only_v2=v2[1]),
-    )
+    """``old`` taking in the lines only v2 covered: each one either showed and the other did not
+    varies. The lines only legacy covered stay as ``old`` has them."""
+    always, varies = _span(old.only_v2, old.varies.only_v2, row.only_v2)
+    return replace(old, only_v2=always, varies=replace(old.varies, only_v2=varies))
 
 
 def _span(
@@ -426,10 +441,13 @@ def _fields(record: Record) -> dict[str, object]:
     }
     if record.varies != Varies():
         varies = record.varies
-        fields["varies"] = {
+        shown: dict[str, object] = {
             "only_legacy": list(varies.only_legacy),
             "only_v2": list(varies.only_v2),
         }
+        if varies.reason is not None:
+            shown["reason"] = varies.reason
+        fields["varies"] = shown
     if Status(record.status) in FAILED:
         fields |= {"failures": dict(record.failures), "covered": list(record.covered)}
     return fields
