@@ -1,84 +1,75 @@
-"""The sense of the fork pyct records at each membership and identity test, by its site.
+"""Which `in` and `is` tests read their value the other way from the forks recorded there.
 
-pyct folds every `not` over a compare with one `in`, `not in`, `is` or `is
-not` into the compare, and the fork it records reads the operator it folds
-to: ``not x in c`` records `x not in c`. CPython folds the same `not`
-through 3.13; from 3.14 a test of ``not x in c`` reads `in` and jumps the
-other way. An `is` or `is not` with True or False on one side records the
-other side's own truth, the operand of ``x is not True`` taken or not. So the
-value a compiled test jumps on is the recorded fork's, or its negation, and
-the flow reads each side in the fork's sense.
+A flow reads a test's sides as the value its jump tests. pyct records a fork
+of its own at an `in` or an `is`, and the two can differ. pyct folds a `not`
+over one compare into it on every release, and records `x not in c` for
+``not x in c``, where 3.14 tests `in` and jumps the other way. An element
+search records `==` forks, whose true side is the `in`'s. An `is` against a
+bool records the other side's own truth, so ``x is not True`` holds on its
+false side. Each such test's sides are read as the forks recorded there, and
+a test with no fork recorded keeps its own.
 """
 
 from __future__ import annotations
 
-import ast
-from collections.abc import Callable, Mapping
+from collections.abc import Iterable, Mapping
 
-from pyct.results.graphs import Pace
+from pyct.results.way import Flow, Fork, Step
 
 # a site, as a fork records it: its line and column
 type At = tuple[int, int]
-# what a flow asks, once and only when it needs them, for the negated sites (`negated_sites`)
-type Asked = Callable[[Pace], Mapping[At, bool]]
-
-# what parsing takes a byte of source, in seconds: about 2e-7 on 3.12 and 3.13 and 1.3e-7 on 3.14,
-# measured on a megabyte of `if` tests on an Apple M-series; four times the slowest
-_A_BYTE = 8e-7
-
-_MEMBERSHIP = (ast.In, ast.NotIn)
-_IDENTITY = (ast.Is, ast.IsNot)
+# one input as the sense reads it: the lines it covered, and its forks
+type Seen = tuple[frozenset[int], tuple[Fork, ...]]
 
 
-def negated_sites(source: str, pace: Pace) -> dict[At, bool]:
-    """Each membership or identity test's site, and whether its recorded fork is negated.
+def against_the_forks(
+    flow: Flow, heads: Mapping[At, frozenset[str]], seen: list[Seen]
+) -> list[int]:
+    """The side nodes of every `in` and `is` test that reads the other way from its forks.
 
-    Negated means a true fork there is a false `in`, or a false `is`: the
-    fork of ``x not in c``, or of ``x is False``, which records ``x``. A
-    compiled test reads `in` or `is` through `CONTAINS_OP` or `IS_OP`, whose
-    argument 1 is the negated one, so a flow swaps the sides where the two
-    differ. Parsing is work no step can break into, so the pace is asked
-    first whether it fits; the walk steps once a node.
+    ``heads`` holds the operator of each fork recorded at a site. At an `in`
+    the forks say: a `not in` fork is negated, and any other, an `in` or an
+    element's `==`, is not. At an `is` the fork is its operand's, whose sense
+    depends on the bool it is compared with, so the inputs say: each input
+    that recorded one side of the fork there, and covered a line only one of
+    the test's sides leads to, shows whether the two agree.
     """
-    pace.afford(len(source) * _A_BYTE)
-    found: dict[At, bool] = {}
-    # each node, and how many `not` stand directly over it
-    pending: list[tuple[ast.AST, int]] = [(ast.parse(source), 0)]
-    while pending:
-        pace.step()
-        node, nots = pending.pop()
-        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-            pending.append((node.operand, nots + 1))
-            continue
-        if isinstance(node, ast.Compare) and len(node.ops) == 1:
-            negated = _recorded_negated(node, nots)
-            if negated is not None:
-                found[(node.lineno, node.col_offset)] = negated
-        pending.extend((child, 0) for child in ast.iter_child_nodes(node))
-    return found
+    tests: dict[At, list[tuple[int, Step]]] = {}
+    for node, step in flow.pace.each(flow.sides().items()):
+        if step.reads is not None and (step.line, step.col) in heads:
+            tests.setdefault((step.line, step.col), []).append((node, step))
+    marks: list[frozenset[int]] | None = None
+    swapped: list[int] = []
+    for site, sides in flow.pace.each(tests.items()):
+        name, negated = sides[0][1].reads or ("", False)
+        if name == "CONTAINS_OP":
+            other = ("not in" in heads[site]) != negated
+        else:
+            marks = marks if marks is not None else [flow.marked(lines, ()) for lines, _ in seen]
+            other = _shown_other(site, sides, seen, marks)
+        swapped.extend(node for node, _ in sides if other)
+    return swapped
 
 
-def none_negated(_pace: Pace) -> dict[At, bool]:
-    """No site: every test's sides read as the value it jumps on."""
-    return {}
+def _shown_other(
+    site: At, sides: list[tuple[int, Step]], seen: list[Seen], marks: list[frozenset[int]]
+) -> bool:
+    """Whether every input that shows both the fork's side and the test's reads them apart."""
+    found: set[bool] = set()
+    for (_, forks), marked in zip(seen, marks, strict=True):
+        taken = {
+            taken for line, col, taken, raising in forks if (line, col) == site and not raising
+        }
+        passed = [step.side for node, step in sides if node in marked]
+        if len(taken) == 1 and len(passed) == 1:
+            found.add(passed[0] != taken.pop())
+    return found == {True}
 
 
-def _recorded_negated(compare: ast.Compare, nots: int) -> bool | None:
-    """Whether the compare's recorded fork is negated, or None where pyct records no fork of
-    the compare's own in a known sense."""
-    operator = compare.ops[0]
-    if isinstance(operator, _MEMBERSHIP):
-        return isinstance(operator, ast.NotIn) != (nots % 2 == 1)
-    if not isinstance(operator, _IDENTITY):
-        return None
-    sides = [compare.left, compare.comparators[0]]
-    flags = [side.value for side in sides if isinstance(side, ast.Constant) and _is_bool(side)]
-    others = [side for side in sides if isinstance(side, ast.Constant) and not _is_bool(side)]
-    if len(flags) != 1 or others:
-        return None
-    # the fork is the other side's truth: `x is True` holds when it does, `x is False` when not
-    return flags[0] is False
-
-
-def _is_bool(node: ast.expr) -> bool:
-    return isinstance(node, ast.Constant) and (node.value is True or node.value is False)
+def heads_of(forks: Iterable[tuple[At, object]]) -> dict[At, frozenset[str]]:
+    """The operator of each fork at each site: an expression's head, or its text when it is one."""
+    found: dict[At, set[str]] = {}
+    for site, expression in forks:
+        head = expression[0] if isinstance(expression, list) and expression else expression
+        found.setdefault(site, set()).add(str(head))
+    return {site: frozenset(each) for site, each in found.items()}

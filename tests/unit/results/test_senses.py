@@ -1,77 +1,96 @@
-"""The sense of the fork pyct records at each membership and identity test."""
+"""Which `in` and `is` tests read their value the other way from the forks recorded there.
+
+Each test states the sides as the forks read them, so it holds on every release, however the
+release compiles the `not`.
+"""
+
+import types
 
 import pytest
 
-from pyct.results.graphs import Pace, UnaffordableError
-from pyct.results.senses import negated_sites
-from pyct.results.way import Flow, Step, StepKind
+from pyct.results.senses import against_the_forks, heads_of
+from pyct.results.way import Flow, Fork, Step, StepKind
 
-# a compare on line 2 at column 7, and whether the fork pyct records there is negated
-RECORDED = [
-    ("x in c", False),
-    ("x not in c", True),
-    ("not x in c", True),
-    ("not (x not in c)", False),
-    ("not not x in c", False),
-    ("x is True", False),
-    ("x is not True", False),
-    ("True is x", False),
-    ("x is False", True),
-    ("not x is False", True),
+
+def flow_of(test: str) -> Flow:
+    """The flow of `f`, which runs line 3 when the test on line 2 holds, else line 4."""
+    source = f"def f(x, c):\n    if {test}:\n        return 1\n    return 2\n"
+    (code,) = [each for each in compile(source, "m.py", "exec").co_consts if _is_code(each)]
+    return Flow(code, frozenset())
+
+
+def _is_code(each: object) -> bool:
+    return isinstance(each, types.CodeType)
+
+
+def body_side(flow: Flow, col: int) -> bool:
+    (step,) = flow.way(3)
+    assert (step.line, step.col) == (2, col)
+    return step.side
+
+
+# the test, the column of its site, the forks' heads there, and the side the body reads as
+IN_TESTS = [
+    ("not x in c", 11, {"not in"}, True),
+    ("x not in c", 7, {"not in"}, True),
+    ("x in c", 7, {"in"}, True),
+    ("not x in c", 11, {"=="}, False),
+    ("x not in c", 7, {"=="}, False),
+    ("not not x in c", 15, {"in"}, True),
 ]
 
 
-@pytest.mark.parametrize(("test", "negated"), RECORDED)
-def test_a_site_says_whether_its_recorded_fork_is_negated(test: str, negated: bool) -> None:
-    compare = test.removeprefix("not (").removeprefix("not not ").removeprefix("not ")
-    column = 7 + test.index(compare)
-    source = f"def f(x, c):\n    if {test}:\n        return 1\n"
+@pytest.mark.parametrize(("test", "col", "heads", "side"), IN_TESTS)
+def test_an_in_test_reads_as_the_forks_recorded_at_its_site(
+    test: str, col: int, heads: set[str], side: bool
+) -> None:
+    flow = flow_of(test)
 
-    assert negated_sites(source, Pace()) == {(2, column): negated}
+    flow.swap(against_the_forks(flow, {(2, col): frozenset(heads)}, []))
+
+    assert body_side(flow, col) == side
+
+
+@pytest.mark.parametrize("test", ["not x in c", "x is not True", "x is False"])
+def test_a_test_no_fork_was_recorded_at_reads_as_its_jump_tests(test: str) -> None:
+    flow = flow_of(test)
+    as_compiled = flow.way(3)
+
+    flow.swap(against_the_forks(flow, {}, [(frozenset({2, 3}), ())]))
+
+    assert flow.way(3) == as_compiled
+
+
+def took_the_body(taken: bool) -> tuple[frozenset[int], tuple[Fork, ...]]:
+    """An input that ran the body, and recorded its operand's fork at 2:7 as ``taken``."""
+    return frozenset({2, 3}), ((2, 7, taken, False),)
 
 
 @pytest.mark.parametrize(
-    "test", ["x is None", "x is y", "x is True is y", "x < y", "x is True is not False"]
+    ("test", "taken"), [("x is not True", False), ("x is True", True), ("x is False", False)]
 )
-def test_a_compare_with_no_fork_of_its_own_in_a_known_sense_has_no_site(test: str) -> None:
-    assert negated_sites(f"def f(x, y):\n    if {test}:\n        pass\n", Pace()) == {}
+def test_an_is_test_reads_as_its_operand_s_fork_where_an_input_shows_both(
+    test: str, taken: bool
+) -> None:
+    flow = flow_of(test)
+
+    flow.swap(against_the_forks(flow, {(2, 7): frozenset({">"})}, [took_the_body(taken)]))
+
+    assert body_side(flow, 7) == taken
 
 
-def test_a_source_too_large_to_parse_before_the_stop_is_not_read() -> None:
-    late = Pace(late=lambda ahead: ahead > 0.0)
+def test_an_is_test_the_inputs_disagree_on_or_do_not_show_reads_as_its_jump_tests() -> None:
+    heads = {(2, 7): frozenset({">"})}
+    unshown: tuple[frozenset[int], tuple[Fork, ...]] = (frozenset({2}), ((2, 7, False, False),))
+    for seen in ([took_the_body(False), took_the_body(True)], [unshown]):
+        flow = flow_of("x is not True")
 
-    with pytest.raises(UnaffordableError):
-        negated_sites("x in c\n" * 1000, late)
+        flow.swap(against_the_forks(flow, heads, seen))
 
-
-# `not x in c` tested on line 2; line 3 is its body, and line 4 comes after it
-NOT_IN = "def f(x, c):\n    if not x in c:\n        return 1\n    return 2\n"
-
-
-def test_a_flow_reads_a_test_s_sides_in_the_sense_of_its_recorded_fork() -> None:
-    (code,) = [
-        each for each in compile(NOT_IN, "m.py", "exec").co_consts if hasattr(each, "co_code")
-    ]
-    asked: list[bool] = []
-
-    def negated(pace: Pace) -> dict[tuple[int, int], bool]:
-        asked.append(True)
-        return negated_sites(NOT_IN, pace)
-
-    flow = Flow(code, frozenset(), negated=negated)
-
-    # the body is the true side of `x not in c` on every release, as pyct records it
-    assert flow.way(3) == (Step(StepKind.CONDITION, 2, 11, True),)
-    assert flow.way(4) == (Step(StepKind.CONDITION, 2, 11, False),)
-    assert asked == [True]
+        assert flow.way(3) == (Step(StepKind.CONDITION, 2, 7, True),)
 
 
-def test_a_flow_with_no_test_of_in_or_is_never_asks_for_the_sites() -> None:
-    code = compile("def f(x):\n    if x:\n        return 1\n", "m.py", "exec").co_consts[0]
+def test_heads_are_each_fork_s_operator_by_site() -> None:
+    forks = [((2, 7), ["not in", "s", "'a'"]), ((2, 7), ["==", "x", 1]), ((3, 4), "b")]
 
-    def negated(pace: Pace) -> dict[tuple[int, int], bool]:
-        raise AssertionError("asked")
-
-    assert Flow(code, frozenset(), negated=negated).way(3) == (
-        Step(StepKind.CONDITION, 2, 7, True),
-    )
+    assert heads_of(forks) == {(2, 7): frozenset({"not in", "=="}), (3, 4): frozenset({"b"})}

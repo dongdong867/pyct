@@ -180,25 +180,44 @@ def test_a_substituted_in_s_test_is_the_condition_on_the_way() -> None:
     assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 7, True, unsat=1)
 
 
-# a `not` over `in`, and `is not True`: the side is read as the fork pyct records there, on every
-# release, where 3.14 tests `in` and jumps the other way
+# an `in` or `is` test whose value reads the other way from the forks pyct records there: a `not`
+# pyct folds and 3.14 does not, an element search's `==` forks, and an `is` against a bool, whose
+# fork is the operand's. Each is judged by the forks' side, on every release; the site, the side,
+# and how many times the solver found the side unsat
 NEGATED = [
-    ("not_in", '{"s": "a"}', 8, (4, 11, False)),
-    ("while_not_in", '{"s": "a"}', 16, (14, 14, False)),
-    ("is_not_true", '{"x": 0}', 24, (22, 7, True)),
+    ("not_in", '{"s": "a"}', 8, (4, 11, False), 1),
+    ("while_not_in", '{"s": "a"}', 16, (14, 14, False), 1),
+    ("is_not_true", '{"x": 0}', 24, (22, 7, True), 1),
+    ("not_in_set", '{"x": 0}', 36, (34, 11, True), 2),
+    ("not_in_set_written", '{"x": 0}', 44, (42, 7, True), 2),
+    ("not_in_list", '{"x": 0}', 52, (50, 11, True), 2),
+    ("is_not_flag", '{"x": 0}', 67, (65, 7, True), 1),
 ]
 
 
-@pytest.mark.parametrize(("function", "seed", "line", "side"), NEGATED)
+@pytest.mark.parametrize(("function", "seed", "line", "side", "unsat"), NEGATED)
 def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
-    function: str, seed: str, line: int, side: tuple[int, int, bool]
+    function: str, seed: str, line: int, side: tuple[int, int, bool], unsat: int
 ) -> None:
     target, file = spec("negated", function)
 
     result = run_pyct(target, seed)
 
     assert result.returncode == 0, result.stderr
-    assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=1)
+    assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=unsat)
+
+
+def test_an_is_test_with_no_fork_keeps_the_side_its_jump_tests() -> None:
+    target, file = spec("negated", "plain_is_false")
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    # `done` is a plain None, so no fork reads the test: `done is False` was never true
+    assert cause(entry_for(result.stdout, 58)) == {
+        "reason": "no fork",
+        "condition": {"file": file, "line": 57, "col": 7, "side": True},
+    }
 
 
 def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:

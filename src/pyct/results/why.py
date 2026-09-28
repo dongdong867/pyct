@@ -19,8 +19,9 @@ from enum import StrEnum
 
 from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
+from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError
-from pyct.results.senses import At, negated_sites
+from pyct.results.senses import At, against_the_forks, heads_of
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -190,15 +191,13 @@ class _Seen:
     inputs: tuple[_Input, ...]
     run: Run
     owners: dict[int, types.CodeType | None]
-    # the module's text, as its lines were read
-    source: str
+    # the operator of each fork recorded at each site, raising forks aside (`senses.heads_of`)
+    heads: dict[At, frozenset[str]]
     # keyed by the code's id: a large function's code is slow to hash, and `owners` keeps each
     # one alive for as long as this is
     flows: dict[int, _Walk] = field(default_factory=dict)
     # the ids of the functions too large to read before the stop
     left: set[int] = field(default_factory=set)
-    # each membership and identity test's site, and whether its recorded fork is negated
-    sites: dict[At, bool] | None = None
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
@@ -213,13 +212,13 @@ class _Seen:
                 for each in Pace(run.late).each(run.walked)
             )
         )
-        return cls(file, covered, inputs, run, *_read(file))
-
-    def negated(self, pace: Pace) -> dict[At, bool]:
-        """Each negated test's site in the module, worked out once, when a flow first asks."""
-        if self.sites is None:
-            self.sites = negated_sites(self.source, pace)
-        return self.sites
+        heads = heads_of(
+            ((branch.site.line, branch.site.col), branch.expression)
+            for each in Pace(run.late).each(run.walked)
+            for branch in each.forks
+            if branch.site.file == file and not branch.raising
+        )
+        return cls(file, covered, inputs, run, _owners(file), heads)
 
     @functools.cached_property
     def _called(self) -> frozenset[int]:
@@ -268,7 +267,9 @@ class _Walk:
         each = Pace(seen.run.late).each
         forks = [fork for one in each(seen.inputs) for fork in one.forks]
         raising = frozenset((line, col) for line, col, _, is_raising in each(forks) if is_raising)
-        flow = Flow(code, raising, late=seen.run.late, negated=seen.negated)
+        flow = Flow(code, raising, late=seen.run.late)
+        # each `in` and `is` test's sides read as the forks recorded there, before any is marked
+        flow.swap(against_the_forks(flow, seen.heads, [(i.lines, i.forks) for i in seen.inputs]))
         passed = flow.marked(seen.covered, forks)
         forked = frozenset((line, col, is_raising) for line, col, _, is_raising in each(forks))
         return cls(seen, flow, passed, forked)
@@ -448,16 +449,14 @@ class _Walk:
         return WhyEntry(self.seen.file, (), reason)
 
 
-def _read(file: str) -> tuple[dict[int, types.CodeType | None], str]:
-    """Each line's code, and the text it was compiled from, from the module as it reads now.
+def _owners(file: str) -> dict[int, types.CodeType | None]:
+    """Each line's code, from the module as it reads now.
 
     A module that no longer reads, such as one deleted during the run,
     places no line in a function, so each of its lines is the import's: no
-    call is known to hold it, and no flow asks for its text.
+    call is known to hold it.
     """
     try:
-        with open(file, encoding="utf-8") as module:
-            source = module.read()
-        return owners(compile(source, file, "exec")), source
+        return owners(compiled(file))
     except (OSError, SyntaxError, ValueError):
-        return {}, ""
+        return {}

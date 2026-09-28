@@ -17,9 +17,9 @@ from __future__ import annotations
 import functools
 import types
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges, senses_of
+from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
 from pyct.results.graphs import (
     Pace,
     dominators,
@@ -28,7 +28,6 @@ from pyct.results.graphs import (
     postorder,
     strictly_after,
 )
-from pyct.results.senses import Asked, At, none_negated
 
 
 @dataclass(frozen=True)
@@ -50,10 +49,7 @@ class Flow:
 
     ``raising`` holds the positions, ``(line, col)``, where a run recorded
     a fork before an operation that may raise; the instruction there is a
-    condition whose true side goes on to the next instruction. ``negated``
-    gives each membership and identity test's site, and whether the fork
-    recorded there is negated (`pyct.results.senses`), asked only when the
-    code tests `in` or `is` for truth, so each side reads in the fork's sense.
+    condition whose true side goes on to the next instruction.
     """
 
     def __init__(
@@ -61,10 +57,9 @@ class Flow:
         code: types.CodeType,
         raising: frozenset[tuple[int, int]],
         late: Callable[[float], bool] = never,
-        negated: Asked = none_negated,
     ) -> None:
         self.pace = Pace(late)
-        graph = _Graph.of(code, raising, self.pace, negated)
+        graph = _Graph.of(code, raising, self.pace)
         self._graph = graph
         pace = self.pace
         order = postorder(graph.successors, graph.entry, pace=pace)
@@ -75,6 +70,16 @@ class Flow:
         # would grow as lines times nodes
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
+
+    def sides(self) -> dict[int, Step]:
+        """Each side's node and its step, a raise's too."""
+        return dict(self._graph.steps)
+
+    def swap(self, nodes: Iterable[int]) -> None:
+        """Read each of these sides as the other one, before anything is marked."""
+        for node in nodes:
+            step = self._graph.steps[node]
+            self._graph.steps[node] = replace(step, side=not step.side)
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
@@ -385,13 +390,12 @@ class _Graph:
     yields: dict[int, int]
 
     @classmethod
-    def of(cls, code: types.CodeType, raising: frozenset[At], pace: Pace, negated: Asked) -> _Graph:
+    def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]], pace: Pace) -> _Graph:
         blocks, splits = blocks_of_code(code, raising, pace)
-        sites = senses_of(blocks, negated, pace)
         builder = _Builder(blocks)
         for index, block in enumerate(blocks):
             pace.step()
-            for target, step in exits(block, blocks, index, splits, sites):
+            for target, step in exits(block, blocks, index, splits):
                 builder.join(index, builder.block_at(target), step)
         ranges = list(handler_ranges(code, blocks))
         for start, covered in ranges:

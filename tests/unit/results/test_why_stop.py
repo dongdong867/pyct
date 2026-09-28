@@ -189,9 +189,18 @@ def _one_long_and(
     return source, frozenset({4}), covered, [Walked((), False, covered)]
 
 
+def _identities(tests: int, file: str) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    ifs = "".join(f"    if (x > {k}) is not True:\n        y += {k}\n" for k in range(tests))
+    source = f"def f(x):\n    y = 0\n{ifs}    return y\n"
+    covered = frozenset({2, 3 + 2 * tests}) | frozenset(range(3, 3 + 2 * tests, 2))
+    # each `is` records its operand's fork, which the sides of its test are read against
+    forks = tuple(Branch([">", "x", k], True, Site(file, 3 + 2 * k, 7)) for k in range(tests))
+    return source, frozenset(range(4, 4 + 2 * tests, 2)), covered, [Walked(forks, False, covered)]
+
+
 # the large shapes the reviews met: joined plain conditions, many try blocks, a generator with a
 # path per input, many operations that may raise, many jumps, a long if/else inside a try, and
-# one line of many tests
+# one line of many tests, and many `is` tests whose sides are read against their forks
 SHAPES = {
     "joined": (_joined, 3000),
     "tries": (_tries, 2000),
@@ -200,6 +209,7 @@ SHAPES = {
     "jumps": (_ifs, 20000),
     "if_else_in_a_try": (_if_else_in_a_try, 8000),
     "one_long_and": (_one_long_and, 4000),
+    "identities": (_identities, 4000),
 }
 
 
