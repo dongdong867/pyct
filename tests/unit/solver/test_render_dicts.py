@@ -1,8 +1,6 @@
 """Tracked dicts written for cvc5: a presence for each key a fork names, a count of the input's
 other keys kept and of keys made up, one size, and the answer read back as each dict's keys."""
 
-import time
-
 import pytest
 
 from pyct.binding.annotations import Items
