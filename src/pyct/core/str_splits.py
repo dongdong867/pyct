@@ -33,10 +33,11 @@ LISTED_SPLITS = frozenset({"split", "rsplit", "splitlines"})
 _BUILT_FROM = frozenset({"+", "*", "[:]"})
 
 
-def built_from_a_split(form: object) -> bool:
-    """Whether a list's form is a split's list, or a list built from one by ``+``, ``*`` or a
-    slice. A list changed in place names the list before it more than once, so each part is
-    looked at once."""
+def splits_built_from(form: object) -> list[list[object]]:
+    """The splits' lists a list's form is, or is built from by ``+``, ``*`` or a slice. A list
+    changed in place names the list before it more than once, so each part is looked at once.
+    """
+    found: list[list[object]] = []
     stack, seen = [form], set()
     while stack:
         part = stack.pop()
@@ -46,10 +47,15 @@ def built_from_a_split(form: object) -> bool:
             continue
         seen.add(id(part))
         if part[0] in LISTED_SPLITS:
-            return True
-        if part[0] in _BUILT_FROM:
+            found.append(part)
+        elif part[0] in _BUILT_FROM:
             stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
-    return False
+    return found
+
+
+def built_from_a_split(form: object) -> bool:
+    """Whether a list's form is a split's list, or a list built from one."""
+    return bool(splits_built_from(form))
 
 
 # each method's arguments in the order Python takes them by position, with the default Python

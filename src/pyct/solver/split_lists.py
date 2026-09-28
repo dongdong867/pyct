@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LONGEST_WALK, built_from_a_split
+from pyct.core.str_splits import LONGEST_WALK, splits_built_from
 from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.literals import plain_operand
@@ -167,15 +167,16 @@ class SplitList:
 
     def tie(self) -> list[str]:
         """What the count is: on whitespace, the words the string has, at most the limit's
-        pieces; otherwise the pieces there below the bound, and none at it. Loosened, the count
-        is only past each number below the bound where that piece is there."""
+        pieces; otherwise the pieces there below the bound, each by its walk, and none at it.
+        Loosened, the count is only past each number below the bound where that piece is there.
+        A tie by walks answered where one by memberships ran past the limit beside a slice."""
         if self._words():
             return [f"(assert (= {self.count} {self._words_count()}))"]
-        beyond = self.past(self.bound)
+        beyond = self._there(self.bound)
         if beyond != FALSE and not self.hold:
-            tied = [f"(= (> {self.count} {at}) {self.past(at)})" for at in range(self.bound)]
+            tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
             return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)]
-        present = [self.past(at) for at in range(self.bound)]
+        present = [self._there(at) for at in range(self.bound)]
         flags = [TRUE_ONE if there == TRUE else f"(ite {there} 1 0)" for there in present]
         kept = [flag for flag, there in zip(flags, present, strict=True) if there != FALSE]
         total = "0" if not kept else kept[0] if len(kept) == 1 else f"(+ {' '.join(kept)})"
@@ -254,29 +255,30 @@ class SplitList:
 
 class Splits:
     """The splits' lists of one path: each by its count's name and by its part, how a compare
-    reads each count, the most pieces a count is tied to, each count a term of the program
-    reads, and the value the input holds for a part it names as it is (a string a split splits,
-    say), which render gives."""
+    reads each count, each count a term of the program reads, and the value the input holds
+    for a part it names as it is (a string a split splits, say), which render gives."""
 
     def __init__(self) -> None:
         self.lists: dict[str, SplitList] = {}
         self.parts: dict[int, str] = {}
         self.counts: dict[str, Callable[[int], str]] = {}
-        self.bound = BOUND_PAST
         self.emitted: list[str] = []
         self.given: Callable[[Expression], object] = lambda part: None
         self.hold = True
         self.bounds: list[str] = []
+        # the largest number a fork compares each split's length with, by the split's part
+        self.numbers: dict[int, int] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
-        """The most pieces a count is tied to: past every number a fork compares a length
-        with, at most `MOST_BOUND`."""
-        numbers = [0]
+        """The largest number a fork compares each split's list's length with, or the length
+        of a list built from it."""
         for fork in prefix:
             expression = fork.expression
-            if isinstance(expression, list) and len(expression) == 3 and _measures(expression):
-                numbers += [part for part in expression[1:] if type(part) is int]
-        self.bound = min(max(numbers) + BOUND_PAST, MOST_BOUND)
+            if not isinstance(expression, list) or len(expression) != 3:
+                continue
+            numbers = [part for part in expression[1:] if type(part) is int]
+            for split in _measured(expression):
+                self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *numbers])
 
     @property
     def bounded(self) -> bool:
@@ -290,7 +292,8 @@ class Splits:
         plain = tuple(plain_operand(part) for part in operands)
         text = self.given(string)
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
-        bound = self.bound if held is None else max(self.bound, min(held + BOUND_PAST, MOST_BOUND))
+        most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
+        bound = min(most, MOST_BOUND)
         count = f"count!{len(self.lists)}!"
         listed = SplitList(term, str(head), plain, count, bound, self.bounds, self.hold, held)
         self.lists[listed.count] = listed
@@ -342,11 +345,13 @@ class Splits:
         return declared, ties
 
 
-def _measures(expression: list[Expression]) -> bool:
-    """Whether a fork compares the length of a split's list, or of a list built from one,
-    ``[op, ["len", parts], n]`` either way round: a string's or another list's length says
-    nothing of how many pieces a split has."""
-    return any(
-        isinstance(part, list) and part[:1] == ["len"] and built_from_a_split(part[1])
+def _measured(expression: list[Expression]) -> list[list[object]]:
+    """The splits whose list, or a list built from it, a fork compares the length of,
+    ``[op, ["len", parts], n]`` either way round: a string's, another list's or another
+    split's length says nothing of how many pieces a split has."""
+    return [
+        split
         for part in expression[1:]
-    )
+        if isinstance(part, list) and part[:1] == ["len"]
+        for split in splits_built_from(part[1])
+    ]
