@@ -8,6 +8,9 @@ group when every other worker has left, then runs its tests one after another.
 A worker runs the last test it holds only when more work or its shutdown arrives, so waiting
 for the others to go idle would wait forever; they are shut down, and they leave.
 
+A worker is given work until it holds two tests, or no more can be given, since one held test
+waits. A worker still collecting is given none; its collection brings its work.
+
 A worker that dies gives back only the tests it had not started. xdist reports the one it was
 running as failed, and would otherwise queue that test again with every test the worker had
 finished; a finished test sent to the worker that replaces it runs nothing, so that worker
@@ -35,6 +38,17 @@ class SerialLastScheduling(LoadGroupScheduling):
             node.shutdown()
         elif not others:
             super()._assign_work_unit(node)
+
+    def _reschedule(self, node: WorkerController) -> None:
+        """Give ``node``, once it has collected, work until it holds two tests or takes no more."""
+        if node not in self.registered_collections:
+            return
+        while True:
+            held = self._pending_of(self.assigned_work[node])
+            super()._reschedule(node)
+            now = self._pending_of(self.assigned_work[node])
+            if now == held or now >= 2 or node.shutting_down:
+                return
 
     def remove_node(self, node: WorkerController) -> str | None:
         """Forget a worker that left, and name the test it died in, if it died in one.

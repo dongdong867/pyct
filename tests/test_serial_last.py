@@ -150,15 +150,54 @@ def test_every_other_test_runs_once_after_a_worker_crashed() -> None:
     assert sorted(ran) == [test for test in range(len(COLLECTION)) if test != running]
 
 
-# a run's tests: many quick ones, one that ends its worker's process last, and a serial group.
-# The worker that dies has finished tests before it, as a worker lost near a run's end has
+def test_a_worker_alone_after_a_crash_is_given_enough_to_run_what_was_left() -> None:
+    crashed = Worker()
+    scheduler = scheduling([crashed], COLLECTION)
+
+    running, _, replacement = crash_and_replace(scheduler, crashed)
+    run_to_the_end(scheduler, [replacement])
+
+    ran = crashed.sent[:1] + replacement.sent
+    assert sorted(ran) == [test for test in range(len(COLLECTION)) if test != running]
+
+
+def test_a_worker_leaving_while_another_collects_leaves_the_rest_to_that_one() -> None:
+    first, last = Worker(), Worker()
+    scheduler = scheduling([first, last], COLLECTION)
+    first_ran, crashitems = running_then_crashing(scheduler, first)
+    collecting = Worker()
+    scheduler.add_node(collecting)  # pyrefly: ignore[bad-argument-type]
+
+    crashitems.append(scheduler.remove_node(last))  # pyrefly: ignore[bad-argument-type]
+    scheduler.add_node_collection(collecting, COLLECTION)  # pyrefly: ignore[bad-argument-type]
+    scheduler.schedule()
+    run_to_the_end(scheduler, [collecting])
+
+    left = [test for test, nodeid in enumerate(COLLECTION) if nodeid not in crashitems]
+    assert sorted(first_ran + collecting.sent) == left
+
+
+def running_then_crashing(
+    scheduler: SerialLastScheduling, worker: Worker
+) -> tuple[list[int], list[str | None]]:
+    """``worker`` runs the tests it holds now, then dies; what it ran, and the test it died in."""
+    ran = list(worker.queue)
+    for test in ran:
+        worker.queue.pop(0)
+        scheduler.mark_test_complete(worker, test)  # pyrefly: ignore[bad-argument-type]
+    return ran, [scheduler.remove_node(worker)]  # pyrefly: ignore[bad-argument-type]
+
+
+# a run's tests: quick ones before and after one that ends its worker's process, and a serial
+# group. The worker that dies has finished tests before it, as a worker lost near a run's end
+# has, and may hold tests after it that it never starts
 QUICK_TESTS = """
 import time
 
 import pytest
 
 
-@pytest.mark.parametrize("n", range(12))
+@pytest.mark.parametrize("n", range(6))
 def test_quick(n):
     time.sleep(0.05)
 """
@@ -171,19 +210,21 @@ import pytest
 def test_serial(n):
     pass
 """
-# how the last test ends its worker, after it notes that it started
+# how the test in the middle ends its worker, a second after it notes that it started, so a
+# second worker has run every other test and left by then
 ENDS = {
-    "exits": "os._exit(1)",
+    "exits": "time.sleep(1)\n    os._exit(1)",
     "times out": "time.sleep(3600)",
 }
 
 
 def write_a_run(folder: Path, end: str) -> Path:
-    """The tests of a run in ``folder``, the last ending as ``end`` says; the file it notes in."""
-    (folder / "test_quick.py").write_text(QUICK_TESTS)
+    """The tests of a run in ``folder``, one ending as ``end`` says; the file it notes in."""
+    for name in ("test_a_quick.py", "test_z_quick.py"):
+        (folder / name).write_text(QUICK_TESTS)
     (folder / "test_serial.py").write_text(SERIAL_TESTS)
     started = folder / "started"
-    (folder / "test_zz_dies.py").write_text(
+    (folder / "test_m_dies.py").write_text(
         "import os, time\n\n\ndef test_dies():\n"
         f"    with open({str(started)!r}, 'a') as started:\n        started.write('x')\n"
         f"    {ENDS[end]}\n"
@@ -191,8 +232,8 @@ def write_a_run(folder: Path, end: str) -> Path:
     return started
 
 
-def run_in_two_workers(folder: Path) -> subprocess.CompletedProcess[str]:
-    """The project's pytest settings and scheduler on ``folder``, in two workers.
+def run_in_workers(folder: Path, workers: int) -> subprocess.CompletedProcess[str]:
+    """The project's pytest settings and scheduler on ``folder``, in ``workers`` workers.
 
     The timeout is cut to two seconds, and the run starts no coverage of this one.
     """
@@ -200,8 +241,8 @@ def run_in_two_workers(folder: Path) -> subprocess.CompletedProcess[str]:
     env["PYTHONPATH"] = str(REPO_ROOT)
     config = str(REPO_ROOT / "pyproject.toml")
     return subprocess.run(
-        [sys.executable, "-m", "pytest", "-c", config, "--rootdir", str(folder)]
-        + ["--confcutdir", str(folder), "-p", "tests.conftest", "-n", "2", "-o", "timeout=2"]
+        [sys.executable, "-m", "pytest", "-c", config, "--rootdir", str(folder), "-n", str(workers)]
+        + ["--confcutdir", str(folder), "-p", "tests.conftest", "-o", "timeout=2"]
         + ["--basetemp", str(folder / "base"), "-p", "no:cacheprovider"],
         cwd=folder,
         env=env,
@@ -212,16 +253,17 @@ def run_in_two_workers(folder: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
+@pytest.mark.parametrize("workers", [1, 2])
 @pytest.mark.parametrize("end", ENDS)
-def test_a_run_ends_after_a_worker_dies(tmp_path: Path, end: str) -> None:
+def test_a_run_ends_after_a_worker_dies(tmp_path: Path, end: str, workers: int) -> None:
     started_file = write_a_run(tmp_path, end)
     started = time.monotonic()
 
-    result = run_in_two_workers(tmp_path)
+    result = run_in_workers(tmp_path, workers)
 
     output = result.stdout + result.stderr
     assert result.returncode == 1, output
-    assert "FAILED test_zz_dies.py::test_dies" in output
+    assert "FAILED test_m_dies.py::test_dies" in output
     assert output.count("PASSED test_serial.py::test_serial") == 3, output
     assert "15 passed" in output, output
     # the dead worker's test is not run again, on the worker that replaces it
