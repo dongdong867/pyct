@@ -32,6 +32,7 @@ from pyct.core.values import (
     REPORTED_CLASS,
     as_base,
     built_plainly,
+    converted,
     copy_as_itself,
     downgrade_the_rest,
     downgraded,
@@ -306,7 +307,7 @@ class ConcolicFloat(float):
     __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
     if hasattr(float, "from_number"):
         # from 3.14. A tracked float converts to itself, as `float(f)` does
-        from_number = built_plainly(float, "from_number", converts=True)
+        from_number = converted(float, "from_number")
 
     # the class called with a value is float's own, a plain float; pyct builds a tracked one
     __new__ = as_base

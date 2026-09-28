@@ -16,7 +16,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
-from pyct.core.values import built_plainly, raised_by_target
+from pyct.core.values import converted, raised_by_target
 
 # the names that hand back the value itself, on an int and on the bool that is an int
 ITSELF: dict[str, Callable[[int], object]] = {
@@ -255,7 +255,7 @@ class Scale:
 
 
 class TrackedScale(Scale):
-    of = built_plainly(Scale, "of", converts=True)
+    of = converted(Scale, "of")
 
 
 def test_a_converting_classmethod_hands_back_a_value_of_its_own_class_as_it_is() -> None:

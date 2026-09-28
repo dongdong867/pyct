@@ -286,7 +286,7 @@ def as_base(cls: type, /, *args: object, **kwargs: object) -> Any:
     return own(BASES[cls], *args, **kwargs)
 
 
-def built_plainly(kind: type, name: str, *, converts: bool = False) -> Any:
+def built_plainly(kind: type, name: str) -> Any:
     """A classmethod of ``kind`` reached through a tracked value: ``kind``'s own answer, plain.
 
     ``kind``'s own classmethod builds the class it is reached through from
@@ -294,19 +294,34 @@ def built_plainly(kind: type, name: str, *, converts: bool = False) -> Any:
     sink, so it is asked of ``kind`` itself: `x.from_bytes(...)` and
     `type(x).from_bytes(...)` answer as `int.from_bytes(...)` does. It reads
     the class and never the value, so it records nothing
-    (downgrades-class-body-taught-attributes-named). One that ``converts``
-    its one argument to ``kind`` hands back a tracked value of the class it
-    is reached through as it is, since that value is already the one it
-    would build, as `float(f)` is `f` (`pyct.core.conversions`).
+    (downgrades-class-body-taught-attributes-named).
     """
     operation = getattr(kind, name)
 
     def build(cls: type, /, *args: object, **kwargs: object) -> object:
-        if converts and len(args) == 1 and not kwargs and type(args[0]) is cls:
-            return args[0]
         return own(operation, *args, **kwargs)
 
     return classmethod(build)
+
+
+def converted(kind: type, name: str) -> Any:
+    """A classmethod of ``kind`` that converts one value to ``kind``, reached through a tracked
+    value.
+
+    A tracked value of the class it is reached through is already the value
+    it would build, so it comes back as it is, as `float(f)` is `f`
+    (`pyct.core.conversions`). Anything else gets ``kind``'s own answer,
+    plain, as `built_plainly` gives it; a tracked number of another type is
+    read through its own conversion, which names what it loses.
+    """
+    operation = getattr(kind, name)
+
+    def convert(cls: type, /, *args: object, **kwargs: object) -> object:
+        if len(args) == 1 and not kwargs and type(args[0]) is cls:
+            return args[0]
+        return own(operation, *args, **kwargs)
+
+    return classmethod(convert)
 
 
 def _called_on_a_value(member: object) -> bool:
