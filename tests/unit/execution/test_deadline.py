@@ -19,10 +19,11 @@ from contextlib import AbstractContextManager
 
 import pytest
 
+from pyct.execution.deadline import _HOLD_AT_MOST as HOLD_AT_MOST
 from pyct.execution.deadline import DeadlineError, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
-from tests.unit.execution.ctrl_c_in_c import interrupted_call
+from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
 
 
 @pytest.fixture
@@ -325,5 +326,22 @@ def test_an_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() 
 @DEADLINE_FIRES
 @pytest.mark.parametrize("name", ["total", "total_then_finally"])
 def test_a_ctrl_c_during_a_c_call_that_outlives_the_deadline_reaches_the_caller(name: str) -> None:
+    started = time.monotonic()
+
     with pytest.raises(KeyboardInterrupt):
         interrupted_call(name)
+
+    # the call returned after the hold would have run out, counted from the deadline
+    assert time.monotonic() - started > 0.05 + HOLD_AT_MOST + 0.1
+
+
+@DEADLINE_FIRES
+def test_a_hang_in_pyct_s_own_frames_ends_near_its_deadline() -> None:
+    spin = spin_in_pyct()
+    started = time.monotonic()
+
+    with pytest.raises(DeadlineError), deadline(started + 0.05):
+        # bounded so the test fails rather than waits when no alarm comes
+        spin(started + 2)
+
+    assert time.monotonic() - started < 0.3

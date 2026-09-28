@@ -2,26 +2,62 @@
 
 ``interrupted_call(name)`` calls a target of ``targets/isolate/long_sum.py``
 through ``execute``, with its line tracer on and a deadline 0.05 s ahead, and
-has another process send this one a SIGINT 0.15 s in. The call outlives both
-by about half a second, so the two signals are handled together as it returns.
+has another process send this one a SIGINT 0.15 s in. The call outlives both,
+and returns more than ``_HOLD_AT_MOST`` past the deadline on every supported
+Python, so the two signals are handled together as it returns, after the
+alarm's hold would have run out had it counted from the deadline.
+
+``spin_in_pyct`` is a loop whose code pyct's package holds, as a core
+operation's is, so an alarm can land in it.
 """
 
 import os
 import subprocess
 import time
+from collections.abc import Callable
 
-from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
+from pyct.core.branch import PYCT_DIR
+from pyct.execution.execute import ExecutionContext, execute
 from tests.acceptance.harness import REPO_ROOT
 
 LONG_SUM = REPO_ROOT / "targets" / "isolate" / "long_sum.py"
 
 
-def interrupted_call(name: str) -> ExecutionResult:
-    """Run the target ``name`` under a deadline a Ctrl-C lands after, as a person presses one."""
+def interrupted_call(name: str) -> float:
+    """Run the target ``name`` under a deadline a Ctrl-C lands after, as a person presses one.
+
+    Returns how far past the deadline the call returned, when it did.
+    """
     namespace: dict[str, object] = {}
     exec(compile(LONG_SUM.read_text(), str(LONG_SUM), "exec"), namespace)
     fn = namespace[name]
     assert callable(fn)
     ctx = ExecutionContext(fn=fn, file=str(LONG_SUM))
     subprocess.Popen(["sh", "-c", f"sleep 0.15; kill -INT {os.getpid()}"])
-    return execute(ctx, {"x": 0}, time.monotonic() + 0.05)
+    at = time.monotonic() + 0.05
+    execute(ctx, {"x": 0}, at)
+    return time.monotonic() - at
+
+
+_SPIN = """\
+import time
+
+
+def spin(until, owner=None):
+    while time.monotonic() < until and (owner is None or owner.hold.in_pyct == 0):
+        pass
+"""
+
+
+def spin_in_pyct() -> Callable[..., object]:
+    """A loop compiled as a file in pyct's package: ``spin(until, owner=None)``.
+
+    It runs until the monotonic instant ``until``, or, given the owned
+    deadline's state, until the alarm was held for pyct's frames. It calls
+    no Python function, so an alarm lands in its own frame.
+    """
+    namespace: dict[str, object] = {}
+    exec(compile(_SPIN, f"{PYCT_DIR}core/spin.py", "exec"), namespace)
+    spin = namespace["spin"]
+    assert callable(spin)
+    return spin

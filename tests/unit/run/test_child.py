@@ -4,6 +4,7 @@ import asyncio
 import mmap
 import os
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -13,13 +14,14 @@ from contextlib import AbstractContextManager
 
 import pytest
 
+from pyct.execution import deadline as deadline_module
 from pyct.execution.deadline import DeadlineError, deadline, own_the_alarm
 from pyct.results.failure import FailureKind
 from pyct.run import child
 from pyct.run.child import serve, settle
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import STOP_SIGNALS
-from tests.unit.execution.ctrl_c_in_c import interrupted_call
+from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
 
 
 def test_a_raise_out_of_pyct_s_own_code_is_a_pyct_bug_on_the_input_s_line() -> None:
@@ -299,10 +301,12 @@ def test_an_owned_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bo
 def owned_ctrl_c_during_a_c_call(name: str) -> None:
     # a process pyct owns, as the command line's, where a Ctrl-C raises as it does anywhere
     own_the_alarm()
+    started = time.monotonic()
     try:
         interrupted_call(name)
     except KeyboardInterrupt:
-        child._EXIT(0)
+        # the call returned after the hold would have run out, counted from the deadline
+        child._EXIT(0 if time.monotonic() - started > 0.65 else 2)
     child._EXIT(3)
 
 
@@ -314,6 +318,48 @@ def test_an_owned_ctrl_c_during_a_c_call_that_outlives_the_deadline_reaches_the_
     pid = os.fork()
     if pid == 0:
         owned_ctrl_c_during_a_c_call(name)
+    _, status = os.waitpid(pid, 0)
+
+    assert os.waitstatus_to_exitcode(status) == 0
+
+
+def hang_in_pyct_s_own_frames() -> None:
+    spin = spin_in_pyct()
+    started = time.monotonic()
+    try:
+        with deadline(started + 0.05):
+            spin(started + 2)
+    except DeadlineError:
+        child._EXIT(0 if time.monotonic() - started < 0.3 else 2)
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_hang_in_pyct_s_own_frames_ends_near_its_deadline() -> None:
+    assert settled_then(hang_in_pyct_s_own_frames) == 0
+
+
+def ctrl_c_after_an_alarm_held_in_pyct_s_frames() -> None:
+    own_the_alarm()
+    spin = spin_in_pyct()
+    at = time.monotonic() + 0.05
+    subprocess.Popen(["sh", "-c", f"sleep 0.3; kill -INT {os.getpid()}"])
+    try:
+        with deadline(at):
+            # pyct's own work as the deadline comes, until the alarm is held there once, then
+            # one long C call a Ctrl-C lands in
+            spin(at + 1, deadline_module._OWNER)
+            sum(range(300_000_000))
+    except KeyboardInterrupt:
+        child._EXIT(0)
+    child._EXIT(3)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_ctrl_c_after_an_alarm_held_in_pyct_s_frames_reaches_the_caller() -> None:
+    pid = os.fork()
+    if pid == 0:
+        ctrl_c_after_an_alarm_held_in_pyct_s_frames()
     _, status = os.waitpid(pid, 0)
 
     assert os.waitstatus_to_exitcode(status) == 0
