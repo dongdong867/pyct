@@ -111,3 +111,12 @@ def not_in_table(x: int) -> int:
     if not key in TABLE:
         return 1
     return 2
+
+
+def false_is_compare(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    if False is (x < 9):
+        n += 1
+    return n

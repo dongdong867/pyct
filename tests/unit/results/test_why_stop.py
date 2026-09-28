@@ -220,10 +220,29 @@ def _named_identities(
     return source, frozenset(line + 1 for line in tests), covered, walked
 
 
+def _spread_inputs(
+    size: int, file: str
+) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    ifs = "".join(f"    if (x > {k}) is not True:\n        y += {k}\n" for k in range(20))
+    source = f"def f(x):\n    y = 0\n{ifs}    return y\n"
+    covered = frozenset({2, 43}) | frozenset(range(3, 43, 2))
+    # many inputs, each forking at as many sites elsewhere in the file as there are inputs, and
+    # no `is` against a name, so no input is asked
+    walked = [
+        Walked(
+            tuple(Branch([">", "x", k], k != i, Site(file, 1, k)) for k in range(size)),
+            False,
+            covered,
+        )
+        for i in range(size)
+    ]
+    return source, frozenset(range(4, 44, 2)), covered, walked
+
+
 # the large shapes the reviews met: joined plain conditions, many try blocks, a generator with a
 # path per input, many operations that may raise, many jumps, a long if/else inside a try, and
 # one line of many tests, and many `is` tests whose sides are read against their forks, by one
-# input and by many
+# input and by many, and many inputs with forks all over the file
 SHAPES = {
     "joined": (_joined, 3000),
     "tries": (_tries, 2000),
@@ -234,6 +253,7 @@ SHAPES = {
     "one_long_and": (_one_long_and, 4000),
     "identities": (_identities, 4000),
     "named_identities": (_named_identities, 300),
+    "spread_inputs": (_spread_inputs, 1000),
 }
 
 

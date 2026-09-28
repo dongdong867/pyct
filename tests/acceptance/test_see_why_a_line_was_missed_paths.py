@@ -196,6 +196,7 @@ NEGATED = [
     ("int_not_in", '{"s": "7"}', 88, (86, 7, True), 2),
     ("is_false_no_else", '{"x": 0}', 96, (95, 7, False), 1),
     ("while_is_not_true", '{"x": 0}', 105, (104, 10, False), 1),
+    ("false_is_compare", '{"x": 0}', 121, (120, 7, False), 1),
 ]
 
 

@@ -64,6 +64,13 @@ IS_TESTS = [
     ("x is False", {">"}, False),
     ("True is not x", {">"}, False),
     ("x is not False", {">"}, True),
+    # a True or False on the left, against an operand of many instructions
+    ("False is (x < 9)", {">"}, False),
+    ("False is c(x)", {">"}, False),
+    ("True is not x.real", {">"}, False),
+    # an operand a jump runs through is no constant, so no input shows the sense: `is`
+    ("(b or False) is x", {">"}, True),
+    ("x is (b or True)", {">"}, True),
 ]
 
 

@@ -30,10 +30,9 @@ TESTS = frozenset(
 # a test jumps on its true side only here; every other one falls through into its true side
 _JUMPS_WHEN_TRUE = frozenset({"POP_JUMP_IF_TRUE"})
 # the compares a truth test may read the value of, whose argument 1 is `not in` or `is not`,
-# what may sit between the two and leaves the value as it is, and the loads that push one value
+# and what may sit between the two and leaves the value as it is
 _COMPARES = frozenset({"CONTAINS_OP", "IS_OP"})
 _PASSED = frozenset({"COPY", "TO_BOOL", "NOP", "EXTENDED_ARG"})
-_NOT_ONE_PUSH = frozenset({"LOAD_ATTR", "LOAD_SUPER_ATTR", "LOAD_METHOD", "LOAD_FAST_LOAD_FAST"})
 # the tests of a value's truth, which may read an `in` or an `is`
 _TRUTH = frozenset({"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"})
 # what an `except` clause tests the raise against: the jump after it is the clause's match
@@ -94,7 +93,9 @@ class Op:
     line: int | None
     col: int | None
     arg: int | None = None
-    # the True or False a LOAD_CONST pushes, and the compare a truth test reads
+    # whether a jump lands here, the True or False a LOAD_CONST pushes, and the compare a truth
+    # test reads
+    joined: bool = False
     flag: bool | None = None
     reads: Reads | None = None
 
@@ -184,6 +185,7 @@ def _op(instruction: dis.Instruction, before: list[Op]) -> Op:
         line=None if positions is None else positions.lineno,
         col=None if positions is None else positions.col_offset,
         arg=instruction.arg,
+        joined=instruction.is_jump_target,
         flag=value if instruction.opname == "LOAD_CONST" and isinstance(value, bool) else None,
         reads=_reads(instruction, before),
     )
@@ -204,14 +206,32 @@ def _reads(instruction: dis.Instruction, before: list[Op]) -> Reads | None:
 
 
 def _flag(before: list[Op], compare: int) -> bool | None:
-    """The True or False a compare's right operand is, or its left before a right of one load."""
-    if compare < 1:
+    """The True or False the code loads as a compare's right operand, or as its left one.
+
+    The right operand ends right before the compare, and starts where,
+    walking back, its instructions have pushed one value more than they took.
+    The left operand ends right before that. An operand a jump runs through,
+    or one a jump lands in, is no constant.
+    """
+    start = _right_start(before, compare)
+    if start is None or before[start].joined or before[compare].joined:
         return None
-    right = before[compare - 1]
-    if right.flag is not None or compare < 2:
-        return right.flag
-    one_push = right.name.startswith("LOAD_") and right.name not in _NOT_ONE_PUSH
-    return before[compare - 2].flag if one_push else None
+    if start == compare - 1 and before[start].flag is not None:
+        return before[start].flag
+    return before[start - 1].flag if start > 0 else None
+
+
+def _right_start(before: list[Op], compare: int) -> int | None:
+    """Where a compare's right operand starts, or None when a jump runs through it."""
+    pushed = 0
+    for at in range(compare - 1, -1, -1):
+        op = before[at]
+        if op.target is not None or (op.joined and at != compare - 1 and pushed < 1):
+            return None
+        pushed += dis.stack_effect(dis.opmap[op.name], op.arg, jump=False)
+        if pushed == 1:
+            return at
+    return None
 
 
 def _splits(ops: list[Op], raising: frozenset[tuple[int, int]]) -> frozenset[int]:

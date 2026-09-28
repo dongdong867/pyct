@@ -20,9 +20,11 @@ where the code cannot say, the forks recorded at its site:
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Iterable, Mapping
 
 from pyct.results.blocks import Reads
+from pyct.results.graphs import Pace
 from pyct.results.way import Flow, Fork, Step
 
 # a site, as a fork records it: its line and column
@@ -48,7 +50,9 @@ def against_the_forks(
     for node, step in flow.pace.each(flow.sides().items()):
         if step.reads is not None:
             tests.setdefault(((step.line, step.col), step.reads), []).append((node, step))
-    shown = _Shown(flow, seen)
+    # the inputs are asked only of an `is` against a name, and read only at those tests' sites
+    named = {site for site, reads in tests if _named(reads) and site in heads}
+    shown = _Shown(flow, seen, frozenset(named))
     swapped: list[int] = []
     for (site, reads), sides in flow.pace.each(tests.items()):
         if _other_way(reads, heads.get(site, frozenset()), shown, site, sides):
@@ -69,13 +73,27 @@ def _other_way(reads: Reads, heads: frozenset[str], shown: _Shown, site: At, sid
     return reads.negated if agrees is None else not agrees
 
 
-class _Shown:
-    """Each input's forks by site, and the sides its lines alone prove, each found once."""
+def _named(reads: Reads) -> bool:
+    """Whether a test is an `is` against something other than a True or False the code loads."""
+    return reads.name == "IS_OP" and reads.flag is None
 
-    def __init__(self, flow: Flow, seen: list[Seen]) -> None:
+
+class _Shown:
+    """Each input's forks at the sites asked of, and the sides its lines alone prove, each
+    found once, when first asked."""
+
+    def __init__(self, flow: Flow, seen: list[Seen], sites: frozenset[At]) -> None:
         self.flow = flow
-        self.inputs = [(lines, _taken_at(forks, flow)) for lines, forks in flow.pace.each(seen)]
+        self.seen = seen
+        self.sites = sites
         self.marks: dict[int, frozenset[int]] = {}
+
+    @functools.cached_property
+    def inputs(self) -> list[tuple[frozenset[int], dict[At, set[bool]]]]:
+        pace = self.flow.pace
+        return [
+            (lines, _taken_at(forks, self.sites, pace)) for lines, forks in pace.each(self.seen)
+        ]
 
     def agree(self, site: At, sides: Sides) -> bool | None:
         """Whether every input that shows both reads the fork's side as the test's, or None when
@@ -93,11 +111,11 @@ class _Shown:
         return found.pop() if len(found) == 1 else None
 
 
-def _taken_at(forks: Iterable[Fork], flow: Flow) -> dict[At, set[bool]]:
-    """The sides an input's forks took at each site, raising forks aside."""
+def _taken_at(forks: Iterable[Fork], sites: frozenset[At], pace: Pace) -> dict[At, set[bool]]:
+    """The sides an input's forks took at each of the sites, raising forks aside."""
     found: dict[At, set[bool]] = {}
-    for line, col, taken, raising in flow.pace.each(forks):
-        if not raising:
+    for line, col, taken, raising in pace.each(forks):
+        if not raising and (line, col) in sites:
             found.setdefault((line, col), set()).add(taken)
     return found
 

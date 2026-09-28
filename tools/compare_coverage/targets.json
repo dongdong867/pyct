@@ -611,6 +611,7 @@
     {"set": "v2", "target": "targets.why.looping_yield::run_async", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.looping_yield::takes_one", "seed": {"x": 1}},
     {"set": "v2", "target": "targets.why.lost::lose", "seed": {"x": 3}},
+    {"set": "v2", "target": "targets.why.negated::false_is_compare", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.why.negated::int_not_in", "seed": {"s": "7"}},
     {"set": "v2", "target": "targets.why.negated::is_false_no_else", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.why.negated::is_not_flag", "seed": {"x": 0}},
