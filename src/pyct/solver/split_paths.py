@@ -4,12 +4,31 @@ tied to, and what the path's reads and ties say of the program (see ``split_list
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import measured_splits
+from pyct.core.str_splits import LISTED_SPLITS, measured_splits
 from pyct.solver.list_terms import Least, Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_lists import BOUND_PAST, MOST_BOUND, SplitList
+
+# what each compare of a length with a number, taken or not, says of the length: the least
+# and the most it can be, by the number
+_RANGES: Mapping[tuple[str, bool], Callable[[int], tuple[int, int | None]]] = {
+    (">", True): lambda n: (n + 1, None),
+    (">=", True): lambda n: (n, None),
+    ("<", True): lambda n: (0, n - 1),
+    ("<=", True): lambda n: (0, n),
+    ("==", True): lambda n: (n, n),
+    (">", False): lambda n: (0, n),
+    (">=", False): lambda n: (0, n - 1),
+    ("<", False): lambda n: (n, None),
+    ("<=", False): lambda n: (n + 1, None),
+    ("!=", False): lambda n: (n, n),
+}
+
+# each order read the other way round, for a number on the left
+_FLIPPED = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!="}
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -42,8 +61,10 @@ class Splits:
         # forks need more pieces than a count's bound
         self.bounds: set[str] = set()
         self.refuted = False
-        # the largest number a fork compares each split's length with, by the split's part
+        # the largest number a fork compares each split's length with, and the least and the
+        # most the forks on its own length let it be, by the split's part
         self.numbers: dict[int, int] = {}
+        self.ranges: dict[int, tuple[int, int | None]] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """The largest number a fork compares each split's list's length with, or the length
@@ -56,6 +77,22 @@ class Splits:
             for split, start in measured_splits(expression):
                 most = [number + start for number in numbers]
                 self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *most])
+            self._range(expression, fork.taken)
+
+    def _range(self, expression: list[Expression], taken: bool) -> None:
+        """Narrow the least and the most a split's count can be by a fork that compares its
+        own length with a number."""
+        op, left, right = expression
+        if type(left) is int:
+            op, left, right = _FLIPPED.get(str(op), ""), right, left
+        read = _RANGES.get((str(op), taken))
+        if read is None or type(right) is not int or not _counts(left):
+            return
+        assert isinstance(left, list)
+        low, high = read(right)
+        was_low, was_high = self.ranges.get(id(left[1]), (0, None))
+        highs = [value for value in (was_high, high) if value is not None]
+        self.ranges[id(left[1])] = (max(was_low, low), min(highs) if highs else None)
 
     @property
     def bounded(self) -> bool:
@@ -74,11 +111,24 @@ class Splits:
         count = f"count!{len(self.lists)}!"
         choose = self.back_among_counts
         known = text if isinstance(text, str) else None
-        listed = SplitList(term, str(head), plain, count, bound, self.hold, held, choose, known)
+        compared = self.numbers.get(id(node), 0)
+        listed = SplitList(
+            term, str(head), plain, count, bound, self.hold, held, choose, known, compared
+        )
+        listed = replace(listed, read_count=self._read_count(node, held))
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
         return listed
+
+    def _read_count(self, node: list[Expression], held: int | None) -> int | None:
+        """The count a read from the end puts its piece at: the input's own, moved as little as
+        the forks on the split's own length need."""
+        if held is None:
+            return None
+        low, high = self.ranges.get(id(node), (0, None))
+        count = max(held, low)
+        return count if high is None else max(min(count, high), low)
 
     def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
         """A split's piece at ``position``, noting whether the read holds the program."""
@@ -142,3 +192,10 @@ class Splits:
             ties += tie
             pending += [other for other in self.lists if other in "\n".join(tie)]
         return declared, ties
+
+
+def _counts(part: Expression) -> bool:
+    """Whether a part is the length of a split's own list, ``["len", [split, ...]]``."""
+    if not isinstance(part, list) or part[:1] != ["len"] or not isinstance(part[1], list):
+        return False
+    return part[1][:1] != [] and part[1][0] in LISTED_SPLITS

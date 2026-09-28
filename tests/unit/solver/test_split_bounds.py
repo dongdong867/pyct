@@ -168,9 +168,11 @@ def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_u
     path = (
         fork([">=", ["len", lines], 2], taken=True),
         fork(["==", ["[]", lines, -2], "'end'"], taken=True),
-        fork([">", ["len", lines], 7], taken=True),
+        fork(["!=", ["len", lines], 7], taken=True),
+        fork(["==", ["len", lines], "n"], taken=True),
+        fork([">", "n", 7], taken=True),
     )
-    seed = Seed.of({"s": "a\nend\nb"})
+    seed = Seed.of({"s": "a\nend\nb", "n": 3})
     asked: list[bool] = []
     ask = cvc5_module._ask
 
@@ -182,13 +184,15 @@ def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_u
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
-    # read where the input's three lines put the one before the last, eight lines are unsat;
-    # the ask after it chooses that line among every count, where the path's eight lines can be
+    # read where the input's three lines put the one before the last, and no fork on the
+    # count with a number moves them, more than seven are unsat; the ask after it chooses that
+    # line among every count, where the path's eight lines can be
     assert asked[:2] == [True, False], asked
     assert not isinstance(answer, Unsat), answer
     if isinstance(answer, Sat):
-        text = str(apply(seed, answer.model).args["s"])
-        assert text.splitlines()[-2] == "end" and len(text.splitlines()) > 7, text
+        args = apply(seed, answer.model).args
+        lines_of = str(args["s"]).splitlines()
+        assert lines_of[-2] == "end" and len(lines_of) == args["n"] and len(lines_of) > 7, args
 
 
 @needs_cvc5
@@ -415,3 +419,27 @@ def test_a_count_of_many_pieces_that_meets_a_term_is_answered(
     args = apply(seed, answer.model).args
     operands: list[Any] = [part[1:-1] if isinstance(part, str) else part for part in split[2:]]
     assert len(getattr(str(args["s"]), str(split[0]))(*operands)) == args["n"], args
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("number", "taken"), [(10, False), (7, True)], ids=["at most ten", "more than seven"]
+)
+def test_the_last_line_is_read_at_the_count_the_forks_allow_nearest_the_input_s(
+    number: int, taken: bool
+) -> None:
+    lines: Expression = ["splitlines", "s"]
+    path = (
+        fork([">=", ["len", lines], 1], taken=True),
+        fork(["==", ["[]", lines, -1], "'end'"], taken=True),
+        fork([">", ["len", lines], number], taken=taken),
+    )
+    seed = Seed.of({"s": "a\n" * 11 + "x"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # twelve lines, moved to ten or kept, where a count walked beside the last line ran past
+    # the limit
+    assert isinstance(answer, Sat), answer
+    text = str(apply(seed, answer.model).args["s"]).splitlines()
+    assert text[-1] == "end" and (len(text) > number) is taken, text

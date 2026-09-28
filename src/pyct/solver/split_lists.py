@@ -120,6 +120,8 @@ class SplitList:
     input_count: int | None = None
     back_among_counts: bool = False
     input_text: str | None = None
+    compared: int = 0
+    read_count: int | None = None
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -234,7 +236,10 @@ class SplitList:
         `--`), so the count is read as Python counted the input's string, and a path that needs
         another count is asked loosened."""
         count = self.input_count
-        return count is not None and self.bound == count + BOUND_PAST > MOST_WALKED_PAST
+        moved = count != self.read_count
+        return (
+            count is not None and not moved and self.bound == count + BOUND_PAST > MOST_WALKED_PAST
+        )
 
     def _pinned_tie(self) -> list[str]:
         """The count as the input's own, and the string as one with that many pieces: on a
@@ -312,7 +317,10 @@ class SplitList:
         if back is None:
             return SplitRead(self._chosen(position, least), True, False)
         walked = right_piece(self.term, self.head, self.operands, back)
-        if self.head == "splitlines" and back == 0:
+        if self.head == "splitlines" and back == 0 and self.compared <= 1:
+            # one look from the end, where no fork compares the count with more than 1: beside
+            # a count walked to 7 or 10 it ran past the limit where the read at the input's
+            # count answered
             walked = last_line(self.term, self.operands)
         if walked is not None:
             return SplitRead(Read(walked, self._there(back)), restricted, False)
@@ -332,11 +340,11 @@ class SplitList:
         return None
 
     def _at_input_count(self, back: int) -> bool:
-        """Whether piece ``back`` from the end is read where the input's own count puts it: on
-        an input with that many pieces, for splitlines where the bound is past
-        `MOST_CHOSEN_BACK`, but for an input with few pieces once that read is unsat
-        (``back_among_counts``)."""
-        count = self.input_count
+        """Whether piece ``back`` from the end is read where the input's own count puts it,
+        moved as little as the forks on the split's length need (``read_count``): on an input
+        with that many pieces, for splitlines where the bound is past `MOST_CHOSEN_BACK`, but
+        for an input with few pieces once that read is unsat (``back_among_counts``)."""
+        count = self.read_count
         if count is None or back >= count:
             return False
         if self.head == "splitlines" and self.bound <= MOST_CHOSEN_BACK:
@@ -353,7 +361,7 @@ class SplitList:
         piece from the start that puts there, and that count. A path that needs another count
         is asked loosened."""
         self._held()
-        count = self.input_count
+        count = self.read_count
         assert count is not None
         # by the walks the piece is read with: past 16 pieces, a count by membership beside the
         # walk ran past the limit where these answered in 1.4 to 2.9 s
