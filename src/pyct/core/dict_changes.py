@@ -249,7 +249,7 @@ def last_item(self: DictState) -> tuple[object, object]:
         return own(dict.popitem, self)
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
-    handed_in_place(self, key, "popitem")
+    handed_in_place(self, key, "popitem", pin)
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
     self.dropped(key)

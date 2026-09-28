@@ -131,7 +131,7 @@ def present(
         return None
     if proven(self, key):
         return held
-    changed = after_changes(self, key, written, (name, raising))
+    changed = after_changes(self, key, written, (name, raising, None))
     if changed is not None:
         return changed
     self.settled.setdefault(settled_as(key), held)
@@ -142,7 +142,12 @@ def present(
 
 
 def after_changes(
-    self: DictState, key: object, written: Expression, how: tuple[str, bool], *, held: bool = False
+    self: DictState,
+    key: object,
+    written: Expression,
+    how: tuple[str, bool, Expression],
+    *,
+    held: bool = False,
 ) -> bool | None:
     """Whether the dict holds ``key`` by a change the target made, the latest first, or None
     when no change decides it and the argument's own keys do.
@@ -151,8 +156,9 @@ def after_changes(
     solver may make the two keys equal or apart, so the lookup records whether they are,
     `["==", "n", "'b'"]`, the side Python took, at the lookup's own site; a key equal to the
     change's decides. Keys of different kinds never are equal, and one expression always is.
-    ``how`` is the lookup's name and whether Python may raise after it. A key the argument
-    ``held`` is apart from each tracked key whose change found it none of the argument's.
+    ``how`` is the lookup's name, whether Python may raise after it, and what each fork it
+    records keeps of the input (see ``Branch.holds``). A key the argument ``held`` is apart
+    from each tracked key whose change found it none of the argument's.
     """
     bare = plain(key)
     tracked = is_tracked(key)
@@ -173,7 +179,7 @@ def after_changes(
             continue
         equal = changed == bare
         fork = ["==", written, other] if tracked else ["==", other, written]
-        if recorded(self, Branch(fork, equal, caller_site(), how[1], how[0])):
+        if recorded(self, Branch(fork, equal, caller_site(), how[1], how[0], how[2])):
             return stored
         apart.append(other)
     return None
@@ -388,11 +394,15 @@ def compared_in_place(self: DictState, key: object) -> bool:
     )
 
 
-def handed_in_place(self: DictState, key: object, name: str) -> None:
+def handed_in_place(self: DictState, key: object, name: str, pin: Expression) -> None:
     """Record, for a key of the argument a walk or popitem hands out, whether each tracked key
-    that may have changed it did, so an answer keeps the value there (``compared_in_place``)."""
+    that may have changed it did, so an answer keeps the value there (``compared_in_place``).
+    Each such fork keeps the key where the walk read it (``pin``) whatever a fork reads, so the
+    key it compares is the one an answer's walk reads there; the walk's own fork keeps only
+    its plain place, so its flip may still end the walk sooner."""
     if compared_in_place(self, key):
-        after_changes(self, key, written_key(key), (name, False), held=True)
+        holds: Expression = None if pin is None else ["given", pin]
+        after_changes(self, key, written_key(key), (name, False, holds), held=True)
 
 
 def _walked(
@@ -408,17 +418,12 @@ def _walked(
         if not self.holds(name, *(() if key is MISSING else (key,))):
             break
         pin = None if key is MISSING else placed(self, key, end)
-        holds: Expression = pin
-        if key is not MISSING and pin is not None and compared_in_place(self, key):
-            # the key stays in its place whatever a fork reads, so the key it is compared
-            # with below is the one an answer's walk reads there
-            holds = ["given", pin]
         fork = Branch(
-            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, holds
+            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, pin
         )
         if not recorded(self, fork):
             return
-        handed_in_place(self, key, name)
+        handed_in_place(self, key, name, pin)
         handout(self, key, pin)
         yield pick(self, key)
         at += 1
