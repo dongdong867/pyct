@@ -147,7 +147,7 @@ def _called_on_a_value(member: object) -> bool:
     return isinstance(member, types.WrapperDescriptorType | types.MethodDescriptorType)
 
 
-def _derive(cls: type[_View], registered: type) -> None:
+def _derive_and_name(cls: type[_View], registered: type) -> None:
     """Downgrade every method of Python's own view that the class body has not taught, and give
     the class the names of Python's view, which Python writes into its messages."""
     python = type(cls.python({}))
@@ -159,6 +159,6 @@ def _derive(cls: type[_View], registered: type) -> None:
     named_as(cls, python)
 
 
-_derive(ConcolicKeys, KeysView)
-_derive(ConcolicValues, ValuesView)
-_derive(ConcolicItems, ItemsView)
+_derive_and_name(ConcolicKeys, KeysView)
+_derive_and_name(ConcolicValues, ValuesView)
+_derive_and_name(ConcolicItems, ItemsView)
