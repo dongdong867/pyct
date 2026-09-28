@@ -148,6 +148,30 @@ def test_lets_the_target_import_its_own(tmp_path: Path) -> None:
     assert run["covered"] == summary_line(ran.stdout)["covered"], ran.stdout
 
 
+# keep-a-sweep-entry-s-folder-from-hiding-pyct-s-modules-lets-the-target-import-its-own, for a
+# module named as one pyct's platform read imports on macOS
+def test_lets_the_target_import_its_own_datetime(tmp_path: Path) -> None:
+    uses = FORKS.replace("x > 3", "x > datetime.MARK")
+    folder = folder_of(
+        tmp_path, {"datetime.py": "MARK = 7\n", "usesdt.py": f"import datetime\n\n\n{uses}"}
+    )
+    plain = plain_python(folder, "import usesdt; print(usesdt.f(0), usesdt.f(8))")
+
+    ran = run_pyct("usesdt::f", "--args", '{"x": 0}', "--budget", "5", cwd=folder)
+    result = sweep_from(folder, "usesdt")
+
+    assert plain.stdout == "small big\n", plain.stderr
+    assert ran.returncode == 0, ran.stderr
+    inputs = input_lines(ran.stdout)
+    assert [line["failure"] for line in inputs] == [None, None], ran.stdout
+    forks = inputs[0]["forks"]
+    assert isinstance(forks, list), ran.stdout
+    assert [fork["expression"] for fork in forks] == [[">", "x", 7]], forks
+    alone = summary_line(ran.stdout)
+    assert alone["stopped"] == "no fork to flip", ran.stdout
+    assert ran_to_the_end(result, "usesdt")["covered"] == alone["covered"], result.stdout
+
+
 # the criterion keep-a-sweep-entry-s-folder-from-hiding-pyct-s-modules-
 # fails-a-target-that-imports-a-raising-module, its id split over two lines
 def test_fails_a_target_that_imports_a_raising_module(tmp_path: Path) -> None:
