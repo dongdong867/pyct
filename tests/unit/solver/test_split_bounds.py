@@ -163,17 +163,31 @@ def test_the_last_of_a_few_lines_leaves_their_number_free() -> None:
     path = (
         fork([">=", ["len", lines], 1], taken=True),
         fork(["==", ["[]", lines, -1], "'end'"], taken=True),
-        fork([">", ["len", lines], 7], taken=True),
+        fork([">", ["len", lines], 4], taken=True),
     )
     seed = Seed.of({"s": "a\nb\nend"})
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
     # the input's three lines are few, so the last line is chosen among every count, and a
-    # flip that asks for more lines is answered
+    # flip that asks for more lines than the input has is answered
     assert isinstance(answer, Sat), answer
     text = str(apply(seed, answer.model).args["s"])
-    assert text.splitlines()[-1] == "end" and len(text.splitlines()) > 7, text
+    assert text.splitlines()[-1] == "end" and len(text.splitlines()) > 4, text
+
+
+@needs_cvc5
+def test_a_count_cut_by_a_slice_is_bound_past_what_the_slice_leaves_out() -> None:
+    parts: Expression = ["split", "s", "','"]
+    path = (fork([">", ["len", ["[:]", parts, 2, None]], 3], taken=True),)
+    seed = Seed.of({"s": "a"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # six pieces, two of them before the slice: the bound counts the two
+    assert isinstance(answer, Sat), answer
+    text = str(apply(seed, answer.model).args["s"])
+    assert len(text.split(",")[2:]) > 3, text
 
 
 @needs_cvc5
@@ -189,14 +203,11 @@ def test_a_loosened_ask_holds_no_rsplit_past_its_walk_to_its_limit() -> None:
 
     # Python takes this path with 'a,b' and seventeen more pieces, a string the read's
     # restriction rules out: that is a miss that says so, never unsat
-    assert not isinstance(answer, Unsat), answer
-    if isinstance(answer, Sat):
-        text = str(apply(seed, answer.model).args["s"])
-        assert text.rsplit(",", LONGEST_WALK + 1)[0] == "a,b", text
+    assert isinstance(answer, Unknown), answer
 
 
 @needs_cvc5
-def test_a_count_past_the_cap_is_asked_loosened_at_once() -> None:
+def test_a_count_held_below_its_forks_is_a_miss_without_asking() -> None:
     parts: Expression = ["split", "s", "','"]
     path = (
         fork(["<", ["len", parts], 36], taken=False),

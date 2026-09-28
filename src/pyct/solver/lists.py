@@ -239,12 +239,12 @@ class ListTerms(ListTyping, Slices):
     def _split(self, node: list[Expression], kinds: Kinds) -> Counted:
         """A split's list: its count, and its pieces as `split_lists` reads them. A count is
         at least as many pieces as every string has, and the input's own where it is known."""
-        listed, held = self.splits.made(node, self.named(node[1]))
+        listed = self.splits.made(node, self.named(node[1]))
         self.least[listed.count] = listed.least()
         if (fact := listed.fact()) != TRUE:
             self.guards.append(fact)
-        if held is not None:
-            self.origin[listed.count] = held
+        if listed.input_count is not None:
+            self.origin[listed.count] = listed.input_count
         return Counted(
             Lin.of(listed.count), kinds.kinds, kinds.every, at=partial(self.splits.read, listed)
         )

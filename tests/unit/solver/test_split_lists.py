@@ -83,7 +83,9 @@ def test_cvc5_counts_many_separators_as_python_does() -> None:
     expected: list[object] = []
     for _ in range(80):
         separator = rng.choice([",", "aa", "ab"])
-        value = "".join(rng.choices([separator, "a", "b", ","], k=rng.randint(12, 24)))
+        # fifteen to twenty-two separators, with letters and commas among them
+        fields = rng.choices(["", "a", "b", ",", "ba"], k=rng.randint(16, 23))
+        value = separator.join(fields)
         head = rng.choice(["split", "rsplit"])
         limit = rng.choice([None, 15, 17, 18, 30])
         operands: tuple[object, ...] = (separator,) if limit is None else (separator, limit)
@@ -96,7 +98,8 @@ def test_cvc5_counts_many_separators_as_python_does() -> None:
             expected.append(count > number)
 
     # past sixteen a compare is one membership, and an rsplit past its walk counts from the
-    # start
+    # start; strings with more pieces than sixteen are among them
+    assert any(expected[at] for at in range(len(asks)) if at % 8 >= 3)
     assert asked(_program(asks)) == expected
 
 

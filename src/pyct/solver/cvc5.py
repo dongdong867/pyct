@@ -215,8 +215,8 @@ def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
         return written, None
     if written.refuted:
         # held to fewer pieces than its own forks need, so the held ask is unsat without
-        # asking; the loosened one ties that many pieces and ran to the limit, so the fork is a
-        # miss that says so at once
+        # asking; the loosened asks of such paths each ran to the limit, so the fork is a miss
+        # that says so at once
         logger.debug("a split's count held below what the path needs: unknown without asking")
         return Unknown(), written
     return _finite_first(path, origin, written, finite), written

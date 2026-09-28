@@ -26,8 +26,8 @@ count tied only to the pieces below the bound, with no bound on it, and none of 
 program that holds only what every string splitting as Python does meets. An unsat to that is
 the path's, and anything else a miss that says it is not (`solver.cvc5._loosened`). So a path
 that needs more pieces than the bound is never `unsat`. A held program whose own forks need
-more pieces than its bound is not asked, and neither is its loosened one, which ties that many
-pieces: the fork is `unknown` at once (``Splits.refuted``).
+more pieces than its bound is not asked, and neither is its loosened one, whose asks for three
+such paths each ran to the limit: the fork is `unknown` at once (``Splits.refuted``).
 """
 
 from __future__ import annotations
@@ -310,16 +310,17 @@ class Splits:
             if not isinstance(expression, list) or len(expression) != 3:
                 continue
             numbers = [part for part in expression[1:] if type(part) is int]
-            for split in _measured(expression):
-                self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *numbers])
+            for split, start in _measured(expression):
+                most = [number + start for number in numbers]
+                self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *most])
 
     @property
     def bounded(self) -> bool:
         """Whether the program holds a count to its bound or reads a piece among those below."""
         return bool(self.bounds)
 
-    def made(self, node: list[Expression], term: str) -> tuple[SplitList, int | None]:
-        """A split's list, its string's term ``term``, and how many pieces Python makes of the
+    def made(self, node: list[Expression], term: str) -> SplitList:
+        """A split's list, its string's term ``term``, with how many pieces Python makes of the
         string in the input whose path this is, where the input holds it as it is."""
         head, string, *operands = node
         plain = tuple(plain_operand(part) for part in operands)
@@ -332,7 +333,7 @@ class Splits:
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
-        return listed, held
+        return listed
 
     def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
         """A split's piece at ``position``, noting whether the read holds the program."""
@@ -390,13 +391,25 @@ class Splits:
         return declared, ties
 
 
-def _measured(expression: list[Expression]) -> list[list[object]]:
+def _measured(expression: list[Expression]) -> list[tuple[list[object], int]]:
     """The splits whose list, or a list built from it, a fork compares the length of,
-    ``[op, ["len", parts], n]`` either way round: a string's, another list's or another
-    split's length says nothing of how many pieces a split has."""
+    ``[op, ["len", parts], n]`` either way round, each with the pieces the slices it is cut by
+    leave out from its start: ``len(parts[2:]) > 3`` needs six pieces. A string's, another
+    list's or another split's length says nothing of how many pieces a split has."""
     return [
-        split
+        (split, _start(part[1]))
         for part in expression[1:]
         if isinstance(part, list) and part[:1] == ["len"]
         for split in splits_built_from(part[1])
     ]
+
+
+def _start(form: Expression) -> int:
+    """The pieces the slices a list is cut by leave out from its start, each start a plain
+    number past 0."""
+    left = 0
+    while isinstance(form, list) and form[:1] == ["[:]"]:
+        start = form[2] if len(form) > 2 else None
+        left += start if type(start) is int and start > 0 else 0
+        form = form[1]
+    return left
