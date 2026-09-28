@@ -119,6 +119,23 @@ def _forget_substituted_modules() -> Iterator[None]:
 
 
 @pytest.fixture
+def coverage_paused() -> Iterator[None]:
+    """Stop every coverage.py measurement this process runs for the test, then start each again.
+
+    A parallel run's worker runs two: the one coverage.py starts in each process a measured
+    process starts, and pytest-cov's above it. Stopping one resumes the one below, so pausing
+    only pytest-cov's, as its ``no_cover`` mark does, leaves the test traced.
+    """
+    stopped = []
+    while (measuring := _current()) is not None:
+        measuring.stop()  # pyrefly: ignore[missing-attribute]
+        stopped.append(measuring)
+    yield
+    for measuring in reversed(stopped):
+        measuring.start()  # pyrefly: ignore[missing-attribute]
+
+
+@pytest.fixture
 def deadline_fires_in_a_child(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep coverage.py out of every child this test forks, since their deadline fires."""
     monkeypatch.setattr(sys.modules[__name__], "_measured", False)
