@@ -180,6 +180,27 @@ def test_a_substituted_in_s_test_is_the_condition_on_the_way() -> None:
     assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 7, True, unsat=1)
 
 
+# a `not` over `in`, and `is not True`: the side is read as the fork pyct records there, on every
+# release, where 3.14 tests `in` and jumps the other way
+NEGATED = [
+    ("not_in", '{"s": "a"}', 8, (4, 11, False)),
+    ("while_not_in", '{"s": "a"}', 16, (14, 14, False)),
+    ("is_not_true", '{"x": 0}', 24, (22, 7, True)),
+]
+
+
+@pytest.mark.parametrize(("function", "seed", "line", "side"), NEGATED)
+def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
+    function: str, seed: str, line: int, side: tuple[int, int, bool]
+) -> None:
+    target, file = spec("negated", function)
+
+    result = run_pyct(target, seed)
+
+    assert result.returncode == 0, result.stderr
+    assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=1)
+
+
 def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
     target, file = spec("empty_walk", "walk_nothing")
 

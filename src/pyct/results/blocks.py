@@ -10,11 +10,12 @@ from __future__ import annotations
 import bisect
 import dis
 import types
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 
 from pyct.results.graphs import Pace
+from pyct.results.senses import Asked, At
 
 # the jumps that test a value: `if`, `while`, `and`, `or`, `assert`, a ternary, a comprehension's
 # `if`, and the test `is None` compiles to; a for loop's next item is its own two-way test
@@ -29,6 +30,10 @@ TESTS = frozenset(
 )
 # a test jumps on its true side only here; every other one falls through into its true side
 _JUMPS_WHEN_TRUE = frozenset({"POP_JUMP_IF_TRUE"})
+# the tests of `in` and `is`, whose argument 1 tests `not in` and `is not`, and the jumps that
+# test their value for truth
+_COMPARES = frozenset({"CONTAINS_OP", "IS_OP"})
+_TRUTH_TESTS = frozenset({"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"})
 # what an `except` clause tests the raise against: the jump after it is the clause's match
 _MATCHES = frozenset({"CHECK_EXC_MATCH", "CHECK_EG_MATCH"})
 # where a block's run ends with no way on
@@ -69,6 +74,7 @@ class Op:
     target: int | None
     line: int | None
     col: int | None
+    arg: int | None = None
 
 
 # every opcode dis lists as a jump: `hasjump` from 3.13, `hasjrel` and `hasjabs` before it. Pseudo
@@ -151,6 +157,7 @@ def _op(instruction: dis.Instruction) -> Op:
         target=target if isinstance(target, int) else None,
         line=None if positions is None else positions.lineno,
         col=None if positions is None else positions.col_offset,
+        arg=instruction.arg,
     )
 
 
@@ -201,15 +208,23 @@ def _blocks(ops: list[Op], edges: set[int], splits: frozenset[int]) -> list[list
 
 
 def exits(
-    block: list[Op], blocks: list[list[Op]], index: int, splits: frozenset[int]
+    block: list[Op],
+    blocks: list[list[Op]],
+    index: int,
+    splits: frozenset[int],
+    negated: Mapping[At, bool],
 ) -> Iterator[Exit]:
-    """Where a block goes on to, and the step each way passes."""
+    """Where a block goes on to, and the step each way passes.
+
+    ``negated`` holds each membership and identity test's site, and whether
+    the fork pyct records there is negated (`pyct.results.senses`).
+    """
     last = block[-1]
     after = blocks[index + 1][0].offset if index + 1 < len(blocks) else None
     if last.name in _ENDS:
         return
     if last.name in TESTS and last.target is not None and after is not None:
-        yield from _test_exits(block, last.target, after)
+        yield from _test_exits(block, last.target, after, negated)
         return
     if last.target is not None:
         yield last.target, None
@@ -224,16 +239,41 @@ def exits(
     yield after, None
 
 
-def _test_exits(block: list[Op], jump: int, after: int) -> Iterator[Exit]:
-    """A test's two sides as conditions; an except clause's match as a step on its true side."""
+def _test_exits(
+    block: list[Op], jump: int, after: int, negated: Mapping[At, bool]
+) -> Iterator[Exit]:
+    """A test's two sides as conditions; an except clause's match as a step on its true side.
+
+    Each side is read in the sense of the fork pyct records at the test's
+    site, so a test of `in` where pyct records `not in` has its sides swapped.
+    """
     last = block[-1]
-    jumps_on = last.name in _JUMPS_WHEN_TRUE
+    jumps_on = (last.name in _JUMPS_WHEN_TRUE) != _against_the_fork(block, negated)
     matching = len(block) > 1 and block[-2].name in _MATCHES
     for target, side in ((jump, jumps_on), (after, not jumps_on)):
         if matching:
             yield target, Step(StepKind.HANDLER, last.line or 0, 0, True) if side else None
         else:
             yield target, Step(StepKind.CONDITION, last.line or 0, last.col or 0, side)
+
+
+def senses_of(blocks: list[list[Op]], negated: Asked, pace: Pace) -> Mapping[At, bool]:
+    """The negated sites, asked for only when a block ends in a truth test of `in` or `is`."""
+    tested = any(
+        len(block) > 1 and block[-1].name in _TRUTH_TESTS and block[-2].name in _COMPARES
+        for block in blocks
+    )
+    return negated(pace) if tested else {}
+
+
+def _against_the_fork(block: list[Op], negated: Mapping[At, bool]) -> bool:
+    """Whether the block's test reads `in` or `is` in the other sense than the fork recorded
+    at its site."""
+    if len(block) < 2 or block[-1].name not in _TRUTH_TESTS or block[-2].name not in _COMPARES:
+        return False
+    test = block[-2]
+    recorded = negated.get((test.line or 0, test.col or 0))
+    return recorded is not None and (test.arg == 1) != recorded
 
 
 # CPython's flag on a function's code; a module and a class body run without it

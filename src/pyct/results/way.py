@@ -19,7 +19,7 @@ import types
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
+from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges, senses_of
 from pyct.results.graphs import (
     Pace,
     dominators,
@@ -28,6 +28,7 @@ from pyct.results.graphs import (
     postorder,
     strictly_after,
 )
+from pyct.results.senses import Asked, At, none_negated
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,10 @@ class Flow:
 
     ``raising`` holds the positions, ``(line, col)``, where a run recorded
     a fork before an operation that may raise; the instruction there is a
-    condition whose true side goes on to the next instruction.
+    condition whose true side goes on to the next instruction. ``negated``
+    gives each membership and identity test's site, and whether the fork
+    recorded there is negated (`pyct.results.senses`), asked only when the
+    code tests `in` or `is` for truth, so each side reads in the fork's sense.
     """
 
     def __init__(
@@ -57,9 +61,10 @@ class Flow:
         code: types.CodeType,
         raising: frozenset[tuple[int, int]],
         late: Callable[[float], bool] = never,
+        negated: Asked = none_negated,
     ) -> None:
         self.pace = Pace(late)
-        graph = _Graph.of(code, raising, self.pace)
+        graph = _Graph.of(code, raising, self.pace, negated)
         self._graph = graph
         pace = self.pace
         order = postorder(graph.successors, graph.entry, pace=pace)
@@ -380,12 +385,13 @@ class _Graph:
     yields: dict[int, int]
 
     @classmethod
-    def of(cls, code: types.CodeType, raising: frozenset[tuple[int, int]], pace: Pace) -> _Graph:
+    def of(cls, code: types.CodeType, raising: frozenset[At], pace: Pace, negated: Asked) -> _Graph:
         blocks, splits = blocks_of_code(code, raising, pace)
+        sites = senses_of(blocks, negated, pace)
         builder = _Builder(blocks)
         for index, block in enumerate(blocks):
             pace.step()
-            for target, step in exits(block, blocks, index, splits):
+            for target, step in exits(block, blocks, index, splits, sites):
                 builder.join(index, builder.block_at(target), step)
         ranges = list(handler_ranges(code, blocks))
         for start, covered in ranges:
