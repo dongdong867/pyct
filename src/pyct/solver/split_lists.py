@@ -36,7 +36,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LONGEST_WALK, splits_built_from
+from pyct.core.str_splits import LONGEST_WALK, measured_splits
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.literals import plain_operand
 from pyct.solver.splits import (
@@ -72,8 +72,9 @@ MOST_WALKED_PAST = 16
 
 # the most pieces an input may have for a piece read from the end, where no walk of the
 # reversed string finds it, to be chosen among every count below the bound once the read at
-# the input's own count is unsat. The read at the input's count comes first on every input
-# whose bound is past this: on cvc5 1.3.4 the last of 8 lines read there answered in 1.7 s,
+# the input's own count is unsat. A separator or whitespace split reads at the input's count
+# first at any bound, and splitlines where its bound is past this: on cvc5 1.3.4 the last of 8
+# lines read there answered in 1.7 s,
 # where chosen among 10 counts it ran past the limit, and the last of 12 lines chosen among 14
 # took 6.1 s where the input's own took 1.3 s. An input with more pieces is read at its count
 # alone, so a path that needs another count is a miss
@@ -211,17 +212,18 @@ class SplitList:
         counts = (right_count(self.term, self.operands), left_count(self.term, self.operands))
         return f"(= {counts[0]} {counts[1]})"
 
-    def tie(self) -> tuple[list[str], bool]:
+    def tie(self, read_from_the_end: bool = False) -> tuple[list[str], bool]:
         """What the count is: on whitespace, the words the string has, at most the limit's
-        pieces; otherwise the pieces there below the bound, each by its walk, and none at it.
-        Loosened, the count is only past each number below the bound where that piece is there.
-        A tie by walks answered where one by memberships ran past the limit beside a slice.
-        Says whether it holds the count to the bound."""
+        pieces; on a separator whose list the path reads from the end, as one replace term (see
+        `_counted_tie`); otherwise the pieces there below the bound, each by its walk, and none
+        at it. Loosened, the count is only past each number below the bound where that piece is
+        there. A tie by walks answered where one by memberships ran past the limit beside a
+        slice. Says whether it holds the count to the bound."""
         if self._words():
             return [f"(assert (= {self.count} {self._words_count()}))"], False
-        beyond = self._there(self.bound)
-        if self._separated() and self.hold and self.bound <= MOST_CHOSEN_BOUND:
+        if read_from_the_end and self._counted_tie_answers():
             return self._counted_tie(), True
+        beyond = self._there(self.bound)
         if beyond != FALSE and not self.hold:
             tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
             return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)], False
@@ -233,6 +235,14 @@ class SplitList:
         if beyond != FALSE:
             tied.append(f"(assert {negated(beyond)})")
         return tied, beyond != FALSE
+
+    def _counted_tie_answers(self) -> bool:
+        """Whether a separator split's count, held to a bound of ten or less that its limit
+        does not already keep it under, is written as one replace term."""
+        limit = self.limit()
+        if not self._separated() or not self.hold or self.bound > MOST_CHOSEN_BOUND:
+            return False
+        return limit < 0 or limit >= self.bound
 
     def _counted_tie(self) -> list[str]:
         """A separator split's count as one replace term, where the bound is small, and held to
@@ -297,6 +307,10 @@ class SplitList:
             return SplitRead(self._held_back(back), True, self._few())
         return SplitRead(self._counted_back(back), True, False)
 
+    def from_the_end(self, position: Lin) -> bool:
+        """Whether a position is the count less a number."""
+        return self._from_the_end(position) is not None
+
     def _from_the_end(self, position: Lin) -> int | None:
         """How far from the last piece a position is, 0 the last, when it is the count less a
         number; None for any other position."""
@@ -306,8 +320,9 @@ class SplitList:
 
     def _at_input_count(self, back: int) -> bool:
         """Whether piece ``back`` from the end is read where the input's own count puts it: on
-        an input with that many pieces whose bound is past `MOST_CHOSEN_BACK`, but for one with
-        few pieces once that read is unsat (``chosen``)."""
+        an input with that many pieces, for splitlines where the bound is past
+        `MOST_CHOSEN_BACK`, but for an input with few pieces once that read is unsat
+        (``back_among_counts``)."""
         count = self.input_count
         if count is None or back >= count:
             return False
@@ -366,8 +381,10 @@ class Splits:
         self.given: Callable[[Expression], object] = lambda part: None
         self.hold = True
         self.back_among_counts = False
-        # whether a read from the end put its piece where the input's own few pieces put it
+        # whether a read from the end put its piece where the input's own few pieces put it,
+        # and each count whose list the path reads from the end
         self.fixed_few = False
+        self.backs: set[str] = set()
         # each count a tie or a read holds the program by, and whether the held program's own
         # forks need more pieces than a count's bound
         self.bounds: set[str] = set()
@@ -383,7 +400,7 @@ class Splits:
             if not isinstance(expression, list) or len(expression) != 3:
                 continue
             numbers = [part for part in expression[1:] if type(part) is int]
-            for split, start in _measured(expression):
+            for split, start in measured_splits(expression):
                 most = [number + start for number in numbers]
                 self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *most])
 
@@ -412,6 +429,8 @@ class Splits:
     def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
         """A split's piece at ``position``, noting whether the read holds the program."""
         read = listed.read(position, kind, least)
+        if listed.from_the_end(position):
+            self.backs.add(listed.count)
         if read.held:
             self.bounds.add(listed.count)
         self.fixed_few |= read.fixes_a_few
@@ -456,7 +475,7 @@ class Splits:
                 continue
             self.emitted.append(count)
             listed = self.lists[count]
-            tie, held = listed.tie()
+            tie, held = listed.tie(count in self.backs)
             if held:
                 self.bounds.add(count)
                 self.refuted |= least.get(count, 0) > listed.bound
@@ -464,27 +483,3 @@ class Splits:
             ties += tie
             pending += [other for other in self.lists if other in "\n".join(tie)]
         return declared, ties
-
-
-def _measured(expression: list[Expression]) -> list[tuple[list[object], int]]:
-    """The splits whose list, or a list built from it, a fork compares the length of,
-    ``[op, ["len", parts], n]`` either way round, each with the pieces the slices it is cut by
-    leave out from its start: ``len(parts[2:]) > 3`` needs six pieces. A string's, another
-    list's or another split's length says nothing of how many pieces a split has."""
-    return [
-        (split, _start(part[1]))
-        for part in expression[1:]
-        if isinstance(part, list) and part[:1] == ["len"]
-        for split in splits_built_from(part[1])
-    ]
-
-
-def _start(form: Expression) -> int:
-    """The pieces the slices a list is cut by leave out from its start, each start a plain
-    number past 0."""
-    left = 0
-    while isinstance(form, list) and form[:1] == ["[:]"]:
-        start = form[2] if len(form) > 2 else None
-        left += start if type(start) is int and start > 0 else 0
-        form = form[1]
-    return left

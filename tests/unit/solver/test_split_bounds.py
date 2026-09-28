@@ -338,3 +338,36 @@ def test_a_piece_from_the_end_of_a_separator_split_is_answered(
     pieces = str(args["s"]).split(*operands)
     assert pieces[-1] == "end", args
     assert not counted or len(pieces) == args["n"], args
+
+
+@needs_cvc5
+def test_a_limited_count_that_meets_a_term_holds_no_separators_past_the_limit() -> None:
+    parts: Expression = ["split", "s", "','", 1]
+    path = (
+        fork(["==", ["len", parts], "n"], taken=True),
+        fork(["==", ["[]", parts, 1], "'b,c,d,e'"], taken=True),
+    )
+    seed = Seed.of({"s": "a,b", "n": 0})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the limit keeps the count at two however many commas the rest holds
+    assert isinstance(answer, Sat), answer
+    args = apply(seed, answer.model).args
+    pieces = str(args["s"]).split(",", 1)
+    assert len(pieces) == args["n"] and pieces[1] == "b,c,d,e", args
+
+
+@needs_cvc5
+def test_a_count_no_read_from_the_end_needs_past_its_bound_is_a_miss_at_once() -> None:
+    parts: Expression = ["split", "s", "','"]
+    path = (
+        fork(["==", ["len", parts], "n"], taken=True),
+        fork(["==", "n", 40], taken=True),
+    )
+    seed = Seed.of({"s": "a,b,c,d", "n": 4})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # tied by walks, the held ask is unsat past the bound of 6 and the loosened one says so
+    assert isinstance(answer, Unknown), answer

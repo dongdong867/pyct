@@ -224,3 +224,27 @@ def _pieces(receiver: Tracked, whole: Expression, parts: Iterable[str]) -> Itera
     Every piece holds the one ``whole``, so a program reads the split once.
     """
     return (piece(receiver, part, ["[]", whole, at]) for at, part in enumerate(parts))
+
+
+def measured_splits(expression: list[Expression]) -> list[tuple[list[object], int]]:
+    """The splits whose list, or a list built from it, a fork compares the length of,
+    ``[op, ["len", parts], n]`` either way round, each with the pieces the slices it is cut by
+    leave out from its start: ``len(parts[2:]) > 3`` needs six pieces. A string's, another
+    list's or another split's length says nothing of how many pieces a split has."""
+    return [
+        (split, _start(part[1]))
+        for part in expression[1:]
+        if isinstance(part, list) and part[:1] == ["len"]
+        for split in splits_built_from(part[1])
+    ]
+
+
+def _start(form: Expression) -> int:
+    """The pieces the slices a list is cut by leave out from its start, each start a plain
+    number past 0."""
+    left = 0
+    while isinstance(form, list) and form[:1] == ["[:]"]:
+        start = form[2] if len(form) > 2 else None
+        left += start if type(start) is int and start > 0 else 0
+        form = form[1]
+    return left
