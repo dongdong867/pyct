@@ -123,3 +123,30 @@ def test_a_raise_in_a_compare_a_link_hands_on_is_the_target_s() -> None:
         FailureKind.TARGET_RAISED,
         "ZeroDivisionError: the operand's own raise",
     )
+
+
+class Truthless:
+    """An answer of the target's whose `__bool__` hands back an int, which Python refuses."""
+
+    def __bool__(self) -> int:  # pyrefly: ignore[bad-return]
+        return 1
+
+
+class Answering:
+    """An element of the target's whose `==` answers with a `Truthless`."""
+
+    def __eq__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
+        return Truthless()
+
+    __hash__ = object.__hash__
+
+
+def test_a_raise_in_python_s_own_truth_test_of_a_walked_element_is_the_target_s() -> None:
+    def target(n: int) -> object:
+        return in_(n, (Answering(),))
+
+    kind, detail = blamed(target, {"n": 1})
+    assert kind is FailureKind.TARGET_RAISED
+    with pytest.raises(TypeError) as raised:
+        bool(Answering() == 1)
+    assert detail == f"TypeError: {raised.value}"
