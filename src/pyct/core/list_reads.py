@@ -126,7 +126,7 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
     if is_read(self.expression) and is_read(row.expression):
         wanted: Expression = ["[]", self.expression, written]
         if row.expression != wanted:
-            row.expression = wanted
+            row.__dict__["expression"] = wanted
 
 
 def more(self: ListState, at: int, name: str) -> bool:
@@ -141,7 +141,7 @@ def walk(self: ListState) -> Iterator[object]:
     next fork. A change made without the list's methods turns the walk plain there, as it turns
     every other operation plain.
     """
-    self.walked_at = caller(2)
+    self.__dict__["walked_at"] = caller(2)
     return _walked(self)
 
 
@@ -204,6 +204,9 @@ def hinted(self: Walked) -> bool:
     to size what they build, in the same call of the same code. Only the first ask after a
     walk starts can be that guess. A tracked list and a tracked range each ask it.
     """
-    started, self.walked_at = self.walked_at, None
+    started = self.walked_at
+    # each refuses a set, as the plain value does: a list keeps the mark in its `__dict__`, a
+    # range in a slot, and object's own set writes either
+    object.__setattr__(self, "walked_at", None)
     # this function, then the value's `__len__`, then the code that asked
     return started is not None and started == caller(3)

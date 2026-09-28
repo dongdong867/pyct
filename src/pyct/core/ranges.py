@@ -52,6 +52,8 @@ from pyct.core.values import (
     forked,
     held_by,
     own,
+    refused_delete,
+    refused_set,
 )
 
 # the most arguments range takes: a start, a stop and a step
@@ -87,6 +89,10 @@ class ConcolicRange:
     # called with a value is range's own, a plain range, and pyct builds a tracked one by `made`
     __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
     __new__ = as_base
+    # a plain range takes no attribute: a set or a delete is Python's own refusal, the slots below
+    # too, which pyct writes past it by object's own set
+    __setattr__ = refused_set
+    __delattr__ = refused_delete
 
     held: range
     # the start, the stop and the step, a tracked one as the target passed it, and each's form
@@ -104,16 +110,17 @@ class ConcolicRange:
     ) -> Self:
         """A tracked range holding Python's own, beside its bounds' forms: how pyct builds one."""
         made = object.__new__(cls)
-        made.held = held
-        made.bounds = bounds
-        made.forms = (_form(bounds[0]), _form(bounds[1]), _form(bounds[2]))
-        made.written = written
-        made.sink = sink
-        made.walked_at = None
+        field = object.__setattr__
+        field(made, "held", held)
+        field(made, "bounds", bounds)
+        field(made, "forms", (_form(bounds[0]), _form(bounds[1]), _form(bounds[2])))
+        field(made, "written", written)
+        field(made, "sink", sink)
+        field(made, "walked_at", None)
         return made
 
     def __iter__(self) -> Iterator[object]:
-        self.walked_at = caller(2)
+        object.__setattr__(self, "walked_at", caller(2))
         return _walked(self)
 
     def __len__(self) -> int:

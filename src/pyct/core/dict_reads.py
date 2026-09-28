@@ -263,7 +263,7 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
 
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
-    self.walked_at = caller(depth)
+    self.__dict__["walked_at"] = caller(depth)
     return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
 
 
@@ -334,5 +334,6 @@ def hinted(self: DictState, depth: int = 3) -> bool:
     """Whether a `__len__` call is Python's own guess at the size of a walk it just started:
     `list(config)`, `sorted` and `tuple` start a walk and then ask the size, in the same call of
     the same code. Only the first ask after a walk starts can be that guess."""
-    started, self.walked_at = self.walked_at, None
+    started = self.walked_at
+    self.__dict__["walked_at"] = None
     return started is not None and started == caller(depth)
