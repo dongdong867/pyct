@@ -38,6 +38,7 @@ from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.splits import (
     SPLITS,
+    last_line,
     left_count,
     right_count,
     right_piece,
@@ -311,6 +312,8 @@ class SplitList:
         if back is None:
             return SplitRead(self._chosen(position, least), True, False)
         walked = right_piece(self.term, self.head, self.operands, back)
+        if self.head == "splitlines" and back == 0:
+            walked = last_line(self.term, self.operands)
         if walked is not None:
             return SplitRead(Read(walked, self._there(back)), restricted, False)
         if self._at_input_count(back):

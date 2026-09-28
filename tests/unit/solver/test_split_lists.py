@@ -216,7 +216,7 @@ def test_the_loosened_program_reads_no_piece_among_those_below_the_bound() -> No
     listed = _listed("splitlines", (), hold=False)
 
     with pytest.raises(LoosenedReadError):
-        listed.read(Lin(-1).plus(Lin.of(COUNT)), "str", {})
+        listed.read(Lin(-2).plus(Lin.of(COUNT)), "str", {})
 
 
 def test_a_piece_of_another_kind_is_not_read() -> None:
@@ -302,3 +302,24 @@ def test_a_piece_read_beside_a_spelled_string_is_named_apart_from_its_letters() 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
     assert isinstance(answer, Sat), answer
+
+
+@needs_cvc5
+@pytest.mark.parametrize("keep", [(), (False,), (True,)], ids=["plain", "no ends", "ends kept"])
+def test_cvc5_reads_the_last_line_from_the_end_as_python_does(keep: tuple[object, ...]) -> None:
+    rng = random.Random(17)
+    asks: list[tuple[str, str, str]] = []
+    expected: list[object] = []
+    for _ in range(150):
+        value = "".join(rng.choices([*"ab\n\r\x0b", "\r\n", "\x85", " "], k=rng.randint(0, 8)))
+        lines = value.splitlines(*keep)  # pyrefly: ignore[no-matching-overload]
+        read = _listed("splitlines", keep).read(Lin(-1).plus(Lin.of(COUNT)), "str", {})
+        assert not read.held, value
+        asks.append((value, "Bool", read.found.guard))
+        expected.append(bool(lines))
+        if lines:
+            asks.append((value, "String", str(read.found.value)))
+            expected.append(lines[-1])
+
+    # read by one look from the end, whatever the count
+    assert asked(_program(asks)) == expected

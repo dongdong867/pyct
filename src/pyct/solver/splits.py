@@ -393,6 +393,23 @@ def line_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:
     return _let(breaks, piece), _let(breaks[: 2 * index], there)
 
 
+def last_line(term: str, operands: tuple[object, ...]) -> str:
+    """The last line of ``s.splitlines(keepends)``, read by one look from the end: past the
+    string's last break but a break at its very end, a carriage return and a line feed one
+    break of two, and with that final break when ends are kept. The string has a last line
+    when it is not empty, which the path's own fork on the count says."""
+    keep = bool((*operands, False)[0])
+    size = length(term)
+    pair = f'(= (str.substr {term} (- {size} 2) 2) "\\u{{d}}\\u{{a}}")'
+    at_end = f"(str.in_re (str.substr {term} (- {size} 1) 1) {_BREAK})"
+    stripped = f"(- {size} (ite {pair} 2 (ite {at_end} 1 0)))"
+    found = f"(str.indexof_re (str.rev (str.substr {term} 0 l!)) {_BREAK} 0)"
+    start = "(ite (< i! 0) 0 (- l! i!))"
+    stop = size if keep else "l!"
+    piece = f"(str.substr {term} {start} (- {stop} {start}))"
+    return _let([("l!", stripped), ("i!", found)], piece)
+
+
 # each split's piece at a position, from the string rendered, the plain operands core wrote
 # after it, and the position
 SPLITS: Mapping[str, Callable[[str, tuple[object, ...], int], Piece]] = {

@@ -166,11 +166,11 @@ def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_u
 ) -> None:
     lines: Expression = ["splitlines", "s"]
     path = (
-        fork([">=", ["len", lines], 1], taken=True),
-        fork(["==", ["[]", lines, -1], "'end'"], taken=True),
+        fork([">=", ["len", lines], 2], taken=True),
+        fork(["==", ["[]", lines, -2], "'end'"], taken=True),
         fork([">", ["len", lines], 7], taken=True),
     )
-    seed = Seed.of({"s": "a\nb\nend"})
+    seed = Seed.of({"s": "a\nend\nb"})
     asked: list[bool] = []
     ask = cvc5_module._ask
 
@@ -182,13 +182,13 @@ def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_u
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
-    # read where the input's three lines put the last one, eight lines are unsat; the ask
-    # after it chooses the last line among every count, where the path's eight lines can be
+    # read where the input's three lines put the one before the last, eight lines are unsat;
+    # the ask after it chooses that line among every count, where the path's eight lines can be
     assert asked[:2] == [True, False], asked
     assert not isinstance(answer, Unsat), answer
     if isinstance(answer, Sat):
         text = str(apply(seed, answer.model).args["s"])
-        assert text.splitlines()[-1] == "end" and len(text.splitlines()) > 7, text
+        assert text.splitlines()[-2] == "end" and len(text.splitlines()) > 7, text
 
 
 @needs_cvc5
@@ -270,13 +270,14 @@ def test_an_rsplit_past_the_walk_counts_its_pieces_on_any_string() -> None:
     assert isinstance(answer, Unsat), answer
 
 
-# a read from the end and the path's number compared with the count: whether the program puts
-# the piece where the input's own few pieces put it, to be chosen among every count after
+# a read from the end, the next to last piece since the last line is read by one look, and the
+# path's number compared with the count: whether the program puts the piece where the input's
+# own few pieces put it, to be chosen among every count after
 FIXED_FEW: dict[str, tuple[Expression, str, int, bool]] = {
-    "the last of three lines, eight asked": (["splitlines", "s"], "a\nb\nend", 7, True),
-    "the last of three lines, ten asked": (["splitlines", "s"], "a\nb\nend", 9, False),
-    "the last of nine lines": (["splitlines", "s"], "a\n" * 8 + "end", 7, False),
-    "a piece a reversed walk reads": (["split", "s", "','"], "a,end", 7, False),
+    "the next to last of three lines, eight asked": (["splitlines", "s"], "a\nend\nb", 7, True),
+    "the next to last of three lines, ten asked": (["splitlines", "s"], "a\nend\nb", 9, False),
+    "the next to last of nine lines": (["splitlines", "s"], "a\n" * 7 + "end\nb", 7, False),
+    "a piece a reversed walk reads": (["split", "s", "','"], "a,end,b", 7, False),
 }
 
 
@@ -287,8 +288,8 @@ def test_a_few_pieces_are_chosen_among_later_only_where_the_choice_answers(
     split: Expression, text: str, number: int, fixed: bool
 ) -> None:
     path = (
-        fork([">=", ["len", split], 1], taken=True),
-        fork(["==", ["[]", split, -1], "'end'"], taken=True),
+        fork([">=", ["len", split], 2], taken=True),
+        fork(["==", ["[]", split, -2], "'end'"], taken=True),
         fork([">", ["len", split], number], taken=True),
     )
 
