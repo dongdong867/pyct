@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from pyct.binding.shapes import DictAnswer, made_up
+from pyct.binding.shapes import DictAnswer
 from pyct.solver.dict_keys import MADE, MISSING
 from pyct.solver.dicts import DictTerms, Tracked
 
@@ -28,8 +28,8 @@ def dict_answers(terms: DictTerms, model: Mapping[str, object]) -> dict[str, obj
             answers[where] = answered
         elif key is MADE:
             found = terms.dicts[where]
-            for text in made_up({*found.shape.keys, *found.named}, counts[where][1]):
-                values[where][text] = answered
+            for made in found.shape.made_up({*found.shape.keys, *found.named}, counts[where][1]):
+                values[where][made] = answered
         else:
             values[where][key] = answered
     for found in terms.dicts.values():
