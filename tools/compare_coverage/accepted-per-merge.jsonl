@@ -135,7 +135,7 @@
 {"set": "v2", "target": "targets.lists.fills::walk_strs", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [8]}
 {"set": "v2", "target": "targets.lists.keeps::keep", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [8]}
 {"set": "v2", "target": "targets.lists.length::check", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
-{"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [], "only_v2": [4]}}
 {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.lists.reaches_an_index::check", "seed": {"items": [1, 2]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.lists.rows::check", "seed": {"grid": [[]]}, "status": "differs", "only_legacy": [], "only_v2": [4]}

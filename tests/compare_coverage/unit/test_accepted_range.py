@@ -180,6 +180,14 @@ def test_a_failed_row_replaces_a_range_even_when_a_side_ran_its_whole_budget() -
     assert (replaced.status, replaced.varies) == ("legacy failed", Varies())
 
 
+def test_a_failed_record_is_replaced_not_widened_by_a_row_that_ran_its_whole_budget() -> None:
+    failed = replace(EXACT, status="legacy failed", only_v2=(), failures={"legacy": "error: boom"})
+
+    (replaced,) = rewritten(accepting(failed), [showing(5, legacy=SPENT)], ROOTS, BUDGET)
+
+    assert replaced == EXACT
+
+
 def test_a_range_is_written_after_the_lines_and_read_back(tmp_path: Path) -> None:
     file = tmp_path / "accepted.jsonl"
 
