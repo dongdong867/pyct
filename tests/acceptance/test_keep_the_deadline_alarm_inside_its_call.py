@@ -34,6 +34,7 @@ RACE_SECONDS = 30
 EACH_WAY = 0.15
 HANGS = "targets.isolate.hangs_with_finally::hang"
 C_WORK = "targets.isolate.c_work"
+HOLDS_A_CTRL_C = "targets.isolate.holds_a_ctrl_c::hold"
 
 
 @pytest.fixture(scope="module")
@@ -150,3 +151,14 @@ def test_a_guest_run_lets_a_c_call_that_holds_the_gil_run_to_its_end(name: str) 
     # and its alarm lands as the target returns or just after
     assert ran["kind"] in (None, "timeout"), ran
     assert ran["took"] > 1.5, ran
+
+
+def test_the_command_line_ends_a_call_that_never_lets_a_ctrl_c_go() -> None:
+    started = time.monotonic()
+    result = run_pyct(HOLDS_A_CTRL_C, '{"x": 0}', "--in-process", "--budget", "0.2")
+    took = time.monotonic() - started
+
+    assert result.returncode == 0, result.stderr
+    assert first_line(result.stdout)["failure"] == {"kind": "timeout", "detail": "deadline passed"}
+    # the alarm waits for the Ctrl-C at most half a second past the deadline
+    assert took < 2.0, took

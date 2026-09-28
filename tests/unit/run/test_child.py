@@ -272,3 +272,24 @@ def hang_after_catching_a_ctrl_c_that_spans_the_deadline() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_an_owned_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
     assert settled_then(hang_after_catching_a_ctrl_c_that_spans_the_deadline) == 0
+
+
+def hold_a_ctrl_c_past_the_bound() -> None:
+    started = time.monotonic()
+    try:
+        with deadline(started + 0.05):
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                # a handler that never returns, bounded so the test fails rather than waits
+                while time.monotonic() < started + 3:
+                    pass
+    except DeadlineError:
+        took = time.monotonic() - started
+        child._EXIT(0 if 0.5 <= took < 1.5 else 2)
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() -> None:
+    assert settled_then(hold_a_ctrl_c_past_the_bound) == 0

@@ -303,3 +303,19 @@ def test_an_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
             pass
 
     assert time.monotonic() - started < 1
+
+
+@DEADLINE_FIRES
+def test_an_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() -> None:
+    started = time.monotonic()
+
+    with pytest.raises(DeadlineError), deadline(started + 0.05):
+        try:
+            raise KeyboardInterrupt
+        except KeyboardInterrupt:
+            # a handler that never returns, bounded so the test fails rather than waits
+            while time.monotonic() < started + 3:
+                pass
+
+    took = time.monotonic() - started
+    assert 0.5 <= took < 1.5, took

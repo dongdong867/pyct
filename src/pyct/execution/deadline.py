@@ -95,11 +95,11 @@ class _Owner:
 
     The handler raises only while a block runs, only once its instant has
     come, and only in the frames under ``home``, the frame that entered the
-    block, and never over a stop on its way out (``_a_stop_in_flight``). A
-    signal the timer of an earlier block posts late, into a later block,
-    comes before that block's instant, since a timer never fires early. A
-    signal that comes after a Ctrl-C cut a block's way out short lands
-    outside the block's frames.
+    block, and never over a stop on its way out, for up to ``_HOLD_AT_MOST``
+    (``_held_back``). A signal the timer of an earlier block posts late,
+    into a later block, comes before that block's instant, since a timer
+    never fires early. A signal that comes after a Ctrl-C cut a block's way
+    out short lands outside the block's frames.
     """
 
     owns: bool = False
@@ -116,6 +116,9 @@ _EARLY = 0.001
 # how soon an alarm held back by a stop on its way out comes again
 _AGAIN = 0.001
 
+# how long past its instant an alarm waits for a stop on its way out, before it raises anyway
+_HOLD_AT_MOST = 0.5
+
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
@@ -123,7 +126,7 @@ def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma
     in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
     if not (in_time and _under(frame, _OWNER.home)):
         return
-    if _a_stop_in_flight():
+    if _held_back(_OWNER.at):
         signal.setitimer(signal.ITIMER_REAL, _AGAIN)
         return
     _OWNER.running = False
@@ -139,15 +142,19 @@ def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:
     return False
 
 
-def _a_stop_in_flight() -> bool:  # pragma: no cover
-    """Whether a person's stop is on its way out where the alarm landed.
+def _held_back(at: float) -> bool:  # pragma: no cover
+    """Whether the alarm of a block whose instant is ``at`` waits for a stop on its way out.
 
-    A DeadlineError would take its place, so the alarm is held back and comes
-    again ``_AGAIN`` later, until the stop has left the block or target code
-    caught it. A stop is a Ctrl-C's KeyboardInterrupt or a SIGTERM's
-    ``Stopped`` (``stops``).
+    A DeadlineError would take the stop's place, so the alarm is held back
+    and comes again ``_AGAIN`` later, until the stop has left the block or
+    target code caught it. A stop is a Ctrl-C's KeyboardInterrupt or a
+    SIGTERM's ``Stopped`` (``stops``). A real stop leaves the block within
+    milliseconds, so once the alarm has waited ``_HOLD_AT_MOST`` past its
+    instant, it raises anyway: a handler that never lets its stop go would
+    otherwise run with no deadline.
     """
-    return isinstance(sys.exception(), STOPS)
+    stop = isinstance(sys.exception(), STOPS)
+    return stop and time.monotonic() < at + _HOLD_AT_MOST
 
 
 def _raise_deadline(signal_number: int, frame: types.FrameType | None) -> NoReturn:
@@ -188,8 +195,9 @@ class _Sent:
     the watcher sends only while it holds, under ``lock``, and while this
     deadline's handler is SIGALRM's. The handler raises once, only for its
     own watcher's signal, only while ``armed`` holds, only in the frames the
-    block runs, and never over a stop on its way out: the block's frame is
-    the one that entered it, and a signal that lands as ``__exit__`` begins,
+    block runs, and never over a stop on its way out, for up to
+    ``_HOLD_AT_MOST`` (``_held_back``): the block's frame is the one that
+    entered it, and a signal that lands as ``__exit__`` begins,
     before its first line, is past the block.
 
     A Ctrl-C or a SIGTERM is held on this thread while the watcher starts
@@ -284,7 +292,7 @@ class _Sent:
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
         """SIGALRM's handler while the block runs: raise once, for its own watcher, inside it."""
-        if not (self.sent and self.armed and self._in_block(frame)) or _a_stop_in_flight():
+        if not (self.sent and self.armed and self._in_block(frame)) or _held_back(self.at):
             return
         self.armed = False
         _raise_deadline(signal_number, frame)
