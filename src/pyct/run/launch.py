@@ -48,6 +48,7 @@ from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
+from pyct.core.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
 from pyct.run.import_watch import ImportWatch
@@ -67,11 +68,14 @@ _NOTED = _PASSED_ON | {signal.SIGINT}
 
 # names the page's descriptor to a command's process started fresh
 _HANDED = "PYCT_WATCHED_BY"
-# what a command's process started fresh runs: this process's import path, which holds the pyct
-# this process runs, and then that pyct, as ``python -m pyct``; so the target's import path is
-# the one a forked command's process gives it
+# what a command's process started fresh runs, given the folder that holds the pyct this process
+# runs and then this process's import path: that pyct, imported from that folder before the path
+# comes in, so no pyct package ahead of it on the path can stand in for it; then the path, and
+# that pyct as ``python -m pyct``. So the target's import path is the one a forked command's
+# process gives it
 _BOOT = (
-    "import json, runpy, sys; sys.path[:] = json.loads(sys.argv.pop(1)); "
+    "import json, runpy, sys; sys.path.insert(0, sys.argv.pop(1)); import pyct; "
+    "sys.path[:] = json.loads(sys.argv.pop(1)); "
     "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
 # the signals whose default action writes a core, as POSIX lists them, and SIGEMT where the
@@ -151,19 +155,19 @@ class _Lifeline:
 def _spawned(watch: ImportWatch, argv: Sequence[str], held: Iterable[int]) -> int:
     """Start the command's process as a fresh interpreter, and return its pid.
 
-    It runs the pyct this process runs, with this interpreter's flags and
-    import path, on the same command line. ``-P`` keeps the working
-    directory off the import path while the boot runs, as for a fresh
-    input's interpreter. Its
-    standard streams are this process's own, and it starts with ``held``
-    as its mask.
+    It runs with this interpreter's flags. It imports the pyct this process
+    runs from where this process imported it, then takes this process's
+    import path and runs that pyct on the same command line. ``-P`` keeps
+    the working directory off the import path while the boot runs, as for a
+    fresh input's interpreter. Its standard streams are this process's own,
+    and it starts with ``held`` as its mask.
     """
     os.set_inheritable(watch.fd, True)
     # CPython's own helper, the one multiprocessing starts its workers with; typeshed omits it
     flags = subprocess._args_from_interpreter_flags()  # pyrefly: ignore[missing-attribute]
     # import reads only the str entries, and so does the fresh process
     path = [entry for entry in sys.path if isinstance(entry, str)]
-    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, json.dumps(path), *argv]
+    fresh = [sys.executable, *flags, "-P", "-c", _BOOT, PYCT_ROOT, json.dumps(path), *argv]
     environment = {**os.environ, _HANDED: str(watch.fd)}
     return os.posix_spawn(sys.executable, fresh, environment, setsigmask=held)
 

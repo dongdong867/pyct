@@ -31,8 +31,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any, Protocol, cast
 
-from pyct.core.branch import BranchSink, Downgrade, Expression
-from pyct.core.values import downgraded, own
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.values import before_a_raise, downgraded, own
 
 # what a tracked int, and a tracked bool with it, leaves to int on purpose. A bool is the int 1
 # or 0, so both keep the same names, and both derivations read them here. Each derivation
@@ -214,7 +214,7 @@ def reflected_answer(
     """
     answer = own(operation, other, self)
     if answer is not NotImplemented and type(answer) not in _CLASSES:
-        cast(Number, self).sink.append(Downgrade(name=name))
+        cast(Number, self).sink.append(Downgrade(name=name, site=caller_site()))
     return answer
 
 
@@ -290,7 +290,7 @@ def zero_fork(divisor: object) -> None:
     nothing to flip and records nothing.
     """
     if type(divisor) in _CLASSES:
-        bool(divisor)
+        before_a_raise(lambda: bool(divisor))
 
 
 def compare(

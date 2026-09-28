@@ -77,8 +77,8 @@ def long_enough(s: Tracked, key: int, index: Expression) -> None:
     measured: Expression = ["len", s.expression]
     if not isinstance(key, ConcolicInt):
         if at >= 0:
-            forked(s.sink, [">", measured, at], length > at)
+            forked(s.sink, [">", measured, at], length > at, raising=True)
         else:
-            forked(s.sink, [">=", measured, -at], length >= -at)
-    elif forked(s.sink, [">", measured, index], length > at):
-        forked(s.sink, [">=", measured, ["-", index]], length >= -at)
+            forked(s.sink, [">=", measured, -at], length >= -at, raising=True)
+    elif forked(s.sink, [">", measured, index], length > at, raising=True):
+        forked(s.sink, [">=", measured, ["-", index]], length >= -at, raising=True)

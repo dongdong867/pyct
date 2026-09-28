@@ -334,6 +334,59 @@ def test_the_picks_over_many_new_sides_read_each_fork_at_most_twice(
     assert reads[0] <= 2 * held
 
 
+def test_a_fresh_path_leaves_each_of_its_forks_untried() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(3, taken=True)))
+
+    assert tree.untried() == {fork(2, taken=True).where: 1, fork(3, taken=True).where: 1}
+
+
+def test_an_aimed_fork_and_a_fork_whose_other_side_ran_are_not_untried() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(3, taken=True)))
+    tree.next()
+    # the other side of line 2 ran, so line 2's fork is closed without an aim
+    tree.add((fork(2, taken=False),))
+
+    assert tree.untried() == {}
+
+
+def test_a_fork_two_paths_share_is_counted_once_and_one_site_under_two_prefixes_twice() -> None:
+    tree = Tree()
+    tree.add((fork(2, taken=True), fork(3, taken=True)))
+    tree.add((fork(2, taken=True), fork(3, taken=True), fork(4, taken=True)))
+    tree.add((fork(2, taken=False), fork(3, taken=True)))
+
+    # line 2 had both sides run; line 3 sits under two prefixes, each its own fork
+    assert tree.untried() == {fork(3, taken=True).where: 2, fork(4, taken=True).where: 1}
+
+
+def test_a_test_and_an_operation_s_fork_at_one_column_are_counted_apart() -> None:
+    tree = Tree()
+    test = fork(2, taken=True)
+    operation = Branch(expression=[">", "x", 0], taken=True, site=test.site, raising=True)
+    tree.add((operation, test))
+
+    assert tree.untried() == {test.where: 1, operation.where: 1}
+
+
+def test_an_operation_s_side_at_a_test_s_column_does_not_make_the_test_s_flip_old() -> None:
+    tree = Tree()
+    test = fork(2, taken=False)
+    # `if s[0] == "q":`: the index's long-enough fork, taken true, at the test's own column
+    index = Branch(expression=[">", "x", 0], taken=True, site=test.site, raising=True)
+    tree.add((index, test, fork(3, taken=True)))
+    # line 3's other side ran on another path: its fork here is still open, but not new
+    tree.add((fork(3, taken=False),))
+
+    picked = tree.next()
+
+    # the test's true side is new, whatever the index's fork took at that column, so it comes
+    # before line 3, which the oldest-path order would pick
+    assert picked is not None
+    assert (picked.aim.site, picked.aim.raising) == (test.site, False)
+
+
 def test_the_oldest_path_a_pick_can_still_extend_moves_on_as_paths_are_spent() -> None:
     tree = Tree()
     tree.add((fork(2, taken=True),))

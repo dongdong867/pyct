@@ -157,4 +157,4 @@ def test_list_asks_for_the_length_first_as_python_does() -> None:
     _walked("listed", _tracked("ab", sink))
 
     # list sizes itself by `__len__` before it walks, and pyct has not taught `len(s)`
-    assert sink[0] == Downgrade(name="__len__")
+    assert sink[0] == Downgrade(name="__len__", site=Site(file="<probe>", line=11, col=11))

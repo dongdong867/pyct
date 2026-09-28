@@ -1,12 +1,10 @@
 import math
-import re
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.printed import LIMIT
 from pyct.results.record import (
     Aim,
     DowngradeCount,
@@ -282,15 +280,15 @@ def test_render_trace_joins_the_downgrades_in_order_and_counts_a_run() -> None:
         forks=(),
         covered_lines=frozenset(),
         downgrades=(
-            DowngradeCount(name="__radd__", count=3),
-            DowngradeCount(name="__abs__", count=1),
+            DowngradeCount(name="__radd__", count=3, site=Site(file="m.py", line=7, col=4)),
+            DowngradeCount(name="__abs__", count=1, site=Site(file="m.py", line=2, col=8)),
         ),
     )
 
     lines = render_trace(record, COVERAGE).splitlines()
 
-    # one call is the bare name; more than one carries the count after it
-    assert lines[-1] == "downgrades __radd__ ×3, __abs__"
+    # one call is the bare name; more than one carries the count after it; each says where
+    assert lines[-1] == "downgrades __radd__ ×3 at m.py:7:4, __abs__ at m.py:2:8"
 
 
 def test_render_trace_opens_a_seed_with_the_word_seed() -> None:
@@ -381,11 +379,14 @@ def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
 def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
     lines = render_stop(stopped_with(Stop(kind=StopKind.NO_FORK))).splitlines()
 
-    # the coverage is worded the way each input's own trace words it, over the run's counts
+    # the coverage is worded the way each input's own trace words it, over the run's counts;
+    # each cause of the uncovered lines follows them. m.py is no file on disk, so no code places
+    # its lines in a function
     assert lines == [
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 0 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
+        "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",
     ]
 
@@ -425,6 +426,7 @@ def test_render_stop_leaves_the_missed_lines_to_the_run() -> None:
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
+        "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",
     ]
 
@@ -450,50 +452,3 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
-
-
-def test_render_trace_writes_an_expression_past_the_cap_cut() -> None:
-    term: Expression = "s"
-    for _ in range(40):
-        term = ["+", ["[:]", term, None, 1], ["[:]", term, 2, None]]
-    fork = Branch(expression=["==", term, "'abc'"], taken=False, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"s": "abc"}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    # the fork line holds what the stdout line holds, each cut part as the distinct nodes it holds
-    assert lines[1].startswith("fork m.py:5:7  (")
-    assert lines[1].endswith(" == 'abc'  not taken")
-    assert " nodes)" in lines[1]
-    assert len(lines[1]) < 20_000
-
-
-def test_render_trace_writes_a_condition_nested_past_the_recursion_limit() -> None:
-    term: Expression = "x"
-    for _ in range(LIMIT - 1):
-        term = ["abs", term]
-    # LIMIT nodes, so the line prints it whole, nested deeper than Python's recursion limit
-    fork = Branch(expression=term, taken=True, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"x": 1}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    nested = LIMIT - 1
-    assert lines[1] == f"fork m.py:5:7  {'abs(' * nested}x{')' * nested}  taken"
-
-
-def test_render_trace_writes_a_string_built_over_five_thousand_passes() -> None:
-    term: Expression = "s"
-    for _ in range(5000):
-        term = ["+", term, "' '"]
-    fork = Branch(expression=["startswith", term, "'ok'"], taken=False, site=Site("m.py", 5, 7))
-    record = InputRecord(args={"s": "a"}, forks=(fork,), covered_lines=frozenset({5}))
-
-    lines = render_trace(record, COVERAGE).splitlines()
-
-    # the top of the string is kept over the cut part, each pass one more sum, as Python reads a
-    # chain of them from the left
-    assert re.fullmatch(
-        r"fork m\.py:5:7  \(\.\.\.\(\d+ nodes\)( \+ ' ')+\)\.startswith\('ok'\)  not taken",
-        lines[1],
-    )

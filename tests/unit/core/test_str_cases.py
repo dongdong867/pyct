@@ -2,6 +2,7 @@
 each hands back, the expression it carries, and the forms left to str as a downgrade."""
 
 from collections.abc import Callable
+from unittest.mock import ANY
 
 import pytest
 
@@ -164,7 +165,7 @@ def test_a_form_pyct_does_not_encode_is_strs_own_and_a_downgrade(
     assert not isinstance(answer, ConcolicStr | ConcolicBool)
     assert not any(isinstance(part, ConcolicStr) for part in _parts(answer))
     assert answer == call("aa,b")
-    assert sink == [Downgrade(name=name)]
+    assert sink == [Downgrade(name=name, site=ANY)]
 
 
 def _parts(answer: object) -> list[object]:
@@ -219,4 +220,4 @@ def test_an_rsplit_on_a_tracked_separator_records_its_downgrade_and_nothing_else
     s.rsplit(t)
 
     # whether the separator overlaps itself is pyct's question, asked of no tracked value
-    assert sink == [Downgrade(name="rsplit")] * 3
+    assert sink == [Downgrade(name="rsplit", site=ANY)] * 3

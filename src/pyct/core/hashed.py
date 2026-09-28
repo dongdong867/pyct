@@ -20,7 +20,7 @@ from collections.abc import Iterable
 from typing import TypeGuard
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade
+from pyct.core.branch import Downgrade, caller_site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -82,7 +82,7 @@ def looked_up(item: Tracked, container: object, kind: type) -> bool:
         answer = own(operator.contains, container, _key(item))
         # recorded after Python answered, as a downgrade is, so a lookup that raises records
         # nothing
-        item.sink.append(Downgrade(name="__contains__"))
+        item.sink.append(Downgrade(name="__contains__", site=caller_site()))
         return answer
     return _searched(item, pairs)
 

@@ -32,7 +32,7 @@ from typing import Any
 
 from pyct.core import floats, numbers
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -62,7 +62,7 @@ def _read(value: ConcolicStr, kind: type, check: str) -> Any:
     str, as Python reads it, so the message names the text as Python's does.
     """
     text = str.__str__(value)
-    forked(value.sink, [check, value.expression], _reads(kind, text))
+    forked(value.sink, [check, value.expression], _reads(kind, text), raising=True)
     return numbers.tracked(own(kind, text), [kind.__name__, value.expression], value.sink)
 
 
@@ -119,5 +119,5 @@ def int_in_another_form(value: ConcolicStr, /, *args: object, **kwargs: object) 
     call, so a call that raises records nothing.
     """
     answer = own(int, value, *args, **kwargs)
-    value.sink.append(Downgrade(name="int"))
+    value.sink.append(Downgrade(name="int", site=caller_site()))
     return answer

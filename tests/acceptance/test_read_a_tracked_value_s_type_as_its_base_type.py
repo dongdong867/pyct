@@ -15,6 +15,7 @@ import pytest
 from targets.types import copied, dispatched, matched, own_type, read
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     first_line,
     run_pyct,
     second_line,
@@ -151,7 +152,12 @@ def test_copies_and_pickles_as_before() -> None:
         [">", "n", 0],
         [">", ["len", "xs"], 2],
     ]
-    assert seed["downgrades"] == [{"name": "__reduce_ex__", "count": 2}]
+    # each pickle of a tracked value is a downgrade where `pickle.dumps` runs
+    at = "targets/types/copied.py"
+    assert seed["downgrades"] == [
+        downgrade("__reduce_ex__", 1, f"{at}:9:21"),
+        downgrade("__reduce_ex__", 1, f"{at}:10:21"),
+    ]
     # plain Python appends "b" alone for these arguments
     assert copied.f(3, [1]) == ["b"]
     file = TYPES / "copied.py"

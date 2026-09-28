@@ -8,6 +8,7 @@ solver's answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     input_lines,
     one_line,
     run_pyct,
@@ -228,7 +229,9 @@ def test_downgrades_a_literal_the_solver_cannot_hold() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # U+30000 is one past the last character cvc5 holds, so Python answers the compare alone
-    assert seed["downgrades"] == [{"name": "__eq__", "count": 1}]
+    assert seed["downgrades"] == [
+        downgrade("__eq__", 1, "targets/strs/past_the_last_character.py:2:7")
+    ]
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -265,7 +268,7 @@ def test_records_an_untaught_method_as_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # a method is named by its own name, and what it hands back is plain, so nothing forks on it
-    assert seed["downgrades"] == [{"name": "encode", "count": 1}]
+    assert seed["downgrades"] == [downgrade("encode", 1, "targets/strs/encode_check.py:2:8")]
     assert seed["forks"] == []
 
 

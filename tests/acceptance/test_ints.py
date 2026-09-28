@@ -9,6 +9,7 @@ from subprocess import CompletedProcess
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    downgrade,
     input_lines,
     one_line,
     run_pyct,
@@ -143,7 +144,7 @@ def test_keeps_bit_operations_as_downgrades() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
-    assert seed["downgrades"] == [{"name": "__and__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__and__", 1, "targets/ints/bit_check.py:2:7")]
     # `x & 1` is a plain int, and the truth of a plain int is nothing pyct can flip
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
@@ -254,7 +255,7 @@ def test_keeps_a_symbolic_exponent_as_a_downgrade() -> None:
     assert result.returncode == 0, result.stderr
     seed = one_line(result.stdout)
     # cvc5 takes a constant exponent only, so `2 ** x` reaches int's own reflected power
-    assert seed["downgrades"] == [{"name": "__rpow__", "count": 1}]
+    assert seed["downgrades"] == [downgrade("__rpow__", 1, "targets/ints/symbolic_exponent.py:2:7")]
     assert seed["forks"] == []
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 

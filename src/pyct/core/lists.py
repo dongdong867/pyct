@@ -17,7 +17,7 @@ from typing import Any
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
-from pyct.core.branch import Downgrade, Expression
+from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
 from pyct.core.values import REPORTED_CLASS, as_base, downgrade_the_rest, downgraded, forked, own
@@ -168,7 +168,7 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
 def _python_joined(self: ListState, name: str, left: list[object], right: list[object]) -> object:
     """Two lists joined as Python joins them, plain, the loss named while the list has a form."""
     if self.expression is not None:
-        self.sink.append(Downgrade(name=name))
+        self.sink.append(Downgrade(name=name, site=caller_site()))
     return plain_items(left + right)
 
 
@@ -246,14 +246,14 @@ def _size(self: ListState) -> int:
     `len(items)` in the target's package asks pyct's own `len`, which gives the list's length
     term (`reads.length`)."""
     if self.expression is not None and not reads.hinted(self):
-        self.sink.append(Downgrade(name="__len__"))
+        self.sink.append(Downgrade(name="__len__", site=caller_site()))
     return self.length()
 
 
 def _pickled(self: ListState, protocol: object) -> object:
     """A pickle of a tracked list holds the plain list: pickle-holds-the-plain-value."""
     if self.expression is not None:
-        self.sink.append(Downgrade(name="__reduce_ex__"))
+        self.sink.append(Downgrade(name="__reduce_ex__", site=caller_site()))
     return (list, ([plain(item) for item in self.storage()],))
 
 
