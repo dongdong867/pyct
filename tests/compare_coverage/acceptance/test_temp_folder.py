@@ -7,6 +7,7 @@ it, and that folder is gone. The stub engine leaves such a file too, and says wh
 folder it saw, so the stub tests also show where legacy ran.
 """
 
+import os
 import signal
 import subprocess
 import sys
@@ -26,6 +27,7 @@ from tests.compare_coverage.acceptance.checker import (
 )
 from tests.compare_coverage.conftest import StubCheckout
 from tools.compare_coverage.legacy_side import probe
+from tools.compare_coverage.process import side_environment
 from tools.compare_coverage.sides import Limits, SideRequest
 
 # long enough for the v2 side to finish first and the stub to record its call
@@ -120,7 +122,8 @@ def test_the_probe_removes_its_folder(stub_checkout: StubCheckout, system: Path)
     python.write_text(f'#!/bin/sh\necho "$TMPDIR" > "{said}"\nexec "{real}" "$@"\n')
     python.chmod(0o755)
 
-    probe(stub_checkout.path, checker_environment())
+    # the environment the checker gives the probe, so coverage does not measure the stub
+    probe(stub_checkout.path, side_environment(os.environ))
 
     assert Path(said.read_text().strip()).parent == system
     assert left_in(system) == []
