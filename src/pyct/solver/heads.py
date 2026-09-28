@@ -240,6 +240,10 @@ ON_A_CHARACTER: Mapping[str, Callable[[str], str]] = {
     "isint": numerals.is_int_character,
 }
 
+# a fact about a form's value that holds for every operand, keyed as `FORMS` is. Render asserts
+# it once where the form is written, for cvc5 to reason with
+FACTS: Mapping[tuple[str, type], Callable[[str], str]] = {("int", str): numerals.int_fact}
+
 # a form exact only inside a bound, which answers its term and the bound, keyed as `FORMS` is.
 # Render holds the bound on the path (see `Program.bounded` in `solver/render.py`)
 BOUNDED: Mapping[tuple[str, type], Callable[..., tuple[str, str]]] = {
