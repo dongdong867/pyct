@@ -31,6 +31,7 @@
 {"set": "v2", "target": "targets.dicts.made_up::check", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5, 6]}
 {"set": "v2", "target": "targets.dicts.missing_key::check", "seed": {"config": {"server": {}}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
+{"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::listed", "seed": {"d": {"a": 0, "c": 0, "b": 0}}, "status": "differs", "only_legacy": [], "only_v2": [32, 34]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::literal_in_walk", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [26]}
