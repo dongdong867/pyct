@@ -35,7 +35,6 @@ COMPARED = "targets.dicts.compared::check"
 COMPARED_FILE = str(DICTS / "compared.py")
 INSIDE_LISTS = "targets.dicts.inside_lists::check"
 OWN_CHANGES = "targets.dicts.own_changes::check"
-UNTAUGHT = "targets.dicts.untaught::check"
 ALIKE = "targets.dicts.alike::check"
 MISSING_KEY = "targets.dicts.missing_key::check"
 MISSING_KEY_FILE = str(DICTS / "missing_key.py")
@@ -212,15 +211,6 @@ def test_counts_a_dict_s_own_changes() -> None:
     # a walk that hands out the target's own key pins the argument's keys, so no answer adds a
     # key ahead of it: each keeps the path it was asked for, or its fork is a miss
     assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
-
-
-# follow-lists-and-dicts-as-they-change-downgrades-an-untaught-dict-form
-def test_downgrades_an_untaught_dict_form() -> None:
-    result = run_pyct(UNTAUGHT, '{"config": {"a": 1}, "name": "b"}')
-
-    assert result.returncode == 0, result.stderr
-    names = downgrade_names(input_lines(result.stdout)[0])
-    assert names == ["__and__", "__setitem__", "__contains__", "__str__"], names
 
 
 # follow-lists-and-dicts-as-they-change-runs-alike-in-and-out-of-process

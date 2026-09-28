@@ -22,7 +22,7 @@ from pyct.core.values import raised_by_target
 from tests.unit.core.test_dicts import downgrades, forks, plain_dict, tracked
 
 
-def test_a_change_under_a_tracked_key_is_python_s_own_and_the_dict_goes_on() -> None:
+def test_a_change_under_a_tracked_key_is_followed_by_the_key_it_names() -> None:
     config, sink = tracked({"a": 1})
     name = ConcolicStr.made("b", "name", sink)
 
@@ -34,9 +34,13 @@ def test_a_change_under_a_tracked_key_is_python_s_own_and_the_dict_goes_on() -> 
 
     assert plain_dict(config) == {"a": 1}
     assert bool(config)
-    assert forks(sink)[-1] == (["!=", ["len", "config"], 0], True)
-    # each call is named once, its lookup and its change together
-    assert downgrades(sink) == ["__setitem__", "setdefault", "pop", "__setitem__", "__delitem__"]
+    # the first change looks the key up; each later one is under the same expression, so the
+    # change before it answers
+    assert forks(sink) == [
+        (["in", "name", "config"], False),
+        (["!=", ["len", "config"], 0], True),
+    ]
+    assert downgrades(sink) == []
 
 
 def test_a_key_of_another_kind_is_python_s_answer() -> None:
@@ -396,14 +400,19 @@ def test_every_method_of_a_view_is_taught_or_a_downgrade(view: type) -> None:
     assert methods - taught <= {"__new__", "__getattribute__", "__sizeof__", "__hash__"}
 
 
-def test_setdefault_under_a_tracked_key_into_a_changed_dict_is_named_once() -> None:
+def test_setdefault_under_a_tracked_key_into_a_changed_dict_compares_the_changed_key() -> None:
     config, sink = tracked({"a": 1})
     config["n"] = 2
     name = ConcolicStr.made("b", "name", sink)
 
     assert config.setdefault(name, 5) == 5
 
-    assert downgrades(sink) == ["setdefault"]
+    # the lookup and then the store each ask whether the key is the one stored before, and then
+    # whether the argument holds it
+    unequal = (["==", "name", "'n'"], False)
+    absent = (["in", "name", "config"], False)
+    assert forks(sink) == [(["in", "'n'", "config"], False), *[unequal, absent] * 2]
+    assert downgrades(sink) == []
     assert plain_dict(config) == {"a": 1, "n": 2, "b": 5}
 
 

@@ -4,8 +4,10 @@ Every lookup records whether the key is there, where it runs, the first time the
 about that key: `["in", "'port'", config]`. After that the path settles the answer, and later
 lookups of that key record nothing more. A key the target stored or removed is known, and one a
 walk handed out was there. A key is a plain str or int, written as a literal, or a tracked one,
-written as its expression, which the solver may change; a tracked key into a dict the target
-changed is Python's own answer and a downgrade, since no expression writes the dict whole.
+written as its expression, which the solver may change. After a change under a tracked key, a
+lookup first records whether its key equals that one (``after_changes``). A tracked key the
+target looks up in a dict it changed is Python's own answer and a downgrade; only a change under
+a tracked key looks it up there, and records whether it equals each key changed before.
 
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
 and once more, taken false, where it ends, in insertion order. Each key it hands out is plain,
@@ -110,28 +112,70 @@ def settled_as(key: object) -> object:
     return key
 
 
-def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
+def present(
+    self: DictState, key: object, name: str, *, raising: bool = False, changing: bool = False
+) -> bool | None:
     """Whether the dict holds ``key``, recording the fork at each lookup, as a string's `in`
     does, so each condition that reads it has a fork of its own: the path settles the answer
     the first time it asks, and a later fork's flip asks for the same key.
 
     None when pyct does not follow this lookup, which the caller answers as Python does and
     names as a downgrade: a key of another kind, or a tracked key into a dict the target
-    changed. Python's own lookup compares a key it finds with `==`, which on a tracked key
-    records a fork no target wrote, so every lookup here reads the key's plain value.
+    changed, unless the lookup is a change's own (``changing``). Python's own lookup compares a
+    key it finds with `==`, which on a tracked key records a fork no target wrote, so every
+    lookup here reads the key's plain value.
     """
     held = dict.__contains__(self, plain(key))
     written = written_key(key)
-    if written is None or (is_tracked(key) and self.changed):
+    if written is None or (is_tracked(key) and self.changed and not changing):
         return None
-    known = settled_as(key)
-    if plain(key) in self.changed or proven(self, key):
+    if proven(self, key):
         return held
-    self.settled.setdefault(known, held)
+    changed = after_changes(self, key, written, (name, raising))
+    if changed is not None:
+        return changed
+    self.settled.setdefault(settled_as(key), held)
     given = self.shared.get(key) if type(key) in (str, int) else None
     written_given: Expression = None if given is None else ["given", given]
     fork = ["in", written, self.expression]
     return recorded(self, Branch(fork, held, caller_site(), raising, name, written_given))
+
+
+def after_changes(
+    self: DictState, key: object, written: Expression, how: tuple[str, bool]
+) -> bool | None:
+    """Whether the dict holds ``key`` by a change the target made, the latest first, or None
+    when no change decides it and the argument's own keys do.
+
+    A plain key and a plain change decide by their values. Where either is tracked, the
+    solver may make the two keys equal or apart, so the lookup records whether they are,
+    `["==", "n", "'b'"]`, the side Python took, at the lookup's own site; a key equal to the
+    change's decides. Keys of different kinds never are equal, and one expression always is.
+    ``how`` is the lookup's name and whether Python may raise after it.
+    """
+    bare = plain(key)
+    tracked = is_tracked(key)
+    if not tracked and not self.retracked:
+        return self.changed.get(bare)
+    apart: list[Expression] = []
+    for under, changed, stored in reversed(self.log):
+        if type(changed) is not type(bare):
+            continue
+        if under is None and not tracked:
+            if changed == bare:
+                return stored
+            continue
+        other = written_key(changed) if under is None else under
+        if other == written:
+            return stored
+        if other in apart:
+            continue
+        equal = changed == bare
+        fork = ["==", written, other] if tracked else ["==", other, written]
+        if recorded(self, Branch(fork, equal, caller_site(), how[1], how[0])):
+            return stored
+        apart.append(other)
+    return None
 
 
 def recorded(self: DictState, branch: Branch) -> bool:
@@ -144,11 +188,13 @@ def recorded(self: DictState, branch: Branch) -> bool:
 def proven(self: DictState, key: object) -> bool:
     """Whether the key is the very object a walk of this dict handed out, whenever the walk ran,
     as in `for k in sorted(d): d[k]` or Python's own `dict(d)`: the dict held it when the walk
-    handed it out, and no store or removal since (``changed``) moved it, so no input takes the
-    other side of the lookup. A walk hands out a copy of each key no code can write, so a key
-    the target writes as a literal is looked up as any other. A walk hands out only a plain str
-    or int, so any other key, a tracked one among them, is never one: it is refused before it
-    is hashed, which on a tracked key would compare it with a stored key and record a fork."""
+    handed it out, and a change under a plain key since moved it alike for every input, so no
+    input takes the other side of the lookup. A change under a tracked key drops every copy
+    (see ``DictState.logged``), since the solver may make that key this one. A walk hands out a
+    copy of each key no code can write, so a key the target writes as a literal is looked up as
+    any other. A walk hands out only a plain str or int, so any other key, a tracked one among
+    them, is never one: it is refused before it is hashed, which on a tracked key would compare
+    it with a stored key and record a fork."""
     if type(key) is not str and type(key) is not int:
         return False
     return self.copies.get(key, MISSING) is key
@@ -183,9 +229,12 @@ def _copy(key: object) -> object:
     return key
 
 
-def found(self: DictState, key: object, name: str, *, raising: bool = False) -> bool:
+def found(
+    self: DictState, key: object, name: str, *, raising: bool = False, changing: bool = False
+) -> bool:
     """Whether the dict holds ``key``, answered and recorded where pyct follows the lookup, and
-    otherwise Python's answer, named ``name``: a key of another kind is Python's to hash."""
+    otherwise Python's answer, named ``name``: a key of another kind is Python's to hash.
+    ``changing`` says the lookup is a change's own (see ``present``)."""
     looked = int_key(key)
     if written_key(looked) is None:
         # a tracked key's plain value, so Python's lookup records no `==` the target never wrote
@@ -196,7 +245,7 @@ def found(self: DictState, key: object, name: str, *, raising: bool = False) -> 
     bare = plain(looked)
     if not self.holds(name, bare):
         return dict.__contains__(self, bare)
-    answer = present(self, looked, name, raising=raising)
+    answer = present(self, looked, name, raising=raising, changing=changing)
     if answer is None:
         self.sink.append(Downgrade(name=name, site=caller_site()))
         return dict.__contains__(self, bare)

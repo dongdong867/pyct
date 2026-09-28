@@ -5,8 +5,9 @@ A tracked dict is a real dict, so C code reads its items where they are. A dict 
 changed is never written whole (follow-lists-and-dicts-as-they-change): its form is the access
 of the argument it came from, and beside it the dict keeps which keys the path has asked about
 and found there or not (``settled``, shared by every dict made from that argument), and which
-keys the target stored or removed since (``changed``). So after each change a key's presence is
-known, a value is its own expression, and the size is the argument's size plus what changed.
+keys the target stored or removed since (``changed``), each change in order in ``log``. So after
+each change a key's presence is known, a value is its own expression, and the size is the
+argument's size plus what changed.
 
 A shadow keeps the items as pyct last saw them. Code that changes the dict without its methods,
 ``dict.__setitem__(config, k, v)`` say, leaves the shadow behind, and the next operation that
@@ -23,6 +24,10 @@ from pyct.core.list_state import plain
 # what a key maps to where the dict holds no such key: apart from every value a dict holds
 MISSING = object()
 
+# one change the target made: the expression of the tracked key it was made under, None under a
+# plain key; the key's plain value; and whether the change stored the key (True) or removed it
+type Change = tuple[Expression, object, bool]
+
 
 class DictState(dict):
     """The state a tracked dict keeps beside its items, and what every operation checks first.
@@ -37,6 +42,10 @@ class DictState(dict):
     sink: BranchSink
     settled: dict[object, bool]
     changed: dict[object, bool]
+    # every change in the order the target made it, and whether any was under a tracked key,
+    # which a later lookup compares its own key with (see ``dict_reads.after_changes``)
+    log: list[Change]
+    retracked: bool
     # how many keys the dict holds past the argument's own: each change's, kept as it happens
     grown: int
     shadow: dict[object, object]
@@ -70,6 +79,8 @@ class DictState(dict):
         made.sink = sink
         made.settled = {}
         made.changed = {}
+        made.log = []
+        made.retracked = False
         made.grown = 0
         made.shadow = dict(items)
         made.walked_at = None
@@ -142,18 +153,33 @@ class DictState(dict):
         made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
         made.settled = self.settled
         made.changed = dict(self.changed)
+        made.log = list(self.log)
+        made.retracked = self.retracked
         made.grown = self.grown
         return made
 
-    def noted(self, key: object, value: object) -> None:
+    def noted(self, key: object, value: object, tracked: Expression = None) -> None:
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
-        still says whether it held the key before, which is how the size grew."""
+        still says whether it held the key before, which is how the size grew. ``tracked`` is
+        the expression of the tracked key the change was made under."""
         self.grown += key not in self.shadow
         self.shadow[key] = value
-        self.changed[key] = True
+        self.logged(key, True, tracked)
 
-    def dropped(self, key: object) -> None:
+    def dropped(self, key: object, tracked: Expression = None) -> None:
         """Note a removal the dict's own method made."""
         self.grown -= key in self.shadow
         self.shadow.pop(key, None)
-        self.changed[key] = False
+        self.logged(key, False, tracked)
+
+    def logged(self, key: object, stored: bool, tracked: Expression = None) -> None:
+        """Log a change, whether it stored the key or removed it.
+
+        A change under a tracked key drops the walks' copies: a copy handed out before it no
+        longer proves the dict holds its key, since the solver may make the two keys equal.
+        """
+        self.changed[key] = stored
+        self.log.append((tracked, key, stored))
+        if tracked is not None:
+            self.retracked = True
+            self.copies.clear()
