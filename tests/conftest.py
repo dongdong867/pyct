@@ -19,7 +19,7 @@ and changes nothing.
 import contextlib
 import os
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import NoReturn
 
 import pytest
@@ -116,6 +116,54 @@ def _forget_substituted_modules() -> Iterator[None]:
     for name, module in list(sys.modules.items()):
         if type(getattr(module, "__loader__", None)).__module__ == "pyct.intercept.hook":
             del sys.modules[name]
+
+
+@pytest.fixture
+def coverage_paused() -> Iterator[None]:
+    """Stop every coverage.py measurement this process runs for the test, then start each again.
+
+    A parallel run's worker runs two: the one coverage.py starts in each process a measured
+    process starts, and pytest-cov's above it. Stopping one resumes the one below, so pausing
+    only pytest-cov's, as its ``no_cover`` mark does, leaves the test traced.
+    """
+    stopped = []
+    while (measuring := _current()) is not None:
+        measuring.stop()  # pyrefly: ignore[missing-attribute]
+        stopped.append(measuring)
+    yield
+    for measuring in reversed(stopped):
+        measuring.start()  # pyrefly: ignore[missing-attribute]
+
+
+@pytest.fixture(autouse=True)
+def _deadline_fires_only_when_marked(request: pytest.FixtureRequest) -> Iterator[None]:
+    """Fail a test whose deadline fires in this process, unless it is marked ``DEADLINE_FIRES``.
+
+    Under coverage, such a test can hang on coverage.py's lock until the per-test timeout ends
+    its worker; tests/unit/deadline_fires.py. The raise is noted with coverage or without, so
+    an unmarked test fails in every run, not only in the one it hangs. A child the test forks
+    raises on its own and fails nothing here. Covers the tests whose module imported pyct's
+    deadline before the test starts, as a test module does.
+    """
+    deadline = sys.modules.get("pyct.execution.deadline")
+    if deadline is None or "coverage_paused" in request.fixturenames:
+        yield
+        return
+    fired: list[int] = []
+    raise_deadline: Callable[[int, object], NoReturn]
+    raise_deadline = deadline._raise_deadline  # pyrefly: ignore[missing-attribute]
+    tester = os.getpid()
+
+    def noting(signal_number: int, frame: object) -> NoReturn:
+        if os.getpid() == tester:
+            fired.append(signal_number)
+        raise_deadline(signal_number, frame)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(deadline, "_raise_deadline", noting)
+        yield
+    if fired:
+        pytest.fail("the test fired its deadline in this process without DEADLINE_FIRES")
 
 
 @pytest.fixture
