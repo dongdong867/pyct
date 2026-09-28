@@ -19,12 +19,20 @@ def spin() -> str:
 
 
 def outlive() -> str:
-    """Spin until ``SECONDS`` have passed, catching the deadline's alarm and spinning on."""
+    """Spin until ``SECONDS`` have passed, catching the deadline's alarm and spinning on.
+
+    The inner spin runs in a frame of its own: from 3.13 an alarm handled at a
+    loop's backward jump can skip the ``except`` around it.
+    """
     end = time.monotonic() + SECONDS
     while time.monotonic() < end:
         try:
-            while time.monotonic() < end:
-                pass
+            _spin_until(end)
         except BaseException:
             pass
     return "done"
+
+
+def _spin_until(end: float) -> None:
+    while time.monotonic() < end:
+        pass
