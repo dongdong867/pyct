@@ -384,6 +384,7 @@ def test_any_other_method_call_is_the_method_s_own() -> None:
     assert method(str.find, "abc", s) == 1
     assert method("-".join, ["a", "b"]) == "a-b"
     assert method(["a", "b"].index, "b") == 1
+    assert method(dict, a=1) == {"a": 1}
     assert sink == []
 
 
@@ -415,10 +416,11 @@ def test_any_plain_value_a_bool_method_returns_passes_through(value: object) -> 
 
 # the routers blame reads through: the substitutes', the handed operand's, the bound builtins'
 # and the conversions'
-_ROUTERS = {"is_", "is_not", "in_", "not_in", "call", "method", "_on_text", "_tracked_in"}
+_ROUTERS = {"is_", "is_not", "in_", "not_in", "call", "method", "join", "_read", "_on_text"}
+_ROUTERS |= {"_joined"}
 _ROUTERS |= {"_walked"}
 _ROUTERS |= {"handed", "answer", "len", "ord", "chr", "_routed", "int_", "float_", "bool_"}
-_ROUTERS |= {"map_", "range_", "type_", "itself", "truth"}
+_ROUTERS |= {"map_", "range_", "type_", "itself", "truth", "_tracked_in"}
 
 
 def test_the_passing_frames_are_the_routers() -> None:
