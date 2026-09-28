@@ -5,7 +5,9 @@ line and adding its path to the tree make as many again; none of them is
 garbage, and none holds a cycle. The collector still walks them all each
 time enough have been made, so with the countdown's 110,000 forks it took
 about a third of the time pyct spent on the input after its deadline.
-Only pyct's own code runs while it is held off: never the target's.
+Only pyct's own code runs while it is held off, and the ``tell`` callbacks
+a ``run()`` caller hands in, which take each finished input: never the
+target's.
 """
 
 import contextlib

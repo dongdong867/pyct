@@ -47,9 +47,9 @@ class Tree:
     def __init__(self) -> None:
         # each site met, by value, as its number; each number's site; and each number by the
         # identity of every Site object met, which a path's forks keep alive, so no id is reused
-        self._numbers: dict[Site, int] = {}
+        self._number_by_value: dict[Site, int] = {}
         self._sites: list[Site] = []
-        self._numbered: dict[int, int] = {}
+        self._number_by_identity: dict[int, int] = {}
         self._ids: dict[tuple[int, int, bool], int] = {}
         self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
@@ -66,10 +66,10 @@ class Tree:
         # path. A fork that closes never opens again, so every fork past this point is spent
         self._path = 0
         self._depth: int | None = None
-        # the path and the site's number of the last pick, the paths whose new sides a timeout
+        # the path and the site number of the last pick, the paths whose new sides a timeout
         # turned, and the sites' numbers a pick timed out at
         self._picked: int | None = None
-        self._picked_site: int | None = None
+        self._picked_number: int | None = None
         self._turned: set[int] = set()
         self._timed_out: set[int] = set()
         # the open forks at a site a pick timed out at, in the order the oldest-path pick passed
@@ -81,12 +81,12 @@ class Tree:
         parent: int = -1
         keys: list[ForkKey] = []
         for fork in forks:
-            site = self._numbered.get(id(fork.site))
-            if site is None:
-                site = self._number(fork.site)
-            keys.append((parent, site))
-            parent = self._ids.setdefault((parent, site, fork.taken), len(self._ids))
-            self._sides.add((site, fork.raising, fork.taken))
+            number = self._number_by_identity.get(id(fork.site))
+            if number is None:
+                number = self._number(fork.site)
+            keys.append((parent, number))
+            parent = self._ids.setdefault((parent, number, fork.taken), len(self._ids))
+            self._sides.add((number, fork.raising, fork.taken))
         index = len(self._paths)
         self._paths.append((forks, tuple(keys)))
         self._new.extend(
@@ -97,10 +97,10 @@ class Tree:
 
     def _number(self, site: Site) -> int:
         """The site's number, given the first time the tree meets a site equal to it."""
-        number = self._numbers.setdefault(site, len(self._numbers))
+        number = self._number_by_value.setdefault(site, len(self._number_by_value))
         if number == len(self._sites):
             self._sites.append(site)
-        self._numbered[id(site)] = number
+        self._number_by_identity[id(site)] = number
         return number
 
     @property
@@ -133,7 +133,7 @@ class Tree:
         path, depth = picked
         forks, keys = self._paths[path]
         self._aimed.add(keys[depth])
-        self._picked, self._picked_site = path, keys[depth][1]
+        self._picked, self._picked_number = path, keys[depth][1]
         return plan(forks[: depth + 1], path)
 
     def timed_out(self) -> None:
@@ -151,8 +151,8 @@ class Tree:
         fork-order-shallowest-first-after-a-timeout and
         fork-order-a-timed-out-site-waits-for-the-last-picks.
         """
-        if self._picked_site is not None:
-            self._timed_out.add(self._picked_site)
+        if self._picked_number is not None:
+            self._timed_out.add(self._picked_number)
         path = self._picked
         if path is None or path in self._turned:
             return
@@ -247,7 +247,8 @@ class Tree:
         # counted by site and kind, so a site's ForkSite is made once, not once a fork
         counts = Counter((key[1], raising) for key, raising in still_open.items())
         return {
-            ForkSite(self._sites[site], raising): count for (site, raising), count in counts.items()
+            ForkSite(self._sites[number], raising): count
+            for (number, raising), count in counts.items()
         }
 
     def _open(self, key: ForkKey, taken: bool) -> bool:
