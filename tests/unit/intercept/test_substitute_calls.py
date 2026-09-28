@@ -32,7 +32,7 @@ from tests.unit.intercept.test_substitute import substituted
         ('"abc".find(s)', "__pyct_method__('abc'.find, s)"),
         ("'abc'.startswith(s, 1)", "__pyct_method__('abc'.startswith, s, 1)"),
         ("','.split(sep=s)", "__pyct_method__(','.split, sep=s)"),
-        ("','.join(parts)", "__pyct_method__(','.join, parts)"),
+        ("','.join(parts)", "__pyct_join__(','.join, parts)"),
     ],
 )
 def test_each_call_becomes_a_call_of_its_router(source: str, expected: str) -> None:

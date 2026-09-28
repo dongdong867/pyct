@@ -35,6 +35,12 @@ _KINDS: dict[type, str] = {
 }
 
 
+def enter_kind(cls: type, kind: str) -> None:
+    """Enter a tracked container type under the kind its values are: a module that defines one
+    enters it when it is imported, before any value of it is built."""
+    _KINDS[cls] = kind
+
+
 def kind_of(item: object) -> str:
     """The kind of one item: what the solver keeps for it at its position."""
     kind = _KINDS.get(type(item))

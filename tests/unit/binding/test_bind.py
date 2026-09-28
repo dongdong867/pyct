@@ -7,9 +7,11 @@ from dataclasses import dataclass
 
 import pytest
 
-from pyct.binding.bind import access_name, bind, leaf_name, leaves
+from pyct.binding.annotations import Items
+from pyct.binding.bind import Seed, access_name, bind, leaf_name, leaves
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression, SinkItem
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -196,8 +198,8 @@ def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
     config["items"].append(1)
     config["seen"] = True
     assert seed == {"config": {"items": [0]}}
-    assert type(config) is dict
-    # a list the walk names is tracked whole, and still a list to the target
+    # a dict and a list the walk names are tracked whole, and still a dict and a list
+    assert isinstance(config, ConcolicDict) and config.expression == "config"
     assert isinstance(config["items"], ConcolicList)
     assert config["items"].expression == ["+", ["[]", "config", "'items'"], ["[,]", 1]]
 
@@ -399,3 +401,53 @@ def test_objects_copied_in_one_walk_keep_their_own_state() -> None:
 
     copies = [args[name] for name in ("p", "q", "r")]
     assert [copy[0].n for copy in copies if isinstance(copy, tuple)] == [1, 2, 3]
+
+
+def test_a_dict_the_walk_names_is_tracked_under_its_access_and_one_it_cannot_name_is_not() -> None:
+    sink: list[SinkItem] = []
+    seed: dict[str, object] = {"orders": [{"coupon": "x"}], "by": {1.5: {"a": 1}}}
+
+    args = bind(seed, sink)
+
+    orders = args["orders"]
+    assert isinstance(orders, list)
+    order = list.__getitem__(orders, 0)
+    assert isinstance(order, ConcolicDict) and order.expression == ["[]", "orders", 0]
+    assert order.shadow == {"coupon": dict.__getitem__(order, "coupon")}
+    assert "coupon" in order and sink
+    by = args["by"]
+    assert isinstance(by, dict)
+    inner = dict.__getitem__(by, 1.5)
+    assert type(inner) is dict and type(inner["a"]) is int
+
+
+def test_access_name_reads_each_step_once_given_what_it_already_named() -> None:
+    inner: Expression = ["[]", "config", "'a'"]
+    outer: Expression = ["[]", inner, "'b'"]
+    not_one: Expression = ["+", "x", 1]
+    known: dict[int, str | None] = {}
+
+    assert access_name(inner, known) == leaf_name(inner)
+    assert access_name(outer, known) == leaf_name(outer) == access_name(outer, known)
+    assert access_name(["[]", not_one, 0], known) is None
+    assert access_name(["[]", ["[]", not_one, 0], 1], known) is None
+    assert access_name("x", known) is None
+
+
+def test_an_int_key_json_wrote_is_read_back_as_an_int_under_an_int_key_annotation() -> None:
+    checks = {"c": Items(dict, Items(dict, str, int), int), "p": Items(dict, str)}
+    seed = Seed.of(
+        {"c": {"3": {"-4": "a", "04": "b", "x": "c", "-0": "e"}}, "p": {"3": "d"}}, checks
+    )
+
+    # JSON never writes -0 for an int key, so "-0" stays a str rather than land on 0
+    assert seed.args == {"c": {3: {-4: "a", "04": "b", "x": "c", "-0": "e"}}, "p": {"3": "d"}}
+    assert seed.leaves == {
+        '["[]", ["[]", "c", 3], -4]': str,
+        '["[]", ["[]", "c", 3], "\'04\'"]': str,
+        '["[]", ["[]", "c", 3], "\'x\'"]': str,
+        '["[]", ["[]", "c", 3], "\'-0\'"]': str,
+        '["[]", "p", "\'3\'"]': str,
+    }
+    assert seed.dicts["c"].adds(4) and not seed.dicts["c"].adds("4") and seed.dicts["c"].adds("x")
+    assert seed.dicts["p"].adds("4") and not seed.dicts["p"].adds(4)

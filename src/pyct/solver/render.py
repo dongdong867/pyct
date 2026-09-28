@@ -6,10 +6,10 @@ from functools import partial
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
-from pyct.solver.answer_size import longest_string
 from pyct.solver.checks import CHECKS, check, checks_by_string
 from pyct.solver.dag import Node, distinct
 from pyct.solver.declared import Leaves, Program, symbols
+from pyct.solver.dicts import DictTerms, TrackedDict
 from pyct.solver.heads import (
     BOUNDED,
     FORMS,
@@ -19,6 +19,7 @@ from pyct.solver.heads import (
     OPERATORS,
     POSITIONED,
     POSITIONS_FROM,
+    READ_BY_A_FORM,
     RESULTS,
     SORTS,
     STRING_ORDERS,
@@ -29,8 +30,10 @@ from pyct.solver.joined import joined
 from pyct.solver.letters import Key, Spellings, fixed_position
 from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
 from pyct.solver.literals import leaf_term, plain_operand, string_order
+from pyct.solver.program_text import program_text
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
+from pyct.solver.str_joins import COUNTED, counted, expanded
 from pyct.solver.symbols import leaf_sort
 
 
@@ -63,17 +66,19 @@ def program(
     ``floats.floor_division``).
     """
     origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
-    prefix, order, holders, named = _path(prefix, leaves, origin.shapes)
+    prefix, order, holders, named = _path(prefix, leaves, origin)
     constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
     terms = ListTerms(origin.shapes, {name: named[name] for name in named if name in origin.shapes})
     terms.learn(prefix)
     terms.start_from(origin, constants)
-    body = _Program(Leaves(leaves, constants, origin.shapes), order, holders, prefix, terms)
+    dicts = DictTerms.of_path(prefix, origin, constants)
+    seed = Leaves(leaves, constants, origin.shapes, origin.dicts)
+    body = _Program(seed, order, holders, prefix, (terms, dicts))
     held = [name for name in constants if name in finite and leaves[name] is float]
     finites = [floats.held_finite(constants[name], named[name] if cores else None) for name in held]
-    text = _text(prefix, body, declared, finites, cores=bool(held and cores))
+    text = program_text(prefix, body, declared, finites, cores=bool(held and cores))
     by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
     listed = terms if terms.declared else None
     return Program(
@@ -83,57 +88,39 @@ def program(
         narrowed=terms.narrowed,
         held=terms.held,
         bounded=bool(body.bounds),
+        dicts=dicts if dicts.dicts else None,
+        kept=dicts.held_back,
+        placed=dicts.placed,
     )
 
 
 def _path(
-    prefix: tuple[Branch, ...], leaves: Mapping[str, type], shapes: Mapping[str, ListShape]
+    prefix: tuple[Branch, ...], leaves: Mapping[str, type], origin: Origin
 ) -> tuple[tuple[Branch, ...], list[Node], dict[int, int], dict[str, str]]:
-    """The path as the program writes it: joins of string pieces written as one, each distinct
-    part in order with how many places hold it, and each leaf and list it names by symbol."""
-    seed = Leaves(kinds=leaves, constants={}, lists=shapes)
+    """The path as written: joins spelled out, pieces side by side as one, each distinct part in
+    order with how many places hold it, and each leaf, list and dict it names by symbol."""
+    shapes = origin.shapes
+    seed = Leaves(kinds=leaves, constants={}, lists=shapes, dicts=origin.dicts)
+    prefix = expanded(prefix, seed.holds, lambda part: origin.values.get(seed.named(part) or ""))
     listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
-    prefix = joined(prefix, seed.holds, lambda part: id(part) in listed or part in shapes)
+    containers = (TrackedList, TrackedDict)
+    prefix = joined(
+        prefix, seed.holds, lambda part: id(part) in listed or seed.kind(part) in containers
+    )
     order, holders = distinct(prefix, seed.holds)
     return prefix, order, holders, symbols(prefix, order, seed)
-
-
-def _text(
-    prefix: tuple[Branch, ...],
-    body: "_Program",
-    declared: list[tuple[str, str]],
-    finites: list[str],
-    *,
-    cores: bool,
-) -> str:
-    """The program's lines, in the order cvc5 reads them: each leaf and each list's parts
-    declared before any term on them, the leaves held finite, the definitions, what the lists
-    and the path assert, and what to ask for."""
-    terms = body.lists
-    lines = ["(set-option :dump-unsat-cores true)"] if cores else []
-    lines.append("(set-logic ALL)")
-    lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
-    lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
-    lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
-    lines += finites
-    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if body.bounded]
-    lines += terms.assertions()
-    lines += [body.assertion(fork) for fork in prefix]
-    lines.append("(check-sat)")
-    lines += [f"(get-value ({constant}))" for constant, _ in declared]
-    lines += [f"(get-value ({name}))" for name in terms.asked()]
-    return "\n".join(lines) + "\n"
 
 
 def float_leaves(
     prefix: tuple[Branch, ...],
     leaves: Mapping[str, type],
-    lists: Mapping[str, ListShape] | None = None,
+    lists: Mapping[str, ListShape] | Origin | None = None,
 ) -> frozenset[str]:
     """The float leaves a fork of the prefix names: those its first ask holds finite."""
     if float not in leaves.values():
         return frozenset()
-    _, _, _, named = _path(prefix, leaves, lists or {})
+    origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
+    _, _, _, named = _path(prefix, leaves, origin)
     return frozenset(name for name in named if leaves.get(name) is float)
 
 
@@ -156,8 +143,9 @@ class _Program:
         order: list[Node],
         holders: dict[int, int],
         prefix: tuple[Branch, ...],
-        lists: ListTerms,
+        terms: tuple[ListTerms, DictTerms],
     ) -> None:
+        lists, self.dicts = terms
         self.leaves = leaves
         # whether each bound a form is exact inside is held (see `_bounded`)
         self.bounded = lists.source.bounded
@@ -176,6 +164,7 @@ class _Program:
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         lists.constant = self._constant
+        self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)
         # the strings read at fixed positions, each written once as its first letters (see
@@ -257,6 +246,8 @@ class _Program:
         """The type of an operation's value, its operands already typed. A part that builds or
         reads a tracked list is typed by the lists (see ``ListTerms.result``)."""
         head, *operands = node
+        if self.dicts.involves(node):
+            return self.dicts.result(node)
         self.lists.infer(node, self.types)
         if self.lists.involves(node):
             return self.lists.result(node)
@@ -294,11 +285,13 @@ class _Program:
         string, or an order on strings."""
         read: set[int] = set()
         for node in order:
-            if self.lists.involves(node):
+            if self.dicts.involves(node):
+                read |= {id(part) for part in node[1:] if isinstance(part, list)}
+            elif self.lists.involves(node):
                 read |= {id(part) for part in self.lists.operands(node)}
             elif (
                 self._form(node) is not None
-                or _read_by_a_form(node[0])
+                or node[0] in READ_BY_A_FORM
                 or self._orders_strings(node)
             ):
                 read |= {id(part) for part in node[1:] if isinstance(part, list)}
@@ -359,8 +352,12 @@ class _Program:
             return ""
         if kind is list:
             return self.term(node[1])
-        involves = self.lists.involves(node)
-        operation = self.lists.scalar(node, kind) if involves else self._operation(node)
+        if self.dicts.involves(node):
+            operation = self.dicts.scalar(node)
+        elif self.lists.involves(node):
+            operation = self.lists.scalar(node, kind)
+        else:
+            operation = self._operation(node)
         sort = None if kind is None or not define else SORTS.get(kind)
         if sort is None:
             return operation
@@ -373,6 +370,8 @@ class _Program:
         head, *operands = node
         if not isinstance(head, str):
             raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+        if head == COUNTED:
+            return counted(operands[0], self.term(operands[0]), operands[1])
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
@@ -481,11 +480,6 @@ class _Program:
         if fact != "true" and fact not in self.facts:
             self.facts.add(fact)
             self.definitions.append(f"(assert {fact})")
-
-
-def _read_by_a_form(head: Expression) -> bool:
-    """Whether an operation's operands are read by a form of one head whatever their type."""
-    return any(head in table for table in (CHECKS, POSITIONED, SPLITS, TO_DECLARE))
 
 
 def _read(term: str, part: Expression) -> str:
