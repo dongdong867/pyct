@@ -65,3 +65,49 @@ def is_not_flag(x: int) -> int:
     if (x > 9) is not FLAG:
         return 1
     return 2
+
+
+TABLE = {"a": 1}
+
+
+def not_first_in(s: str) -> int:
+    if s == "":
+        return 0
+    if not s[0] in "":
+        return 1
+    return 2
+
+
+def int_not_in(s: str) -> int:
+    if not s.isdigit():
+        return 0
+    if len(s) > 5:
+        return 0
+    if int(s) not in {100000, 200000}:
+        return 1
+    return 2
+
+
+def is_false_no_else(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    if (x < 9) is False:
+        n += 1
+    return n
+
+
+def while_is_not_true(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    while (x < 9) is not True:
+        n += 1
+    return n
+
+
+def not_in_table(x: int) -> int:
+    key = "zz"
+    if not key in TABLE:
+        return 1
+    return 2

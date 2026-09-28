@@ -1,6 +1,6 @@
-"""Which `in` and `is` tests read their value the other way from the forks recorded there.
+"""How each `in` and `is` test's sides read, the same on every release.
 
-Each test states the sides as the forks read them, so it holds on every release, however the
+Each test states the sides in the sense they read, so it holds on every release, however the
 release compiles the `not`.
 """
 
@@ -8,22 +8,26 @@ import types
 
 import pytest
 
-from pyct.results.senses import against_the_forks, heads_of
-from pyct.results.way import Flow, Fork, Step, StepKind
+from pyct.results.senses import Seen, against_the_forks, heads_of
+from pyct.results.way import Flow, Step, StepKind
 
 
-def flow_of(test: str) -> Flow:
+def flow_of(test: str, raising: frozenset[tuple[int, int]] = frozenset()) -> Flow:
     """The flow of `f`, which runs line 3 when the test on line 2 holds, else line 4."""
-    source = f"def f(x, c):\n    if {test}:\n        return 1\n    return 2\n"
+    source = f"def f(x, c, b):\n    if {test}:\n        return 1\n    return 2\n"
     (code,) = [each for each in compile(source, "m.py", "exec").co_consts if _is_code(each)]
-    return Flow(code, frozenset())
+    return Flow(code, raising)
 
 
 def _is_code(each: object) -> bool:
     return isinstance(each, types.CodeType)
 
 
-def body_side(flow: Flow, col: int) -> bool:
+def body_side(test: str, heads: set[str], seen: list[Seen], col: int = 7) -> bool:
+    """The side of the test the body reads as, with these forks recorded at 2:``col``."""
+    flow = flow_of(test)
+    recorded = {(2, col): frozenset(heads)} if heads else {}
+    flow.swap(against_the_forks(flow, recorded, seen))
     (step,) = flow.way(3)
     assert (step.line, step.col) == (2, col)
     return step.side
@@ -37,57 +41,79 @@ IN_TESTS = [
     ("not x in c", 11, {"=="}, False),
     ("x not in c", 7, {"=="}, False),
     ("not not x in c", 15, {"in"}, True),
+    # no fork, and a fork of each kind: read in the `in` sense
+    ("not x in c", 11, set(), False),
+    ("x not in c", 7, set(), False),
+    ("x not in c", 7, {"not in", "=="}, False),
 ]
 
 
 @pytest.mark.parametrize(("test", "col", "heads", "side"), IN_TESTS)
-def test_an_in_test_reads_as_the_forks_recorded_at_its_site(
+def test_an_in_test_reads_in_the_in_sense_or_as_its_not_in_forks(
     test: str, col: int, heads: set[str], side: bool
 ) -> None:
-    flow = flow_of(test)
-
-    flow.swap(against_the_forks(flow, {(2, col): frozenset(heads)}, []))
-
-    assert body_side(flow, col) == side
+    assert body_side(test, heads, [], col) == side
 
 
-@pytest.mark.parametrize("test", ["not x in c", "x is not True", "x is False"])
-def test_a_test_no_fork_was_recorded_at_reads_as_its_jump_tests(test: str) -> None:
-    flow = flow_of(test)
-    as_compiled = flow.way(3)
+# with no fork, in the `is` sense; with its operand's fork, in the operand's sense
+IS_TESTS = [
+    ("x is not True", set(), False),
+    ("x is False", set(), True),
+    ("x is not True", {">"}, False),
+    ("x is True", {">"}, True),
+    ("x is False", {">"}, False),
+    ("True is not x", {">"}, False),
+    ("x is not False", {">"}, True),
+]
 
-    flow.swap(against_the_forks(flow, {}, [(frozenset({2, 3}), ())]))
 
-    assert flow.way(3) == as_compiled
+@pytest.mark.parametrize(("test", "heads", "side"), IS_TESTS)
+def test_an_is_test_against_a_bool_reads_as_the_code_says(
+    test: str, heads: set[str], side: bool
+) -> None:
+    assert body_side(test, heads, []) == side
 
 
-def took_the_body(taken: bool) -> tuple[frozenset[int], tuple[Fork, ...]]:
+def took_the_body(taken: bool) -> Seen:
     """An input that ran the body, and recorded its operand's fork at 2:7 as ``taken``."""
     return frozenset({2, 3}), ((2, 7, taken, False),)
 
 
-@pytest.mark.parametrize(
-    ("test", "taken"), [("x is not True", False), ("x is True", True), ("x is False", False)]
-)
-def test_an_is_test_reads_as_its_operand_s_fork_where_an_input_shows_both(
-    test: str, taken: bool
-) -> None:
-    flow = flow_of(test)
+def test_an_is_test_against_a_name_reads_as_the_inputs_show() -> None:
+    unshown: Seen = (frozenset({2}), ((2, 7, False, False),))
 
-    flow.swap(against_the_forks(flow, {(2, 7): frozenset({">"})}, [took_the_body(taken)]))
-
-    assert body_side(flow, 7) == taken
+    assert body_side("x is b", {">"}, [took_the_body(False)]) is False
+    assert body_side("x is b", {">"}, [took_the_body(True)]) is True
+    # inputs that disagree, or show no side, leave the `is` sense
+    assert body_side("x is b", {">"}, [took_the_body(False), took_the_body(True)]) is True
+    assert body_side("x is not b", {">"}, [unshown]) is False
 
 
-def test_an_is_test_the_inputs_disagree_on_or_do_not_show_reads_as_its_jump_tests() -> None:
-    heads = {(2, 7): frozenset({">"})}
-    unshown: tuple[frozenset[int], tuple[Fork, ...]] = (frozenset({2}), ((2, 7, False, False),))
-    for seen in ([took_the_body(False), took_the_body(True)], [unshown]):
-        flow = flow_of("x is not True")
+def test_a_constant_decides_an_is_test_whatever_the_inputs_show() -> None:
+    # a loop's plain pass may run the body while its tracked pass forked the other way
+    assert body_side("x is True", {">"}, [took_the_body(False)]) is True
 
-        flow.swap(against_the_forks(flow, heads, seen))
 
-        assert flow.way(3) == (Step(StepKind.CONDITION, 2, 7, True),)
+def test_each_link_of_a_chain_at_one_site_is_read_on_its_own() -> None:
+    flow = flow_of("x not in c is b")
+
+    # the `not in` link reads in the `in` sense its `==` forks give; the `is` link keeps its own
+    swapped = against_the_forks(flow, {(2, 7): frozenset({"=="})}, [])
+
+    sides = flow.sides()
+    read = [sides[node].reads for node in swapped]
+    assert read and all(each is not None and each.name == "CONTAINS_OP" for each in read)
+
+
+def test_a_raising_fork_at_the_compare_s_column_leaves_the_compare_read() -> None:
+    # `x[0]` may raise, so its fork at 2:11 splits the block before the test's jump
+    flow = flow_of("not x[0] in c", raising=frozenset({(2, 11)}))
+
+    flow.swap(against_the_forks(flow, {(2, 11): frozenset({"not in"})}, []))
+
+    assert [step for step in flow.way(3) if not step.raising] == [
+        Step(StepKind.CONDITION, 2, 11, True)
+    ]
 
 
 def test_heads_are_each_fork_s_operator_by_site() -> None:

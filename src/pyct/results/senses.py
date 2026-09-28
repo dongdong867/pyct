@@ -1,69 +1,105 @@
-"""Which `in` and `is` tests read their value the other way from the forks recorded there.
+"""How each `in` and `is` test's sides read, the same on every release.
 
-A flow reads a test's sides as the value its jump tests. pyct records a fork
-of its own at an `in` or an `is`, and the two can differ. pyct folds a `not`
-over one compare into it on every release, and records `x not in c` for
-``not x in c``, where 3.14 tests `in` and jumps the other way. An element
-search records `==` forks, whose true side is the `in`'s. An `is` against a
-bool records the other side's own truth, so ``x is not True`` holds on its
-false side. Each such test's sides are read as the forks recorded there, and
-a test with no fork recorded keeps its own.
+A flow reads a test's sides as the value its jump tests, and releases
+compile that value differently: 3.14 tests `in` for ``not x in c`` and
+jumps the other way, where 3.12 and 3.13 test `not in`. So each test's sides
+are read in one sense, from the compare the code tests (`blocks.Reads`) and,
+where the code cannot say, the forks recorded at its site:
+
+- an `in` in the `in` sense, unless every membership fork recorded there
+  is a `not in`, which pyct records for a `not` it folds: then in that sense;
+- an `is` with no fork recorded there in the `is` sense;
+- an `is` against a True or False the code loads, where a fork was
+  recorded, in the sense of that fork, its operand's truth: ``x is True``
+  holds when the operand does, ``x is False`` when it does not;
+- any other `is`, as against a name bound to bools, as the inputs show it:
+  each input that recorded one side of a fork there, and covered a line only
+  one of the test's sides leads to, says whether the two agree. With none,
+  or inputs that disagree, in the `is` sense.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from pyct.results.blocks import Reads
 from pyct.results.way import Flow, Fork, Step
 
 # a site, as a fork records it: its line and column
 type At = tuple[int, int]
 # one input as the sense reads it: the lines it covered, and its forks
 type Seen = tuple[frozenset[int], tuple[Fork, ...]]
+# a test's two sides: each node and its step
+type Sides = list[tuple[int, Step]]
+
+# the heads a membership test's forks carry: its own, and an element search's
+_MEMBERSHIP = frozenset({"in", "not in", "=="})
 
 
 def against_the_forks(
     flow: Flow, heads: Mapping[At, frozenset[str]], seen: list[Seen]
 ) -> list[int]:
-    """The side nodes of every `in` and `is` test that reads the other way from its forks.
+    """The side nodes of every `in` and `is` test whose sides read the other way from its value.
 
-    ``heads`` holds the operator of each fork recorded at a site. At an `in`
-    the forks say: a `not in` fork is negated, and any other, an `in` or an
-    element's `==`, is not. At an `is` the fork is its operand's, whose sense
-    depends on the bool it is compared with, so the inputs say: each input
-    that recorded one side of the fork there, and covered a line only one of
-    the test's sides leads to, shows whether the two agree.
+    ``heads`` holds the operator of each fork recorded at each site. Each test
+    is decided on its own, so two links of one chain at one site keep theirs.
     """
-    tests: dict[At, list[tuple[int, Step]]] = {}
+    tests: dict[tuple[At, Reads], Sides] = {}
     for node, step in flow.pace.each(flow.sides().items()):
-        if step.reads is not None and (step.line, step.col) in heads:
-            tests.setdefault((step.line, step.col), []).append((node, step))
-    marks: list[frozenset[int]] | None = None
+        if step.reads is not None:
+            tests.setdefault(((step.line, step.col), step.reads), []).append((node, step))
+    shown = _Shown(flow, seen)
     swapped: list[int] = []
-    for site, sides in flow.pace.each(tests.items()):
-        name, negated = sides[0][1].reads or ("", False)
-        if name == "CONTAINS_OP":
-            other = ("not in" in heads[site]) != negated
-        else:
-            marks = marks if marks is not None else [flow.marked(lines, ()) for lines, _ in seen]
-            other = _shown_other(site, sides, seen, marks)
-        swapped.extend(node for node, _ in sides if other)
+    for (site, reads), sides in flow.pace.each(tests.items()):
+        if _other_way(reads, heads.get(site, frozenset()), shown, site, sides):
+            swapped.extend(node for node, _ in sides)
     return swapped
 
 
-def _shown_other(
-    site: At, sides: list[tuple[int, Step]], seen: list[Seen], marks: list[frozenset[int]]
-) -> bool:
-    """Whether every input that shows both the fork's side and the test's reads them apart."""
-    found: set[bool] = set()
-    for (_, forks), marked in zip(seen, marks, strict=True):
-        taken = {
-            taken for line, col, taken, raising in forks if (line, col) == site and not raising
-        }
-        passed = [step.side for node, step in sides if node in marked]
-        if len(taken) == 1 and len(passed) == 1:
-            found.add(passed[0] != taken.pop())
-    return found == {True}
+def _other_way(reads: Reads, heads: frozenset[str], shown: _Shown, site: At, sides: Sides) -> bool:
+    """Whether a test's sides read the other way from the value its jump tests."""
+    if reads.name == "CONTAINS_OP":
+        return (heads & _MEMBERSHIP == {"not in"}) != reads.negated
+    if not heads:
+        return reads.negated
+    if reads.flag is not None:
+        # the fork is the operand's truth, which `is False` and `is not True` read the other way
+        return (reads.flag is False) != reads.negated
+    agrees = shown.agree(site, sides)
+    return reads.negated if agrees is None else not agrees
+
+
+class _Shown:
+    """Each input's forks by site, and the sides its lines alone prove, each found once."""
+
+    def __init__(self, flow: Flow, seen: list[Seen]) -> None:
+        self.flow = flow
+        self.inputs = [(lines, _taken_at(forks, flow)) for lines, forks in flow.pace.each(seen)]
+        self.marks: dict[int, frozenset[int]] = {}
+
+    def agree(self, site: At, sides: Sides) -> bool | None:
+        """Whether every input that shows both reads the fork's side as the test's, or None when
+        none shows both or they disagree."""
+        found: set[bool] = set()
+        for index, (lines, taken_at) in enumerate(self.flow.pace.each(self.inputs)):
+            fork_sides = taken_at.get(site, set())
+            if len(fork_sides) != 1:
+                continue
+            if index not in self.marks:
+                self.marks[index] = self.flow.marked(lines, ())
+            passed = [step.side for node, step in sides if node in self.marks[index]]
+            if len(passed) == 1:
+                found.add(passed[0] in fork_sides)
+        return found.pop() if len(found) == 1 else None
+
+
+def _taken_at(forks: Iterable[Fork], flow: Flow) -> dict[At, set[bool]]:
+    """The sides an input's forks took at each site, raising forks aside."""
+    found: dict[At, set[bool]] = {}
+    for line, col, taken, raising in flow.pace.each(forks):
+        if not raising:
+            found.setdefault((line, col), set()).add(taken)
+    return found
 
 
 def heads_of(forks: Iterable[tuple[At, object]]) -> dict[At, frozenset[str]]:

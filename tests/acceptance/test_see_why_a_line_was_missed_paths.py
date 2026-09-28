@@ -192,6 +192,10 @@ NEGATED = [
     ("not_in_set_written", '{"x": 0}', 44, (42, 7, True), 2),
     ("not_in_list", '{"x": 0}', 52, (50, 11, True), 2),
     ("is_not_flag", '{"x": 0}', 67, (65, 7, True), 1),
+    ("not_first_in", '{"s": "1"}', 78, (76, 11, False), 1),
+    ("int_not_in", '{"s": "7"}', 88, (86, 7, True), 2),
+    ("is_false_no_else", '{"x": 0}', 96, (95, 7, False), 1),
+    ("while_is_not_true", '{"x": 0}', 105, (104, 10, False), 1),
 ]
 
 
@@ -207,16 +211,23 @@ def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
     assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=unsat)
 
 
-def test_an_is_test_with_no_fork_keeps_the_side_its_jump_tests() -> None:
-    target, file = spec("negated", "plain_is_false")
+# a test no fork was recorded at, read in the sense of its `is` or `in` on every release: `done is
+# False` was never true, and neither was `key in TABLE` where the code says `not key in TABLE`
+NO_FORK = [("plain_is_false", 58, (57, 7)), ("not_in_table", 113, (111, 11))]
+
+
+@pytest.mark.parametrize(("function", "line", "site"), NO_FORK)
+def test_a_test_with_no_fork_reads_in_the_sense_of_its_is_or_in(
+    function: str, line: int, site: tuple[int, int]
+) -> None:
+    target, file = spec("negated", function)
 
     result = run_pyct(target, '{"x": 0}')
 
     assert result.returncode == 0, result.stderr
-    # `done` is a plain None, so no fork reads the test: `done is False` was never true
-    assert cause(entry_for(result.stdout, 58)) == {
+    assert cause(entry_for(result.stdout, line)) == {
         "reason": "no fork",
-        "condition": {"file": file, "line": 57, "col": 7, "side": True},
+        "condition": {"file": file, "line": site[0], "col": site[1], "side": True},
     }
 
 

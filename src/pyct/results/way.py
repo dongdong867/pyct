@@ -76,10 +76,10 @@ class Flow:
         return dict(self._graph.steps)
 
     def swap(self, nodes: Iterable[int]) -> None:
-        """Read each of these sides as the other one, before anything is marked."""
-        for node in nodes:
-            step = self._graph.steps[node]
-            self._graph.steps[node] = replace(step, side=not step.side)
+        """Read each of these sides as the other, before a fork marks one (`_proved_by`)."""
+        assert "_proved_by" not in vars(self), "a fork was marked before the sides were read"
+        steps = self._graph.steps
+        steps.update({node: replace(steps[node], side=not steps[node].side) for node in nodes})
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
