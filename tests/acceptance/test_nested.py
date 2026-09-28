@@ -12,7 +12,9 @@ import re
 
 import pytest
 
+from pyct.cli import LINE_NESTING
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.nesting import nested_list, nested_text, refused_depth
 
 DICT_VALUES = "targets.nested.dict_values::check"
 DICT_VALUES_FILE = str(REPO_ROOT / "targets" / "nested" / "dict_values.py")
@@ -353,7 +355,11 @@ def test_flips_a_fork_on_a_parameter_named_past_ascii() -> None:
 
 # run-with-nested-arguments: a seed nested past what a line can hold is refused before it runs
 def test_refuses_a_seed_too_deep_to_write_back() -> None:
-    result = run_pyct(DEEP, '{"config": ' + '{"a": ' * 9995 + "0" + "}" * 9996)
+    # twice the seed depth this process cannot write a line for, since pyct's own process runs
+    # under fewer frames and writes a little deeper; its reader may refuse the seed first, and
+    # either refusal comes before any input runs
+    depth = 2 * refused_depth(lambda depth: json.dumps(nested_list(depth + LINE_NESTING)))
+    result = run_pyct(DEEP, '{"config": ' + nested_text(depth - 1) + "}")
 
     assert result.returncode == 2, result.stderr[-2000:]
     assert result.stdout == ""
