@@ -26,6 +26,19 @@ from tests.unit.deadline_fires import DEADLINE_FIRES
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
 
 
+def spin_until(instant: float) -> None:
+    """Spin until the monotonic ``instant``, in a frame of its own, as pyct calls the target.
+
+    On 3.13 the closing jump of a loop that ends a ``with`` body, or an
+    ``except`` body, lies outside the frame's exception table. An alarm raised
+    there leaves the frame without the ``with``'s exit, and leaves the
+    exception the ``except`` handled set for the thread. A loop in a frame of
+    its own keeps the test's ``with`` and ``except`` out of that.
+    """
+    while time.monotonic() < instant:
+        pass
+
+
 @pytest.fixture
 def counting() -> Iterator[list[int]]:
     """A SIGALRM handler of the test's own, which counts its calls, restored after the test."""
@@ -281,11 +294,9 @@ def test_an_alarm_that_lands_on_a_target_s_own_base_exception_still_stops_it() -
             raise asyncio.CancelledError
         except asyncio.CancelledError:
             # the alarm lands while the target handles its own cancel, then it hangs
-            while time.monotonic() < started + 0.15:
-                pass
+            spin_until(started + 0.15)
         # a hang, bounded so the test fails rather than waits when no alarm comes
-        while time.monotonic() < started + 2:
-            pass
+        spin_until(started + 2)
 
     assert time.monotonic() - started < 1
 
@@ -298,11 +309,9 @@ def test_an_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
         try:
             raise KeyboardInterrupt
         except KeyboardInterrupt:
-            while time.monotonic() < started + 0.15:
-                pass
+            spin_until(started + 0.15)
         # a hang, bounded so the test fails rather than waits when no alarm comes
-        while time.monotonic() < started + 2:
-            pass
+        spin_until(started + 2)
 
     assert time.monotonic() - started < 1
 
@@ -316,8 +325,7 @@ def test_an_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() 
             raise KeyboardInterrupt
         except KeyboardInterrupt:
             # a handler that never returns, bounded so the test fails rather than waits
-            while time.monotonic() < started + 3:
-                pass
+            spin_until(started + 3)
 
     took = time.monotonic() - started
     assert 0.5 <= took < 1.5, took
@@ -343,5 +351,19 @@ def test_a_hang_in_pyct_s_own_frames_ends_near_its_deadline() -> None:
     with pytest.raises(DeadlineError), deadline(started + 0.05):
         # bounded so the test fails rather than waits when no alarm comes
         spin(started + 2)
+
+    assert time.monotonic() - started < 0.3
+
+
+@DEADLINE_FIRES
+def test_a_ctrl_c_handled_before_the_block_holds_no_alarm_back() -> None:
+    started = time.monotonic()
+
+    try:
+        raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        # a stop the caller handles as it calls, one no alarm of the block can replace
+        with pytest.raises(DeadlineError), deadline(started + 0.05):
+            spin_until(started + 2)
 
     assert time.monotonic() - started < 0.3

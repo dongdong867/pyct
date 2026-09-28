@@ -22,6 +22,7 @@ from pyct.run.child import serve, settle
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import STOP_SIGNALS
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
+from tests.unit.execution.test_deadline import spin_until
 
 
 def test_a_raise_out_of_pyct_s_own_code_is_a_pyct_bug_on_the_input_s_line() -> None:
@@ -218,9 +219,7 @@ def alarm_on_a_ctrl_c_in_flight() -> None:
                 raise KeyboardInterrupt
             except KeyboardInterrupt:
                 # the alarm lands while the Ctrl-C is on its way out of the target
-                end = time.monotonic() + 0.2
-                while time.monotonic() < end:
-                    pass
+                spin_until(time.monotonic() + 0.2)
                 raise
     except KeyboardInterrupt:
         return
@@ -238,12 +237,9 @@ def hang_after_a_cancel_spans_the_deadline() -> None:
                 raise asyncio.CancelledError
             except asyncio.CancelledError:
                 # the alarm lands while the target handles its own cancel, then it hangs
-                end = time.monotonic() + 0.1
-                while time.monotonic() < end:
-                    pass
+                spin_until(time.monotonic() + 0.1)
             # a hang, bounded so the test fails rather than waits when no alarm comes
-            while time.monotonic() < end + 2:
-                pass
+            spin_until(time.monotonic() + 2)
     except DeadlineError:
         return
     child._EXIT(1)
@@ -260,13 +256,10 @@ def hang_after_catching_a_ctrl_c_that_spans_the_deadline() -> None:
             try:
                 raise KeyboardInterrupt
             except KeyboardInterrupt:
-                end = time.monotonic() + 0.1
-                while time.monotonic() < end:
-                    pass
-            # the stop is done with, so the alarm it held back comes now
-            # a hang, bounded so the test fails rather than waits when no alarm comes
-            while time.monotonic() < end + 2:
-                pass
+                spin_until(time.monotonic() + 0.1)
+            # the stop is done with, so the alarm it held back comes now. A hang, bounded so the
+            # test fails rather than waits when no alarm comes
+            spin_until(time.monotonic() + 2)
     except DeadlineError:
         return
     child._EXIT(1)
@@ -285,8 +278,7 @@ def hold_a_ctrl_c_past_the_bound() -> None:
                 raise KeyboardInterrupt
             except KeyboardInterrupt:
                 # a handler that never returns, bounded so the test fails rather than waits
-                while time.monotonic() < started + 3:
-                    pass
+                spin_until(started + 3)
     except DeadlineError:
         took = time.monotonic() - started
         child._EXIT(0 if 0.5 <= took < 1.5 else 2)
@@ -363,3 +355,21 @@ def test_an_owned_ctrl_c_after_an_alarm_held_in_pyct_s_frames_reaches_the_caller
     _, status = os.waitpid(pid, 0)
 
     assert os.waitstatus_to_exitcode(status) == 0
+
+
+def hang_while_the_caller_handles_a_ctrl_c() -> None:
+    started = time.monotonic()
+    try:
+        raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        try:
+            with deadline(started + 0.05):
+                spin_until(started + 2)
+        except DeadlineError:
+            child._EXIT(0 if time.monotonic() - started < 0.3 else 2)
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_ctrl_c_handled_before_the_block_holds_no_alarm_back() -> None:
+    assert settled_then(hang_while_the_caller_handles_a_ctrl_c) == 0
