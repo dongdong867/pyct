@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import platform
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -42,6 +43,29 @@ from pyct.solver.locate import locate, version
 _NO_LIMITS = Limits()
 
 
+class _Noted:
+    """A finder that finds nothing, and notes each module the thread that made it asks for.
+
+    Python asks every finder in turn for a module it has not imported yet,
+    so with this one first, each module that thread imports passes it. A
+    module another thread imports passes it too, but in that thread, so it
+    is not noted.
+    """
+
+    def __init__(self) -> None:
+        self.reader = threading.get_ident()
+        self.names: set[str] = set()
+
+    def find_spec(self, name: str, path: object = None, target: object = None) -> None:
+        if threading.get_ident() == self.reader:
+            self.names.add(name)
+
+    def imported(self, name: str) -> bool:
+        """Whether the module ``name`` is one this thread asked for, or lies under one."""
+        parts = name.split(".")
+        return any(".".join(parts[:end]) in self.names for end in range(1, len(parts) + 1))
+
+
 def _platform() -> str:
     """The platform the summary line names, read with ``sys.modules`` left as it was found.
 
@@ -49,16 +73,24 @@ def _platform() -> str:
     on macOS. Made here, as this module imports, it runs before a target's
     folder joins the import path, so none of them comes from that folder.
     Each one is then dropped again, so a target that imports one gets it
-    from its own path, as plain Python would. platform keeps what it read,
-    so no later read imports them again. The read also runs one or two short
+    from its own path, as plain Python would. So is a module put in
+    ``sys.modules`` under one of them, as pyexpat puts its ``errors``. A
+    module another thread imports meanwhile, such as a thread a host's
+    ``sitecustomize`` started, stays. platform keeps what it read, so no
+    later read imports them again. The read also runs one or two short
     commands, ``uname -p`` among them, about 10 ms in all.
     """
     before = set(sys.modules)
+    noted = _Noted()
+    # a new list each way, never a change to this one: another thread's import may be walking it
+    sys.meta_path = [noted, *sys.meta_path]
     try:
         return platform.platform()
     finally:
+        sys.meta_path = [finder for finder in sys.meta_path if finder is not noted]
         for name in set(sys.modules) - before:
-            sys.modules.pop(name, None)
+            if noted.imported(name):
+                sys.modules.pop(name, None)
 
 
 _PLATFORM = _platform()
