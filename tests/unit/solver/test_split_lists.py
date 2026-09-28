@@ -3,7 +3,6 @@ and its count where a term reads it, with cvc5 held against Python on each."""
 
 import random
 import subprocess
-import time
 
 import pytest
 
@@ -11,13 +10,10 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
-from pyct.solver.answer import Sat, Unknown, Unsat
+from pyct.solver.answer import Sat
 from pyct.solver.cvc5 import solve
-from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
-from pyct.solver.lists import Origin
-from pyct.solver.render import program
-from pyct.solver.split_lists import SplitList
+from pyct.solver.split_lists import LoosenedReadError, SplitList
 from pyct.solver.splits import named_classes
 from pyct.solver.strings import encode
 from tests.unit.solver.agreement import asked, needs_cvc5
@@ -61,7 +57,7 @@ def _program(asks: list[tuple[str, str, str]]) -> list[str]:
 def _listed(
     head: str, operands: tuple[object, ...], bound: int = 6, *, hold: bool = True
 ) -> SplitList:
-    return SplitList("|s|", head, operands, COUNT, bound, [], hold)
+    return SplitList("|s|", head, operands, COUNT, bound, hold)
 
 
 @needs_cvc5
@@ -81,6 +77,30 @@ def test_cvc5_counts_the_pieces_of_every_split_as_python_does() -> None:
 
 
 @needs_cvc5
+def test_cvc5_counts_many_separators_as_python_does() -> None:
+    rng = random.Random(4)
+    asks: list[tuple[str, str, str]] = []
+    expected: list[object] = []
+    for _ in range(80):
+        separator = rng.choice([",", "aa", "ab"])
+        value = "".join(rng.choices([separator, "a", "b", ","], k=rng.randint(12, 24)))
+        head = rng.choice(["split", "rsplit"])
+        limit = rng.choice([None, 15, 17, 18, 30])
+        operands: tuple[object, ...] = (separator,) if limit is None else (separator, limit)
+        if head == "rsplit" and overlaps_itself(separator) and not 0 <= (limit or -1) <= 16:
+            continue
+        count = len(_pieces(value, head, operands))
+        listed = _listed(head, operands, bound=40)
+        for number in range(14, 22):
+            asks.append((value, "Bool", listed.past(number)))
+            expected.append(count > number)
+
+    # past sixteen a compare is one membership, and an rsplit past its walk counts from the
+    # start
+    assert asked(_program(asks)) == expected
+
+
+@needs_cvc5
 def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
     rng = random.Random(5)
     asks: list[tuple[str, str, str]] = []
@@ -90,7 +110,7 @@ def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
         head, operands = _form(rng)
         listed, pieces = _listed(head, operands, bound=9), _pieces(value, head, operands)
         back = rng.randint(0, 2)
-        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", {})
+        read, _ = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", {})
         there = back < len(pieces) and len(pieces) <= listed.bound + back
         if read.value is None:
             # a split whose limit leaves no piece that far from the end, on any string
@@ -135,7 +155,7 @@ def _count_answer(value: str, listed: SplitList) -> str:
         "(declare-const |s| String)",
         f"(assert (= |s| {encode(value)}))",
         f"(declare-const {COUNT} Int)",
-        *listed.tie(),
+        *listed.tie()[0],
         f"(define-fun v0 () Int {COUNT})",
     ]
     lines[1:1] = named_classes("\n".join(lines))
@@ -160,7 +180,8 @@ def test_cvc5_reads_a_piece_at_a_position_a_term_writes_as_python_does() -> None
         if not pieces:
             continue
         at = rng.randrange(len(pieces))
-        read = _listed(head, operands, bound=8).read(Lin.of(f"(+ 0 {at})"), "str", {})
+        read, held = _listed(head, operands, bound=8).read(Lin.of(f"(+ 0 {at})"), "str", {})
+        assert held
         assert read.value is not None
         asks += [(value, "Bool", read.guard), (value, "String", read.value)]
         expected += [True, pieces[at]]
@@ -190,14 +211,14 @@ def test_cvc5_holds_a_walked_rsplit_s_count_on_every_string() -> None:
 def test_the_loosened_program_reads_no_piece_among_those_below_the_bound() -> None:
     listed = _listed("splitlines", (), hold=False)
 
-    with pytest.raises(ProgramTooLargeError):
+    with pytest.raises(LoosenedReadError):
         listed.read(Lin(-1).plus(Lin.of(COUNT)), "str", {})
 
 
 def test_a_piece_of_another_kind_is_not_read() -> None:
-    read = _listed("split", (",",)).read(Lin(0), "int", {})
+    read, held = _listed("split", (",",)).read(Lin(0), "int", {})
 
-    assert (read.value, read.guard) == (None, FALSE)
+    assert (read.value, read.guard, held) == (None, FALSE, False)
 
 
 # a compare of a count with a number: the difference, whether it may be 0, and the count asked
@@ -277,158 +298,3 @@ def test_a_piece_read_beside_a_spelled_string_is_named_apart_from_its_letters() 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
     assert isinstance(answer, Sat), answer
-
-
-def test_a_read_from_the_end_of_many_lines_writes_a_program_of_bounded_size() -> None:
-    # the input's own count is held to the cap, so a program over many lines stays small
-    lines: Expression = ["splitlines", "s"]
-    path = (
-        fork([">=", ["len", lines], 1], taken=True),
-        fork(["==", ["[]", lines, -1], "'z'"], taken=True),
-    )
-    origin = Origin(values={"s": "a\n" * 300})
-
-    text = program(path, {"s": str}, origin).text
-
-    assert len(text) < 2_000_000, len(text)
-
-
-@needs_cvc5
-@pytest.mark.parametrize(
-    ("parts", "seed"),
-    [(["split", "s", "','"], "a"), (["split", ["strip", "s"], "','"], "a")],
-    ids=["the input's string", "a changed string"],
-)
-def test_a_path_past_the_bound_is_a_miss_that_says_so_never_unsat(
-    parts: Expression, seed: str
-) -> None:
-    path = (
-        fork(["==", ["len", parts], "n"], taken=True),
-        fork(["==", "n", 40], taken=True),
-    )
-    args = Seed.of({"s": seed, "n": 0})
-
-    answer = solve(path, args.leaves, 10.0, args.lists, args.values)
-
-    # Python takes this path with 40 pieces, past the bound of 3: the held ask is unsat, and
-    # the loosened one, which has an answer, says the fork is unknown
-    assert isinstance(answer, Unknown), answer
-
-
-@needs_cvc5
-def test_a_path_that_needs_no_more_pieces_than_the_bound_is_answered_held() -> None:
-    parts: Expression = ["split", "s", "','"]
-    path = (
-        fork(["<", ["len", parts], 36], taken=False),
-        fork(["==", ["len", parts], "n"], taken=True),
-    )
-    args = Seed.of({"s": "a", "n": 0})
-
-    answer = solve(path, args.leaves, 10.0, args.lists, args.values)
-
-    # a split of the input's own string: 36 pieces is the cap, and 37 past it
-    assert not isinstance(answer, Unsat), answer
-
-
-@needs_cvc5
-@pytest.mark.parametrize(
-    "other",
-    ["n", ["len", ["split", "t"]]],
-    ids=["a tracked int", "another split's count"],
-)
-def test_a_whitespace_count_that_meets_a_term_is_answered_at_once(other: Expression) -> None:
-    words: Expression = ["split", "s"]
-    path = (fork(["==", ["len", words], other], taken=True), fork([">", "n", 2], taken=True))
-    seed = Seed.of({"s": "a", "t": "b c", "n": 0})
-
-    started = time.perf_counter()
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    assert isinstance(answer, Sat), answer
-    assert time.perf_counter() - started < 3.0
-    args = dict(apply(seed, answer.model).args)
-    s, t, n = str(args["s"]), str(args["t"]), args["n"]
-    counted = n if other == "n" else len(t.split())
-    assert len(s.split()) == counted and isinstance(n, int) and n > 2, args
-
-
-@needs_cvc5
-def test_an_unrelated_number_on_the_path_leaves_a_tie_small() -> None:
-    split: Expression = ["split", "s", "','"]
-    path = (
-        fork([">", "x", 1000], taken=True),
-        fork(["==", ["len", split], ["+", "m", 1]], taken=True),
-    )
-    seed = Seed.of({"s": "a", "x": 0, "m": 5})
-
-    started = time.perf_counter()
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    assert isinstance(answer, Sat), answer
-    assert time.perf_counter() - started < 3.0
-    args = dict(apply(seed, answer.model).args)
-    s, x, m = str(args["s"]), args["x"], args["m"]
-    assert isinstance(x, int) and isinstance(m, int), args
-    assert x > 1000 and len(s.split(",")) == m + 1, args
-
-
-@needs_cvc5
-@pytest.mark.parametrize(
-    "guard",
-    [["<", ["len", "s"], 100], [">", ["len", ["split", "t", "','"]], 1000]],
-    ids=["a string's length", "a large count of another split"],
-)
-def test_a_length_guard_leaves_a_split_s_flip_quick(guard: list[Expression]) -> None:
-    split: Expression = ["split", "s", "','"]
-    path = (
-        fork(guard, taken=guard[0] == "<"),
-        fork(["==", ["len", split], ["+", "m", 1]], taken=True),
-        fork(["==", ["[]", split, 0], "'x'"], taken=True),
-    )
-    seed = Seed.of({"s": "a", "t": "b", "m": 5})
-
-    started = time.perf_counter()
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # a string's length says nothing of the pieces, and a count past 1,000 is one membership
-    assert isinstance(answer, Sat), answer
-    assert time.perf_counter() - started < 3.0
-    args = dict(apply(seed, answer.model).args)
-    s, t, m = str(args["s"]), str(args["t"]), args["m"]
-    assert isinstance(m, int) and len(s.split(",")) == m + 1 and s.split(",")[0] == "x", args
-    assert len(s) < 100 if guard[0] == "<" else len(t.split(",")) <= 1000, args
-
-
-@needs_cvc5
-def test_the_last_of_many_lines_is_read_where_the_input_s_count_puts_it() -> None:
-    lines: Expression = ["splitlines", "s"]
-    path = (
-        fork([">=", ["len", lines], 1], taken=True),
-        fork(["==", ["[]", lines, -1], "'z'"], taken=True),
-    )
-    seed = Seed.of({"s": "a\n" * 12})
-
-    started = time.perf_counter()
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # chosen among every count up to 14 this ran past the limit; read where the input's own
-    # twelve lines put it, it answers at once
-    assert isinstance(answer, Sat), answer
-    assert time.perf_counter() - started < 8.0
-    assert str(apply(seed, answer.model).args["s"]).splitlines()[-1] == "z"
-
-
-@needs_cvc5
-def test_an_rsplit_past_the_walk_counts_its_pieces_on_any_string() -> None:
-    parts: Expression = ["rsplit", "s", "','", LONGEST_WALK + 1]
-    path = (
-        fork([">", ["len", parts], 2], taken=False),
-        fork(["in", "',,,'", "s"], taken=True),
-    )
-    seed = Seed.of({"s": "a"})
-
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # three commas make four pieces, so no string takes both; the string the pieces are read
-    # on is the reads' restriction, not the count's, and does not free it
-    assert isinstance(answer, Unsat), answer

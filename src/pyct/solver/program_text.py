@@ -48,7 +48,7 @@ def program_text(
     bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
     asserted = terms.assertions() + dicts.assertions()
     forks = [body.assertion(fork) for fork in prefix]
-    counts, ties = terms.splits.tied([*body.definitions, *bounds, *asserted, *forks])
+    counts, ties = terms.splits.tied([*body.definitions, *bounds, *asserted, *forks], terms.least)
     written = [*body.definitions, *ties, *bounds, *asserted, *forks]
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")

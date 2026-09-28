@@ -26,6 +26,7 @@ from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, Rende
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
+from pyct.solver.split_lists import LoosenedReadError
 
 logger = logging.getLogger(__name__)
 
@@ -212,6 +213,12 @@ def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
     written, origin = _written(path, origin, finite)
     if not isinstance(written, Program):
         return written, None
+    if written.refuted:
+        # held to fewer pieces than its own forks need, so the held ask is unsat without
+        # asking; the loosened one ties that many pieces and ran to the limit, so the fork is a
+        # miss that says so at once
+        logger.debug("a split's count held below what the path needs: unknown without asking")
+        return Unknown(), written
     return _finite_first(path, origin, written, finite), written
 
 
@@ -256,7 +263,10 @@ def _write(
         logger.debug("giving up the program's tracked-key lookups: %s", error)
         return Unknown()
     except ProgramTooLargeError as error:
-        logger.debug("giving up the program: %s", error)
+        logger.debug("giving up the unsettled program: %s", error)
+        return Unknown()
+    except LoosenedReadError as error:
+        logger.debug("giving up the loosened program: %s", error)
         return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)

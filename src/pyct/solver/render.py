@@ -87,6 +87,7 @@ def program(
         listed,
         narrowed=terms.narrowed,
         held=terms.held,
+        refuted=terms.splits.refuted,
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back,
@@ -163,7 +164,9 @@ class _Program:
         # define what they write once in the program's own definitions
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
-        lists.constant, lists.splits.given = self._constant, self._given
+        lists.constant = self._constant
+        # the value the input holds for a part it names as it is, or None for any other
+        lists.splits.given = lambda part: lists.source.values.get(self.leaves.named(part) or "")
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -227,11 +230,6 @@ class _Program:
         """The constant of the leaf a part is, or None for any other part."""
         name = self.leaves.named(part)
         return None if name is None else self.leaves.constants[name]
-
-    def _given(self, part: Expression) -> object:
-        """The value the input holds for a part it names as it is, or None for any other."""
-        name = self.leaves.named(part)
-        return None if name is None else self.lists.source.values.get(name)
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.

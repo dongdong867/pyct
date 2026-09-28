@@ -19,11 +19,15 @@ A piece is read at a number from the start, at a number from the end, which a wa
 reversed string reads where one does (`splits.right_piece`), and at any other position as a
 choice among the pieces below the bound.
 
-A program that holds a count to its bound, or reads a piece among those below it, says so
-(``Splits.bounded``), and an unsat to it is asked once more loosened: each count tied only to
-the pieces below the bound, with no bound on it, and no piece read among those below it. An
-unsat to that is the path's, and anything else a miss that says it is not
-(`solver.cvc5._loosened`). So a path that needs more pieces than the bound is never `unsat`.
+A program that holds a count to its bound, reads a piece among those below it or at the
+input's own count, or reads an rsplit past its walk on a string with no more separators than
+its limit, says so (``Splits.bounded``), and an unsat to it is asked once more loosened: each
+count tied only to the pieces below the bound, with no bound on it, and none of those reads, a
+program that holds only what every string splitting as Python does meets. An unsat to that is
+the path's, and anything else a miss that says it is not (`solver.cvc5._loosened`). So a path
+that needs more pieces than the bound is never `unsat`. A held program whose own forks need
+more pieces than its bound is not asked, and neither is its loosened one, which ties that many
+pieces: the fork is `unknown` at once (``Splits.refuted``).
 """
 
 from __future__ import annotations
@@ -33,7 +37,6 @@ from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
 from pyct.core.str_splits import LONGEST_WALK, splits_built_from
-from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.literals import plain_operand
 from pyct.solver.splits import (
@@ -67,9 +70,15 @@ MOST_BOUND = 34
 MOST_WALKED_PAST = 16
 
 # the most pieces a piece from the end is chosen among, one choice per count, where no walk of
-# the reversed string finds it: past it the piece is the one the input's own count puts there.
+# the reversed string finds it: an input with more puts the piece where its own count does.
 # On cvc5 1.3.4 a last line chosen among 12 took 6.1 s, where the input's own took 1.3 s
 MOST_CHOSEN_BACK = 8
+
+
+class LoosenedReadError(Exception):
+    """A loosened program reads a piece only a held one writes: past a split's bound, at the
+    input's count, or on a string an rsplit past its walk is held to. The ask is a miss."""
+
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -84,11 +93,12 @@ _ORDERS: Mapping[str, tuple[bool, bool]] = {
 @dataclass(frozen=True)
 class SplitList:
     """One split's list: the string's term, the method and its plain operands, the name its
-    count goes by where a term reads it, and the most pieces that count is tied to.
+    count goes by where a term reads it, the most pieces that count is tied to, and how many
+    pieces the input's own string has, where the input holds it as it is.
 
-    ``bounds`` is where the list notes its count when the program holds it to the bound, shared
-    by the path's splits; with ``hold`` false the program is the loosened one, which holds no
-    count to a bound and reads no piece among those below it.
+    With ``hold`` false the program is the loosened one, which holds no count to a bound and
+    reads no piece a held program alone writes. A tie and a read each say whether they hold
+    the program, and `Splits` notes it.
     """
 
     term: str
@@ -96,9 +106,8 @@ class SplitList:
     operands: tuple[object, ...]
     count: str
     bound: int
-    bounds: list[str]
     hold: bool = True
-    held: int | None = None
+    input_count: int | None = None
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -123,7 +132,7 @@ class SplitList:
         if 0 <= limit < number:
             return FALSE
         if self.head == "splitlines" or self._walked():
-            # lines and an rsplit walked to its limit, at most 17 pieces, count by their walk
+            # lines, and an rsplit walked to its limit (at most 17 pieces), count by their walk
             return SPLITS[self.head](self.term, self.operands, number)[1]
         if self._words():
             return words_past(self.term, number)
@@ -180,54 +189,59 @@ class SplitList:
         counts = (right_count(self.term, self.operands), left_count(self.term, self.operands))
         return f"(= {counts[0]} {counts[1]})"
 
-    def tie(self) -> list[str]:
+    def tie(self) -> tuple[list[str], bool]:
         """What the count is: on whitespace, the words the string has, at most the limit's
         pieces; otherwise the pieces there below the bound, each by its walk, and none at it.
         Loosened, the count is only past each number below the bound where that piece is there.
-        A tie by walks answered where one by memberships ran past the limit beside a slice."""
+        A tie by walks answered where one by memberships ran past the limit beside a slice.
+        Says whether it holds the count to the bound."""
         if self._words():
-            return [f"(assert (= {self.count} {self._words_count()}))"]
+            return [f"(assert (= {self.count} {self._words_count()}))"], False
         beyond = self._there(self.bound)
         if beyond != FALSE and not self.hold:
             tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
-            return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)]
+            return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)], False
         present = [self._there(at) for at in range(self.bound)]
         flags = [TRUE_ONE if there == TRUE else f"(ite {there} 1 0)" for there in present]
         kept = [flag for flag, there in zip(flags, present, strict=True) if there != FALSE]
         total = "0" if not kept else kept[0] if len(kept) == 1 else f"(+ {' '.join(kept)})"
         tied = [f"(assert (= {self.count} {total}))"]
         if beyond != FALSE:
-            self.bounds.append(self.count)
             tied.append(f"(assert {negated(beyond)})")
-        return tied
+        return tied, beyond != FALSE
 
     def _words_count(self) -> str:
         """How many words the string has, at most one past the limit when there is one."""
         words, limit = words_count(self.term), self.limit()
         return words if limit < 0 else f"(ite (< {words} {limit + 1}) {words} {limit + 1})"
 
-    def _bounded(self) -> None:
-        """Note a piece chosen among those below the bound; the loosened program reads none."""
+    def _held(self) -> None:
+        """A read that holds the program; the loosened program makes none."""
         if not self.hold:
-            raise ProgramTooLargeError("a piece past a split's bound has no term")
-        self.bounds.append(self.count)
+            raise LoosenedReadError(f"a loosened program reads no held piece of {self.count}")
 
-    def read(self, position: Lin, kind: str, least: Least) -> Read:
-        """The piece at ``position``, and when it is there."""
+    def read(self, position: Lin, kind: str, least: Least) -> tuple[Read, bool]:
+        """The piece at ``position``, and when it is there; and whether the read holds the
+        program: a choice by the bound or the input's count, or an rsplit's restriction."""
         if kind != "str":
-            return Read(None, FALSE)
+            return Read(None, FALSE), False
+        restricted = self.restriction() != TRUE
+        if restricted:
+            self._held()
         number = position.number()
         if number is not None:
-            return Read(self.piece(number), both(self._there(number), self.restriction()))
+            there = both(self._there(number), self.restriction())
+            return Read(self.piece(number), there), restricted
         back = self._from_the_end(position)
         if back is not None:
             walked = right_piece(self.term, self.head, self.operands, back)
             if walked is not None:
-                return Read(walked, self._there(back))
-            if self.held is not None and self.bound > MOST_CHOSEN_BACK and back < self.held:
-                return self._held_back(back)
-            return self._counted_back(back)
-        return self._chosen(position, least)
+                return Read(walked, self._there(back)), restricted
+            many = self.input_count is not None and self.input_count > MOST_CHOSEN_BACK
+            if many and back < (self.input_count or 0):
+                return self._held_back(back), True
+            return self._counted_back(back), True
+        return self._chosen(position, least), True
 
     def _from_the_end(self, position: Lin) -> int | None:
         """How far from the last piece a position is, 0 the last, when it is the count less a
@@ -240,15 +254,16 @@ class SplitList:
         """Piece ``back`` from the end where the string has as many pieces as the input's: the
         piece from the start that puts there, and that count. A path that needs another count
         is asked loosened."""
-        self._bounded()
-        assert self.held is not None
-        count = both(self.past(self.held - 1), negated(self.past(self.held)))
-        return Read(self.piece(self.held - 1 - back), both(count, self.restriction()))
+        self._held()
+        count = self.input_count
+        assert count is not None
+        exact = both(self.past(count - 1), negated(self.past(count)))
+        return Read(self.piece(count - 1 - back), both(exact, self.restriction()))
 
     def _counted_back(self, back: int) -> Read:
         """Piece ``back`` from the end as the piece from the start it is for each count below
         the bound, chosen by which piece is the last there."""
-        self._bounded()
+        self._held()
         branches = [
             (both(self.past(at + back), negated(self.past(at + back + 1))), self.piece(at))
             for at in range(self.bound)
@@ -262,7 +277,7 @@ class SplitList:
 
     def _chosen(self, position: Lin, least: Least) -> Read:
         """The piece at a position a term writes, among those below the bound."""
-        self._bounded()
+        self._held()
         branches = [(f"(= {position.text()} {at})", self.piece(at)) for at in range(self.bound)]
         value = nested(branches[:-1], branches[-1][1])
         return Read(value, both(compare(position, Lin(self.bound), least), self.restriction()))
@@ -280,7 +295,10 @@ class Splits:
         self.emitted: list[str] = []
         self.given: Callable[[Expression], object] = lambda part: None
         self.hold = True
-        self.bounds: list[str] = []
+        # each count a tie or a read holds the program by, and whether the held program's own
+        # forks need more pieces than a count's bound
+        self.bounds: set[str] = set()
+        self.refuted = False
         # the largest number a fork compares each split's length with, by the split's part
         self.numbers: dict[int, int] = {}
 
@@ -310,11 +328,18 @@ class Splits:
         most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
         bound = min(most, MOST_BOUND)
         count = f"count!{len(self.lists)}!"
-        listed = SplitList(term, str(head), plain, count, bound, self.bounds, self.hold, held)
+        listed = SplitList(term, str(head), plain, count, bound, self.hold, held)
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
         return listed, held
+
+    def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
+        """A split's piece at ``position``, noting whether the read holds the program."""
+        found, held = listed.read(position, kind, least)
+        if held:
+            self.bounds.add(listed.count)
+        return found
 
     def count_of(self, node: list[Expression]) -> str:
         """The name of a split's count."""
@@ -341,9 +366,10 @@ class Splits:
         low, high = (right, left) if swap else (left, right)
         return compare(low, high, {}, or_equal=or_equal, counts=self.counts)
 
-    def tied(self, lines: list[str]) -> tuple[list[str], list[str]]:
+    def tied(self, lines: list[str], least: Least) -> tuple[list[str], list[str]]:
         """Each count a line of the program reads, declared, and tied to its split's pieces;
-        a tie may read another split's count, which is tied as well."""
+        a tie may read another split's count, which is tied as well. A count held to a bound
+        below the least its path's forks give it refutes the held program."""
         text = "\n".join(lines)
         pending = [count for count in self.lists if count in text]
         declared: list[str] = []
@@ -353,7 +379,11 @@ class Splits:
             if count in self.emitted:
                 continue
             self.emitted.append(count)
-            tie = self.lists[count].tie()
+            listed = self.lists[count]
+            tie, held = listed.tie()
+            if held:
+                self.bounds.add(count)
+                self.refuted |= least.get(count, 0) > listed.bound
             declared.append(f"(declare-const {count} Int)")
             ties += tie
             pending += [other for other in self.lists if other in "\n".join(tie)]

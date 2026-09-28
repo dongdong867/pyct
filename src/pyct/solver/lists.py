@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from functools import partial
 
 from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch, Expression
@@ -244,7 +245,9 @@ class ListTerms(ListTyping, Slices):
             self.guards.append(fact)
         if held is not None:
             self.origin[listed.count] = held
-        return Counted(Lin.of(listed.count), kinds.kinds, kinds.every, at=listed.read)
+        return Counted(
+            Lin.of(listed.count), kinds.kinds, kinds.every, at=partial(self.splits.read, listed)
+        )
 
     def counted_compare(self, node: list[Expression]) -> str | None:
         """A compare of a split's length with a number or another length, as the splits write
