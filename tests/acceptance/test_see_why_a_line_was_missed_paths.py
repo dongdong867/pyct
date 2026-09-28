@@ -180,6 +180,61 @@ def test_a_substituted_in_s_test_is_the_condition_on_the_way() -> None:
     assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 7, True, unsat=1)
 
 
+# an `in` or `is` test whose value reads the other way from the forks pyct records there: a `not`
+# pyct folds and 3.14 does not, an element search's `==` forks, and an `is` against a bool, whose
+# fork is the operand's. Each is judged by the forks' side, on every release; the site, the side,
+# and how many times the solver found the side unsat
+NEGATED = [
+    ("not_in", '{"s": "a"}', 8, (4, 11, False), 1),
+    ("while_not_in", '{"s": "a"}', 16, (14, 14, False), 1),
+    ("is_not_true", '{"x": 0}', 24, (22, 7, True), 1),
+    ("not_in_set", '{"x": 0}', 36, (34, 11, True), 2),
+    ("not_in_set_written", '{"x": 0}', 44, (42, 7, True), 2),
+    ("not_in_list", '{"x": 0}', 52, (50, 11, True), 2),
+    ("is_not_flag", '{"x": 0}', 67, (65, 7, True), 1),
+    ("not_first_in", '{"s": "1"}', 78, (76, 11, False), 1),
+    ("int_not_in", '{"s": "7"}', 88, (86, 7, True), 2),
+    ("is_false_no_else", '{"x": 0}', 96, (95, 7, False), 1),
+    ("while_is_not_true", '{"x": 0}', 105, (104, 10, False), 1),
+    ("false_is_compare", '{"x": 0}', 121, (120, 7, False), 1),
+    ("pair_one", '{"x": 0, "flag": true}', 133, (132, 7, True), 1),
+    ("ifexp_is_false", '{"x": 0}', 142, (141, 7, False), 2),
+    ("false_is_ifexp", '{"x": 0}', 151, (150, 7, False), 2),
+]
+
+
+@pytest.mark.parametrize(("function", "seed", "line", "side", "unsat"), NEGATED)
+def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
+    function: str, seed: str, line: int, side: tuple[int, int, bool], unsat: int
+) -> None:
+    target, file = spec("negated", function)
+
+    result = run_pyct(target, seed)
+
+    assert result.returncode == 0, result.stderr
+    assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=unsat)
+
+
+# a test no fork was recorded at, read in the sense of its `is` or `in` on every release: `done is
+# False` was never true, and neither was `key in TABLE` where the code says `not key in TABLE`
+NO_FORK = [("plain_is_false", 58, (57, 7)), ("not_in_table", 113, (111, 11))]
+
+
+@pytest.mark.parametrize(("function", "line", "site"), NO_FORK)
+def test_a_test_with_no_fork_reads_in_the_sense_of_its_is_or_in(
+    function: str, line: int, site: tuple[int, int]
+) -> None:
+    target, file = spec("negated", function)
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert cause(entry_for(result.stdout, line)) == {
+        "reason": "no fork",
+        "condition": {"file": file, "line": site[0], "col": site[1], "side": True},
+    }
+
+
 def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
     target, file = spec("empty_walk", "walk_nothing")
 

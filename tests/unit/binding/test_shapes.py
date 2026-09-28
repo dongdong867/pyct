@@ -1,7 +1,20 @@
-"""A tracked list's shape in the input, and a list answered back at its new length."""
+"""A tracked list's shape in the input, and a list answered back at its new length; a tracked
+dict's made-up keys."""
 
 from pyct.binding.annotations import Items, OneOf
-from pyct.binding.shapes import ArrayValue, ListAnswer, ListShape, annotated, empty, resized, shaped
+from pyct.binding.shapes import (
+    ArrayValue,
+    DictAnswer,
+    DictShape,
+    ListAnswer,
+    ListShape,
+    annotated,
+    dict_shaped,
+    empty,
+    rekeyed,
+    resized,
+    shaped,
+)
 
 
 def test_a_shape_runs_the_input_in_stretches_of_one_kind() -> None:
@@ -58,3 +71,22 @@ def test_an_added_item_the_annotation_types_as_a_float_or_a_bool_holds_its_plain
     # seed check accepts, where null would be refused
     assert resized([], answer, ListShape((), fill="float")) == [0.0, 0.0]
     assert resized([], answer, ListShape((), fill="bool")) == [False, False]
+
+
+def test_an_int_keyed_dict_makes_up_the_smallest_non_negative_ints_not_taken() -> None:
+    shape = dict_shaped({0: 5}, Items(dict, int, int))
+
+    assert shape.makes_up and shape.made_type is int
+    # a str key and a negative int take no made-up int's place
+    assert shape.made_up_keys({0, 1, "2", -1, 4}, 4) == [2, 3, 5, 6]
+    assert rekeyed({0: 5}, DictAnswer({1: False}, kept=1, made=1), shape) == {0: 5, 2: 0}
+
+
+def test_a_dict_makes_up_keys_only_when_its_keys_are_all_of_the_made_up_type() -> None:
+    int_keys = Items(dict, int, int)
+
+    assert dict_shaped({}, int_keys).makes_up and dict_shaped({1: 0}, int_keys).makes_up
+    assert not dict_shaped({1: 0, "a": 0}, int_keys).makes_up
+    assert not dict_shaped({"a": 0}, int_keys).makes_up
+    str_keys = DictShape(keys=("a",), kinds=("int",))
+    assert str_keys.makes_up and str_keys.made_up_keys({"pyct1"}, 2) == ["pyct2", "pyct3"]

@@ -175,22 +175,21 @@ def test_no_key_is_added_that_an_answer_would_read_back_as_another(
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)
 
 
-@pytest.mark.parametrize("keys", [int, float])
+@pytest.mark.parametrize(("keys", "made"), [(int, 0), (float, "pyct1")])
 @needs_cvc5
-def test_a_str_key_a_fork_names_and_a_made_up_key_read_back_under_any_key_type(
-    keys: type,
-) -> None:
-    # `--args` reads an int key's text back as an int only, so "a" and "pyct1" stay strs
+def test_a_str_key_a_fork_names_reads_back_under_any_key_type(keys: type, made: object) -> None:
+    # `--args` reads an int key's text back as an int only, so "a" and "pyct1" stay strs, and a
+    # `dict[int, X]` makes up int keys
     checks: dict[str, object] = {"config": Items(dict, int, keys)}
     named = answered({"config": {}}, fork(["in", "'a'", "config"]), checks=checks)
     counted = answered({"config": {}}, fork(["!=", ["len", "config"], 0]), checks=checks)
 
-    assert named["config"] == {"a": 0} and counted["config"] == {"pyct1": 0}
+    assert named["config"] == {"a": 0} and counted["config"] == {made: 0}
 
 
 @needs_cvc5
-def test_no_key_is_made_up_where_the_input_holds_an_int_key() -> None:
-    seed = Seed.of({"config": {"1": 1}}, {"config": Items(dict, int, int)})
+def test_no_key_is_made_up_where_an_int_keyed_dict_holds_a_str_key() -> None:
+    seed = Seed.of({"config": {"a": 1}}, {"config": Items(dict, int, int)})
     forks = (fork(["==", ["len", "config"], 2]),)
 
     assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers()), Unsat)

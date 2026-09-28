@@ -11,7 +11,7 @@ import bisect
 import dis
 import types
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.results.graphs import Pace
@@ -29,6 +29,12 @@ TESTS = frozenset(
 )
 # a test jumps on its true side only here; every other one falls through into its true side
 _JUMPS_WHEN_TRUE = frozenset({"POP_JUMP_IF_TRUE"})
+# the compares a truth test may read the value of, whose argument 1 is `not in` or `is not`,
+# and what may sit between the two and leaves the value as it is
+_COMPARES = frozenset({"CONTAINS_OP", "IS_OP"})
+_PASSED = frozenset({"COPY", "TO_BOOL", "NOP", "EXTENDED_ARG"})
+# the tests of a value's truth, which may read an `in` or an `is`
+_TRUTH = frozenset({"POP_JUMP_IF_FALSE", "POP_JUMP_IF_TRUE"})
 # what an `except` clause tests the raise against: the jump after it is the clause's match
 _MATCHES = frozenset({"CHECK_EXC_MATCH", "CHECK_EG_MATCH"})
 # where a block's run ends with no way on
@@ -51,6 +57,8 @@ class Step:
 
     ``raising`` marks a fork before an operation that may raise, whose true
     side goes on past the operation; a test at the same column is another step.
+    ``reads`` is the `in` or `is` compare a truth test reads, whose side may
+    then be read the other way (`pyct.results.senses`). It is no part of the step.
     """
 
     kind: StepKind
@@ -58,6 +66,21 @@ class Step:
     col: int
     side: bool
     raising: bool = False
+    reads: Reads | None = field(default=None, compare=False)
+
+
+@dataclass(frozen=True)
+class Reads:
+    """The `in` or `is` compare a truth test reads, as the code compiled it.
+
+    ``negated`` is `not in` or `is not`, the compare's argument 1, and
+    ``flag`` the True or False an `is` compares with, when the code loads it
+    as a constant on either side, else None.
+    """
+
+    name: str
+    negated: bool
+    flag: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +92,17 @@ class Op:
     target: int | None
     line: int | None
     col: int | None
+    arg: int | None = None
+    # where the instruction's source ends, the True or False a LOAD_CONST pushes, and the
+    # compare a truth test reads
+    end: tuple[int, int] | None = None
+    flag: bool | None = None
+    reads: Reads | None = None
+
+    @property
+    def at(self) -> tuple[int, int] | None:
+        """Where the instruction's source starts, or None when it has no position."""
+        return None if self.line is None or self.col is None else (self.line, self.col)
 
 
 # every opcode dis lists as a jump: `hasjump` from 3.13, `hasjrel` and `hasjabs` before it. Pseudo
@@ -100,7 +134,9 @@ def blocks_of_code(
     first whether that pass fits before the stop.
     """
     pace.afford(_label_pass(code))
-    ops = [_op(instruction) for instruction in _read(code, pace)]
+    ops: list[Op] = []
+    for instruction in _read(code, pace):
+        ops.append(_op(instruction, ops))
     splits = _splits(ops, raising)
     edges = {edge for entry in _table(code) for edge in (entry.start, entry.end, entry.target)}
     return _blocks(ops, edges, splits), splits
@@ -142,16 +178,77 @@ def _read(code: types.CodeType, pace: Pace) -> Iterator[dis.Instruction]:
         yield instruction
 
 
-def _op(instruction: dis.Instruction) -> Op:
+def _op(instruction: dis.Instruction, before: list[Op]) -> Op:
+    """One instruction, a truth test with the compare it reads among the ones ``before`` it."""
     positions = instruction.positions
     target = instruction.argval if instruction.opname in _JUMPS else None
+    value = instruction.argval
     return Op(
         offset=instruction.offset,
         name=instruction.opname,
         target=target if isinstance(target, int) else None,
         line=None if positions is None else positions.lineno,
         col=None if positions is None else positions.col_offset,
+        arg=instruction.arg,
+        end=_end(positions),
+        flag=value if instruction.opname == "LOAD_CONST" and isinstance(value, bool) else None,
+        reads=_reads(instruction, before),
     )
+
+
+def _reads(instruction: dis.Instruction, before: list[Op]) -> Reads | None:
+    """The `in` or `is` compare a truth test reads, the last instruction before it in code order
+    but for any that pass its value on, or None."""
+    if instruction.opname not in _TRUTH:
+        return None
+    at = len(before) - 1
+    while at >= 0 and before[at].name in _PASSED:
+        at -= 1
+    if at < 0 or before[at].name not in _COMPARES:
+        return None
+    compare = before[at]
+    return Reads(compare.name, compare.arg == 1, _flag(before, at))
+
+
+def _end(positions: dis.Positions | None) -> tuple[int, int] | None:
+    if positions is None or positions.end_lineno is None or positions.end_col_offset is None:
+        return None
+    return positions.end_lineno, positions.end_col_offset
+
+
+def _flag(before: list[Op], compare: int) -> bool | None:
+    """The True or False the code loads as a compare's whole right operand, or its whole left.
+
+    Read from the compare's own source span, which its operands' instructions
+    lie inside: the right operand alone is the constant loaded right before the
+    compare that ends where the compare ends, and the left one alone is the one
+    instruction of the compare that starts where the compare starts. Anything
+    else, a constant inside a larger operand or an operand the span does not
+    show whole, is no constant.
+    """
+    op = before[compare]
+    if op.line is None or op.col is None or op.end is None:
+        return None
+    start, end = (op.line, op.col), op.end
+    right = before[compare - 1] if compare else None
+    if right is not None and right.flag is not None and right.end == end:
+        return right.flag
+    starting = [each for each in _inside(before, compare, start, end) if each.at == start]
+    return starting[0].flag if len(starting) == 1 else None
+
+
+def _inside(
+    before: list[Op], compare: int, start: tuple[int, int], end: tuple[int, int]
+) -> list[Op]:
+    """The instructions right before a compare whose source lies inside its span, back to the
+    first that does not."""
+    found: list[Op] = []
+    for at in range(compare - 1, -1, -1):
+        each = before[at]
+        if each.at is None or each.end is None or each.at < start or each.end > end:
+            break
+        found.append(each)
+    return found
 
 
 def _splits(ops: list[Op], raising: frozenset[tuple[int, int]]) -> frozenset[int]:
@@ -233,7 +330,8 @@ def _test_exits(block: list[Op], jump: int, after: int) -> Iterator[Exit]:
         if matching:
             yield target, Step(StepKind.HANDLER, last.line or 0, 0, True) if side else None
         else:
-            yield target, Step(StepKind.CONDITION, last.line or 0, last.col or 0, side)
+            step = Step(StepKind.CONDITION, last.line or 0, last.col or 0, side, reads=last.reads)
+            yield target, step
 
 
 # CPython's flag on a function's code; a module and a class body run without it

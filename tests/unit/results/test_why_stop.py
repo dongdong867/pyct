@@ -189,9 +189,60 @@ def _one_long_and(
     return source, frozenset({4}), covered, [Walked((), False, covered)]
 
 
+def _identities(tests: int, file: str) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    ifs = "".join(f"    if (x > {k}) is not True:\n        y += {k}\n" for k in range(tests))
+    source = f"def f(x):\n    y = 0\n{ifs}    return y\n"
+    covered = frozenset({2, 3 + 2 * tests}) | frozenset(range(3, 3 + 2 * tests, 2))
+    # each `is` records its operand's fork, which the sides of its test are read against
+    forks = tuple(Branch([">", "x", k], True, Site(file, 3 + 2 * k, 7)) for k in range(tests))
+    return source, frozenset(range(4, 4 + 2 * tests, 2)), covered, [Walked(forks, False, covered)]
+
+
+def _named_identities(
+    size: int, file: str
+) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    ifs = "".join(f"    if (x > {k}) is not FLAG:\n        y += {k}\n" for k in range(size))
+    source = f"FLAG = True\n\n\ndef f(x):\n    y = 0\n{ifs}    return y\n"
+    tests = range(6, 6 + 2 * size, 2)
+    covered = frozenset({5, 6 + 2 * size}) | frozenset(tests)
+    # as many inputs as tests, each forking at every one, and each its own by the side one took:
+    # the inputs are asked of each test
+    walked = [
+        Walked(
+            tuple(
+                Branch([">", "x", k], k != i, Site(file, line, 7)) for k, line in enumerate(tests)
+            ),
+            False,
+            covered,
+        )
+        for i in range(size)
+    ]
+    return source, frozenset(line + 1 for line in tests), covered, walked
+
+
+def _spread_inputs(
+    size: int, file: str
+) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    ifs = "".join(f"    if (x > {k}) is not True:\n        y += {k}\n" for k in range(20))
+    source = f"def f(x):\n    y = 0\n{ifs}    return y\n"
+    covered = frozenset({2, 43}) | frozenset(range(3, 43, 2))
+    # many inputs, each forking at as many sites elsewhere in the file as there are inputs, and
+    # no `is` against a name, so no input is asked
+    walked = [
+        Walked(
+            tuple(Branch([">", "x", k], k != i, Site(file, 1, k)) for k in range(size)),
+            False,
+            covered,
+        )
+        for i in range(size)
+    ]
+    return source, frozenset(range(4, 44, 2)), covered, walked
+
+
 # the large shapes the reviews met: joined plain conditions, many try blocks, a generator with a
 # path per input, many operations that may raise, many jumps, a long if/else inside a try, and
-# one line of many tests
+# one line of many tests, and many `is` tests whose sides are read against their forks, by one
+# input and by many, and many inputs with forks all over the file
 SHAPES = {
     "joined": (_joined, 3000),
     "tries": (_tries, 2000),
@@ -200,6 +251,9 @@ SHAPES = {
     "jumps": (_ifs, 20000),
     "if_else_in_a_try": (_if_else_in_a_try, 8000),
     "one_long_and": (_one_long_and, 4000),
+    "identities": (_identities, 4000),
+    "named_identities": (_named_identities, 300),
+    "spread_inputs": (_spread_inputs, 1000),
 }
 
 
@@ -241,9 +295,9 @@ def test_a_stop_lands_while_the_instructions_are_read(monkeypatch: pytest.Monkey
     read: list[object] = []
     op = blocks._op
 
-    def reading(instruction: dis.Instruction) -> blocks.Op:
+    def reading(instruction: dis.Instruction, before: list[blocks.Op]) -> blocks.Op:
         read.append(instruction)
-        return op(instruction)
+        return op(instruction, before)
 
     monkeypatch.setattr(blocks, "_op", reading)
 
@@ -288,7 +342,9 @@ def test_a_function_whose_labels_cannot_be_read_before_the_stop_is_not_read(
     read: list[object] = []
     op = blocks._op
     monkeypatch.setattr(
-        blocks, "_op", lambda instruction: read.append(instruction) or op(instruction)
+        blocks,
+        "_op",
+        lambda instruction, before: read.append(instruction) or op(instruction, before),
     )
     code = _many_jumps(20000)
     asked: list[float] = []

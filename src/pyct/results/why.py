@@ -21,6 +21,7 @@ from pyct.core.branch import Branch, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError
+from pyct.results.senses import At, against_the_forks, heads_of
 from pyct.results.way import Flow, Fork, Place, Step, StepKind
 
 logger = logging.getLogger(__name__)
@@ -190,6 +191,8 @@ class _Seen:
     inputs: tuple[_Input, ...]
     run: Run
     owners: dict[int, types.CodeType | None]
+    # the operator of each fork recorded at each site, raising forks aside (`senses.heads_of`)
+    heads: dict[At, frozenset[str]]
     # keyed by the code's id: a large function's code is slow to hash, and `owners` keeps each
     # one alive for as long as this is
     flows: dict[int, _Walk] = field(default_factory=dict)
@@ -198,18 +201,30 @@ class _Seen:
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
-        # inputs that took one path are one input to every question asked of them
+        # inputs that took one path are one input to every question asked of them; one step
+        # for each input and each of its forks, since one input may hold many
+        pace = Pace(run.late)
         inputs = tuple(
             dict.fromkeys(
                 _Input(
                     each.lines,
-                    tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
+                    tuple(
+                        _fork(branch)
+                        for branch in pace.each(each.forks)
+                        if branch.site.file == file
+                    ),
                     each.failed,
                 )
-                for each in Pace(run.late).each(run.walked)
+                for each in pace.each(run.walked)
             )
         )
-        return cls(file, covered, inputs, run, _owners(file))
+        heads = heads_of(
+            ((branch.site.line, branch.site.col), branch.expression)
+            for each in pace.each(run.walked)
+            for branch in pace.each(each.forks)
+            if branch.site.file == file and not branch.raising
+        )
+        return cls(file, covered, inputs, run, _owners(file), heads)
 
     @functools.cached_property
     def _called(self) -> frozenset[int]:
@@ -259,6 +274,8 @@ class _Walk:
         forks = [fork for one in each(seen.inputs) for fork in one.forks]
         raising = frozenset((line, col) for line, col, _, is_raising in each(forks) if is_raising)
         flow = Flow(code, raising, late=seen.run.late)
+        # each `in` and `is` test's sides read as the forks recorded there, before any is marked
+        flow.swap(against_the_forks(flow, seen.heads, [(i.lines, i.forks) for i in seen.inputs]))
         passed = flow.marked(seen.covered, forks)
         forked = frozenset((line, col, is_raising) for line, col, _, is_raising in each(forks))
         return cls(seen, flow, passed, forked)

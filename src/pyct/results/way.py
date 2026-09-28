@@ -17,7 +17,7 @@ from __future__ import annotations
 import functools
 import types
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pyct.results.blocks import Op, Step, StepKind, blocks_of_code, exits, handler_ranges
 from pyct.results.graphs import (
@@ -70,6 +70,16 @@ class Flow:
         # would grow as lines times nodes
         self._reaching_lines: dict[int, frozenset[int]] = {}
         self._towards: dict[int, frozenset[int]] = {}
+
+    def sides(self) -> dict[int, Step]:
+        """Each side's node and its step, a raise's too."""
+        return dict(self._graph.steps)
+
+    def swap(self, nodes: Iterable[int]) -> None:
+        """Read each of these sides as the other, before a fork marks one (`_proved_by`)."""
+        assert "_proved_by" not in vars(self), "a fork was marked before the sides were read"
+        steps = self._graph.steps
+        steps.update({node: replace(steps[node], side=not steps[node].side) for node in nodes})
 
     def way(self, line: int) -> tuple[Step, ...]:
         """The steps every run takes to reach ``line``, in the order it takes them."""
