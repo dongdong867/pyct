@@ -50,6 +50,7 @@ from pyct.solver.splits import (
     words_count,
     words_past,
 )
+from pyct.solver.strings import encode
 
 # a piece always there, counted
 TRUE_ONE = "1"
@@ -219,6 +220,8 @@ class SplitList:
         if self._words():
             return [f"(assert (= {self.count} {self._words_count()}))"], False
         beyond = self._there(self.bound)
+        if self._separated() and self.hold and self.bound <= MOST_CHOSEN_BOUND:
+            return self._counted_tie(), True
         if beyond != FALSE and not self.hold:
             tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
             return [f"(assert (>= {self.count} 0))", *(f"(assert {tie})" for tie in tied)], False
@@ -230,6 +233,35 @@ class SplitList:
         if beyond != FALSE:
             tied.append(f"(assert {negated(beyond)})")
         return tied, beyond != FALSE
+
+    def _counted_tie(self) -> list[str]:
+        """A separator split's count as one replace term, where the bound is small, and held to
+        the bound by one membership: beside a read from the end at the input's count, a tie of
+        ten walks ran past the limit where these answered in 0.1 s."""
+        separator = self.operands[0]
+        assert isinstance(separator, str)
+        beyond = separators_past(self.term, separator, self.bound)
+        counted = f"(assert (= {self.count} {self._separators_count()}))"
+        return [counted, f"(assert {negated(beyond)})"]
+
+    def _separated(self) -> bool:
+        """Whether it splits on a separator from the start, or an rsplit that counts as the
+        split does past its walk."""
+        separated = self.head in ("split", "rsplit") and bool(self.operands)
+        return separated and isinstance(self.operands[0], str) and not self._walked()
+
+    def _separators_count(self) -> str:
+        """How many pieces it has, as one term: one more than the separators a literal replace
+        removes, which are the ones side by side from the start that the split cuts at, at most
+        the limit."""
+        separator = self.operands[0]
+        assert isinstance(separator, str)
+        kept = f'(str.len (str.replace_all {self.term} {encode(separator)} ""))'
+        found = f"(div (- (str.len {self.term}) {kept}) {len(separator)})"
+        limit = self.limit()
+        if limit >= 0:
+            found = f"(ite (< {found} {limit}) {found} {limit})"
+        return f"(+ 1 {found})"
 
     def _words_count(self) -> str:
         """How many words the string has, at most one past the limit when there is one."""
@@ -277,7 +309,9 @@ class SplitList:
         an input with that many pieces whose bound is past `MOST_CHOSEN_BACK`, but for one with
         few pieces once that read is unsat (``chosen``)."""
         count = self.input_count
-        if count is None or back >= count or self.bound <= MOST_CHOSEN_BACK:
+        if count is None or back >= count:
+            return False
+        if self.head == "splitlines" and self.bound <= MOST_CHOSEN_BACK:
             return False
         return count > MOST_CHOSEN_BACK or not self.back_among_counts
 

@@ -295,3 +295,46 @@ def test_a_few_pieces_are_chosen_among_later_only_where_the_choice_answers(
     written = program(path, {"s": str}, Origin(values={"s": text}))
 
     assert written.fixed_few is fixed
+
+
+# a separator split read from its end: the split, the input's string, and whether the path then
+# asks the count to meet a tracked int
+FROM_THE_END: dict[str, tuple[Expression, str, bool]] = {
+    "the last of five pieces, limited": (["split", "s", "','", 20], "a,a,a,a,x", False),
+    "the last of eight pieces, limited, then a count": (
+        ["split", "s", "','", 20],
+        "a,b,c,d,e,f,g,end",
+        True,
+    ),
+    "the last of seven pieces on a separator that overlaps itself, then a count": (
+        ["split", "s", "'--'"],
+        "a--b--c--d--e--f--end",
+        True,
+    ),
+}
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("split", "text", "counted"), FROM_THE_END.values(), ids=list(FROM_THE_END)
+)
+def test_a_piece_from_the_end_of_a_separator_split_is_answered(
+    split: list[Expression], text: str, counted: bool
+) -> None:
+    path = [
+        fork([">=", ["len", split], 1], taken=True),
+        fork(["==", ["[]", split, -1], "'end'"], taken=True),
+    ]
+    if counted:
+        path.append(fork(["==", ["len", split], "n"], taken=True))
+    seed = Seed.of({"s": text, "n": 0})
+
+    answer = solve(tuple(path), seed.leaves, 10.0, seed.lists, seed.values)
+
+    # read where the input's own count puts it, and a count tied by one replace term
+    assert isinstance(answer, Sat), answer
+    args = apply(seed, answer.model).args
+    operands: list[Any] = [part[1:-1] if isinstance(part, str) else part for part in split[2:]]
+    pieces = str(args["s"]).split(*operands)
+    assert pieces[-1] == "end", args
+    assert not counted or len(pieces) == args["n"], args
