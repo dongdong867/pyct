@@ -229,6 +229,8 @@ class _Timed:
         _OWNER.running = False
         signal.setitimer(signal.ITIMER_REAL, 0)
         _OWNER.home = None
+        # the exception handled as the block began, its traceback and its frames go with it
+        _OWNER.hold.before = None
 
 
 class _Sent:

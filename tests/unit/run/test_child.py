@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import types
+import weakref
 from collections.abc import Callable
 from contextlib import AbstractContextManager
 
@@ -372,3 +373,28 @@ def hang_while_the_caller_handles_a_ctrl_c() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_an_owned_ctrl_c_handled_before_the_block_holds_no_alarm_back() -> None:
     assert settled_then(hang_while_the_caller_handles_a_ctrl_c) == 0
+
+
+class Held:
+    """An object only a handled exception's frame keeps alive."""
+
+
+def raise_holding(held: Held) -> None:
+    raise ValueError(type(held).__name__)
+
+
+def block_inside_a_handled_exception() -> None:
+    held = Held()
+    freed = weakref.ref(held)
+    try:
+        raise_holding(held)
+    except ValueError:
+        del held
+        with deadline(time.monotonic() + 10):
+            pass
+    # the handler has ended, so nothing holds its exception, its frames or their locals
+    child._EXIT(0 if freed() is None else 2)
+
+
+def test_an_owned_block_keeps_no_exception_handled_as_it_began_once_it_ends() -> None:
+    assert settled_then(block_inside_a_handled_exception) == 0
