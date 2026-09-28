@@ -197,6 +197,10 @@ def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
+    # the solver's clock stands still, so no millisecond passes between setting the limit and
+    # handing cvc5 what is left of it
+    now = time.monotonic()
+    monkeypatch.setattr(cvc5_module, "monotonic", lambda: now)
 
     # about 115 days, past the 2**31 - 1 milliseconds Python's poll can wait
     assert ask(tmp_path, monkeypatch, timeout=1e7) == Unsat()
