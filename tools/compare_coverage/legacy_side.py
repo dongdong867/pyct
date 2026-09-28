@@ -134,8 +134,9 @@ class LegacySide:
             report = with_library(
                 read_report(finished, "covered", _report), python, request, environment
             )
+        # read_report fails a side that exited otherwise or ran past its wait
         probed = request.library is None or report.library is not None
-        return report, finished.returncode == 0 and probed and report.failure is None
+        return report, probed and report.failure is None
 
 
 def _report(line: dict[str, object]) -> SideReport:
