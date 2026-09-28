@@ -33,11 +33,9 @@ def test_a_plain_view_s_type_is_python_s_own() -> None:
     assert type_({}.keys()) is type({}.keys())
 
 
-@pytest.mark.parametrize(("name", "_registered"), VIEWS, ids=VIEW_IDS)
+@pytest.mark.parametrize("name", VIEW_IDS)
 @pytest.mark.parametrize("kind", [dict, type({}.keys()), 5])
-def test_assigning_a_view_s_class_raises_what_python_raises(
-    name: str, _registered: type, kind: object
-) -> None:
+def test_assigning_a_view_s_class_raises_what_python_raises(name: str, kind: object) -> None:
     config, sink = tracked({"a": 1})
     view = getattr(config, name)()
     python = getattr({}, name)()
@@ -52,8 +50,8 @@ def test_assigning_a_view_s_class_raises_what_python_raises(
     assert sink == []
 
 
-@pytest.mark.parametrize(("name", "_registered"), VIEWS, ids=VIEW_IDS)
-def test_deleting_a_view_s_class_raises_what_python_raises(name: str, _registered: type) -> None:
+@pytest.mark.parametrize("name", VIEW_IDS)
+def test_deleting_a_view_s_class_raises_what_python_raises(name: str) -> None:
     config, sink = tracked({"a": 1})
     view = getattr(config, name)()
     python = getattr({}, name)()
@@ -93,15 +91,17 @@ def _refusals() -> list[object]:
         pytest.param(lambda value: value.__reduce_ex__(), id="reduce-ex-bare"),
         pytest.param(lambda value: value.__reduce_ex__(2, 3), id="reduce-ex-two"),
         pytest.param(lambda value: value.__reduce__(1), id="reduce-one"),
+        pytest.param(lambda value: value.__reduce_ex__(protocol=2), id="reduce-ex-keyword"),
+        pytest.param(lambda value: value.__reduce__(protocol=2), id="reduce-keyword"),
         pytest.param(copy.copy, id="copy"),
         pytest.param(copy.deepcopy, id="deepcopy"),
     ]
 
 
-@pytest.mark.parametrize(("name", "_registered"), VIEWS, ids=VIEW_IDS)
+@pytest.mark.parametrize("name", VIEW_IDS)
 @pytest.mark.parametrize("refusal", _refusals())
 def test_a_view_refuses_a_pickle_and_a_copy_as_python_s_does(
-    name: str, _registered: type, refusal: Callable[[object], object]
+    name: str, refusal: Callable[[object], object]
 ) -> None:
     config, sink = tracked({"a": 1})
     with pytest.raises(Exception) as plain:

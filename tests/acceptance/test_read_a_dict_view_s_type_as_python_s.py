@@ -51,7 +51,6 @@ def test_follows_past_a_type_guard() -> None:
 
 # read-a-dict-view-s-type-as-python-s-refuses-a-view-built-through-its-type
 def test_refuses_a_view_built_through_its_type() -> None:
-    assert views.built(PLAIN) == "same"
     result = run_pyct(f"{TARGET}::built", SEED)
 
     assert result.returncode == 0, result.stderr

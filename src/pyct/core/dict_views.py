@@ -76,19 +76,19 @@ class _View:
         """`del v.name`: made on Python's own view of an empty dict, as a set is."""
         own(delattr, self.python({}), name)
 
-    def __reduce_ex__(self, /, *args: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
+    def __reduce_ex__(self, /, *args: object, **kwargs: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
         """A pickle, a copy or a deep copy: asked of Python's own view of an empty dict, which
         refuses in its own words at every protocol. It is called through its type, as a
-        target's `v.__reduce_ex__()` is, so a wrong count of arguments reads as there too.
+        target's `v.__reduce_ex__()` is, so arguments Python refuses read as there too.
         Nothing is written and no answer leaves the dict, so nothing is recorded
         (refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
         python = self.python({})
-        return own(type(python).__reduce_ex__, python, *args)
+        return own(type(python).__reduce_ex__, python, *args, **kwargs)
 
-    def __reduce__(self, /, *args: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
+    def __reduce__(self, /, *args: object, **kwargs: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
         """`v.__reduce__()`: asked of Python's own view of an empty dict, as a pickle is."""
         python = self.python({})
-        return own(type(python).__reduce__, python, *args)
+        return own(type(python).__reduce__, python, *args, **kwargs)
 
     @property
     def mapping(self) -> types.MappingProxyType[object, object]:

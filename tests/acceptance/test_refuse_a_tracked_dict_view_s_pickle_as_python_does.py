@@ -21,13 +21,11 @@ from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
 # refuse-a-tracked-dict-view-s-pickle-as-python-does-refuses-each-pickle
 @pytest.mark.parametrize("where", [(), ("--in-process",)], ids=["own-process", "in-process"])
 def test_refuses_each_pickle(where: tuple[str, ...]) -> None:
-    assert views.pickled(PLAIN) == "same"
     covers_plainly(f"{TARGET}::pickled", SEED, FILE, "same", *where)
 
 
 # refuse-a-tracked-dict-view-s-pickle-as-python-does-refuses-each-copy
 def test_refuses_each_copy() -> None:
-    assert views.copied(PLAIN) == "same"
     covers_plainly(f"{TARGET}::copied", SEED, FILE, "same")
 
 
