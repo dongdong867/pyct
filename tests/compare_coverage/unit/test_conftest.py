@@ -68,6 +68,7 @@ def test_the_build_hands_uv_neither_variable_that_names_the_caller_s_environment
 
 
 @pytest.mark.legacy
+@pytest.mark.timeout(180)
 def test_the_build_leaves_the_caller_s_environment_unchanged(tmp_path: Path) -> None:
     scratch = tmp_path / "scratch"
     subprocess.run(

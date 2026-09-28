@@ -134,7 +134,8 @@ def built_once(checkout: Path, build: Callable[[Path], None]) -> Path:
 
 def build_legacy_checkout(checkout: Path, environment: Mapping[str, str]) -> None:
     """Extract main into ``checkout`` and install its own environment, whatever environment
-    ``environment`` names. A failure says what uv said."""
+    ``UV_PROJECT_ENVIRONMENT`` or ``VIRTUAL_ENV`` in ``environment`` names. A failure says what
+    uv said."""
     own = {name: value for name, value in environment.items() if name not in CALLER_ENVIRONMENT}
     archive = subprocess.run(
         ["git", "archive", "main"], cwd=REPO_ROOT, capture_output=True, check=True
