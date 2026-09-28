@@ -18,9 +18,10 @@ on the literal and the tracked value, which is the plain answer Python gave.
 
 So pyct's frame is gone before Python's operator runs, and the target's own
 reflected method, on anything other than a tracked value, runs under the
-target's frame alone, as written. The stand-in is named after the tracked
-type it holds, so an error that names the operand's type names it as
-before, and it never outlives the operator.
+target's frame alone, as written. The stand-in carries the names of the
+base type of the value it holds, so an error that names the operand's type
+names it as Python names the plain value's, and it never outlives the
+operator.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.ints import ConcolicInt
+from pyct.core.values import named_as
 
 # each reflected method Python asks the right operand for, with Python's own operator, which
 # answers when the tracked value declines. A compare's reflected method is the swapped compare:
@@ -74,22 +76,24 @@ def _reflected(name: str, python: Callable[[Any, Any], object]) -> Callable[[Any
     return answer
 
 
-def _stand_in(tracked: type) -> type:
-    """The stand-in class for one tracked type, named as that type is."""
+def _stand_in(base: type) -> type:
+    """The stand-in class for a tracked value of one base type, named as that type is."""
     methods: dict[str, object] = {
         name: _reflected(name, python) for name, python in _REFLECTED.items()
     }
     methods["__slots__"] = ("value",)
     methods["__hash__"] = None
     methods["__init__"] = _held
-    return type(tracked.__name__, (), methods)
+    stand_in = type("stand_in", (), methods)
+    named_as(stand_in, base)
+    return stand_in
 
 
 def _held(self: Any, value: object) -> None:
     self.value = value
 
 
-_STAND_INS: dict[type, type] = {kind: _stand_in(kind) for kind in (ConcolicInt, ConcolicBool)}
+_STAND_INS: dict[type, type] = {ConcolicInt: _stand_in(int), ConcolicBool: _stand_in(bool)}
 
 
 def handed(right: object, left: object, /) -> object:

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.str_operands import literal, plain, within_cvc5
-from pyct.core.values import BASES, base_value, downgraded, own
+from pyct.core.values import BASES, downgraded, own
 
 if TYPE_CHECKING:
     from pyct.core.strs import ConcolicStr
@@ -72,12 +72,9 @@ def joined(separator: str, iterable: object, tracked: type[ConcolicStr]) -> obje
 
 
 def _answer(separator: str, items: list[object]) -> str:
-    """str's own join of the items: their text, or the TypeError Python raises for the plain
-    values, where an item that is not a str is named by the type it reports."""
-    try:
-        return own(str.join, separator, items)
-    except TypeError:
-        return own(str.join, separator, [_as_python_reads(item) for item in items])
+    """str's own join of the items: their text, or the TypeError Python raises, which names a
+    tracked item's type as it names the plain value's (`values.named_as`)."""
+    return own(str.join, separator, items)
 
 
 def _form(iterable: object) -> Expression | None:
@@ -85,15 +82,6 @@ def _form(iterable: object) -> Expression | None:
     if BASES.get(type(iterable)) is not list:
         return None
     return cast(_Formed, iterable).expression
-
-
-def _as_python_reads(item: object) -> object:
-    """An item as str's own join reads it: a str's text, and a tracked value of another type as
-    a plain value of the type it reports, so Python's refusal names that type."""
-    if isinstance(item, str):
-        return plain(item)
-    base = BASES.get(type(item))
-    return item if base is None else base_value(base)
 
 
 def _sink(
