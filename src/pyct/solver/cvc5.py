@@ -243,8 +243,9 @@ def _write(
     """The program for the path, written by the origin's instant.
 
     A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is. A
-    path with a read nothing on it types, or one whose reads run past the steps the origin
-    gives them all, is an ``Unknown()``, a miss rather than a crash.
+    path with a read nothing on it types, one whose reads run past the steps the origin
+    gives them all, or a loosened one that reads a split's piece past its bound, is an
+    ``Unknown()``, a miss rather than a crash.
     """
     try:
         return program(*path, origin, finite=finite, cores=cores)
@@ -255,7 +256,7 @@ def _write(
         logger.debug("giving up the program's tracked-key lookups: %s", error)
         return Unknown()
     except ProgramTooLargeError as error:
-        logger.debug("giving up the unsettled program: %s", error)
+        logger.debug("giving up the program: %s", error)
         return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)

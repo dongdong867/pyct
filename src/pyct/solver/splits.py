@@ -151,6 +151,17 @@ def worded(term: str, limit: int, index: int) -> Piece:
     return _let(bounds, piece), _let(bounds[:-1], f"(>= a!{index} 0)")
 
 
+def separators_past(term: str, separator: str, index: int) -> str:
+    """That the string has at least ``index`` separators side by side, so more than ``index``
+    pieces: each separator after anything, ``index`` times, then anything. The most separators
+    that fit side by side are the ones a split finds from the start, or an rsplit from the end.
+    One membership, which cvc5 settled at once for 1,000 where the walk ran past its limit."""
+    if index <= 0:
+        return "true"
+    step = f"(re.++ re.all (str.to_re {encode(separator)}))"
+    return f"(str.in_re {term} (re.++ ((_ re.loop {index} {index}) {step}) re.all))"
+
+
 def words_count(term: str) -> str:
     """How many words the string has, as one term: a word starts where a character that is
     not whitespace follows whitespace, or the start, and each such pair is removed once."""

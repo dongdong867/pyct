@@ -32,7 +32,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LONGEST_WALK
+from pyct.core.str_splits import LONGEST_WALK, built_from_a_split
 from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
 from pyct.solver.literals import plain_operand
@@ -41,7 +41,7 @@ from pyct.solver.splits import (
     left_count,
     right_count,
     right_piece,
-    split_piece,
+    separators_past,
     unwalked_bound,
     words_count,
     words_past,
@@ -55,9 +55,14 @@ TRUE_ONE = "1"
 BOUND_PAST = 2
 
 # the most pieces a count is tied to, and a piece chosen among: the program grows with the
-# square of the bound, since each piece is a walk to it, and past about ten a tie takes cvc5 to
-# its limit anyway. A path that needs more is asked loosened (see the module docstring)
+# square of the bound, since each piece is a walk to it: uncapped, a read from the end of 1,000
+# lines peaked at 2.9 GB. A path that needs more is asked loosened (see the module docstring)
 MOST_BOUND = 34
+
+# the most pieces a piece from the end is chosen among, one choice per count, where no walk of
+# the reversed string finds it: past it the piece is the one the input's own count puts there.
+# On cvc5 1.3.4 a last line chosen among 12 took 6.1 s, where the input's own took 1.3 s
+MOST_CHOSEN_BACK = 8
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -86,6 +91,7 @@ class SplitList:
     bound: int
     bounds: list[str]
     hold: bool = True
+    held: int | None = None
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -110,11 +116,13 @@ class SplitList:
         if 0 <= limit < number:
             return FALSE
         if self.head == "splitlines" or self._walked():
+            # lines and an rsplit walked to its limit, at most 17 pieces, count by their walk
             return SPLITS[self.head](self.term, self.operands, number)[1]
         if self._words():
             return words_past(self.term, number)
-        # the split's separators, found from the start, up to the limit
-        return split_piece(self.term, self.operands[:1], number)[1]
+        separator = self.operands[0]
+        assert isinstance(separator, str)
+        return separators_past(self.term, separator, number)
 
     def restriction(self) -> str:
         """What a string must be for the pieces from the start to be Python's: an rsplit past
@@ -133,6 +141,14 @@ class SplitList:
     def _words(self) -> bool:
         """Whether it splits on whitespace."""
         return self.head in ("split", "rsplit") and (not self.operands or self.operands[0] is None)
+
+    def _there(self, index: int) -> str:
+        """That piece ``index`` is there, as the walk that reads it writes it: the pieces a
+        path takes out are asserted there by the same walk, which cvc5 answered faster beside
+        the pieces themselves than one membership."""
+        if self.past(index) == FALSE:
+            return FALSE
+        return SPLITS[self.head](self.term, self.operands, index)[1]
 
     def piece(self, index: int) -> str:
         """Piece ``index`` from the start."""
@@ -186,12 +202,14 @@ class SplitList:
             return Read(None, FALSE)
         number = position.number()
         if number is not None:
-            return Read(self.piece(number), both(self.past(number), self.restriction()))
+            return Read(self.piece(number), both(self._there(number), self.restriction()))
         back = self._from_the_end(position)
         if back is not None:
             walked = right_piece(self.term, self.head, self.operands, back)
             if walked is not None:
-                return Read(walked, self.past(back))
+                return Read(walked, self._there(back))
+            if self.held is not None and self.bound > MOST_CHOSEN_BACK and back < self.held:
+                return self._held_back(back)
             return self._counted_back(back)
         return self._chosen(position, least)
 
@@ -201,6 +219,15 @@ class SplitList:
         if position.atoms == ((self.count, 1),) and position.const < 0:
             return -position.const - 1
         return None
+
+    def _held_back(self, back: int) -> Read:
+        """Piece ``back`` from the end where the string has as many pieces as the input's: the
+        piece from the start that puts there, and that count. A path that needs another count
+        is asked loosened."""
+        self._bounded()
+        assert self.held is not None
+        count = both(self.past(self.held - 1), negated(self.past(self.held)))
+        return Read(self.piece(self.held - 1 - back), both(count, self.restriction()))
 
     def _counted_back(self, back: int) -> Read:
         """Piece ``back`` from the end as the piece from the start it is for each count below
@@ -265,7 +292,7 @@ class Splits:
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
         bound = self.bound if held is None else max(self.bound, min(held + BOUND_PAST, MOST_BOUND))
         count = f"count!{len(self.lists)}!"
-        listed = SplitList(term, str(head), plain, count, bound, self.bounds, self.hold)
+        listed = SplitList(term, str(head), plain, count, bound, self.bounds, self.hold, held)
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
@@ -316,5 +343,10 @@ class Splits:
 
 
 def _measures(expression: list[Expression]) -> bool:
-    """Whether a fork compares a list's length, ``[op, ["len", items], n]`` either way round."""
-    return any(isinstance(part, list) and part[:1] == ["len"] for part in expression[1:])
+    """Whether a fork compares the length of a split's list, or of a list built from one,
+    ``[op, ["len", parts], n]`` either way round: a string's or another list's length says
+    nothing of how many pieces a split has."""
+    return any(
+        isinstance(part, list) and part[:1] == ["len"] and built_from_a_split(part[1])
+        for part in expression[1:]
+    )

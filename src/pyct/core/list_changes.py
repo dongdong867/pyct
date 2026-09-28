@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.str_splits import LISTED_SPLITS
+from pyct.core.str_splits import built_from_a_split
 from pyct.core.values import forked, own
 
 # one change, made the same way on the items and on the shadow
@@ -51,28 +51,8 @@ def follows(self: ListState, key: object) -> bool:
     whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
     not made from a split's (follow-the-length-of-a-split)."""
     if type(key) is ConcolicInt:
-        return len(self.kinds) <= 1 and not _from_a_split(self.expression)
+        return len(self.kinds) <= 1 and not built_from_a_split(self.expression)
     return plain_index(key) is not None
-
-
-# the heads that build a list from the lists among their operands; a display or a read of an
-# item builds none, so a piece it holds makes no list of it a split's
-_BUILT_FROM = frozenset({"+", "*", "[:]"})
-
-
-def _from_a_split(form: Expression | None) -> bool:
-    """Whether a list's form is a split's list, or a list built from one: a split's piece is
-    read at a position the path writes, so a tracked index into such a list is not followed."""
-    stack = [form]
-    while stack:
-        part = stack.pop()
-        if not isinstance(part, list) or not part or not isinstance(part[0], str):
-            continue
-        if part[0] in LISTED_SPLITS:
-            return True
-        if part[0] in _BUILT_FROM:
-            stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
-    return False
 
 
 def in_range(self: ListState, key: object, name: str = "__getitem__") -> bool:

@@ -11,7 +11,7 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
-from pyct.solver.answer import Sat, Unsat
+from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
@@ -294,18 +294,39 @@ def test_a_read_from_the_end_of_many_lines_writes_a_program_of_bounded_size() ->
 
 
 @needs_cvc5
-def test_a_path_past_the_cap_on_a_changed_string_is_no_false_unsat() -> None:
-    parts: Expression = ["split", ["strip", "s"], "','"]
+@pytest.mark.parametrize(
+    ("parts", "seed"),
+    [(["split", "s", "','"], "a"), (["split", ["strip", "s"], "','"], "a")],
+    ids=["the input's string", "a changed string"],
+)
+def test_a_path_past_the_bound_is_a_miss_that_says_so_never_unsat(
+    parts: Expression, seed: str
+) -> None:
+    path = (
+        fork(["==", ["len", parts], "n"], taken=True),
+        fork(["==", "n", 40], taken=True),
+    )
+    args = Seed.of({"s": seed, "n": 0})
+
+    answer = solve(path, args.leaves, 10.0, args.lists, args.values)
+
+    # Python takes this path with 40 pieces, past the bound of 3: the held ask is unsat, and
+    # the loosened one, which has an answer, says the fork is unknown
+    assert isinstance(answer, Unknown), answer
+
+
+@needs_cvc5
+def test_a_path_that_needs_no_more_pieces_than_the_bound_is_answered_held() -> None:
+    parts: Expression = ["split", "s", "','"]
     path = (
         fork(["<", ["len", parts], 36], taken=False),
         fork(["==", ["len", parts], "n"], taken=True),
     )
-    seed = Seed.of({"s": "a", "n": 0})
+    args = Seed.of({"s": "a", "n": 0})
 
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+    answer = solve(path, args.leaves, 10.0, args.lists, args.values)
 
-    # Python takes this path, with 36 pieces and n = 36: past the cap the answer is a miss that
-    # says so, never unsat
+    # a split of the input's own string: 36 pieces is the cap, and 37 past it
     assert not isinstance(answer, Unsat), answer
 
 
@@ -345,3 +366,53 @@ def test_an_unrelated_number_on_the_path_leaves_a_tie_small() -> None:
 
     assert isinstance(answer, Sat), answer
     assert time.perf_counter() - started < 3.0
+    args = dict(apply(seed, answer.model).args)
+    s, x, m = str(args["s"]), args["x"], args["m"]
+    assert isinstance(x, int) and isinstance(m, int), args
+    assert x > 1000 and len(s.split(",")) == m + 1, args
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    "guard",
+    [["<", ["len", "s"], 100], [">", ["len", ["split", "t", "','"]], 1000]],
+    ids=["a string's length", "a large count of another split"],
+)
+def test_a_length_guard_leaves_a_split_s_flip_quick(guard: list[Expression]) -> None:
+    split: Expression = ["split", "s", "','"]
+    path = (
+        fork(guard, taken=guard[0] == "<"),
+        fork(["==", ["len", split], ["+", "m", 1]], taken=True),
+        fork(["==", ["[]", split, 0], "'x'"], taken=True),
+    )
+    seed = Seed.of({"s": "a", "t": "b", "m": 5})
+
+    started = time.perf_counter()
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # a string's length says nothing of the pieces, and a count past 1,000 is one membership
+    assert isinstance(answer, Sat), answer
+    assert time.perf_counter() - started < 3.0
+    args = dict(apply(seed, answer.model).args)
+    s, t, m = str(args["s"]), str(args["t"]), args["m"]
+    assert isinstance(m, int) and len(s.split(",")) == m + 1 and s.split(",")[0] == "x", args
+    assert len(s) < 100 if guard[0] == "<" else len(t.split(",")) <= 1000, args
+
+
+@needs_cvc5
+def test_the_last_of_many_lines_is_read_where_the_input_s_count_puts_it() -> None:
+    lines: Expression = ["splitlines", "s"]
+    path = (
+        fork([">=", ["len", lines], 1], taken=True),
+        fork(["==", ["[]", lines, -1], "'z'"], taken=True),
+    )
+    seed = Seed.of({"s": "a\n" * 12})
+
+    started = time.perf_counter()
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # chosen among every count up to 14 this ran past the limit; read where the input's own
+    # twelve lines put it, it answers at once
+    assert isinstance(answer, Sat), answer
+    assert time.perf_counter() - started < 8.0
+    assert str(apply(seed, answer.model).args["s"]).splitlines()[-1] == "z"

@@ -28,6 +28,30 @@ LONGEST_WALK = 16
 # the splits that hand back a tracked list; `partition` hands back a tuple of three
 LISTED_SPLITS = frozenset({"split", "rsplit", "splitlines"})
 
+# the heads that build a list from the lists among their operands; a display or a read of an
+# item builds none, so a piece it holds makes no list of it a split's
+_BUILT_FROM = frozenset({"+", "*", "[:]"})
+
+
+def built_from_a_split(form: object) -> bool:
+    """Whether a list's form is a split's list, or a list built from one by ``+``, ``*`` or a
+    slice. A list changed in place names the list before it more than once, so each part is
+    looked at once."""
+    stack, seen = [form], set()
+    while stack:
+        part = stack.pop()
+        if not isinstance(part, list) or not part or not isinstance(part[0], str):
+            continue
+        if id(part) in seen:
+            continue
+        seen.add(id(part))
+        if part[0] in LISTED_SPLITS:
+            return True
+        if part[0] in _BUILT_FROM:
+            stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
+    return False
+
+
 # each method's arguments in the order Python takes them by position, with the default Python
 # gives one left out; partition takes no keyword
 _KEYWORDS: dict[str, tuple[tuple[str, object], ...]] = {

@@ -146,6 +146,18 @@ def test_a_tracked_index_into_a_list_that_holds_a_piece_keeps_its_forks() -> Non
     assert downgrades(sink) == [] and len(forks(sink)) == 2
 
 
+def test_a_list_changed_many_times_is_looked_through_once_for_a_split() -> None:
+    items, sink = tracked(["q"])
+    for at in range(60):
+        items[0] = ConcolicStr.made("x", expression=["[]", "t", at], sink=sink)
+
+    # each change names the list before it twice, so a look that did not share the parts it
+    # met would take 2**60 steps
+    item = items[ConcolicInt.made(0, expression="i", sink=sink)]
+
+    assert isinstance(item, ConcolicStr) and downgrades(sink) == []
+
+
 def test_a_position_from_the_start_of_a_mixed_argument_is_read_by_its_position() -> None:
     items, sink = tracked([1, "a", None])
 
