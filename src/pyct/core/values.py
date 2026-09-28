@@ -111,8 +111,32 @@ class _Sinked(Protocol):
 
 
 # what a type may answer before its base type's own operation, given the operation's name, the
-# tracked value and the one argument: an answer, or NotImplemented to go on to the base type's
-type First = Callable[[str, object, object], object]
+# tracked value, the other operand and any modulus: an answer, or NotImplemented to go on to the
+# base type's. Its arguments are left unchecked because a Protocol taking the modulus would make
+# `texts.alone`, which answers `__format__` and never meets one, take a parameter it never uses
+type First = Callable[..., object]
+
+
+class _ReflectedPower(int):
+    """An int whose own reflected power answers: what pyct asks the running Python about."""
+
+    def __rpow__(self, other: object, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
+        return _ReflectedPower
+
+
+# whether Python asks the right operand's reflected power for a three-argument pow, as it does
+# for two: from 3.14. Asked of the running Python, not read from its version
+_ASKED_WITH_A_MODULUS = pow(0, _ReflectedPower(), 1) is _ReflectedPower
+
+
+def asked_of_the_right_first(name: str, args: tuple[object, ...]) -> bool:
+    """Whether Python asks the right operand before the left one's operation with these arguments.
+
+    It does for a call on one operand, and for a power with a modulus on a
+    Python that asks for it (`_ASKED_WITH_A_MODULUS`); ``first`` and the
+    type's own rule then say whether the right operand is one it asks.
+    """
+    return len(args) == 1 or (len(args) == 2 and name == "__pow__" and _ASKED_WITH_A_MODULUS)
 
 
 def downgraded(
@@ -140,15 +164,16 @@ def downgraded(
     a split runs on plain values, so that none of its pieces is tracked.
     Such a replacement may turn its arguments into plain values, and it is
     what takes and refuses them. The downgrade is still named ``name``.
-    ``first`` answers a call on one argument before the base type does,
-    when it has an answer, and that answer comes back as it is: ``first``
-    names any downgrade it makes.
+    ``first`` answers a call Python asks the right operand for first
+    (`asked_of_the_right_first`) before the base type does, when it has an
+    answer, and that answer comes back as it is: ``first`` names any
+    downgrade it makes.
     """
     operation = getattr(base, name) if calling is None else calling
 
     def downgrade(self: _Sinked, /, *args: object, **kwargs: object) -> object:
-        if first is not None and len(args) == 1 and not kwargs:
-            answer = first(name, self, args[0])
+        if first is not None and not kwargs and asked_of_the_right_first(name, args):
+            answer = first(name, self, *args)
             if answer is not NotImplemented:
                 return answer
         result = own(operation, self, *args, **kwargs)
@@ -205,6 +230,21 @@ BASES_BY_ID: dict[int, type] = {}
 
 # what each base type is called with for a plain value of its own, when not with nothing
 _EMPTY: dict[type, tuple[object, ...]] = {range: (0,)}
+
+
+def named_as(cls: type, base: type) -> None:
+    """Give a class of pyct's the name, qualified name and module of a type Python has.
+
+    Python writes a value's type into a message from its real class, which
+    ``__class__`` does not reach, as in `'int' object is not subscriptable`,
+    and from 3.14 some messages with the module and qualified name as well.
+    So a message on a tracked value names what it names on a plain one
+    (tracked-classes-carry-their-base-type-s-names). pyct tells its classes
+    apart by identity, never by name.
+    """
+    cls.__name__ = base.__name__
+    cls.__qualname__ = base.__qualname__
+    cls.__module__ = base.__module__
 
 
 def base_value(kind: type) -> object:
@@ -278,6 +318,26 @@ def built_plainly(kind: type, name: str) -> Any:
         return own(operation, *args, **kwargs)
 
     return classmethod(build)
+
+
+def converted(kind: type, name: str) -> Any:
+    """A classmethod of ``kind`` that converts one value to ``kind``, reached through a tracked
+    value.
+
+    A tracked value of the class it is reached through is already the value
+    it would build, so it comes back as it is, as `float(f)` is `f`
+    (`pyct.core.conversions`). Anything else gets ``kind``'s own answer,
+    plain, as `built_plainly` gives it; a tracked number of another type is
+    read through its own conversion, which names what it loses.
+    """
+    operation = getattr(kind, name)
+
+    def convert(cls: type, /, *args: object, **kwargs: object) -> object:
+        if len(args) == 1 and not kwargs and type(args[0]) is cls:
+            return args[0]
+        return own(operation, *args, **kwargs)
+
+    return classmethod(convert)
 
 
 def _called_on_a_value(member: object) -> bool:

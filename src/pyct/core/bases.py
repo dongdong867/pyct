@@ -1,6 +1,7 @@
 """Each tracked class and the base type Python's own value has: the one table of them.
 
-A tracked value reports its base type as its class, and its class called
+A tracked value reports its base type as its class, its class carries that
+type's names, which Python writes into its messages, and its class called
 outside pyct's construction builds that type's value (`pyct.core.values`).
 Each tracked type adds its row here.
 """
@@ -28,3 +29,5 @@ _ROWS: dict[type, type] = {
 TRACKED_CLASSES = frozenset(_ROWS)
 values.BASES.update(_ROWS)
 values.BASES_BY_ID.update({id(tracked): base for tracked, base in _ROWS.items()})
+for tracked, base in _ROWS.items():
+    values.named_as(tracked, base)

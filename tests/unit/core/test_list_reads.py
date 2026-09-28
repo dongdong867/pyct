@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from pyct.core import bound
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import handed
@@ -339,6 +340,54 @@ def test_pyct_s_len_of_a_list_whose_form_stopped_describing_it_is_plain() -> Non
     # the list turned plain here, so the line names the call that found it changed
     assert downgrades(sink) == ["__len__"]
     assert type(bound.len(items)) is int and downgrades(sink) == ["__len__"]
+
+
+@pytest.mark.parametrize(("start", "filled"), [([], False), ([1], True)])
+def test_pyct_s_bool_is_the_truth_test_untested(start: list[int], filled: bool) -> None:
+    items, sink = tracked(start)
+
+    truth = bound.bool_(items)
+
+    # the condition `if items:` tests, recorded only where the target tests it
+    assert isinstance(truth, ConcolicBool) and int.__bool__(truth) is filled
+    assert truth.expression == ["!=", ["len", "items"], 0]
+    assert forks(sink) == [] and downgrades(sink) == []
+    assert bool(truth) is filled
+    assert forks(sink) == [(["!=", ["len", "items"], 0], filled)]
+
+
+def test_pyct_s_bool_keeps_the_form_the_list_had_at_the_call() -> None:
+    items, sink = tracked([])
+    items.append(0)
+
+    truth = bound.bool_(items)
+    items.append(1)
+
+    assert truth.expression == ["!=", ["len", ["+", "items", ["[,]", 0]]], 0]
+    assert int.__bool__(truth) is True and forks(sink) == []
+
+
+def test_pyct_s_bool_of_a_list_whose_form_stopped_describing_it_is_plain() -> None:
+    items, sink = tracked([])
+    heapq.heappush(items, 0)
+
+    truth = bound.bool_(items)
+
+    assert truth is True
+    assert downgrades(sink) == ["__bool__"] and forks(sink) == []
+    assert bound.bool_(items) is True and downgrades(sink) == ["__bool__"]
+
+
+def test_pyct_s_bool_through_map_is_each_list_s_truth() -> None:
+    sink: list[SinkItem] = []
+    rows = [ConcolicList.made([], ["[]", "grid", at], sink) for at in range(2)]
+
+    truths = list(bound.map_(bool, rows))
+
+    assert [truth.expression for truth in truths] == [
+        ["!=", ["len", ["[]", "grid", at]], 0] for at in range(2)
+    ]
+    assert forks(sink) == []
 
 
 def test_an_item_that_is_a_list_is_handed_out_as_it_is_stored() -> None:

@@ -32,7 +32,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, cast
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
-from pyct.core.values import before_a_raise, downgraded, own
+from pyct.core.values import asked_of_the_right_first, before_a_raise, downgraded, own
 
 # what a tracked int, and a tracked bool with it, leaves to int on purpose. A bool is the int 1
 # or 0, so both keep the same names, and both derivations read them here. Each derivation
@@ -77,7 +77,11 @@ def enter(base: type, tracked_class: type, *, number: bool = True) -> None:
     depend on import order, so it raises.
     """
     if _TRACKED.get(base, tracked_class) is not tracked_class:
-        raise ValueError(f"{base.__name__} is already tracked by {_TRACKED[base].__name__}")
+        # the class entered first may carry its base type's names (`values.named_as`), so the
+        # message names the one refused
+        raise ValueError(
+            f"{base.__name__} is already tracked, so {tracked_class.__name__} is refused"
+        )
     _TRACKED[base] = tracked_class
     if number:
         _CLASSES.add(tracked_class)
@@ -174,7 +178,7 @@ _REFLECTED = {
 }
 
 
-def answered_first(name: str, self: object, other: object) -> object:
+def answered_first(name: str, self: object, other: object, *modulus: object) -> object:
     """What a number subclass on the right of a tracked int answers, as Python asks it, or
     NotImplemented.
 
@@ -197,11 +201,11 @@ def answered_first(name: str, self: object, other: object) -> object:
     operation = getattr(kind, reflected, None)
     if operation is None or operation is getattr(base, reflected, None):
         return NotImplemented
-    return reflected_answer(name, self, other, operation)
+    return reflected_answer(name, self, other, operation, *modulus)
 
 
 def reflected_answer(
-    name: str, self: object, other: object, operation: Callable[..., object]
+    name: str, self: object, other: object, operation: Callable[..., object], *modulus: object
 ) -> object:
     """The right operand's own reflected operation, asked first as Python asks it, on a tracked
     number on the left.
@@ -212,7 +216,7 @@ def reflected_answer(
     record nothing. Each number type that asks a subclass first answers
     through here.
     """
-    answer = own(operation, other, self)
+    answer = own(operation, other, self, *modulus)
     if answer is not NotImplemented and type(answer) not in _CLASSES:
         cast(Number, self).sink.append(Downgrade(name=name, site=caller_site()))
     return answer
@@ -221,12 +225,13 @@ def reflected_answer(
 def asked_first(name: str, method: Callable[..., Any]) -> Callable[..., Any]:
     """A tracked int's operation by that name, asked of a number subclass on the right first.
 
-    See `answered_first`. Python asks the right operand first only for a
-    call on one operand, so a three-argument `pow` goes to `method` alone.
+    See `answered_first`. Python asks it for a three-argument `pow` too
+    where the running Python does (`asked_of_the_right_first`).
     """
 
     def compute(self: object, other: object, /, *rest: object) -> Any:
-        if not rest and (answer := answered_first(name, self, other)) is not NotImplemented:
+        asked = asked_of_the_right_first(name, (other, *rest))
+        if asked and (answer := answered_first(name, self, other, *rest)) is not NotImplemented:
             return answer
         return method(self, other, *rest)
 

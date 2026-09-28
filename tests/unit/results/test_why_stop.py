@@ -265,22 +265,25 @@ def test_the_clock_is_read_often_through_each_large_shape(
     file = str(tmp_path / f"{shape}.py")
     source, uncovered, covered, walked = build(size, file)
     Path(file).write_text(source)
+    # each read notes the thread's CPU time: the analysis's own work, which a loaded machine
+    # stretches far less than the wall clock (under twelve CPU burners, [jumps] took at most
+    # 0.113 s of CPU where the wall clock reached 0.27 s)
     reads: list[float] = []
 
     def clock() -> float:
-        reads.append(time.monotonic())
-        return reads[-1]
+        reads.append(time.thread_time())
+        return time.monotonic()
 
     monkeypatch.setattr(why, "clock", clock)
-    started = time.monotonic()
+    started = time.thread_time()
 
-    entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=started + 1.5))
-    marks = [started, *reads, time.monotonic()]
+    entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=time.monotonic() + 1.5))
+    marks = [started, *reads, time.thread_time()]
 
     assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
     # a stop lands at the first read after it, so the longest stretch between two reads, or
     # after the last, is the most the analysis runs past its stop, which the run sets that much
-    # before its grace ends
+    # before its grace ends; each mark is the thread's CPU time, so a stretch is CPU seconds
     longest = max(later - earlier for earlier, later in itertools.pairwise(marks))
     assert longest < LONGEST_STRETCH, longest
 

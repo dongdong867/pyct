@@ -3,7 +3,10 @@
 ``stub_checkout`` lays out a folder the checker takes for a legacy checkout: its
 ``.venv/bin/python`` runs this interpreter with the stub engine first on the path. The real
 adapter and the real v2 side run against it, so a difference or a legacy failure a test
-needs is exact, and does not move when a follow story closes a gap.
+needs is exact, and does not move when a follow story closes a gap. It is not a git checkout,
+so the checker keeps none of its results until a test commits it.
+
+Every test's checker keeps legacy results in a folder of the test's own, never the user's.
 
 ``legacy_checkout`` is a real checkout of ``main`` with its own environment, made once per
 session, however many workers a parallel run has: ``git archive main`` into pytest's temporary
@@ -44,7 +47,16 @@ class StubCheckout:
 
     def calls(self) -> list[dict[str, Any]]:
         calls = self.path / "calls.jsonl"
+        if not calls.exists():
+            return []
         return [json.loads(line) for line in calls.read_text().splitlines()]
+
+    def commit(self) -> None:
+        """Make the checkout a git checkout at one commit, its script included, as main is."""
+        git = ("git", "-C", str(self.path), "-c", "user.name=t", "-c", "user.email=t@t")
+        (self.path / ".gitignore").write_text("calls.jsonl\n")
+        for command in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "stub")):
+            subprocess.run([*git, *command], check=True, capture_output=True)
 
     def install(self, name: str, version: str, files: Mapping[str, str]) -> Path:
         """A library only this checkout's environment has, found before any other of the name.
@@ -61,6 +73,14 @@ class StubCheckout:
             (folder / path).parent.mkdir(parents=True, exist_ok=True)
             (folder / path).write_text(text)
         return folder
+
+
+@pytest.fixture(autouse=True)
+def own_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The folder this test's checker keeps legacy results in, the default one for the test."""
+    folder = tmp_path / "compare-cache"
+    monkeypatch.setenv("PYCT_COMPARE_CACHE", str(folder))
+    return folder
 
 
 @pytest.fixture

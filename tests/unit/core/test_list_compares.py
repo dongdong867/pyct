@@ -43,8 +43,11 @@ def test_index_count_and_remove_search_as_pythons_do() -> None:
     items.remove(5)
 
     assert items.expression == ["+", ["[:]", "items", None, 1], ["[:]", "items", 2, None]]
-    with pytest.raises(ValueError, match="is not in list"):
+    with pytest.raises(ValueError) as plain:
+        [4, 4].index(9)
+    with pytest.raises(ValueError) as raised:
         items.index(9)
+    assert str(raised.value) == str(plain.value)
     assert downgrades(sink) == []
 
 
