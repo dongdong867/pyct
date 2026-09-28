@@ -19,7 +19,7 @@ from pyct.core.branch import Downgrade, caller_site
 from pyct.core.dict_state import DictState
 from pyct.core.list_compares import matches
 from pyct.core.list_state import plain
-from pyct.core.values import own
+from pyct.core.values import named_as, own
 
 # not the target's path: the view's repr and the object plumbing
 _KEPT = ("__repr__", "__getattribute__", "__init__", "__sizeof__", "__new__")
@@ -148,13 +148,15 @@ def _called_on_a_value(member: object) -> bool:
 
 
 def _derive(cls: type[_View], registered: type) -> None:
-    """Downgrade every method of Python's own view that the class body has not taught."""
+    """Downgrade every method of Python's own view that the class body has not taught, and give
+    the class the names of Python's view, which Python writes into its messages."""
     python = type(cls.python({}))
     names = {name for name, member in vars(python).items() if _called_on_a_value(member)}
     names |= set(_INHERITED)
     for name in sorted(names - set(vars(cls)) - set(vars(_View)) - set(_KEPT)):
         setattr(cls, name, _derived(name, cls.python))
     registered.register(cls)
+    named_as(cls, python)
 
 
 _derive(ConcolicKeys, KeysView)

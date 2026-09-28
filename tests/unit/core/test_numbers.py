@@ -85,7 +85,7 @@ def test_a_type_enters_its_class_once() -> None:
 @pytest.mark.usefixtures("table")
 def test_a_second_class_for_a_type_is_refused() -> None:
     # two classes for one type would make the answer depend on which module Python read last
-    with pytest.raises(ValueError, match="int is already tracked by ConcolicInt"):
+    with pytest.raises(ValueError, match="int is already tracked, so Tracked is refused"):
         numbers.enter(int, Tracked)
 
 
@@ -158,7 +158,7 @@ TABLE_ALONE = textwrap.dedent(
     """
     from pyct.core.numbers import tracked
 
-    print(*(type(tracked(value, "x", [])).__name__ for value in (1, True, 1.5)))
+    print(*(type(tracked(value, "x", [])) is not type(value) for value in (1, True, 1.5)))
     """
 )
 
@@ -171,4 +171,4 @@ def test_the_table_is_full_whichever_core_module_is_imported_first() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "ConcolicInt ConcolicBool ConcolicFloat\n"
+    assert result.stdout == "True True True\n"
