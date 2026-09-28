@@ -220,6 +220,28 @@ def test_a_float_subclass_that_answers_the_reflected_operation_answers_first(
     assert sink == [Downgrade(name=name, site=ANY)]
 
 
+def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> None:
+    # Python asks the right operand's reflected power for a three-argument pow from 3.14, so
+    # plain Python in this run says whether Gauge's own answers or float's own raises
+    sink: list[SinkItem] = []
+    x = ConcolicFloat.made(2.5, expression="x", sink=sink)
+
+    answer, error = _answer_or_error(lambda: pow(x, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+
+    plain = _answer_or_error(lambda: pow(2.5, Gauge(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    assert (answer, error) == plain
+    # Gauge's answer is plain, so x's condition is lost there and named; a raise records nothing
+    assert sink == ([] if error else [Downgrade(name="__pow__", site=ANY)])
+
+
+def _answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
+    """What a call answers, or the text of the TypeError it raises."""
+    try:
+        return call(), None
+    except TypeError as error:
+        return None, str(error)
+
+
 def test_a_tracked_answer_from_a_float_subclass_is_no_downgrade() -> None:
     sink: list[SinkItem] = []
     x = ConcolicFloat.made(2.5, expression="x", sink=sink)

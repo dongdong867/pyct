@@ -230,10 +230,18 @@ def test_an_int_subclass_that_hands_the_operation_back_leaves_it_to_the_int() ->
     assert result == 7 + Shy(2)
 
 
-def test_a_three_argument_power_asks_the_int_subclass_nothing() -> None:
-    n = ConcolicInt.made(7, expression="n", sink=[])
+def test_a_three_argument_power_asks_an_int_subclass_where_python_does() -> None:
+    # Python asks the right operand's reflected power for a three-argument pow from 3.14, so
+    # plain Python in this run says whether Rev's own answers
+    sink: list[SinkItem] = []
+    n = ConcolicInt.made(7, expression="n", sink=sink)
 
-    assert pow(n, Rev(2), 5) == pow(7, Rev(2), 5)
+    result = pow(n, Rev(2), 5)
+
+    expected = pow(7, Rev(2), 5)
+    assert result == expected and type(result) is type(expected)
+    # Rev's answer and int's own modular power are both plain, so the condition is lost and named
+    assert sink == [Downgrade(name="__pow__", site=ANY)]
 
 
 def test_a_reflected_call_on_the_tracked_int_asks_the_int_subclass_nothing() -> None:
@@ -360,8 +368,8 @@ PLAIN_INT_NAME = ("'int'", "'ConcolicInt'")
 
 @pytest.mark.parametrize(
     "operation",
-    [lambda n: n ** Coy(2.0), lambda n: pow(n, Dial(2.0), 5), lambda n: pow(n, Fwd(2.0), 5)],
-    ids=["declined-power", "three-argument-power", "three-argument-forward-power"],
+    [lambda n: n ** Coy(2.0), lambda n: pow(n, Fwd(2.0), 5)],
+    ids=["declined-power", "three-argument-forward-power"],
 )
 def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     operation: Callable[[Any], Any],
@@ -377,3 +385,27 @@ def test_a_power_a_float_subclass_does_not_answer_raises_as_python_does(
     # Python's own message, not float's, with only the left operand's type name apart
     assert str(raised.value) == str(plain.value).replace(*PLAIN_INT_NAME, 1)
     assert sink == []
+
+
+def _answer_or_error(call: Callable[[], object]) -> tuple[object, str | None]:
+    """What a call answers, or the text of the TypeError it raises."""
+    try:
+        return call(), None
+    except TypeError as error:
+        return None, str(error)
+
+
+def test_a_three_argument_power_asks_a_float_subclass_where_python_does() -> None:
+    # int declines a float, and Python asks the float subclass's reflected power next for a
+    # three-argument pow from 3.14, so plain Python in this run says whether Dial's own answers
+    sink: list[SinkItem] = []
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+
+    answer, error = _answer_or_error(lambda: pow(n, Dial(2.0), 5))
+
+    plain = _answer_or_error(lambda: pow(7, Dial(2.0), 5))  # pyrefly: ignore[no-matching-overload]
+    plain_answer, plain_error = plain
+    assert answer == plain_answer
+    assert error == (plain_error and plain_error.replace(*PLAIN_INT_NAME, 1))
+    # Dial's answer is plain, so the condition is lost and named; a raise records nothing
+    assert sink == ([] if plain_error else [Downgrade(name="__pow__", site=ANY)])
