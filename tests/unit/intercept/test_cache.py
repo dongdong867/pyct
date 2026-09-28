@@ -183,6 +183,21 @@ def test_an_entry_others_may_write_to_is_a_miss(tmp_path: Path) -> None:
     assert module.builds == ["x = 1", "x = 1"]
 
 
+@pytest.mark.usefixtures("settled")
+def test_an_entry_that_opens_but_cannot_be_read_is_a_miss(tmp_path: Path) -> None:
+    module = Module(tmp_path, "x = 1")
+    module.code(tmp_path / "cache")
+    (entry,) = entries(tmp_path / "cache")
+    # a folder of this user's alone in the entry's place opens, and then refuses the read
+    entry.unlink()
+    entry.mkdir(mode=0o700)
+
+    code = module.code(tmp_path / "cache")
+
+    assert module.builds == ["x = 1", "x = 1"]
+    assert isinstance(code, types.CodeType)
+
+
 def test_the_folder_is_made_for_this_user_alone(tmp_path: Path) -> None:
     Module(tmp_path, "x = 1").code(tmp_path / "cache")
 

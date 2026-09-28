@@ -88,9 +88,10 @@ def cached(
     next run. The stat is taken before the read, so an edit between the two
     leaves a stat the next run does not match.
     """
-    if not _usable(root):
+    folder = _entries(root)
+    if folder is None:
         return build(read())
-    entry = os.path.join(root, "substituted", _version(), _name(path))
+    entry = os.path.join(folder, _name(path))
     held = _held(entry)
     stat = _stat(path)
     if held is not None and stat is not None and _settled(held, stat):
@@ -103,6 +104,12 @@ def cached(
     code = build(source) if kept is None else kept
     _write(root, entry, _head(digest, stat) + marshal.dumps(code))
     return code
+
+
+@functools.cache
+def _entries(root: Path) -> str | None:
+    """The folder of this transform's entries under ``root``, or None when ``root`` keeps none."""
+    return os.path.join(root, "substituted", _version()) if _usable(root) else None
 
 
 @functools.cache
@@ -125,7 +132,6 @@ def _name(path: str) -> str:
     return hashlib.sha256(key).hexdigest()[:32]
 
 
-@functools.cache
 def _usable(root: Path) -> bool:
     """Whether the folder is there or can be made, and is this user's alone."""
     try:
@@ -166,10 +172,16 @@ def _cannot_keep(root: Path, why: str) -> None:
 def _held(entry: str) -> bytes | None:
     """What the entry holds, or None when there is none, or it is not this user's alone."""
     try:
-        with open(entry, "rb", buffering=0) as handle:
-            return handle.readall() if _own(os.fstat(handle.fileno())) else None
+        handle = os.open(entry, os.O_RDONLY)
     except OSError:
         return None
+    try:
+        found = os.fstat(handle)
+        return os.read(handle, found.st_size) if _own(found) else None
+    except OSError:
+        return None
+    finally:
+        os.close(handle)
 
 
 def _stat(path: str) -> Stat | None:
@@ -192,7 +204,7 @@ def _settled(held: bytes, stat: Stat) -> bool:
 def _code(held: bytes) -> types.CodeType | None:
     """The code the entry holds after its head, or None when it holds none."""
     try:
-        code = marshal.loads(held[_HEAD.size :])
+        code = marshal.loads(memoryview(held)[_HEAD.size :])
     except (EOFError, ValueError, TypeError):
         return None
     return code if isinstance(code, types.CodeType) else None
