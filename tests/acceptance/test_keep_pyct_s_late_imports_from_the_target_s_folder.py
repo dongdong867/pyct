@@ -10,6 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from tests.acceptance.harness import input_lines, run_pyct, summary_line
 from tests.acceptance.sweeping import row_named, sweep
 from tests.acceptance.test_keep_a_sweep_entry_s_folder_from_hiding_pyct_s_modules import (
@@ -71,6 +73,17 @@ FORKS = 'def f(x: int) -> str:\n    if x > 3:\n        return "big"\n    return 
 def run_from(folder: Path, spec: str) -> subprocess.CompletedProcess[str]:
     """``pyct run <spec> --args '{"x": 0}' --budget 10`` from ``folder``, unmeasured."""
     return run_pyct(spec, "--args", '{"x": 0}', "--budget", "10", cwd=folder, timeout=60)
+
+
+def imported_by_the_command_line(name: str) -> bool:
+    """Whether importing pyct's command line imports the module ``name``."""
+    result = subprocess.run(
+        [sys.executable, "-P", "-c", f"import sys, pyct.cli; print({name!r} in sys.modules)"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout.strip() == "True"
 
 
 def syntax_error_line() -> str:
@@ -152,3 +165,24 @@ def test_runs_a_target_named_as_a_stdlib_module(tmp_path: Path) -> None:
     forks = inputs[0]["forks"]
     assert isinstance(forks, list), ran.stdout
     assert [fork["expression"] for fork in forks] == [[">", "x", 3]], forks
+
+
+# keep-pyct-s-late-imports-from-the-target-s-folder-lets-the-target-import-its-own-sysconfig
+def test_lets_the_target_import_its_own_sysconfig(tmp_path: Path) -> None:
+    if imported_by_the_command_line("sysconfig"):
+        pytest.skip("pyct's command line imports sysconfig on this Python, so the target shares it")
+    uses = FORKS.replace("x > 3", "x > sysconfig.MARK")
+    folder = folder_of(
+        tmp_path, {"sysconfig.py": "MARK = 7\n", "usesc.py": f"import sysconfig\n\n\n{uses}"}
+    )
+    plain = plain_python(folder, "import usesc; print(usesc.f(0), usesc.f(8))")
+
+    ran = run_from(folder, "usesc::f")
+
+    assert plain.stdout == "small big\n", plain.stderr
+    assert ran.returncode == 0, ran.stderr
+    inputs = input_lines(ran.stdout)
+    assert [line["failure"] for line in inputs] == [None, None], ran.stdout
+    forks = inputs[0]["forks"]
+    assert isinstance(forks, list), ran.stdout
+    assert [fork["expression"] for fork in forks] == [[">", "x", 7]], forks

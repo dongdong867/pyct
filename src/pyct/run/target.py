@@ -44,9 +44,9 @@ def load_target(spec: str, watch: ImportWatch | None = None) -> Target:
 
     The working directory goes first on the import path, so a module under
     it resolves with no ``PYTHONPATH`` set. From then on, a module pyct
-    imports for itself comes from the standard library, never from that
-    directory (``own_imports``). While the module imports, ``watch`` names
-    it for the process that watches this one, when one does.
+    imports for itself is looked for in the standard library first
+    (``own_imports``). While the module imports, ``watch`` names it for
+    the process that watches this one, when one does.
     """
     module_name, function_name = spec.split("::", 1)
     cwd = os.getcwd()

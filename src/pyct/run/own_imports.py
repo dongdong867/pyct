@@ -29,16 +29,31 @@ from __future__ import annotations
 import importlib.machinery
 import os
 import sys
-import sysconfig
 import types
 from collections.abc import Sequence
 
 from pyct.core.branch import PYCT_DIR
 
-# the folders the standard library's files lie in, each with a separator on its end
-_STANDARD = tuple(f"{sysconfig.get_path(key)}{os.sep}" for key in ("stdlib", "platstdlib"))
-# the folders installed packages lie in, which can lie inside the standard library's
-_INSTALLED = tuple(f"{sysconfig.get_path(key)}{os.sep}" for key in ("purelib", "platlib"))
+
+def _installed_folders() -> tuple[str, ...]:
+    """The folders ``site`` looks in for installed packages, each with a separator on its end.
+
+    One can lie inside the standard library's folder, as a system Python's
+    own site-packages does. They are read from ``site`` itself, which
+    imports nothing to answer; none when Python started without ``site``,
+    as ``-S`` has it, which then puts none of them on the path.
+    """
+    site = sys.modules.get("site")
+    if site is None:
+        return ()
+    folders = [*site.getsitepackages(), site.getusersitepackages()]
+    return tuple(f"{folder}{os.sep}" for folder in folders)
+
+
+# the folder the standard library's own files lie in, lib-dynload's included, with a separator on
+# its end; read from os, which every interpreter has imported, so reading it imports nothing
+_STANDARD = f"{os.path.dirname(os.__file__)}{os.sep}"
+_INSTALLED = _installed_folders()
 # how the file name of code frozen into the interpreter starts, the import system's included
 _FROZEN = "<frozen "
 
@@ -72,13 +87,15 @@ def keep_own_imports(package: str) -> None:
     of the top-level package ``package`` to the target.
 
     The finders become a new list, so another thread's import that walks
-    the old one does not see it shift.
+    the old one does not see it shift. With no path finder among them, as a
+    host can leave it, the finder goes last.
     """
     own = next((finder for finder in sys.meta_path if isinstance(finder, _OwnImports)), None)
     if own is None:
         own = _OwnImports()
         finders = list(sys.meta_path)
-        at = finders.index(importlib.machinery.PathFinder)
+        path_finder = importlib.machinery.PathFinder
+        at = finders.index(path_finder) if path_finder in finders else len(finders)
         sys.meta_path = [*finders[:at], own, *finders[at:]]
     own.targets.add(package)
 

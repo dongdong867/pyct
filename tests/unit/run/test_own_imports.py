@@ -7,7 +7,9 @@ the working directory; these tests put back ``sys.meta_path`` and ``difflib``.
 """
 
 import importlib
+import importlib.machinery
 import os
+import subprocess
 import sys
 import sysconfig
 import threading
@@ -18,6 +20,8 @@ from types import ModuleType
 import pytest
 
 from pyct.core.branch import PYCT_DIR
+from pyct.run import own_imports
+from pyct.run.own_imports import keep_own_imports
 from pyct.run.target import load_target
 
 TARGET = "def f(x: int) -> int:\n    return x\n"
@@ -124,3 +128,53 @@ def test_an_import_with_no_frame_past_the_standard_library_s_is_python_s(folder:
     thread.join()
 
     assert getattr(sys.modules["difflib"], "MARK", None) == "folder"
+
+
+def test_an_installed_package_s_import_under_pyct_s_call_comes_from_the_folder(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a site-packages inside the standard library's folder, as a system Python's own is
+    installed = f"{own_imports._STANDARD}site-packages{os.sep}"
+    monkeypatch.setattr(own_imports, "_INSTALLED", (installed,))
+    load_target("target::f")
+    library_s = code_of(f"{installed}lazy.py", "found = importlib.import_module('difflib')")
+
+    names = pyct_s("found = library_s()['found']", {"library_s": library_s})()
+
+    assert getattr(names["found"], "MARK", None) == "folder"
+
+
+def test_the_finder_goes_last_when_no_path_finder_is_there(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    others = [each for each in sys.meta_path if each is not importlib.machinery.PathFinder]
+    monkeypatch.setattr(sys, "meta_path", others)
+
+    keep_own_imports("target")
+
+    assert sys.meta_path[:-1] == others
+    assert type(sys.meta_path[-1]).__name__ == "_OwnImports"
+
+
+def test_no_folder_is_installed_when_python_started_without_site(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delitem(sys.modules, "site")
+
+    assert own_imports._installed_folders() == ()
+
+
+def test_loading_the_finder_imports_no_module_of_its_own() -> None:
+    # what own_imports imports itself, then own_imports: nothing more may come with it
+    loads = (
+        "import sys, importlib.machinery, os, types, collections.abc, pyct.core.branch, pyct.run\n"
+        "before = set(sys.modules)\n"
+        "import pyct.run.own_imports\n"
+        "print(sorted(set(sys.modules) - before))\n"
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-P", "-c", loads], capture_output=True, text=True, check=True
+    )
+
+    assert result.stdout == "['pyct.run.own_imports']\n", result.stdout

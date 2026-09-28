@@ -1,7 +1,8 @@
 """Acceptance tests for drop-only-the-platform-read-s-own-imports, one per criterion.
 
-The criterion keeps-another-thread-s-finished-import is in ``tests/unit/run/test_run_platform.py``:
-a thread's import that starts and ends within the read's 12 ms or so cannot be timed from outside.
+The criteria keeps-another-thread-s-finished-import, keeps-a-held-import and drops-the-read-s-own
+are in ``tests/unit/run/test_run_platform.py``, where a thread's import can be timed against a
+stubbed read.
 """
 
 import subprocess

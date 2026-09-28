@@ -66,6 +66,7 @@ def in_a_thread(name: str, errors: list[BaseException]) -> threading.Thread:
     return thread
 
 
+# drop-only-the-platform-read-s-own-imports-drops-the-read-s-own
 def test_the_read_drops_each_module_it_imported(
     folder: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -100,10 +101,8 @@ def test_keeps_another_thread_s_finished_import(
     assert importlib.import_module("quickmod") is held
 
 
-# drop-only-the-platform-read-s-own-imports-keeps-another-thread-s-import-in-progress
-def test_keeps_another_thread_s_import_in_progress(
-    folder: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+# drop-only-the-platform-read-s-own-imports-keeps-a-held-import
+def test_keeps_a_held_import(folder: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (folder / "slowmod.py").write_text(HELD)
     gate = Gate()
     monkeypatch.setitem(sys.modules, "pyct_test_gate", gate)
@@ -122,3 +121,31 @@ def test_keeps_another_thread_s_import_in_progress(
 
     assert errors == []
     assert "slowmod" in sys.modules
+
+
+# drop-only-the-platform-read-s-own-imports-keeps-another-thread-s-module-under-the-read-s-package
+def test_keeps_another_thread_s_module_under_the_read_s_package(
+    folder: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (folder / "pk").mkdir()
+    (folder / "pk" / "__init__.py").write_text("")
+    (folder / "pk" / "slow.py").write_text(HELD)
+    gate = Gate()
+    monkeypatch.setitem(sys.modules, "pyct_test_gate", gate)
+    errors: list[BaseException] = []
+    threads: list[threading.Thread] = []
+
+    def during() -> None:
+        importlib.import_module("pk")
+        threads.append(in_a_thread("pk.slow", errors))
+        assert gate.entered.wait(PATIENCE)
+
+    a_read(monkeypatch, during)
+
+    _platform()
+    gate.release.set()
+    threads[0].join(PATIENCE)
+
+    assert errors == []
+    # the read's package stays too: the other thread's module needs it
+    assert {"pk", "pk.slow"} <= set(sys.modules)
