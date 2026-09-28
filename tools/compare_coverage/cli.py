@@ -1,7 +1,7 @@
 """The command line: ``python -m tools.compare_coverage --legacy DIR [flags]``.
 
 Before any target runs, the checks go in this order, each leaving stdout empty: the flags
-and the files they name (exit 2), the legacy checkout (exit 2), then cvc5 (exit 1), as
+and the files and folders they name (exit 2), the legacy checkout (exit 2), then cvc5 (exit 1), as
 ``pyct run`` checks its command line before the machine. The limit flags take the names and
 the rules ``pyct run`` gives them. Ctrl-C stops every running side and exits 130.
 
@@ -29,7 +29,7 @@ from tools.compare_coverage.accepted import (
     key_of,
     read_records,
 )
-from tools.compare_coverage.cache import Cache, clear, default_folder, run_context
+from tools.compare_coverage.cache import Cache, Legacy, clear, default_folder, run_context
 from tools.compare_coverage.compare import Facts, Run, Sides, Streams, compare
 from tools.compare_coverage.entries import (
     LIST_FILE,
@@ -63,8 +63,9 @@ USAGE = (
     " [--jobs N] [--cache DIR] [--clear-cache] [--refresh-budget-spent]"
 )
 
-# rows that run at once when --jobs is not given, measured on the per-merge gate
-DEFAULT_JOBS = 4
+# rows that run at once when --jobs is not given: on the per-merge gate, four or six at once
+# pushed rows that end near their 5 s budget past it on a loaded machine, and two did not
+DEFAULT_JOBS = 2
 
 # this checkout: its targets are the v2 set's, and its pyct is the v2 side
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -112,6 +113,7 @@ def prepare(argv: Sequence[str], environ: Mapping[str, str]) -> tuple[Run, Sides
     target_list = load_list(LIST_FILE)
     entries = target_list.select(flags.sets, flags.targets)
     accepted = _accepted(flags, target_list)
+    folder = _cache_folder(flags, environ)
     environment = side_environment(environ)
     legacy_python = probe(flags.legacy, environment)
     cvc5 = locate_cvc5(environ)
@@ -134,7 +136,7 @@ def prepare(argv: Sequence[str], environ: Mapping[str, str]) -> tuple[Run, Sides
         accepted=accepted,
         jobs=flags.jobs,
     )
-    legacy = LegacySide(flags.legacy, environment, _cache(flags, facts, environ))
+    legacy = LegacySide(flags.legacy, environment, _cache(flags, facts, folder))
     return run, _sides(legacy, environment)
 
 
@@ -145,10 +147,8 @@ def _sides(legacy: LegacySide, environment: Mapping[str, str]) -> Sides:
     return Sides(v2=v2, legacy=legacy)
 
 
-def _cache(flags: Flags, facts: Facts, environ: Mapping[str, str]) -> Cache | None:
-    """Where legacy results are kept, cleared first if asked, or ``None`` when legacy's commit
-    is not known."""
-    assert flags.legacy is not None  # probe refuses a missing checkout
+def _cache_folder(flags: Flags, environ: Mapping[str, str]) -> Path:
+    """The folder legacy results are kept in, made if missing and cleared first if asked."""
     folder = flags.cache or default_folder(environ, Path.home())
     try:
         (folder / "legacy").mkdir(parents=True, exist_ok=True)
@@ -156,13 +156,21 @@ def _cache(flags: Flags, facts: Facts, environ: Mapping[str, str]) -> Cache | No
             clear(folder)
     except OSError as error:
         raise UsageError(f"cannot keep legacy results in {folder}: {error.strerror}") from error
-    context = run_context(
-        facts.commits["legacy"],
-        changes(flags.legacy),
-        facts.python["legacy"],
-        facts.cvc5,
-        installed_distributions(flags.legacy),
+    return folder
+
+
+def _cache(flags: Flags, facts: Facts, folder: Path) -> Cache | None:
+    """Legacy results kept in ``folder``, or ``None`` when a fact they depend on is not known."""
+    assert flags.legacy is not None  # probe refuses a missing checkout
+    legacy = Legacy(
+        checkout=flags.legacy,
+        commit=facts.commits["legacy"],
+        changes=changes(flags.legacy),
+        python=facts.python["legacy"],
+        cvc5=facts.cvc5,
+        installed=installed_distributions(flags.legacy),
     )
+    context = run_context(legacy)
     return None if context is None else Cache(folder, context, flags.refresh_budget_spent)
 
 

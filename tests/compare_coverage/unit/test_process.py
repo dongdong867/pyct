@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from tools.compare_coverage import process
 from tools.compare_coverage.process import (
     Command,
     Finished,
@@ -145,7 +146,9 @@ def test_stopping_every_command_ends_one_another_thread_waits_on_and_refuses_mor
     )
     started = time.monotonic()
     waiter.start()
-    time.sleep(0.5)
+    while not process._RUNNING:
+        assert time.monotonic() - started < 10, "the command never started"
+        time.sleep(0.05)
 
     try:
         stop_every_command()

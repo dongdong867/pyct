@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from tests.compare_coverage.conftest import REPO_ROOT, StubCheckout
+from tools.compare_coverage import legacy_side
 from tools.compare_coverage.cache import Cache
 from tools.compare_coverage.legacy_side import (
     LegacyCheckoutError,
@@ -219,6 +220,23 @@ def test_a_side_that_did_not_answer_is_not_kept(
 
     assert len(stub_checkout.calls()) == 2
     assert report.failure is not None and not report.reused
+
+
+def test_a_side_whose_library_probe_failed_is_not_kept(
+    stub_checkout: StubCheckout, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unprobed(report: SideReport, *_args: object) -> SideReport:
+        return replace(report, failure="cannot read which fakelib it has: no library line")
+
+    monkeypatch.setattr(legacy_side, "with_library", unprobed)
+    side = cached_side(stub_checkout, tmp_path)
+    installed = SideRequest(ONE_CHECK, {"x": 0}, REPO_ROOT, Limits(budget=5.0), 60, "fakelib")
+
+    side.run(installed)
+    report = side.run(installed)
+
+    assert len(stub_checkout.calls()) == 2
+    assert not report.reused
 
 
 def test_the_installed_distributions_are_the_names_in_the_environments_site_packages(

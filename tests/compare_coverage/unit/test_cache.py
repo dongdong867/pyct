@@ -2,12 +2,14 @@
 
 import hashlib
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tools.compare_coverage.cache import (
     Cache,
+    Legacy,
     clear,
     default_folder,
     run_context,
@@ -161,14 +163,15 @@ def test_a_budget_spent_report_is_kept_and_refreshed_when_asked(tmp_path: Path) 
     assert a_cache(tmp_path, refresh=True).get("done", tmp_path) is not None
 
 
-def test_clear_removes_every_kept_report_and_nothing_else(tmp_path: Path) -> None:
+def test_clear_removes_every_kept_report_and_part_and_nothing_else(tmp_path: Path) -> None:
     cache = a_cache(tmp_path)
     cache.put("a", SideReport(), tmp_path)
     cache.put("b", SideReport(), tmp_path)
+    (tmp_path / "cache" / "legacy" / "left.part").write_text("{")
     other = tmp_path / "cache" / "notes.txt"
     other.write_text("mine")
 
-    assert clear(tmp_path / "cache") == 2
+    assert clear(tmp_path / "cache") == 3
     assert cache.get("a", tmp_path) is None
     assert other.read_text() == "mine"
     assert clear(tmp_path / "absent") == 0
@@ -182,19 +185,46 @@ def test_the_default_folder_is_the_variable_else_the_user_cache(tmp_path: Path) 
     assert default_folder({}, home) == home / ".cache" / "pyct" / "compare-coverage"
 
 
-FACTS = {"commit": "abc", "changes": "d", "python": "3.12.1", "cvc5": "cvc5 1.3", "installed": ()}
+LEGACY = Legacy(
+    checkout=Path("/legacy"),
+    commit="abc",
+    changes="d",
+    python="3.12.1",
+    cvc5="cvc5 1.3",
+    installed=("a-1.0.dist-info",),
+)
 
 
-@pytest.mark.parametrize("fact", sorted(FACTS))
-def test_the_run_context_moves_with_each_fact(fact: str) -> None:
-    changed = {**FACTS, fact: ("other",) if fact == "installed" else "other"}
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"checkout": Path("/other")},
+        {"commit": "other"},
+        {"changes": "other"},
+        {"python": "3.12.2"},
+        {"cvc5": "cvc5 1.4"},
+        {"installed": ("a-1.1.dist-info",)},
+    ],
+    ids=lambda changed: next(iter(changed)),
+)
+def test_the_run_context_moves_with_each_fact(changed: dict[str, object]) -> None:
+    assert run_context(replace(LEGACY, **changed)) != run_context(LEGACY)  # type: ignore[arg-type]
 
-    assert run_context(**changed) != run_context(**FACTS)  # type: ignore[arg-type]
+
+@pytest.mark.parametrize("fact", ["commit", "changes", "python", "cvc5"])
+def test_there_is_no_run_context_when_a_fact_is_not_known(fact: str) -> None:
+    assert run_context(replace(LEGACY, **{fact: None})) is None  # type: ignore[arg-type]
 
 
-def test_there_is_no_run_context_without_a_commit_or_its_changes() -> None:
-    assert run_context(**{**FACTS, "commit": None}) is None  # type: ignore[arg-type]
-    assert run_context(**{**FACTS, "changes": None}) is None  # type: ignore[arg-type]
+def test_a_result_that_cannot_be_written_is_not_kept_and_the_row_goes_on(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (tmp_path / "cache").write_text("a file where the folder would be")
+
+    a_cache(tmp_path).put("k", SideReport(file="/f.py"), tmp_path)
+
+    assert a_cache(tmp_path).get("k", tmp_path) is None
+    assert "cannot keep a legacy result" in caplog.text
 
 
 def test_a_kept_report_is_one_json_file_named_by_its_key(tmp_path: Path) -> None:

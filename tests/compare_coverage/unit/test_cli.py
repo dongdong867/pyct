@@ -169,8 +169,9 @@ def test_a_cache_folder_that_cannot_be_made_is_refused_before_any_row(
     (tmp_path / "file").write_text("")
     legacy = ["--legacy", str(stub_checkout.path)]
 
+    # no cvc5 on an empty PATH: the folder, a file the flags name, is refused first
     with pytest.raises(UsageError, match="cannot keep legacy results in"):
-        cli.prepare([*legacy, "--cache", str(tmp_path / "file" / "cache")], os.environ)
+        cli.prepare([*legacy, "--cache", str(tmp_path / "file" / "cache")], {"PATH": ""})
 
 
 def test_ctrl_c_exits_130(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,8 +1,10 @@
 """``compare``: one row per entry, then the summary, and the exit code a merge gate reads.
 
 Up to ``jobs`` rows run at once, each in a thread of its own, and within a row the v2 side
-runs before the legacy side, never beside it, so the two sides of a row share the machine
-with the same other rows. With one job, entries run in list order, one at a time. Rows print
+runs before the legacy side, never beside it. With one job, entries run in list order, one at
+a time, so the two sides of a row get the same machine and a budget means the same on both.
+With more, each side shares the machine with whatever rows run beside it then, so a row that
+ends near its budget can end otherwise than it does one at a time. Rows print
 in list order whatever order they finish in, each as soon as it and every row before it has
 finished. A side's trouble is its row's failure, never an error of the run, so every entry
 gets its row. Anything that ends the run early, Ctrl-C among them, stops every side still
@@ -122,21 +124,20 @@ def _rows(run: Run, sides: Sides) -> Generator[Row]:
 def _rows_at_once(run: Run, sides: Sides) -> Generator[Row]:
     """Every entry's row, up to ``run.jobs`` running at once, in list order.
 
-    Whatever ends the wait early stops every side still running before it goes on up, and
-    the pool's threads then end before the run does.
+    Whatever ends the wait early stops every side still running and refuses any new one
+    before it goes on up, and the pool's threads then end before the run does.
     """
-    try:
-        with ThreadPoolExecutor(max_workers=run.jobs, thread_name_prefix="row") as pool:
+    # a run stopped before this one refused new commands until now
+    allow_commands()
+    with ThreadPoolExecutor(max_workers=run.jobs, thread_name_prefix="row") as pool:
+        try:
             futures = [pool.submit(_row, entry, run, sides) for entry in run.entries]
-            try:
-                for future in futures:
-                    yield future.result()
-            except BaseException:
-                pool.shutdown(wait=False, cancel_futures=True)
-                stop_every_command()
-                raise
-    finally:
-        allow_commands()
+            for future in futures:
+                yield future.result()
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            stop_every_command()
+            raise
 
 
 def _row(entry: Entry, run: Run, sides: Sides) -> Row:

@@ -2,17 +2,19 @@
 
 A kept result is reused while nothing it depends on has changed. Its key holds two parts:
 
-- the run's context, one for every row: legacy's commit and the changes to its tracked files,
-  legacy's Python release, the cvc5 version, the distributions legacy's environment has
-  installed, and the contents of the checker files that run and read the legacy side;
+- the run's context, one for every row: legacy's checkout path, its commit and the changes to
+  its tracked files, legacy's Python release, the cvc5 version, the distributions legacy's
+  environment has installed, and the contents of the checker files that run and read the
+  legacy side;
 - the row's own: its target, seed, limits as legacy is given them, how long the side may run,
   the library an installed entry names, and the sources of the target under its root.
 
 The sources are the target module's file, its packages' ``__init__.py`` files, and every
 module under the root that an ``import`` statement in one of them names, followed through
 those modules in turn. An installed entry's module sits in legacy's environment, not under its
-root, so its installed distributions stand for its sources. A checkout with no commit has no
-context, and nothing of its is kept.
+root, so its installed distributions stand for its sources, and the checkout's path is in the
+context, since the report names files there. A run whose commit, changes, Python or cvc5
+version cannot be read has no context, and nothing of its is kept.
 
 Each result is one JSON file, ``legacy/KEY.json`` in the cache folder, written whole before it
 is renamed into place, so rows that run at once never read half of one. Its paths under the
@@ -24,6 +26,7 @@ runs such a row's legacy side again and keeps the new result.
 import ast
 import hashlib
 import json
+import logging
 import os
 import tempfile
 from collections.abc import Iterator, Mapping
@@ -60,6 +63,8 @@ CHECKER_FILES = (
 
 HERE = Path(__file__).parent
 
+LOGGER = logging.getLogger(__name__)
+
 
 def default_folder(environ: Mapping[str, str], home: Path) -> Path:
     """``$PYCT_COMPARE_CACHE``, else ``pyct/compare-coverage`` in the user's cache folder."""
@@ -70,24 +75,37 @@ def default_folder(environ: Mapping[str, str], home: Path) -> Path:
     return Path(user) / "pyct" / "compare-coverage"
 
 
-def run_context(
-    commit: str | None,
-    changes: str | None,
-    python: str | None,
-    cvc5: str | None,
-    installed: tuple[str, ...],
-) -> str | None:
-    """The part of every key one run shares, or ``None`` when legacy's commit is not known."""
-    if commit is None or changes is None:
+@dataclass(frozen=True)
+class Legacy:
+    """What every legacy result of one run depends on, ``None`` where it could not be read.
+
+    ``checkout`` is the checkout's path: an installed entry's report names files in its
+    environment. ``changes`` is the hash of the changes to its tracked files, ``installed``
+    its environment's ``NAME-VERSION.dist-info`` folders.
+    """
+
+    checkout: Path
+    commit: str | None
+    changes: str | None
+    python: str | None
+    cvc5: str | None
+    installed: tuple[str, ...]
+
+
+def run_context(legacy: Legacy) -> str | None:
+    """The part of every key one run shares, or ``None`` when a fact of it is not known."""
+    known = (legacy.commit, legacy.changes, legacy.python, legacy.cvc5)
+    if any(fact is None for fact in known):
         return None
     checker = {name: _digest((HERE / name).read_bytes()) for name in CHECKER_FILES}
     facts = {
         "format": FORMAT,
-        "commit": commit,
-        "changes": changes,
-        "python": python,
-        "cvc5": cvc5,
-        "installed": list(installed),
+        "checkout": str(legacy.checkout.resolve()),
+        "commit": legacy.commit,
+        "changes": legacy.changes,
+        "python": legacy.python,
+        "cvc5": legacy.cvc5,
+        "installed": list(legacy.installed),
         "checker": checker,
     }
     return _digest(_canonical(facts))
@@ -102,8 +120,11 @@ def clear(folder: Path) -> int:
 
 
 def _kept(folder: Path) -> Iterator[Path]:
+    """Every kept result, and every part of one a failed write left."""
     results = folder / "legacy"
-    return results.glob("*.json") if results.is_dir() else iter(())
+    if not results.is_dir():
+        return iter(())
+    return (file for file in results.iterdir() if file.suffix in (".json", ".part"))
 
 
 @dataclass(frozen=True)
@@ -140,13 +161,24 @@ class Cache:
         return report
 
     def put(self, key: str, report: SideReport, root: Path) -> None:
-        """Keep ``report`` under ``key``, replacing whole any result kept there before."""
+        """Keep ``report`` under ``key``, replacing whole any result kept there before.
+
+        A result that cannot be written is not kept, and the row goes on: the next run runs
+        its legacy side again.
+        """
         folder = self.folder / "legacy"
-        folder.mkdir(parents=True, exist_ok=True)
         text = json.dumps({"root": str(root), "report": _fields(report)})
-        with tempfile.NamedTemporaryFile("w", dir=folder, suffix=".part", delete=False) as part:
-            part.write(text)
-        os.replace(part.name, folder / f"{key}.json")
+        part = None
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile("w", dir=folder, suffix=".part", delete=False) as file:
+                part = Path(file.name)
+                file.write(text)
+            os.replace(part, folder / f"{key}.json")
+        except OSError as error:
+            LOGGER.warning("cannot keep a legacy result in %s: %s", folder, error)
+            if part is not None:
+                part.unlink(missing_ok=True)
 
 
 def _fields(report: SideReport) -> dict[str, object]:
@@ -172,7 +204,7 @@ def _report(fields: dict[str, object], kept_root: object, root: Path) -> SideRep
     return SideReport(
         file=_moved(optional_text(fields["file"]), kept_root, root),
         covered=lines_of(fields["covered"]),
-        stopped=_moved(optional_text(fields["stopped"]), kept_root, root),
+        stopped=optional_text(fields["stopped"]),
         inputs=optional_count(fields["inputs"]),
         failure=_moved(optional_text(fields["failure"]), kept_root, root),
         library=installed_of(fields["library"]),
@@ -188,7 +220,8 @@ def _moved(text: str | None, kept_root: str, root: Path) -> str | None:
 
 
 def sources(module: str, root: Path) -> dict[str, str]:
-    """Each file under ``root`` that importing ``module`` can load, with its contents' hash.
+    """Each file under ``root`` an import statement reached from ``module`` names, with its
+    contents' hash.
 
     The module docstring says which files these are. Paths are relative to ``root``.
     """

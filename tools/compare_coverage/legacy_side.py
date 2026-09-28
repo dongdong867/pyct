@@ -8,7 +8,8 @@ Legacy's line tracer leaves a ``.pyct-cov.*`` file in the temp folder for each i
 and main is never changed. So every legacy process runs with ``TMPDIR``, ``TEMP`` and ``TMP``
 naming a folder of its own inside the checker's temp folder. The folder is removed once the
 process exits, fails, is stopped at its deadline or is stopped by Ctrl-C. A checker that is
-itself killed leaves its one folder, found by its ``pyct-legacy-`` prefix.
+itself killed leaves the folder of each legacy side it was running, found by its
+``pyct-legacy-`` prefix.
 
 With a cache, the side answers from a result kept by an earlier run when there is one, and
 keeps each new answer: one from a process that exited 0 and, for an installed entry, said
