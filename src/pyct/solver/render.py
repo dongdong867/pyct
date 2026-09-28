@@ -301,7 +301,8 @@ class _Program:
     def _form(self, node: Node) -> Callable[..., str] | None:
         """The form that writes an operation on the type it works on, or None for an operator.
 
-        A form exact only inside a bound writes its term, and its bound is held once.
+        A form exact only inside a bound writes its term, and its bound is held once. A form
+        with a fact about its value, but for one on a character, holds the fact once.
         """
         head, *operands = node
         if not isinstance(head, str):

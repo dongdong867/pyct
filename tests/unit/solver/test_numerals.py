@@ -335,9 +335,11 @@ def _asked_seconds(prefix: tuple[Branch, ...]) -> tuple[Answer, float]:
 
 @needs_cvc5
 @pytest.mark.parametrize("value", [100000, 200000])
-def test_a_digit_string_of_five_characters_never_reads_as_six_digits_fast(value: int) -> None:
-    """The negated row's case: an int no string of five digits reads, answered in time for the
-    shallow forks after it."""
+def test_a_digit_string_of_at_most_five_characters_never_reads_as_six_digits_fast(
+    value: int,
+) -> None:
+    """The negated row's case: an int no string of at most five digits reads, answered in time
+    for the shallow forks after it."""
     prefix = (
         Branch(expression=["isdigit", "s"], taken=True, site=SITE),
         Branch(expression=[">", ["len", "s"], 5], taken=False, site=SITE),
@@ -361,8 +363,8 @@ def test_the_fact_about_an_int_text_holds_for_every_text() -> None:
 
 
 @needs_cvc5
-def test_a_digit_string_of_five_characters_is_always_read_as_an_int_fast() -> None:
-    """The negated row's other case: no string of five digits is one `int` refuses."""
+def test_a_digit_string_of_at_most_five_characters_is_always_read_as_an_int_fast() -> None:
+    """The negated row's other case: no string of at most five digits is one `int` refuses."""
     prefix = (
         Branch(expression=["isdigit", "s"], taken=True, site=SITE),
         Branch(expression=[">", ["len", "s"], 5], taken=False, site=SITE),

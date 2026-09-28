@@ -84,8 +84,8 @@ def is_int(term: str) -> str:
     """Python's `int(s)` accepts the string: spaces, a sign, and digits with underscores.
 
     The grammar names a string of plain digits on its own as well, the same language: cvc5
-    then sees at once that a string `s.isdigit()` holds for is one it accepts, where the
-    grammar alone took it seconds, or past any limit with no bound on the string's length.
+    then sees at once that a string `s.isdigit()` holds for matches it, where it took 2 to 8 s
+    to see so of a string of at most five characters by the grammar alone.
     """
     written = f"(re.++ (re.* {_SPACE}) {_SIGN} {_DIGITS} (re.* {_SPACE}))"
     grammar = f"(re.union {_PLAIN_DIGITS} {written})"
