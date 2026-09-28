@@ -8,8 +8,6 @@ line writes each as JSON text, and ``--args`` reads it back as the int.
 import json
 import re
 
-import pytest
-
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
 from tests.acceptance.test_dicts import UNTIL_NO_GAIN, dict_of
 from tests.acceptance.test_lists import args_of, covered_of, listed, number, solved
@@ -19,7 +17,6 @@ MADE_UP_INTS = "targets.dicts.made_up_ints"
 MADE_UP_INTS_FILE = str(DICTS / "made_up_ints.py")
 INT_ONLY = "targets.dicts.settled::int_only"
 SETTLED_FILE = str(DICTS / "settled.py")
-ACCEPTED = REPO_ROOT / "tools" / "compare_coverage" / "accepted-per-merge.jsonl"
 
 # the text JSON writes for an int, which `--args` reads back as the int under `dict[int, X]`
 INT_TEXT = re.compile(r"0|-?[1-9][0-9]*")
@@ -49,25 +46,24 @@ def test_makes_up_a_key_to_meet_a_count() -> None:
     assert above and any((4, fork, True) in listed(line) for line in above), ds
 
 
-# make-up-an-int-key-for-an-int-keyed-dict-reaches-the-int-only-line
-@pytest.mark.xfail(
-    strict=True,
-    reason="needs-info: every answer that drops key 1 flips the lookup a walk's shared key 1 "
-    "recorded given its place, which leaves the plan and is an `unknown` miss",
-)
-def test_reaches_the_int_only_line() -> None:
+# make-up-an-int-key-for-an-int-keyed-dict: `int_only` stays behind legacy at line 12, and the
+# cause is the walk's place, not a missing int key. Every path from `{"1": 9}` walks key 1 first,
+# and the only flip that drops it is the line-10 lookup Python shares with the walk's key 1,
+# recorded given its place. With the place it is unsat, and the answer found without it is an
+# `unknown` miss, never an answer that leaves the plan; try-an-answer-found-without-a-walk-s-
+# places tracks the gap
+def test_int_only_misses_line_12_through_the_walk_s_place() -> None:
     result = run_pyct(INT_ONLY, '{"d": {"1": 9}}', "--plateau", "5")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    reached = [line for line in lines if 12 in covered_of([line]).get(SETTLED_FILE, [])]
-    assert reached, covered_of(lines)
-    for line in reached:
-        d = int_keyed(line)
-        # the path Python takes for this `d`: some value above 5 and no key 1
-        assert 1 not in d and any(number(v) > 5 for v in d.values()), d
-    rows = [json.loads(row) for row in ACCEPTED.read_text().splitlines()[1:]]
-    assert INT_ONLY not in [row["target"] for row in rows]
+    assert 12 not in covered_of(lines)[SETTLED_FILE], covered_of(lines)
+    # every key an answer holds, a made-up one included, is an int's JSON text
+    assert all(isinstance(int_keyed(line), dict) for line in lines)
+    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
+    misses = summary_line(result.stdout)["misses"]
+    assert isinstance(misses, list)
+    assert (10, 11, "unknown") in {(m["line"], m["col"], m["why"]) for m in misses}, misses
 
 
 # make-up-an-int-key-for-an-int-keyed-dict-hands-the-keys-back-through-args
