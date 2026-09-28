@@ -160,7 +160,8 @@ def test_a_walk_after_a_tracked_store_asks_which_key_it_named() -> None:
     assert [plain(config[key]) for key in config] == [0, 2]
 
     assert (["==", "name", "'ab'"], True) in forks(sink)
-    assert (["==", "name", "'cd'"], False) in forks(sink)
+    # that settles the name, so the key after it records no compare
+    assert not any(expression == ["==", "name", "'cd'"] for expression, _ in forks(sink))
     hold_against_python(sink, {"config": {"ab": 1, "cd": 2}, "name": "ab"})
     # Python walks `[1, 0]` there: the path must keep that answer out
     assert moves_a_fork(sink, {"config": {"ab": 1, "cd": 2}, "name": "cd"})
@@ -248,10 +249,7 @@ def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
     walked = [item for item in sink if isinstance(item, Branch)][1:]
     compares = [item for item in walked if part(item.expression, 0) == "=="]
     sizes = [item for item in walked if part(item.expression, 0) == ">"]
-    assert [item.holds for item in compares] == [
-        ["given", ["walked", "config", "'ab'"]],
-        ["given", ["walked", "config", "'cd'"]],
-    ]
+    assert [item.holds for item in compares] == [["given", ["walked", "config", "'ab'"]]]
     assert [item.holds for item in sizes] == [
         ["walked", "config", "'ab'"],
         ["walked", "config", "'cd'"],
@@ -262,15 +260,17 @@ def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
 @pytest.mark.parametrize(
     "change",
     [
-        lambda config, n, m: (config.__setitem__(n, 1), config.__setitem__(n, 2)),
-        lambda config, n, m: (config.__setitem__(n, 1), config.__setitem__(m, 2)),
-        lambda config, n, m: config.pop(n, None),
+        lambda config, n, alias, held: (config.__setitem__(n, 1), config.__setitem__(n, 2)),
+        lambda config, n, alias, held: (config.__setitem__(n, 1), config.__setitem__(alias, 2)),
+        lambda config, n, alias, held: config.pop(held, None),
     ],
     ids=["twice", "aliased", "removed"],
 )
 def test_a_walk_compares_no_key_the_path_keeps_apart(change: Any) -> None:
     config, sink = tracked({"ab": 1, "cd": 2})
-    change(config, ConcolicStr.made("zz", "n", sink), ConcolicStr.made("zz", "m", sink))
+    keys = [ConcolicStr.made(text, name, sink) for text, name in (("zz", "n"), ("zz", "m"))]
+    # only a removal takes a key the argument holds, here "ab"
+    change(config, *keys, ConcolicStr.made("ab", "h", sink))
     before = len(forks(sink))
 
     list(config)
@@ -302,3 +302,26 @@ def test_popitem_decides_a_size_its_stores_hold() -> None:
 
     checked = [item for item in sink if isinstance(item, Branch)][-1]
     assert checked.expression == ["!=", ["+", ["len", "config"], 1], 0] and checked.decided
+
+
+def test_a_walk_decides_the_places_the_keys_found_held_fill() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+    name = ConcolicStr.made("a", "name", sink)
+    assert "a" in config and "b" in config and name in config
+
+    list(config)
+
+    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
+    # "a" and "b" are two keys; the tracked key may be either, so adds none
+    assert [item.decided for item in sizes] == [True, True, False]
+
+
+def test_a_compare_the_path_already_decides_records_nothing() -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    name = ConcolicStr.made("zz", "name", sink)
+    config[name] = 0
+
+    assert "ab" in config and "ab" in config
+    compares = [expression for expression, _ in forks(sink) if part(expression, 0) == "=="]
+
+    assert compares == [["==", "name", "'ab'"]]

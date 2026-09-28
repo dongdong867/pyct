@@ -176,11 +176,20 @@ def test_walks_the_stored_key() -> None:
     walk = line_of("walked", "for k in d")
     held = [line for line in lines if (line_of("walked", "d[n]"), LOOKED_UP, True) in listed(line)]
     assert any((walk, [">", ["len", "d"], 1], True) in listed(line) for line in held), held[:3]
-    # a walk after a store records `len(d) + 1 > 0`, whose flip no input takes, as it does after
-    # a store under a plain key; the store's own lookup has an input on each side
     missed = [entry for entry in result.stderr.splitlines() if entry.startswith("missed ")]
-    unsat = [entry for entry in missed if entry.endswith(" unsat")]
-    assert all(entry.startswith(f"missed {FILE}:{walk}:") for entry in unsat), unsat
+    assert [entry for entry in missed if entry.endswith(" unsat")] == [], missed
+
+
+# follow-a-store-under-a-tracked-key-walks-the-stored-key: a walk after a store under a plain
+# key asks nothing its stores already decide either, so no flip of it is unsat
+def test_a_walk_after_a_plain_store_leaves_no_unsat_miss() -> None:
+    result = run_pyct(f"{MODULE}::plain_walked", '{"d": {}}', *BUDGET, timeout=PATIENCE)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert any(covers(line, return_line("plain_walked", "more")) for line in lines), lines[:3]
+    missed = [entry for entry in result.stderr.splitlines() if entry.startswith("missed ")]
+    assert [entry for entry in missed if entry.endswith(" unsat")] == [], missed
 
 
 # follow-a-store-under-a-tracked-key-removes-under-a-tracked-key

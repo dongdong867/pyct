@@ -107,3 +107,13 @@ def missing_deleted(n: str, d: dict):
 def missing_popped(n: str, d: dict):
     d.pop(n)
     return len(d)
+
+
+def plain_walked(d: dict):
+    d["x"] = 5
+    count = 0
+    for k in d:
+        count += 1
+    if count > 1:
+        return "more"
+    return "one"

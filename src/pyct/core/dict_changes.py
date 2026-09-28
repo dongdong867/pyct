@@ -126,11 +126,12 @@ def under(key: object) -> Expression:
 
 def looked_up_to_change(self: DictState, key: object, name: str) -> bool:
     """A followed change's lookup, recorded before the change: whether the dict holds the key.
-    A tracked key the argument does not hold is the target's own for a walk (see
-    ``dict_reads.placed``), as a plain one is."""
+    A tracked key the path found the argument lacks is the target's own for a walk (see
+    ``dict_reads.placed``), as a plain one is; one it holds names no key the argument settles,
+    since the solver may move it."""
     held = bool(present(self, key, name, changing=True))
-    if is_tracked(key) and plain(key) not in self.changed:
-        self.settled.setdefault(plain(key), held)
+    if is_tracked(key) and plain(key) not in self.changed and not held:
+        self.settled.setdefault(plain(key), False)
     return held
 
 
@@ -261,7 +262,7 @@ def last_item(self: DictState) -> tuple[object, object]:
     pin = None if key is MISSING else placed(self, key, POPPED)
     # a size its stores already hold above zero decides the check (see ``Branch.decided``)
     held = key is not MISSING
-    decided = held and self.grown > 0
+    decided = held and self.least_size() > 0
     fork = Branch(["!=", self.size_term(), 0], held, caller_site(), True, "popitem", pin, decided)
     if not recorded(self, fork):
         return own(dict.popitem, self)

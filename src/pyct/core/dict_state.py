@@ -29,6 +29,12 @@ MISSING = object()
 type Change = tuple[Expression, object, bool]
 
 
+def _tracked_key(key: object) -> bool:
+    """Whether a settled key is a tracked key's, which ``dict_reads.settled_as`` writes as a
+    pair."""
+    return isinstance(key, tuple) and key[:1] == ("tracked",)
+
+
 class DictState(dict):
     """The state a tracked dict keeps beside its items, and what every operation checks first.
 
@@ -44,6 +50,11 @@ class DictState(dict):
     sink: BranchSink
     settled: dict[object, bool]
     changed: dict[object, bool]
+    # each key a recorded fork found the argument holds, as ``settled`` knows it, shared as it is
+    found_held: set[object]
+    # each pair of keys a fork compared, a tracked one first, each written as JSON, and whether
+    # they were equal; and each tracked key found equal to a literal, paired with "=="
+    compared: dict[tuple[str, str], bool]
     # every change in the order the target made it, and how many were under a tracked key,
     # which a later lookup compares its own key with (see ``dict_reads.after_changes``)
     log: list[Change]
@@ -82,6 +93,8 @@ class DictState(dict):
         fields["sink"] = sink
         fields["settled"] = {}
         fields["changed"] = {}
+        fields["found_held"] = set()
+        fields["compared"] = {}
         fields["log"] = []
         fields["tracked_changes"] = 0
         fields["grown"] = 0
@@ -109,6 +122,14 @@ class DictState(dict):
         if grown == 0:
             return measured
         return ["+", measured, grown] if grown > 0 else ["-", measured, -grown]
+
+    def least_size(self) -> int:
+        """The fewest keys the dict holds on any input that takes the path so far: the keys the
+        path found the argument holds, at least one where a tracked key was among them, plus
+        the keys the target added and less the keys it removed."""
+        found = self.found_held
+        named = sum(1 for key in found if not _tracked_key(key))
+        return max(named, 1 if found else 0) + self.grown
 
     def current(self, *keys: object) -> bool:
         """Whether the form still describes the dict: its size and each key read.
@@ -156,6 +177,8 @@ class DictState(dict):
         made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
         fields = made.__dict__
         fields["settled"] = self.settled
+        fields["found_held"] = self.found_held
+        fields["compared"] = self.compared
         fields["changed"] = dict(self.changed)
         fields["log"] = list(self.log)
         fields["tracked_changes"] = self.tracked_changes

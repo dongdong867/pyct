@@ -407,11 +407,11 @@ def test_setdefault_under_a_tracked_key_into_a_changed_dict_compares_the_changed
 
     assert config.setdefault(name, 5) == 5
 
-    # the lookup and then the store each ask whether the key is the one stored before, and then
-    # whether the argument holds it
+    # the lookup asks whether the key is the one stored before, once, and the lookup and then
+    # the store each ask whether the argument holds it
     unequal = (["==", "name", "'n'"], False)
     absent = (["in", "name", "config"], False)
-    assert forks(sink) == [(["in", "'n'", "config"], False), *[unequal, absent] * 2]
+    assert forks(sink) == [(["in", "'n'", "config"], False), unequal, absent, absent]
     assert downgrades(sink) == []
     assert plain_dict(config) == {"a": 1, "n": 2, "b": 5}
 

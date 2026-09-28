@@ -135,6 +135,8 @@ def present(
     if changed is not None:
         return changed
     self.settled.setdefault(settled_as(key), held)
+    if held:
+        self.found_held.add(settled_as(key))
     given = self.shared.get(key) if type(key) in (str, int) else None
     written_given: Expression = None if given is None else ["given", given]
     fork = ["in", written, self.expression]
@@ -189,9 +191,26 @@ def after_changes(
 def _compared(
     self: DictState, pair: list[Expression], equal: bool, how: tuple[str, bool, Expression]
 ) -> bool:
-    """Record whether two keys are equal, the tracked one first, and answer whether they are."""
+    """Record whether two keys are equal, the tracked one first, and answer whether they are.
+
+    A pair the path already compared records nothing more, and neither does a tracked key the
+    path already found equal to a literal, compared with another literal: the path decides
+    both, so no input takes their other side.
+    """
+    tracked, other = (json.dumps(part) for part in pair)
+    pinned = self.compared.get((tracked, "=="))
+    if (tracked, other) in self.compared or (pinned is not None and _literal(pair[1])):
+        return equal
     name, raising, holds = how
+    self.compared[(tracked, other)] = equal
+    if equal and _literal(pair[1]):
+        self.compared[(tracked, "==")] = True
     return recorded(self, Branch(["==", *pair], equal, caller_site(), raising, name, holds))
+
+
+def _literal(written: Expression) -> bool:
+    """Whether a key as a fork writes it is a literal: an int, or a str in its quotes."""
+    return type(written) is int or (type(written) is str and written[:1] in ("'", '"'))
 
 
 def over_the_argument(self: DictState, change: Change) -> bool:
@@ -441,7 +460,7 @@ def _walked(
             False,
             name,
             pin,
-            decided=key is not MISSING and self.grown > at,
+            decided=key is not MISSING and self.least_size() > at,
         )
         if not recorded(self, fork):
             return
