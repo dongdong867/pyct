@@ -152,7 +152,7 @@ class Rev(int):
     def __rlshift__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
         return "Rev's own shift"
 
-    def __rpow__(self, other: object, modulus: object = None) -> str:
+    def __rpow__(self, other: object, modulus: object = None) -> object:
         return ("Rev's own power", modulus)
 
     def __rfloordiv__(self, other: object) -> object:  # pyrefly: ignore[bad-override]
@@ -293,7 +293,7 @@ class Dial(float):
     def __rlshift__(self, other: object) -> str:
         return "Dial's own shift"
 
-    def __rpow__(self, other: object, modulus: object = None) -> str:  # pyrefly: ignore[bad-override]
+    def __rpow__(self, other: object, modulus: object = None) -> object:  # pyrefly: ignore[bad-override]
         return ("Dial's own power", modulus)
 
     def __gt__(self, other: object) -> str:  # pyrefly: ignore[bad-override]
