@@ -35,12 +35,14 @@ COMPARES: list[object] = [
 
 
 # follow-builtins-and-conversions-follows-math-on-a-float
-@pytest.mark.timeout(90)
+@pytest.mark.timeout(150)
 def test_follows_math_on_a_float() -> None:
     # cvc5 1.3.4 takes a second or more on each path through `sqrt`, and every path after the
-    # first fork goes through it: every side is taken in about 15 s, and an unsat after that
-    # can take as long again, so the budget ends the run
-    result = run_pyct(READS, '{"x": 0.1}', "--budget", "40", timeout=60)
+    # first fork goes through it: every side is taken in about 12 s on an idle machine, and the
+    # unsats after that end the run at about 45 s. The budget leaves a loaded machine room to
+    # take the sides several times as long; the 10 s solver timeout binds first, at about six
+    # times the slowest sat's 1.6 s
+    result = run_pyct(READS, '{"x": 0.1}', "--budget", "90", timeout=120)
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
