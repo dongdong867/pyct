@@ -9,7 +9,9 @@ A worker runs the last test it holds only when more work or its shutdown arrives
 for the others to go idle would wait forever; they are shut down, and they leave.
 
 A worker is given work until it holds two tests, or no more can be given, since one held test
-waits. A worker still collecting is given none; its collection brings its work.
+waits. A worker still collecting is given none; its collection brings its work. Nor does it
+hold the ``serial`` group back, and a worker whose collection differs from the run's, which
+xdist never registers, holds back nothing.
 
 A worker that dies gives back only the tests it had not started. xdist reports the one it was
 running as failed, and would otherwise queue that test again with every test the worker had
@@ -33,7 +35,12 @@ class SerialLastScheduling(LoadGroupScheduling):
         if next(iter(self.workqueue)) != SERIAL:
             super()._assign_work_unit(node)
             return
-        others = [other for other in self.assigned_work if other is not node]
+        # a worker that has not collected, or collected other tests, is never given the group
+        others = [
+            other
+            for other in self.assigned_work
+            if other is not node and other in self.registered_collections
+        ]
         if not all(other.shutting_down for other in others):
             node.shutdown()
         elif not others:

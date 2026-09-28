@@ -188,6 +188,23 @@ def running_then_crashing(
     return ran, [scheduler.remove_node(worker)]  # pyrefly: ignore[bad-argument-type]
 
 
+def test_a_replacement_whose_collection_differs_holds_nothing_back() -> None:
+    crashed, survivor = Worker(), Worker()
+    scheduler = scheduling([crashed, survivor], COLLECTION)
+    crashitem = scheduler.remove_node(crashed)  # pyrefly: ignore[bad-argument-type]
+    stranger = Worker()
+    scheduler.add_node(stranger)  # pyrefly: ignore[bad-argument-type]
+    differs = [*COLLECTION, "t.py::extra"]
+    scheduler.add_node_collection(stranger, differs)  # pyrefly: ignore[bad-argument-type]
+    scheduler.schedule()
+
+    run_to_the_end(scheduler, [survivor, stranger])
+
+    left = [test for test, nodeid in enumerate(COLLECTION) if nodeid != crashitem]
+    assert sorted(survivor.sent) == left
+    assert stranger.sent == []
+
+
 # a run's tests: quick ones before and after one that ends its worker's process, and a serial
 # group. The worker that dies has finished tests before it, as a worker lost near a run's end
 # has, and may hold tests after it that it never starts
