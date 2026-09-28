@@ -101,7 +101,7 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
         target = load_target(spec)
         positional = positional_only(target.signature)
         checks = checked_annotations(target.signature, target.fn)
-        ctx = ExecutionContext(target.fn, file, True, positional, checks)
+        ctx = ExecutionContext(target.fn, file, alone=True, positional=positional, checks=checks)
         return execute(ctx, args, until, watch=watch).failure
 
 

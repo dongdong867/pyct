@@ -50,7 +50,7 @@ class DictState(dict):
     shared: dict[object, Expression]
     # whether the argument's annotation is `dict[int, X]`, whose made-up keys are ints: a key
     # pyct does not follow that may equal an int turns such a dict plain (see
-    # ``dict_reads.unfollowed``)
+    # ``dict_reads.may_equal_made_up``)
     int_keyed: bool
 
     @classmethod

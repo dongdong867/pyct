@@ -218,3 +218,54 @@ def test_a_key_pyct_does_not_follow_stays_a_downgrade(
     printed = input_lines(result.stdout)
     assert downgrade_names(printed[0])[:1] == [downgrade], printed[0]
     assert [line["mismatch_at"] for line in solved(printed)] == [None] * len(solved(printed))
+
+
+INT_EQUAL_NUMBERS = "targets.dicts.int_equal_numbers"
+INT_EQUAL_NUMBERS_FILE = str(DICTS / "int_equal_numbers.py")
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: any other number, a Fraction, a Decimal or a float
+# subclass, may equal an int, so looking it up turns a `dict[int, X]` plain
+@pytest.mark.parametrize("function", ["fraction_key", "decimal_key", "float_subclass_key"])
+def test_a_number_pyct_does_not_follow_turns_the_dict_plain(function: str) -> None:
+    result = run_pyct(f"{INT_EQUAL_NUMBERS}::{function}", '{"d": {}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert downgrade_names(printed[0])[:1] == ["__contains__"], printed[0]
+    assert [line["mismatch_at"] for line in solved(printed)] == [None] * len(solved(printed))
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: `setdefault` and a merge with the dict on the right
+# look a key equal to an int up as that int, as a store does
+@pytest.mark.parametrize(
+    ("function", "fork", "line"),
+    [
+        ("defaulted_bool", (39, ["in", 0, "d"], False), 41),
+        ("defaulted_enum", (46, ["in", 0, "d"], False), 48),
+        ("merged_after", (53, ["in", 1, "d"], False), 55),
+    ],
+)
+def test_setdefault_and_a_merge_name_the_int(
+    function: str, fork: tuple[object, object, object], line: int
+) -> None:
+    result = run_pyct(f"{INT_EQUAL_NUMBERS}::{function}", '{"d": {}}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert listed(printed[0])[0] == fork, listed(printed[0])
+    assert all(entry["downgrades"] == [] for entry in printed), printed
+    assert [entry["mismatch_at"] for entry in solved(printed)] == [None] * len(solved(printed))
+    assert line in covered_of(printed).get(INT_EQUAL_NUMBERS_FILE, []), covered_of(printed)
+
+
+# make-up-an-int-key-for-an-int-keyed-dict: a `dict[int, X]` holding a str key makes up no key,
+# so a tracked bool key leaves it followed, and its count's fork is recorded
+def test_a_dict_that_makes_up_no_key_stays_followed_past_a_tracked_bool() -> None:
+    seed = '{"b": false, "d": {"a": 1}}'
+    result = run_pyct(f"{INT_EQUAL_NUMBERS}::str_keyed_tracked_bool", seed, *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    printed = input_lines(result.stdout)
+    assert (62, [">", ["len", "d"], 1], False) in listed(printed[0]), listed(printed[0])
+    assert downgrade_names(printed[0]) == ["__contains__"], printed[0]

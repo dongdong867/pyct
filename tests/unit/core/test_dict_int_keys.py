@@ -2,6 +2,8 @@
 does not follow that turns a `dict[int, X]` plain, since it may equal a made-up key."""
 
 import enum
+from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
@@ -68,3 +70,35 @@ def test_a_key_that_may_equal_a_made_up_int_turns_only_an_int_keyed_dict_plain(
     assert ConcolicFloat.made(1.0, "x", sink) not in d
     assert (d.expression is None) is int_keyed
     assert [item.name for item in sink if isinstance(item, Downgrade)][:1] == ["__contains__"]
+
+
+class Loose:
+    def __eq__(self, other: object) -> bool:
+        return other == 0
+
+    def __hash__(self) -> int:
+        return 0
+
+
+@pytest.mark.parametrize(
+    ("key", "plain"),
+    [
+        (Fraction(0), True),
+        (Decimal(0), True),
+        (0.5, False),
+        (ConcolicFloat.made(0.5, "x", []), True),
+        (Loose(), True),
+        ((0,), False),
+        (None, False),
+        (b"0", False),
+        (frozenset(), False),
+    ],
+    ids=repr,
+)
+def test_a_key_turns_an_int_keyed_dict_plain_when_it_may_equal_an_int(
+    key: object, plain: bool
+) -> None:
+    d = ConcolicDict.made({}, "d", [], int_keyed=True)
+
+    assert key not in d
+    assert (d.expression is None) is plain

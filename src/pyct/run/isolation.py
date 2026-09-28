@@ -95,7 +95,9 @@ class Inputs:
         self._switched: Isolation | None = None
         positional = positional_only(target.signature)
         checks = checked_annotations(target.signature, target.fn)
-        alone = ExecutionContext(target.fn, target.file, True, positional, checks)
+        alone = ExecutionContext(
+            target.fn, target.file, alone=True, positional=positional, checks=checks
+        )
         self._calls: dict[Isolation, Call] = {
             # random's state as the run finds it after the target's import, taken once
             Isolation.FORK: functools.partial(in_a_child, alone, random.getstate()),
@@ -103,7 +105,8 @@ class Inputs:
                 in_a_fresh_interpreter, fresh_for(target.spec, target.file)
             ),
             Isolation.IN_PROCESS: functools.partial(
-                execute, ExecutionContext(target.fn, target.file, False, positional, checks)
+                execute,
+                ExecutionContext(target.fn, target.file, positional=positional, checks=checks),
             ),
         }
 

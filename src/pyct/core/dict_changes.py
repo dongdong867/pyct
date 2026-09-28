@@ -190,7 +190,7 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
     """``config.setdefault(key, default)``: the value when the dict holds the key, else a store."""
     if not holds_key(self, key, "setdefault"):
         return own(dict.setdefault, self, key, default)
-    if written_key(key) is None:
+    if written_key(int_key(key)) is None:
         held = own(dict.__contains__, self, key)
         answer = as_python(self, key, "setdefault", lambda: dict.setdefault(self, key, default))
         if not held:
@@ -246,11 +246,12 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
     keys looked up in the dict so the size is known."""
     made = self.derived({**other, **self.storage()})
     for key in other:
-        if follows(key):
-            held = present(self, key, "__ror__")
+        looked = int_key(key)
+        if follows(looked):
+            held = present(self, looked, "__ror__")
         else:
             held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
         if not held:
-            made.changed[plain(key)] = True
+            made.changed[plain(looked)] = True
             made.grown += 1
     return made

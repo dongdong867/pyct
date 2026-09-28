@@ -20,6 +20,7 @@ no copy, and its lookup is recorded given the place the walk read it (``handout`
 from __future__ import annotations
 
 import json
+import numbers
 from collections.abc import Callable, Iterator
 
 from pyct.core.bools import ConcolicBool
@@ -61,7 +62,7 @@ def int_key(key: object) -> object:
     return key
 
 
-def unfollowed(self: DictState, key: object, name: str) -> None:
+def looked_up_unfollowed(self: DictState, key: object, name: str) -> None:
     """Name a lookup pyct does not follow as a downgrade, and turn the dict plain where the key
     may equal a key pyct makes up (see ``may_equal_made_up``)."""
     if may_equal_made_up(self, key):
@@ -72,12 +73,22 @@ def unfollowed(self: DictState, key: object, name: str) -> None:
 
 def may_equal_made_up(self: DictState, key: object) -> bool:
     """Whether a key pyct does not follow may equal a key pyct makes up, which no fork names:
-    in a ``dict[int, X]``, a key whose value is an int or an integral float, a tracked bool or
-    float or an int with its own `__hash__` among them."""
-    bare = plain(key)
+    in a dict that makes up int keys, any number but a plain float that is not integral, a
+    tracked bool or float, a Fraction, a Decimal or an int with its own `__hash__` among them,
+    and any key whose `==` is its own."""
     if not self.int_keyed or written_key(int_key(key)) is not None:
         return False
-    return isinstance(bare, int) or (type(bare) is float and float.is_integer(bare))
+    if type(key) is float:
+        # a plain float here is not integral, and never equals an int
+        return False
+    bare = plain(key)
+    return isinstance(bare, numbers.Number) or type(bare).__eq__ not in _APART_FROM_INTS
+
+
+# the `==` of each builtin type whose values never equal an int, and object's, which is `is`
+_APART_FROM_INTS = frozenset(
+    kind.__eq__ for kind in (object, str, bytes, bytearray, tuple, frozenset, type(None))
+)
 
 
 def is_tracked(key: object) -> bool:
@@ -174,7 +185,7 @@ def found(self: DictState, key: object, name: str, *, raising: bool = False) -> 
         # a tracked key's plain value, so Python's lookup records no `==` the target never wrote
         answer = own(dict.__contains__, self, plain(key))
         if self.expression is not None:
-            unfollowed(self, key, name)
+            looked_up_unfollowed(self, key, name)
         return answer
     bare = plain(looked)
     if not self.holds(name, bare):
