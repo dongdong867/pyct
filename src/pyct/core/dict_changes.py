@@ -23,7 +23,9 @@ from pyct.core.dict_reads import (
     POPPED,
     found,
     handout,
+    int_key,
     is_tracked,
+    may_equal_added,
     placed,
     present,
     recorded,
@@ -86,7 +88,8 @@ def as_python(
 ) -> object:
     """A change under a key pyct does not follow: Python's own, and a downgrade named ``name``,
     with whether the key was there noted from the dict itself, so the size stays the dict's.
-    ``named`` says the call's own lookup already named it, so the call is named once."""
+    ``named`` says the call's own lookup already named it, so the call is named once. A key
+    that may equal an int key the solver adds turns the dict plain (see ``may_equal_added``)."""
     bare = plain(key)
     held = own(dict.__contains__, self, bare)
     answer = own(change)
@@ -94,6 +97,8 @@ def as_python(
         self.sink.append(Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
         self.settled.setdefault(bare, held)
+    if may_equal_added(self, key):
+        self.turn_plain()
     return answer
 
 
@@ -105,8 +110,10 @@ def looked_up_as_python(self: DictState, key: object) -> bool:
 
 def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
     """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
-    says the call's own lookup already named it (see ``as_python``)."""
-    bare = plain(key)
+    says the call's own lookup already named it (see ``as_python``). A key Python's lookup
+    makes the same as an int is looked up as that int, and stored as it is."""
+    looked = int_key(key)
+    bare = plain(looked)
     if not holds_key(self, key, name):
         own(dict.__setitem__, self, key, stored)
         return
@@ -114,8 +121,8 @@ def store(self: DictState, key: object, stored: object, name: str, *, named: boo
         own(dict.__setitem__, self, key, stored)
         self.lose(name)
         return
-    if follows(key):
-        present(self, key, name)
+    if follows(looked):
+        present(self, looked, name)
         own(dict.__setitem__, self, key, stored)
     else:
         as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named)
@@ -131,14 +138,15 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     """
     if not holds_key(self, key, name):
         return own(dict.pop, self, key, *default)
-    if written_key(key) is None:
+    looked = int_key(key)
+    if written_key(looked) is None:
         return _removed_as_python(self, key, name, default)
     named = looked_up_as_python(self, key)
     if not found(self, key, name, raising=not default):
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
-    bare = plain(key)
-    if follows(key):
+    bare = plain(looked)
+    if follows(looked):
         own(dict.__delitem__, self, bare)
     else:
         as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
@@ -182,7 +190,7 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
     """``config.setdefault(key, default)``: the value when the dict holds the key, else a store."""
     if not holds_key(self, key, "setdefault"):
         return own(dict.setdefault, self, key, default)
-    if written_key(key) is None:
+    if written_key(int_key(key)) is None:
         held = own(dict.__contains__, self, key)
         answer = as_python(self, key, "setdefault", lambda: dict.setdefault(self, key, default))
         if not held:
@@ -235,14 +243,22 @@ def merged(self: DictState, other: object, *, reflected: bool = False) -> object
 
 def _joined_after(self: DictState, other: dict[object, object]) -> object:
     """``other | config``: ``other``'s keys first, the dict's values winning, each of ``other``'s
-    keys looked up in the dict so the size is known."""
+    keys looked up in the dict so the size is known, until a key the dict cannot follow turns
+    it plain, and then the dict built from it too."""
     made = self.derived({**other, **self.storage()})
     for key in other:
-        if follows(key):
-            held = present(self, key, "__ror__")
+        if self.expression is None:
+            # a key the dict could not follow turned it plain: it records nothing more
+            break
+        looked = int_key(key)
+        if follows(looked):
+            held = present(self, looked, "__ror__")
         else:
             held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
         if not held:
-            made.changed[plain(key)] = True
+            made.changed[plain(looked)] = True
             made.grown += 1
+    if self.expression is None:
+        # the dict built holds the key that turned this one plain, so it cannot be followed either
+        made.turn_plain()
     return made

@@ -15,13 +15,20 @@ at its place (``placed``), so an answer keeps that key there, as a read keeps a 
 hands out its own copy of each key, so a lookup of that very object, whenever it runs, is one no
 input fails and records no fork (``proven``); a key Python shares with the target's literals has
 no copy, and its lookup is recorded given the place the walk read it (``handout``).
+
+`len(config)` and `bool(config)` where pyct binds or routes them, and on each of its views, read
+the size term, `["len", config]` and what the target added or removed, and record no fork where
+they run.
 """
 
 from __future__ import annotations
 
 import json
+import numbers
 from collections.abc import Callable, Iterator
+from typing import Any
 
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, caller_site
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.ints import ConcolicInt
@@ -44,6 +51,50 @@ def written_key(key: object) -> Expression | None:
     if type(key) is ConcolicStr or type(key) is ConcolicInt:
         return key.expression
     return None
+
+
+def int_key(key: object) -> object:
+    """The int a plain key equals and hashes as, which makes Python's lookup of it that int's:
+    an integral float, or a bool or other int subclass that keeps int's `__eq__` and
+    `__hash__`, an IntEnum member among them. Any other key as it is."""
+    kind = type(key)
+    if isinstance(key, float) and kind is float:
+        return int(key) if key.is_integer() else key
+    if kind is int or not isinstance(key, int) or kind is ConcolicInt or kind is ConcolicBool:
+        return key
+    if kind.__eq__ is int.__eq__ and kind.__hash__ is int.__hash__:
+        return int.__int__(key)
+    return key
+
+
+def looked_up_unfollowed(self: DictState, key: object, name: str) -> None:
+    """Name a lookup pyct does not follow as a downgrade, and turn the dict plain where the key
+    may equal an int key the solver adds (see ``may_equal_added``)."""
+    if may_equal_added(self, key):
+        self.lose(name)
+    else:
+        self.sink.append(Downgrade(name=name, site=caller_site()))
+
+
+def may_equal_added(self: DictState, key: object) -> bool:
+    """Whether a key pyct does not follow may equal an int key the solver adds, one a fork
+    names or one pyct makes up, which that key's lookup does not name: in a ``dict[int, X]``,
+    any number but a plain float that is not integral, a tracked bool or float, a Fraction, a
+    Decimal or an int with its own `__hash__` among them, and any key whose `==` is its own."""
+    if not self.int_keyed or written_key(int_key(key)) is not None:
+        return False
+    if type(key) is float:
+        # a plain float here is not integral, and never equals an int
+        return False
+    bare = plain(key)
+    return isinstance(bare, numbers.Number) or type(bare).__eq__ not in _APART_FROM_INTS
+
+
+# the `==` of str, bytes, tuple, frozenset and None, whose values never equal an int, and
+# object's, which is `is`
+_APART_FROM_INTS = frozenset(
+    kind.__eq__ for kind in (object, str, bytes, tuple, frozenset, type(None))
+)
 
 
 def is_tracked(key: object) -> bool:
@@ -135,15 +186,17 @@ def _copy(key: object) -> object:
 def found(self: DictState, key: object, name: str, *, raising: bool = False) -> bool:
     """Whether the dict holds ``key``, answered and recorded where pyct follows the lookup, and
     otherwise Python's answer, named ``name``: a key of another kind is Python's to hash."""
-    if written_key(key) is None:
-        answer = own(dict.__contains__, self, key)
+    looked = int_key(key)
+    if written_key(looked) is None:
+        # a tracked key's plain value, so Python's lookup records no `==` the target never wrote
+        answer = own(dict.__contains__, self, plain(key))
         if self.expression is not None:
-            self.sink.append(Downgrade(name=name, site=caller_site()))
+            looked_up_unfollowed(self, key, name)
         return answer
-    bare = plain(key)
+    bare = plain(looked)
     if not self.holds(name, bare):
         return dict.__contains__(self, bare)
-    answer = present(self, key, name, raising=raising)
+    answer = present(self, looked, name, raising=raising)
     if answer is None:
         self.sink.append(Downgrade(name=name, site=caller_site()))
         return dict.__contains__(self, bare)
@@ -196,6 +249,20 @@ def truth(self: DictState) -> bool:
     if not self.holds("__bool__"):
         return self.size() != 0
     return forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0)
+
+
+def condition(self: DictState) -> Any:
+    """`bool(config)` where pyct routes `bool`: the condition `if config:` tests, as a tracked
+    bool that records no fork, so the fork is recorded where the target tests it.
+
+    It holds the dict's size term at the call, which a later change replaces rather than edits.
+    A dict with no form gives Python's plain answer; one whose form stopped describing it does
+    too, naming `__bool__` as `if config:` does.
+    """
+    filled = self.size() != 0
+    if not self.holds("__bool__"):
+        return filled
+    return ConcolicBool.made(filled, ["!=", self.size_term(), 0], self.sink)
 
 
 def key_of(self: DictState, key: object) -> object:

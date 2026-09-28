@@ -48,13 +48,15 @@ from pyct.core.values import BASES_BY_ID
 # builtin plain Python found
 _LEN, _ORD, _CHR = len, ord, chr
 
-# a view's size is its dict's
+# a view's size and truth are its dict's
 _VIEWED: Callable[[Any], object] = lambda view: dict_reads.length(view._mapping)  # noqa: E731
+_VIEWED_TRUTH: Callable[[Any], object] = lambda view: dict_reads.condition(view._mapping)  # noqa: E731
 
 # the tracked values core follows through each builtin, by their exact type, and the function
 # that follows them: the three bound in the module's builtins, the conversions a call written
-# `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`), and `range`, which
-# follows a tracked int in any of its arguments and is handed all of them
+# `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`, and for the truth
+# of a list, a dict or a dict's view `pyct.core.list_reads` and `pyct.core.dict_reads`), and
+# `range`, which follows a tracked int in any of its arguments and is handed all of them
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] = {
     _LEN: {
         ConcolicStr: strs.length,
@@ -83,6 +85,11 @@ _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] 
         ConcolicInt: conversions.bool_of_int,
         ConcolicFloat: conversions.bool_of_float,
         ConcolicStr: conversions.bool_of_text,
+        ConcolicList: list_reads.condition,
+        ConcolicDict: dict_reads.condition,
+        ConcolicKeys: _VIEWED_TRUTH,
+        ConcolicValues: _VIEWED_TRUTH,
+        ConcolicItems: _VIEWED_TRUTH,
     },
     range: {ConcolicInt: ranges.ranged, ConcolicBool: ranges.ranged},
 }

@@ -1,4 +1,4 @@
-"""Where cvc5 is and what it says, and the commit a checkout has out."""
+"""Where cvc5 is and what it says, the commit a checkout has out, and its changes."""
 
 import subprocess
 from pathlib import Path
@@ -7,6 +7,7 @@ import pytest
 
 from tools.compare_coverage.environment import (
     SolverMissingError,
+    changes,
     commit,
     cvc5_version,
     locate_cvc5,
@@ -62,3 +63,24 @@ def test_a_folder_that_is_no_checkout_root_has_no_commit(tmp_path: Path) -> None
     assert commit(tmp_path) is None
     # a folder inside a checkout is not that checkout
     assert commit(REPO_ROOT / "targets") is None
+
+
+def test_the_changes_move_with_a_tracked_file_and_not_with_an_untracked_one(
+    tmp_path: Path,
+) -> None:
+    git = ("git", "-C", str(tmp_path), "-c", "user.name=t", "-c", "user.email=t@t")
+    (tmp_path / "tracked.py").write_text("x = 1\n")
+    for command in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "one")):
+        subprocess.run([*git, *command], check=True, capture_output=True)
+    clean = changes(tmp_path)
+    (tmp_path / "untracked.py").write_text("y = 1\n")
+    untracked = changes(tmp_path)
+    (tmp_path / "tracked.py").write_text("x = 2\n")
+
+    assert clean is not None
+    assert untracked == clean
+    assert changes(tmp_path) not in (None, clean)
+
+
+def test_a_folder_git_cannot_read_has_no_changes(tmp_path: Path) -> None:
+    assert changes(tmp_path) is None

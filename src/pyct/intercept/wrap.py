@@ -2,8 +2,9 @@
 
 A module finds a name it neither defines nor imports in its builtins, the
 mapping its ``__builtins__`` holds, which Python sets to the ``builtins``
-module's own dict when the module runs without one. The loader hands each
-module of the package a `LiveBuiltins` instead, which answers every name
+module's own dict when the module runs without one. The loader hands every
+module of the package one `LiveBuiltins` instead, made once, as Python
+hands every module the one dict of ``builtins``. It answers every name
 with what ``builtins`` holds when the name is looked up, but for the three
 names `pyct.core.bound.BOUND` names: while ``builtins`` holds
 Python's own under one of them, the module finds pyct's. So every call that
@@ -30,6 +31,7 @@ from __future__ import annotations
 
 import builtins
 import copy
+import functools
 from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
 from pyct.core.bound import BOUND
@@ -197,6 +199,8 @@ class LiveBuiltins(dict[str, object]):
         self._synced()
 
 
+@functools.cache
 def bound_builtins() -> LiveBuiltins:
-    """The builtins a module of the target's package runs with (see `LiveBuiltins`)."""
+    """The builtins every module of the target's package runs with, made once (see
+    `LiveBuiltins`)."""
     return LiveBuiltins()
