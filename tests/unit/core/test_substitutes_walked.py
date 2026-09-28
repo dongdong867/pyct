@@ -1,6 +1,7 @@
 """`in` on a tuple or a list with a tracked int or bool searched for: the elements in order,
-identity first, an int subclass that keeps int's `==` compared with the tracked value on its
-left, and every other element compared as Python compares it."""
+identity first, an element whose type keeps int's `==`, an exact int or an int subclass,
+compared with the tracked value on its left, and every other element compared as Python
+compares it."""
 
 from collections import namedtuple
 from enum import IntEnum

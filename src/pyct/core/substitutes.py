@@ -180,11 +180,12 @@ def _walked(item: Tracked, elements: Iterator[object]) -> bool:
     Python puts the element on the left of each `==`. An element whose
     type keeps int's own `__eq__`, an IntEnum member or True say, then
     answers plainly, since a tracked int is no subclass of its type, and the
-    condition is lost; so the tracked value is put on the left there, and
-    answers with the same bool and a fork, the element written as its plain
-    value. Any other element is compared as Python compares it: an exact
-    int already hands the compare to the tracked value, and an element with
-    its own `__eq__` answers first. The base type's own walk is read, so a
+    condition is lost; so the tracked value is put on the left of every
+    element whose type keeps int's `__eq__`, an exact int included, where
+    Python would hand it the compare anyway, and answers with the same bool
+    and a fork, the element written as its plain value. Any other element is
+    compared as Python compares it, so an element with its own `__eq__`
+    answers first. The base type's own walk is read, so a
     subclass's `__iter__` never runs where Python's `in` would not run it.
     """
     for element in elements:
