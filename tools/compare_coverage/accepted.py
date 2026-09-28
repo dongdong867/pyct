@@ -19,9 +19,10 @@ they are in, and the exception type and message as they were. A row keeps the te
   ``varies``, ``{only_legacy, only_v2}``: the lines some accepted runs showed and others did
   not, beside ``only_legacy`` and ``only_v2``, which every one showed. A ``same`` or
   ``differs`` row matches it when each list of its lines holds the record's and nothing
-  outside them and ``varies`` (decision compare-budget-bound-rows-widen-only-v2-lines). A
+  outside them and ``varies`` (decision compare-budget-bound-rows-legacy-range-only-at-the-budget). A
   line only legacy covered is one v2 misses: only a person puts it in ``varies``, with
-  ``reason`` saying why it is timing.
+  ``reason`` saying why it is timing, and it counts only in a run where a side ran its whole
+  budget. A record ``--accept`` keeps is written back as the file held it.
 - ``--accept`` rewrites FILE after the last row, with the run's limits first: a row that
   matches its record keeps it as it was; a ``same`` or ``differs`` row where a side ran its
   whole budget, and whose lines only legacy covered fit the record, widens a ``differs``
@@ -32,6 +33,7 @@ they are in, and the exception type and message as they were. A row keeps the te
 """
 
 import json
+import math
 import os
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -64,7 +66,8 @@ class Varies:
     """The lines a record's row showed in some accepted runs and not in others.
 
     ``--accept`` adds only lines only v2 covered. A line only legacy covered is one v2 misses,
-    so only a person adds it, and ``reason`` says why it is timing and not a loss.
+    so only a person adds it, and ``reason`` says why it is timing and not a loss; such a line
+    counts only in a run where a side ran its whole budget.
     """
 
     only_legacy: tuple[int, ...] = ()
@@ -85,6 +88,8 @@ class Record:
     failures: Mapping[str, str] = field(default_factory=dict)
     covered: tuple[int, ...] = ()
     varies: Varies = Varies()
+    # the line as the file held it, written back as it was while the record is kept
+    line: str | None = field(default=None, compare=False)
 
     @property
     def key(self) -> Key:
@@ -193,6 +198,7 @@ def _record(line: str, where: str) -> Record:
             failures=dict(raw["failures"]) if failed else {},
             covered=tuple(raw["covered"]) if failed else (),
             varies=_varies(raw),
+            line=line,
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
         raise RecordsError(f"--accepted: {where} is not a record: {error!r}") from error
@@ -202,22 +208,26 @@ def _record(line: str, where: str) -> Record:
 
 
 def _varies(raw: dict[str, object]) -> Varies:
-    """The record's ``varies``: two lists, not both empty, and a reason with legacy lines only.
+    """The record's ``varies``, or an empty one when the line has none.
 
-    None when the line has no such key.
+    Refused: anything but two lists of lines, both lists empty, lines only legacy covered
+    without a written reason, and a ``reason`` key without such lines.
     """
     if "varies" not in raw:
         return Varies()
     varies = raw["varies"]
     if not isinstance(varies, dict) or set(varies) - {"reason"} != {"only_legacy", "only_v2"}:
         raise ValueError(f"varies must hold only_legacy and only_v2, got {varies!r}")
-    lists, reason = (varies["only_legacy"], varies["only_v2"]), varies.get("reason")
-    if not all(isinstance(lines, list) for lines in lists) or not any(lists):
+    legacy, v2 = varies["only_legacy"], varies["only_v2"]
+    if not (isinstance(legacy, list) and isinstance(v2, list)) or not (legacy or v2):
         raise ValueError(f"varies must hold two lists of lines, not both empty: {varies!r}")
-    written = isinstance(reason, str) and bool(reason)
-    if bool(lists[0]) != written or (reason is not None and not written):
-        raise ValueError(f"varies needs a reason exactly when only legacy lines vary: {varies!r}")
-    return Varies(only_legacy=tuple(lists[0]), only_v2=tuple(lists[1]), reason=reason)
+    reason = varies.get("reason")
+    written = isinstance(reason, str) and bool(reason.strip())
+    if bool(legacy) != written or ("reason" in varies and not written):
+        raise ValueError(
+            f"varies needs a written reason exactly when only legacy lines vary: {varies!r}"
+        )
+    return Varies(only_legacy=tuple(legacy), only_v2=tuple(v2), reason=reason if written else None)
 
 
 def _well_formed(record: Record) -> bool:
@@ -244,33 +254,49 @@ def _range_fits(record: Record) -> bool:
     return record.status == Status.DIFFERS.value and apart
 
 
-def mark(row: Row, records: Mapping[Key, Record], roots: Roots, budget: float | None = None) -> Row:
+def mark(
+    row: Row,
+    records: Mapping[Key, Record],
+    roots: Roots,
+    budget: float = math.inf,
+    accepting: bool = False,
+) -> Row:
     """The row marked ``accepted`` or ``changed`` against its record, or as it was without one.
 
-    ``roots`` are the checkouts this run's paths are under, for the row's stable reasons. With
-    ``budget``, the run's under ``--accept``, a changed row also says whether ``--accept``
-    widens its record rather than replacing it.
+    ``roots`` are the checkouts this run's paths are under, for the row's stable reasons, and
+    ``budget`` is the run's. Under ``--accept`` (``accepting``), a changed row also says
+    whether ``--accept`` widens its record rather than replacing it.
     """
     if row.target is None or row.seed is None:
         return row
     record = records.get(key_of(row.target, row.seed))
     if record is None:
         return row
-    change = _change(record, row, roots)
-    widened = change is not None and budget is not None and _widens(record, row, budget)
+    change = _change(record, row, roots, budget_bound(row, budget))
+    widened = accepting and change is not None and _widens(record, row, budget)
     record_mark = "accepted" if change is None else "changed"
     return replace(row, record=record_mark, change=change, widened=widened)
 
 
-def _change(record: Record, row: Row, roots: Roots) -> str | None:
-    """What differs between the record and the row, or ``None`` when they match."""
+def _change(record: Record, row: Row, roots: Roots, bound: bool) -> str | None:
+    """What differs between the record and the row, or ``None`` when they match.
+
+    ``bound`` says a side of the row ran its whole budget; only then do the lines only legacy
+    covered that the record's range holds count.
+    """
+    legacy_range, note = record.varies.only_legacy, ""
+    if legacy_range and not bound:
+        note = (
+            f", and its range {_lines(legacy_range)} counts only when a side ran its whole budget"
+        )
+        legacy_range = ()
     sides = (
-        ("only legacy", record.only_legacy, record.varies.only_legacy, row.only_legacy),
-        ("only v2", record.only_v2, record.varies.only_v2, row.only_v2),
+        ("only legacy", record.only_legacy, legacy_range, row.only_legacy, note),
+        ("only v2", record.only_v2, record.varies.only_v2, row.only_v2, ""),
     )
     lines = [
-        f"{name} was {_range(always, varies)}, now {_lines(now)}"
-        for name, always, varies, now in sides
+        f"{name} was {_range(always, varies)}, now {_lines(now)}{note}"
+        for name, always, varies, now, note in sides
         if not _within(always, varies, now)
     ]
     # a range holds same and differs rows alike, so their status alone is no change
@@ -374,7 +400,7 @@ def rewritten(accepted: Accepted, rows: Iterable[Row], roots: Roots, budget: flo
 def _next_record(old: Record | None, row: Row, roots: Roots, budget: float) -> Record | None:
     """The record ``--accept`` keeps for ``row``, as the module docstring says."""
     assert row.target is not None and row.seed is not None  # rewritten skips a file's row
-    if old is not None and _change(old, row, roots) is None:
+    if old is not None and _change(old, row, roots, budget_bound(row, budget)) is None:
         return old
     if old is not None and _widens(old, row, budget):
         return _widened(old, row)
@@ -391,10 +417,13 @@ def _widens(old: Record, row: Row, budget: float) -> bool:
 
 
 def _widened(old: Record, row: Row) -> Record:
-    """``old`` taking in the lines only v2 covered: each one either showed and the other did not
-    varies. The lines only legacy covered stay as ``old`` has them."""
+    """``old`` with its range taking in the lines only v2 covered in the row.
+
+    A line only v2 covered in one of the two and not in the other varies. The lines only
+    legacy covered, the range's among them, stay as ``old`` has them.
+    """
     always, varies = _span(old.only_v2, old.varies.only_v2, row.only_v2)
-    return replace(old, only_v2=always, varies=replace(old.varies, only_v2=varies))
+    return replace(old, only_v2=always, varies=replace(old.varies, only_v2=varies), line=None)
 
 
 def _span(
@@ -426,8 +455,18 @@ def write_records(path: Path, limits: Limits, records: Collection[Record]) -> No
         "plateau": limits.plateau,
         "solver_timeout": limits.solver_timeout,
     }
-    lines = [json.dumps(made_with), *(json.dumps(_fields(record)) for record in records)]
+    lines = [json.dumps(made_with), *(_line(record) for record in records)]
     path.write_text("".join(f"{line}\n" for line in lines), encoding="utf-8")
+
+
+def _line(record: Record) -> str:
+    """The record as the file held it, or, for a record this run made, its fields as JSON.
+
+    A reason's text is written as it is, not escaped.
+    """
+    if record.line is not None:
+        return record.line
+    return json.dumps(_fields(record), ensure_ascii=False)
 
 
 def _fields(record: Record) -> dict[str, object]:

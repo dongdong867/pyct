@@ -152,6 +152,22 @@ def test_accept_keeps_legacy_lines_exact(stub_checkout: StubCheckout, tmp_path: 
     assert (row["record"], code) == ("changed", 1), row
 
 
+def test_a_legacy_range_counts_only_at_the_budget(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    """keep-a-budget-bound-compare-row-stable-a-legacy-range-counts-only-at-the-budget"""
+    checker = Checker(stub_checkout, tmp_path)
+    reason = "v2 misses 4 only when a side runs out of time"
+    hand = FOUR | {"only_v2": [], "varies": {"only_legacy": [4], "only_v2": [], "reason": reason}}
+
+    for limits, record, code in ((SPENT, "accepted", 0), (INSIDE, "changed", 1)):
+        checker.records(hand, limits=limits)
+
+        exit_code, row = checker.run([2, 3, 4], limits, v2=[2, 3])
+
+        assert (row["only_legacy"], row["record"], exit_code) == ([4], record, code), row
+
+
 def test_a_same_row_inside_the_range_passes(stub_checkout: StubCheckout, tmp_path: Path) -> None:
     """keep-a-budget-bound-compare-row-stable-a-same-row-inside-the-range-passes"""
     checker = Checker(stub_checkout, tmp_path)
@@ -198,7 +214,7 @@ def test_fails_an_outcome_outside_the_range(stub_checkout: StubCheckout, tmp_pat
 
         code, row = checker.run([], limits)
 
-        assert (row["record"], code) == ("changed", 1), row
+        assert (row["record"], row["widened"], code) == ("changed", False, 1), row
         assert row["change"] == "only v2 was 4 and any of 3, now 2, 3, 4"
 
 
@@ -226,8 +242,14 @@ def test_refuses_a_malformed_range(stub_checkout: StubCheckout, tmp_path: Path) 
     command = ("--legacy", str(stub_checkout.path), "--target", ONE_CHECK)
     overlapping = FOUR | {"varies": {"only_legacy": [], "only_v2": [4]}}
     failed = {**FOUR_OR_THREE, "status": "v2 failed", "failures": {"v2": "x"}, "covered": []}
+    same = {**FOUR_OR_THREE, "status": "same", "only_v2": []}
+    empty = FOUR | {"varies": {"only_legacy": [], "only_v2": []}}
+    unexplained = FOUR | {"varies": {"only_legacy": [3], "only_v2": []}}
+    blank = FOUR | {"varies": {"only_legacy": [3], "only_v2": [], "reason": " "}}
+    idle = FOUR | {"varies": {"only_legacy": [], "only_v2": [3], "reason": "timing"}}
+    malformed = (FOUR | {"varies": [3]}, overlapping, failed, same, empty, unexplained, blank, idle)
 
-    for record in (FOUR | {"varies": [3]}, overlapping, failed):
+    for record in malformed:
         write_records(accepted, record)
 
         result = run_checker(*command, "--accepted", str(accepted))

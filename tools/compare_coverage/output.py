@@ -100,7 +100,9 @@ def table_line(row: Row) -> str:
     parts = [row.set, row.target or str(row.file)]
     if row.v2 is not None and row.legacy is not None:
         parts += [_side_text("v2", row.v2, row), _side_text("legacy", row.legacy, row)]
-    marks = [row.status.value, *([row.record] if row.record else []), *["widened"][: row.widened]]
+    marks = [row.status.value] if row.record is None else [row.status.value, row.record]
+    if row.widened:
+        marks.append("widened")
     parts.append(", ".join(marks))
     details = _details(row)
     return "  ".join(parts + ["; ".join(details)] if details else parts)

@@ -213,6 +213,9 @@ def test_a_range_is_written_after_the_lines_and_read_back(tmp_path: Path) -> Non
         {"only_legacy": [3], "only_v2": [4], "reason": ""},
         {"only_legacy": [], "only_v2": [4], "reason": "timing"},
         {"only_legacy": [3], "only_v2": [4], "reason": 7},
+        {"only_legacy": [3], "only_v2": [4], "reason": "  "},
+        {"only_legacy": [3], "only_v2": [4], "reason": None},
+        {"only_legacy": [], "only_v2": [4], "reason": None},
     ],
 )
 def test_a_range_that_is_not_two_lists_of_new_lines_is_refused(
@@ -258,7 +261,7 @@ def test_accept_never_widens_the_lines_only_legacy_covered() -> None:
     (replaced,) = rewritten(accepting(EXACT), [lost], ROOTS, BUDGET)
 
     assert replaced == replace(EXACT, only_legacy=(3,))
-    assert mark(lost, {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False
+    assert mark(lost, {EXACT.key: EXACT}, ROOTS, BUDGET, accepting=True).widened is False
 
 
 def test_accept_widens_v2_lines_beside_a_legacy_range_a_person_wrote() -> None:
@@ -268,14 +271,55 @@ def test_accept_widens_v2_lines_beside_a_legacy_range_a_person_wrote() -> None:
     (widened,) = rewritten(accepting(record), [row], ROOTS, BUDGET)
 
     assert widened == replace(record, varies=replace(HAND, only_v2=(4, 6, 7)))
-    assert mark(row, {record.key: record}, ROOTS, BUDGET).widened is True
+    assert mark(row, {record.key: record}, ROOTS, BUDGET, accepting=True).widened is True
 
 
 def test_a_row_is_marked_widened_only_when_accept_widens_its_record() -> None:
     """keep-a-budget-bound-compare-row-stable-accept-widens-a-budget-bound-record"""
     spent = showing(4, 5, 6, legacy=SPENT)
 
-    assert mark(spent, {EXACT.key: EXACT}, ROOTS, BUDGET).widened is True
-    assert mark(spent, {EXACT.key: EXACT}, ROOTS).widened is False
-    assert mark(showing(4, 5, 6), {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False
-    assert mark(showing(5, legacy=SPENT), {EXACT.key: EXACT}, ROOTS, BUDGET).widened is False
+    records = {EXACT.key: EXACT}
+
+    assert mark(spent, records, ROOTS, BUDGET, accepting=True).widened is True
+    assert mark(spent, records, ROOTS, BUDGET).widened is False
+    assert mark(showing(4, 5, 6), records, ROOTS, BUDGET, accepting=True).widened is False
+    assert mark(showing(5, legacy=SPENT), records, ROOTS, BUDGET, accepting=True).widened is False
+
+
+def test_a_legacy_range_counts_only_when_a_side_ran_its_whole_budget() -> None:
+    """keep-a-budget-bound-compare-row-stable-a-legacy-range-counts-only-at-the-budget"""
+    record = replace(EXACT, varies=HAND)
+    records = {record.key: record}
+    quick, spent = (replace(showing(5, legacy=side), only_legacy=(3,)) for side in (QUICK, SPENT))
+
+    assert mark(spent, records, ROOTS, BUDGET).record == "accepted"
+    assert mark(quick, records, ROOTS, BUDGET).change == (
+        "only legacy was none, now 3, and its range 3 counts only when a side ran its whole budget"
+    )
+    assert mark(quick, records, ROOTS).record == "changed"
+    assert mark(replace(quick, only_legacy=()), records, ROOTS, BUDGET).record == "accepted"
+    (replaced,) = rewritten(accepting(record), [quick], ROOTS, BUDGET)
+    assert replaced == replace(EXACT, only_legacy=(3,))
+
+
+def test_accept_keeps_a_hand_written_record_as_it_was_written(tmp_path: Path) -> None:
+    """keep-a-budget-bound-compare-row-stable-accept-keeps-a-matching-record"""
+    hand = (
+        '{"set": "v2", "target": "m::f", "seed": {"s": "a"}, "status": "differs",'
+        ' "only_legacy": [], "only_v2": [5], "varies": {"reason": "v2\u2019s run ends on its'
+        ' budget", "only_v2": [4, 6], "only_legacy": [3]}}'
+    )
+    file = a_file(tmp_path, hand)
+    records = read_records(file, True, LIMITS)
+    row = replace(showing(5, 6, legacy=SPENT), only_legacy=(3,))
+    accepted = Accepted(path=file, records=records, accept=True, listed=frozenset(records))
+
+    write_records(file, LIMITS, rewritten(accepted, [row], ROOTS, BUDGET))
+
+    assert file.read_text().splitlines()[1] == hand
+    (widened,) = rewritten(accepted, [replace(row, only_v2=(5, 7))], ROOTS, BUDGET)
+    write_records(file, LIMITS, [widened])
+    assert json.loads(file.read_text().splitlines()[1])["varies"]["reason"] == (
+        "v2\u2019s run ends on its budget"
+    )
+    assert "\u2019" in file.read_text(encoding="utf-8")
