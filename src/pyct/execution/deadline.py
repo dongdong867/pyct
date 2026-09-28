@@ -93,10 +93,11 @@ class _Owner:
 
     The handler raises only while a block runs, only once its instant has
     come, and only in the frames under ``home``, the frame that entered the
-    block. A signal the timer of an earlier block posts late, into a later
-    block, comes before that block's instant, since a timer never fires
-    early. A signal that comes after a Ctrl-C cut a block's way out short
-    lands outside the block's frames.
+    block, and never over a stop on its way out (``_a_stop_in_flight``). A
+    signal the timer of an earlier block posts late, into a later block,
+    comes before that block's instant, since a timer never fires early. A
+    signal that comes after a Ctrl-C cut a block's way out short lands
+    outside the block's frames.
     """
 
     owns: bool = False
@@ -115,9 +116,22 @@ _EARLY = 0.001
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
     """SIGALRM's handler in a process that owns it: raise once, only inside a block, in time."""
     in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
-    if in_time and _under(frame, _OWNER.home):
+    if in_time and _under(frame, _OWNER.home) and not _a_stop_in_flight():
         _OWNER.running = False
         _raise_deadline(signal_number, frame)
+
+
+def _a_stop_in_flight() -> bool:  # pragma: no cover
+    """Whether a stop is on its way out where the alarm landed, which a DeadlineError would replace.
+
+    A stop is a KeyboardInterrupt, or another BaseException that is neither
+    an Exception nor SystemExit, such as pyct's own ``Stopped`` for a
+    SIGTERM. GeneratorExit is Python closing a generator, and a DeadlineError
+    is the deadline's own; neither is a stop.
+    """
+    error = sys.exception()
+    ordinary = (Exception, SystemExit, GeneratorExit, DeadlineError)
+    return error is not None and not isinstance(error, ordinary)
 
 
 def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:  # pragma: no cover
@@ -167,7 +181,7 @@ class _Sent:
     the watcher sends only while it holds, under ``lock``, and while this
     deadline's handler is SIGALRM's. The handler raises once, only for its
     own watcher's signal, only while ``armed`` holds, only in the frames the
-    block runs, and never over a Ctrl-C on its way out: the block's frame is
+    block runs, and never over a stop on its way out: the block's frame is
     the one that entered it, and a signal that lands as ``__exit__`` begins,
     before its first line, is past the block.
 
@@ -258,10 +272,7 @@ class _Sent:
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
         """SIGALRM's handler while the block runs: raise once, for its own watcher, inside it."""
-        if not (self.sent and self.armed and self._in_block(frame)):
-            return
-        # a Ctrl-C the alarm lands on goes on; a DeadlineError would take its place
-        if isinstance(sys.exception(), KeyboardInterrupt):
+        if not (self.sent and self.armed and self._in_block(frame)) or _a_stop_in_flight():
             return
         self.armed = False
         _raise_deadline(signal_number, frame)

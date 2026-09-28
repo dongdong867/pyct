@@ -205,3 +205,23 @@ def test_a_ctrl_c_at_a_block_s_edge_leaves_no_alarm_to_raise_after_it(
     step: Callable[[], None],
 ) -> None:
     assert settled_then(step) == 0
+
+
+def alarm_on_a_ctrl_c_in_flight() -> None:
+    try:
+        with deadline(time.monotonic() + 0.05):
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                # the alarm lands while the Ctrl-C is on its way out of the target
+                end = time.monotonic() + 0.2
+                while time.monotonic() < end:
+                    pass
+                raise
+    except KeyboardInterrupt:
+        return
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_alarm_that_lands_on_a_ctrl_c_leaves_it_to_go_on() -> None:
+    assert settled_then(alarm_on_a_ctrl_c_in_flight) == 0
