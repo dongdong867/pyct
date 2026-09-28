@@ -76,16 +76,21 @@ def test_a_join_of_a_tracked_list_no_walk_ended_on_is_a_pyct_bug() -> None:
 
 
 @pytest.mark.parametrize(
-    "items",
-    [PIECE_ITEMS, [["upper", ["[]", SPLIT, 1]], ["upper", ["[]", SPLIT, 0]]]],
-    ids=["as they are", "through an operation"],
+    ("items", "s", "count"),
+    [
+        (PIECE_ITEMS, "x,y", 2),
+        ([["upper", ["[]", SPLIT, 1]], ["upper", ["[]", SPLIT, 0]]], "x,y", 2),
+        # the list's tail, as `s.split(",")[1:]` reads it
+        ([["[]", SPLIT, 1], ["[]", SPLIT, 2]], "a,x,y", 3),
+    ],
+    ids=["as they are", "through an operation", "the tail"],
 )
-def test_a_split_whose_every_piece_a_join_reads_is_held_to_its_number(
-    items: list[Expression],
+def test_a_split_of_the_input_s_string_whose_last_piece_a_join_reads_is_held_to_its_number(
+    items: list[Expression], s: str, count: int
 ) -> None:
-    written = _expressions((fork(["==", ["join", "'-'", ["[,]", *items]], "'a-b'"]),), s="x,y")
+    written = _expressions((fork(["==", ["join", "'-'", ["[,]", *items]], "'a-b'"]),), s=s)
 
-    assert written[-1] == [COUNTED, SPLIT, 2]
+    assert written[-1] == [COUNTED, SPLIT, count]
 
 
 @pytest.mark.parametrize(
@@ -93,17 +98,25 @@ def test_a_split_whose_every_piece_a_join_reads_is_held_to_its_number(
     [
         # part of the list: the input's split has three pieces, and the join reads two
         (PIECES, "x,y,z"),
-        # a split read only as the string of another split
+        # a split read only as the string of another split, held on its own
         (["[,]", ["[]", ["split", ["[]", SPLIT, 0], "':'"], 0]], "x:y,z"),
-        # a split of a string the input does not hold as it is
-        (["[,]", ["[]", ["split", ["upper", "s"], "','"], 0]], "x"),
     ],
-    ids=["part of the list", "through another split", "of a changed string"],
+    ids=["part of the list", "through another split"],
 )
-def test_any_other_split_a_join_reads_is_left_free(joined: Expression, s: str) -> None:
+def test_a_split_whose_last_piece_no_join_reads_is_left_free(joined: Expression, s: str) -> None:
     written = _expressions((fork(["==", ["join", "'-'", joined], "'a'"]),), s=s)
 
-    assert len(written) == 1
+    assert [COUNTED, SPLIT] not in [part[:2] for part in written if isinstance(part, list)]
+
+
+def test_a_split_of_a_changed_string_is_held_one_past_the_last_piece_the_path_reads() -> None:
+    changed: Expression = ["split", ["upper", "s"], "','"]
+    joined = fork(["==", ["join", "'-'", ["[,]", ["[]", changed, 0]]], "'a'"])
+    later = fork(["==", ["[]", changed, 2], "'z'"], taken=False)
+
+    written = _expressions((joined, later), s="x,y,z")
+
+    assert written[-1] == [COUNTED, changed, 3]
 
 
 @pytest.mark.parametrize(

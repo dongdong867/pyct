@@ -8,6 +8,8 @@ so only a real run through the command line proves it.
 from collections.abc import Callable
 from typing import Any
 
+import pytest
+
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
 from tests.acceptance.test_lists import (
     UNTIL_NO_GAIN,
@@ -265,3 +267,22 @@ def covered_lines(lines: list[dict[str, object]]) -> set[int]:
         assert isinstance(each, dict), line
         covered |= set(each.get(JOINS_FILE, []))
     return covered
+
+
+# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a join that reads a split's
+# last piece, or a split of a changed string, keeps every answer on the plan
+@pytest.mark.parametrize(
+    ("target", "seed"),
+    [
+        ("of_the_tail", '{"s": "a,x,y"}'),
+        ("of_a_lowered_split", '{"s": "x,y"}'),
+        ("of_a_stripped_split", '{"s": "x,y"}'),
+    ],
+)
+def test_a_join_that_reads_to_a_split_s_end_leaves_no_plan(target: str, seed: str) -> None:
+    result = run_pyct(f"{JOINS}::{target}", seed)
+
+    assert result.returncode == 0, result.stderr
+    answers = solved(input_lines(result.stdout))
+    assert answers, result.stdout
+    assert all(line["mismatch_at"] is None for line in answers), answers

@@ -1,5 +1,5 @@
-"""A join of strings written as the concatenation it is, and each split whose whole list it
-joins held to its number of pieces.
+"""A join of strings written as the concatenation it is, and each split whose list's end it
+reads held to its number of pieces.
 
 Core writes a join as ``["join", sep, what]``: ``what`` is a list display of the items it read,
 or a tracked list's form, whose walk the join made first. That walk's last fork,
@@ -8,13 +8,16 @@ the path to the join, so the join is ``what[0] + sep + ... + what[n-1]``, the em
 none. The condition means what it meant; only the way it is written changes.
 
 The list a split hands back is plain, and render asserts only that each piece a fork reads is
-there (see `splits`). A join of the whole list reads every piece, so an answer with another
-piece would join another item. A split of a string the input holds, whose every piece the
-join reads among its items, as ``"-".join(s.split(","))`` and ``"".join(p.upper() for p in
-s.split(","))`` do, is held to the number of pieces it had in that input, by a fork the path
-took, ``[COUNTED, split, n]``. Any other split is left free: one the join reads part of, as
-``s.split(",")[:1]``, one it reads only as the string of another split, and one of a string the
-input does not hold as it is.
+there (see `splits`). A join that reads a split's last piece, as ``"-".join(s.split(","))``,
+``s.split(",")[1:]`` and ``reversed(s.split(","))`` do, reads to the list's end, so an answer
+with another piece would join another item: such a split is held by a fork the path took,
+``[COUNTED, split, n]``. For a split of a string the input holds as it is, n is the number of
+pieces Python made of it there. For a split of any other string, whose pieces the solver cannot
+count, n is one past the last piece the path reads, which an answer may need more of: a miss,
+never an answer off the plan. A split whose last piece the join does not read, as
+``s.split(",")[:1]`` from ``"q,r"``, and one the join reads only as the string of another split,
+stay free: each piece is counted from the start and asserted there, so another piece past them
+changes nothing the join reads.
 """
 
 from collections.abc import Callable
@@ -35,7 +38,7 @@ type Held = Callable[[Expression], object]
 
 def expanded(prefix: tuple[Branch, ...], is_leaf: IsLeaf, held: Held) -> tuple[Branch, ...]:
     """The path with every join written as the concatenation it is, and a fork that holds each
-    split whose whole list a join reads to its number of pieces.
+    split whose list's end a join reads to its number of pieces.
 
     Each distinct part is rewritten once, so a part held in many places is
     still one part, and a path with no join is handed back as it is.
@@ -53,7 +56,7 @@ def expanded(prefix: tuple[Branch, ...], is_leaf: IsLeaf, held: Held) -> tuple[B
         for fork in prefix
     )
     site = prefix[-1].site
-    counts = rewriting.counts.values()
+    counts = _counts(written, rewriting.reads, is_leaf, held)
     return written + tuple(Branch([COUNTED, *count], taken=True, site=site) for count in counts)
 
 
@@ -69,15 +72,15 @@ def _walk_ends(prefix: tuple[Branch, ...]) -> dict[_Walked, int]:
 
 
 class _Rewriting:
-    """The parts of one path as they are rewritten, and the splits its joins read whole."""
+    """The parts of one path as they are rewritten, and the pieces of splits its joins read."""
 
     def __init__(self, ends: dict[_Walked, int], is_leaf: IsLeaf, held: Held) -> None:
         self.ends = ends
         self.is_leaf = is_leaf
         self.held = held
         self.written: dict[int, Expression] = {}
-        # each split a join reads whole, by its identity as rewritten, and its number of pieces
-        self.counts: dict[int, tuple[Node, int]] = {}
+        # each split a join reads a piece of, by its identity as rewritten, and the positions
+        self.reads: dict[int, tuple[Node, set[int]]] = {}
 
     def rewrite(self, node: Node) -> None:
         """A part with its operands rewritten, and a join as its concatenation."""
@@ -97,7 +100,8 @@ class _Rewriting:
         written = node[2]
         if isinstance(written, list) and written[0] == "[,]":
             items = [self._now(item) for item in written[1:]]
-            self._hold_whole(items)
+            for split, at in _pieces_in(items, self.is_leaf):
+                self.reads.setdefault(id(split), (split, set()))[1].add(at)
         else:
             items = [["[]", what, at] for at in range(self._count(written))]
         if not items:
@@ -112,16 +116,6 @@ class _Rewriting:
         if key not in self.ends:
             raise ValueError(f"pyct cannot render a join of {listed}: no walk ends on it")
         return self.ends[key]
-
-    def _hold_whole(self, items: list[Expression]) -> None:
-        """Note each split every piece of which the items read, with its number of pieces."""
-        read: dict[int, tuple[Node, set[int]]] = {}
-        for split, at in _pieces_in(items, self.is_leaf):
-            read.setdefault(id(split), (split, set()))[1].add(at)
-        for key, (split, positions) in read.items():
-            count = _pieces_held(split, self.held)
-            if count is not None and positions >= set(range(count)):
-                self.counts[key] = (split, count)
 
 
 def _pieces_in(items: list[Expression], is_leaf: IsLeaf) -> list[tuple[Node, int]]:
@@ -143,6 +137,36 @@ def _pieces_in(items: list[Expression], is_leaf: IsLeaf) -> list[tuple[Node, int
             case _:
                 stack.extend(part[1:])
     return found
+
+
+def _counts(
+    prefix: tuple[Branch, ...],
+    reads: dict[int, tuple[Node, set[int]]],
+    is_leaf: IsLeaf,
+    held: Held,
+) -> list[tuple[Node, int]]:
+    """Each split a join reads to its list's end, with the number of pieces it is held to: the
+    input's, or one past the last piece the path reads where the solver cannot count them."""
+    counts: list[tuple[Node, int]] = []
+    last: dict[int, int] | None = None
+    for split, positions in reads.values():
+        count = _pieces_held(split, held)
+        if count is None:
+            last = _last_pieces(prefix, is_leaf) if last is None else last
+            counts.append((split, last[id(split)] + 1))
+        elif max(positions) >= count - 1:
+            counts.append((split, count))
+    return counts
+
+
+def _last_pieces(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> dict[int, int]:
+    """The last piece of each split the path reads, by the split's identity."""
+    last: dict[int, int] = {}
+    for node in distinct(prefix, is_leaf)[0]:
+        match node:
+            case ["[]", [str() as head, *_] as split, int() as at] if head in SPLITS:
+                last[id(split)] = max(last.get(id(split), at), at)
+    return last
 
 
 def _pieces_held(split: Node, held: Held) -> int | None:

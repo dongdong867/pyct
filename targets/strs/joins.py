@@ -81,3 +81,27 @@ def of_a_piece_split_again(s):
         if s.endswith("z"):
             return "ends"  # split again
     return "other"
+
+
+def of_the_tail(s):
+    if "-".join(s.split(",")[1:]) == "b-c":
+        if s.endswith(",d"):
+            return "ends"
+        return "joined"
+    return "other"
+
+
+def of_a_lowered_split(s):
+    if "-".join(s.lower().split(",")) == "a-b":
+        if s.endswith(",c"):
+            return "ends"
+        return "joined"
+    return "other"
+
+
+def of_a_stripped_split(s):
+    if "-".join(s.strip().split(",")) == "a-b":
+        if "," in s[3:]:
+            return "comma"
+        return "joined"
+    return "other"
