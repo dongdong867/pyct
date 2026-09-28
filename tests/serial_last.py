@@ -35,7 +35,7 @@ class SerialLastScheduling(LoadGroupScheduling):
         if next(iter(self.workqueue)) != SERIAL:
             super()._assign_work_unit(node)
             return
-        # a worker that has not collected, or collected other tests, is never given the group
+        # a worker still collecting, or whose collection differs, does not hold the group back
         others = [
             other
             for other in self.assigned_work
