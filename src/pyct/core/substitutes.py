@@ -203,7 +203,7 @@ def _walked(item: Tracked, elements: Iterator[object]) -> bool:
     not run it, and a deque changed during the walk raises as its own
     search does.
     """
-    bases = _ANSWERED_PLAINLY[type(item)]
+    bases = _ANSWERED_PLAINLY.get(type(item), ())
     for element in elements:
         if element is item:
             return True

@@ -331,3 +331,17 @@ def test_a_chain_link_walks_str_members() -> None:
 
     assert (tracked_str("blue", sink) in Searched([Color.RED, Color.BLUE])) is True
     assert expressions(sink) == [(["==", "s", "'red'"], False), (["==", "s", "'blue'"], True)]
+
+
+class OwnText(str):
+    """A str whose own walk hands out something else, which str's `==` never runs."""
+
+    def __iter__(self):  # noqa: ANN204
+        return iter(["zz"])
+
+
+def test_a_str_element_s_own_walk_never_runs() -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked_str("a", sink), [OwnText("a")]) is True
+    assert expressions(sink) == [(["==", "s", "'a'"], True)]
