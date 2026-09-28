@@ -142,7 +142,7 @@ def present(
 
 
 def after_changes(
-    self: DictState, key: object, written: Expression, how: tuple[str, bool]
+    self: DictState, key: object, written: Expression, how: tuple[str, bool], *, held: bool = False
 ) -> bool | None:
     """Whether the dict holds ``key`` by a change the target made, the latest first, or None
     when no change decides it and the argument's own keys do.
@@ -151,15 +151,16 @@ def after_changes(
     solver may make the two keys equal or apart, so the lookup records whether they are,
     `["==", "n", "'b'"]`, the side Python took, at the lookup's own site; a key equal to the
     change's decides. Keys of different kinds never are equal, and one expression always is.
-    ``how`` is the lookup's name and whether Python may raise after it.
+    ``how`` is the lookup's name and whether Python may raise after it. A key the argument
+    ``held`` is apart from each tracked key whose change found it none of the argument's.
     """
     bare = plain(key)
     tracked = is_tracked(key)
     if not tracked and not self.retracked:
         return self.changed.get(bare)
     apart: list[Expression] = []
-    for under, changed, stored in reversed(self.log):
-        if type(changed) is not type(bare):
+    for under, changed, stored, apart_from_argument in reversed(self.log):
+        if type(changed) is not type(bare) or (held and apart_from_argument):
             continue
         if under is None and not tracked:
             if changed == bare:
@@ -252,15 +253,18 @@ def found(
     return answer
 
 
-def value(self: DictState, key: object) -> object:
+def value(self: DictState, key: object, *, changing: bool = False) -> object:
     """The value under a key the dict holds, handed out as the target reads it.
 
     A tracked key reads the argument's value as ``config[name]``, so the solver may change the
-    key; any other key, and a tracked one into a dict the target changed, hands out what the
-    dict holds there.
+    key; any other key hands out what the dict holds there. So does a tracked key into a dict
+    the target changed, unless a change's own lookup (``changing``) found the key none of the
+    changed ones, and so the argument's.
     """
     held = dict.__getitem__(self, plain(key))
-    if not is_tracked(key) or self.expression is None or self.changed:
+    if not is_tracked(key) or self.expression is None:
+        return held
+    if self.changed and not (changing and plain(key) not in self.changed):
         return held
     assert isinstance(key, ConcolicStr | ConcolicInt)
     read: Expression = ["[]", self.expression, key.expression]
@@ -360,10 +364,35 @@ def placed(self: DictState, key: object, end: str) -> Expression:
     written = written_key(key)
     if written is None:
         return None
-    own_key = self.changed.get(key) is True and self.settled.get(key) is False
+    target_s = own_key(self, key)
     if end in (LAST, POPPED):
-        return None if own_key else [end, self.expression, written]
-    return ["exactly", self.expression] if own_key else ["walked", self.expression, written]
+        return None if target_s else [end, self.expression, written]
+    return ["exactly", self.expression] if target_s else ["walked", self.expression, written]
+
+
+def own_key(self: DictState, key: object) -> bool:
+    """Whether the dict holds a key of the target's own: one it stored that the argument did
+    not hold."""
+    return self.changed.get(key) is True and self.settled.get(key) is False
+
+
+def compared_in_place(self: DictState, key: object) -> bool:
+    """Whether a key of the argument a walk or popitem hands out may be one a tracked key
+    changed: a tracked key whose change found it among the argument's keys. The target's own
+    key is wherever its store put it."""
+    if not self.retracked or written_key(key) is None or own_key(self, key):
+        return False
+    return any(
+        under is not None and not apart and type(changed) is type(key)
+        for under, changed, _, apart in self.log
+    )
+
+
+def handed_in_place(self: DictState, key: object, name: str) -> None:
+    """Record, for a key of the argument a walk or popitem hands out, whether each tracked key
+    that may have changed it did, so an answer keeps the value there (``compared_in_place``)."""
+    if compared_in_place(self, key):
+        after_changes(self, key, written_key(key), (name, False), held=True)
 
 
 def _walked(
@@ -379,11 +408,17 @@ def _walked(
         if not self.holds(name, *(() if key is MISSING else (key,))):
             break
         pin = None if key is MISSING else placed(self, key, end)
+        holds: Expression = pin
+        if key is not MISSING and pin is not None and compared_in_place(self, key):
+            # the key stays in its place whatever a fork reads, so the key it is compared
+            # with below is the one an answer's walk reads there
+            holds = ["given", pin]
         fork = Branch(
-            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, pin
+            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, holds
         )
         if not recorded(self, fork):
             return
+        handed_in_place(self, key, name)
         handout(self, key, pin)
         yield pick(self, key)
         at += 1

@@ -83,7 +83,7 @@ def forks_by_input(stderr: str) -> list[tuple[dict[str, object], list[tuple[str,
 def check_forks_read_as_python(stderr: str, *, int_keyed: bool = False) -> None:
     """Each fork on every line, read as Python with the line's arguments, gives its side."""
     inputs = forks_by_input(stderr)
-    assert inputs, stderr
+    assert any(forks for _, forks in inputs), stderr
     for args, forks in inputs:
         given = called({"args": args}, int_keyed=int_keyed)
         for text, taken in forks:

@@ -9,7 +9,9 @@ from pyct.core.branch import Branch, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
+from tests.unit.core.python_forms import evaluate
 from tests.unit.core.test_dicts import downgrades, forks, hold_against_python, plain_dict, tracked
 
 
@@ -136,3 +138,46 @@ def test_a_tracked_key_of_another_kind_stays_python_s(make: Any, keyed: bool) ->
 
     assert downgrades(sink) == ["__setitem__"]
     assert not any(isinstance(item, Branch) for item in sink)
+
+
+def moves_a_fork(sink: list[SinkItem], args: dict[str, object]) -> bool:
+    """Whether some recorded fork takes the other side on these arguments, so the path they
+    would run is not the one recorded."""
+    return any(evaluate(expression, args) != taken for expression, taken in forks(sink))
+
+
+def test_a_walk_after_a_tracked_store_asks_which_key_it_named() -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    name = ConcolicStr.made("ab", "name", sink)
+
+    config[name] = 0
+    assert [plain(config[key]) for key in config] == [0, 2]
+
+    assert (["==", "name", "'ab'"], True) in forks(sink)
+    assert (["==", "name", "'cd'"], False) in forks(sink)
+    hold_against_python(sink, {"config": {"ab": 1, "cd": 2}, "name": "ab"})
+    # Python walks `[1, 0]` there: the path must keep that answer out
+    assert moves_a_fork(sink, {"config": {"ab": 1, "cd": 2}, "name": "cd"})
+
+
+def test_a_tracked_pop_from_a_changed_dict_reads_the_argument_under_the_key() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+    name = ConcolicStr.made("a", "name", sink)
+
+    config["z"] = 0
+    popped = config.pop(name)
+
+    assert isinstance(popped, ConcolicInt) and popped.expression == ["[]", "config", "name"]
+    assert downgrades(sink) == []
+    hold_against_python(sink, {"config": {"a": 1, "b": 2}, "name": "a"})
+
+
+def test_a_merge_on_the_left_keeps_its_own_keys_apart() -> None:
+    config, sink = tracked({})
+    name = ConcolicStr.made("a", "name", sink)
+
+    merged = {name: 1, "x": 2} | config
+
+    assert (["==", "name", "'x'"], False) in forks(sink)
+    assert moves_a_fork(sink, {"config": {}, "name": "x"})
+    assert plain_dict(merged) == {"a": 1, "x": 2}

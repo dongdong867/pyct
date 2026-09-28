@@ -25,8 +25,9 @@ from pyct.core.list_state import plain
 MISSING = object()
 
 # one change the target made: the expression of the tracked key it was made under, None under a
-# plain key; the key's plain value; and whether the change stored the key (True) or removed it
-type Change = tuple[Expression, object, bool]
+# plain key; the key's plain value; whether the change stored the key (True) or removed it; and
+# whether its lookup found the tracked key none of the argument's, so apart from each of them
+type Change = tuple[Expression, object, bool, bool]
 
 
 class DictState(dict):
@@ -158,13 +159,16 @@ class DictState(dict):
         made.grown = self.grown
         return made
 
-    def noted(self, key: object, value: object, tracked: Expression = None) -> None:
+    def noted(
+        self, key: object, value: object, tracked: Expression = None, *, apart: bool = False
+    ) -> None:
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
         still says whether it held the key before, which is how the size grew. ``tracked`` is
-        the expression of the tracked key the change was made under."""
+        the expression of the tracked key the change was made under, and ``apart`` says the
+        argument holds no key equal to it."""
         self.grown += key not in self.shadow
         self.shadow[key] = value
-        self.logged(key, True, tracked)
+        self.logged(key, True, tracked, apart=apart)
 
     def dropped(self, key: object, tracked: Expression = None) -> None:
         """Note a removal the dict's own method made."""
@@ -172,14 +176,17 @@ class DictState(dict):
         self.shadow.pop(key, None)
         self.logged(key, False, tracked)
 
-    def logged(self, key: object, stored: bool, tracked: Expression = None) -> None:
+    def logged(
+        self, key: object, stored: bool, tracked: Expression = None, *, apart: bool = False
+    ) -> None:
         """Log a change, whether it stored the key or removed it.
 
-        A change under a tracked key drops the walks' copies: a copy handed out before it no
-        longer proves the dict holds its key, since the solver may make the two keys equal.
+        A change under a tracked key drops the walks' copies: the solver may make that key a
+        copied one, which a removal takes out and a store gives another value, so a lookup of
+        a copy handed out before it asks again.
         """
         self.changed[key] = stored
-        self.log.append((tracked, key, stored))
+        self.log.append((tracked, key, stored, apart))
         if tracked is not None:
             self.retracked = True
             self.copies.clear()
