@@ -436,6 +436,11 @@ class Splits:
         self.fixed_few |= read.fixes_a_few
         return read.found
 
+    def flags(self) -> dict[str, bool]:
+        """What a program's splits say of it: that its held asks cannot be sat, and that a read
+        from the end fixed a few pieces (see `solver.cvc5`)."""
+        return {"refuted": self.refuted, "fixed_few": self.fixed_few}
+
     def count_of(self, node: list[Expression]) -> str:
         """The name of a split's count."""
         return self.parts[id(node)]

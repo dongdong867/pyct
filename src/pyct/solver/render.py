@@ -12,6 +12,7 @@ from pyct.solver.declared import Leaves, Program, symbols
 from pyct.solver.dicts import DictTerms, TrackedDict
 from pyct.solver.heads import (
     BOUNDED,
+    FACTS,
     FORMS,
     INDEXED,
     MEMBERSHIPS,
@@ -87,8 +88,7 @@ def program(
         listed,
         narrowed=terms.narrowed,
         held=terms.held,
-        refuted=terms.splits.refuted,
-        fixed_few=terms.splits.fixed_few,
+        **terms.splits.flags(),
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back,
@@ -166,8 +166,6 @@ class _Program:
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         lists.constant = self._constant
-        # the value the input holds for a part it names as it is, or None for any other
-        lists.splits.given = lambda part: lists.source.values.get(self.leaves.named(part) or "")
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -304,7 +302,8 @@ class _Program:
     def _form(self, node: Node) -> Callable[..., str] | None:
         """The form that writes an operation on the type it works on, or None for an operator.
 
-        A form exact only inside a bound writes its term, and its bound is held once.
+        A form exact only inside a bound writes its term, and its bound is held once. A form
+        with a fact about its value, but for one on a character, holds the fact once.
         """
         head, *operands = node
         if not isinstance(head, str):
@@ -315,7 +314,14 @@ class _Program:
             return partial(self._bounded, bounded)
         if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
             return ON_A_CHARACTER[head]
-        return None if kind is None else FORMS.get((head, kind))
+        form = None if kind is None else FORMS.get((head, kind))
+        fact = None if kind is None else FACTS.get((head, kind))
+        return form if form is None or fact is None else partial(self._with_fact, form, fact)
+
+    def _with_fact(self, form: Callable[..., str], fact: Callable[..., str], *operands: str) -> str:
+        """A form's term, and the fact about its value held once."""
+        self._hold(fact(*operands))
+        return form(*operands)
 
     def _character(self, part: Expression) -> bool:
         """Whether a part is one character of a string, as `s[i]` hands it out."""
@@ -361,7 +367,6 @@ class _Program:
         elif self.lists.involves(node):
             operation = self.lists.scalar(node, kind)
             if self.lists.counts_length(node):
-                # a split's count is read by the compares that name it, as the pieces there
                 return operation
         else:
             operation = self._operation(node)
@@ -452,12 +457,8 @@ class _Program:
         return value
 
     def _piece(self, split: Node, positions: list[Expression]) -> str:
-        """A piece of a partition, and the assertion that the string has it.
-
-        The target took the piece out of the tuple Python built, so the piece
-        is there on every input that follows the path this far. A split's
-        list is a tracked list, whose pieces the lists read.
-        """
+        """A piece of a partition's tuple, and the assertion that the string has it: the target
+        took the piece out, so it is there on every input that follows the path this far."""
         (index,) = (plain_operand(part) for part in positions)
         if not isinstance(index, int):
             raise ValueError(f"pyct cannot render piece {index} of a partition: core writes an int")

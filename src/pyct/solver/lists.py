@@ -269,7 +269,8 @@ class ListTerms(ListTyping, Slices):
         return self.length_of(part)
 
     def counts_length(self, node: list[Expression]) -> bool:
-        """Whether a part is the length of a list a split's count adds to."""
+        """Whether a part is the length of a list a split's count adds to: the compares that
+        name it read the count as the pieces there, so it is not defined."""
         length = self.length_of(node) if node[0] == "len" else None
         return length is not None and self.splits.reads(length)
 
@@ -319,6 +320,9 @@ class ListTerms(ListTyping, Slices):
         self.shared = None if origin.most is None else Shared(origin.most)
         self.splits.hold = origin.hold
         self.splits.back_among_counts = origin.back_among_counts
+        # the value the input holds for a part it names as it is, a split's string say
+        names = {constant: name for name, constant in constants.items()}
+        self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))
 
     def _context(self) -> Context:
         return Context(
