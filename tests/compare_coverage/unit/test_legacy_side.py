@@ -4,12 +4,20 @@ import os
 import platform
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from tests.compare_coverage.conftest import REPO_ROOT, StubCheckout
-from tools.compare_coverage.legacy_side import LegacyCheckoutError, LegacySide, probe
+from tools.compare_coverage import legacy_side
+from tools.compare_coverage.cache import Cache
+from tools.compare_coverage.legacy_side import (
+    LegacyCheckoutError,
+    LegacySide,
+    installed_distributions,
+    probe,
+)
 from tools.compare_coverage.process import side_environment
 from tools.compare_coverage.sides import Installed, Limits, SideReport, SideRequest
 
@@ -165,3 +173,100 @@ def test_the_probe_refuses_a_v2_checkout() -> None:
         LegacyCheckoutError, match="no run_concolic, so it is not a checkout of main"
     ):
         probe(REPO_ROOT, ENVIRONMENT)
+
+
+def cached_side(stub_checkout: StubCheckout, tmp_path: Path, refresh: bool = False) -> LegacySide:
+    cache = Cache(folder=tmp_path / "cache", context="c", refresh_budget_spent=refresh)
+    return LegacySide(checkout=stub_checkout.path, environment=ENVIRONMENT, cache=cache)
+
+
+def test_a_kept_answer_is_reused_without_running_legacy(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    stub_checkout.script({ONE_CHECK: {"lines": [2, 4], "stopped": "timeout", "inputs": 7}})
+    side = cached_side(stub_checkout, tmp_path)
+
+    first = side.run(request())
+    second = side.run(request())
+
+    assert len(stub_checkout.calls()) == 1
+    assert (first.reused, second.reused) == (False, True)
+    assert replace(second, reused=False) == first
+
+
+def test_a_budget_spent_answer_reruns_when_refreshing(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    stub_checkout.script({ONE_CHECK: {"lines": [2], "stopped": "timeout"}})
+    cached_side(stub_checkout, tmp_path).run(request())
+
+    report = cached_side(stub_checkout, tmp_path, refresh=True).run(request())
+
+    assert len(stub_checkout.calls()) == 2
+    assert not report.reused
+
+
+@pytest.mark.parametrize(
+    "script",
+    [
+        {"exit": 3, "say": "boom"},
+        {"sleep": 5},
+        {"success": False, "stopped": "error", "error": "boom"},
+    ],
+    ids=["exited", "stopped", "legacy failed"],
+)
+def test_a_side_that_did_not_answer_is_not_kept(
+    stub_checkout: StubCheckout, tmp_path: Path, script: dict[str, object]
+) -> None:
+    stub_checkout.script({ONE_CHECK: script})
+    side = cached_side(stub_checkout, tmp_path)
+
+    side.run(request(wait=2))
+    report = side.run(request(wait=2))
+
+    assert len(stub_checkout.calls()) == 2
+    assert report.failure is not None and not report.reused
+
+
+def test_a_side_legacy_failed_on_its_own_timeout_is_kept_and_refreshed_when_asked(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    failed = {"success": False, "stopped": "timeout", "error": "child closed pipe"}
+    stub_checkout.script({ONE_CHECK: failed})
+    cached_side(stub_checkout, tmp_path).run(request())
+
+    reused = cached_side(stub_checkout, tmp_path).run(request())
+    refreshed = cached_side(stub_checkout, tmp_path, refresh=True).run(request())
+
+    assert len(stub_checkout.calls()) == 2
+    assert reused.reused and reused.failure == "timeout: child closed pipe"
+    assert not refreshed.reused
+
+
+def test_a_side_whose_library_probe_failed_is_not_kept(
+    stub_checkout: StubCheckout, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unprobed(report: SideReport, *_args: object) -> SideReport:
+        return replace(report, failure="cannot read which fakelib it has: no library line")
+
+    monkeypatch.setattr(legacy_side, "with_library", unprobed)
+    side = cached_side(stub_checkout, tmp_path)
+    installed = SideRequest(ONE_CHECK, {"x": 0}, REPO_ROOT, Limits(budget=5.0), 60, "fakelib")
+
+    side.run(installed)
+    report = side.run(installed)
+
+    assert len(stub_checkout.calls()) == 2
+    assert not report.reused
+
+
+def test_the_installed_distributions_are_the_names_in_the_environments_site_packages(
+    tmp_path: Path,
+) -> None:
+    site = tmp_path / ".venv" / "lib" / "python3.12" / "site-packages"
+    (site / "b-2.0.dist-info").mkdir(parents=True)
+    (site / "a-1.0.dist-info").mkdir()
+    (site / "a").mkdir()
+
+    assert installed_distributions(tmp_path) == ("a-1.0.dist-info", "b-2.0.dist-info")
+    assert installed_distributions(tmp_path / "none") == ()

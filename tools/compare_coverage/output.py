@@ -1,7 +1,9 @@
 """What the checker prints: JSON on stdout for tools, a table on stderr for a person.
 
 stdout carries one JSON line per row as each finishes, then one summary line, which has
-``statuses`` and no ``target``. stderr carries one table line per row, then the totals.
+``statuses`` and no ``target``. stderr carries one table line per row, then the totals. Each
+side of a row says whether its report was ``reused`` from an earlier run, and the summary and
+the totals count the rows whose legacy side was.
 """
 
 import json
@@ -55,6 +57,7 @@ def _side(view: SideView | None) -> dict[str, object] | None:
         "inputs": view.inputs,
         "failure": view.failure,
         "library": view.library,
+        "reused": view.reused,
     }
 
 
@@ -64,6 +67,11 @@ def counts(rows: Sequence[Row]) -> dict[str, int]:
     return {**statuses, **{mark: sum(row.record == mark for row in rows) for mark in MARKS}}
 
 
+def legacy_reused(rows: Sequence[Row]) -> int:
+    """How many rows took their legacy side from an earlier run."""
+    return sum(row.legacy is not None and row.legacy.reused for row in rows)
+
+
 def summary_line(
     rows: Sequence[Row], limits: Mapping[str, Mapping[str, float]], facts: Facts
 ) -> str:
@@ -71,6 +79,7 @@ def summary_line(
     return json.dumps(
         {
             "statuses": counts(rows),
+            "legacy_reused": legacy_reused(rows),
             "limits": limits,
             "commits": facts.commits,
             "environment": {
@@ -124,4 +133,5 @@ def _details(row: Row) -> list[str]:
 
 def totals_line(rows: Sequence[Row]) -> str:
     """The table's last line: every count the summary line carries."""
-    return "totals: " + ", ".join(f"{name} {count}" for name, count in counts(rows).items())
+    named = [*counts(rows).items(), ("legacy reused", legacy_reused(rows))]
+    return "totals: " + ", ".join(f"{name} {count}" for name, count in named)

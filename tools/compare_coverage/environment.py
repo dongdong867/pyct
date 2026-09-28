@@ -1,9 +1,11 @@
-"""What the checker learns about the machine: where cvc5 is and its version, each commit.
+"""What the checker learns about the machine: where cvc5 is and its version, each commit,
+and the changes to a checkout's tracked files.
 
 Both sides take cvc5 from PATH, so the checker looks there once, before any target runs, and
 says what ``pyct run`` says when it finds none.
 """
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -45,6 +47,24 @@ def commit(checkout: Path) -> str | None:
     if len(said) != 2 or Path(said[0]).resolve() != checkout.resolve():
         return None
     return said[1]
+
+
+def changes(checkout: Path) -> str | None:
+    """A hash of the changes to the checkout's tracked files since its commit, or ``None``
+    when git cannot say."""
+    try:
+        finished = subprocess.run(
+            ["git", "-C", str(checkout), "diff", "HEAD", "--binary"],
+            input=b"",
+            capture_output=True,
+            check=False,
+            timeout=PROBE_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if finished.returncode != 0:
+        return None
+    return hashlib.sha256(finished.stdout).hexdigest()
 
 
 def _output(argv: list[str]) -> list[str]:

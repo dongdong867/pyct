@@ -16,7 +16,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
-from pyct.core.values import raised_by_target
+from pyct.core.values import converted, raised_by_target
 
 # the names that hand back the value itself, on an int and on the bool that is an int
 ITSELF: dict[str, Callable[[int], object]] = {
@@ -181,6 +181,91 @@ def test_every_classmethod_of_the_base_type_is_named_in_the_class_body(
 
     assert classmethods
     assert classmethods <= set(vars(cls))
+
+
+@pytest.mark.parametrize(
+    ("cls", "base", "constants"),
+    [
+        (ConcolicInt, int, set(CONSTANTS)),
+        (ConcolicBool, int, set(CONSTANTS)),
+        (ConcolicFloat, float, {"imag"}),
+    ],
+    ids=["int", "bool", "float"],
+)
+def test_every_public_member_of_the_base_type_is_followed_or_named(
+    cls: type, base: type, constants: set[str]
+) -> None:
+    # read from the running Python, so a member a newer one adds is taught, named or derived as
+    # a downgrade too. The constants alone stay the base type's own, since they read nothing
+    public = {name for name in vars(base) if not name.startswith("_")}
+
+    assert public - set(vars(cls)) == constants
+
+
+# float.from_number is new in 3.14
+FROM_NUMBER = pytest.mark.skipif(
+    not hasattr(float, "from_number"), reason="this Python's float has no from_number"
+)
+
+
+@FROM_NUMBER
+def test_from_number_of_a_tracked_float_is_the_value_itself() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat.made(0.5, expression="x", sink=sink)
+    f = ConcolicFloat.made(2.5, expression="f", sink=sink)
+
+    # as `float(f)` is: the value converted is already the float it would be
+    assert x.from_number(f) is f  # pyrefly: ignore[missing-attribute]
+    assert type(x).from_number(f) is f  # pyrefly: ignore[missing-attribute]
+    assert sink == []
+
+
+@FROM_NUMBER
+def test_from_number_of_any_other_number_is_floats_own() -> None:
+    sink: list[SinkItem] = []
+    x = ConcolicFloat.made(0.5, expression="x", sink=sink)
+    n = ConcolicInt.made(3, expression="n", sink=sink)
+
+    assert type(x.from_number(2)) is float and x.from_number(2) == 2.0  # pyrefly: ignore[missing-attribute]
+    # Python reads a tracked int through its `__float__`, which names the loss
+    answer = x.from_number(n)  # pyrefly: ignore[missing-attribute]
+    assert type(answer) is float and answer == 3.0
+    assert sink == [Downgrade(name="__float__", site=ANY)]
+
+
+@FROM_NUMBER
+def test_from_number_refuses_what_float_refuses() -> None:
+    x = ConcolicFloat.made(0.5, expression="x", sink=[])
+
+    with pytest.raises(TypeError) as plain:
+        float.from_number("1.5")  # pyrefly: ignore[missing-attribute]
+    with pytest.raises(TypeError) as raised:
+        x.from_number("1.5")  # pyrefly: ignore[missing-attribute]
+
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+
+
+class Scale:
+    """A base type with a classmethod that converts one value to it."""
+
+    @classmethod
+    def of(cls, value: object) -> object:
+        return ("Scale's own", value)
+
+
+class TrackedScale(Scale):
+    of = converted(Scale, "of")
+
+
+def test_a_converting_classmethod_hands_back_a_value_of_its_own_class_as_it_is() -> None:
+    held = TrackedScale()
+
+    # on every Python, so the conversion float.from_number takes from 3.14 is checked here too
+    assert TrackedScale.of(held) is held
+    assert held.of(held) is held
+    assert TrackedScale.of(3) == ("Scale's own", 3)
+    assert TrackedScale.of(value=held) == ("Scale's own", held)
 
 
 @pytest.mark.parametrize("build", FROM_BYTES.values(), ids=list(FROM_BYTES))
