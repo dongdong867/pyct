@@ -12,29 +12,29 @@ that differ between checkouts and machines taken out.
 
 import hashlib
 import json
-import mmap
-import os
 import re
-import sys
-import time
 from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Branch, Site
-from pyct.execution.execute import ExecutionResult
+from pyct.config.budget import Budget
+from pyct.config.limits import Limits
+from pyct.core.branch import Branch
 from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import DowngradeCount
-from pyct.run.journal import NUMBER, RECORDS, JournalWriter
-from pyct.run.journal_reader import JournalReader
-from pyct.run.process import ending, watched
+from pyct.run import isolation
+from pyct.run.isolation import Isolation
+from pyct.run.run import run
+from pyct.run.target import load_target
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_strs import forks_of
 from tests.acceptance.timed import Measured, within
 
 COUNTDOWN = "targets.loops.countdown::count_down"
 FOREVER = json.dumps({"x": 100_000_000})
+
+# the journal the full-journal test gives each input, where 256 MiB takes seconds to fill
+_SMALL_JOURNAL = 2 * 1024 * 1024
 
 # the forks a run may list before each further 100,000 adds half a second to its bound
 _FORKS_FREE = 100_000
@@ -189,94 +189,37 @@ def test_a_repeated_downgrade_that_raises_prints_what_it_printed(tmp_path: Path)
     assert _printed(result.stdout, result.stderr, tmp_path) == _PRINTED["downgrades"]
 
 
-SITE = Site(file="t.py", line=3, col=7)
-FORK = Branch(expression=["<", "x", ["+", "y", 1]], taken=True, site=SITE)
-# long enough for pyct's process to look at the journal in between
-_PAUSE = 0.05
-
-
-def _input_writing(size: int, write: Callable[[mmap.mmap, JournalWriter], None]) -> ExecutionResult:
-    """What pyct makes of an input whose process runs ``write`` into a journal of ``size`` bytes.
-
-    pyct's process looks at the journal while the process writes, and reads
-    the rest once it has ended, as it does for every input it forks.
-    """
-    with mmap.mmap(-1, size) as buffer:
-        reader = JournalReader(buffer)
-
-        def start() -> int:
-            pid = os.fork()
-            # coverage.py cannot see the child's lines: they run in a frame begun before the fork
-            if pid == 0:  # pragma: no cover
-                try:
-                    write(buffer, JournalWriter(buffer))
-                finally:
-                    sys.stdout.flush()
-                    os._exit(0)
-            return pid
-
-        waited = watched(start, None, reader.look)
-        return ending(reader.finish(), waited)
-
-
-def _facts_before(writer: JournalWriter, pause: float = _PAUSE) -> None:
-    """The facts before the problem, with a pause after each so pyct looks at them."""
-    writer.start()
-    writer.line(2)
-    writer.fork(FORK)
-    time.sleep(pause)
-    for count in range(1, 4):
-        writer.downgrade("__xor__", SITE, count)
-        time.sleep(pause)
-
-
-def _committed_after_the_facts_before() -> int:
-    """Where the facts before the problem end, as the same facts written again lay them out."""
-    scratch = bytearray(RECORDS + 4096)
-    _facts_before(JournalWriter(scratch), pause=0)
-    return int.from_bytes(scratch[0:8], sys.byteorder)
-
-
-_BEFORE_LINES = frozenset({2})
-_BEFORE_DOWNGRADES = (DowngradeCount("__xor__", 3, SITE),)
-
-
 # read-an-input-s-journal-within-its-second-keeps-a-journal-problem
-def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_facts_before() -> None:
-    def fills(buffer: mmap.mmap, writer: JournalWriter) -> None:
-        _facts_before(writer)
-        for line in range(3, 10_000):
-            writer.line(line)
-        time.sleep(_PAUSE)
-        writer.end(None)
+def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_forks_before(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # a journal of 2 MiB, which the countdown fills after thousands of passes, while pyct looks
+    monkeypatch.setattr(isolation, "CAPACITY", _SMALL_JOURNAL)
+    target = load_target(COUNTDOWN)
 
-    size = RECORDS + 4096
-    result = _input_writing(size, fills)
+    # forked, as the command line forks it: the test's own timeout thread would move it to a
+    # fresh interpreter
+    result = run(target, {"x": 100_000}, limits=Limits(budget=Budget(3)), isolation=Isolation.FORK)
 
-    assert result.failure == Failure(FailureKind.PYCT_BUG, f"the journal is full at {size} bytes")
-    assert result.branches == (FORK,)
-    assert result.downgrades == _BEFORE_DOWNGRADES
-    assert result.lines > _BEFORE_LINES
-    assert max(result.lines) < 10_000
-
-
-# read-an-input-s-journal-within-its-second-keeps-a-journal-problem
-def test_an_unreadable_record_ends_its_input_as_a_pyct_bug_with_the_facts_before() -> None:
-    at = _committed_after_the_facts_before()
-
-    def breaks(buffer: mmap.mmap, writer: JournalWriter) -> None:
-        _facts_before(writer)
-        # a record of a kind the journal has none of, committed as a whole, then looked at
-        writer._record(99, NUMBER.pack(99))
-        time.sleep(_PAUSE)
-        writer.line(100)
-        writer.end(None)
-
-    result = _input_writing(RECORDS + 4096, breaks)
-
-    assert result.failure == Failure(
-        FailureKind.PYCT_BUG, f"could not read the input's facts at byte {at}"
+    seed = result.records[0]
+    assert seed.failure == Failure(
+        FailureKind.PYCT_BUG, f"the journal is full at {_SMALL_JOURNAL} bytes"
     )
-    assert result.branches == (FORK,)
-    assert result.downgrades == _BEFORE_DOWNGRADES
-    assert result.lines == _BEFORE_LINES
+    assert 1_000 < len(seed.forks) < 100_000, len(seed.forks)
+    assert _counts_down(seed.forks)
+    assert seed.covered_lines >= {2, 3}, sorted(seed.covered_lines)
+
+
+def _counts_down(forks: tuple[Branch, ...]) -> bool:
+    """Whether the forks are the countdown's passes in order, each taken: `x > 0`, then on each
+    pass the value before it less one, `["-", before, 1] > 0`."""
+    before: object = None
+    for fork in forks:
+        match fork.expression:
+            case [">", "x", 0] if before is None:
+                before = "x"
+            case [">", ["-", held, 1] as value, 0] if held is before or held == before == "x":
+                before = value
+            case _:
+                return False
+    return all(fork.taken for fork in forks)

@@ -123,6 +123,8 @@ def test_a_line_within_its_budget_prints_as_it_did(tmp_path: Path) -> None:
     assert after.startswith("covered "), after
 
 
+# its fixture's runs are held to a wall bound, so it runs alone, whichever test takes it first
+@pytest.mark.serial
 # print-an-input-with-many-forks-within-its-budget-cuts-forks-past-the-line-budget
 def test_forks_past_the_line_budget_print_one_cut_part_each(
     ten_thousand_passes: Measured,
