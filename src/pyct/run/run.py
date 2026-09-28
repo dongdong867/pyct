@@ -62,10 +62,11 @@ class _Noted:
     def imported(self, name: str) -> bool:
         """Whether the module ``name`` is the reading thread's alone.
 
-        It is when that thread asked for it or for a package above it, since
-        a module can put another in ``sys.modules`` itself, and no other
-        thread asked for it, for a package above it or for a module under
-        it, whose import needs its package to stay.
+        It is when that thread asked for it, for a package above it, since a
+        module can put another in ``sys.modules`` itself, or for a module
+        under it, since a package the read imported goes with its modules;
+        and no other thread asked for it, for a package above it or for a
+        module under it, whose import needs its package to stay.
         """
         return _in_the_family(name, self.names) and not _in_the_family(name, self.others)
 

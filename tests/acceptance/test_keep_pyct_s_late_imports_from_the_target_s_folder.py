@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from tests.acceptance.harness import input_lines, run_pyct, summary_line
-from tests.acceptance.sweeping import row_named, sweep
+from tests.acceptance.sweeping import environment, row_named, sweep
 from tests.acceptance.test_keep_a_sweep_entry_s_folder_from_hiding_pyct_s_modules import (
     a_thread_at_startup,
     folder_of,
@@ -105,9 +105,11 @@ def run_from(folder: Path, spec: str) -> subprocess.CompletedProcess[str]:
 
 
 def imported_by_the_command_line(name: str) -> bool:
-    """Whether importing pyct's command line imports the module ``name``."""
+    """Whether importing pyct's command line imports the module ``name``, with coverage.py left
+    out as the runs here leave it: its start-up imports much of the standard library."""
     result = subprocess.run(
         [sys.executable, "-P", "-c", f"import sys, pyct.cli; print({name!r} in sys.modules)"],
+        env=environment(measured=False),
         capture_output=True,
         text=True,
         check=True,

@@ -173,7 +173,8 @@ def test_no_folder_is_installed_when_python_started_without_site(
 def test_loading_the_finder_imports_no_module_of_its_own() -> None:
     # what own_imports imports itself, then own_imports: nothing more may come with it
     loads = (
-        "import sys, importlib.machinery, os, types, collections.abc, pyct.core.branch, pyct.run\n"
+        "import sys, functools, importlib.machinery, os, types, collections.abc\n"
+        "import pyct.core.branch, pyct.run\n"
         "before = set(sys.modules)\n"
         "import pyct.run.own_imports\n"
         "print(sorted(set(sys.modules) - before))\n"
