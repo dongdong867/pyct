@@ -19,10 +19,11 @@ they are in, and the exception type and message as they were. A row keeps the te
   ``varies``, ``{only_legacy, only_v2}``: the lines some accepted runs showed and others did
   not, beside ``only_legacy`` and ``only_v2``, which every one showed. A ``same`` or
   ``differs`` row matches it when each list of its lines holds the record's and nothing
-  outside them and ``varies`` (decision compare-budget-bound-rows-legacy-range-only-at-the-budget). A
-  line only legacy covered is one v2 misses: only a person puts it in ``varies``, with
-  ``reason`` saying why it is timing, and it counts only in a run where a side ran its whole
-  budget. A record ``--accept`` keeps is written back as the file held it.
+  outside them and ``varies``. A line only legacy covered is one v2 misses: only a person
+  puts it in ``varies``, with ``reason`` saying why it is timing, and it counts only in a run
+  where a side ran its whole budget (decision
+  compare-budget-bound-rows-legacy-range-only-at-the-budget). A record ``--accept`` keeps is
+  written back as the file held it.
 - ``--accept`` rewrites FILE after the last row, with the run's limits first: a row that
   matches its record keeps it as it was; a ``same`` or ``differs`` row where a side ran its
   whole budget, and whose lines only legacy covered fit the record, widens a ``differs``
