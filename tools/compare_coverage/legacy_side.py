@@ -6,8 +6,9 @@ any target runs, ``probe`` checks that DIR's interpreter imports legacy's engine
 
 Legacy's line tracer leaves a ``.pyct-cov.*`` file in the temp folder for each input it runs,
 and main is never changed. So every legacy process runs with ``TMPDIR``, ``TEMP`` and ``TMP``
-naming a folder of its own inside the checker's temp folder, removed once the process ends,
-however it ends.
+naming a folder of its own inside the checker's temp folder. The folder is removed once the
+process exits, fails, is stopped at its deadline or is stopped by Ctrl-C. A checker that is
+itself killed leaves its one folder, found by its ``pyct-legacy-`` prefix.
 """
 
 import contextlib
@@ -68,7 +69,7 @@ def interpreter(checkout: Path) -> Path:
 
 @contextlib.contextmanager
 def own_temp(environment: Mapping[str, str]) -> Iterator[dict[str, str]]:
-    """``environment`` with its temp folder a new one, removed when the block ends."""
+    """``environment`` with its temp folder a new one, removed when the block exits or raises."""
     with tempfile.TemporaryDirectory(prefix="pyct-legacy-") as folder:
         yield {**environment, **dict.fromkeys(TEMP_VARIABLES, folder)}
 
