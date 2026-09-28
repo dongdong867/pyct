@@ -45,6 +45,12 @@
 {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
+{"set": "v2", "target": "targets.dicts.truth_kept::changed_after", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [20]}
+{"set": "v2", "target": "targets.dicts.truth_kept::inside", "seed": {"cfg": {"a": {}}}, "status": "differs", "only_legacy": [], "only_v2": [27]}
+{"set": "v2", "target": "targets.dicts.truth_kept::items", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [48]}
+{"set": "v2", "target": "targets.dicts.truth_kept::kept", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.dicts.truth_kept::keys", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [34]}
+{"set": "v2", "target": "targets.dicts.truth_kept::values", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [41]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::listed", "seed": {"d": {"a": 0, "c": 0, "b": 0}}, "status": "differs", "only_legacy": [], "only_v2": [32, 34]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::literal_in_walk", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [26]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::popped", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [40]}
@@ -172,7 +178,7 @@
 {"set": "v2", "target": "targets.strs.nothing_to_fill::format_empty", "seed": {"s": "x"}, "status": "differs", "only_legacy": [11], "only_v2": []}
 {"set": "v2", "target": "targets.strs.nothing_to_fill::mod_empty", "seed": {"s": "x"}, "status": "differs", "only_legacy": [4], "only_v2": []}
 {"set": "v2", "target": "targets.strs.one_replacement::swap", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
-{"set": "v2", "target": "targets.strs.padded::pad", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.strs.padded::pad", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [4, 5, 6]}
 {"set": "v2", "target": "targets.strs.past_ascii_upper::shout", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}, "status": "differs", "only_legacy": [], "only_v2": [7, 9]}
 {"set": "v2", "target": "targets.strs.prefixes::route", "seed": {"s": "x", "t": "q"}, "status": "differs", "only_legacy": [], "only_v2": [3]}

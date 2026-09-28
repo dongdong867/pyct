@@ -15,6 +15,10 @@ at its place (``placed``), so an answer keeps that key there, as a read keeps a 
 hands out its own copy of each key, so a lookup of that very object, whenever it runs, is one no
 input fails and records no fork (``proven``); a key Python shares with the target's literals has
 no copy, and its lookup is recorded given the place the walk read it (``handout``).
+
+`len(config)` and `bool(config)` where pyct binds or routes them, and on each of its views, read
+the size term, `["len", config]` and what the target added or removed, and record no fork where
+they run.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from __future__ import annotations
 import json
 import numbers
 from collections.abc import Callable, Iterator
+from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, caller_site
@@ -244,6 +249,20 @@ def truth(self: DictState) -> bool:
     if not self.holds("__bool__"):
         return self.size() != 0
     return forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0)
+
+
+def condition(self: DictState) -> Any:
+    """`bool(config)` where pyct routes `bool`: the condition `if config:` tests, as a tracked
+    bool that records no fork, so the fork is recorded where the target tests it.
+
+    It holds the dict's size term at the call, which a later change replaces rather than edits.
+    A dict with no form gives Python's plain answer; one whose form stopped describing it does
+    too, naming `__bool__` as `if config:` does.
+    """
+    filled = self.size() != 0
+    if not self.holds("__bool__"):
+        return filled
+    return ConcolicBool.made(filled, ["!=", self.size_term(), 0], self.sink)
 
 
 def key_of(self: DictState, key: object) -> object:
