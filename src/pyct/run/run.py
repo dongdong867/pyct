@@ -31,6 +31,7 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
+from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target
@@ -199,7 +200,6 @@ def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
         seeded = _record_of(copied.args, call(copied.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
-    told.record(seeded)
     looped = _loop(call, copied, seeded, bounds, told)
     return dataclasses.replace(looped, records=(seeded, *looped.records))
 
@@ -246,7 +246,7 @@ def _loop(
     misses: list[Miss] = []
     covered = [seeded.covered_lines & told.scope.lines]
     tree = Tree()
-    tree.add(seeded.forks)
+    _handled(seeded, told, tree)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)
     inputs = {0: seed}
@@ -261,9 +261,15 @@ def _loop(
         if attempt.ran is not None:
             records.append(attempt.ran.record)
             covered.append(attempt.ran.record.covered_lines & told.scope.lines)
-            tree.add(attempt.ran.record.forks)
             inputs[len(records)] = attempt.ran.seed
-            told.record(attempt.ran.record)
+            _handled(attempt.ran.record, told, tree)
+
+
+def _handled(record: InputRecord, told: _Told, tree: Tree) -> None:
+    """Hand out a finished input, then add its path to the tree, with the collector paused."""
+    with collector_paused():
+        told.record(record)
+        tree.add(record.forks)
 
 
 def _attempt(
@@ -318,8 +324,9 @@ def _attempt(
 
 def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
     """How many forks the run never tried at each site: the open ones, and one picked but not
-    run."""
-    counts = tree.untried()
+    run. Counted with the collector paused, as each input's path was added."""
+    with collector_paused():
+        counts = tree.untried()
     if attempt.unrun is not None:
         counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
     return counts
