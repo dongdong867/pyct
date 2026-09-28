@@ -110,13 +110,13 @@ class ConcolicRange:
     ) -> Self:
         """A tracked range holding Python's own, beside its bounds' forms: how pyct builds one."""
         made = object.__new__(cls)
-        field = object.__setattr__
-        field(made, "held", held)
-        field(made, "bounds", bounds)
-        field(made, "forms", (_form(bounds[0]), _form(bounds[1]), _form(bounds[2])))
-        field(made, "written", written)
-        field(made, "sink", sink)
-        field(made, "walked_at", None)
+        write = object.__setattr__
+        write(made, "held", held)
+        write(made, "bounds", bounds)
+        write(made, "forms", (_form(bounds[0]), _form(bounds[1]), _form(bounds[2])))
+        write(made, "written", written)
+        write(made, "sink", sink)
+        write(made, "walked_at", None)
         return made
 
     def __iter__(self) -> Iterator[object]:

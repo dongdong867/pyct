@@ -2,15 +2,24 @@
 delete their plain value refuses, in Python's own words, and keep the fields pyct wrote
 (tracked-numbers-refuse-attributes-on-a-plain-number)."""
 
+import inspect
+import re
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
+import pyct
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import SinkItem
+from pyct.core.dict_state import DictState
+from pyct.core.dict_views import _View
 from pyct.core.dicts import ConcolicDict
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.list_state import ListState
 from pyct.core.lists import ConcolicList
-from pyct.core.ranges import ranged
+from pyct.core.ranges import ConcolicRange, ranged
 from pyct.core.strs import ConcolicStr, one_character
 from pyct.core.values import raised_by_target
 
@@ -91,3 +100,46 @@ def test_a_range_s_bounds_stay_read_only_as_python_s_are() -> None:
     expected = _raised(lambda: setattr(range(3), "start", 1))
 
     assert (type(raised), str(raised)) == (type(expected), str(expected))
+
+
+# the classes whose fields pyct writes past their refusal, and every way it writes one: by key
+# into the value's `__dict__`, a local named `fields` holding it, or object's own set, which the
+# range's `made` holds as `write`
+_REFUSING = (
+    ConcolicInt,
+    ConcolicBool,
+    ConcolicFloat,
+    ConcolicStr,
+    ListState,
+    DictState,
+    ConcolicRange,
+    _View,
+)
+_WRITES = re.compile(
+    r'(?:__dict__|\bfields)\["(\w+)"\]|(?:object\.__setattr__|\bwrite)\(\w+, "(\w+)"'
+)
+_SOURCE = Path(pyct.__file__).parent
+
+
+def _fields() -> set[str]:
+    """Each name a refusing class annotates or keeps a slot for, its bases' among them."""
+    names: set[str] = set()
+    for cls in _REFUSING:
+        for kind in cls.__mro__:
+            names |= set(inspect.get_annotations(kind))
+            names |= set(vars(kind).get("__slots__", ()))
+    return names
+
+
+def test_each_field_pyct_writes_by_name_is_one_a_class_declares() -> None:
+    # a write by key escapes the type checker, so a misspelled name is caught here instead
+    written = {
+        (path.relative_to(_SOURCE).as_posix(), name)
+        for path in _SOURCE.rglob("*.py")
+        for match in _WRITES.finditer(path.read_text())
+        for name in match.groups()
+        if name is not None and not name.startswith("__")
+    }
+
+    assert len(written) > 40
+    assert {entry for entry in written if entry[1] not in _fields()} == set()
