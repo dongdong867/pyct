@@ -232,3 +232,26 @@ def test_a_type_error_inside_a_generator_is_the_generator_s_own() -> None:
 
     with pytest.raises(TypeError, match="broken"):
         substitutes.join("-".join, broken())
+
+
+class Joiner:
+    """A value of the target's own with a `join`, which a name bound to a literal may hold."""
+
+    def __init__(self) -> None:
+        self.given: object = None
+
+    def join(self, items: object) -> str:
+        self.given = items
+        return "joined"
+
+
+@pytest.mark.parametrize(
+    "items",
+    [[ConcolicStr.made("a", expression="a", sink=[])], (part for part in ["a"])],
+    ids=["a list holding a tracked str", "a generator"],
+)
+def test_a_join_of_the_target_s_own_is_given_what_the_call_gave(items: object) -> None:
+    joiner = Joiner()
+
+    assert substitutes.join(joiner.join, items) == "joined"
+    assert joiner.given is items

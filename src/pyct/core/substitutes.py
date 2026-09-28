@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import operator
 import types
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from pyct.core import bound, ranges, str_joins, str_literals, strs
@@ -48,7 +48,6 @@ from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ranges import ConcolicRange
-from pyct.core.str_operands import plain
 from pyct.core.strs import ConcolicStr
 
 # the tracked ints and bools, by their exact type: a plain range is searched for one with one
@@ -316,6 +315,24 @@ def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: obj
     if kwargs or len(args) != 1:
         return method(receiver_method, *args, **kwargs)
     items = args[0]
+    if type(items) is list or type(items) is tuple:
+        for item in cast("list[object]", items):
+            if type(item) in TRACKED_CLASSES:
+                break
+        else:
+            return receiver_method(items)
+    # the receiver is what the name the code wrote holds when the call runs: a str literal's
+    # text, unless another module rebound the name. A str or a tracked str joins as pyct follows
+    # it, and any other value's own join is called as Python calls it, with what it was given
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver) is not str and type(receiver) is not ConcolicStr:
+        return receiver_method(items)
+    return _joined(receiver_method, cast(str, receiver), items)
+
+
+def _joined(receiver_method: Callable[..., object], receiver: str, items: object) -> object:
+    """A str's join of what it is given, read once: Python's own answer and refusal when
+    nothing in it is tracked, and `str_joins.joined` when something is."""
     if type(items) not in TRACKED_CLASSES:
         items = _read(items)
         if items is None:
@@ -326,18 +343,7 @@ def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: obj
                 break
         else:
             return receiver_method(items)
-    # the receiver is what the name the code wrote holds when the call runs: a str literal's
-    # text, unless another module rebound the name, as to bytes
-    receiver = getattr(receiver_method, "__self__", None)
-    if type(receiver) is not str:
-        return _rebound(receiver_method, cast("list[object]", items))
     return str_joins.joined(receiver, items, ConcolicStr)
-
-
-def _rebound(receiver_method: Callable[..., object], items: Iterable[object]) -> object:
-    """The join of a value another module bound the name to, its own answer: each tracked str
-    is handed over as its text, so a refusal names the type Python would name."""
-    return receiver_method([plain(item) if type(item) is ConcolicStr else item for item in items])
 
 
 def _read(items: object) -> list[object] | tuple[object] | None:
@@ -393,8 +399,8 @@ PASSING: frozenset[types.CodeType] = (
             call,
             method,
             join,
+            _joined,
             _read,
-            _rebound,
             _on_text,
             truth,
             Searched.__contains__,

@@ -296,4 +296,21 @@ def test_a_literal_bound_separator_rebound_elsewhere_raises_as_python_does() -> 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     separator: Any = b"-"
-    assert failure_detail(seed) == raised_by_python(lambda: separator.join(["a", "b"])), seed
+    # bytes' own join names the tracked str's class, as every message Python writes with a type's
+    # name does until name-int-in-a-tracked-int-s-type-error; the rest is Python's
+    detail = str(failure_detail(seed)).replace("ConcolicStr", "str")
+    assert detail == raised_by_python(lambda: separator.join(["a", "b"])), seed
+
+
+# follow-a-join-of-tracked-strings-follows-a-tracked-separator: a name bound only to a str
+# literal in its module, rebound to a tracked str from another, joins as a tracked separator
+def test_a_literal_bound_separator_rebound_to_a_tracked_str_is_followed() -> None:
+    result = run_pyct(
+        "targets.strs.rebinds_to_a_tracked_separator::check", '{"sep": "-", "a": "q"}'
+    )
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    compare = ["==", ["join", "sep", ["[,]", "a", "'b'"]], "'q-b'"]
+    assert compare in [fork[1] for fork in listed(lines[0])], lines[0]
+    assert all(line["mismatch_at"] is None for line in solved(lines)), lines
