@@ -16,6 +16,7 @@ from pyct.run.process import InputStartError
 from pyct.run.run import Bounds, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Error
+from tests.unit.deadline_fires import DEADLINE_FIRES
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TWO_OTHER_SIDES = str(REPO_ROOT / "targets" / "flip" / "two_other_sides_empty.py")
@@ -72,6 +73,7 @@ def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
     assert attempt.unrun == ForkSite(Site(file=ONE_CHECK, line=2, col=7))
 
 
+@DEADLINE_FIRES
 def test_a_budget_stop_counts_every_fork_still_open() -> None:
     target = load_target("targets.flip.spins_after_a_check::spin")
 

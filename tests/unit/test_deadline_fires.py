@@ -53,3 +53,51 @@ def test_a_deadline_test_runs_untraced_under_coverage(tmp_path: Path, workers: s
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "2 passed" in result.stdout, result.stdout
+
+
+# a test whose deadline fires in the test process, with the mark and without it
+FIRING_TESTS = """
+import time
+
+import pytest
+
+from pyct.execution.deadline import DeadlineError, deadline
+from tests.unit.deadline_fires import DEADLINE_FIRES
+
+
+def fire():
+    with pytest.raises(DeadlineError), deadline(time.monotonic()):
+        time.sleep(1)
+
+
+@DEADLINE_FIRES
+def test_marked():
+    fire()
+
+
+def test_unmarked():
+    fire()
+"""
+
+
+def test_a_deadline_that_fires_in_an_unmarked_test_fails_it(tmp_path: Path) -> None:
+    (tmp_path / "test_firing.py").write_text(FIRING_TESTS)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("COVERAGE_")}
+    env["PYTHONPATH"] = str(REPO_ROOT)
+    config = str(REPO_ROOT / "pyproject.toml")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "test_firing.py", "-c", config, "--rootdir", str(tmp_path)]
+        + ["--confcutdir", str(tmp_path), "-p", "tests.conftest", "-p", "no:cacheprovider"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=40,
+    )
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "test_firing.py::test_marked PASSED" in result.stdout, result.stdout
+    assert "ERROR at teardown of test_unmarked" in result.stdout, result.stdout
+    assert "fired its deadline in this process without DEADLINE_FIRES" in result.stdout
