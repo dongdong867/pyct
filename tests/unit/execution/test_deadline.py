@@ -22,6 +22,7 @@ import pytest
 from pyct.execution.deadline import DeadlineError, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
+from tests.unit.execution.ctrl_c_in_c import interrupted_call
 
 
 @pytest.fixture
@@ -319,3 +320,10 @@ def test_an_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() 
 
     took = time.monotonic() - started
     assert 0.5 <= took < 1.5, took
+
+
+@DEADLINE_FIRES
+@pytest.mark.parametrize("name", ["total", "total_then_finally"])
+def test_a_ctrl_c_during_a_c_call_that_outlives_the_deadline_reaches_the_caller(name: str) -> None:
+    with pytest.raises(KeyboardInterrupt):
+        interrupted_call(name)

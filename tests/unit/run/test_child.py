@@ -13,12 +13,13 @@ from contextlib import AbstractContextManager
 
 import pytest
 
-from pyct.execution.deadline import DeadlineError, deadline
+from pyct.execution.deadline import DeadlineError, deadline, own_the_alarm
 from pyct.results.failure import FailureKind
 from pyct.run import child
 from pyct.run.child import serve, settle
 from pyct.run.journal import CAPACITY, JournalWriter, read
 from pyct.run.process import STOP_SIGNALS
+from tests.unit.execution.ctrl_c_in_c import interrupted_call
 
 
 def test_a_raise_out_of_pyct_s_own_code_is_a_pyct_bug_on_the_input_s_line() -> None:
@@ -293,3 +294,26 @@ def hold_a_ctrl_c_past_the_bound() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_an_owned_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() -> None:
     assert settled_then(hold_a_ctrl_c_past_the_bound) == 0
+
+
+def owned_ctrl_c_during_a_c_call(name: str) -> None:
+    # a process pyct owns, as the command line's, where a Ctrl-C raises as it does anywhere
+    own_the_alarm()
+    try:
+        interrupted_call(name)
+    except KeyboardInterrupt:
+        child._EXIT(0)
+    child._EXIT(3)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+@pytest.mark.parametrize("name", ["total", "total_then_finally"])
+def test_an_owned_ctrl_c_during_a_c_call_that_outlives_the_deadline_reaches_the_caller(
+    name: str,
+) -> None:
+    pid = os.fork()
+    if pid == 0:
+        owned_ctrl_c_during_a_c_call(name)
+    _, status = os.waitpid(pid, 0)
+
+    assert os.waitstatus_to_exitcode(status) == 0
