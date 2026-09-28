@@ -6,8 +6,9 @@ from pyct.core.branch import Expression
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.heads import BOUNDED, FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
+from pyct.solver.list_kinds import SPLIT_HEADS
 from pyct.solver.recased import TO_DECLARE
-from pyct.solver.splits import COUNTED, SPLITS
+from pyct.solver.splits import SPLITS
 from tests.unit.solver.test_render import fork, render
 
 
@@ -15,7 +16,8 @@ def test_every_head_render_writes_says_what_type_its_value_is() -> None:
     written = {head for head, _ in OPERATORS} | {head for head, _ in FORMS}
     written |= {head for head, _ in BOUNDED}
     written |= set(POSITIONED) | set(STRING_ORDERS)
-    written |= set(CHECKS) | set(SPLITS) | set(TO_DECLARE)
+    # a split's list is typed by the lists (list_kinds), a partition's tuple here
+    written |= set(CHECKS) | (set(SPLITS) - SPLIT_HEADS) | set(TO_DECLARE)
 
     # a head with no entry cannot say whether a `+` or an order above it is on strings, and a
     # wrong guess is a program cvc5 refuses, which stops the run on `solver failed`
@@ -83,8 +85,6 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["not in", 3, RANGE_TERMS[0]],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
-    # a split a join reads, held to its number of pieces
-    [COUNTED, ["split", "s", "','"], 2],
     ["startswith", "s", TUPLE_TERMS[0]],
     ["endswith", "s", TUPLE_TERMS[0], "n"],
     ["is_integer", "f"],
@@ -99,7 +99,7 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     *([head, "s"] for head in CHECKS),
 ]
 # a split builds a list, which no order reads; each piece of it is a str
-LIST_TERMS: list[Expression] = [[head, "s", "','"] for head in SPLITS]
+LIST_TERMS: list[Expression] = [[head, "s", "','"] for head in sorted(set(SPLITS) - SPLIT_HEADS)]
 TYPED_LEAVES: dict[str, type] = {"x": int, "n": int, "f": float, "g": float, "s": str, "t": str}
 
 

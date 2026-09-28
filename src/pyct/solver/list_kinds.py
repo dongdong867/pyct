@@ -57,6 +57,9 @@ type TypeOf = Callable[[Expression], type | None]
 # the heads that build a list from lists, or read one
 _LIST_HEADS = frozenset({"[]", "len", "[,]", "+", "*", "[:]"})
 
+# the splits whose list is tracked, each a list of strs; `partition` hands back a tuple
+SPLIT_HEADS = frozenset({"split", "rsplit", "splitlines"})
+
 
 class TrackedList:
     """The type render gives a part that is a tracked list: a list no single term holds."""
@@ -71,6 +74,10 @@ class Kinds:
     kinds: frozenset[str]
     every: frozenset[str]
     shape: ListShape | None = None
+
+
+# what a split's pieces are: strs, and only strs
+_PIECES = Kinds(frozenset({"str"}), frozenset({"str"}))
 
 
 def of_shape(shape: ListShape) -> Kinds:
@@ -146,7 +153,7 @@ class ListTyping:
     def involves(self, node: list[Expression]) -> bool:
         """Whether a part builds a list or reads one: a display, or a list head on a list."""
         head = node[0]
-        if head == "[,]":
+        if head == "[,]" or head in SPLIT_HEADS:
             return True
         return head in _LIST_HEADS and any(self.kinds_of(part) is not None for part in node[1:3])
 
@@ -159,6 +166,9 @@ class ListTyping:
         if head == "[,]":
             kinds = frozenset(self.item_kind(part) for part in operands)
             self.kinds[id(node)] = Kinds(kinds, kinds)
+            return TrackedList
+        if head in SPLIT_HEADS:
+            self.kinds[id(node)] = _PIECES
             return TrackedList
         lists = [kinds for part in operands if (kinds := self.kinds_of(part)) is not None]
         if head == "[]":

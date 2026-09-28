@@ -71,7 +71,8 @@ class Slices:
         """The position an item is read at: from the start, back from the end for a negative
         number, and a tracked index counted back from the end when it is negative."""
         bound = self._bound(part)
-        assert bound is not None
+        if bound is None:
+            raise ValueError(f"pyct cannot render a read at position {part}: core writes one")
         number = bound.number()
         if number is not None:
             return bound if number >= 0 else piece.length.plus(bound)

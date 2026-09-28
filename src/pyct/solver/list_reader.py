@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pyct.solver.list_terms import (
     FALSE,
     TRUE,
+    Counted,
+    Counts,
     Joined,
     Least,
     Lin,
@@ -112,14 +114,19 @@ class Context:
     visited: set[int] = field(default_factory=set)
     # the steps every read of the program may still take together, None for no limit
     shared: Shared | None = None
+    # each split's count, which a compare with a number writes as whether a piece is there
+    counts: Counts = field(default_factory=dict)
 
 
 def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
     """The item of ``kind`` at ``position``."""
     found = _Reader(kind, context).read(piece, position)
     # a list whose every item is of the kind read needs no guard: the path keeps the position
-    # inside the list, and any item there is of that kind
-    return Read(found.value, TRUE) if piece.every <= {kind} else found
+    # inside the list, and any item there is of that kind. A split's piece keeps the condition
+    # that it is there, which render asserts for each piece a fork reads
+    if piece.every <= {kind} and not isinstance(piece, Counted):
+        return Read(found.value, TRUE)
+    return found
 
 
 class _Reader:
@@ -207,6 +214,8 @@ class _Reader:
             return [], [(piece.base, piece.start.plus(position, piece.step))]
         if isinstance(piece, Repeated):
             return [], [(piece.base, _wrapped(position, piece.base.length))]
+        if isinstance(piece, Counted):
+            return piece.at(position, self.kind, self.least)
         assert isinstance(piece, Joined)
         return self._joined(piece, position)
 
@@ -242,7 +251,7 @@ class _Reader:
         offset = Lin()
         for part in piece.flat():
             end = offset.plus(part.length)
-            before_end = compare(position, end, self.least)
+            before_end = compare(position, end, self.least, counts=self.context.counts)
             if before_end != FALSE:
                 parts.append((part, position.minus(offset)))
                 if before_end == TRUE:

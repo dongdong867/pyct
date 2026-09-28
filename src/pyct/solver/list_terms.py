@@ -21,6 +21,10 @@ TRUE, FALSE = "true", "false"
 # the least value each named term can take on the path, by its text
 type Least = Mapping[str, int]
 
+# each split's count by its term, as a compare writes it: whether the split holds more pieces
+# than a number, which is whether the piece there is present (see ``split_lists``)
+type Counts = Mapping[str, Callable[[int], str]]
+
 
 @dataclass(frozen=True)
 class Lin:
@@ -156,6 +160,16 @@ class Window(Piece):
 
 
 @dataclass
+class Counted(Piece):
+    """A split's list: its length the split's count, and the piece at a position, with when
+    it is there, of the kind read (see ``split_lists``)."""
+
+    at: Callable[[Lin, str, Least], Read] = field(
+        default=lambda position, kind, least: Read(None, FALSE)
+    )
+
+
+@dataclass
 class Repeated(Piece):
     """A list repeated a plain number of times: its position ``q`` reads the list at
     ``q mod len``, so a repeat costs one piece however many times it repeats."""
@@ -172,8 +186,11 @@ class Read:
     guard: str
 
 
-def compare(low: Lin, high: Lin, least: Least, *, or_equal: bool = False) -> str:
-    """``low < high``, or ``low <= high``, decided here when the difference says."""
+def compare(
+    low: Lin, high: Lin, least: Least, *, or_equal: bool = False, counts: Counts | None = None
+) -> str:
+    """``low < high``, or ``low <= high``, decided here when the difference says, and written as
+    whether a split holds a piece when the difference is one split's count and a number."""
     difference = high.minus(low)
     lowest = difference.lowest(least)
     highest = difference.highest(least)
@@ -181,8 +198,29 @@ def compare(low: Lin, high: Lin, least: Least, *, or_equal: bool = False) -> str
         return TRUE
     if highest is not None and (highest < 0 or (not or_equal and highest <= 0)):
         return FALSE
+    counted = None if counts is None else _by_count(difference, or_equal, counts)
+    if counted is not None:
+        return counted
     op = "<=" if or_equal else "<"
     return f"({op} {low.text()} {high.text()})"
+
+
+def _by_count(difference: Lin, or_equal: bool, counts: Counts) -> str | None:
+    """``difference > 0``, or ``>= 0``, as whether a split holds more pieces than a number,
+    when the difference is that split's count, or its negation, and a number."""
+    if len(difference.atoms) != 1:
+        return None
+    ((term, factor),) = difference.atoms
+    past = counts.get(term)
+    if past is None or factor not in (1, -1):
+        return None
+    # the difference is past `beyond`: past 0, or past -1 when it may be 0
+    beyond = -1 if or_equal else 0
+    if factor == 1:
+        return past(beyond - difference.const)
+    # a number less the count is past `beyond` where the count is not past the rest, less one
+    held = past(difference.const - beyond - 1)
+    return FALSE if held == TRUE else TRUE if held == FALSE else f"(not {held})"
 
 
 def equal(position: Lin, at: int, least: Least) -> str:

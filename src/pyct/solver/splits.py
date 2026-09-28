@@ -13,13 +13,13 @@ time, each step a ``let`` that names where the last one was. ``rsplit``
 walks the reversed string the same way. Each form takes the string
 rendered, then the plain operands core wrote after it, and the position.
 Exact for ASCII. Past ASCII, ``splitlines`` breaks lines where Python does,
-and a split on whitespace reads only ASCII whitespace, as ``isspace`` does
-here (see `checks`).
+and a split on whitespace splits where Python does too (`WORD_SPACE`), though
+``isspace`` here reads only ASCII whitespace (see `checks`).
 """
 
 from collections.abc import Callable, Mapping
 
-from pyct.core.str_splits import LONGEST_WALK
+from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
 from pyct.solver.checks import SPACE, Ranges, one_of, outside
 from pyct.solver.strings import encode, length
 
@@ -30,8 +30,36 @@ type Piece = tuple[str, str]
 # the next line, the line separator and the paragraph separator; \r\n is one break
 LINE_BREAKS: Ranges = ((0x0A, 0x0D), (0x1C, 0x1E), (0x85, 0x85), (0x2028, 0x2029))
 
-_SPACE = one_of(SPACE)
-_NOT_SPACE = one_of(outside(SPACE))
+# what split() takes as whitespace: what isspace takes in ASCII, and past it every character
+# Python calls whitespace, so a split on whitespace is exact for every character cvc5 holds
+WORD_SPACE: Ranges = (
+    *SPACE,
+    (0x85, 0x85),
+    (0xA0, 0xA0),
+    (0x1680, 0x1680),
+    (0x2000, 0x200A),
+    (0x2028, 0x2029),
+    (0x202F, 0x202F),
+    (0x205F, 0x205F),
+    (0x3000, 0x3000),
+)
+
+# the two classes a split on whitespace reads, each a regular expression named once in the
+# program that reads it, so a walk of many words holds each name rather than its long union
+_SPACE, _NOT_SPACE = "re!space", "re!other"
+_NAMED: Mapping[str, str] = {
+    _SPACE: one_of(WORD_SPACE),
+    _NOT_SPACE: one_of(outside(WORD_SPACE)),
+}
+
+
+def named_classes(text: str) -> list[str]:
+    """The definition of each class of characters the program's text names."""
+    return [
+        f"(define-fun {name} () RegLan {regex})" for name, regex in _NAMED.items() if name in text
+    ]
+
+
 _BREAK = one_of(LINE_BREAKS)
 
 
@@ -123,6 +151,16 @@ def worded(term: str, limit: int, index: int) -> Piece:
     return _let(bounds, piece), _let(bounds[:-1], f"(>= a!{index} 0)")
 
 
+def words_past(term: str, index: int) -> str:
+    """That the string has more than ``index`` words: whitespace, then ``index`` runs of
+    characters that are not whitespace each followed by whitespace, then one more such
+    character. One membership, which cvc5 settled at once where the walk of the words ran past
+    its limit at five."""
+    word = f"(re.++ (re.+ {_NOT_SPACE}) (re.+ {_SPACE}))"
+    before = f"((_ re.loop {index} {index}) {word})" if index else ""
+    return f"(str.in_re {term} (re.++ (re.* {_SPACE}) {before} {_NOT_SPACE} re.all))"
+
+
 def split_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:
     """Piece ``index`` of ``s.split()``, ``s.split(sep)`` or ``s.split(sep, maxsplit)``.
 
@@ -174,6 +212,30 @@ def right_split_piece(term: str, operands: tuple[object, ...], index: int) -> Pi
     return _let(bound, chosen), there
 
 
+def right_count(term: str, operands: tuple[object, ...]) -> str:
+    """How many pieces ``s.rsplit(sep, maxsplit)`` has, by the walk of the reversed string its
+    pieces are read from, for a limit it walks, 0 to `LONGEST_WALK`."""
+    separator, limit = _separator_and_limit(operands)
+    walk = _words_back(limit) if separator is None else _separators_back(separator, limit)
+    bindings, count, _ = walk
+    return _let([("r!", f"(str.rev {term})"), *bindings], count)
+
+
+def left_count(term: str, operands: tuple[object, ...]) -> str:
+    """How many pieces ``s.split(sep, maxsplit)`` has, for a limit of 0 or more: one walk from
+    the start, each separator or word counted once it is found, and none after one is missing.
+    """
+    separator, limit = _separator_and_limit(operands)
+    if separator is None:
+        return _sum([f"(ite {words_past(term, at)} 1 0)" for at in range(limit + 1)])
+    written, width = encode(separator), len(separator)
+    hits = [("h!0", f"(str.indexof {term} {written} 0)")] if limit else []
+    for at in range(1, limit):
+        look = f"(str.indexof {term} {written} (+ h!{at - 1} {width}))"
+        hits.append((f"h!{at}", f"(ite (< h!{at - 1} 0) (- 1) {look})"))
+    return _let(hits, _sum(["1", *(f"(ite (>= h!{at} 0) 1 0)" for at in range(limit))]))
+
+
 def _unwalked(term: str, separator: str | None, limit: int, index: int) -> Piece:
     """Piece ``index`` of an rsplit whose limit is past `LONGEST_WALK`, read as the split's.
 
@@ -183,17 +245,23 @@ def _unwalked(term: str, separator: str | None, limit: int, index: int) -> Piece
     needs one is a miss.
     """
     piece, there = split_piece(term, (separator,), index)
+    return piece, _all([there, unwalked_bound(term, separator, limit)])
+
+
+def unwalked_bound(term: str, separator: str | None, limit: int) -> str:
+    """That an rsplit whose limit is past `LONGEST_WALK` splits the string as the split with no
+    limit does: the string has no more separators than the limit, or fewer words."""
     if separator is None:
         # a word starts where a character that is not whitespace follows whitespace, or the start
         spaced = f'(str.++ " " {term})'
         starts = f'(str.replace_re_all {spaced} (re.++ {_SPACE} {_NOT_SPACE}) "")'
         words = f"(div (- (str.len {spaced}) (str.len {starts})) 2)"
-        return piece, _all([there, f"(< {words} {limit})"])
+        return f"(< {words} {limit})"
     # a literal replace, which cvc5 answered at once where the same count as a regular
     # expression ran past its limit
     kept = f'(str.len (str.replace_all {term} {encode(separator)} ""))'
     separators = f"(div (- (str.len {term}) {kept}) {len(separator)})"
-    return piece, _all([there, f"(<= {separators} {limit})"])
+    return f"(<= {separators} {limit})"
 
 
 # a walk of the reversed string: the names it binds, how many pieces the string has, and each
@@ -222,6 +290,33 @@ def _words_back(limit: int) -> Walk:
     stops = [f"b!{at}" for at in range(limit)] + ["(str.len r!)"]
     pieces = [_back(f"a!{at}", stop) for at, stop in enumerate(stops)]
     return bounds, _sum(found), pieces
+
+
+def right_piece(term: str, head: str, operands: tuple[object, ...], back: int) -> str | None:
+    """Piece ``back`` of a split counted from the right, 0 the last, where one walk of the
+    reversed string finds it; None for a split it does not.
+
+    The walk finds a split's pieces with no limit on whitespace, or on a separator that does
+    not overlap itself, and an rsplit's to the limit it walks. A split with a limit keeps the
+    rest of the string in its last piece, and one on a separator that overlaps itself finds
+    other pieces from the right, so neither is walked from there. An rsplit past
+    `LONGEST_WALK` is read as the split with no limit, as its pieces are.
+    """
+    if head not in ("split", "rsplit"):
+        return None
+    separator, limit = _separator_and_limit(operands)
+    walked = head == "rsplit" and 0 <= limit <= LONGEST_WALK
+    # a split with a limit, or an rsplit's piece at its limit or past it, holds the rest
+    if (head == "split" and limit >= 0) or 0 <= limit <= back:
+        return None
+    if not walked and separator is not None and overlaps_itself(separator):
+        return None
+    steps = limit if walked else back + 1
+    walk = _words_back(steps) if separator is None else _separators_back(separator, steps)
+    bindings, _, pieces = walk
+    if back >= len(pieces):
+        return '""'
+    return _let([("r!", f"(str.rev {term})"), *bindings], pieces[back])
 
 
 def _back(start: str, stop: str) -> str:
@@ -284,10 +379,6 @@ def line_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:
     there = _all([*found, f"(< {start} {length(term)})"])
     return _let(breaks, piece), _let(breaks[: 2 * index], there)
 
-
-# the head of a fork render reads as a split held to a number of pieces, ``[COUNTED, split, n]``,
-# which only the solver writes (see `str_joins.counted`); ``!`` is in no Python name
-COUNTED = "pieces!"
 
 # each split's piece at a position, from the string rendered, the plain operands core wrote
 # after it, and the position

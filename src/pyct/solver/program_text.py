@@ -9,6 +9,7 @@ from pyct.solver.answer_size import longest_string
 from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import SORTS
 from pyct.solver.lists import ListTerms
+from pyct.solver.splits import named_classes
 
 
 class Body(Protocol):
@@ -33,8 +34,10 @@ def program_text(
     cores: bool,
 ) -> str:
     """The program's lines, in the order cvc5 reads them: each leaf and each list's and dict's
-    parts declared before any term on them, the leaves held finite, the definitions, what the
-    lists, the dicts and the path assert, and what to ask for."""
+    parts declared before any term on them, each split's count a line reads among them, the
+    leaves held finite, each class of characters a line names, the definitions, each such
+    count's tie to its pieces, what the lists, the dicts and the path assert, and what to ask
+    for."""
     terms, dicts = body.lists, body.dicts
     lines = ["(set-option :dump-unsat-cores true)"] if cores else []
     lines.append("(set-logic ALL)")
@@ -42,10 +45,12 @@ def program_text(
     lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
     lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
     lines += dicts.declarations()
-    lines += finites
-    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if body.bounded]
-    lines += terms.assertions() + dicts.assertions()
-    lines += [body.assertion(fork) for fork in prefix]
+    bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
+    asserted = terms.assertions() + dicts.assertions()
+    forks = [body.assertion(fork) for fork in prefix]
+    counts, ties = terms.splits.tied([*body.definitions, *bounds, *asserted, *forks])
+    written = [*body.definitions, *ties, *bounds, *asserted, *forks]
+    lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
     lines += [f"(get-value ({constant}))" for constant, _ in declared]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]

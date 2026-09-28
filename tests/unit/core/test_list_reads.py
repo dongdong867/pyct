@@ -119,6 +119,20 @@ def test_a_tracked_index_into_items_of_two_kinds_is_a_downgrade() -> None:
     assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
 
 
+@pytest.mark.parametrize("changed", [False, True], ids=["the split's list", "a list made from it"])
+def test_a_tracked_index_into_a_split_s_list_is_a_downgrade(changed: bool) -> None:
+    sink: list[SinkItem] = []
+    parts: Any = ConcolicStr.made("a,b", expression="s", sink=sink).split(",")
+    if changed:
+        parts = parts + ["z"]
+
+    item = parts[ConcolicInt.made(1, expression="i", sink=sink)]
+
+    # the solver reads a split's piece at a position the path writes, not at one it chooses
+    assert type(item) is str and item == "b"
+    assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
+
+
 def test_a_position_from_the_start_of_a_mixed_argument_is_read_by_its_position() -> None:
     items, sink = tracked([1, "a", None])
 

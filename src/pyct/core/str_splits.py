@@ -1,18 +1,20 @@
 """What a tracked str teaches about splitting: split, rsplit, partition and splitlines.
 
-Each hands back what str's own method does, a list, or a tuple for
-``partition``, with every piece a tracked str carrying
-``["[]", [name, s, *operands], k]``, k its position in what Python built. The
-list itself is plain: Python indexes it, and ``len(parts)`` is plain. A call
-in a form pyct does not encode, a keyword included, is str's own answer and a
-downgrade named by the method (``README.md › Rules › downgrades``).
+``split``, ``rsplit`` and ``splitlines`` hand back a tracked list whose form is the call,
+``[name, s, *operands]``, the operands by position: a keyword goes to its place, so
+``s.split(maxsplit=1)`` is ``["split", s, None, 1]``. Its length is followed as any tracked
+list's, and every piece is a tracked str carrying ``["[]", [name, s, *operands], k]``, k its
+position in what Python built. ``partition`` hands back str's own tuple of such pieces. A call
+in a form pyct does not encode is str's own answer and a downgrade named by the method
+(``README.md › Rules › downgrades``).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from typing import Protocol
 
-from pyct.core.branch import Expression
+from pyct.core.branch import BranchSink, Expression
 from pyct.core.str_cases import Reader, Tracked, piece
 from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import downgraded, own
@@ -22,6 +24,47 @@ from pyct.core.values import downgraded, own
 # at 64. Past it, the solver reads an rsplit as the split with no limit, which it is on a string
 # with no more separators than the limit, or fewer words (see `solver/splits.py`)
 LONGEST_WALK = 16
+
+# each method's arguments in the order Python takes them by position, with the default Python
+# gives one left out; partition takes no keyword
+_KEYWORDS: dict[str, tuple[tuple[str, object], ...]] = {
+    "split": (("sep", None), ("maxsplit", -1)),
+    "rsplit": (("sep", None), ("maxsplit", -1)),
+    "splitlines": (("keepends", False),),
+    "partition": (),
+}
+
+
+class _Listed(Protocol):
+    """How a tracked list is made: its items, its form and its sink."""
+
+    def made(self, items: list[object], expression: Expression, sink: BranchSink) -> object: ...
+
+
+# the tracked list a split hands back, entered by `pyct.core.lists` as it is imported, which
+# imports this module on its way
+_LISTED: list[_Listed] = []
+
+
+def enter_list(listed: _Listed) -> None:
+    """Enter the tracked list type a split's pieces are handed back in."""
+    _LISTED[:] = [listed]
+
+
+def _by_position(
+    name: str, args: tuple[object, ...], kwargs: dict[str, object]
+) -> tuple[object, ...] | None:
+    """A split's arguments as Python takes them by position: each keyword in its place, each
+    one left out before it at Python's default. None for a call Python refuses, a keyword it
+    does not take or one given twice, which the downgrade leaves to Python to refuse."""
+    if not kwargs:
+        return args
+    names = _KEYWORDS[name]
+    keys = [key for key, _ in names]
+    if len(args) > len(keys) or any(key not in keys[len(args) :] for key in kwargs):
+        return None
+    last = max(keys.index(key) for key in kwargs)
+    return (*args, *(kwargs.get(key, default) for key, default in names[len(args) : last + 1]))
 
 
 def _parsed(
@@ -55,7 +98,7 @@ def separator_and_limit(receiver: object, args: tuple[object, ...]) -> list[Expr
     return None if parsed is None else parsed[0]
 
 
-def _overlaps_itself(separator: str) -> bool:
+def overlaps_itself(separator: str) -> bool:
     """Whether a separator's start can be its own end: ``aa``, ``aba``."""
     return any(separator[:size] == separator[-size:] for size in range(1, len(separator)))
 
@@ -75,7 +118,7 @@ def from_the_right(receiver: object, args: tuple[object, ...]) -> list[Expressio
         return None
     operands, text, limit = parsed
     unwalked = limit < 0 or limit > LONGEST_WALK
-    return None if unwalked and text is not None and _overlaps_itself(text) else operands
+    return None if unwalked and text is not None and overlaps_itself(text) else operands
 
 
 def one_separator(receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
@@ -119,7 +162,8 @@ def _text(value: object) -> object:
 
 
 def split_up(name: str, reader: Reader) -> Callable[..., object]:
-    """str's own split, each piece a tracked str at its position in what Python built.
+    """str's own split, each piece a tracked str at its position in what Python built, in a
+    tracked list whose form is the call, or partition's tuple.
 
     A form pyct does not encode is a downgrade whose pieces are all plain.
     """
@@ -127,12 +171,16 @@ def split_up(name: str, reader: Reader) -> Callable[..., object]:
     downgrade = downgraded(str, name, calling=operation)
 
     def compute(self: Tracked, /, *args: object, **kwargs: object) -> object:
-        forms = None if kwargs else reader(self, args)
-        if forms is None:
+        taken = _by_position(name, args, kwargs)
+        forms = None if taken is None else reader(self, taken)
+        if taken is None or forms is None:
             return downgrade(self, *args, **kwargs)
-        parts = own(operation, self, *args)
-        pieces = _pieces(self, [name, self.expression, *forms], parts)
-        return tuple(pieces) if isinstance(parts, tuple) else list(pieces)
+        parts = own(operation, self, *taken)
+        whole: Expression = [name, self.expression, *forms]
+        pieces = list(_pieces(self, whole, parts))
+        if isinstance(parts, tuple):
+            return tuple(pieces)
+        return _LISTED[0].made(pieces, whole, self.sink)
 
     return compute
 

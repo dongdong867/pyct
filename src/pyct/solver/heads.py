@@ -24,7 +24,7 @@ from pyct.solver.positions import (
 )
 from pyct.solver.recased import TO_DECLARE
 from pyct.solver.spans import equal, unequal, within, without
-from pyct.solver.splits import COUNTED, SPLITS
+from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
@@ -95,11 +95,9 @@ RESULTS: Mapping[str, type | None] = {
     "range": range,
     **dict.fromkeys(CHECKS, bool),
     **dict.fromkeys([*CASES, *PADDINGS, *TO_DECLARE], str),
-    # a split builds a list, which SMT-LIB has no sort for here: its term is the string it splits,
-    # and only its pieces are read, each through `[]`
-    **dict.fromkeys(SPLITS, list),
-    # whether a split has no more pieces than a join of it reads
-    COUNTED: bool,
+    # a partition builds a tuple, which SMT-LIB has no sort for here: its term is the string it
+    # splits, and only its pieces are read, each through `[]`. A split's list is a tracked list
+    "partition": list,
 }
 
 # Python's spelling of an operator on operands of one type, and SMT-LIB's. This is the one

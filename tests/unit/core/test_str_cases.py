@@ -9,6 +9,7 @@ import pytest
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.lists import ConcolicList
 from pyct.core.str_operands import plain
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
@@ -98,6 +99,14 @@ SPLITS: dict[str, tuple[Callable[[str], object], Expression]] = {
     "s.partition('x')": (lambda s: s.partition("x"), ["partition", "s", "'x'"]),
     "s.splitlines()": (lambda s: s.splitlines(), ["splitlines", "s"]),
     "s.splitlines(True)": (lambda s: s.splitlines(True), ["splitlines", "s", True]),
+    # a keyword is written in its place, as Python takes it by position
+    "s.split(sep=',')": (lambda s: s.split(sep=","), ["split", "s", "','"]),
+    "s.split(maxsplit=1)": (lambda s: s.split(maxsplit=1), ["split", "s", None, 1]),
+    "s.rsplit(',', maxsplit=1)": (lambda s: s.rsplit(",", maxsplit=1), ["rsplit", "s", "','", 1]),
+    "s.splitlines(keepends=True)": (
+        lambda s: s.splitlines(keepends=True),
+        ["splitlines", "s", True],
+    ),
 }
 
 
@@ -111,10 +120,16 @@ def test_a_split_hands_back_strs_own_pieces_each_tracked_at_its_position(
 
     plain = call("a,b c")
     assert isinstance(parts, list | tuple) and isinstance(plain, list | tuple)
-    assert type(parts) is type(plain)
-    assert all(isinstance(part, ConcolicStr) for part in parts)
-    assert [str.__str__(part) for part in parts] == list(plain)
-    assert [part.expression for part in parts] == [["[]", whole, at] for at in range(len(plain))]
+    if isinstance(plain, tuple):
+        assert type(parts) is tuple
+    else:
+        # a tracked list whose form is the call (follow-the-length-of-a-split)
+        assert type(parts) is ConcolicList and parts.expression == whole
+    # the items as stored: a walk of a tracked list records its forks
+    pieces = list.copy(parts) if isinstance(parts, list) else list(parts)
+    assert all(isinstance(part, ConcolicStr) for part in pieces)
+    assert [str.__str__(part) for part in pieces] == list(plain)
+    assert [part.expression for part in pieces] == [["[]", whole, at] for at in range(len(plain))]
     # where partition's separator is missing, CPython hands the receiver back as its first
     # piece; pyct splits the plain text, so building that piece reads no `__str__` of the
     # target's
@@ -141,14 +156,13 @@ NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
         lambda s: s.ljust(ConcolicInt.made(9, expression="n", sink=[])),
         "ljust",
     ),
-    "s.split(sep=',')": (lambda s: s.split(sep=","), "split"),
     "s.split(tracked)": (lambda s: s.split(_tracked(",")), "split"),
+    "s.split(sep=tracked)": (lambda s: s.split(sep=_tracked(",")), "split"),
     "s.split(past cvc5)": (lambda s: s.split(PAST_CVC5), "split"),
     "s.rsplit('aa')": (lambda s: s.rsplit("aa"), "rsplit"),
     "s.rsplit('aba', -1)": (lambda s: s.rsplit("aba", -1), "rsplit"),
     "s.rsplit('aa', 17)": (lambda s: s.rsplit("aa", 17), "rsplit"),
     "s.partition(tracked)": (lambda s: s.partition(_tracked(",")), "partition"),
-    "s.splitlines(keepends=True)": (lambda s: s.splitlines(keepends=True), "splitlines"),
 }
 
 
@@ -188,6 +202,13 @@ REFUSED: dict[str, tuple[Callable[[str], object], type[Exception]]] = {
     "s.split(',', 1, 2)": (lambda s: s.split(",", 1, 2), TypeError),  # pyrefly: ignore[no-matching-overload]
     "s.partition(None)": (lambda s: s.partition(None), TypeError),  # pyrefly: ignore[no-matching-overload]
     "s.partition()": (lambda s: s.partition(), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s.split(sepp=',')": (lambda s: s.split(sepp=","), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s.split(',', sep=',')": (lambda s: s.split(",", sep=","), TypeError),  # pyrefly: ignore[no-matching-overload]
+    "s.splitlines(True, keepends=True)": (
+        lambda s: s.splitlines(True, keepends=True),  # pyrefly: ignore[no-matching-overload]
+        TypeError,
+    ),
+    "s.partition(sep=',')": (lambda s: s.partition(sep=","), TypeError),  # pyrefly: ignore[no-matching-overload]
 }
 
 

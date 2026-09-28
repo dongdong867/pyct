@@ -45,12 +45,30 @@ def position(key: object) -> Expression | None:
     return key.expression if type(key) is ConcolicInt else None
 
 
+# the splits whose list pyct tracks: a piece of one is read at a position the path writes, so
+# a tracked index into such a list, or into a list made from one, is not followed
+_SPLITS = frozenset({"split", "rsplit", "splitlines"})
+
+
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
-    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys)."""
+    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
+    not made from a split's (follow-the-length-of-a-split)."""
     if type(key) is ConcolicInt:
-        return len(self.kinds) <= 1
+        return len(self.kinds) <= 1 and not _from_a_split(self.expression)
     return plain_index(key) is not None
+
+
+def _from_a_split(form: Expression | None) -> bool:
+    """Whether a list's form holds a split's list anywhere."""
+    stack = [form]
+    while stack:
+        part = stack.pop()
+        if isinstance(part, list) and part:
+            if isinstance(part[0], str) and part[0] in _SPLITS:
+                return True
+            stack.extend(part[1:])
+    return False
 
 
 def in_range(self: ListState, key: object, name: str = "__getitem__") -> bool:

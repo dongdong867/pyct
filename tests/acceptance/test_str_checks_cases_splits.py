@@ -60,21 +60,38 @@ PAST_ASCII_LOWER = "targets.strs.past_ascii_lower::shout"
 REQUEST_LINE = "targets.strs.request_line::method"
 REQUEST_LINE_FILE = str(REPO_ROOT / "targets" / "strs" / "request_line.py")
 SPLIT_FAMILY = "targets.strs.split_family::route"
-# each fork the seed takes in ``route``, in order: the line and the expression
+# each fork the seed takes in ``route``, in order: the line and the expression. A split's list is
+# tracked, so a piece taken out of it records whether the list is long enough first
+# (follow-the-length-of-a-split)
 SPLIT_FAMILY_FORKS: list[tuple[int, list[object]]] = [
+    (2, [">", ["len", ["split", "s"]], 0]),
     (2, ["==", ["[]", ["split", "s"], 0], "'GET'"]),
+    (4, [">", ["len", ["split", "s", "','", 1]], 1]),
     (4, ["==", ["[]", ["split", "s", "','", 1], 1], "'b,c'"]),
+    (6, [">", ["len", ["rsplit", "s", "'/'", 1]], 0]),
     (6, ["==", ["[]", ["rsplit", "s", "'/'", 1], 0], "'x/y'"]),
     (8, ["==", ["[]", ["partition", "s", "'='"], 2], "'on'"]),
+    (10, [">", ["len", ["splitlines", "s"]], 0]),
     (10, ["==", ["[]", ["splitlines", "s"], 0], "'top'"]),
+]
+# the long-enough forks that hold wherever they are reached: an rsplit on a separator always has
+# a first piece, and a string with no line has no word either, so it raises on line 2 first
+SPLIT_FAMILY_ALWAYS = [
+    (6, [">", ["len", ["rsplit", "s", "'/'", 1]], 0]),
+    (10, [">", ["len", ["splitlines", "s"]], 0]),
 ]
 TRACKED_RSPLIT = "targets.strs.tracked_rsplit::cut"
 SPLIT_FORMS = "targets.strs.split_forms::read"
 # the seed's forks in ``read``: a split on whitespace with a limit, and a line kept with its end
 SPLIT_FORMS_FORKS: list[tuple[int, list[object]]] = [
+    (2, [">", ["len", ["split", "s", None, 1]], 0]),
     (2, ["==", ["[]", ["split", "s", None, 1], 0], "'GET'"]),
+    (4, [">", ["len", ["splitlines", "s", True]], 0]),
     (4, ["==", ["[]", ["splitlines", "s", True], 0], "'a\\n'"]),
 ]
+# a string with no line has no word either, so the line's own long-enough fork holds wherever
+# it is reached
+SPLIT_FORMS_ALWAYS = (4, [">", ["len", ["splitlines", "s", True]], 0])
 LONG_RSPLIT = "targets.strs.long_rsplit::head"
 SHOUTED_PAIR = "targets.strs.shouted_pair::pair"
 SHOUTED_PAIR_FILE = str(REPO_ROOT / "targets" / "strs" / "shouted_pair.py")
@@ -188,7 +205,8 @@ def test_follows_split() -> None:
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
     expression = ["==", ["[]", ["split", "line", "' '"], 0], "'GET'"]
-    assert [fork["expression"] for fork in forks_of(inputs[0])] == [expression]
+    long_enough = [">", ["len", ["split", "line", "' '"]], 0]
+    assert [fork["expression"] for fork in forks_of(inputs[0])] == [long_enough, expression]
     assert any(text(line, "line").startswith("GET") for line in inputs[1:]), inputs
     assert f"fork {REQUEST_LINE_FILE}:3:7  line.split(' ')[0] == 'GET'  not taken" in (
         result.stderr.splitlines()
@@ -208,10 +226,11 @@ def test_follows_the_split_family() -> None:
         (line, repr(expression), taken)
         for line, expression in SPLIT_FAMILY_FORKS
         for taken in (True, False)
+        if taken or (line, expression) not in SPLIT_FAMILY_ALWAYS
     }
     assert aimed_lines_reached(inputs)
-    # the list is Python's own, so taking a piece out of it records nothing, not even partition
-    # asking a str subclass for its text
+    # taking a piece out of the list records nothing else, not even partition asking a str
+    # subclass for its text
     assert all(line["downgrades"] == [] for line in inputs), inputs
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -227,7 +246,8 @@ def test_reports_a_slow_encoding_as_a_miss(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
     assert (2, "timeout") in misses_of(result.stdout), result.stdout
     assert f"missed {SHOUTED_PAIR_FILE}:2:7 timeout" in result.stderr.splitlines()
-    assert _reported_taken(result.stdout) == []
+    # the seed alone ran: no answer came back to run
+    assert len(input_lines(result.stdout)) == 1, result.stdout
     assert summary_line(result.stdout)["stopped"] == "budget spent"
 
 
@@ -251,8 +271,9 @@ def test_an_rsplit_with_a_large_limit_is_flipped_within_the_budget() -> None:
     elapsed = time.perf_counter() - started
 
     assert result.returncode == 0, result.stderr
-    # past the longest walk the piece is read as the split's, which renders and solves at once
-    assert misses_of(result.stdout) == [], result.stdout
+    # past the longest walk the piece is read as the split's, which renders and solves at once;
+    # the one miss is the first piece's long-enough fork, which an rsplit on a separator holds
+    assert misses_of(result.stdout) == [(2, "unsat")], result.stdout
     assert any(text(line, "s").rsplit(",", 2000)[0] == "a" for line in input_lines(result.stdout))
     assert elapsed < 3, elapsed
 
@@ -273,4 +294,5 @@ def test_a_null_separator_and_a_kept_line_end_cross_from_the_child() -> None:
         (line, repr(expression), taken)
         for line, expression in SPLIT_FORMS_FORKS
         for taken in (True, False)
+        if taken or (line, expression) != SPLIT_FORMS_ALWAYS
     }

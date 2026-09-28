@@ -23,6 +23,7 @@ from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.list_kinds import (
     ITEM_SORTS,
     ITEM_TYPES,
+    SPLIT_HEADS,
     Kinds,
     ListTyping,
     TrackedList,
@@ -33,6 +34,7 @@ from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import (
     FALSE,
     TRUE,
+    Counted,
     Guard,
     Joined,
     Least,
@@ -48,6 +50,7 @@ from pyct.solver.list_terms import (
     equal,
     shape_guard,
 )
+from pyct.solver.split_lists import Splits
 
 __all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
 
@@ -146,9 +149,13 @@ class ListTerms(ListTyping, Slices):
         self.strings: dict[str, None] = {}
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
+        # the splits' lists the path reads
+        self.splits = Splits()
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
-        """Note how long each list is at least, by the forks on its length the path takes."""
+        """Note how long each list is at least, by the forks on its length the path takes, and
+        what the splits' lists learn of the path."""
+        self.splits.learn(prefix)
         for fork in prefix:
             expression = fork.expression
             if not (isinstance(expression, list) and len(expression) == 3):
@@ -202,14 +209,14 @@ class ListTerms(ListTyping, Slices):
         if head == "[]":
             piece: Piece = self._row(node, kinds)
         elif head == "[,]":
-            items = [(self._item_term(part), self.item_kind(part)) for part in operands]
-            piece = Shown(Lin(len(items)), kinds.kinds, kinds.every, items=items)
+            piece = self._shown(operands, kinds)
         elif head == "[:]":
             settle = self.source.everywhere or len(self.built) in self.source.settle
             piece = self.window(self.piece(operands[0]), operands[1:], kinds, settle=settle)
         elif head == "+":
-            left, right = (self.piece(operand) for operand in operands)
-            piece = Joined(left.length.plus(right.length), kinds.kinds, kinds.every, [left, right])
+            piece = self._joined(operands, kinds)
+        elif head in SPLIT_HEADS:
+            piece = self._split(node, kinds)
         else:
             piece = self._repeated(operands, kinds)
         self.pieces[id(node)] = piece
@@ -217,6 +224,48 @@ class ListTerms(ListTyping, Slices):
         self.places[id(piece)] = len(self.built)
         self.built.append(node)
         self._apply_fact(node, piece)
+
+    def _shown(self, operands: list[Expression], kinds: Kinds) -> Shown:
+        """A list display: each item's term and kind."""
+        items = [(self._item_term(part), self.item_kind(part)) for part in operands]
+        return Shown(Lin(len(items)), kinds.kinds, kinds.every, items=items)
+
+    def _joined(self, operands: list[Expression], kinds: Kinds) -> Joined:
+        """Two lists joined by `+`: one piece whose length adds theirs."""
+        left, right = (self.piece(operand) for operand in operands)
+        return Joined(left.length.plus(right.length), kinds.kinds, kinds.every, [left, right])
+
+    def _split(self, node: list[Expression], kinds: Kinds) -> Counted:
+        """A split's list: its count, and its pieces as `split_lists` reads them. A count is
+        at least as many pieces as every string has, and the input's own where it is known."""
+        listed, held = self.splits.made(node, self.named(node[1]))
+        self.least[listed.count] = listed.least()
+        if (fact := listed.fact()) != TRUE:
+            self.guards.append(fact)
+        if held is not None:
+            self.origin[listed.count] = held
+        return Counted(Lin.of(listed.count), kinds.kinds, kinds.every, at=listed.read)
+
+    def counted_compare(self, node: list[Expression]) -> str | None:
+        """A compare of a split's length with a number or another length, as the splits write
+        it (``Splits.compare``); None for any other part."""
+        if len(node) != 3 or not isinstance(node[0], str):
+            return None
+        left, right = (self._side(part) for part in node[1:])
+        if left is None or right is None:
+            return None
+        return self.splits.compare(node[0], left, right)
+
+    def _side(self, part: Expression) -> Lin | None:
+        """A side of a compare as a sum: a number, or a list's length; None for any other."""
+        if isinstance(part, int):
+            return Lin(int(part))
+        return self.length_of(part)
+
+    def counts_length(self, node: list[Expression]) -> bool:
+        """Whether a part is the length of a list a split's count adds to."""
+        length = self.length_of(node) if node[0] == "len" else None
+        return length is not None and self.splits.reads(length)
 
     def scalar(self, node: list[Expression], kind: type | None) -> str:
         """The term of a list's length, or of an item of ``kind`` read from one."""
@@ -234,7 +283,8 @@ class ListTerms(ListTyping, Slices):
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
             self.guards.append(found.guard)
-        if item == "str":
+        if item == "str" and not isinstance(piece, Counted):
+            # a split's piece is no longer than its string, which the answer holds already
             self.strings[found.value] = None
         if isinstance(piece, Stored):
             self._present(piece.length, rest[0])
@@ -272,6 +322,7 @@ class ListTerms(ListTyping, Slices):
             self.source.steps,
             set(),
             self.shared,
+            self.splits.counts,
         )
 
     def _define_read(self, text: str, sort: str) -> str:
@@ -395,7 +446,7 @@ class ListTerms(ListTyping, Slices):
     def asked(self) -> list[str]:
         """What the program asks cvc5 for about the lists: each length and array it declared,
         and each position's term the answer reads (see ``list_answers``)."""
-        names = list(self.declared)
+        names = list(self.declared) + (self.splits.emitted if self.declared else [])
         names += [
             term
             for part in self.positions.values()
