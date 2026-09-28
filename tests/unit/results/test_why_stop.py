@@ -229,7 +229,7 @@ def test_the_clock_is_read_often_through_each_large_shape(
     assert sorted(line for entry in entries for line in entry.lines) == sorted(uncovered)
     # a stop lands at the first read after it, so the longest stretch between two reads, or
     # after the last, is the most the analysis runs past its stop, which the run sets that much
-    # before its grace ends
+    # before its grace ends; each mark is the thread's CPU time, so a stretch is CPU seconds
     longest = max(later - earlier for earlier, later in itertools.pairwise(marks))
     assert longest < LONGEST_STRETCH, longest
 
