@@ -73,6 +73,7 @@ def test_run_records_how_the_seed_ended() -> None:
     assert result.records[0].covered_lines == frozenset({2, 3})
 
 
+@pytest.mark.serial
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
     target = load_target("targets.trace.never_returns::spin")

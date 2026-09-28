@@ -25,6 +25,9 @@ type IsLeaf = Callable[[Expression], bool]
 # pyct's own package directory: every frame inside it is pyct, not the target.
 # Unresolved, because a frame's co_filename is the unresolved __file__ it was compiled from.
 PYCT_DIR = f"{Path(__file__).parent.parent}{os.sep}"
+# the folder that holds pyct's package: a fresh interpreter imports pyct from here, so it runs
+# the pyct this process runs
+PYCT_ROOT = str(Path(__file__).parent.parent.parent)
 
 
 @dataclass(frozen=True)
