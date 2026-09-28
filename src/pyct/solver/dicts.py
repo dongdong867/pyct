@@ -141,6 +141,7 @@ class DictTerms(Keyed):
         self.extra: dict[str, str] = {}
         self.functions: dict[str, str] = {}
         self.spent = 0
+        self.stepped: set[tuple[str, str]] = set()
         self.most_lookups: int | None = None
         self.facts: dict[str, None] = {}
         # each value constant a dict declared, and what the answer names it by: a leaf's name,

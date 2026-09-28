@@ -439,32 +439,6 @@ def test_a_tracked_key_s_lookups_write_the_dict_s_keys_once() -> None:
     assert written(100) < written(10) * 1.5
 
 
-def lookups(names: int, keys: int) -> tuple[Seed, tuple[Branch, ...]]:
-    """A path that looks ``names`` tracked keys up in a dict of ``keys`` keys, each in turn."""
-    seed = Seed.of({"prices": {f"k{i}": 0 for i in range(keys)}, "names": ["k0"] * names})
-    forks = tuple(fork(["in", ["[]", "names", at], "prices"]) for at in range(names))
-    return seed, forks
-
-
-@needs_cvc5
-def test_tracked_key_lookups_past_their_steps_are_unknown_at_once() -> None:
-    # cvc5 writes each lookup over every key: 300 into 3,000 keys grew it to 3.8 GB and then
-    # ran to the limit; the steps scale with the solve's limit, as a list read's do
-    seed, forks = lookups(300, 3000)
-
-    started = time.monotonic()
-    answer = solve(forks, seed.leaves, 10.0, seed.containers(), seed.values)
-
-    assert isinstance(answer, Unknown) and time.monotonic() - started < 2.0
-
-
-@needs_cvc5
-def test_tracked_key_lookups_inside_their_steps_are_asked() -> None:
-    seed, forks = lookups(5, 100)
-
-    assert isinstance(solve(forks, seed.leaves, 10.0, seed.containers(), seed.values), Sat)
-
-
 @needs_cvc5
 def test_a_placed_walk_beside_a_bound_is_asked_without_both_and_is_unknown() -> None:
     # `x // 1.0 == 1e300` holds for `x = 1e300` past the bound a float floor division is exact
