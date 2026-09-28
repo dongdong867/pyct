@@ -325,3 +325,53 @@ def test_a_compare_the_path_already_decides_records_nothing() -> None:
     compares = [expression for expression, _ in forks(sink) if part(expression, 0) == "=="]
 
     assert compares == [["==", "name", "'ab'"]]
+
+
+def test_a_walk_compares_no_store_that_put_its_key_last_again() -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    name = ConcolicStr.made("ab", "name", sink)
+    config.pop(name)
+    config[name] = 1
+    before = len(forks(sink))
+
+    list(config)
+
+    # an answer that moves the name moves another key to the end: the walk reads it elsewhere
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[before:])
+
+
+def test_a_shared_key_a_walk_handed_out_is_compared_as_any_other() -> None:
+    config, sink = tracked({"c": 0})
+    name = ConcolicStr.made("a", "name", sink)
+    config[name] = 7
+    list(config)
+
+    assert "b" not in config
+
+    assert (["==", "name", "'b'"], False) in forks(sink)
+    hold_against_python(sink, {"config": {"c": 0}, "name": "a"})
+
+
+def test_a_tracked_key_found_held_counts_as_one_key_at_most() -> None:
+    config, sink = tracked({"a": 1, "b": 2, "c": 3})
+    name = ConcolicStr.made("c", "name", sink)
+    assert "a" in config and name in config
+
+    list(config)
+
+    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
+    # "a" and the name may be the same key, so only one place is certain
+    assert [item.decided for item in sizes] == [True, False, False, False]
+
+
+def test_a_plain_lookup_reads_only_the_changes_after_its_key_s_own() -> None:
+    config, sink = tracked({})
+    name = ConcolicStr.made("k", "name", sink)
+    config[name] = 1
+    config["b"] = 2
+    config["c"] = 3
+    before = len(forks(sink))
+
+    assert "b" in config
+
+    assert forks(sink)[before:] == []

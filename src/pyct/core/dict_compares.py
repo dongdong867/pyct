@@ -59,8 +59,8 @@ def after_changes(
     if not tracked and not self.tracked_changes:
         return self.changed.get(bare)
     unequal: list[Expression] = []
-    for change in reversed(self.log):
-        under, changed, stored = change
+    for change in _after_the_last_plain(self, bare) if not tracked else reversed(self.log):
+        under, changed, stored, _ = change
         if type(changed) is not type(bare):
             continue
         if under is None and not tracked:
@@ -78,6 +78,16 @@ def after_changes(
                 return stored
             unequal.append(other)
     return None
+
+
+def _after_the_last_plain(self: DictState, bare: object) -> list[Change]:
+    """The changes a plain key's lookup reads, the latest first: each change under a tracked key
+    after the key's own latest change under a plain key, and then that one, which decides."""
+    last = self.plain_at.get(bare, -1)
+    if last >= 0 and type(self.log[last][1]) is not type(bare):
+        last = -1
+    after = [self.log[at] for at in reversed(self.tracked_at) if at > last]
+    return after + ([self.log[last]] if last >= 0 else [])
 
 
 def _compared(
@@ -108,11 +118,12 @@ def _literal(written: Expression) -> bool:
 
 def over_the_argument(self: DictState, change: Change) -> bool:
     """Whether a change is a store under a tracked key that may be over one of the argument's
-    keys: the path did not settle that the argument lacks the key's value. A walk that hands out
-    an argument's key compares it only with these; a removal under a tracked key stays Python's
-    own there, since an answer that removes another key walks another key in its place."""
-    under, changed, stored = change
-    return under is not None and stored and self.settled.get(changed) is not False
+    keys in its place: the dict held the key, and the path did not settle that the argument
+    lacks it. A walk that hands out an argument's key compares it only with these. A removal
+    under a tracked key, and a store that puts its key last again, stay Python's own there,
+    since an answer that moves either to another key walks another key in its place."""
+    under, changed, stored, held = change
+    return under is not None and stored and held and self.settled.get(changed) is not False
 
 
 def own_key(self: DictState, key: object) -> bool:

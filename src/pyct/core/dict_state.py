@@ -25,8 +25,9 @@ from pyct.core.list_state import plain
 MISSING = object()
 
 # one change the target made: the expression of the tracked key it was made under, None under a
-# plain key; the key's plain value; and whether the change stored the key (True) or removed it
-type Change = tuple[Expression, object, bool]
+# plain key; the key's plain value; whether the change stored the key (True) or removed it; and
+# whether the dict held the key when it ran, so a store kept the key in its place
+type Change = tuple[Expression, object, bool, bool]
 
 
 def _tracked_key(key: object) -> bool:
@@ -59,6 +60,10 @@ class DictState(dict):
     # which a later lookup compares its own key with (see ``dict_reads.after_changes``)
     log: list[Change]
     tracked_changes: int
+    # where in ``log`` each plain key's latest change under a plain key sits, and where each
+    # change under a tracked key does, so a plain key's lookup reads only the changes after it
+    plain_at: dict[object, int]
+    tracked_at: list[int]
     # how many keys the dict holds past the argument's own: each change's, kept as it happens
     grown: int
     shadow: dict[object, object]
@@ -96,6 +101,8 @@ class DictState(dict):
         fields["found_held"] = set()
         fields["compared"] = {}
         fields["log"] = []
+        fields["plain_at"] = {}
+        fields["tracked_at"] = []
         fields["tracked_changes"] = 0
         fields["grown"] = 0
         fields["shadow"] = dict(items)
@@ -181,6 +188,8 @@ class DictState(dict):
         fields["compared"] = self.compared
         fields["changed"] = dict(self.changed)
         fields["log"] = list(self.log)
+        fields["plain_at"] = dict(self.plain_at)
+        fields["tracked_at"] = list(self.tracked_at)
         fields["tracked_changes"] = self.tracked_changes
         fields["grown"] = self.grown
         return made
@@ -189,25 +198,32 @@ class DictState(dict):
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
         still says whether it held the key before, which is how the size grew. ``tracked`` is
         the expression of the tracked key the change was made under."""
-        self.__dict__["grown"] += key not in self.shadow
+        held = key in self.shadow
+        self.__dict__["grown"] += not held
         self.shadow[key] = value
-        self.logged(key, True, tracked)
+        self.logged(key, (True, held), tracked)
 
     def dropped(self, key: object, tracked: Expression = None) -> None:
         """Note a removal the dict's own method made."""
         self.__dict__["grown"] -= key in self.shadow
         self.shadow.pop(key, None)
-        self.logged(key, False, tracked)
+        self.logged(key, (False, True), tracked)
 
-    def logged(self, key: object, stored: bool, tracked: Expression = None) -> None:
-        """Log a change, whether it stored the key or removed it.
+    def logged(self, key: object, how: tuple[bool, bool], tracked: Expression = None) -> None:
+        """Log a change: whether it stored the key or removed it, and whether the dict held the
+        key when it ran (``how``).
 
         A change under a tracked key drops the walks' copies: the solver may make that key a
         copied one, which a removal takes out and a store gives another value, so a lookup of
         a copy handed out before it asks again.
         """
+        stored, held = how
         self.changed[key] = stored
-        self.log.append((tracked, key, stored))
-        if tracked is not None:
+        at = len(self.log)
+        self.log.append((tracked, key, stored, held))
+        if tracked is None:
+            self.plain_at[key] = at
+        else:
+            self.tracked_at.append(at)
             self.__dict__["tracked_changes"] += 1
             self.copies.clear()

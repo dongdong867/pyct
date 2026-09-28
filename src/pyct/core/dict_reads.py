@@ -123,15 +123,9 @@ def present(
         return None
     if proven(self, key):
         return held
-    if handed_shared(self, key):
-        # a walk handed out this key, which Python shares with the target's literals, so no
-        # compare can tell the two apart: a change decides it by its plain value
-        if plain(key) in self.changed:
-            return held
-    else:
-        changed = after_changes(self, key, written, (name, raising, None))
-        if changed is not None:
-            return changed
+    changed = after_changes(self, key, written, (name, raising, None))
+    if changed is not None:
+        return changed
     self.settled.setdefault(settled_as(key), held)
     if held:
         self.found_held.add(settled_as(key))
@@ -161,14 +155,6 @@ def proven(self: DictState, key: object) -> bool:
     if type(key) is not str and type(key) is not int:
         return False
     return self.copies.get(key, MISSING) is key
-
-
-def handed_shared(self: DictState, key: object) -> bool:
-    """Whether a plain key after a change under a tracked key is one a walk handed out that
-    Python shares with the target's literals (see ``handout``). Compared with the tracked key,
-    it would name the text the walk read, which a flip moves: the answer's walk hands out
-    another key, and leaves the plan there."""
-    return bool(self.tracked_changes) and type(key) in (str, int) and key in self.shared
 
 
 def handout(self: DictState, key: object, pin: Expression) -> object:
