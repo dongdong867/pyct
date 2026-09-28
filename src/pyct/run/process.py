@@ -19,7 +19,10 @@ pyct's process sets no timer and takes no signal for that: it waits for the
 system's notice that the process ended (see ``exits``), with the kill's
 instant as the wait's limit, or asks every millisecond where the system
 gives none. Only then does it reap, or kill and reap, in one thread, so
-nothing lands after the wait or between a reap and a kill.
+nothing lands after the wait or between a reap and a kill. The wait breaks
+off every ``LOOK_EVERY`` seconds for a look at the facts written so far,
+in the same thread, so the facts of an input that runs long are mostly
+read by the time it ends.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
