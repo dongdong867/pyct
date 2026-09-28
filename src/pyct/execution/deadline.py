@@ -96,11 +96,18 @@ class _Hold:
 
     ``since`` is when it was first held for a stop, or None while it has not
     been. ``in_pyct`` counts the times it was held for landing in pyct's own
-    frames, a count of its own that never starts ``since``.
+    frames, a count of its own that never starts ``since``. ``before`` is the
+    exception Python showed as handled when the block began: the caller's,
+    or one a frame left set as it ended. From 3.13 a signal handled at a
+    loop's backward jump can raise from an offset outside the frame's
+    exception table, so an ``except`` body around the loop leaves its
+    exception set for the thread. It is not on its way out of the block, so
+    no alarm waits for it.
     """
 
     since: float | None = None
     in_pyct: int = 0
+    before: BaseException | None = None
 
 
 @dataclass
@@ -167,7 +174,8 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
     A DeadlineError would take a stop's place, so the alarm is held back and
     comes again ``_AGAIN`` later, until the stop has left the block or target
     code caught it. A stop is a Ctrl-C's KeyboardInterrupt or a SIGTERM's
-    ``Stopped`` (``stops``). A real stop leaves the block within
+    ``Stopped`` (``stops``), other than one already handled as the block
+    began (``_Hold.before``). A real stop leaves the block within
     milliseconds, so once the alarm has waited ``_HOLD_AT_MOST`` from when it
     was first held for one, it raises anyway: a handler that never lets its
     stop go would otherwise run with no deadline.
@@ -178,7 +186,8 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
     ``_PYCT_HOLDS`` times in a block, long enough for Python to mark it, and
     short enough that a hang in pyct's frames still ends near its deadline.
     """
-    if isinstance(sys.exception(), STOPS):
+    error = sys.exception()
+    if isinstance(error, STOPS) and error is not hold.before:
         now = time.monotonic()
         if hold.since is None:
             hold.since = now
@@ -203,7 +212,7 @@ class _Timed:
 
     def __enter__(self) -> None:
         _OWNER.home = sys._getframe(1)
-        _OWNER.hold = _Hold()
+        _OWNER.hold = _Hold(before=sys.exception())
         try:
             if signal.getsignal(signal.SIGALRM) is not _owned:
                 signal.signal(signal.SIGALRM, _owned)
@@ -220,6 +229,8 @@ class _Timed:
         _OWNER.running = False
         signal.setitimer(signal.ITIMER_REAL, 0)
         _OWNER.home = None
+        # the exception handled as the block began, its traceback and its frames go with it
+        _OWNER.hold.before = None
 
 
 class _Sent:
@@ -258,6 +269,7 @@ class _Sent:
 
     def __enter__(self) -> None:
         self.home = sys._getframe(1)
+        self.hold = _Hold(before=sys.exception())
         self.previous = _restorable(signal.getsignal(signal.SIGALRM))
         held = signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
         try:
@@ -303,6 +315,8 @@ class _Sent:
             # the thread is freed here, where no Ctrl-C lands in its finalizer
             self.watcher = None
             self.home = None
+            # the handler holds this deadline in a cycle, so the exception goes with the block
+            self.hold.before = None
 
     def _let_go(self) -> None:
         """Let the watcher end now rather than at the instant. Letting go twice does nothing."""
