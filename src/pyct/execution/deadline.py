@@ -243,8 +243,12 @@ class _Sent:
     block runs, and never over a stop on its way out, for up to
     ``_HOLD_AT_MOST``, waiting a few milliseconds when it lands in pyct's own
     frames (``_held_back``): the block's frame is the one that
-    entered it, and a signal that lands as ``__exit__`` begins,
-    before its first line, is past the block.
+    entered it. The way in and the way out are not the block: a signal
+    that lands as ``__exit__`` begins, before its first line, is past it,
+    and one that lands in ``__enter__``, as ``Thread.start`` waits on a
+    lock of threading's own, is not yet in it. A raise there can skip the
+    lock's taking back, so its ``with`` releases it unlocked; the watcher
+    sends again ``_AGAIN`` later, into the block.
 
     A Ctrl-C or a SIGTERM is held on this thread while the watcher starts
     and while the way out runs, and goes on once it is done, so it neither
@@ -278,11 +282,11 @@ class _Sent:
             self.armed = True
             self.watcher = threading.Thread(target=self._watch, name="pyct deadline", daemon=True)
             self.watcher.start()
-            # inside the try: a signal Python handles as this returns is the block's too
+            # inside the try: a Ctrl-C Python handles as this returns undoes the block too
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
         except BaseException:
-            # first, before any call. The alarm that lands here, as the block begins, is the
-            # block's: it goes on from the with statement once all of this is undone
+            # first, before any call. A raise that lands here, as the block begins, goes on
+            # from the with statement once all of this is undone
             self.armed = False
             self._way_out()
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
@@ -348,12 +352,13 @@ class _Sent:
         _raise_deadline(signal_number, frame)
 
     def _in_block(self, frame: types.FrameType | None) -> bool:  # pragma: no cover
-        """Whether ``frame`` runs in the block: under the frame that entered it, not its way out."""
-        way_out = frame
-        while way_out is not None:
-            if way_out.f_code is _WAY_OUT:
+        """Whether ``frame`` runs in the block: under the frame that entered it, not its way
+        in or out."""
+        edge = frame
+        while edge is not None:
+            if edge.f_code in _WAY_IN_OR_OUT:
                 return False
-            way_out = way_out.f_back
+            edge = edge.f_back
         return _under(frame, self.home)
 
     def _put_back(self) -> None:
@@ -383,7 +388,7 @@ class _Sent:
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
 
-_WAY_OUT = _Sent.__exit__.__code__
+_WAY_IN_OR_OUT = frozenset({_Sent.__enter__.__code__, _Sent.__exit__.__code__})
 
 # the signals a person stops a run with, held while the watcher starts and while the way out runs
 _STOPS = frozenset({signal.SIGINT, signal.SIGTERM})

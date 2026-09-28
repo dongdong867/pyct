@@ -14,6 +14,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import types
 import weakref
 from collections.abc import Callable, Iterator
@@ -49,6 +50,17 @@ def test_deadline_fires_at_once_when_the_instant_has_passed() -> None:
     with pytest.raises(DeadlineError), deadline(time.monotonic() - 1):
         while True:
             pass
+
+
+@DEADLINE_FIRES
+def test_an_alarm_due_as_the_block_begins_lands_inside_it() -> None:
+    # the watcher sends at once, as Thread.start waits on a lock of threading's own; a raise
+    # there can skip that lock's taking back, and its with statement then releases it unlocked
+    with pytest.raises(DeadlineError) as raised, deadline(time.monotonic() - 1):
+        spin_until(time.monotonic() + 5)
+
+    landed = [frame.name for frame in traceback.extract_tb(raised.value.__traceback__)]
+    assert "spin_until" in landed, landed
 
 
 @DEADLINE_FIRES
