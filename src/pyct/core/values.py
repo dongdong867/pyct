@@ -212,12 +212,36 @@ def _base_class(self: object) -> type:
     return BASES[type(self)]
 
 
+def _plain_of(self: object) -> object:
+    """A plain value of the base type a tracked value reports, for Python to answer in its words."""
+    base = BASES[type(self)]
+    return base(*_EMPTY.get(base, ()))
+
+
 def _assigned_class(self: object, kind: object) -> None:
     """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
     error, in its words, as it refuses every class for an int, float, str, bool, list or range.
     """
-    base = BASES[type(self)]
-    own(setattr, base(*_EMPTY.get(base, ())), "__class__", kind)
+    own(setattr, _plain_of(self), "__class__", kind)
+
+
+def refused_set(self: object, name: str, value: object, /) -> None:
+    """`v.name = value` on a tracked number: made on a plain number of its base type instead.
+
+    A plain int, bool or float takes no attribute, so Python raises its own
+    error, in the running release's words, and the target's handler sees
+    what it would see. The names pyct keeps on the value are refused too,
+    since a plain number has none of them; pyct writes them into the
+    value's `__dict__` as it builds the value. Setting an attribute is
+    object plumbing, so nothing is recorded
+    (tracked-numbers-refuse-attributes-on-a-plain-number).
+    """
+    own(setattr, _plain_of(self), name, value)
+
+
+def refused_delete(self: object, name: str, /) -> None:
+    """`del v.name` on a tracked number: made on a plain number of its base type, as a set is."""
+    own(delattr, _plain_of(self), name)
 
 
 # a tracked class's `__class__`: its base type. `isinstance` and `issubclass` fall back to it
