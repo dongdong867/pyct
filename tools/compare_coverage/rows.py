@@ -43,7 +43,8 @@ class SideView:
     """One side in a row: the file it loaded, its lines cut to the body, how it stopped.
 
     ``library`` is the version of an installed entry's library the side has. ``reused`` is
-    true when the side's report was kept from an earlier run.
+    true when the side's report was kept from an earlier run. ``seconds`` is how long the
+    side's process ran, or ``None`` for a side that did not run.
     """
 
     file: str | None
@@ -53,6 +54,7 @@ class SideView:
     failure: str | None
     library: str | None = None
     reused: bool = False
+    seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -149,6 +151,16 @@ def compared_row(entry: Entry, files: Files, body: Body, reports: Reports) -> Ro
     )
 
 
+def budget_bound(row: Row, budget: float) -> bool:
+    """True when a side of the row ran its whole budget: its process ran at least that long.
+
+    The wall time says it for every engine alike, where a stop reason may not: legacy can say
+    ``exhausted`` after its time ran out.
+    """
+    sides = (view for view in (row.v2, row.legacy) if view is not None)
+    return any(view.seconds is not None and view.seconds >= budget for view in sides)
+
+
 def without_body(reports: Reports, reason: str) -> Reports:
     """Both reports failed with ``reason``: the file the own lines come from has no body.
 
@@ -194,6 +206,7 @@ def _view(report: SideReport, file: Path | None, body: Body, entry: Entry) -> Si
         failure=failure or report.failure or _file_failure(report, file, library),
         library=None if report.library is None else report.library.version,
         reused=report.reused,
+        seconds=report.seconds,
     )
 
 

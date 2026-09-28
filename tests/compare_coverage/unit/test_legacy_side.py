@@ -37,7 +37,8 @@ def test_the_side_reports_what_legacys_engine_answered(stub_checkout: StubChecko
 
     report = side.run(request())
 
-    assert report == SideReport(
+    assert report.seconds is not None and report.seconds > 0
+    assert replace(report, seconds=None) == SideReport(
         file=ONE_CHECK_FILE, covered=frozenset({2, 4}), stopped="timeout", inputs=7
     )
 
