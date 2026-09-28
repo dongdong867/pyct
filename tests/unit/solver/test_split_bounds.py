@@ -311,6 +311,22 @@ FROM_THE_END: dict[str, tuple[Expression, str, bool]] = {
         "a--b--c--d--e--f--end",
         True,
     ),
+    "the last of nine pieces, limited, then a count": (
+        ["split", "s", "','", 20],
+        ",".join(["a"] * 8 + ["end"]),
+        True,
+    ),
+    "the last of twelve pieces on a separator that overlaps itself, then a count": (
+        ["split", "s", "'--'"],
+        "--".join(["a"] * 11 + ["end"]),
+        True,
+    ),
+    "the last of eighteen pieces, limited": (["split", "s", "','", 20], "a," * 17 + "x", False),
+    "the last of twenty-five pieces, limited past them": (
+        ["split", "s", "','", 20],
+        "a," * 24 + "x",
+        False,
+    ),
 }
 
 

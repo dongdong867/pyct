@@ -214,15 +214,15 @@ class SplitList:
 
     def tie(self, read_from_the_end: bool = False) -> tuple[list[str], bool]:
         """What the count is: on whitespace, the words the string has, at most the limit's
-        pieces; on a separator whose list the path reads from the end, as one replace term (see
-        `_counted_tie`); otherwise the pieces there below the bound, each by its walk, and none
-        at it. Loosened, the count is only past each number below the bound where that piece is
-        there. A tie by walks answered where one by memberships ran past the limit beside a
-        slice. Says whether it holds the count to the bound."""
+        pieces; on a separator whose list the path reads from the end, as one replace term at
+        any bound (see `_counted_tie`); otherwise the pieces there below the bound, each by its
+        walk, and none at it. Loosened, the count is only past each number below the bound
+        where that piece is there. A tie by walks answered where one by memberships ran past the
+        limit beside a slice. Says whether it holds the count to the bound."""
         if self._words():
             return [f"(assert (= {self.count} {self._words_count()}))"], False
-        if read_from_the_end and self._counted_tie_answers():
-            return self._counted_tie(), True
+        if read_from_the_end and self._separated() and self.hold:
+            return self._counted_tie()
         beyond = self._there(self.bound)
         if beyond != FALSE and not self.hold:
             tied = [f"(= (> {self.count} {at}) {self._there(at)})" for at in range(self.bound)]
@@ -236,23 +236,18 @@ class SplitList:
             tied.append(f"(assert {negated(beyond)})")
         return tied, beyond != FALSE
 
-    def _counted_tie_answers(self) -> bool:
-        """Whether a separator split's count, held to a bound of ten or less that its limit
-        does not already keep it under, is written as one replace term."""
-        limit = self.limit()
-        if not self._separated() or not self.hold or self.bound > MOST_CHOSEN_BOUND:
-            return False
-        return limit < 0 or limit >= self.bound
-
-    def _counted_tie(self) -> list[str]:
-        """A separator split's count as one replace term, where the bound is small, and held to
-        the bound by one membership: beside a read from the end at the input's count, a tie of
-        ten walks ran past the limit where these answered in 0.1 s."""
+    def _counted_tie(self) -> tuple[list[str], bool]:
+        """A separator split's count as one replace term, held to the bound by one membership
+        where its limit does not already keep it under the bound: beside a read from the end at
+        the input's count, a tie of ten walks ran past the limit where these answered in 0.1 s,
+        and at 9 to 16 pieces in 0.4 to 4.7 s. Says whether it holds the count."""
         separator = self.operands[0]
         assert isinstance(separator, str)
-        beyond = separators_past(self.term, separator, self.bound)
         counted = f"(assert (= {self.count} {self._separators_count()}))"
-        return [counted, f"(assert {negated(beyond)})"]
+        if 0 <= self.limit() < self.bound:
+            return [counted], False
+        beyond = separators_past(self.term, separator, self.bound)
+        return [counted, f"(assert {negated(beyond)})"], True
 
     def _separated(self) -> bool:
         """Whether it splits on a separator from the start, or an rsplit that counts as the
@@ -342,7 +337,9 @@ class SplitList:
         self._held()
         count = self.input_count
         assert count is not None
-        exact = both(self.past(count - 1), negated(self.past(count)))
+        # by the walks the piece is read with: past 16 pieces, a count by membership beside the
+        # walk ran past the limit where these answered in 1.4 to 2.9 s
+        exact = both(self._there(count - 1), negated(self._there(count)))
         return Read(self.piece(count - 1 - back), both(exact, self.restriction()))
 
     def _counted_back(self, back: int) -> Read:
