@@ -5,6 +5,7 @@ back after each block. The input's own process, which owns SIGALRM, is tested
 where it is settled, in ``tests/unit/run/test_child.py``.
 """
 
+import asyncio
 import json
 import os
 import signal
@@ -267,3 +268,38 @@ def test_blocks_that_end_as_their_alarm_comes_keep_it_inside() -> None:
         tally = json.loads(stdout)
         assert tally["escaped"] == 0, (case, tally)
         assert tally["calls"] == 0, (case, tally)
+
+
+@DEADLINE_FIRES
+def test_an_alarm_that_lands_on_a_target_s_own_base_exception_still_stops_it() -> None:
+    started = time.monotonic()
+
+    with pytest.raises(DeadlineError), deadline(started + 0.05):
+        try:
+            raise asyncio.CancelledError
+        except asyncio.CancelledError:
+            # the alarm lands while the target handles its own cancel, then it hangs
+            while time.monotonic() < started + 0.15:
+                pass
+        # a hang, bounded so the test fails rather than waits when no alarm comes
+        while time.monotonic() < started + 2:
+            pass
+
+    assert time.monotonic() - started < 1
+
+
+@DEADLINE_FIRES
+def test_an_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
+    started = time.monotonic()
+
+    with pytest.raises(DeadlineError), deadline(started + 0.05):
+        try:
+            raise KeyboardInterrupt
+        except KeyboardInterrupt:
+            while time.monotonic() < started + 0.15:
+                pass
+        # a hang, bounded so the test fails rather than waits when no alarm comes
+        while time.monotonic() < started + 2:
+            pass
+
+    assert time.monotonic() - started < 1

@@ -52,6 +52,8 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
 from typing import NoReturn
 
+from pyct.execution.stops import STOPS
+
 # a deadline already past still has to fire, and setitimer(0) would cancel instead
 _AT_ONCE = 1e-6
 
@@ -111,27 +113,21 @@ _OWNER = _Owner()
 # how far before its instant a block's own signal can come: setitimer rounds to a microsecond
 _EARLY = 0.001
 
+# how soon an alarm held back by a stop on its way out comes again
+_AGAIN = 0.001
+
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
     """SIGALRM's handler in a process that owns it: raise once, only inside a block, in time."""
     in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
-    if in_time and _under(frame, _OWNER.home) and not _a_stop_in_flight():
-        _OWNER.running = False
-        _raise_deadline(signal_number, frame)
-
-
-def _a_stop_in_flight() -> bool:  # pragma: no cover
-    """Whether a stop is on its way out where the alarm landed, which a DeadlineError would replace.
-
-    A stop is a KeyboardInterrupt, or another BaseException that is neither
-    an Exception nor SystemExit, such as pyct's own ``Stopped`` for a
-    SIGTERM. GeneratorExit is Python closing a generator, and a DeadlineError
-    is the deadline's own; neither is a stop.
-    """
-    error = sys.exception()
-    ordinary = (Exception, SystemExit, GeneratorExit, DeadlineError)
-    return error is not None and not isinstance(error, ordinary)
+    if not (in_time and _under(frame, _OWNER.home)):
+        return
+    if _a_stop_in_flight():
+        signal.setitimer(signal.ITIMER_REAL, _AGAIN)
+        return
+    _OWNER.running = False
+    _raise_deadline(signal_number, frame)
 
 
 def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:  # pragma: no cover
@@ -141,6 +137,17 @@ def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:
             return True
         frame = frame.f_back
     return False
+
+
+def _a_stop_in_flight() -> bool:  # pragma: no cover
+    """Whether a person's stop is on its way out where the alarm landed.
+
+    A DeadlineError would take its place, so the alarm is held back and comes
+    again ``_AGAIN`` later, until the stop has left the block or target code
+    caught it. A stop is a Ctrl-C's KeyboardInterrupt or a SIGTERM's
+    ``Stopped`` (``stops``).
+    """
+    return isinstance(sys.exception(), STOPS)
 
 
 def _raise_deadline(signal_number: int, frame: types.FrameType | None) -> NoReturn:
@@ -259,15 +266,20 @@ class _Sent:
             self.cancel.release()
 
     def _watch(self) -> None:
-        """Send SIGALRM to the main thread at the instant, unless the block has ended."""
+        """Send SIGALRM to the main thread at the instant, and every ``_AGAIN`` after it,
+        until the handler has raised or the block has ended.
+
+        A signal the handler held back for a stop on its way out comes again that way.
+        """
         wait = min(max(self.at - time.monotonic(), 0.0), threading.TIMEOUT_MAX)
-        if self.cancel.acquire(timeout=wait):
-            return
-        with self.lock:
-            # the handler check keeps a signal from a handler a way out cut short left behind
-            if self.armed and signal.getsignal(signal.SIGALRM) is self.handler:
+        while not self.cancel.acquire(timeout=wait):
+            with self.lock:
+                # the handler check keeps a signal from a handler a way out cut short left behind
+                if not (self.armed and signal.getsignal(signal.SIGALRM) is self.handler):
+                    return
                 self.sent = True
                 signal.pthread_kill(self.main, signal.SIGALRM)
+            wait = _AGAIN
 
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover

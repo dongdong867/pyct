@@ -23,8 +23,10 @@ nothing lands after the wait or between a reap and a kill.
 
 ``Child`` and ``how`` also serve the process the shell started, which
 watches the command's process the same way (see ``launch``). The module
-also holds pyct's process-wide stop: ``Stopped``, which a SIGTERM raises,
-and the mark that refuses every input after it.
+also holds pyct's process-wide stop: raising ``Stopped`` for a SIGTERM, and
+the mark that refuses every input after it. ``Stopped`` itself lives in
+``pyct.execution.stops``, so the deadline below can tell it from a raise of
+the target's own.
 """
 
 from __future__ import annotations
@@ -38,6 +40,7 @@ from dataclasses import dataclass
 from typing import NoReturn
 
 from pyct.execution.execute import ExecutionResult
+from pyct.execution.stops import Stopped
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.exits import ends_by
 from pyct.run.journal import Reading
@@ -52,16 +55,6 @@ _POLL = 0.001
 # how long past the deadline an input's process may run before pyct kills it: long enough for
 # the process's own alarm to end a Python hang, finally blocks included, even on a busy machine
 KILL_GRACE = 0.5
-
-
-class Stopped(BaseException):
-    """pyct's process was told to stop, by a SIGTERM (see ``launch``).
-
-    A BaseException, as a Ctrl-C's KeyboardInterrupt is, so pyct's code lets
-    it through and ends each process pyct started on the way out. Target
-    code that catches BaseException can catch it and go on, so a stop also
-    refuses every input after it (see ``refuse_after_a_stop``).
-    """
 
 
 # whether this process was told to stop; once it was, no input starts

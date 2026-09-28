@@ -1,5 +1,6 @@
 """The input's own process, served for real in a child this test forks."""
 
+import asyncio
 import mmap
 import os
 import signal
@@ -225,3 +226,49 @@ def alarm_on_a_ctrl_c_in_flight() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_an_owned_alarm_that_lands_on_a_ctrl_c_leaves_it_to_go_on() -> None:
     assert settled_then(alarm_on_a_ctrl_c_in_flight) == 0
+
+
+def hang_after_a_cancel_spans_the_deadline() -> None:
+    try:
+        with deadline(time.monotonic() + 0.05):
+            try:
+                raise asyncio.CancelledError
+            except asyncio.CancelledError:
+                # the alarm lands while the target handles its own cancel, then it hangs
+                end = time.monotonic() + 0.1
+                while time.monotonic() < end:
+                    pass
+            # a hang, bounded so the test fails rather than waits when no alarm comes
+            while time.monotonic() < end + 2:
+                pass
+    except DeadlineError:
+        return
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_alarm_that_lands_on_a_target_s_own_base_exception_still_stops_it() -> None:
+    assert settled_then(hang_after_a_cancel_spans_the_deadline) == 0
+
+
+def hang_after_catching_a_ctrl_c_that_spans_the_deadline() -> None:
+    try:
+        with deadline(time.monotonic() + 0.05):
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                end = time.monotonic() + 0.1
+                while time.monotonic() < end:
+                    pass
+            # the stop is done with, so the alarm it held back comes now
+            # a hang, bounded so the test fails rather than waits when no alarm comes
+            while time.monotonic() < end + 2:
+                pass
+    except DeadlineError:
+        return
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_owned_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
+    assert settled_then(hang_after_catching_a_ctrl_c_that_spans_the_deadline) == 0
