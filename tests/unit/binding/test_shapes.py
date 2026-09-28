@@ -78,7 +78,7 @@ def test_an_int_keyed_dict_makes_up_the_smallest_non_negative_ints_not_taken() -
 
     assert shape.makes_up and shape.made_type is int
     # a str key and a negative int take no made-up int's place
-    assert shape.made_up({0, 1, "2", -1, 4}, 4) == [2, 3, 5, 6]
+    assert shape.made_up_keys({0, 1, "2", -1, 4}, 4) == [2, 3, 5, 6]
     assert rekeyed({0: 5}, DictAnswer({1: False}, kept=1, made=1), shape) == {0: 5, 2: 0}
 
 
@@ -89,4 +89,4 @@ def test_a_dict_makes_up_keys_only_when_its_keys_are_all_of_the_made_up_type() -
     assert not dict_shaped({1: 0, "a": 0}, int_keys).makes_up
     assert not dict_shaped({"a": 0}, int_keys).makes_up
     str_keys = DictShape(keys=("a",), kinds=("int",))
-    assert str_keys.makes_up and str_keys.made_up({"pyct1"}, 2) == ["pyct2", "pyct3"]
+    assert str_keys.makes_up and str_keys.made_up_keys({"pyct1"}, 2) == ["pyct2", "pyct3"]

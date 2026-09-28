@@ -155,7 +155,7 @@ class DictShape:
     ints: an input's line writes a key as JSON text, so the solver adds an int key only there,
     and there no str key that reads as an int (see ``adds``). Such a dict whose keys are all
     ints gets made-up int keys, and any other dict whose keys are all strs made-up str keys
-    (see ``made_up``).
+    (see ``made_up_keys``).
     """
 
     keys: tuple[object, ...]
@@ -174,20 +174,13 @@ class DictShape:
         """The type of the dict's made-up keys: int under ``dict[int, X]``, else str."""
         return int if self.int_keys else str
 
-    def made_up(self, taken: Collection[object], count: int) -> list[object]:
+    def made_up_keys(self, taken: Collection[object], count: int) -> list[object]:
         """The first ``count`` made-up keys, skipping any key in ``taken``: the keys the dict
-        holds and the keys a fork names. An int-keyed dict's are the smallest non-negative
-        ints, `0`, `1` and on; any other dict's `pyct1`, `pyct2` and on."""
-        if not self.int_keys:
-            return list(made_up(taken, count))
-        ints = {key for key in taken if type(key) is int}
-        keys: list[object] = []
-        number = 0
-        while len(keys) < count:
-            if number not in ints:
-                keys.append(number)
-            number += 1
-        return keys
+        holds and the keys a fork names. An int-keyed dict's are ``made_up_ints``; any other
+        dict's ``made_up``."""
+        if self.int_keys:
+            return list(made_up_ints(taken, count))
+        return list(made_up(taken, count))
 
     def adds(self, key: object) -> bool:
         """Whether the solver may add this key: one an answer's line reads back as itself
@@ -240,6 +233,19 @@ def made_up(taken: Collection[object], count: int) -> list[str]:
     return keys
 
 
+def made_up_ints(taken: Collection[object], count: int) -> list[int]:
+    """The first ``count`` made-up int keys, the smallest non-negative ints, `0`, `1` and on,
+    skipping any int in ``taken``."""
+    ints = {key for key in taken if type(key) is int}
+    keys: list[int] = []
+    number = 0
+    while len(keys) < count:
+        if number not in ints:
+            keys.append(number)
+        number += 1
+    return keys
+
+
 def rekeyed(
     items: dict[object, object], answer: DictAnswer, shape: DictShape
 ) -> dict[object, object]:
@@ -260,7 +266,7 @@ def rekeyed(
         if keep:
             rebuilt[key] = value
     added = [key for key, held in answer.present.items() if held and key not in items]
-    added += shape.made_up({*items, *answer.present}, answer.made)
+    added += shape.made_up_keys({*items, *answer.present}, answer.made)
     for key in added:
         rebuilt[key] = answer.values.get(key, _filled(shape.fill))
     return rebuilt

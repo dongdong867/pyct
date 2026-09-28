@@ -28,7 +28,9 @@ def dict_answers(terms: DictTerms, model: Mapping[str, object]) -> dict[str, obj
             answers[where] = answered
         elif key is MADE:
             found = terms.dicts[where]
-            for made in found.shape.made_up({*found.shape.keys, *found.named}, counts[where][1]):
+            for made in found.shape.made_up_keys(
+                {*found.shape.keys, *found.named}, counts[where][1]
+            ):
                 values[where][made] = answered
         else:
             values[where][key] = answered
