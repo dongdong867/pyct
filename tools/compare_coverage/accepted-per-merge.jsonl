@@ -117,9 +117,12 @@
 {"set": "v2", "target": "targets.strs.joins::of_a_built_list", "seed": {"a": "p", "b": "q"}, "status": "differs", "only_legacy": [], "only_v2": [25]}
 {"set": "v2", "target": "targets.strs.joins::of_a_generator", "seed": {"parts": ["x"]}, "status": "differs", "only_legacy": [], "only_v2": [43]}
 {"set": "v2", "target": "targets.strs.joins::of_a_list", "seed": {"parts": ["x", "y"]}, "status": "differs", "only_legacy": [], "only_v2": [7]}
+{"set": "v2", "target": "targets.strs.joins::of_a_lowered_split", "seed": {"s": "x,y"}, "status": "differs", "only_legacy": [], "only_v2": [96, 98]}
 {"set": "v2", "target": "targets.strs.joins::of_a_piece_split_again", "seed": {"s": "q,r"}, "status": "differs", "only_legacy": [], "only_v2": [79]}
+{"set": "v2", "target": "targets.strs.joins::of_a_stripped_split", "seed": {"s": "x,y"}, "status": "differs", "only_legacy": [], "only_v2": [104, 106]}
 {"set": "v2", "target": "targets.strs.joins::of_split_pieces", "seed": {"s": "x,y"}, "status": "differs", "only_legacy": [], "only_v2": [31]}
 {"set": "v2", "target": "targets.strs.joins::of_the_first_piece", "seed": {"s": "q,r"}, "status": "differs", "only_legacy": [], "only_v2": [70]}
+{"set": "v2", "target": "targets.strs.joins::of_the_tail", "seed": {"s": "a,x,y"}, "status": "differs", "only_legacy": [], "only_v2": [88, 90]}
 {"set": "v2", "target": "targets.strs.joins::of_three_split_pieces", "seed": {"s": "x,y"}, "status": "differs", "only_legacy": [], "only_v2": [37]}
 {"set": "v2", "target": "targets.strs.long_answer::tail_is_z", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.long_or_empty::measure", "seed": {"s": "abc"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
