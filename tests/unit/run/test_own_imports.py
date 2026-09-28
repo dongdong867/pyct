@@ -147,13 +147,19 @@ def test_an_installed_package_s_import_under_pyct_s_call_comes_from_the_folder(
 def test_the_finder_goes_last_when_no_path_finder_is_there(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    others = [each for each in sys.meta_path if each is not importlib.machinery.PathFinder]
+    # an earlier test's load may have left its finder in this process
+    others = [
+        each
+        for each in sys.meta_path
+        if each is not importlib.machinery.PathFinder
+        and not isinstance(each, own_imports._OwnImports)
+    ]
     monkeypatch.setattr(sys, "meta_path", others)
 
     keep_own_imports("target")
 
     assert sys.meta_path[:-1] == others
-    assert type(sys.meta_path[-1]).__name__ == "_OwnImports"
+    assert isinstance(sys.meta_path[-1], own_imports._OwnImports)
 
 
 def test_no_folder_is_installed_when_python_started_without_site(
