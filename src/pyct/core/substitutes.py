@@ -38,25 +38,36 @@ from __future__ import annotations
 
 import operator
 import types
+from collections import deque
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from pyct.core import bound, ranges, str_joins, str_literals, strs
 from pyct.core.bases import TRACKED_CLASSES
 from pyct.core.bools import ConcolicBool
+from pyct.core.floats import ConcolicFloat
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.hashed import Tracked, hashed, looked_up, tracked
+from pyct.core.ints import ConcolicInt
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
 # the tracked ints and bools, by their exact type: a plain range is searched for one with one
-# fork, and a tuple or a list walked for one (`_walked`)
+# fork
 _INT_ITEMS = frozenset(ranges.TRACKED_INTS)
 # the containers Python searches element by element, identity first, then `==` with the element
 # on the left
-_WALKED: tuple[type, ...] = (tuple, list)
-_INT_EQ = int.__eq__
+_WALKED: tuple[type, ...] = (tuple, list, deque)
+# for each tracked type, the plain types whose own `==` answers it plainly from the element's
+# left: an int's and a float's for a tracked int or bool, a float's for a tracked float, and a
+# str's for a tracked str
+_ANSWERED_PLAINLY: dict[type, tuple[type, ...]] = {
+    ConcolicBool: (int, float),
+    ConcolicInt: (int, float),
+    ConcolicFloat: (float,),
+    ConcolicStr: (str,),
+}
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -99,8 +110,8 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     with one condition untested (`pyct.core.ranges`), where Python alone
     would compare a tracked int with every element in turn. A tracked value
     in a set, a frozenset or a dict's keys is searched for as
-    `pyct.core.hashed` says, and a tracked int or bool in a tuple or a list
-    as `_walked` says. Anything else is Python's own `in`.
+    `pyct.core.hashed` says, and one in a tuple, a list or a deque as
+    `_walked` says. Anything else is Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
@@ -147,22 +158,21 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
 def _tracked_in(item: Tracked, container: object, written: tuple[object, ...] | None) -> object:
     """`item in container` for a tracked item a set or a dict can hold: one fork in a plain
     range, one `==` fork per literal element of a display, a lookup in a hashed container, a
-    walk of a tuple or a list for a tracked int or bool, and Python's own `in` for anything
-    else."""
+    walk of a tuple, a list or a deque, and Python's own `in` for anything else."""
     if type(container) is range and type(item) in _INT_ITEMS:
         return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
     if written is not None:
         return _searched(item, written)
     if (kind := hashed(container)) is not None:
         return looked_up(item, container, kind)
-    if type(item) in _INT_ITEMS and (kind := _sequence(container)) is not None:
+    if (kind := _sequence(container)) is not None:
         return _walked(item, kind.__iter__(container))
     return item in container  # pyrefly: ignore[not-iterable]
 
 
 def _sequence(container: object) -> type | None:
-    """The type Python searches the container as element by element, a tuple or a list, or
-    None for any other container.
+    """The type Python searches the container as element by element, a tuple, a list or a
+    deque, or None for any other container.
 
     A subclass counts when it keeps its base's own `__contains__`, as a
     named tuple does; one that defines its own is asked, as Python asks it.
@@ -175,29 +185,41 @@ def _sequence(container: object) -> type | None:
 
 
 def _walked(item: Tracked, elements: Iterator[object]) -> bool:
-    """Whether the tracked int or bool is one of the elements, as Python's `in` answers on a
-    tuple or a list: in order, identity first, then `==`, until one holds.
+    """Whether the tracked value is one of the elements, as Python's `in` answers on a tuple, a
+    list or a deque: in order, identity first, then `==`, until one holds.
 
     Python puts the element on the left of each `==`. An element whose
-    type keeps int's own `__eq__`, an IntEnum member or True say, then
-    answers plainly, since a tracked int is no subclass of its type, and the
-    condition is lost; so the tracked value is put on the left of every
-    element whose type keeps int's `__eq__`, an exact int included, where
-    Python would hand it the compare anyway, and answers with the same bool
-    and a fork, the element written as its plain value. Any other element is
-    compared as Python compares it, so an element with its own `__eq__`
-    answers first. The base type's own walk is read, so a
-    subclass's `__iter__` never runs where Python's `in` would not run it.
+    type keeps the own `__eq__` of a type `_ANSWERED_PLAINLY` names for the
+    tracked value, an IntEnum member or True beside a tracked int, a float
+    beside a tracked int, a float-valued Enum member beside a tracked float,
+    a StrEnum member beside a tracked str, then answers plainly, since the
+    tracked value is no subclass of its type, and the condition is lost; so
+    the tracked value is put on the left of every such element, an exact
+    one included, where Python would hand it the compare anyway, and
+    answers with the same bool and a fork, the element written as its plain
+    value. Any other element is compared as Python compares it, so an
+    element with its own `__eq__` answers first. The base type's own walk
+    is read, so a subclass's `__iter__` never runs where Python's `in` would
+    not run it, and a deque changed during the walk raises as its own
+    search does.
     """
+    bases = _ANSWERED_PLAINLY[type(item)]
     for element in elements:
         if element is item:
             return True
-        if type(element).__eq__ is _INT_EQ and isinstance(element, int):
+        if _answers_plainly(element, bases):
             if item == element:
                 return True
         elif element == item:
             return True
     return False
+
+
+def _answers_plainly(element: object, bases: tuple[type, ...]) -> bool:
+    """Whether the element is of one of the base types and its type keeps that base's own
+    `__eq__`."""
+    eq = type(element).__eq__
+    return any(eq is base.__eq__ and isinstance(element, base) for base in bases)
 
 
 def _forwarded(compare: Callable[[Any, Any], object]) -> Callable[[_Link, object], object]:
