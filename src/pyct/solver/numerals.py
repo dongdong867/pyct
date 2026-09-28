@@ -39,6 +39,7 @@ which no name render writes can be (see ``solver/floats.py``).
 import math
 import sys
 
+from pyct.solver.checks import ALL_DIGITS
 from pyct.solver.floats import literal
 
 # the characters Python's `int` and `float` strip around a number, as ASCII
@@ -49,6 +50,9 @@ _EXACT_POWERS = 22
 
 # the largest whole number every smaller one of which a double holds exactly
 _EXACT_WHOLE = 2**53
+
+# the most digits `int_fact` names a power of ten for
+_COUNTED_DIGITS = 20
 
 
 def _characters(characters: str) -> str:
@@ -76,8 +80,15 @@ def _digits(term: str) -> str:
 
 
 def is_int(term: str) -> str:
-    """Python's `int(s)` accepts the string: spaces, a sign, and digits with underscores."""
-    grammar = f"(re.++ (re.* {_SPACE}) {_SIGN} {_DIGITS} (re.* {_SPACE}))"
+    """Python's `int(s)` accepts the string: spaces, a sign, and digits with underscores.
+
+    The grammar names a string of plain digits on its own as well, the same language, as the
+    very membership `s.isdigit()` is written as where it is the string's only check: cvc5 then
+    sees at once that such a string matches, where it took 2 to 8 s to see so of a string of at
+    most five characters by the grammar alone.
+    """
+    written = f"(re.++ (re.* {_SPACE}) {_SIGN} {_DIGITS} (re.* {_SPACE}))"
+    grammar = f"(re.union {ALL_DIGITS} {written})"
     matched = f"(str.in_re {term} {grammar})"
     most = sys.get_int_max_str_digits()
     if most == 0:
@@ -96,6 +107,22 @@ def int_of(term: str) -> str:
     """
     magnitude = f"(abs (str.to_int {_digits(term)}))"
     return f'(ite (str.contains {term} "-") (- {magnitude}) {magnitude})'
+
+
+def int_fact(term: str) -> str:
+    """A fact about the int `int_of` reads, true of every string: its digits' Int is below ten
+    to the power of their count, for each count up to ``_COUNTED_DIGITS``.
+
+    cvc5 does not tie `str.to_int` to the length of its string, and took seconds to see that no
+    string of five digits reads as 100000; with this fact it answers at once. Text that is no
+    number reads as -1 there, and so meets it too.
+    """
+    number = "(str.to_int d!)"
+    each = " ".join(
+        f"(=> (<= (str.len d!) {count}) (< {number} {10**count}))"
+        for count in range(1, _COUNTED_DIGITS + 1)
+    )
+    return f"(let ((d! {_digits(term)})) (and {each}))"
 
 
 def is_int_character(term: str) -> str:
