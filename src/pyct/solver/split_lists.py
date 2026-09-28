@@ -69,9 +69,13 @@ MOST_BOUND = 34
 # membership answered in 0.02 s
 MOST_WALKED_PAST = 16
 
-# the most pieces a piece from the end is chosen among, one choice per count, where no walk of
-# the reversed string finds it: an input with more puts the piece where its own count does.
-# On cvc5 1.3.4 a last line chosen among 12 took 6.1 s, where the input's own took 1.3 s
+# the most pieces an input may have for a piece read from the end, where no walk of the
+# reversed string finds it, to be chosen among every count below the bound once the read at
+# the input's own count is unsat. The read at the input's count comes first on every input
+# whose bound is past this: on cvc5 1.3.4 the last of 8 lines read there answered in 1.7 s,
+# where chosen among 10 counts it ran past the limit, and the last of 12 lines chosen among 14
+# took 6.1 s where the input's own took 1.3 s. An input with more pieces is read at its count
+# alone, so a path that needs another count is a miss
 MOST_CHOSEN_BACK = 8
 
 
@@ -108,6 +112,7 @@ class SplitList:
     bound: int
     hold: bool = True
     input_count: int | None = None
+    chosen: bool = False
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -237,8 +242,7 @@ class SplitList:
             walked = right_piece(self.term, self.head, self.operands, back)
             if walked is not None:
                 return Read(walked, self._there(back)), restricted
-            many = self.input_count is not None and self.input_count > MOST_CHOSEN_BACK
-            if many and back < (self.input_count or 0):
+            if self._at_input_count(back):
                 return self._held_back(back), True
             return self._counted_back(back), True
         return self._chosen(position, least), True
@@ -249,6 +253,24 @@ class SplitList:
         if position.atoms == ((self.count, 1),) and position.const < 0:
             return -position.const - 1
         return None
+
+    def _at_input_count(self, back: int) -> bool:
+        """Whether piece ``back`` from the end is read where the input's own count puts it: on
+        an input with that many pieces whose bound is past `MOST_CHOSEN_BACK`, but for one with
+        few pieces once that read is unsat (``chosen``)."""
+        count = self.input_count
+        if count is None or back >= count or self.bound <= MOST_CHOSEN_BACK:
+            return False
+        return count > MOST_CHOSEN_BACK or not self.chosen
+
+    def fixes_a_few(self, position: Lin) -> bool:
+        """Whether a read at ``position`` puts the piece where the input's own few pieces put
+        it, which a later ask may choose among every count instead."""
+        back = self._from_the_end(position)
+        if back is None or not self._at_input_count(back):
+            return False
+        few = (self.input_count or 0) <= MOST_CHOSEN_BACK
+        return few and right_piece(self.term, self.head, self.operands, back) is None
 
     def _held_back(self, back: int) -> Read:
         """Piece ``back`` from the end where the string has as many pieces as the input's: the
@@ -295,6 +317,9 @@ class Splits:
         self.emitted: list[str] = []
         self.given: Callable[[Expression], object] = lambda part: None
         self.hold = True
+        self.chosen = False
+        # whether a read from the end put its piece where the input's own few pieces put it
+        self.fixed_few = False
         # each count a tie or a read holds the program by, and whether the held program's own
         # forks need more pieces than a count's bound
         self.bounds: set[str] = set()
@@ -329,7 +354,7 @@ class Splits:
         most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
         bound = min(most, MOST_BOUND)
         count = f"count!{len(self.lists)}!"
-        listed = SplitList(term, str(head), plain, count, bound, self.hold, held)
+        listed = SplitList(term, str(head), plain, count, bound, self.hold, held, self.chosen)
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
@@ -340,6 +365,7 @@ class Splits:
         found, held = listed.read(position, kind, least)
         if held:
             self.bounds.add(listed.count)
+        self.fixed_few |= kind == "str" and listed.fixes_a_few(position)
         return found
 
     def count_of(self, node: list[Expression]) -> str:

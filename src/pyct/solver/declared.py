@@ -96,6 +96,8 @@ class Program:
     narrowed: bool = False
     held: bool = False
     refuted: bool = False
+    # whether a piece read from a split's end sits where the input's own few pieces put it
+    fixed_few: bool = False
     bounded: bool = False
     dicts: DictTerms | None = None
     kept: bool = False

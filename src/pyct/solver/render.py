@@ -88,6 +88,7 @@ def program(
         narrowed=terms.narrowed,
         held=terms.held,
         refuted=terms.splits.refuted,
+        fixed_few=terms.splits.fixed_few,
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back,

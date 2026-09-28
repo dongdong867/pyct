@@ -92,7 +92,9 @@ class Origin:
     monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
     keys no fork names and makes none up, ``pinned`` whether it keeps each key a walk read at its
     place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
-    program is given up, None for no limit (see ``dicts``).
+    program is given up, None for no limit (see ``dicts``). ``chosen`` says whether a piece of a
+    split read from its end, on an input with few pieces, is chosen among every count below the
+    bound rather than put where the input's own count puts it (see ``split_lists``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -108,6 +110,7 @@ class Origin:
     keep: bool = True
     pinned: bool = True
     lookups: int | None = None
+    chosen: bool = False
 
 
 class UnencodedError(ValueError):
@@ -314,7 +317,7 @@ class ListTerms(ListTyping, Slices):
                 self.origin[constant] = value
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
-        self.splits.hold = origin.hold
+        self.splits.hold, self.splits.chosen = origin.hold, origin.chosen
 
     def _context(self) -> Context:
         return Context(

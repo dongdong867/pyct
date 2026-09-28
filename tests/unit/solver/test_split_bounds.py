@@ -2,6 +2,7 @@
 loosened ask past the bound, with cvc5 held against Python on each."""
 
 import time
+from typing import Any
 
 import pytest
 
@@ -9,8 +10,10 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LONGEST_WALK
+from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.declared import Program
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
@@ -158,22 +161,51 @@ def test_the_last_of_many_lines_is_read_where_the_input_s_count_puts_it() -> Non
 
 
 @needs_cvc5
-def test_the_last_of_a_few_lines_leaves_their_number_free() -> None:
+def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_unsat(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     lines: Expression = ["splitlines", "s"]
     path = (
         fork([">=", ["len", lines], 1], taken=True),
         fork(["==", ["[]", lines, -1], "'end'"], taken=True),
-        fork([">", ["len", lines], 4], taken=True),
+        fork([">", ["len", lines], 7], taken=True),
     )
     seed = Seed.of({"s": "a\nb\nend"})
+    asked: list[bool] = []
+    ask = cvc5_module._ask
+
+    def recorded(written: Program, timeout: float) -> Any:
+        asked.append(written.fixed_few)
+        return ask(written, timeout)
+
+    monkeypatch.setattr(cvc5_module, "_ask", recorded)
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
-    # the input's three lines are few, so the last line is chosen among every count, and a
-    # flip that asks for more lines than the input has is answered
+    # read where the input's three lines put the last one, eight lines are unsat; the ask
+    # after it chooses the last line among every count, where the path's eight lines can be
+    assert asked[:2] == [True, False], asked
+    assert not isinstance(answer, Unsat), answer
+    if isinstance(answer, Sat):
+        text = str(apply(seed, answer.model).args["s"])
+        assert text.splitlines()[-1] == "end" and len(text.splitlines()) > 7, text
+
+
+@needs_cvc5
+@pytest.mark.parametrize("count", [7, 8])
+def test_the_last_of_several_lines_is_flipped(count: int) -> None:
+    lines: Expression = ["splitlines", "s"]
+    path = (
+        fork([">=", ["len", lines], 1], taken=True),
+        fork(["==", ["[]", lines, -1], "'end'"], taken=True),
+    )
+    seed = Seed.of({"s": "a\n" * (count - 1) + "x"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # read first where the input's own count puts the last line, which answers
     assert isinstance(answer, Sat), answer
-    text = str(apply(seed, answer.model).args["s"])
-    assert text.splitlines()[-1] == "end" and len(text.splitlines()) > 4, text
+    assert str(apply(seed, answer.model).args["s"]).splitlines()[-1] == "end"
 
 
 @needs_cvc5

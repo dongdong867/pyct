@@ -171,6 +171,10 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat) and written is not None and written.fixed_few:
+        logger.debug("unsat with a read from a split's end at the input's count: choosing")
+        origin = replace(origin, chosen=True)
+        answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed
     return answer, placed
