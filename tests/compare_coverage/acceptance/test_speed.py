@@ -52,6 +52,9 @@ def targets(*names: str) -> list[str]:
 
 def test_a_second_run_with_no_change_runs_no_legacy_side(stub_checkout: StubCheckout) -> None:
     """speed-up-the-compare-run-reuses-legacy"""
+    # legacy fails the first row on its own timeout, as it does some isolate targets by design
+    failed = {"success": False, "stopped": "timeout", "error": "child closed pipe"}
+    stub_checkout.script({FOUR[0]: failed})
     stub_checkout.commit()
     argv = ("--legacy", str(stub_checkout.path), *targets(*FOUR[:2]), "--budget", "5")
 
@@ -64,6 +67,7 @@ def test_a_second_run_with_no_change_runs_no_legacy_side(stub_checkout: StubChec
     assert [row["legacy"]["reused"] for row in rows(second.stdout)] == [True, True]
     assert "legacy reused 2" in second.stderr.splitlines()[-1]
     assert statuses(first.stdout) == statuses(second.stdout)
+    assert rows(second.stdout)[0]["status"] == "legacy failed"
 
 
 def test_changing_one_target_file_reruns_only_that_rows_legacy_side(

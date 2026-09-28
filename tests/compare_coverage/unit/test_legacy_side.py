@@ -228,6 +228,21 @@ def test_a_side_that_did_not_answer_is_not_kept(
     assert report.failure is not None and not report.reused
 
 
+def test_a_side_legacy_failed_on_its_own_timeout_is_kept_and_refreshed_when_asked(
+    stub_checkout: StubCheckout, tmp_path: Path
+) -> None:
+    failed = {"success": False, "stopped": "timeout", "error": "child closed pipe"}
+    stub_checkout.script({ONE_CHECK: failed})
+    cached_side(stub_checkout, tmp_path).run(request())
+
+    reused = cached_side(stub_checkout, tmp_path).run(request())
+    refreshed = cached_side(stub_checkout, tmp_path, refresh=True).run(request())
+
+    assert len(stub_checkout.calls()) == 2
+    assert reused.reused and reused.failure == "timeout: child closed pipe"
+    assert not refreshed.reused
+
+
 def test_a_side_whose_library_probe_failed_is_not_kept(
     stub_checkout: StubCheckout, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

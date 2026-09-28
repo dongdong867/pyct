@@ -12,10 +12,11 @@ itself killed leaves the folder of each legacy side it was running, found by its
 ``pyct-legacy-`` prefix.
 
 With a cache, the side answers from a result kept by an earlier run when there is one, and
-keeps each new answer that did not fail: one from a process that exited 0 with a report of
-no failure and, for an installed entry, said which copy of the library it has. A failed side,
-whether stopped past its wait, exited otherwise, failed in legacy or failed its probe, is not
-kept, so each run tries it again.
+keeps each new answer: one from a process that exited 0 and, for an installed entry, said
+which copy of the library it has, whose report has no failure or failed on legacy's own
+budget stop (``timeout``), as some targets do by design. Such a report is refreshed as a
+budget-spent one is. Any other failed side, whether stopped past its wait, exited otherwise,
+failed in legacy another way or failed its probe, is not kept, so each run tries it again.
 """
 
 import contextlib
@@ -27,7 +28,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.compare_coverage.cache import Cache
+from tools.compare_coverage.cache import BUDGET_SPENT, Cache
 from tools.compare_coverage.process import Command, run_command
 from tools.compare_coverage.sides import (
     Limits,
@@ -134,9 +135,9 @@ class LegacySide:
             report = with_library(
                 read_report(finished, "covered", _report), python, request, environment
             )
-        # read_report fails a side that exited otherwise or ran past its wait
         probed = request.library is None or report.library is not None
-        return report, probed and report.failure is None
+        kept_failure = report.failure is None or report.stopped == BUDGET_SPENT
+        return report, finished.returncode == 0 and probed and kept_failure
 
 
 def _report(line: dict[str, object]) -> SideReport:
