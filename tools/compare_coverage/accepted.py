@@ -41,6 +41,15 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from tools.compare_coverage.entries import Origin
+from tools.compare_coverage.ranges import (
+    Varies,
+    describe_range,
+    lines_of,
+    read_varies,
+    span,
+    varies_fields,
+    within,
+)
 from tools.compare_coverage.reasons import stable_reason
 from tools.compare_coverage.rows import Row, SideView, Status, budget_bound
 from tools.compare_coverage.sides import Limits
@@ -60,20 +69,6 @@ COMPARED = (Status.SAME, Status.DIFFERS)
 
 class RecordsError(Exception):
     """The accepted file cannot be read, or holds a line that is not a record."""
-
-
-@dataclass(frozen=True)
-class Varies:
-    """The lines a record's row showed in some accepted runs and not in others.
-
-    ``--accept`` adds only lines only v2 covered. A line only legacy covered is one v2 misses,
-    so only a person adds it, and ``reason`` says why it is timing and not a loss; such a line
-    counts only in a run where a side ran its whole budget.
-    """
-
-    only_legacy: tuple[int, ...] = ()
-    only_v2: tuple[int, ...] = ()
-    reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -122,7 +117,7 @@ def read_records(path: Path, accept: bool, limits: Limits) -> dict[Key, Record]:
         raise RecordsError(f"--accepted: cannot read {path}: no such file") from None
     except OSError as error:
         raise RecordsError(f"--accepted: cannot read {path}: {error.strerror}") from error
-    first, *rest = text.splitlines() or [""]
+    first, *rest = _lines_in(text) or [""]
     made_with = _limits(first, path)
     if made_with != limits:
         raise RecordsError(
@@ -130,6 +125,17 @@ def read_records(path: Path, accept: bool, limits: Limits) -> dict[Key, Record]:
             f"this run has {describe(limits)}"
         )
     return _records(rest, path)
+
+
+def _lines_in(text: str) -> list[str]:
+    """The file's lines, split at newlines only.
+
+    A record is written raw, so its seed or reason may hold U+2028, U+2029 or U+0085, which
+    ``str.splitlines`` would split at; JSON escapes a newline, so a newline ends a record.
+    Reading as text already turns ``\r\n`` into a newline.
+    """
+    lines = text.split("\n")
+    return lines[:-1] if lines[-1] == "" else lines
 
 
 def _limits(line: str, path: Path) -> Limits:
@@ -198,7 +204,7 @@ def _record(line: str, where: str) -> Record:
             # a failed row's record needs both; any other record has neither
             failures=dict(raw["failures"]) if failed else {},
             covered=tuple(raw["covered"]) if failed else (),
-            varies=_varies(raw),
+            varies=read_varies(raw["varies"]) if "varies" in raw else Varies(),
             line=line,
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as error:
@@ -208,40 +214,13 @@ def _record(line: str, where: str) -> Record:
     return record
 
 
-def _varies(raw: dict[str, object]) -> Varies:
-    """The record's ``varies``, or an empty one when the line has none.
-
-    Refused: anything but two lists of lines, both lists empty, lines only legacy covered
-    without a written reason, and a ``reason`` key without such lines.
-    """
-    if "varies" not in raw:
-        return Varies()
-    varies = raw["varies"]
-    if not isinstance(varies, dict) or set(varies) - {"reason"} != {"only_legacy", "only_v2"}:
-        raise ValueError(f"varies must hold only_legacy and only_v2, got {varies!r}")
-    legacy, v2 = varies["only_legacy"], varies["only_v2"]
-    if not (isinstance(legacy, list) and isinstance(v2, list)) or not (legacy or v2):
-        raise ValueError(f"varies must hold two lists of lines, not both empty: {varies!r}")
-    reason = varies.get("reason")
-    written = isinstance(reason, str) and bool(reason.strip())
-    if bool(legacy) != written or ("reason" in varies and not written):
-        raise ValueError(
-            f"varies needs a written reason exactly when only legacy lines vary: {varies!r}"
-        )
-    return Varies(only_legacy=tuple(legacy), only_v2=tuple(v2), reason=reason if written else None)
-
-
 def _well_formed(record: Record) -> bool:
     varies = record.varies
-    lines = [*record.only_legacy, *record.only_v2, *record.covered, *_lines_of(varies)]
+    lines = [*record.only_legacy, *record.only_v2, *record.covered, *lines_of(varies)]
     reasons = [*record.failures, *record.failures.values()]
     texts = all(isinstance(text, str) for text in [record.set, record.target, *reasons])
     ints = isinstance(record.seed, dict) and all(type(n) is int for n in lines)
     return texts and ints and _range_fits(record)
-
-
-def _lines_of(varies: Varies) -> tuple[int, ...]:
-    return (*varies.only_legacy, *varies.only_v2)
 
 
 def _range_fits(record: Record) -> bool:
@@ -296,29 +275,15 @@ def _change(record: Record, row: Row, roots: Roots, bound: bool) -> str | None:
         ("only v2", record.only_v2, record.varies.only_v2, row.only_v2, ""),
     )
     lines = [
-        f"{name} was {_range(always, varies)}, now {_lines(now)}{note}"
+        f"{name} was {describe_range(always, varies)}, now {_lines(now)}{note}"
         for name, always, varies, now, note in sides
-        if not _within(always, varies, now)
+        if not within(always, varies, now)
     ]
     # a range holds same and differs rows alike, so their status alone is no change
     ranged = record.varies != Varies() and row.status in COMPARED and not lines
     status = record.status != row.status.value and not ranged
     changes = [f"status was {record.status}, now {row.status.value}"] if status else []
     return "; ".join(changes + lines + _failure_changes(record, row, roots)) or None
-
-
-def _within(always: Sequence[int], varies: Sequence[int], lines: Sequence[int]) -> bool:
-    """The row's lines hold every line always shown and nothing past those and ``varies``."""
-    return set(always) <= set(lines) <= set(always) | set(varies)
-
-
-def _range(always: Sequence[int], varies: Sequence[int]) -> str:
-    """A record's lines as a person reads them: ``5 and any of 4, 6``."""
-    if not varies:
-        return _lines(always)
-    if not always:
-        return f"any of {_lines(varies)}"
-    return f"{_lines(always)} and any of {_lines(varies)}"
 
 
 def _failure_changes(record: Record, row: Row, roots: Roots) -> list[str]:
@@ -413,7 +378,7 @@ def _next_record(old: Record | None, row: Row, roots: Roots, budget: float) -> R
 def _widens(old: Record, row: Row, budget: float) -> bool:
     """A budget-bound ``same`` or ``differs`` row whose lines only legacy covered fit ``old``."""
     lines = old.status == Status.DIFFERS.value and row.status in COMPARED
-    legacy = _within(old.only_legacy, old.varies.only_legacy, row.only_legacy)
+    legacy = within(old.only_legacy, old.varies.only_legacy, row.only_legacy)
     return lines and legacy and budget_bound(row, budget)
 
 
@@ -423,17 +388,8 @@ def _widened(old: Record, row: Row) -> Record:
     A line only v2 covered in one of the two and not in the other varies. The lines only
     legacy covered, the range's among them, stay as ``old`` has them.
     """
-    always, varies = _span(old.only_v2, old.varies.only_v2, row.only_v2)
+    always, varies = span(old.only_v2, old.varies.only_v2, row.only_v2)
     return replace(old, only_v2=always, varies=replace(old.varies, only_v2=varies), line=None)
-
-
-def _span(
-    always: Sequence[int], varies: Sequence[int], lines: Sequence[int]
-) -> tuple[tuple[int, ...], tuple[int, ...]]:
-    """The lines both always showed, and every other line either one showed."""
-    both = set(always) & set(lines)
-    seen = set(always) | set(varies) | set(lines)
-    return tuple(sorted(both)), tuple(sorted(seen - both))
 
 
 def _record_of(row: Row, target: str, seed: Mapping[str, object], roots: Roots) -> Record:
@@ -480,14 +436,7 @@ def _fields(record: Record) -> dict[str, object]:
         "only_v2": list(record.only_v2),
     }
     if record.varies != Varies():
-        varies = record.varies
-        shown: dict[str, object] = {
-            "only_legacy": list(varies.only_legacy),
-            "only_v2": list(varies.only_v2),
-        }
-        if varies.reason is not None:
-            shown["reason"] = varies.reason
-        fields["varies"] = shown
+        fields["varies"] = varies_fields(record.varies)
     if Status(record.status) in FAILED:
         fields |= {"failures": dict(record.failures), "covered": list(record.covered)}
     return fields

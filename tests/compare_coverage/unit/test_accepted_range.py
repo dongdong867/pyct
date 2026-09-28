@@ -216,6 +216,7 @@ def test_a_range_is_written_after_the_lines_and_read_back(tmp_path: Path) -> Non
         {"only_legacy": [3], "only_v2": [4], "reason": "  "},
         {"only_legacy": [3], "only_v2": [4], "reason": None},
         {"only_legacy": [], "only_v2": [4], "reason": None},
+        None,
     ],
 )
 def test_a_range_that_is_not_two_lists_of_new_lines_is_refused(
@@ -323,3 +324,20 @@ def test_accept_keeps_a_hand_written_record_as_it_was_written(tmp_path: Path) ->
         "v2\u2019s run ends on its budget"
     )
     assert "\u2019" in file.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("separator", [" ", " ", "\x85"])
+def test_a_record_holding_a_line_separator_reads_back(tmp_path: Path, separator: str) -> None:
+    """A seed or a reason may hold a character ``str.splitlines`` splits on; a record stays
+    one line."""
+    seed = {"s": f"a{separator}b"}
+    reason = f"v2 misses 3{separator}only at its budget"
+    record = replace(EXACT, seed=seed, varies=replace(HAND, reason=reason))
+    file = tmp_path / "accepted.jsonl"
+
+    write_records(file, LIMITS, [record, replace(EXACT, target="m::g", seed=seed)])
+
+    read = read_records(file, False, LIMITS)
+    assert list(read.values()) == [record, replace(EXACT, target="m::g", seed=seed)]
+    write_records(file, LIMITS, list(read.values()))
+    assert read_records(file, False, LIMITS) == read
