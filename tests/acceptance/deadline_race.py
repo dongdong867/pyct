@@ -9,8 +9,9 @@ step of the instant they race, with a little noise so each lands elsewhere.
 
 The process keeps SIG_DFL as SIGALRM's handler, or its own counting handler for
 the ``counted`` case: a SIGALRM of pyct's that reached it would end the process
-or be counted. It runs without coverage.py, since the deadline raises inside
-the target.
+or be counted. The ``owned`` case gives SIGALRM to pyct first, as the command
+line does, so its in-process calls take the kernel timer instead of a watcher.
+It runs without coverage.py, since the deadline raises inside the target.
 """
 
 import json
@@ -23,6 +24,7 @@ from dataclasses import dataclass
 
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
+from pyct.execution.deadline import own_the_alarm
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import RunResult
 from pyct.run.isolation import Isolation
@@ -50,6 +52,7 @@ class Case:
 CASES = {
     "in-process": Case("spin", Isolation.IN_PROCESS, 0.002, 0.006, 50e-6),
     "counted": Case("spin", Isolation.IN_PROCESS, 0.002, 0.006, 50e-6),
+    "owned": Case("spin", Isolation.IN_PROCESS, 0.002, 0.006, 50e-6),
     "forked": Case("spin", Isolation.AUTO, 0.02, 0.02, 50e-6),
     "past-the-kill": Case("outlive", Isolation.AUTO, 0.05, 0.55, 0.002),
 }
@@ -66,6 +69,10 @@ def main(name: str, seconds: float) -> None:
     case = CASES[name]
     handler = count if name == "counted" else signal.SIG_DFL
     signal.signal(signal.SIGALRM, handler)
+    if name == "owned":
+        # as the command line does: the process is pyct's, and SIGALRM its deadline's for good
+        own_the_alarm()
+        handler = signal.getsignal(signal.SIGALRM)
     target = load_target(f"targets.isolate.spins::{case.target}")
     limits = Limits(budget=Budget(case.budget))
     tally = {"returned": 0, "timeout": 0, "bad": [], "handler_moved": 0}

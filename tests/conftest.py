@@ -89,26 +89,6 @@ def pytest_xdist_make_scheduler(config: pytest.Config, log: Producer) -> Schedul
     return SerialLastScheduling(config, log)
 
 
-@pytest.hookimpl(hookwrapper=True, trylast=True)
-def pytest_runtest_call(item: pytest.Item) -> Iterator[None]:
-    """Stop every coverage.py measurement in this process for a test marked ``no_cover``.
-
-    pytest-cov stops only its own, and an xdist worker also runs the one
-    coverage.py's subprocess patch started in it, whose tracer a deadline
-    firing in the test can leave holding its lock (see
-    ``tests/unit/deadline_fires.py``). Each one stopped starts again after
-    the test, in the order they ran.
-    """
-    stopped: list[object] = []
-    if item.get_closest_marker("no_cover") is not None:
-        while (measuring := _current()) is not None:
-            measuring.stop()  # pyrefly: ignore[missing-attribute]
-            stopped.append(measuring)
-    yield
-    for measuring in reversed(stopped):
-        measuring.start()  # pyrefly: ignore[missing-attribute]
-
-
 @pytest.fixture(autouse=True, scope="session")
 def _session_cache(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
     """Keep the code pyct substitutes for a target in a folder of this session's own.

@@ -12,26 +12,32 @@ accepted.
 No SIGALRM of a deadline raises, or reaches another handler, once its block
 has ended. How the signal comes depends on who owns the process:
 
-- The input's own process owns SIGALRM (``own_the_alarm``). pyct's handler
-  is installed once and never put back, and the kernel's real-time timer
-  sends the signal. The handler raises only while a block runs, so a signal
-  the timer posts late, as macOS can after the timer is cancelled, finds it
-  and does nothing. No thread runs beside the target.
-- Any other process, pyct's own with ``--in-process`` or a program that
-  calls ``run()``, keeps its own handler, which a block borrows and puts
-  back. A kernel timer's signal cannot be taken back there, so a watcher
-  thread sends it to the main thread with ``pthread_kill``, under a lock and
-  only while the block runs. The way out stops the sends under that lock
-  and takes a signal still on its way before the handler goes back, so none
-  comes after it. The watcher needs the GIL to send, so a C call that holds
-  it, such as a regular expression's backtracking, runs to its end first,
-  and a Python loop's alarm lands some milliseconds late.
+- A process pyct owns, the command line's and each input's own, owns
+  SIGALRM (``own_the_alarm``, which they call first). pyct's handler is
+  installed once and never put back, and the kernel's real-time timer sends
+  the signal. The handler raises only while a block runs and once its
+  instant has come, so a signal the timer posts late, as macOS can after
+  the timer is cancelled, finds it and does nothing. No thread runs beside
+  the target, and a C call that checks for signals, such as a regular
+  expression's backtracking, stops at the deadline.
+- In a process pyct is a guest in, a program that calls ``run()``, pytest
+  included, the program keeps its own handler, which a block borrows and
+  puts back. A kernel timer's signal cannot be taken back there, so a
+  watcher thread sends it to the main thread with ``pthread_kill``, under a
+  lock and only while the block runs. The way out stops the sends under
+  that lock and takes a signal still on its way before the handler goes
+  back, so none comes after it. The watcher needs the GIL to send, so a C
+  call that holds it runs to its end first: a backtracking ``re.match`` ran
+  2.5 s past a 0.1 s deadline, and a big-int power to its end at 0.665 s,
+  where the kernel timer stopped both at about 0.1 s. A Python loop's alarm
+  lands about 12.5 ms late at the median.
 
 A target that catches ``BaseException`` swallows the one alarm, and a call
 inside C never returns to Python for the alarm to raise in. Nothing here can
 stop either. In a process of the input's own, pyct's run layer kills that
 process shortly after the deadline instead; in pyct's own process, with
-``--in-process``, both run unbounded.
+``--in-process``, both run unbounded, and so does a guest's C call that
+holds the GIL.
 """
 
 from __future__ import annotations
@@ -44,6 +50,7 @@ import types
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass
+from typing import NoReturn
 
 # a deadline already past still has to fire, and setitimer(0) would cancel instead
 _AT_ONCE = 1e-6
@@ -70,12 +77,11 @@ def deadline(at: float | None) -> AbstractContextManager[None]:
 
 
 def own_the_alarm() -> None:
-    """Make SIGALRM the deadline's alone for the rest of this process, the input's own.
+    """Make SIGALRM the deadline's alone for the rest of this process, one pyct owns.
 
-    The handler is never put back, so a late signal finds it and does
-    nothing. The input's process runs one call, so no late signal can land
-    in a later block either. A handler the target's import installs is
-    replaced again as the call begins.
+    pyct owns the command line's process and each input's own. The handler
+    is never put back, so a late signal finds it and does nothing. A handler
+    target code installs is replaced again as the next call begins.
     """
     _OWNER.owns = True
     signal.signal(signal.SIGALRM, _owned)
@@ -83,24 +89,36 @@ def own_the_alarm() -> None:
 
 @dataclass
 class _Owner:
-    """Whether this process owns SIGALRM, and whether a block of its deadline runs now.
+    """Whether this process owns SIGALRM, and the block of its deadline that runs now, if any.
 
-    The handler raises only while a block runs.
+    The handler raises only while a block runs, and only once its instant
+    has come: a signal the timer of an earlier block posts late, into a
+    later block, comes before that block's instant, since a timer never
+    fires early.
     """
 
     owns: bool = False
     running: bool = False
+    at: float = 0.0
 
 
 _OWNER = _Owner()
 
+# how far before its instant a block's own signal can come: setitimer rounds to a microsecond
+_EARLY = 0.001
+
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
 def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
-    """SIGALRM's handler in a process that owns it: raise once, and only inside a block."""
-    if _OWNER.running:
+    """SIGALRM's handler in a process that owns it: raise once, only inside a block, in time."""
+    if _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY:
         _OWNER.running = False
-        raise DeadlineError
+        _raise_deadline(signal_number, frame)
+
+
+def _raise_deadline(signal_number: int, frame: types.FrameType | None) -> NoReturn:
+    """Raise DeadlineError: the one raise both kinds of deadline make."""
+    raise DeadlineError  # pragma: no cover
 
 
 class _Timed:
@@ -112,6 +130,7 @@ class _Timed:
     def __enter__(self) -> None:
         if signal.getsignal(signal.SIGALRM) is not _owned:
             signal.signal(signal.SIGALRM, _owned)
+        _OWNER.at = self.at
         _OWNER.running = True
         signal.setitimer(signal.ITIMER_REAL, max(self.at - time.monotonic(), _AT_ONCE))
 
@@ -225,7 +244,7 @@ class _Sent:
         if isinstance(sys.exception(), KeyboardInterrupt):
             return
         self.armed = False
-        raise DeadlineError
+        _raise_deadline(signal_number, frame)
 
     def _in_block(self, frame: types.FrameType | None) -> bool:  # pragma: no cover
         """Whether ``frame`` runs in the block: under the frame that entered it, not its way out."""

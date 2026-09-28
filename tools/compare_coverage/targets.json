@@ -275,6 +275,7 @@
     {"set": "v2", "target": "targets.isolate.asserts::check", "seed": {"x": -1}},
     {"set": "v2", "target": "targets.isolate.base_raises::stop", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "module": "targets.isolate.c_hang", "left_out": "hangs in one C call for about ten seconds by design"},
+    {"set": "v2", "module": "targets.isolate.c_work", "left_out": "spends seconds in one C call by design, for the deadline tests"},
     {"set": "v2", "module": "targets.isolate.closure", "left_out": "a factory: the target is the closure it returns, which no module attribute names"},
     {"set": "v2", "target": "targets.isolate.counter::count", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.exits::leave", "seed": {"x": 0}},

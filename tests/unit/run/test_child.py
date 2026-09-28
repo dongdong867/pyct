@@ -127,3 +127,17 @@ def hang_after_an_import_takes_sigalrm() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_the_input_s_process_keeps_the_alarm_its_target_s_import_took() -> None:
     assert settled_then(hang_after_an_import_takes_sigalrm) == 0
+
+
+def late_alarm_into_the_next_block() -> None:
+    with deadline(time.monotonic() + 10):
+        pass
+    with deadline(time.monotonic() + 10):
+        # the first block's timer, come late, into a block whose instant is far off
+        os.kill(os.getpid(), signal.SIGALRM)
+        for _ in range(1000):
+            pass
+
+
+def test_a_late_alarm_in_a_process_pyct_owns_leaves_the_next_block_running() -> None:
+    assert settled_then(late_alarm_into_the_next_block) == 0
