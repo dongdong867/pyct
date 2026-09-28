@@ -326,10 +326,11 @@ class ListTerms(ListTyping, Slices):
         )
 
     def _define_read(self, text: str, sort: str) -> str:
-        """A read written once, as ``(define-fun r!N () Sort ...)``, and named wherever read."""
+        """A read written once, as ``(define-fun l!N () Sort ...)``, and named wherever read; a
+        letter a spelling names is ``r!N`` (see ``letters``)."""
         key = f"{sort} {text}"
         if key not in self.written:
-            name = f"r!{len(self.definitions)}"
+            name = f"l!{len(self.definitions)}"
             self.definitions.append(f"(define-fun {name} () {sort} {text})")
             self.written[key] = name
         return self.written[key]

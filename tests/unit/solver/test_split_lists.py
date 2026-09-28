@@ -235,3 +235,17 @@ def test_an_item_of_a_list_after_a_split_s_list_is_read_where_the_answer_s_piece
     s, items = args["s"], args["items"]
     assert isinstance(s, str) and isinstance(items, list)
     assert [*s.split(","), *items][2] == "z" and len(s.split(",")) == 2, args
+
+
+@needs_cvc5
+def test_a_piece_read_beside_a_spelled_string_is_named_apart_from_its_letters() -> None:
+    # the letters of a string read at fixed positions and the pieces a list read defines each
+    # get a name of their own
+    piece: Expression = ["[]", SPLIT, 0]
+    letters = [fork(["==", ["[]", piece, at], "'a'"], taken=True) for at in range(4)]
+    path = (fork([">", ["len", SPLIT], 0], taken=True), *letters)
+    seed = Seed.of({"s": "aaaa,b"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    assert isinstance(answer, Sat), answer
