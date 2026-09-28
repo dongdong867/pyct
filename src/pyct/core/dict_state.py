@@ -31,6 +31,8 @@ class DictState(dict):
     plain: a change made without its methods left the form behind for good, or the target
     emptied it. ``settled`` holds, by each key the path asked about, whether the argument held
     it; ``changed`` whether the dict holds each key the target stored (True) or removed (False).
+    The dict refuses a set, as a plain one does, so pyct writes these fields straight into its
+    ``__dict__``.
     """
 
     expression: Expression | None
@@ -66,16 +68,17 @@ class DictState(dict):
         # dict's own, since the class called with a value builds a plain dict
         made = dict.__new__(cls)
         dict.update(made, items)
-        made.expression = expression
-        made.sink = sink
-        made.settled = {}
-        made.changed = {}
-        made.grown = 0
-        made.shadow = dict(items)
-        made.walked_at = None
-        made.copies = {}
-        made.shared = {}
-        made.int_keyed = int_keyed
+        fields = made.__dict__
+        fields["expression"] = expression
+        fields["sink"] = sink
+        fields["settled"] = {}
+        fields["changed"] = {}
+        fields["grown"] = 0
+        fields["shadow"] = dict(items)
+        fields["walked_at"] = None
+        fields["copies"] = {}
+        fields["shared"] = {}
+        fields["int_keyed"] = int_keyed
         return made
 
     def size(self) -> int:
@@ -132,7 +135,7 @@ class DictState(dict):
         Each tracked int, str and bool is its value from now on; a list or a dict inside,
         tracked in its own right, stays where it is.
         """
-        self.expression = None
+        self.__dict__["expression"] = None
         for key, value in dict.items(self.storage()):
             dict.__setitem__(self, key, plain(value))
 
@@ -140,20 +143,21 @@ class DictState(dict):
         """A new tracked dict of the same argument: these items, and what this one settled and
         changed, the argument's settled keys shared."""
         made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
-        made.settled = self.settled
-        made.changed = dict(self.changed)
-        made.grown = self.grown
+        fields = made.__dict__
+        fields["settled"] = self.settled
+        fields["changed"] = dict(self.changed)
+        fields["grown"] = self.grown
         return made
 
     def noted(self, key: object, value: object) -> None:
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
         still says whether it held the key before, which is how the size grew."""
-        self.grown += key not in self.shadow
+        self.__dict__["grown"] += key not in self.shadow
         self.shadow[key] = value
         self.changed[key] = True
 
     def dropped(self, key: object) -> None:
         """Note a removal the dict's own method made."""
-        self.grown -= key in self.shadow
+        self.__dict__["grown"] -= key in self.shadow
         self.shadow.pop(key, None)
         self.changed[key] = False

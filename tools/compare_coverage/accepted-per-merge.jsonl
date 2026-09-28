@@ -204,10 +204,16 @@
 {"set": "v2", "target": "targets.strs.text_of_values::formatted_alone", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [30, 32, 34, 36]}
 {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [16]}
 {"set": "v2", "target": "targets.strs.text_of_values::mapped", "seed": {"x": 0, "y": 0}, "status": "differs", "only_legacy": [], "only_v2": [43]}
+{"set": "v2", "target": "targets.types.attributes::computed_untouched", "seed": {"s": "ab", "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [92, 94]}
 {"set": "v2", "target": "targets.types.attributes::set_by_name", "seed": {"x": 3}, "status": "differs", "only_legacy": [14], "only_v2": [13]}
 {"set": "v2", "target": "targets.types.attributes::set_new", "seed": {"x": 3}, "status": "differs", "only_legacy": [6], "only_v2": [5]}
 {"set": "v2", "target": "targets.types.attributes::set_on_a_compare", "seed": {"x": 3}, "status": "differs", "only_legacy": [35], "only_v2": [34]}
+{"set": "v2", "target": "targets.types.attributes::set_on_a_range", "seed": {"n": 2}, "status": "differs", "only_legacy": [], "only_v2": [104, 108, 112]}
+{"set": "v2", "target": "targets.types.attributes::set_on_computed", "seed": {"s": "ab", "xs": [1]}, "status": "differs", "only_legacy": [74], "only_v2": [72, 75, 76, 78, 81, 82, 83, 84, 85]}
 {"set": "v2", "target": "targets.types.attributes::set_pyct_s_names", "seed": {"x": 3}, "status": "differs", "only_legacy": [], "only_v2": [42, 46]}
+{"set": "v2", "target": "targets.types.attributes::set_pyct_s_names_on_a_range", "seed": {"n": 2}, "status": "differs", "only_legacy": [], "only_v2": [123, 127]}
+{"set": "v2", "target": "targets.types.attributes::set_pyct_s_names_on_a_sized", "seed": {"x": [1]}, "status": "differs", "only_legacy": [], "only_v2": [62]}
+{"set": "v2", "target": "targets.types.attributes::set_pyct_s_names_on_a_view", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [155]}
 {"set": "v2", "target": "targets.types.attributes::set_then_delete", "seed": {"x": 3}, "status": "differs", "only_legacy": [], "only_v2": [25]}
 {"set": "v2", "target": "targets.types.copied::f", "seed": {"n": 3, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [13, 17, 19, 21]}
 {"set": "v2", "target": "targets.types.dispatched::f", "seed": {"flag": true, "x": 1, "r": 2.5, "s": "a", "xs": [1]}, "status": "differs", "only_legacy": [38], "only_v2": [37]}

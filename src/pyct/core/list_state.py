@@ -93,7 +93,8 @@ class ListState(list):
     """The state a tracked list keeps beside its items, and what every operation checks first.
 
     ``expression`` is None once the list is plain: a change pyct could not write, or one made
-    without the list's methods, left the form behind for good.
+    without the list's methods, left the form behind for good. The list refuses a set, as a
+    plain one does, so pyct writes these fields straight into its ``__dict__``.
     """
 
     expression: Expression | None
@@ -110,11 +111,12 @@ class ListState(list):
         # list's own, since the class called with a value builds a plain list
         made = list.__new__(cls)
         list.extend(made, items)
-        made.sink = sink
-        made.shadow = list(items)
-        made.expression = expression
-        made.kinds = kinds_of(items)
-        made.walked_at = None
+        fields = made.__dict__
+        fields["sink"] = sink
+        fields["shadow"] = list(items)
+        fields["expression"] = expression
+        fields["kinds"] = kinds_of(items)
+        fields["walked_at"] = None
         return made
 
     def length(self) -> int:
@@ -162,7 +164,7 @@ class ListState(list):
         The list is plain from now on, so what it holds is plain too: each tracked int, str
         and bool is its value, and a list inside, tracked in its own right, stays where it is.
         """
-        self.expression = None
+        self.__dict__["expression"] = None
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
 
     def derived(
@@ -170,6 +172,7 @@ class ListState(list):
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form."""
         made = type(self).made(items, expression, self.sink)
-        made.shadow = shadow
-        made.kinds = self.kinds
+        fields = made.__dict__
+        fields["shadow"] = shadow
+        fields["kinds"] = self.kinds
         return made

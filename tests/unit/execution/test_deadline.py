@@ -6,6 +6,7 @@ where it is settled, in ``tests/unit/run/test_child.py``.
 """
 
 import asyncio
+import gc
 import json
 import os
 import signal
@@ -14,6 +15,7 @@ import sys
 import threading
 import time
 import types
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 
@@ -23,7 +25,7 @@ from pyct.execution.deadline import _HOLD_AT_MOST as HOLD_AT_MOST
 from pyct.execution.deadline import DeadlineError, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
-from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct
+from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
 
 
 @pytest.fixture
@@ -281,11 +283,9 @@ def test_an_alarm_that_lands_on_a_target_s_own_base_exception_still_stops_it() -
             raise asyncio.CancelledError
         except asyncio.CancelledError:
             # the alarm lands while the target handles its own cancel, then it hangs
-            while time.monotonic() < started + 0.15:
-                pass
+            spin_until(started + 0.15)
         # a hang, bounded so the test fails rather than waits when no alarm comes
-        while time.monotonic() < started + 2:
-            pass
+        spin_until(started + 2)
 
     assert time.monotonic() - started < 1
 
@@ -298,11 +298,9 @@ def test_an_alarm_held_back_by_a_ctrl_c_comes_once_it_is_caught() -> None:
         try:
             raise KeyboardInterrupt
         except KeyboardInterrupt:
-            while time.monotonic() < started + 0.15:
-                pass
+            spin_until(started + 0.15)
         # a hang, bounded so the test fails rather than waits when no alarm comes
-        while time.monotonic() < started + 2:
-            pass
+        spin_until(started + 2)
 
     assert time.monotonic() - started < 1
 
@@ -316,8 +314,7 @@ def test_an_alarm_held_back_by_a_ctrl_c_that_never_leaves_comes_after_a_bound() 
             raise KeyboardInterrupt
         except KeyboardInterrupt:
             # a handler that never returns, bounded so the test fails rather than waits
-            while time.monotonic() < started + 3:
-                pass
+            spin_until(started + 3)
 
     took = time.monotonic() - started
     assert 0.5 <= took < 1.5, took
@@ -345,3 +342,67 @@ def test_a_hang_in_pyct_s_own_frames_ends_near_its_deadline() -> None:
         spin(started + 2)
 
     assert time.monotonic() - started < 0.3
+
+
+@DEADLINE_FIRES
+def test_a_ctrl_c_handled_before_the_block_holds_no_alarm_back() -> None:
+    started = time.monotonic()
+
+    try:
+        raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        # a stop the caller handles as it calls, one no alarm of the block can replace
+        with pytest.raises(DeadlineError), deadline(started + 0.05):
+            spin_until(started + 2)
+
+    assert time.monotonic() - started < 0.3
+
+
+@DEADLINE_FIRES
+def test_a_ctrl_c_raised_in_a_block_begun_inside_a_handled_one_still_holds_the_alarm() -> None:
+    started = time.monotonic()
+
+    try:
+        raise KeyboardInterrupt
+    except KeyboardInterrupt:
+        with pytest.raises(DeadlineError), deadline(started + 0.05):
+            try:
+                raise KeyboardInterrupt
+            except KeyboardInterrupt:
+                # a new stop on its way out of the target: the alarm waits for it
+                spin_until(started + 0.15)
+                handled = time.monotonic()
+            # a hang, bounded so the test fails rather than waits when no alarm comes
+            spin_until(started + 2)
+
+    took = time.monotonic() - started
+    assert handled - started >= 0.15
+    assert took < 1, took
+
+
+class Held:
+    """An object only a handled exception's frame keeps alive."""
+
+
+def raise_holding(held: Held) -> None:
+    raise ValueError(type(held).__name__)
+
+
+def test_a_block_keeps_no_exception_handled_as_it_began_once_it_ends() -> None:
+    held = Held()
+    freed = weakref.ref(held)
+    # refcounting alone frees what nothing holds; the collector would hide a cycle that holds it
+    gc.disable()
+    try:
+        try:
+            raise_holding(held)
+        except ValueError:
+            del held
+            with deadline(time.monotonic() + 10):
+                pass
+        gone = freed() is None
+    finally:
+        gc.enable()
+
+    # the handler has ended, so nothing holds its exception, its frames or their locals
+    assert gone
