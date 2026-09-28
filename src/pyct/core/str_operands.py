@@ -8,8 +8,9 @@ LAST_CHARACTER = 0x2FFFF
 
 
 def within_cvc5(text: str) -> bool:
-    """Whether the solver holds every character of a plain str as it is."""
-    return all(ord(character) <= LAST_CHARACTER for character in text)
+    """Whether the solver holds every character of a plain str as it is, read through str's own
+    walk, so a subclass's `__iter__` never runs."""
+    return all(ord(character) <= LAST_CHARACTER for character in str.__iter__(text))
 
 
 def literal(value: object, tracked: type) -> str | None:

@@ -1,10 +1,11 @@
-"""`in` on a tuple or a list with a tracked int or bool searched for: the elements in order,
-identity first, an element whose type keeps int's `==`, an exact int or an int subclass,
-compared with the tracked value on its left, and every other element compared as Python
-compares it."""
+"""`in` on a tuple, a list or a deque with a tracked value searched for: the elements in order,
+identity first, an element whose type keeps the `==` of a type Python would have answer the
+tracked value plainly, int or float for a tracked int or bool, float for a tracked float and str
+for a tracked str, compared with the tracked value on its left, and every other element
+compared as Python compares it."""
 
-from collections import namedtuple
-from enum import IntEnum
+from collections import deque, namedtuple
+from enum import Enum, IntEnum, StrEnum
 
 import pytest
 
@@ -12,6 +13,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from pyct.core.substitutes import Searched, in_, not_in
 from tests.unit.core.test_substitutes import expressions
 
@@ -168,3 +170,178 @@ def test_a_chain_link_walks_the_container_it_searches() -> None:
 
     assert (tracked(1, sink) in Searched((Status.OK, Status.BAD))) is True
     assert expressions(sink) == [(["==", "x", 0], False), (["==", "x", 1], True)]
+
+
+class Color(StrEnum):
+    RED = "red"
+    BLUE = "blue"
+
+
+class Ratio(float, Enum):
+    HALF = 0.5
+    TWO = 2.0
+
+
+class Tag(str):
+    pass
+
+
+class Loose(float):
+    """A float equal to everything, by its own `__eq__`."""
+
+    def __eq__(self, other: object) -> bool:
+        return True
+
+    __hash__ = float.__hash__
+
+
+class RefusingStr(str):
+    """A str whose `==` raises."""
+
+    def __eq__(self, other: object) -> bool:
+        raise ValueError("no compare")
+
+    __hash__ = str.__hash__
+
+
+class OwnDeque(deque):
+    """A deque that answers `in` itself."""
+
+    def __contains__(self, item: object) -> bool:
+        return True
+
+
+class Growing(int):
+    """An int whose `==` appends to the deque it sits in and answers False."""
+
+    into: deque[object]
+
+    def __eq__(self, other: object) -> bool:
+        Growing.into.append(0)
+        return False
+
+    __hash__ = int.__hash__
+
+
+def tracked_str(value: str, sink: list[SinkItem]) -> ConcolicStr:
+    return ConcolicStr.made(value, expression="s", sink=sink)
+
+
+def tracked_float(value: float, sink: list[SinkItem]) -> ConcolicFloat:
+    return ConcolicFloat.made(value, expression="f", sink=sink)
+
+
+@pytest.mark.parametrize(
+    "container", [(Color.RED, Color.BLUE), [Tag("red"), Tag("blue")], ("red", "blue")]
+)
+def test_a_tracked_str_is_compared_on_the_left_of_str_elements(container: object) -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked_str("x", sink), container) is False
+    assert expressions(sink) == [(["==", "s", "'red'"], False), (["==", "s", "'blue'"], False)]
+
+
+def test_a_tracked_float_is_compared_on_the_left_of_float_elements() -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked_float(2.0, sink), [Ratio.HALF, 3.0, Ratio.TWO]) is True
+    assert expressions(sink) == [
+        (["==", "f", 0.5], False),
+        (["==", "f", 3.0], False),
+        (["==", "f", 2.0], True),
+    ]
+
+
+@pytest.mark.parametrize("container", [(0.5, 2.0), (Ratio.HALF, Ratio.TWO)])
+def test_a_tracked_int_is_compared_on_the_left_of_float_elements(container: object) -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked(2, sink), container) is True
+    assert expressions(sink) == [(["==", "x", 0.5], False), (["==", "x", 2.0], True)]
+
+
+def test_a_tracked_bool_is_compared_on_the_left_of_a_float() -> None:
+    sink: list[SinkItem] = []
+    flag = ConcolicBool.made(True, expression="flag", sink=sink)
+
+    assert not_in(flag, (1.0,)) is False
+    assert expressions(sink) == [(["==", "flag", 1.0], True)]
+
+
+def test_an_element_of_another_type_is_compared_as_python_compares_it() -> None:
+    sink: list[SinkItem] = []
+
+    # an int declines a str, and so does the tracked str Python asks next, with no fork
+    assert in_(tracked_str("1", sink), (1, Status.BAD)) is False
+    assert expressions(sink) == []
+
+
+def test_a_float_element_with_its_own_eq_is_asked_as_python_asks_it() -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked(7, sink), (Loose(0.5),)) is True
+    assert expressions(sink) == []
+
+
+def test_a_str_element_whose_eq_raises_raises_as_python_does() -> None:
+    sink: list[SinkItem] = []
+
+    with pytest.raises(ValueError, match="no compare"):
+        in_(tracked_str("x", sink), (Color.RED, RefusingStr("b")))
+    assert expressions(sink) == [(["==", "s", "'red'"], False)]
+
+
+def test_the_tracked_str_itself_holds_by_identity_with_no_fork() -> None:
+    sink: list[SinkItem] = []
+    s = tracked_str("x", sink)
+
+    assert in_(s, (s, Color.RED)) is True
+    assert expressions(sink) == []
+
+
+def test_a_deque_is_walked_as_a_list_is() -> None:
+    sink: list[SinkItem] = []
+
+    assert not_in(tracked(1, sink), deque([Status.OK, Status.BAD])) is False
+    assert expressions(sink) == [(["==", "x", 0], False), (["==", "x", 1], True)]
+
+
+def test_a_deque_subclass_with_its_own_search_is_asked() -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked(7, sink), OwnDeque([Status.OK])) is True
+    assert expressions(sink) == []
+
+
+def test_a_deque_changed_during_the_walk_raises_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    Growing.into = deque([Growing(0), 1])
+    with pytest.raises(RuntimeError) as plain:
+        _ = 7 in Growing.into
+
+    Growing.into = deque([Growing(0), 1])
+    with pytest.raises(RuntimeError) as walked:
+        in_(tracked(7, sink), Growing.into)
+    assert str(walked.value) == str(plain.value)
+    assert expressions(sink) == []
+
+
+def test_a_chain_link_walks_str_members() -> None:
+    sink: list[SinkItem] = []
+
+    assert (tracked_str("blue", sink) in Searched([Color.RED, Color.BLUE])) is True
+    assert expressions(sink) == [(["==", "s", "'red'"], False), (["==", "s", "'blue'"], True)]
+
+
+class OwnText(str):
+    """A str whose own walk hands out something else, which str's `==` never runs."""
+
+    def __iter__(self):  # noqa: ANN204
+        return iter(["zz"])
+
+
+def test_a_str_element_s_own_walk_never_runs() -> None:
+    sink: list[SinkItem] = []
+
+    assert in_(tracked_str("a", sink), [OwnText("a")]) is True
+    assert expressions(sink) == [(["==", "s", "'a'"], True)]
