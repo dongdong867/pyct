@@ -199,6 +199,11 @@
 {"set": "v2", "target": "targets.types.copied::f", "seed": {"n": 3, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [13, 17, 19, 21]}
 {"set": "v2", "target": "targets.types.dispatched::f", "seed": {"flag": true, "x": 1, "r": 2.5, "s": "a", "xs": [1]}, "status": "differs", "only_legacy": [38], "only_v2": [37]}
 {"set": "v2", "target": "targets.types.matched::f", "seed": {"flag": true, "x": 1, "r": 2.5, "s": "a", "xs": [1]}, "status": "differs", "only_legacy": [21], "only_v2": [20]}
+{"set": "v2", "target": "targets.types.messages::compare_result", "seed": {"x": 3}, "status": "differs", "only_legacy": [71], "only_v2": [70]}
+{"set": "v2", "target": "targets.types.messages::each_form", "seed": {"x": 3}, "status": "differs", "only_legacy": [], "only_v2": [64]}
+{"set": "v2", "target": "targets.types.messages::each_other_form", "seed": {"x": "ab"}, "status": "differs", "only_legacy": [], "only_v2": [76]}
+{"set": "v2", "target": "targets.types.messages::each_view", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [82]}
+{"set": "v2", "target": "targets.types.messages::shift_check", "seed": {"x": 3}, "status": "differs", "only_legacy": [21], "only_v2": [20]}
 {"set": "v2", "target": "targets.types.read::bool_checks", "seed": {"flag": true, "x": 1}, "status": "differs", "only_legacy": [32], "only_v2": [24, 31]}
 {"set": "v2", "target": "targets.types.read::class_and_name", "seed": {"n": 1, "s": "a", "flag": true, "xs": [1]}, "status": "differs", "only_legacy": [46], "only_v2": [36, 45]}
 {"set": "v2", "target": "targets.types.read::each_type", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [14], "only_v2": [6, 13]}
