@@ -72,9 +72,9 @@ _HANDED = "PYCT_WATCHED_BY"
 # runs and then this process's import path: that pyct, imported from that folder, which then
 # leaves the path again; that pyct's command line, whose own modules come through the package and
 # the rest from where this interpreter finds them; then the path, and that pyct as ``python -m
-# pyct``. So nothing on the path, a pyct package or a module named as one the command line
-# imports, can stand in for pyct's, and the target's import path is the one a forked command's
-# process gives it
+# pyct``. So nothing on the handed path alone, such as a sweep entry's folder, can stand in for
+# pyct or a module its command line imports, and the target's import path is the one a forked
+# command's process gives it
 _BOOT = (
     "import json, runpy, sys; sys.path.insert(0, sys.argv.pop(1)); import pyct; "
     "del sys.path[0]; import pyct.cli; "
