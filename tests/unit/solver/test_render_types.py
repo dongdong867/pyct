@@ -7,7 +7,7 @@ from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.heads import BOUNDED, FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
 from pyct.solver.recased import TO_DECLARE
-from pyct.solver.splits import SPLITS
+from pyct.solver.splits import COUNTED, SPLITS
 from tests.unit.solver.test_render import fork, render
 
 
@@ -83,6 +83,8 @@ BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "=
     ["not in", 3, RANGE_TERMS[0]],
     ["startswith", "s", "'a'"],
     ["endswith", "s", "'a'"],
+    # a split a join reads, held to its number of pieces
+    [COUNTED, ["split", "s", "','"], 2],
     ["startswith", "s", TUPLE_TERMS[0]],
     ["endswith", "s", TUPLE_TERMS[0], "n"],
     ["is_integer", "f"],

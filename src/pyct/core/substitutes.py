@@ -41,7 +41,8 @@ import types
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
-from pyct.core import bound, ranges, str_literals, strs
+from pyct.core import bound, ranges, str_joins, str_literals, strs
+from pyct.core.bases import TRACKED_CLASSES
 from pyct.core.bools import ConcolicBool
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
@@ -300,6 +301,63 @@ def method(receiver_method: Callable[..., object], /, *args: object, **kwargs: o
     return receiver_method(*args, **kwargs)
 
 
+def join(receiver_method: Callable[..., object], /, *args: object, **kwargs: object) -> Any:
+    """A call written ``"text".join(...)``, on a str literal or a name bound only to str
+    literals, as ``receiver_method(...)``.
+
+    Given one argument, it reads what it joins once, as Python's own join
+    does, and joins as a tracked separator holding the literal's text joins
+    (`str_joins.joined`) when the argument or an item is tracked. Anything
+    else is the method's own, handed the items read, and any other call is
+    `method`'s. Only the types of the method, its receiver, the argument and
+    its items are read.
+    """
+    if kwargs or len(args) != 1:
+        return method(receiver_method, *args, **kwargs)
+    items = args[0]
+    if type(items) is list or type(items) is tuple:
+        for item in cast("list[object]", items):
+            if type(item) in TRACKED_CLASSES:
+                break
+        else:
+            return receiver_method(items)
+    # the receiver is what the name the code wrote holds when the call runs: a str literal's
+    # text, unless another module rebound the name. A str or a tracked str joins as pyct follows
+    # it, and any other value's own join is called as Python calls it, with what it was given
+    receiver = getattr(receiver_method, "__self__", None)
+    if type(receiver) is not str and type(receiver) is not ConcolicStr:
+        return receiver_method(items)
+    return _joined(receiver_method, cast(str, receiver), items)
+
+
+def _joined(receiver_method: Callable[..., object], receiver: str, items: object) -> object:
+    """A str's join of what it is given, read once: Python's own answer and refusal when
+    nothing in it is tracked, and `str_joins.joined` when something is."""
+    if type(items) not in TRACKED_CLASSES:
+        items = _read(items)
+        if items is None:
+            # Python's join makes any TypeError `iter` raises its own refusal, which this raises
+            return receiver_method(None)
+        for item in items:
+            if type(item) in TRACKED_CLASSES:
+                break
+        else:
+            return receiver_method(items)
+    return str_joins.joined(receiver, items, ConcolicStr)
+
+
+def _read(items: object) -> list[object] | tuple[object] | None:
+    """What a join reads, as Python's own join reads it: a list or a tuple as it is, and any
+    other iterable into a list, its `__iter__` called once; None where `iter` raises TypeError."""
+    if type(items) is list or type(items) is tuple:
+        return cast("list[object]", items)
+    try:
+        iterator = iter(items)  # pyrefly: ignore[no-matching-overload]
+    except TypeError:
+        return None
+    return list(iterator)
+
+
 def _on_text(
     receiver_method: Callable[..., object], args: tuple[object, ...], kwargs: dict[str, object]
 ) -> Any:
@@ -340,6 +398,9 @@ PASSING: frozenset[types.CodeType] = (
             _walked,
             call,
             method,
+            join,
+            _joined,
+            _read,
             _on_text,
             truth,
             Searched.__contains__,

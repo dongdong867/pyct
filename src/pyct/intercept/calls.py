@@ -20,7 +20,8 @@
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
-  (`pyct.intercept.constants`).
+  (`pyct.intercept.constants`). A join becomes ``__pyct_join__("text".join,
+  ...)``, which reads what it joins.
 
 The callee is the call's own node, moved into the new call, so it is
 evaluated first, its attribute read once, then each argument in Python's
@@ -41,7 +42,11 @@ _CONVERSIONS = frozenset({"int", "float", "bool"})
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
 
-BOUND: dict[str, str] = {"__pyct_call__": "call", "__pyct_method__": "method"}
+BOUND: dict[str, str] = {
+    "__pyct_call__": "call",
+    "__pyct_method__": "method",
+    "__pyct_join__": "join",
+}
 
 # the most arguments a substituted call is written with; well below CPython's 30, past which it
 # builds a call's arguments in steps of its own
@@ -56,7 +61,9 @@ def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
     if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
         return _curried(node, parts)
     if _text_method(node.func, parts):
-        callee = parts.named("__pyct_method__", node)
+        # a join has a router of its own, which reads the items it joins
+        router = "__pyct_join__" if _spelled(node.func) == "join" else "__pyct_method__"
+        callee = parts.named(router, node)
         call = ast.Call(func=callee, args=[node.func, *node.args], keywords=node.keywords)
         return ast.copy_location(call, node)
     return None

@@ -285,6 +285,10 @@ def line_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:
     return _let(breaks, piece), _let(breaks[: 2 * index], there)
 
 
+# the head of a fork render reads as a split held to a number of pieces, ``[COUNTED, split, n]``,
+# which only the solver writes (see `str_joins.counted`); ``!`` is in no Python name
+COUNTED = "pieces!"
+
 # each split's piece at a position, from the string rendered, the plain operands core wrote
 # after it, and the position
 SPLITS: Mapping[str, Callable[[str, tuple[object, ...], int], Piece]] = {
