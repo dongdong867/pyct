@@ -1,5 +1,5 @@
 """A plain key Python's lookup makes the same as an int, looked up as that int, and a key pyct
-does not follow that turns a `dict[int, X]` plain, since it may equal a made-up key."""
+does not follow that turns a `dict[int, X]` plain, since it may equal an int key the solver adds."""
 
 import enum
 from decimal import Decimal

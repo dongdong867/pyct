@@ -282,7 +282,7 @@ def test_a_tracked_bool_turns_an_int_annotated_dict_plain_whatever_it_holds(
 
 
 # make-up-an-int-key-for-an-int-keyed-dict: a merge that turns the dict plain turns what it
-# builds plain too, so no fork reads a merged dict a made-up key could change unseen
+# builds plain too, so no fork reads a merged dict an added int key could change unseen
 @pytest.mark.parametrize("function", ["merged_fraction", "merged_fraction_first"])
 def test_a_merge_with_a_key_pyct_does_not_follow_builds_a_plain_dict(function: str) -> None:
     result = run_pyct(f"{INT_EQUAL_NUMBERS}::{function}", '{"d": {}}', *UNTIL_NO_GAIN)

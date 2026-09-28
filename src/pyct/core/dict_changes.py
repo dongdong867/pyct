@@ -243,7 +243,8 @@ def merged(self: DictState, other: object, *, reflected: bool = False) -> object
 
 def _joined_after(self: DictState, other: dict[object, object]) -> object:
     """``other | config``: ``other``'s keys first, the dict's values winning, each of ``other``'s
-    keys looked up in the dict so the size is known."""
+    keys looked up in the dict so the size is known, until a key the dict cannot follow turns
+    it plain, and then the dict built from it too."""
     made = self.derived({**other, **self.storage()})
     for key in other:
         if self.expression is None:
@@ -258,6 +259,6 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             made.changed[plain(looked)] = True
             made.grown += 1
     if self.expression is None:
-        # and what it built holds that key
+        # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()
     return made
