@@ -98,7 +98,8 @@ def test_sweeps_past_a_folder_json(tmp_path: Path) -> None:
 
 # keep-a-sweep-entry-s-folder-from-hiding-pyct-s-modules-sweeps-past-it-when-started-fresh
 def test_sweeps_past_it_when_started_fresh(tmp_path: Path) -> None:
-    folder = folder_of(tmp_path, {"plain.py": FORKS, "json.py": raising("json")})
+    # argparse, since the fresh boot imports json itself before any path changes
+    folder = folder_of(tmp_path, {"plain.py": FORKS, "argparse.py": raising("argparse")})
 
     result = sweep_from(folder, "plain", env=a_thread_at_startup(tmp_path))
 
