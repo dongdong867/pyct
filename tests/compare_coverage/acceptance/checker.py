@@ -40,15 +40,15 @@ def roots(legacy: Path, v2: Path = REPO_ROOT) -> dict[Origin, Path]:
 
 
 def run_checker(
-    *argv: str, path: str | None = None, timeout: float = 55
+    *argv: str, path: str | None = None, timeout: float = 55, temp: Path | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Spawn the checker with ``argv``. ``path`` replaces its ``PATH``.
+    """Spawn the checker with ``argv``. ``path`` replaces its ``PATH``, ``temp`` its temp folder.
 
     Each side leads a session of its own, so killing a checker past ``timeout`` would leave
     its running side behind. It gets Ctrl-C instead, which stops the side's whole group, and
     is killed only if it has not ended ten seconds later. The timeout then fails the test.
     """
-    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    env = checker_environment(temp)
     if path is not None:
         env["PATH"] = path
     argv = (sys.executable, "-m", "tools.compare_coverage", *argv)
@@ -65,6 +65,14 @@ def run_checker(
                 checker.kill()
             raise
     return subprocess.CompletedProcess(argv, checker.returncode, stdout, stderr)
+
+
+def checker_environment(temp: Path | None = None) -> dict[str, str]:
+    """This environment less ``PYTHONPATH``; with ``temp``, every temp folder variable names it."""
+    env = {k: v for k, v in os.environ.items() if k != "PYTHONPATH"}
+    if temp is not None:
+        env.update(dict.fromkeys(("TMPDIR", "TEMP", "TMP"), str(temp)))
+    return env
 
 
 def rows(stdout: str, stderr: str = "") -> list[dict[str, Any]]:

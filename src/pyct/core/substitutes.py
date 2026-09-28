@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import operator
 import types
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from pyct.core import bound, ranges, str_joins, str_literals, strs
@@ -50,8 +50,13 @@ from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
-# the tracked values a plain range is searched for with one fork, by their exact type
-_RANGE_ITEMS = frozenset(ranges.TRACKED_INTS)
+# the tracked ints and bools, by their exact type: a plain range is searched for one with one
+# fork, and a tuple or a list walked for one (`_walked`)
+_INT_ITEMS = frozenset(ranges.TRACKED_INTS)
+# the containers Python searches element by element, identity first, then `==` with the element
+# on the left
+_WALKED: tuple[type, ...] = (tuple, list)
+_INT_EQ = int.__eq__
 
 
 def _stands_for(value: object, other: object) -> bool:
@@ -94,7 +99,8 @@ def in_(item: object, container: object, written: tuple[object, ...] | None = No
     with one condition untested (`pyct.core.ranges`), where Python alone
     would compare a tracked int with every element in turn. A tracked value
     in a set, a frozenset or a dict's keys is searched for as
-    `pyct.core.hashed` says. Anything else is Python's own `in`.
+    `pyct.core.hashed` says, and a tracked int or bool in a tuple or a list
+    as `_walked` says. Anything else is Python's own `in`.
     """
     if isinstance(container, ConcolicStr):
         return type(container).__contains__(container, item)
@@ -132,7 +138,7 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
     if type(container) is ConcolicRange:
         return ranges.not_contains(container, item)
     if tracked(item):
-        if type(container) is range and type(item) in _RANGE_ITEMS:
+        if type(container) is range and type(item) in _INT_ITEMS:
             return ranges.not_within(item, container)  # pyrefly: ignore[bad-argument-type]
         return not _tracked_in(item, container, written)
     return item not in container  # pyrefly: ignore[not-iterable]
@@ -140,15 +146,58 @@ def not_in(item: object, container: object, written: tuple[object, ...] | None =
 
 def _tracked_in(item: Tracked, container: object, written: tuple[object, ...] | None) -> object:
     """`item in container` for a tracked item a set or a dict can hold: one fork in a plain
-    range, one `==` fork per literal element of a display, a lookup in a hashed container, and
-    Python's own `in` for anything else."""
-    if type(container) is range and type(item) in _RANGE_ITEMS:
+    range, one `==` fork per literal element of a display, a lookup in a hashed container, a
+    walk of a tuple or a list for a tracked int or bool, and Python's own `in` for anything
+    else."""
+    if type(container) is range and type(item) in _INT_ITEMS:
         return ranges.within(item, container)  # pyrefly: ignore[bad-argument-type]
     if written is not None:
         return _searched(item, written)
     if (kind := hashed(container)) is not None:
         return looked_up(item, container, kind)
+    if type(item) in _INT_ITEMS and (kind := _sequence(container)) is not None:
+        return _walked(item, kind.__iter__(container))
     return item in container  # pyrefly: ignore[not-iterable]
+
+
+def _sequence(container: object) -> type | None:
+    """The type Python searches the container as element by element, a tuple or a list, or
+    None for any other container.
+
+    A subclass counts when it keeps its base's own `__contains__`, as a
+    named tuple does; one that defines its own is asked, as Python asks it.
+    """
+    own_type: type[Any] = type(container)
+    for kind in _WALKED:
+        if issubclass(own_type, kind):
+            return kind if own_type.__contains__ is kind.__contains__ else None
+    return None
+
+
+def _walked(item: Tracked, elements: Iterator[object]) -> bool:
+    """Whether the tracked int or bool is one of the elements, as Python's `in` answers on a
+    tuple or a list: in order, identity first, then `==`, until one holds.
+
+    Python puts the element on the left of each `==`. An element whose
+    type keeps int's own `__eq__`, an IntEnum member or True say, then
+    answers plainly, since a tracked int is no subclass of its type, and the
+    condition is lost; so the tracked value is put on the left of every
+    element whose type keeps int's `__eq__`, an exact int included, where
+    Python would hand it the compare anyway, and answers with the same bool
+    and a fork, the element written as its plain value. Any other element is
+    compared as Python compares it, so an element with its own `__eq__`
+    answers first. The base type's own walk is read, so a
+    subclass's `__iter__` never runs where Python's `in` would not run it.
+    """
+    for element in elements:
+        if element is item:
+            return True
+        if type(element).__eq__ is _INT_EQ and isinstance(element, int):
+            if item == element:
+                return True
+        elif element == item:
+            return True
+    return False
 
 
 def _forwarded(compare: Callable[[Any, Any], object]) -> Callable[[_Link, object], object]:
@@ -330,6 +379,7 @@ PASSING: frozenset[types.CodeType] = (
             in_,
             not_in,
             _tracked_in,
+            _walked,
             call,
             method,
             join,
