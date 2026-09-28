@@ -13,6 +13,7 @@ from tools.compare_coverage.rows import (
     Row,
     SideView,
     Status,
+    budget_bound,
     compared_row,
     installed_files,
     left_out_row,
@@ -271,3 +272,19 @@ def test_a_copy_with_other_line_endings_is_the_same_file(tmp_path: Path) -> None
     row = compared_row(LIBRARY_ENTRY, installed_files("w.http", WERKZEUG, reports), BODY, reports)
 
     assert row.status is Status.SAME
+
+
+def test_a_row_is_budget_bound_when_a_side_ran_for_at_least_the_budget() -> None:
+    def ran(v2: float | None, legacy: float | None) -> Row:
+        reports = Reports(
+            v2=replace(report(2), seconds=v2), legacy=replace(report(2), seconds=legacy)
+        )
+        return compared_row(ENTRY, ONE, BODY, reports)
+
+    row = ran(1.0, 5.3)
+    assert row.v2 is not None and row.legacy is not None
+    assert (row.v2.seconds, row.legacy.seconds) == (1.0, 5.3)
+    assert budget_bound(ran(1.0, 5.0), 5.0)
+    assert budget_bound(ran(5.3, None), 5.0)
+    assert not budget_bound(ran(4.9, None), 5.0)
+    assert not budget_bound(unreadable_row(ENTRY, FILE, "no def"), 5.0)
