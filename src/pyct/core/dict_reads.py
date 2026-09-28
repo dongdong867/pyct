@@ -251,8 +251,8 @@ def condition(self: DictState) -> object:
     bool that records no fork, so the fork is recorded where the target tests it.
 
     It holds the dict's size term at the call, which a later change replaces rather than edits.
-    A dict with no form, or one whose form stopped describing it, gives Python's plain answer,
-    naming `__bool__` as `if config:` does.
+    A dict with no form gives Python's plain answer; one whose form stopped describing it does
+    too, naming `__bool__` as `if config:` does.
     """
     filled = self.size() != 0
     if not self.holds("__bool__"):
