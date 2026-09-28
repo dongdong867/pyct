@@ -36,11 +36,12 @@ from pyct.sweep.result import SweepLimits
 from pyct.sweep.rows import Row, Status
 
 # what starts pyct, given the folder the entry's module imports from and then pyct's arguments:
-# pyct is imported before that folder joins the import path, so nothing in it, a pyct package
-# included, can stand in for pyct; pyct's own modules then come through pyct's own path. -P keeps
-# the entry's empty working directory off the path until pyct run puts it there
+# pyct's command line, and with it every module it imports, the standard library's among them, is
+# imported before that folder joins the import path, so nothing in it, a pyct package or a
+# json.py included, can stand in for them. -P keeps the entry's empty working directory off the
+# path until pyct run puts it there
 _BOOT = (
-    "import runpy, sys; import pyct; sys.path.insert(0, sys.argv.pop(1)); "
+    "import runpy, sys; import pyct.cli; sys.path.insert(0, sys.argv.pop(1)); "
     "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )
 

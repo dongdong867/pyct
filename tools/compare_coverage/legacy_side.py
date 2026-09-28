@@ -115,7 +115,7 @@ class LegacySide:
         if self.cache is None:
             return self._answer(request)[0]
         key = self.cache.key(request, self.given(request.limits))
-        kept = self.cache.get(key, request.root)
+        kept = self.cache.get(key, request.root, request.limits.budget)
         if kept is not None:
             return kept
         report, answered = self._answer(request)

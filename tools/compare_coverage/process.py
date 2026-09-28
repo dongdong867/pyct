@@ -20,6 +20,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -51,12 +52,16 @@ class Command:
 
 @dataclass(frozen=True)
 class Finished:
-    """How a command ended. ``returncode`` is ``None`` when it was stopped at its deadline."""
+    """How a command ended. ``returncode`` is ``None`` when it was stopped at its deadline.
+
+    ``seconds`` is how long the command ran, from its start until it ended or was stopped.
+    """
 
     returncode: int | None
     stdout: str
     stderr: str
     stopped_after: float | None = None
+    seconds: float | None = None
 
 
 def side_environment(base: Mapping[str, str]) -> dict[str, str]:
@@ -67,6 +72,7 @@ def side_environment(base: Mapping[str, str]) -> dict[str, str]:
 def run_command(command: Command, wait: float) -> Finished:
     """Run ``command`` to its end or for ``wait`` seconds, then stop its whole process group."""
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        started = time.monotonic()
         process = _start(command, out, err)
         stopped_after = None
         try:
@@ -74,12 +80,13 @@ def run_command(command: Command, wait: float) -> Finished:
         except subprocess.TimeoutExpired:
             stopped_after = wait
         finally:
+            seconds = time.monotonic() - started
             with _LOCK:
                 _RUNNING.discard(process)
             _stop(process)
         process.wait()
         returncode = None if stopped_after is not None else process.returncode
-        return Finished(returncode, _text(out), _text(err), stopped_after)
+        return Finished(returncode, _text(out), _text(err), stopped_after, seconds)
 
 
 def stop_every_command() -> None:
