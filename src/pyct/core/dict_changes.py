@@ -10,8 +10,10 @@ lookup records whether the key equals each key changed before and then whether t
 holds it (``dict_reads.after_changes``), so the path settles which key it changes, and the dict
 changes the key's plain value and logs the change under the key's expression.
 
-A change under a key pyct does not follow, a tracked bool or float, a tracked key of the other
-kind, or a key of another kind, is Python's own and a downgrade named by the operation; the dict
+A change under a key pyct does not follow is Python's own and a downgrade named by the
+operation: a tracked bool or float, a tracked key of the other kind, a key of another kind, and
+a tracked key past ``MOST_TRACKED_CHANGES``, among the other keys of an `update` or a `|`, or in
+the `other` of `other | config`, where an answer that moves it leaves the plan. The dict
 notes what it did to that key, as the plain key it is, so the forks after it still read the
 dict's size. Storing a value no expression holds, anything but an int, str, float, bool, None,
 or a list or dict of those, is a downgrade too, and the dict is plain from then on.
@@ -24,20 +26,17 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, caller_site
+from pyct.core.dict_compares import handed_in_place, is_tracked, own_key, written_key
 from pyct.core.dict_reads import (
     POPPED,
     found,
-    handed_in_place,
     handout,
     int_key,
-    is_tracked,
     may_equal_added,
-    own_key,
     placed,
     present,
     recorded,
     value,
-    written_key,
 )
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.floats import ConcolicFloat
@@ -97,26 +96,19 @@ def followed(self: DictState, key: object) -> bool:
     return type(key) is kind and self.tracked_changes < MOST_TRACKED_CHANGES
 
 
-def _joined_key(self: DictState, made: DictState, key: object, crowded: bool) -> None:
+def _joined_key(self: DictState, made: DictState, key: object) -> None:
     """One of ``other``'s keys in ``other | config``, looked up in the dict: a key it does not
-    hold is one ``made`` adds. A tracked key among others (``crowded``) is Python's own and a
-    downgrade: Python compared it with them as it built ``other``, where only equal hashes
-    record a fork, so an answer that makes two of them equal leaves the plan."""
+    hold is one ``made`` adds. A tracked key is Python's own and a downgrade: ``made`` holds
+    ``other``'s keys first, where the solver may move it, so a walk over ``made`` would read
+    another key in its place."""
     looked = int_key(key)
-    tracked: Expression = None
-    if followed(self, looked) and not (crowded and is_tracked(looked)):
+    if plain_key(looked):
         held = looked_up_to_change(self, looked, "__ror__")
-        tracked = under(looked)
     else:
         held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, key)))
     if not held:
-        made.logged(plain(looked), True, tracked)
+        made.logged(plain(looked), True)
         made.__dict__["grown"] += 1
-
-
-def followed_tracked(self: DictState, key: object) -> bool:
-    """Whether ``key`` is a tracked key a change under it follows (see ``followed``)."""
-    return is_tracked(key) and followed(self, key)
 
 
 def under(key: object) -> Expression:
@@ -344,19 +336,13 @@ def merged(self: DictState, other: object, *, reflected: bool = False) -> object
 def _joined_after(self: DictState, other: dict[object, object]) -> object:
     """``other | config``: ``other``'s keys first, the dict's values winning, each of ``other``'s
     keys looked up in the dict so the size is known, until a key the dict cannot follow turns
-    it plain, and then the dict built from it too. A tracked key it follows goes in as its
-    plain value, as a store puts it, so no key Python compares later is a tracked one."""
-    crowded = len(other) > 1
-    keyed = {
-        plain(key) if followed_tracked(self, key) and not crowded else key: held
-        for key, held in other.items()
-    }
-    made = self.derived({**keyed, **self.storage()})
+    it plain, and then the dict built from it too."""
+    made = self.derived({**other, **self.storage()})
     for key in other:
         if self.expression is None:
             # a key the dict could not follow turned it plain: it records nothing more
             break
-        _joined_key(self, made, key, crowded)
+        _joined_key(self, made, key)
     if self.expression is None:
         # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()
