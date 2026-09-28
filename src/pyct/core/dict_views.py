@@ -29,8 +29,32 @@ _KEPT = ("__repr__", "__getattribute__", "__init__", "__sizeof__", "__new__")
 _INHERITED = ("__str__", "__format__")
 
 
+def _python_type(self: _View) -> type:
+    """The class a view reports: Python's view type, read from its view of an empty dict."""
+    return type(self.python({}))
+
+
+def _assigned_class(self: _View, kind: object) -> None:
+    """`object.__setattr__(v, "__class__", kind)`: made on Python's own view of an empty dict,
+    which refuses it in its own words. `v.__class__ = kind` is the view's `__setattr__`'s."""
+    own(setattr, self.python({}), "__class__", kind)
+
+
+def _deleted_class(self: _View) -> None:
+    """`object.__delattr__(v, "__class__")`: made on Python's own view of an empty dict, as a
+    set is. `del v.__class__` is the view's `__delattr__`'s."""
+    own(delattr, self.python({}), "__class__")
+
+
 class _View:
     """What the three views share: the dict they read, its size, and Python's own view."""
+
+    # Python's view type, as `isinstance`, singledispatch and a class pattern read it, as each
+    # tracked class reports its base type. It reads the class and never the dict, so it
+    # records nothing. `type(v)` still reads the real class, which is how pyct tells a view
+    # apart; the `type` router answers Python's view type in the target's package
+    # (read-a-dict-view-s-type-as-python-s)
+    __class__ = property(_python_type, _assigned_class, _deleted_class)  # pyrefly: ignore[bad-override]
 
     # the view Python's dict hands out for this one, read on the dict's storage
     python: Any = None
@@ -51,6 +75,20 @@ class _View:
     def __delattr__(self, name: str, /) -> None:
         """`del v.name`: made on Python's own view of an empty dict, as a set is."""
         own(delattr, self.python({}), name)
+
+    def __reduce_ex__(self, /, *args: object, **kwargs: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
+        """A pickle, a copy or a deep copy: asked of Python's own view of an empty dict, which
+        refuses in its own words at every protocol. It is called through its type, as a
+        target's `v.__reduce_ex__()` is, so arguments Python refuses read as there too.
+        Nothing is written and no answer leaves the dict, so nothing is recorded
+        (refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
+        python = self.python({})
+        return own(type(python).__reduce_ex__, python, *args, **kwargs)
+
+    def __reduce__(self, /, *args: object, **kwargs: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
+        """`v.__reduce__()`: asked of Python's own view of an empty dict, as a pickle is."""
+        python = self.python({})
+        return own(type(python).__reduce__, python, *args, **kwargs)
 
     @property
     def mapping(self) -> types.MappingProxyType[object, object]:

@@ -7,7 +7,8 @@ import sys
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
-from pyct.run.journal import RECORDS, JournalWriter, read
+from pyct.run.journal import RECORDS, JournalWriter
+from pyct.run.journal_reader import read
 
 SITE = Site(file="t.py", line=3, col=7)
 FORK = Branch(expression=["<", "x", ["+", "y", 1]], taken=True, site=SITE)

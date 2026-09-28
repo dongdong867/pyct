@@ -278,21 +278,22 @@ def _walked(
         for part in reversed(expressions)
         if isinstance(part, list) and not is_leaf(part)
     ]
-    try:
-        while stack:
-            node, finished = stack.pop()
-            if finished:
-                order.append(node)
-            elif id(node) not in seen:
-                steps.spend(len(node))
-                seen.add(id(node))
-                stack.append((node, True))
-                held = [part for part in node[1:] if isinstance(part, list) and not is_leaf(part)]
-                for part in held:
+    # no call per list, and the leaf test only when a caller names leaves: the walk is most of a
+    # long line's counting, and a call per list was most of the walk
+    while stack:
+        node, finished = stack.pop()
+        if finished:
+            order.append(node)
+        elif id(node) not in seen:
+            if len(node) > steps.left:
+                break
+            steps.left -= len(node)
+            seen.add(id(node))
+            stack.append((node, True))
+            for part in node[1:]:
+                if isinstance(part, list) and (is_leaf is _no_leaf or not is_leaf(part)):
                     holders[id(part)] = holders.get(id(part), 0) + 1
-                stack.extend((part, False) for part in held)
-    except _StepsSpentError:
-        pass
+                    stack.append((part, False))
     return order, holders
 
 
