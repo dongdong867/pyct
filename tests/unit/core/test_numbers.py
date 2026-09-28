@@ -158,7 +158,13 @@ TABLE_ALONE = textwrap.dedent(
     """
     from pyct.core.numbers import tracked
 
-    print(*(type(tracked(value, "x", [])) is not type(value) for value in (1, True, 1.5)))
+    kinds = [type(tracked(value, "x", [])) for value in (1, True, 1.5)]
+
+    from pyct.core.bools import ConcolicBool
+    from pyct.core.floats import ConcolicFloat
+    from pyct.core.ints import ConcolicInt
+
+    print(kinds == [ConcolicInt, ConcolicBool, ConcolicFloat])
     """
 )
 
@@ -171,4 +177,4 @@ def test_the_table_is_full_whichever_core_module_is_imported_first() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout == "True True True\n"
+    assert result.stdout == "True\n"

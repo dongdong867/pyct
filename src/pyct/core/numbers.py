@@ -77,8 +77,8 @@ def enter(base: type, tracked_class: type, *, number: bool = True) -> None:
     depend on import order, so it raises.
     """
     if _TRACKED.get(base, tracked_class) is not tracked_class:
-        # the class entered first carries its base type's names by now (`values.named_as`), so
-        # the message names the one refused
+        # the class entered first may carry its base type's names (`values.named_as`), so the
+        # message names the one refused
         raise ValueError(
             f"{base.__name__} is already tracked, so {tracked_class.__name__} is refused"
         )
