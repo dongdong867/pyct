@@ -24,6 +24,8 @@ from pyct.core.values import (
     forked,
     own,
     pickled,
+    refused_delete,
+    refused_set,
 )
 
 
@@ -34,7 +36,8 @@ def _the_int(self: ConcolicBool) -> Any:
     writes it, since Python writes the int, `1`, where the bool writes `True`.
     """
     number = numbers.tracked(own(int.__index__, self), self.expression, self.sink)
-    number.as_int = ["int", self.expression]
+    # the int refuses a set, as a plain one does, so pyct writes the field straight in
+    number.__dict__["as_int"] = ["int", self.expression]
     return number
 
 
@@ -168,13 +171,18 @@ class ConcolicBool(int):
 
     # the class called with a value is bool's own, a plain bool; pyct builds a tracked one
     __new__ = as_base
+    # a plain bool takes no attribute: a set or a delete is Python's own refusal, pyct's names too
+    __setattr__ = refused_set
+    __delattr__ = refused_delete
 
     @classmethod
     def made(cls, value: bool, expression: Expression, sink: BranchSink) -> Self:
         """A tracked bool of this value and form: how pyct builds one."""
         made = int.__new__(cls, value)
-        made.expression = expression
-        made.sink = sink
+        # the value refuses a set, as a plain one does, so pyct writes its fields straight in
+        fields = made.__dict__
+        fields["expression"] = expression
+        fields["sink"] = sink
         return made
 
     def __bool__(self) -> bool:
