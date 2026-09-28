@@ -192,6 +192,5 @@
 {"set": "v2", "target": "targets.types.read::range_type", "seed": {"n": 2}, "status": "differs", "only_legacy": [107], "only_v2": [99, 106]}
 {"set": "v2", "target": "targets.types.read::rebuilt", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [52]}
 {"set": "v2", "target": "targets.types.read_dict::dict_type", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [8]}
-{"set": "v2", "target": "targets.why.negated::int_not_in", "seed": {"s": "7"}, "status": "differs", "only_legacy": [83, 85], "only_v2": []}
 {"set": "v2", "target": "targets.why.negated::while_is_not_true", "seed": {"x": 0}, "status": "differs", "only_legacy": [105], "only_v2": [103, 106]}
 {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}

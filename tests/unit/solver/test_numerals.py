@@ -1,14 +1,16 @@
 """cvc5 held against Python where a string is read as a number: `int(s)` and `float(s)`."""
 
 import re
+import statistics
 import sys
+import time
 from collections.abc import Callable
 
 import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver import numerals
-from pyct.solver.answer import Unsat
+from pyct.solver.answer import Answer, Unsat
 from pyct.solver.cvc5 import Sat, solve
 from pyct.solver.floats import literal
 from pyct.solver.strings import encode
@@ -317,3 +319,57 @@ def test_a_digit_string_never_reads_as_a_negative_int() -> None:
     )
 
     assert isinstance(solve(prefix, {"s": str}, 5.0), Unsat)
+
+
+def _asked_seconds(prefix: tuple[Branch, ...]) -> tuple[Answer, float]:
+    """The answer to a path, and the median of three solve times in seconds."""
+    times: list[float] = []
+    answer: Answer | None = None
+    for _ in range(3):
+        start = time.monotonic()
+        answer = solve(prefix, {"s": str}, 10.0)
+        times.append(time.monotonic() - start)
+    assert answer is not None
+    return answer, statistics.median(times)
+
+
+@needs_cvc5
+@pytest.mark.parametrize("value", [100000, 200000])
+def test_a_digit_string_of_five_characters_never_reads_as_six_digits_fast(value: int) -> None:
+    """The negated row's case: an int no string of five digits reads, answered in time for the
+    shallow forks after it."""
+    prefix = (
+        Branch(expression=["isdigit", "s"], taken=True, site=SITE),
+        Branch(expression=[">", ["len", "s"], 5], taken=False, site=SITE),
+        Branch(expression=["isint", "s"], taken=True, site=SITE),
+        Branch(expression=["==", ["int", "s"], value], taken=True, site=SITE),
+    )
+
+    answer, seconds = _asked_seconds(prefix)
+
+    assert isinstance(answer, Unsat), answer
+    assert seconds < 0.5
+
+
+@needs_cvc5
+def test_the_fact_about_an_int_text_holds_for_every_text() -> None:
+    texts = [*INT_TEXTS, *(chr(code) for code in range(128)), "9" * 20, "1" + "0" * 20, "٣"]
+
+    said = _values("Bool", [numerals.int_fact(encode(text)) for text in texts])
+
+    assert said == [True] * len(texts)
+
+
+@needs_cvc5
+def test_a_digit_string_of_five_characters_is_always_read_as_an_int_fast() -> None:
+    """The negated row's other case: no string of five digits is one `int` refuses."""
+    prefix = (
+        Branch(expression=["isdigit", "s"], taken=True, site=SITE),
+        Branch(expression=[">", ["len", "s"], 5], taken=False, site=SITE),
+        Branch(expression=["isint", "s"], taken=False, site=SITE),
+    )
+
+    answer, seconds = _asked_seconds(prefix)
+
+    assert isinstance(answer, Unsat), answer
+    assert seconds < 0.5
