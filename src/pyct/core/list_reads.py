@@ -9,14 +9,18 @@ An item handed out is written as the target indexed it, `["[]", items, -1]` say,
 the last item of any input. An int or a str comes out tracked; a list inside, a None and every
 other item come out as they are stored. A walk records `[">", ["len", items], j]` for each item
 it takes and once more, taken false, where it ends.
+
+`len(items)` and `bool(items)` where pyct binds or routes them read the length term,
+`["len", items]`, and record no fork where they run.
 """
 
 from __future__ import annotations
 
 import sys
 from collections.abc import Iterator
-from typing import Protocol
+from typing import Any, Protocol
 
+from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
@@ -93,6 +97,21 @@ def length(self: ListState) -> int:
     if not self.holds("__len__"):
         return self.length()
     return ConcolicInt.made(self.length(), expression=["len", self.expression], sink=self.sink)
+
+
+def condition(self: ListState) -> Any:
+    """`bool(items)` where pyct routes `bool`: the condition `if items:` tests, as a tracked bool
+    that records no fork, so the fork is recorded where the target tests it.
+
+    Python's `bool` tests the list on the spot, so this is what `pyct.core.bound.bool_` asks
+    for instead. It holds the list's form at the call, which a later change replaces rather
+    than edits. A list with no form, or one whose form stopped describing it, gives Python's
+    plain answer, naming `__bool__` as `if items:` does.
+    """
+    filled = self.length() != 0
+    if not self.holds("__bool__"):
+        return filled
+    return ConcolicBool.made(filled, ["!=", ["len", self.expression], 0], self.sink)
 
 
 def _named(self: ListState, row: ListState, written: Expression) -> None:
