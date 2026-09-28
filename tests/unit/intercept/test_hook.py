@@ -245,6 +245,24 @@ def test_a_write_through_a_module_s_builtins_reaches_builtins(package: Path) -> 
     assert not hasattr(builtins, "_pyct_probe") and "_pyct_probe" not in held
 
 
+def test_every_module_in_scope_shares_one_builtins_as_modules_share_python_s(
+    package: Path,
+) -> None:
+    (package / "sized.py").write_text(SIZED)
+    with intercepting(interception(package.parent)):
+        sized = importlib.import_module("pkghook.sized")
+        entry = importlib.import_module("pkghook.entry")
+
+    held = vars(sized)["__builtins__"]
+    assert vars(entry)["__builtins__"] is held
+    # so a write through one module's builtins is in the copy C code reads for every other
+    try:
+        vars(entry)["__builtins__"]["_pyct_probe"] = "written"
+        assert dict.get(held, "_pyct_probe") == "written"
+    finally:
+        del held["_pyct_probe"]
+
+
 def test_a_module_outside_the_scope_keeps_python_s_builtins(package: Path, tmp_path: Path) -> None:
     (tmp_path / "outside.py").write_text(SIZED)
 
