@@ -39,7 +39,7 @@ def bind(
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
     (see ``Walk``). ``checks`` is what each parameter's annotation asks, which marks a
-    ``dict[int, X]`` dict as one whose made-up keys are ints.
+    ``dict[int, X]`` dict as one the solver adds int keys to, named or made up.
     """
     tracker = _Tracker(sink)
     args = Walk(tracker).rebuilt(seed, checks)

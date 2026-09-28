@@ -93,6 +93,7 @@
     {"set": "v2", "target": "targets.dicts.int_equal_numbers::fraction_key", "seed": {"d": {}}},
     {"set": "v2", "target": "targets.dicts.int_equal_numbers::merged_after", "seed": {"d": {}}},
     {"set": "v2", "target": "targets.dicts.int_equal_numbers::merged_fraction", "seed": {"d": {}}},
+    {"set": "v2", "target": "targets.dicts.int_equal_numbers::merged_fraction_first", "seed": {"d": {}}},
     {"set": "v2", "target": "targets.dicts.int_equal_numbers::str_keyed_tracked_bool", "seed": {"b": false, "d": {"a": 1}}},
     {"set": "v2", "target": "targets.dicts.int_equal_numbers::tracked_bool_then_named", "seed": {"b": true, "d": {"a": 1}}},
     {"set": "v2", "target": "targets.dicts.int_keys::annotated", "seed": {"config": {}}},

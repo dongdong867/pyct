@@ -246,6 +246,9 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
     keys looked up in the dict so the size is known."""
     made = self.derived({**other, **self.storage()})
     for key in other:
+        if self.expression is None:
+            # a key the dict could not follow turned it plain: it records nothing more
+            break
         looked = int_key(key)
         if follows(looked):
             held = present(self, looked, "__ror__")
@@ -255,6 +258,6 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             made.changed[plain(looked)] = True
             made.grown += 1
     if self.expression is None:
-        # a key the dict could not follow turned it plain, and what it built holds that key
+        # and what it built holds that key
         made.turn_plain()
     return made

@@ -60,7 +60,7 @@ def test_an_int_equal_key_records_the_int_s_fork() -> None:
 
 
 @pytest.mark.parametrize("int_keyed", [True, False])
-def test_a_key_that_may_equal_a_made_up_int_turns_only_an_int_keyed_dict_plain(
+def test_a_key_that_may_equal_an_added_int_turns_only_an_int_keyed_dict_plain(
     int_keyed: bool,
 ) -> None:
     sink: list[object] = []

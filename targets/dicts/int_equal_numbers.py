@@ -77,3 +77,10 @@ def merged_fraction(d: dict[int, int]):
     if len(joined) > 1:
         return 1
     return 0
+
+
+def merged_fraction_first(d: dict[int, int]):
+    joined = {fractions.Fraction(0): 1, 1: 2} | d
+    if len(joined) > 2:
+        return 1
+    return 0
