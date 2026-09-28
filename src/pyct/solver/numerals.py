@@ -39,6 +39,7 @@ which no name render writes can be (see ``solver/floats.py``).
 import math
 import sys
 
+from pyct.solver.checks import ALL_DIGITS
 from pyct.solver.floats import literal
 
 # the characters Python's `int` and `float` strip around a number, as ASCII
@@ -65,8 +66,6 @@ _DIGIT = '(re.range "0" "9")'
 # digits, with single underscores between them
 _DIGITS = f'(re.++ {_DIGIT} (re.* (re.++ (re.opt (str.to_re "_")) {_DIGIT})))'
 _SIGN = f"(re.opt {_characters('+-')})"
-# digits alone, as `s.isdigit()` holds them for ASCII (see ``solver/checks.py``)
-_PLAIN_DIGITS = f"(re.+ {_DIGIT})"
 # every character other than a digit Python's `int` reads in a number
 _NOT_DIGITS = _characters(_SPACES + "_+-")
 
@@ -83,12 +82,13 @@ def _digits(term: str) -> str:
 def is_int(term: str) -> str:
     """Python's `int(s)` accepts the string: spaces, a sign, and digits with underscores.
 
-    The grammar names a string of plain digits on its own as well, the same language: cvc5
-    then sees at once that a string `s.isdigit()` holds for matches it, where it took 2 to 8 s
-    to see so of a string of at most five characters by the grammar alone.
+    The grammar names a string of plain digits on its own as well, the same language, as the
+    very membership `s.isdigit()` is written as where it is the string's only check: cvc5 then
+    sees at once that such a string matches, where it took 2 to 8 s to see so of a string of at
+    most five characters by the grammar alone.
     """
     written = f"(re.++ (re.* {_SPACE}) {_SIGN} {_DIGITS} (re.* {_SPACE}))"
-    grammar = f"(re.union {_PLAIN_DIGITS} {written})"
+    grammar = f"(re.union {ALL_DIGITS} {written})"
     matched = f"(str.in_re {term} {grammar})"
     most = sys.get_int_max_str_digits()
     if most == 0:

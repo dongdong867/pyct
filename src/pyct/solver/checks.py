@@ -225,14 +225,15 @@ def _one_of_case(cased: str, other: str) -> str:
     return f"(re.++ {rest} {_in([cased])} {rest})"
 
 
-_ALL_DIGITS = f"(re.+ {_in(['digit'])})"
+# one or more ASCII digits: what `isdigit` holds alone, and a string `int` reads
+ALL_DIGITS = f"(re.+ {_in(['digit'])})"
 
 # each check as the one regular expression a string matches exactly where the check's counts
 # say true
 _MEMBERSHIPS: Mapping[str, str] = {
-    "isdigit": _ALL_DIGITS,
-    "isdecimal": _ALL_DIGITS,
-    "isnumeric": _ALL_DIGITS,
+    "isdigit": ALL_DIGITS,
+    "isdecimal": ALL_DIGITS,
+    "isnumeric": ALL_DIGITS,
     "isalpha": f"(re.+ {_in(['upper', 'lower'])})",
     "isalnum": f"(re.+ {_in(['digit', 'upper', 'lower'])})",
     "isspace": f"(re.+ {_in(['space', 'whitespace_but_space'])})",
