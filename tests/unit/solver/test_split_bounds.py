@@ -268,3 +268,30 @@ def test_an_rsplit_past_the_walk_counts_its_pieces_on_any_string() -> None:
     # three commas make four pieces, so no string takes both; the string the pieces are read
     # on is the reads' restriction, not the count's, and does not free it
     assert isinstance(answer, Unsat), answer
+
+
+# a read from the end and the path's number compared with the count: whether the program puts
+# the piece where the input's own few pieces put it, to be chosen among every count after
+FIXED_FEW: dict[str, tuple[Expression, str, int, bool]] = {
+    "the last of three lines, eight asked": (["splitlines", "s"], "a\nb\nend", 7, True),
+    "the last of three lines, ten asked": (["splitlines", "s"], "a\nb\nend", 9, False),
+    "the last of nine lines": (["splitlines", "s"], "a\n" * 8 + "end", 7, False),
+    "a piece a reversed walk reads": (["split", "s", "','"], "a,end", 7, False),
+}
+
+
+@pytest.mark.parametrize(
+    ("split", "text", "number", "fixed"), FIXED_FEW.values(), ids=list(FIXED_FEW)
+)
+def test_a_few_pieces_are_chosen_among_later_only_where_the_choice_answers(
+    split: Expression, text: str, number: int, fixed: bool
+) -> None:
+    path = (
+        fork([">=", ["len", split], 1], taken=True),
+        fork(["==", ["[]", split, -1], "'end'"], taken=True),
+        fork([">", ["len", split], number], taken=True),
+    )
+
+    written = program(path, {"s": str}, Origin(values={"s": text}))
+
+    assert written.fixed_few is fixed

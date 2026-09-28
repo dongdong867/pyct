@@ -78,6 +78,22 @@ MOST_WALKED_PAST = 16
 # alone, so a path that needs another count is a miss
 MOST_CHOSEN_BACK = 8
 
+# the largest bound a piece of an input with few pieces is chosen among, once the read at the
+# input's count is unsat: the last of 3 lines chosen among 10 counts answered in 9.6 s at a
+# load of 30, and among more ran past the limit, where the read at the input's count gives up
+# at once
+MOST_CHOSEN_BOUND = MOST_CHOSEN_BACK + 2
+
+
+@dataclass(frozen=True)
+class SplitRead:
+    """A read of a split's piece: what it found, whether it holds the program, and whether it
+    put the piece where the input's own few pieces put it."""
+
+    found: Read
+    held: bool
+    fixes_a_few: bool
+
 
 class LoosenedReadError(Exception):
     """A loosened program reads a piece only a held one writes: past a split's bound, at the
@@ -112,7 +128,7 @@ class SplitList:
     bound: int
     hold: bool = True
     input_count: int | None = None
-    chosen: bool = False
+    back_among_counts: bool = False
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -225,27 +241,29 @@ class SplitList:
         if not self.hold:
             raise LoosenedReadError(f"a loosened program reads no held piece of {self.count}")
 
-    def read(self, position: Lin, kind: str, least: Least) -> tuple[Read, bool]:
-        """The piece at ``position``, and when it is there; and whether the read holds the
-        program: a choice by the bound or the input's count, or an rsplit's restriction."""
+    def read(self, position: Lin, kind: str, least: Least) -> SplitRead:
+        """The piece at ``position``, and when it is there; whether the read holds the program,
+        a choice by the bound or the input's count, or an rsplit's restriction; and whether it
+        puts the piece where the input's own few pieces put it, which a later ask may choose
+        among every count instead."""
         if kind != "str":
-            return Read(None, FALSE), False
+            return SplitRead(Read(None, FALSE), False, False)
         restricted = self.restriction() != TRUE
         if restricted:
             self._held()
         number = position.number()
         if number is not None:
             there = both(self._there(number), self.restriction())
-            return Read(self.piece(number), there), restricted
+            return SplitRead(Read(self.piece(number), there), restricted, False)
         back = self._from_the_end(position)
-        if back is not None:
-            walked = right_piece(self.term, self.head, self.operands, back)
-            if walked is not None:
-                return Read(walked, self._there(back)), restricted
-            if self._at_input_count(back):
-                return self._held_back(back), True
-            return self._counted_back(back), True
-        return self._chosen(position, least), True
+        if back is None:
+            return SplitRead(self._chosen(position, least), True, False)
+        walked = right_piece(self.term, self.head, self.operands, back)
+        if walked is not None:
+            return SplitRead(Read(walked, self._there(back)), restricted, False)
+        if self._at_input_count(back):
+            return SplitRead(self._held_back(back), True, self._few())
+        return SplitRead(self._counted_back(back), True, False)
 
     def _from_the_end(self, position: Lin) -> int | None:
         """How far from the last piece a position is, 0 the last, when it is the count less a
@@ -261,16 +279,12 @@ class SplitList:
         count = self.input_count
         if count is None or back >= count or self.bound <= MOST_CHOSEN_BACK:
             return False
-        return count > MOST_CHOSEN_BACK or not self.chosen
+        return count > MOST_CHOSEN_BACK or not self.back_among_counts
 
-    def fixes_a_few(self, position: Lin) -> bool:
-        """Whether a read at ``position`` puts the piece where the input's own few pieces put
-        it, which a later ask may choose among every count instead."""
-        back = self._from_the_end(position)
-        if back is None or not self._at_input_count(back):
-            return False
-        few = (self.input_count or 0) <= MOST_CHOSEN_BACK
-        return few and right_piece(self.term, self.head, self.operands, back) is None
+    def _few(self) -> bool:
+        """Whether the bound is one the choice among every count answers within, which also
+        makes the input's pieces few: the bound is two past the input's count."""
+        return self.bound <= MOST_CHOSEN_BOUND
 
     def _held_back(self, back: int) -> Read:
         """Piece ``back`` from the end where the string has as many pieces as the input's: the
@@ -317,7 +331,7 @@ class Splits:
         self.emitted: list[str] = []
         self.given: Callable[[Expression], object] = lambda part: None
         self.hold = True
-        self.chosen = False
+        self.back_among_counts = False
         # whether a read from the end put its piece where the input's own few pieces put it
         self.fixed_few = False
         # each count a tie or a read holds the program by, and whether the held program's own
@@ -354,7 +368,8 @@ class Splits:
         most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
         bound = min(most, MOST_BOUND)
         count = f"count!{len(self.lists)}!"
-        listed = SplitList(term, str(head), plain, count, bound, self.hold, held, self.chosen)
+        choose = self.back_among_counts
+        listed = SplitList(term, str(head), plain, count, bound, self.hold, held, choose)
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
@@ -362,11 +377,11 @@ class Splits:
 
     def read(self, listed: SplitList, position: Lin, kind: str, least: Least) -> Read:
         """A split's piece at ``position``, noting whether the read holds the program."""
-        found, held = listed.read(position, kind, least)
-        if held:
+        read = listed.read(position, kind, least)
+        if read.held:
             self.bounds.add(listed.count)
-        self.fixed_few |= kind == "str" and listed.fixes_a_few(position)
-        return found
+        self.fixed_few |= read.fixes_a_few
+        return read.found
 
     def count_of(self, node: list[Expression]) -> str:
         """The name of a split's count."""

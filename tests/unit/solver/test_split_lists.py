@@ -113,7 +113,7 @@ def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
         head, operands = _form(rng)
         listed, pieces = _listed(head, operands, bound=9), _pieces(value, head, operands)
         back = rng.randint(0, 2)
-        read, _ = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", {})
+        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", {}).found
         there = back < len(pieces) and len(pieces) <= listed.bound + back
         if read.value is None:
             # a split whose limit leaves no piece that far from the end, on any string
@@ -183,8 +183,9 @@ def test_cvc5_reads_a_piece_at_a_position_a_term_writes_as_python_does() -> None
         if not pieces:
             continue
         at = rng.randrange(len(pieces))
-        read, held = _listed(head, operands, bound=8).read(Lin.of(f"(+ 0 {at})"), "str", {})
-        assert held
+        split_read = _listed(head, operands, bound=8).read(Lin.of(f"(+ 0 {at})"), "str", {})
+        read = split_read.found
+        assert split_read.held
         assert read.value is not None
         asks += [(value, "Bool", read.guard), (value, "String", read.value)]
         expected += [True, pieces[at]]
@@ -219,9 +220,9 @@ def test_the_loosened_program_reads_no_piece_among_those_below_the_bound() -> No
 
 
 def test_a_piece_of_another_kind_is_not_read() -> None:
-    read, held = _listed("split", (",",)).read(Lin(0), "int", {})
+    read = _listed("split", (",",)).read(Lin(0), "int", {})
 
-    assert (read.value, read.guard, held) == (None, FALSE, False)
+    assert (read.found.value, read.found.guard, read.held) == (None, FALSE, False)
 
 
 # a compare of a count with a number: the difference, whether it may be 0, and the count asked

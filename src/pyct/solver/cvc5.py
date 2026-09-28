@@ -173,7 +173,7 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and written.fixed_few:
         logger.debug("unsat with a read from a split's end at the input's count: choosing")
-        origin = replace(origin, chosen=True)
+        origin = replace(origin, back_among_counts=True)
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed
