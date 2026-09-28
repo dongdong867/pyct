@@ -56,6 +56,11 @@ from pyct.run.journal import (
 
 _DECODER = json.JSONDecoder()
 
+# the most bytes of records one look starts reading, about 4 ms of reading where it was measured:
+# a look that stops here says so, and the wait looks again at once, asking between the two
+# whether the process ended or is due its kill
+LOOK_BYTES = 256 * 1024
+
 # the types of a leaf besides None: a name or literal, a number, a truth value
 _LEAVES = (str, int, float)
 
@@ -103,20 +108,26 @@ class JournalReader:
         self._seen = RECORDS
         self._looking = True
 
-    def look(self) -> None:
-        """Read the records the last look saw committed. The writer may still be writing."""
+    def look(self) -> bool:
+        """Read the records the last look saw committed, those that start within ``LOOK_BYTES``.
+
+        The writer may still be writing. Whether the look stopped at its
+        bound with more of them left, so the next look need not wait.
+        """
         if not self._looking:
-            return
+            return False
+        end = self._seen
         with memoryview(self._buffer) as view:
             (mark,) = WORD.unpack_from(view, COMMITTED * WORD.size)
             try:
-                self._at = self._facts.take_all(view, self._at, self._seen)
+                self._at = self._facts.take_all(view, self._at, end, self._at + LOOK_BYTES)
             except _UnreadableError as error:
                 # the records before it are taken; the end reads on from this one
                 self._at = error.at
                 self._looking = False
             if RECORDS <= mark <= len(view):
                 self._seen = max(self._seen, mark)
+        return self._looking and self._at < end
 
     def finish(self) -> Reading:
         """Every fact the journal committed, once its writer's process has ended.
@@ -183,9 +194,13 @@ class _Facts:
     # where the last downgrade record starts, whose count may have grown since it was read
     counted_at: int | None = None
 
-    def take_all(self, view: memoryview, at: int, end: int) -> int:
-        """Add each record from ``at`` up to ``end``, and return where the next one starts."""
-        while at < end:
+    def take_all(self, view: memoryview, at: int, end: int, stop: int | None = None) -> int:
+        """Add each record from ``at`` up to ``end``, and return where the next one starts.
+
+        With ``stop``, only the records that start before it.
+        """
+        stop = end if stop is None else min(stop, end)
+        while at < stop:
             if at + HEAD.size > end:
                 raise _UnreadableError(at)
             length, kind = HEAD.unpack_from(view, at)

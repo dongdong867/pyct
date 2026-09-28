@@ -12,7 +12,7 @@ from pyct.core.branch import Branch, Site
 from pyct.results.record import DowngradeCount
 from pyct.run import journal_reader
 from pyct.run.journal import LINE, RECORDS, JournalWriter
-from pyct.run.journal_reader import JournalReader, read
+from pyct.run.journal_reader import LOOK_BYTES, JournalReader, read
 
 SITE = Site(file="t.py", line=3, col=7)
 FORK = Branch(expression=["<", "x", ["+", "y", 1]], taken=True, site=SITE)
@@ -232,3 +232,33 @@ def test_a_stop_during_a_look_leaves_the_journal_free_to_unmap(
         buffer.close()
 
     assert buffer.closed
+
+
+def test_a_look_reads_a_bounded_stretch_and_says_when_it_fell_behind() -> None:
+    buffer = bytearray(RECORDS + 4 * LOOK_BYTES)
+    writer, reader = JournalWriter(buffer), JournalReader(buffer)
+    for line in range(2, 2 + 2 * LOOK_BYTES // LINE_RECORD + 10):
+        writer.line(line)
+    beyond = RECORDS + LOOK_BYTES + LINE_RECORD
+    assert reader.look() is False
+
+    assert reader.look() is True
+    # the record past the look's bound is still unread, so breaking it now shows at the end
+    buffer[beyond + KIND] = 99
+    reading = reader.finish()
+
+    assert reading.problem == f"could not read the input's facts at byte {beyond}"
+    assert max(reading.lines) == 2 + LOOK_BYTES // LINE_RECORD
+
+
+def test_looks_that_fell_behind_catch_up() -> None:
+    buffer = bytearray(RECORDS + 4 * LOOK_BYTES)
+    writer, reader = JournalWriter(buffer), JournalReader(buffer)
+    for line in range(2, 2 + 3 * LOOK_BYTES // LINE_RECORD):
+        writer.line(line)
+    reader.look()
+
+    behind = [reader.look() for _ in range(4)]
+
+    assert behind == [True, True, False, False]
+    assert reader.finish() == read(buffer)
