@@ -315,6 +315,8 @@ class _Sent:
             # the thread is freed here, where no Ctrl-C lands in its finalizer
             self.watcher = None
             self.home = None
+            # the handler holds this deadline in a cycle, so the exception goes with the block
+            self.hold.before = None
 
     def _let_go(self) -> None:
         """Let the watcher end now rather than at the instant. Letting go twice does nothing."""

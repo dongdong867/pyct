@@ -6,6 +6,7 @@ where it is settled, in ``tests/unit/run/test_child.py``.
 """
 
 import asyncio
+import gc
 import json
 import os
 import signal
@@ -14,6 +15,7 @@ import sys
 import threading
 import time
 import types
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager
 
@@ -376,3 +378,31 @@ def test_a_ctrl_c_raised_in_a_block_begun_inside_a_handled_one_still_holds_the_a
     took = time.monotonic() - started
     assert handled - started >= 0.15
     assert took < 1, took
+
+
+class Held:
+    """An object only a handled exception's frame keeps alive."""
+
+
+def raise_holding(held: Held) -> None:
+    raise ValueError(type(held).__name__)
+
+
+def test_a_block_keeps_no_exception_handled_as_it_began_once_it_ends() -> None:
+    held = Held()
+    freed = weakref.ref(held)
+    # refcounting alone frees what nothing holds; the collector would hide a cycle that holds it
+    gc.disable()
+    try:
+        try:
+            raise_holding(held)
+        except ValueError:
+            del held
+            with deadline(time.monotonic() + 10):
+                pass
+        gone = freed() is None
+    finally:
+        gc.enable()
+
+    # the handler has ended, so nothing holds its exception, its frames or their locals
+    assert gone
