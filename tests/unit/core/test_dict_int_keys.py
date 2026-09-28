@@ -93,7 +93,17 @@ class Loose:
         (b"0", False),
         (frozenset(), False),
     ],
-    ids=repr,
+    ids=[
+        "fraction",
+        "decimal",
+        "half",
+        "tracked float",
+        "own eq",
+        "tuple",
+        "none",
+        "bytes",
+        "frozenset",
+    ],
 )
 def test_a_key_turns_an_int_keyed_dict_plain_when_it_may_equal_an_int(
     key: object, plain: bool
