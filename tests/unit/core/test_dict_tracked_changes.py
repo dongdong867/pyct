@@ -278,44 +278,6 @@ def test_a_walk_compares_no_key_the_path_keeps_apart(change: Any) -> None:
     assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[before:])
 
 
-def test_a_walk_decides_the_places_its_stores_already_fill() -> None:
-    config, sink = tracked({"a": 1})
-    config["x"] = 5
-    config["y"] = 6
-
-    list(config)
-
-    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
-    assert [(part(item.expression, 2), item.decided) for item in sizes] == [
-        (0, True),
-        (1, True),
-        (2, False),
-        (3, False),
-    ]
-
-
-def test_popitem_decides_a_size_its_stores_hold() -> None:
-    config, sink = tracked({})
-    config["x"] = 5
-
-    config.popitem()
-
-    checked = [item for item in sink if isinstance(item, Branch)][-1]
-    assert checked.expression == ["!=", ["+", ["len", "config"], 1], 0] and checked.decided
-
-
-def test_a_walk_decides_the_places_the_keys_found_held_fill() -> None:
-    config, sink = tracked({"a": 1, "b": 2})
-    name = ConcolicStr.made("a", "name", sink)
-    assert "a" in config and "b" in config and name in config
-
-    list(config)
-
-    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
-    # "a" and "b" are two keys; the tracked key may be either, so adds none
-    assert [item.decided for item in sizes] == [True, True, False]
-
-
 def test_a_compare_the_path_already_decides_records_nothing() -> None:
     config, sink = tracked({"ab": 1, "cd": 2})
     name = ConcolicStr.made("zz", "name", sink)
@@ -350,18 +312,6 @@ def test_a_shared_key_a_walk_handed_out_is_compared_as_any_other() -> None:
 
     assert (["==", "name", "'b'"], False) in forks(sink)
     hold_against_python(sink, {"config": {"c": 0}, "name": "a"})
-
-
-def test_a_tracked_key_found_held_counts_as_one_key_at_most() -> None:
-    config, sink = tracked({"a": 1, "b": 2, "c": 3})
-    name = ConcolicStr.made("c", "name", sink)
-    assert "a" in config and name in config
-
-    list(config)
-
-    sizes = [item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == ">"]
-    # "a" and the name may be the same key, so only one place is certain
-    assert [item.decided for item in sizes] == [True, False, False, False]
 
 
 def test_a_plain_lookup_reads_only_the_changes_after_its_key_s_own() -> None:

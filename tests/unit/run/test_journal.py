@@ -49,17 +49,6 @@ def test_each_fact_reads_back_as_it_was_written() -> None:
     assert not reading.ended
 
 
-def test_a_decided_fork_reads_back_decided() -> None:
-    buffer = journal()
-    writer = JournalWriter(buffer)
-    decided = Branch(expression=[">", "x", 0], taken=True, site=SITE, decided=True)
-
-    writer.fork(decided)
-    writer.fork(FORK)
-
-    assert [branch.decided for branch in read(buffer).branches] == [True, False]
-
-
 def test_a_repeated_downgrade_grows_its_one_entry() -> None:
     buffer = journal()
     writer = JournalWriter(buffer)

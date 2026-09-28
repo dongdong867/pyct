@@ -10,9 +10,7 @@ target looks up in a dict it changed is Python's own answer and a downgrade; onl
 a tracked key looks it up there, and records whether it equals each key changed before.
 
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
-and once more, taken false, where it ends, in insertion order; a check that the keys the path
-found and the stores already hold is decided, and no pick aims at it (``Branch.decided``). It
-keeps the fork for the key it carries in its place. Each key it hands out is plain,
+and once more, taken false, where it ends, in insertion order. Each key it hands out is plain,
 and each value as the dict holds it: an argument's value tracked, the target's own as it is.
 A walk is not a lookup, so it settles nothing; each fork it records carries which key it read
 at its place (``placed``), so an answer keeps that key there, as a read keeps a list's item. It
@@ -127,8 +125,6 @@ def present(
     if changed is not None:
         return changed
     self.settled.setdefault(settled_as(key), held)
-    if held:
-        self.found_held.add(settled_as(key))
     given = self.shared.get(key) if type(key) in (str, int) else None
     written_given: Expression = None if given is None else ["given", given]
     fork = ["in", written, self.expression]
@@ -345,7 +341,6 @@ def _walked(
             False,
             name,
             pin,
-            decided=key is not MISSING and self.least_size() > at,
         )
         if not recorded(self, fork):
             return

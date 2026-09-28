@@ -252,10 +252,9 @@ def last_item(self: DictState) -> tuple[object, object]:
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
     pin = None if key is MISSING else placed(self, key, POPPED)
-    # a size its stores already hold above zero decides the check (see ``Branch.decided``)
-    held = key is not MISSING
-    decided = held and self.least_size() > 0
-    fork = Branch(["!=", self.size_term(), 0], held, caller_site(), True, "popitem", pin, decided)
+    fork = Branch(
+        ["!=", self.size_term(), 0], key is not MISSING, caller_site(), True, "popitem", pin
+    )
     if not recorded(self, fork):
         return own(dict.popitem, self)
     if not self.holds("popitem", key):
