@@ -31,6 +31,9 @@
 {"set": "v2", "target": "targets.dicts.int_equal_keys::float_key", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [33, 35]}
 {"set": "v2", "target": "targets.dicts.int_equal_keys::popped_bool", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [65]}
 {"set": "v2", "target": "targets.dicts.int_equal_keys::stored_float", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [58]}
+{"set": "v2", "target": "targets.dicts.int_equal_numbers::defaulted_bool", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [41]}
+{"set": "v2", "target": "targets.dicts.int_equal_numbers::defaulted_enum", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [48]}
+{"set": "v2", "target": "targets.dicts.int_equal_numbers::merged_after", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [55]}
 {"set": "v2", "target": "targets.dicts.int_keys::annotated", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.length::check", "seed": {"config": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.dicts.made_up::check", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5, 6]}
