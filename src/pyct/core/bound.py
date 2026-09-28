@@ -53,8 +53,9 @@ _VIEWED: Callable[[Any], object] = lambda view: dict_reads.length(view._mapping)
 
 # the tracked values core follows through each builtin, by their exact type, and the function
 # that follows them: the three bound in the module's builtins, the conversions a call written
-# `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`), and `range`, which
-# follows a tracked int in any of its arguments and is handed all of them
+# `int(...)`, `float(...)` or `bool(...)` reaches (`pyct.core.conversions`, and for a list's
+# truth `pyct.core.list_reads`), and `range`, which follows a tracked int in any of its
+# arguments and is handed all of them
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] = {
     _LEN: {
         ConcolicStr: strs.length,
@@ -83,6 +84,7 @@ _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] 
         ConcolicInt: conversions.bool_of_int,
         ConcolicFloat: conversions.bool_of_float,
         ConcolicStr: conversions.bool_of_text,
+        ConcolicList: list_reads.condition,
     },
     range: {ConcolicInt: ranges.ranged, ConcolicBool: ranges.ranged},
 }
