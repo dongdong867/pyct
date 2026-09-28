@@ -69,13 +69,15 @@ _NOTED = _PASSED_ON | {signal.SIGINT}
 # names the page's descriptor to a command's process started fresh
 _HANDED = "PYCT_WATCHED_BY"
 # what a command's process started fresh runs, given the folder that holds the pyct this process
-# runs and then this process's import path: that pyct's command line, imported from that folder
-# before the path comes in, with every module it imports, so nothing ahead of it on the path, a
-# pyct package or a module named as the standard library's, can stand in for one; then the path,
-# and that pyct as ``python -m pyct``. So the target's import path is the one a forked command's
+# runs and then this process's import path: that pyct, imported from that folder, which then
+# leaves the path again; that pyct's command line, whose own modules come through the package and
+# the rest from where this interpreter finds them; then the path, and that pyct as ``python -m
+# pyct``. So nothing on the path, a pyct package or a module named as one the command line
+# imports, can stand in for pyct's, and the target's import path is the one a forked command's
 # process gives it
 _BOOT = (
-    "import json, runpy, sys; sys.path.insert(0, sys.argv.pop(1)); import pyct.cli; "
+    "import json, runpy, sys; sys.path.insert(0, sys.argv.pop(1)); import pyct; "
+    "del sys.path[0]; import pyct.cli; "
     "sys.path[:] = json.loads(sys.argv.pop(1)); "
     "runpy.run_module('pyct', run_name='__main__', alter_sys=True)"
 )

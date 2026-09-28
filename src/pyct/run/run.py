@@ -41,7 +41,8 @@ from pyct.solver.locate import locate, version
 _NO_LIMITS = Limits()
 # the platform the summary line names, read as this module imports: the first read imports modules
 # of its own, such as plistlib on macOS, and pyct's modules all import before a target's folder
-# joins the import path, so these come from pyct's interpreter and never from that folder
+# joins the import path, so these come from pyct's interpreter and never from that folder. The
+# read also runs two short commands, ``uname -p`` and ``file``, about 10 ms in all
 _PLATFORM = platform.platform()
 
 # what a caller does with an input the moment it is finished
