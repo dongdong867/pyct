@@ -52,6 +52,23 @@ def test_assigning_a_view_s_class_raises_what_python_raises(
     assert sink == []
 
 
+@pytest.mark.parametrize(("name", "_registered"), VIEWS, ids=VIEW_IDS)
+def test_deleting_a_view_s_class_raises_what_python_raises(name: str, _registered: type) -> None:
+    config, sink = tracked({"a": 1})
+    view = getattr(config, name)()
+    python = getattr({}, name)()
+
+    for delete in (delattr, object.__delattr__):
+        with pytest.raises(Exception) as plain:
+            delete(python, "__class__")
+        with pytest.raises(Exception) as raised:
+            delete(view, "__class__")
+        assert type(raised.value) is type(plain.value)
+        assert str(raised.value) == str(plain.value)
+        assert raised_by_target(raised.value)
+    assert sink == []
+
+
 def _refusals() -> list[object]:
     """Each way a target asks for a view's pickle or copy, named for its test."""
     protocols = range(pickle.HIGHEST_PROTOCOL + 1)
@@ -72,6 +89,10 @@ def _refusals() -> list[object]:
         *pickles,
         *reductions,
         pytest.param(lambda value: value.__reduce__(), id="reduce"),
+        # a call Python itself refuses for its count of arguments
+        pytest.param(lambda value: value.__reduce_ex__(), id="reduce-ex-bare"),
+        pytest.param(lambda value: value.__reduce_ex__(2, 3), id="reduce-ex-two"),
+        pytest.param(lambda value: value.__reduce__(1), id="reduce-one"),
         pytest.param(copy.copy, id="copy"),
         pytest.param(copy.deepcopy, id="deepcopy"),
     ]

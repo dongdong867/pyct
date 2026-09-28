@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
-from typing import Any, SupportsIndex
+from typing import Any
 
 from pyct.core import dict_reads as reads
 from pyct.core.branch import Downgrade, caller_site
@@ -40,6 +40,12 @@ def _assigned_class(self: _View, kind: object) -> None:
     own(setattr, self.python({}), "__class__", kind)
 
 
+def _deleted_class(self: _View) -> None:
+    """`object.__delattr__(v, "__class__")`: made on Python's own view of an empty dict, as a
+    set is. `del v.__class__` is the view's `__delattr__`'s."""
+    own(delattr, self.python({}), "__class__")
+
+
 class _View:
     """What the three views share: the dict they read, its size, and Python's own view."""
 
@@ -48,7 +54,7 @@ class _View:
     # records nothing. `type(v)` still reads the real class, which is how pyct tells a view
     # apart; the `type` router answers Python's view type in the target's package
     # (read-a-dict-view-s-type-as-python-s)
-    __class__ = property(_python_type, _assigned_class)  # pyrefly: ignore[bad-override]
+    __class__ = property(_python_type, _assigned_class, _deleted_class)  # pyrefly: ignore[bad-override]
 
     # the view Python's dict hands out for this one, read on the dict's storage
     python: Any = None
@@ -70,15 +76,19 @@ class _View:
         """`del v.name`: made on Python's own view of an empty dict, as a set is."""
         own(delattr, self.python({}), name)
 
-    def __reduce_ex__(self, protocol: SupportsIndex, /) -> str | tuple[Any, ...]:
+    def __reduce_ex__(self, /, *args: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
         """A pickle, a copy or a deep copy: asked of Python's own view of an empty dict, which
-        refuses in its own words at every protocol. Nothing is written and no answer leaves
-        the dict, so nothing is recorded (refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
-        return own(self.python({}).__reduce_ex__, protocol)
+        refuses in its own words at every protocol. It is called through its type, as a
+        target's `v.__reduce_ex__()` is, so a wrong count of arguments reads as there too.
+        Nothing is written and no answer leaves the dict, so nothing is recorded
+        (refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
+        python = self.python({})
+        return own(type(python).__reduce_ex__, python, *args)
 
-    def __reduce__(self) -> str | tuple[Any, ...]:
+    def __reduce__(self, /, *args: object) -> str | tuple[Any, ...]:  # pyrefly: ignore[bad-override]
         """`v.__reduce__()`: asked of Python's own view of an empty dict, as a pickle is."""
-        return own(self.python({}).__reduce__)
+        python = self.python({})
+        return own(type(python).__reduce__, python, *args)
 
     @property
     def mapping(self) -> types.MappingProxyType[object, object]:
