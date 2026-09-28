@@ -50,6 +50,13 @@ def test_a_command_that_ends_gives_its_exit_code_and_output(tmp_path: Path) -> N
     assert finished.stopped_after is None
 
 
+def test_a_command_gives_how_long_it_ran(tmp_path: Path) -> None:
+    finished = run_command(command(tmp_path, PYTHON, "-c", "import time; time.sleep(0.3)"), 30)
+
+    assert finished.seconds is not None
+    assert 0.3 <= finished.seconds < 30
+
+
 def test_output_that_is_not_utf8_is_read_with_replacements(tmp_path: Path) -> None:
     script = "import sys; sys.stdout.buffer.write(b'a\\xffb')"
 
@@ -71,6 +78,7 @@ def test_a_command_past_its_wait_is_stopped_with_everything_it_started(tmp_path:
 
     assert finished.returncode is None
     assert finished.stopped_after == 1
+    assert finished.seconds is not None and finished.seconds >= 1
     assert gone(int(finished.stdout.split()[0]))
 
 

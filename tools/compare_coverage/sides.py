@@ -65,6 +65,7 @@ class SideReport:
 
     ``library`` is the requested library as the side has it, for an installed entry.
     ``reused`` is true when the report is one kept from an earlier run, not a new run's.
+    ``seconds`` is how long the side's process ran, however it ended.
     """
 
     file: str | None = None
@@ -74,6 +75,7 @@ class SideReport:
     failure: str | None = None
     library: Installed | None = None
     reused: bool = False
+    seconds: float | None = None
 
 
 class Side(Protocol):
@@ -93,8 +95,18 @@ def read_report(
     """The report in the last stdout line carrying ``key``; how the process ended fails it first.
 
     A line that cannot be read as a report fails the side, naming what was wrong with it.
-    ``line_name`` is what a failure calls the line.
+    ``line_name`` is what a failure calls the line. The report says how long the process ran.
     """
+    report = _read(finished, key, parse, line_name)
+    return replace(report, seconds=finished.seconds)
+
+
+def _read(
+    finished: Finished,
+    key: str,
+    parse: Callable[[dict[str, object]], SideReport],
+    line_name: str,
+) -> SideReport:
     failure = _process_failure(finished)
     line = result_line(finished.stdout, key)
     if line is None:
@@ -182,6 +194,14 @@ def installed_of(value: object) -> Installed | None:
         root=optional_text(value["root"]),
         provides=value["provides"],
     )
+
+
+def optional_seconds(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError(f"expected seconds, got {value!r}")
+    return float(value)
 
 
 def optional_count(value: object) -> int | None:

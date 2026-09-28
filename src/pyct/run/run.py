@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 import platform
+import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -40,6 +41,28 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.locate import locate, version
 
 _NO_LIMITS = Limits()
+
+
+def _platform() -> str:
+    """The platform the summary line names, read with ``sys.modules`` left as it was found.
+
+    The first read imports modules of its own, such as plistlib and datetime
+    on macOS. Made here, as this module imports, it runs before a target's
+    folder joins the import path, so none of them comes from that folder.
+    Each one is then dropped again, so a target that imports one gets it
+    from its own path, as plain Python would. platform keeps what it read,
+    so no later read imports them again. The read also runs one or two short
+    commands, ``uname -p`` among them, about 10 ms in all.
+    """
+    before = set(sys.modules)
+    try:
+        return platform.platform()
+    finally:
+        for name in set(sys.modules) - before:
+            sys.modules.pop(name, None)
+
+
+_PLATFORM = _platform()
 
 # what a caller does with an input the moment it is finished
 type Report = Callable[[InputRecord, Coverage], None]
@@ -219,7 +242,7 @@ def _environment(cvc5: str | None, isolated: bool) -> Environment:
     return Environment(
         python=platform.python_version(),
         cvc5=cvc5,
-        platform=platform.platform(),
+        platform=_PLATFORM,
         isolated=isolated,
     )
 

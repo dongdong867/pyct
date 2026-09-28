@@ -39,6 +39,7 @@ V2_LINE = {
     "failure": None,
     "library": None,
     "reused": False,
+    "seconds": None,
 }
 LEGACY_LINE = {
     "file": "/t.py",
@@ -48,6 +49,7 @@ LEGACY_LINE = {
     "failure": None,
     "library": None,
     "reused": True,
+    "seconds": None,
 }
 
 
@@ -67,7 +69,15 @@ def test_a_row_line_holds_every_field_of_the_row() -> None:
         "change": None,
         "left_out": None,
         "library": None,
+        "widened": False,
     }
+
+
+def test_a_row_accept_widened_says_so_beside_its_change() -> None:
+    row = replace(DIFFERS, record="changed", change="only v2 was 4, now 3, 4", widened=True)
+
+    assert json.loads(row_line(row))["widened"] is True
+    assert "  differs, changed, widened  changed: only v2 was 4, now 3, 4" in table_line(row)
 
 
 def test_a_row_with_no_sides_has_null_sides() -> None:
@@ -166,6 +176,23 @@ def test_a_table_line_for_an_installed_entry_names_each_sides_version() -> None:
         "  legacy covered 3 of 3 (exhausted, 4 inputs, werkzeug 3.1.3)"
     )
     assert json.loads(row_line(row))["legacy"]["library"] == "3.1.3"
+
+
+def test_each_side_says_how_long_it_ran_to_a_tenth_of_a_second() -> None:
+    """keep-a-budget-bound-compare-row-stable-shows-each-side-s-time"""
+    row = replace(
+        DIFFERS,
+        library="werkzeug==3.1.3",
+        v2=replace(V2, seconds=1.2345, library="3.1.3"),
+        legacy=replace(LEGACY, seconds=5.06),
+    )
+
+    line = json.loads(row_line(row))
+    assert (line["v2"]["seconds"], line["legacy"]["seconds"]) == (1.2, 5.1)
+    assert table_line(row).startswith(
+        "v2  m::f  v2 covered 2 of 3 (no fork to flip, 2 inputs, werkzeug 3.1.3, 1.2 s)"
+        "  legacy covered 3 of 3 (exhausted, 4 inputs, werkzeug ?, 5.1 s)"
+    )
 
 
 def test_the_totals_line_gives_every_count() -> None:
