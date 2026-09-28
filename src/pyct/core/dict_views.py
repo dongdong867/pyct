@@ -34,9 +34,23 @@ class _View:
 
     # the view Python's dict hands out for this one, read on the dict's storage
     python: Any = None
+    # the dict the view reads
+    _mapping: DictState
 
     def __init__(self, mapping: DictState) -> None:
-        self._mapping = mapping
+        # the view refuses a set, as Python's does, so pyct writes the dict by object's own set,
+        # which keeps the field where Python reads it fastest; `self.__dict__` would move it
+        object.__setattr__(self, "_mapping", mapping)
+
+    def __setattr__(self, name: str, value: object, /) -> None:
+        """`v.name = value`: made on Python's own view of an empty dict, which takes no
+        attribute, so Python refuses it in its own words, `_mapping` too, and nothing is
+        recorded (tracked-numbers-refuse-attributes-on-a-plain-number)."""
+        own(setattr, self.python({}), name, value)
+
+    def __delattr__(self, name: str, /) -> None:
+        """`del v.name`: made on Python's own view of an empty dict, as a set is."""
+        own(delattr, self.python({}), name)
 
     @property
     def mapping(self) -> types.MappingProxyType[object, object]:

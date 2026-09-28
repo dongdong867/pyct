@@ -259,28 +259,29 @@ def _base_class(self: object) -> type:
 
 
 def _assigned_class(self: object, kind: object) -> None:
-    """`v.__class__ = kind`: made on a plain value of the base type, so Python raises its own
-    error, in its words, as it refuses every class for an int, float, str, bool, list or range.
+    """`object.__setattr__(v, "__class__", kind)`: made on a plain value of the base type, so
+    Python raises its own error, in its words. `v.__class__ = kind` never gets here: each
+    tracked class's `refused_set` makes it on the plain value first, with the same answer.
     """
     own(setattr, base_value(BASES[type(self)]), "__class__", kind)
 
 
 def refused_set(self: object, name: str, value: object, /) -> None:
-    """`v.name = value` on a tracked number: made on a plain number of its base type instead.
+    """`v.name = value` on a tracked value: made on a plain value of its base type instead.
 
-    A plain int, bool or float takes no attribute, so Python raises its own
-    error, in the running release's words, and the target's handler sees
-    what it would see. The names pyct keeps on the value are refused too,
-    since a plain number has none of them; pyct writes them into the
-    value's `__dict__` as it builds the value. Setting an attribute is
-    object plumbing, so nothing is recorded
+    A plain int, bool, float, str, list, dict or range takes no attribute of
+    its own, so Python raises its own error, in the running release's words,
+    and the target's handler sees what it would see. The names pyct keeps on
+    the value are refused too, since the plain value has none of them; pyct
+    writes them past this, into the value's `__dict__`, or its slots for a
+    range. Setting an attribute is object plumbing, so nothing is recorded
     (tracked-numbers-refuse-attributes-on-a-plain-number).
     """
     own(setattr, base_value(BASES[type(self)]), name, value)
 
 
 def refused_delete(self: object, name: str, /) -> None:
-    """`del v.name` on a tracked number: made on a plain number of its base type, as a set is."""
+    """`del v.name` on a tracked value: made on a plain value of its base type, as a set is."""
     own(delattr, base_value(BASES[type(self)]), name)
 
 

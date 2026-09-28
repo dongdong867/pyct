@@ -360,7 +360,7 @@ def one_character(value: str, expression: Expression, sink: BranchSink) -> Conco
     """A tracked str that holds one character on every path that makes it: an index's, a walk's
     or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
     character = ConcolicStr.made(value, expression=expression, sink=sink)
-    character.single = True
+    character.__dict__["single"] = True
     return character
 
 
@@ -473,13 +473,17 @@ class ConcolicStr(str):
     __format__ = downgraded(str, "__format__", first=texts.alone(__str__))  # pyrefly: ignore[bad-override]
 
     __new__ = values.as_base
+    # each set or delete is Python's own refusal, as on a plain str; pyct writes into `__dict__`
+    __setattr__ = values.refused_set
+    __delattr__ = values.refused_delete
 
     @classmethod
     def made(cls, value: str, expression: Expression, sink: BranchSink) -> Self:
         """How pyct builds a tracked str: the class called with a value builds a plain one."""
         made = str.__new__(cls, value)
-        made.expression = expression
-        made.sink = sink
+        fields = made.__dict__
+        fields["expression"] = expression
+        fields["sink"] = sink
         return made
 
     def __bool__(self) -> bool:

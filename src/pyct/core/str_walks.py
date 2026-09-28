@@ -36,7 +36,8 @@ def walk(s: ConcolicStr) -> Iterator[ConcolicStr]:
         character = type(s).made(
             own(str.__getitem__, s, at), expression=["[]", s.expression, at], sink=s.sink
         )
-        # one character on every pass: the pass's fork says position i exists
-        character.single = True
+        # one character on every pass: the pass's fork says position i exists. The str refuses
+        # a set, as a plain one does, so pyct writes the mark straight in
+        character.__dict__["single"] = True
         yield character
         at += 1
