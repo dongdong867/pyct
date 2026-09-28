@@ -129,6 +129,7 @@ def test_a_kept_report_reads_back_reused_with_its_root_moved(tmp_path: Path) -> 
         inputs=4,
         failure=f"raised in {old}/pkg/mod.py",
         library=Installed(version="1.0", root="/site", provides=True),
+        seconds=5.3,
     )
 
     cache.put("k", report, old)
@@ -140,6 +141,7 @@ def test_a_kept_report_reads_back_reused_with_its_root_moved(tmp_path: Path) -> 
         inputs=4,
         failure=f"raised in {new}/pkg/mod.py",
         library=Installed(version="1.0", root="/site", provides=True),
+        seconds=5.3,
         reused=True,
     )
 
@@ -161,6 +163,17 @@ def test_a_budget_spent_report_is_kept_and_refreshed_when_asked(tmp_path: Path) 
     assert a_cache(tmp_path).get("spent", tmp_path) is not None
     assert a_cache(tmp_path, refresh=True).get("spent", tmp_path) is None
     assert a_cache(tmp_path, refresh=True).get("done", tmp_path) is not None
+
+
+def test_a_report_that_ran_its_whole_budget_is_refreshed_whatever_its_stop(
+    tmp_path: Path,
+) -> None:
+    ran_out = SideReport(file="/f.py", stopped="exhausted", seconds=5.3)
+    a_cache(tmp_path).put("ran out", ran_out, tmp_path)
+
+    assert a_cache(tmp_path).get("ran out", tmp_path, budget=5.0) is not None
+    assert a_cache(tmp_path, refresh=True).get("ran out", tmp_path, budget=5.0) is None
+    assert a_cache(tmp_path, refresh=True).get("ran out", tmp_path, budget=6.0) is not None
 
 
 def test_clear_removes_every_kept_report_and_part_and_nothing_else(tmp_path: Path) -> None:

@@ -19,10 +19,11 @@ version cannot be read has no context, and nothing of its is kept.
 Each result is one JSON file, ``legacy/KEY.json`` in the cache folder, written whole before it
 is renamed into place, so rows that run at once never read half of one. Its paths under the
 row's root are read back under the root of the run that reads it, so checkouts at other paths
-share results. A result whose legacy side stopped on ``timeout`` is kept too, failed or not;
-that stop covers a spent budget and a child that died with an input pending.
-``refresh_budget_spent`` runs such a row's legacy side again and keeps the new result; until
-then a plain run reuses it.
+share results. A kept result keeps how long its side ran. A result whose legacy side stopped
+on ``timeout`` is kept too, failed or not; that stop covers a spent budget and a child that
+died with an input pending. A result whose side ran its whole budget counts as one that spent
+it, whatever its stop, and the row reads it as budget-bound. ``refresh_budget_spent`` runs
+such a row's legacy side again and keeps the new result; until then a plain run reuses it.
 """
 
 import ast
@@ -42,11 +43,12 @@ from tools.compare_coverage.sides import (
     installed_of,
     lines_of,
     optional_count,
+    optional_seconds,
     optional_text,
 )
 
 # the shape of a kept result; a new shape keys every result anew
-FORMAT = 1
+FORMAT = 2
 
 # the variable that names the cache folder, before the user's cache folder
 FOLDER_VARIABLE = "PYCT_COMPARE_CACHE"
@@ -151,14 +153,19 @@ class Cache:
         }
         return _digest(_canonical(row))
 
-    def get(self, key: str, root: Path) -> SideReport | None:
-        """The result kept under ``key``, marked reused, or ``None`` when there is none to use."""
+    def get(self, key: str, root: Path, budget: float | None = None) -> SideReport | None:
+        """The result kept under ``key``, marked reused, or ``None`` when there is none to use.
+
+        A result whose side ran for ``budget`` seconds or more spent its budget too, whatever
+        its stop says: legacy can say ``exhausted`` once its time ran out.
+        """
         try:
             kept = json.loads((self.folder / "legacy" / f"{key}.json").read_text("utf-8"))
             report = _report(kept["report"], kept["root"], root)
         except (OSError, ValueError, KeyError, TypeError, AttributeError):
             return None
-        if self.refresh_budget_spent and report.stopped == BUDGET_SPENT:
+        ran_out = budget is not None and report.seconds is not None and report.seconds >= budget
+        if self.refresh_budget_spent and (report.stopped == BUDGET_SPENT or ran_out):
             return None
         return report
 
@@ -192,6 +199,7 @@ def _fields(report: SideReport) -> dict[str, object]:
         "inputs": report.inputs,
         "failure": report.failure,
         "library": None if library is None else _library(library),
+        "seconds": report.seconds,
     }
 
 
@@ -211,6 +219,7 @@ def _report(fields: dict[str, object], kept_root: object, root: Path) -> SideRep
         failure=_moved(optional_text(fields["failure"]), kept_root, root),
         library=installed_of(fields["library"]),
         reused=True,
+        seconds=optional_seconds(fields["seconds"]),
     )
 
 
