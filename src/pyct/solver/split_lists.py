@@ -42,6 +42,7 @@ from pyct.solver.splits import (
     right_count,
     right_piece,
     separators_past,
+    split_piece,
     unwalked_bound,
     words_count,
     words_past,
@@ -58,6 +59,12 @@ BOUND_PAST = 2
 # square of the bound, since each piece is a walk to it: uncapped, a read from the end of 1,000
 # lines peaked at 2.9 GB. A path that needs more is asked loosened (see the module docstring)
 MOST_BOUND = 34
+
+# the largest number a compare of a separator split's count with a number is written as the
+# walk to that piece, which cvc5 answers fastest beside the pieces a path reads and their int
+# conversions; past it, as one membership, since a walk to 1,000 ran past the limit where the
+# membership answered in 0.02 s
+MOST_WALKED_PAST = 16
 
 # the most pieces a piece from the end is chosen among, one choice per count, where no walk of
 # the reversed string finds it: past it the piece is the one the input's own count puts there.
@@ -122,6 +129,8 @@ class SplitList:
             return words_past(self.term, number)
         separator = self.operands[0]
         assert isinstance(separator, str)
+        if number <= MOST_WALKED_PAST:
+            return self._there(number)
         return separators_past(self.term, separator, number)
 
     def restriction(self) -> str:
@@ -146,8 +155,14 @@ class SplitList:
         """That piece ``index`` is there, as the walk that reads it writes it: the pieces a
         path takes out are asserted there by the same walk, which cvc5 answered faster beside
         the pieces themselves than one membership."""
-        if self.past(index) == FALSE:
+        if index < 0:
+            return TRUE
+        if 0 <= self.limit() < index:
             return FALSE
+        if self.head == "rsplit" and not self._walked():
+            # the split's pieces from the start, whose count this rsplit has up to its limit;
+            # the string it reads them on is the read's restriction, not the count's
+            return split_piece(self.term, self.operands[:1], index)[1]
         return SPLITS[self.head](self.term, self.operands, index)[1]
 
     def piece(self, index: int) -> str:

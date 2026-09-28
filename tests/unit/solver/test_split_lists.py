@@ -416,3 +416,19 @@ def test_the_last_of_many_lines_is_read_where_the_input_s_count_puts_it() -> Non
     assert isinstance(answer, Sat), answer
     assert time.perf_counter() - started < 8.0
     assert str(apply(seed, answer.model).args["s"]).splitlines()[-1] == "z"
+
+
+@needs_cvc5
+def test_an_rsplit_past_the_walk_counts_its_pieces_on_any_string() -> None:
+    parts: Expression = ["rsplit", "s", "','", LONGEST_WALK + 1]
+    path = (
+        fork([">", ["len", parts], 2], taken=False),
+        fork(["in", "',,,'", "s"], taken=True),
+    )
+    seed = Seed.of({"s": "a"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # three commas make four pieces, so no string takes both; the string the pieces are read
+    # on is the reads' restriction, not the count's, and does not free it
+    assert isinstance(answer, Unsat), answer
