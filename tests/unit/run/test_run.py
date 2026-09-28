@@ -16,6 +16,7 @@ from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
+from pyct.run.isolation import Isolation
 from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Answer, Timeout, Unknown
@@ -77,8 +78,11 @@ def test_run_records_how_the_seed_ended() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_run_reports_a_timeout_when_the_budget_runs_out() -> None:
     target = load_target("targets.trace.never_returns::spin")
+    # forked, since pytest-timeout's thread would send the input to a fresh interpreter, whose
+    # start a loaded machine stretches past a short budget; half a second covers a fork's start
+    limits = Limits(budget=Budget(seconds=0.5))
 
-    result = run(target, {"x": 1}, limits=Limits(budget=Budget(seconds=0.05)))
+    result = run(target, {"x": 1}, limits=limits, isolation=Isolation.FORK)
 
     assert len(result.records) == 1
     assert result.records[0].failure == Failure(kind=FailureKind.TIMEOUT, detail="deadline passed")
