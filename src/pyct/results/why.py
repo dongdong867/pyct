@@ -201,21 +201,27 @@ class _Seen:
 
     @classmethod
     def of(cls, file: str, covered: frozenset[int], run: Run) -> _Seen:
-        # inputs that took one path are one input to every question asked of them
+        # inputs that took one path are one input to every question asked of them; a step an
+        # input and a fork, since one input may hold many
+        pace = Pace(run.late)
         inputs = tuple(
             dict.fromkeys(
                 _Input(
                     each.lines,
-                    tuple(_fork(branch) for branch in each.forks if branch.site.file == file),
+                    tuple(
+                        _fork(branch)
+                        for branch in pace.each(each.forks)
+                        if branch.site.file == file
+                    ),
                     each.failed,
                 )
-                for each in Pace(run.late).each(run.walked)
+                for each in pace.each(run.walked)
             )
         )
         heads = heads_of(
             ((branch.site.line, branch.site.col), branch.expression)
-            for each in Pace(run.late).each(run.walked)
-            for branch in each.forks
+            for each in pace.each(run.walked)
+            for branch in pace.each(each.forks)
             if branch.site.file == file and not branch.raising
         )
         return cls(file, covered, inputs, run, _owners(file), heads)
