@@ -1,5 +1,5 @@
 from pyct.branches.plan import plan
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.record import Aim
 
 
@@ -42,3 +42,16 @@ def test_the_path_it_was_given_is_left_alone() -> None:
     assert planned is not None
     assert planned.prefix is not forks
     assert forks == (fork(2, taken=True),)
+
+
+def test_what_held_after_the_fork_is_dropped_and_what_held_before_it_is_kept() -> None:
+    site = Site("m.py", 2, 4)
+    after = Branch(expression="x", taken=True, site=site, holds=["walked", "d", "'a'"])
+    given: Expression = ["given", ["walked", "d", "'a'"]]
+    before = Branch(expression="y", taken=True, site=site, holds=given)
+
+    flipped_after = plan((after,))
+    flipped_before = plan((before,))
+
+    assert flipped_after is not None and flipped_after.prefix[-1].holds is None
+    assert flipped_before is not None and flipped_before.prefix[-1].holds == given

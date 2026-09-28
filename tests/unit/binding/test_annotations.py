@@ -100,7 +100,6 @@ def test_check_of_checks_the_kind_whatever_the_items_are(annotation: object, che
     "annotation",
     [
         pytest.param(tuple[int, int], id="tuple"),
-        pytest.param(dict[int, str], id="int keys"),
         pytest.param(list[int] | None, id="union"),
         pytest.param(int | None, id="union of plain types"),
         pytest.param(Target, id="class"),
@@ -183,3 +182,12 @@ def test_contradictions_escapes_what_a_terminal_cannot_show() -> None:
         'xs[3] must be an int, got "\\ud800"',
     ]
     assert all(len(line.splitlines()) == 1 for line in lines)
+
+
+def test_a_dict_annotation_names_its_key_type_and_checks_nothing_under_one_not_str() -> None:
+    assert check_of(dict[int, str]) == Items(dict, str, keys=int)
+    assert check_of(dict[float, str]) == Items(dict, None, keys=float)
+    checks: dict[str, Check] = {"a": Items(dict, str, keys=int), "b": Items(dict, None, keys=float)}
+
+    # JSON keys are always strings, so neither is checked, not even its kind
+    assert contradictions(checks, {"a": [1], "b": {"k": 2}}) == []

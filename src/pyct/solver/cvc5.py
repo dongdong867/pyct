@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import replace
 from time import monotonic
 
-from pyct.binding.shapes import ListShape
+from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch
 from pyct.solver.answer import (
     Answer,
@@ -20,6 +20,7 @@ from pyct.solver.answer import (
     model_from,
 )
 from pyct.solver.answer_size import MOST_ITEMS
+from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.floats import FINITE
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
@@ -58,6 +59,15 @@ LONGEST_WAIT_SECONDS = 2_147_483.0
 # again with clamps settled; never fewer than READ_STEPS
 STEPS_PER_SECOND = 100
 
+# the steps a path's tracked-key lookups into its dicts may take together, per second of the
+# solve's limit. cvc5 writes each call out over every key it may equal, and a key looked up and
+# then read makes four calls, the lookup's and the read's own lookup, whether the value is of
+# the kind read, and the value: into 3,000 keys, 3,001 steps each, 12,004 a key. cvc5 works
+# through about 44,000 steps a second: 10 keys, 120,040 steps, solve in about 2.7 s, 20 keys in
+# about 5.5 s, and 300 keys grow past 3.8 GB. So at the 10 s default 350,000 steps are asked,
+# 29 keys looked up and read in 3,000 keys, and more are given up at once
+LOOKUP_STEPS_PER_SECOND = 35_000
+
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
 # second of the solve's limit, so a path's outcome never turns on how long the first ask took.
 # Each cut of a list at open clamps doubles them: ten cuts take about 10,000 and eleven about
@@ -75,14 +85,15 @@ def solve(
     prefix: tuple[Branch, ...],
     leaves: Mapping[str, type],
     timeout: float,
-    lists: Mapping[str, ListShape] | None = None,
+    shapes: Mapping[str, ListShape | DictShape] | None = None,
     values: Mapping[str, object] | None = None,
 ) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds the solve
     gets, writing the program included.
 
-    ``leaves``, ``lists`` and ``values`` are what the input whose path it extends holds: each
-    leaf the solver may change, each tracked list with its shape, and each leaf's value.
+    ``leaves``, ``shapes`` and ``values`` are what the input whose path it extends holds: each
+    leaf the solver may change, each tracked list and dict with its shape, and each leaf's
+    value.
 
     The formula goes in on stdin rather than a file, so a run leaves nothing
     behind on disk.
@@ -110,6 +121,13 @@ def solve(
     once more with neither held (see ``_loosened``); decision
     float-floor-division-a-real-floor-inside-a-bound.
 
+    A program that keeps each dict's keys no fork names and makes none up answers with the
+    input's keys where the path does not ask for others. An unsat to it asks once more with
+    them free. A program that keeps a key a walk read at its place answers an input that walks
+    as the path did; an unsat to it runs every ask once more without the places, where only an
+    unsat is the path's, and a model is an ``Unknown()``, since pyct cannot tell whether the
+    answer it would write walks the dict as the path did (see ``_asked`` and ``dicts``).
+
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
 
@@ -122,18 +140,51 @@ def solve(
     solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
-    until = monotonic() + timeout
-    steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
-    origin = Origin(shapes=lists or {}, values=values or {}, steps=steps, until=until)
+    origin = _origin(shapes or {}, values or {}, timeout)
     path = (prefix, leaves)
+    answer, placed = _asked(path, origin, timeout)
+    if isinstance(answer, Unsat) and placed:
+        logger.debug("unsat with the keys a walk read kept in place: asking without")
+        answer, _ = _asked(path, replace(origin, keep=False, pinned=False), timeout)
+        return Unknown() if isinstance(answer, Sat) else answer
+    return answer
+
+
+def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
+    """What the path is answered from ``origin``, every ask a program that held more than the
+    path needs and was unsat taken in turn, and whether any program kept a key a walk read in
+    its place.
+
+    The places are what makes a model walk the dict as the path did; without them, a model may
+    walk another order, and pyct cannot tell whether an answer it writes takes the path, so a
+    model to the asks without places is an ``Unknown()`` (see ``solve``).
+    """
     answer, written = _solved(path, origin)
+    placed = written is not None and written.placed
+    if isinstance(answer, Unsat) and written is not None and written.kept:
+        logger.debug("unsat with each dict's other keys kept: asking with them free")
+        origin = replace(origin, keep=False)
+        answer, written = _solved(path, origin)
+        placed = placed or (written is not None and written.placed)
     if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
-        return _loosened(path, origin)
-    return answer
+        return _loosened(path, origin), placed
+    return answer, placed
+
+
+def _origin(
+    shapes: Mapping[str, ListShape | DictShape], values: Mapping[str, object], timeout: float
+) -> Origin:
+    """The input a solve extends, its lists apart from its dicts, and the solve's limits."""
+    lists = {name: shape for name, shape in shapes.items() if isinstance(shape, ListShape)}
+    dicts = {name: shape for name, shape in shapes.items() if isinstance(shape, DictShape)}
+    steps = max(READ_STEPS, int(timeout * STEPS_PER_SECOND))
+    until = monotonic() + timeout
+    lookups = int(timeout * LOOKUP_STEPS_PER_SECOND)
+    return Origin(lists, dicts, values, steps=steps, until=until, lookups=lookups)
 
 
 def _loosened(path: _Path, origin: Origin) -> Answer:
@@ -157,7 +208,7 @@ def _loosened(path: _Path, origin: Origin) -> Answer:
 def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
     """What cvc5 answers the path written from ``origin``, and the program it answered, None
     when none was written."""
-    finite = float_leaves(*path, origin.shapes)
+    finite = float_leaves(*path, origin)
     written, origin = _written(path, origin, finite)
     if not isinstance(written, Program):
         return written, None
@@ -200,6 +251,9 @@ def _write(
     except RenderTimeError:
         logger.warning("writing the program for cvc5 ran past the time limit")
         return Timeout()
+    except LookupsTooManyError as error:
+        logger.debug("giving up the program's tracked-key lookups: %s", error)
+        return Unknown()
     except ProgramTooLargeError as error:
         logger.debug("giving up the unsettled program: %s", error)
         return Unknown()
