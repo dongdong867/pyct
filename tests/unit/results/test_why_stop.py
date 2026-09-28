@@ -211,8 +211,9 @@ def test_the_clock_is_read_often_through_each_large_shape(
     file = str(tmp_path / f"{shape}.py")
     source, uncovered, covered, walked = build(size, file)
     Path(file).write_text(source)
-    # each read notes the thread's CPU time: the analysis's own work, which the other processes
-    # of a loaded machine do not stretch as they stretch the wall clock
+    # each read notes the thread's CPU time: the analysis's own work, which a loaded machine
+    # stretches far less than the wall clock (under twelve CPU burners, [jumps] took at most
+    # 0.113 s of CPU where the wall clock reached 0.27 s)
     reads: list[float] = []
 
     def clock() -> float:

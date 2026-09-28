@@ -41,6 +41,13 @@ def fake_cvc5(directory: Path, *, out: str = "", err: str = "", code: int = 0) -
     script.chmod(0o755)
 
 
+def frozen_clock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand the solver's clock still, so no millisecond passes between setting a limit and
+    handing cvc5 what is left of it."""
+    now = time.monotonic()
+    monkeypatch.setattr(cvc5_module, "monotonic", lambda: now)
+
+
 def ask(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timeout: float = 10.0) -> object:
     """One solve of the one-fork path, against whatever cvc5 the tmp directory holds."""
     monkeypatch.setenv("PATH", str(tmp_path))
@@ -149,6 +156,7 @@ def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
+    frozen_clock(monkeypatch)
 
     ask(tmp_path, monkeypatch, timeout=1.5)
 
@@ -197,10 +205,7 @@ def test_a_limit_longer_than_python_can_wait_is_cut_to_the_longest_wait(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, out="unsat\n")
-    # the solver's clock stands still, so no millisecond passes between setting the limit and
-    # handing cvc5 what is left of it
-    now = time.monotonic()
-    monkeypatch.setattr(cvc5_module, "monotonic", lambda: now)
+    frozen_clock(monkeypatch)
 
     # about 115 days, past the 2**31 - 1 milliseconds Python's poll can wait
     assert ask(tmp_path, monkeypatch, timeout=1e7) == Unsat()
