@@ -2,7 +2,9 @@
 views do, each recording nothing (read-a-dict-view-s-type-as-python-s,
 refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
 
-from collections.abc import ItemsView, KeysView, ValuesView
+import copy
+import pickle
+from collections.abc import Callable, ItemsView, KeysView, ValuesView
 
 import pytest
 
@@ -47,4 +49,47 @@ def test_assigning_a_view_s_class_raises_what_python_raises(
             assign(view, "__class__", kind)
         assert str(raised.value) == str(plain.value)
         assert raised_by_target(raised.value)
+    assert sink == []
+
+
+def _refusals() -> list[object]:
+    """Each way a target asks for a view's pickle or copy, named for its test."""
+    protocols = range(pickle.HIGHEST_PROTOCOL + 1)
+    pickles = [
+        pytest.param(
+            lambda value, protocol=protocol: pickle.dumps(value, protocol), id=f"dumps-{protocol}"
+        )
+        for protocol in protocols
+    ]
+    reductions = [
+        pytest.param(
+            lambda value, protocol=protocol: value.__reduce_ex__(protocol),
+            id=f"reduce-ex-{protocol}",
+        )
+        for protocol in protocols
+    ]
+    return [
+        *pickles,
+        *reductions,
+        pytest.param(lambda value: value.__reduce__(), id="reduce"),
+        pytest.param(copy.copy, id="copy"),
+        pytest.param(copy.deepcopy, id="deepcopy"),
+    ]
+
+
+@pytest.mark.parametrize(("name", "_registered"), VIEWS, ids=VIEW_IDS)
+@pytest.mark.parametrize("refusal", _refusals())
+def test_a_view_refuses_a_pickle_and_a_copy_as_python_s_does(
+    name: str, _registered: type, refusal: Callable[[object], object]
+) -> None:
+    config, sink = tracked({"a": 1})
+    with pytest.raises(Exception) as plain:
+        refusal(getattr({"a": 1}, name)())
+    with pytest.raises(Exception) as raised:
+        refusal(getattr(config, name)())
+
+    assert type(raised.value) is type(plain.value)
+    assert str(raised.value) == str(plain.value)
+    assert raised_by_target(raised.value)
+    # nothing is written and no answer leaves the dict, so nothing is recorded
     assert sink == []

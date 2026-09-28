@@ -1,3 +1,6 @@
+import copy
+import pickle
+
 PLAIN = {"k": 1}
 VIEWS = ("keys", "values", "items")
 
@@ -33,3 +36,34 @@ def built(d):
         if refused(lambda: type(view)({"k": 1})) != refused(lambda: type(python)({"k": 1})):
             return "differs"
     return "same"
+
+
+def refusals(view, operations):
+    return [refused(lambda: operation(view)) for operation in operations]
+
+
+PICKLES = [lambda v, protocol=protocol: pickle.dumps(v, protocol) for protocol in range(6)]
+COPIES = [copy.copy, copy.deepcopy]
+
+
+def compared(d, operations):
+    for name in VIEWS:
+        if refusals(getattr(d, name)(), operations) != refusals(getattr(PLAIN, name)(), operations):
+            return "differs"
+    return "same"
+
+
+def pickled(d):
+    if compared(d, PICKLES) == "same":
+        return "same"
+    return "differs"
+
+
+def copied(d):
+    if compared(d, COPIES) == "same":
+        return "same"
+    return "differs"
+
+
+def dumped(d):
+    return pickle.dumps(d.keys())

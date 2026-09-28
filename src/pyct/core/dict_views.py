@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import types
 from collections.abc import ItemsView, Iterator, KeysView, ValuesView
-from typing import Any
+from typing import Any, SupportsIndex
 
 from pyct.core import dict_reads as reads
 from pyct.core.branch import Downgrade, caller_site
@@ -69,6 +69,16 @@ class _View:
     def __delattr__(self, name: str, /) -> None:
         """`del v.name`: made on Python's own view of an empty dict, as a set is."""
         own(delattr, self.python({}), name)
+
+    def __reduce_ex__(self, protocol: SupportsIndex, /) -> str | tuple[Any, ...]:
+        """A pickle, a copy or a deep copy: asked of Python's own view of an empty dict, which
+        refuses in its own words at every protocol. Nothing is written and no answer leaves
+        the dict, so nothing is recorded (refuse-a-tracked-dict-view-s-pickle-as-python-does)."""
+        return own(self.python({}).__reduce_ex__, protocol)
+
+    def __reduce__(self) -> str | tuple[Any, ...]:
+        """`v.__reduce__()`: asked of Python's own view of an empty dict, as a pickle is."""
+        return own(self.python({}).__reduce__)
 
     @property
     def mapping(self) -> types.MappingProxyType[object, object]:
