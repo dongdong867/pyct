@@ -13,20 +13,25 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# a test that notes the trace function it runs under
+# a test that notes whether coverage.py measures it: through a trace function, or through the
+# tool it registers with sys.monitoring, as it can from 3.14
 MARKED_TEST = """
 import sys
 
 from tests.unit.deadline_fires import DEADLINE_FIRES
 
 
+def measurer():
+    return sys.gettrace() or sys.monitoring.get_tool(sys.monitoring.COVERAGE_ID)
+
+
 @DEADLINE_FIRES
 def test_marked():
-    assert sys.gettrace() is None, sys.gettrace()
+    assert measurer() is None, measurer()
 
 
 def test_measured():
-    assert sys.gettrace() is not None
+    assert measurer() is not None
 """
 
 

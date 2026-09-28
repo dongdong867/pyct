@@ -402,10 +402,13 @@ def test_flips_after_thousands_of_passes() -> None:
 
 
 @pytest.mark.serial
+@pytest.mark.timeout(270)
 # follow-lists-and-dicts-as-they-change-limits-an-answer-to-a-million-items
 def test_limits_an_answer_to_a_million_items() -> None:
-    at_limit = run_pyct(f"{MILLION}::at_the_limit", '{"items": [0]}')
-    past_limit = run_pyct(f"{MILLION}::past_the_limit", '{"items": [0]}')
+    # the two runs take about 11 s together on an idle machine; each limit leaves a loaded one
+    # room, and fails a run that hangs
+    at_limit = run_pyct(f"{MILLION}::at_the_limit", '{"items": [0]}', timeout=120)
+    past_limit = run_pyct(f"{MILLION}::past_the_limit", '{"items": [0]}', timeout=120)
 
     assert at_limit.returncode == 0, at_limit.stderr
     longest = [items_of(line) for line in solved(input_lines(at_limit.stdout))]

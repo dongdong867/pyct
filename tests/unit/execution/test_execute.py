@@ -260,36 +260,18 @@ def test_execute_reports_a_raise_from_a_target_with_no_code_object_as_the_target
 
 
 @pytest.mark.parametrize(
-    ("operation", "detail"),
+    "operation",
     [
-        pytest.param(lambda x: x / 0, "ZeroDivisionError: division by zero", id="downgrade"),
-        pytest.param(
-            lambda x: x // 0,
-            "ZeroDivisionError: integer division or modulo by zero",
-            id="division",
-        ),
-        pytest.param(
-            lambda x: divmod(x, 0),
-            "ZeroDivisionError: integer division or modulo by zero",
-            id="divmod",
-        ),
-        pytest.param(
-            lambda x: x**-1,
-            "ZeroDivisionError: 0.0 cannot be raised to a negative power",
-            id="power",
-        ),
-        pytest.param(
-            lambda x: pow(x, 2, 0), "ValueError: pow() 3rd argument cannot be 0", id="modular-power"
-        ),
-        pytest.param(
-            lambda x: round(x, 1.5),  # pyrefly: ignore[no-matching-overload]
-            "TypeError: 'float' object cannot be interpreted as an integer",
-            id="round",
-        ),
+        pytest.param(lambda x: x / 0, id="downgrade"),
+        pytest.param(lambda x: x // 0, id="division"),
+        pytest.param(lambda x: divmod(x, 0), id="divmod"),
+        pytest.param(lambda x: x**-1, id="power"),
+        pytest.param(lambda x: pow(x, 2, 0), id="modular-power"),
+        pytest.param(lambda x: round(x, 1.5), id="round"),  # pyrefly: ignore[no-matching-overload]
     ],
 )
 def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
-    operation: Callable[[int], object], detail: str
+    operation: Callable[[int], object],
 ) -> None:
     def target(x: int) -> object:
         return operation(x)
@@ -298,7 +280,11 @@ def test_execute_reports_a_raise_under_ints_own_operation_as_the_targets(
 
     result = execute(ctx, {"x": 0})
 
-    # a downgrade, and a taught operation's fallback, only run int's own; the raise is the target's
+    # a downgrade, and a taught operation's fallback, only run int's own; the raise is the
+    # target's, in the words plain Python gives it here
+    with pytest.raises((ArithmeticError, ValueError, TypeError)) as plain:
+        operation(0)
+    detail = f"{type(plain.value).__name__}: {plain.value}"
     assert result.failure == Failure(kind=FailureKind.TARGET_RAISED, detail=detail, traceback=None)
 
 

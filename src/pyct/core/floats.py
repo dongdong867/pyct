@@ -3,7 +3,9 @@
 The `ConcolicFloat` body below is the taught set: the compares, the truth
 test, `+ - * / // %` and `divmod`, the unary operations, the four roundings
 to an int and `is_integer` stay symbolic, `real` and `conjugate` are the
-value itself, `fromhex` is float's own, and a copy is the value itself.
+value itself, `fromhex` is float's own, `from_number`, where the running
+Python's float has it, converts a tracked float to itself, and a copy is
+the value itself.
 `_KEPT` names what is left to float on purpose. `_INHERITED` names what
 float inherits rather than defines, which the derivation at the bottom of
 the file downgrades along with every other method float defines. What each
@@ -32,6 +34,7 @@ from pyct.core.values import (
     REPORTED_CLASS,
     as_base,
     built_plainly,
+    converted,
     copy_as_itself,
     downgrade_the_rest,
     downgraded,
@@ -79,7 +82,7 @@ _REFLECTED = {
 }
 
 
-def _answered_first(name: str, self: object, other: object) -> object:
+def _answered_first(name: str, self: object, other: object, *modulus: object) -> object:
     """What a float subclass on the right answers first, as Python asks it, or NotImplemented.
 
     With a plain float on the left, Python asks the right operand's
@@ -97,7 +100,7 @@ def _answered_first(name: str, self: object, other: object) -> object:
     operation = getattr(kind, reflected)
     if issubclass(kind, ConcolicFloat) or operation is getattr(float, reflected):
         return NotImplemented
-    return numbers.reflected_answer(name, self, other, operation)
+    return numbers.reflected_answer(name, self, other, operation, *modulus)
 
 
 def _operand(other: object) -> Expression | None:
@@ -304,6 +307,9 @@ class ConcolicFloat(float):
     # is named here, since the derivation reads only methods called on a value
     fromhex = built_plainly(float, "fromhex")  # pyrefly: ignore[bad-override]
     __getformat__ = built_plainly(float, "__getformat__")  # pyrefly: ignore[bad-override]
+    if hasattr(float, "from_number"):
+        # from 3.14. A tracked float converts to itself, as `float(f)` does
+        from_number = converted(float, "from_number")
 
     # the class called with a value is float's own, a plain float; pyct builds a tracked one
     __new__ = as_base
