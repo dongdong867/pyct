@@ -237,7 +237,8 @@ class ListTerms(ListTyping, Slices):
     def _joined(self, operands: list[Expression], kinds: Kinds) -> Joined:
         """Two lists joined by `+`: one piece whose length adds theirs."""
         left, right = (self.piece(operand) for operand in operands)
-        return Joined(left.length.plus(right.length), kinds.kinds, kinds.every, [left, right])
+        length, split = left.length.plus(right.length), left.of_a_split or right.of_a_split
+        return Joined(length, kinds.kinds, kinds.every, of_a_split=split, parts=[left, right])
 
     def _split(self, node: list[Expression], kinds: Kinds) -> Counted:
         """A split's list: its count, and its pieces as `split_lists` reads them. A count is
@@ -248,9 +249,8 @@ class ListTerms(ListTyping, Slices):
             self.guards.append(fact)
         if listed.input_count is not None:
             self.origin[listed.count] = listed.input_count
-        return Counted(
-            Lin.of(listed.count), kinds.kinds, kinds.every, at=partial(self.splits.read, listed)
-        )
+        read = partial(self.splits.read, listed)
+        return Counted(Lin.of(listed.count), kinds.kinds, kinds.every, of_a_split=True, at=read)
 
     def counted_compare(self, node: list[Expression]) -> str | None:
         """A compare of a split's length with a number or another length, as the splits write
@@ -444,7 +444,8 @@ class ListTerms(ListTyping, Slices):
         if times > 1 and self.source.hold:
             longest = max(self.origin_of(listed.length) or 0, MOST_ITEMS // times)
             self.capped.append(f"(assert (<= {listed.length.text()} {longest}))")
-        return Repeated(listed.length.times(times), kinds.kinds, kinds.every, base=listed)
+        length, split = listed.length.times(times), listed.of_a_split
+        return Repeated(length, kinds.kinds, kinds.every, of_a_split=split, base=listed)
 
     @property
     def narrowed(self) -> bool:

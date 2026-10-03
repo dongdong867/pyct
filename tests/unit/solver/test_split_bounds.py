@@ -483,5 +483,5 @@ def test_the_first_of_many_lines_past_a_tracked_count_is_flipped(count: int) -> 
     # the count meets a tracked int, and nothing reads the lines from their end
     assert isinstance(answer, Sat), answer
     args = apply(seed, answer.model).args
-    lines = str(args["s"]).splitlines()
-    assert lines[0] == "end" and len(lines) > args["n"], args
+    lines, n = str(args["s"]).splitlines(), args["n"]
+    assert isinstance(n, int) and lines[0] == "end" and len(lines) > n, args

@@ -65,7 +65,10 @@ class Slices:
                 size.minus(start) if stop_bound is None else self._nonnegative(stop.minus(start))
             )
             step = 1
-        return Window(length, kinds.kinds, kinds.every, base=base, start=start, step=step)
+        split = base.of_a_split
+        return Window(
+            length, kinds.kinds, kinds.every, of_a_split=split, base=base, start=start, step=step
+        )
 
     def position(self, part: Expression, piece: Piece) -> Lin:
         """The position an item is read at: from the start, back from the end for a negative

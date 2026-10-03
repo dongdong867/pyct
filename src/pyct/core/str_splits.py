@@ -239,29 +239,6 @@ def measured_splits(expression: list[Expression]) -> list[tuple[list[object], in
     ]
 
 
-def splits_read_from_the_end(expression: Expression) -> list[list[object]]:
-    """The splits whose list, or a list built from it, an expression reads counted back from its
-    end: at a negative index, cut at a negative bound, or stepped back. A pop and a reverse are
-    written that way too. A list changed in place names the one before it more than once, so
-    each part is looked at once."""
-    found: list[list[object]] = []
-    stack, seen = [expression], set()
-    while stack:
-        part = stack.pop()
-        if not isinstance(part, list) or id(part) in seen:
-            continue
-        seen.add(id(part))
-        stack.extend(part)
-        if part[:1] in (["[]"], ["[:]"]) and any(_negative(bound) for bound in part[2:]):
-            found += splits_built_from(part[1])
-    return found
-
-
-def _negative(bound: Expression) -> bool:
-    """Whether an index, a slice bound or a step is a plain number below 0."""
-    return type(bound) is int and bound < 0
-
-
 def _start(form: Expression) -> int:
     """The pieces the slices a list is cut by leave out from its start, each start a plain
     number past 0."""

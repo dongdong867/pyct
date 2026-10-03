@@ -94,12 +94,14 @@ class Piece:
     """A list as cvc5 reads it: its length, and the kinds of the items it can hand out.
 
     ``kinds`` are the kinds of the items the input and the target put in it, as core counts
-    them; ``every`` adds the kinds of items the solver may add.
+    them; ``every`` adds the kinds of items the solver may add. ``of_a_split`` says it is a
+    split's list or built from one, whose piece keeps the condition that it is there.
     """
 
     length: Lin
     kinds: frozenset[str]
     every: frozenset[str]
+    of_a_split: bool = False
 
 
 # where a list the seed names holds an item of a kind: the guard at a position

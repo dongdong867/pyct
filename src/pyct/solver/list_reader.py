@@ -122,9 +122,11 @@ def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
     """The item of ``kind`` at ``position``."""
     found = _Reader(kind, context).read(piece, position)
     # a list whose every item is of the kind read needs no guard: the path keeps the position
-    # inside the list, and any item there is of that kind. A split's piece keeps the condition
-    # that it is there, which render asserts for each piece a fork reads
-    if piece.every <= {kind} and not isinstance(piece, Counted):
+    # inside the list, and any item there is of that kind. A split's piece, read from its list
+    # or one built from it, keeps the condition that it is there, which render asserts for each
+    # piece a fork reads: through a slice, a read at a count dropped it, and an answer held the
+    # piece at a line its string did not have
+    if piece.every <= {kind} and not piece.of_a_split:
         return Read(found.value, TRUE)
     return found
 

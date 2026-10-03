@@ -10,29 +10,35 @@ compare, a fork or the branch of a read.
 
 Only a length that meets anything else, a clamp a slice writes, a tracked int, another split's
 length, is a named count. On whitespace it is one term, the words the string has, exact on
-every string. Otherwise it is tied to the pieces up to a bound: two past the largest number
-the path compares a length with, or past the input's own count, at most `MOST_BOUND`. The
-count is the number of pieces there below the bound, and the piece at the bound is not, so an
-answer holds no more pieces than the bound.
+every string. On a separator split the path reads from its end it is one replace term. Where
+the input's own count takes the bound past `MOST_TIED_BY_WALKS`, it is the input's count, the
+string held to one with that many pieces. Otherwise it is tied to the pieces up to a bound:
+two past the largest number the path compares that split's length with, or past the input's
+own count where the path reads the list from its end, at most `MOST_BOUND`. The count is the
+number of pieces there below the bound, and the piece at the bound is not, so an answer holds
+no more pieces than the bound.
 
-A piece is read at a number from the start, at a number from the end, which a walk of the
-reversed string reads where one does (`splits.right_piece`), and at any other position as a
-choice among the pieces below the bound.
+A piece is read at a number from the start, and at any other position a term writes as a
+choice among the pieces below the bound. A piece from the end is read by a walk of the
+reversed string where one reads it (`splits.right_piece`), the last line by one look from the
+end where no fork compares the count with more than 1, and otherwise where the count the
+path's forks allow nearest the input's own puts it, or chosen among every count below the
+bound.
 
-A program that holds a count to its bound, reads a piece among those below it or at the
-input's own count, or reads an rsplit past its walk on a string with no more separators than
-its limit, says so (``Splits.bounded``), and an unsat to it is asked once more loosened: each
-count tied only to the pieces below the bound, with no bound on it, and none of those reads, a
-program that holds only what every string splitting as Python does meets. An unsat to that is
-the path's, and anything else a miss that says it is not (`solver.cvc5._loosened`). So a path
-that needs more pieces than the bound is never `unsat`. A held program whose own forks need
-more pieces than its bound is not asked, and neither is its loosened one, whose asks for three
-such paths each ran to the limit: the fork is `unknown` at once (``Splits.refuted``).
+A program that holds a count to its bound, reads a piece among those below it or at the count a
+read from the end fixes, or reads an rsplit past its walk on a string with no more separators
+than its limit, says so (``Splits.bounded``), and an unsat to it is asked once more loosened:
+each count tied only to the pieces below the bound, with no bound on it, and none of those
+reads, a program that holds only what every string splitting as Python does meets. An unsat to
+that is the path's, and anything else a miss that says it is not (`solver.cvc5._loosened`). So
+a path that needs more pieces than the bound is never `unsat`. A held program whose own forks
+need more pieces than its bound is not asked, and neither is its loosened one, whose asks for
+three such paths each ran to the limit: the fork is `unknown` at once (``Splits.refuted``).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.list_terms import FALSE, TRUE, Least, Lin, Read, both, compare, negated, nested
@@ -68,14 +74,19 @@ MOST_BOUND = 34
 # membership answered in 0.02 s
 MOST_WALKED_PAST = 16
 
+# the most pieces a count is tied to by their walks where the input's own count sets the bound:
+# past it, the count is held to the input's own, since a tie of 17 lines or 24 pieces on `--`
+# ran past the limit where origin/v2, whose length is plain, answered at once
+MOST_TIED_BY_WALKS = 16
+
 # the most pieces an input may have for a piece read from the end, where no walk of the
 # reversed string finds it, to be chosen among every count below the bound once the read at
-# the input's own count is unsat. A separator or whitespace split reads at the input's count
-# first at any bound, and splitlines where its bound is past this: on cvc5 1.3.4 the last of 8
-# lines read there answered in 1.7 s,
-# where chosen among 10 counts it ran past the limit, and the last of 12 lines chosen among 14
-# took 6.1 s where the input's own took 1.3 s. An input with more pieces is read at its count
-# alone, so a path that needs another count is a miss
+# the count the forks allow nearest the input's own is unsat. A separator or whitespace split
+# reads at that count first at any bound, and splitlines where its bound is past this: on cvc5
+# 1.3.4 the last of 8 lines read there answered in 1.7 s, where chosen among 10 counts it ran
+# past the limit, and the last of 12 lines chosen among 14 took 6.1 s where the input's own
+# took 1.3 s. An input with more pieces is read at that one count, so a path that needs
+# another count is a miss
 MOST_CHOSEN_BACK = 8
 
 # the largest bound a piece of an input with few pieces is chosen among, once the read at the
@@ -87,24 +98,36 @@ MOST_CHOSEN_BOUND = MOST_CHOSEN_BACK + 2
 
 @dataclass(frozen=True)
 class SplitRead:
-    """A read of a split's piece: what it found, whether it holds the program, and whether it
-    put the piece where the input's own few pieces put it."""
+    """A read of a split's piece: what it found, whether it holds the program, whether it
+    put the piece where the input's own few pieces put it, whether it chose the piece among
+    every count, which ties the count up to ``SplitList.counted_bound``, and whether it fixed
+    the count at ``SplitList.read_count``."""
 
     found: Read
     held: bool
     fixes_a_few: bool
+    among_counts: bool = False
+    fixes_the_count: bool = False
 
 
 class LoosenedReadError(Exception):
-    """A loosened program reads a piece only a held one writes: past a split's bound, at the
-    input's count, or on a string an rsplit past its walk is held to. The ask is a miss."""
+    """A loosened program reads a piece only a held one writes: past a split's bound, at a count
+    a read from the end fixes, or on a string an rsplit past its walk is held to. The ask is a
+    miss."""
 
 
 @dataclass(frozen=True)
 class SplitList:
     """One split's list: the string's term, the method and its plain operands, the name its
-    count goes by where a term reads it, the most pieces that count is tied to, and how many
-    pieces the input's own string has, where the input holds it as it is.
+    count goes by where a term reads it, and the most pieces that count is tied to: ``bound``,
+    or ``counted_bound`` where a read from the end puts a piece at a count, which also counts
+    the input's own pieces.
+
+    ``input_count`` and ``input_text`` are how many pieces the input's own string has, and that
+    string, where the input holds it as it is; ``read_count`` the count a piece from the end is
+    read at, the input's own moved as little as the forks on the split's length need; and
+    ``compared`` the largest number a fork compares that length with. ``back_among_counts``
+    says a piece from the end of an input with few pieces is chosen among every count.
 
     With ``hold`` false the program is the loosened one, which holds no count to a bound and
     reads no piece a held program alone writes. A tie and a read each say whether they hold
@@ -122,6 +145,7 @@ class SplitList:
     input_text: str | None = None
     compared: int = 0
     read_count: int | None = None
+    counted_bound: int | None = None
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -203,17 +227,30 @@ class SplitList:
         counts = (right_count(self.term, self.operands), left_count(self.term, self.operands))
         return f"(= {counts[0]} {counts[1]})"
 
-    def tie(self, read_from_the_end: bool = False) -> tuple[list[str], bool]:
+    def tie(
+        self, read_from_the_end: bool = False, among_counts: bool = False, fixed: bool = False
+    ) -> tuple[list[str], bool]:
         """What the count is: on whitespace, the words the string has, at most the limit's
         pieces; on a separator whose list the path reads from the end, as one replace term at
-        any bound (see `_counted_tie`); otherwise the pieces there below the bound, each by its
-        walk, and none at it. Loosened, the count is only past each number below the bound
-        where that piece is there. A tie by walks answered where one by memberships ran past the
-        limit beside a slice. Says whether it holds the count to the bound."""
+        any bound (see `_counted_tie`); where the input's own count takes the bound past
+        `MOST_TIED_BY_WALKS`, that count (see `_pinned`); otherwise the pieces there below the
+        bound, each by its walk, and none at it. Loosened, the count is only past each number
+        below the bound where that piece is there. A tie by walks answered where one by
+        memberships ran past the limit beside a slice. Says whether it holds the count.
+
+        A read from the end that put a piece at a count ties the count up to ``counted_bound``:
+        one that fixed the count, other than on a separator, to that count alone (see
+        `_fixed_tie`).
+        """
+        at_a_count = among_counts or fixed
+        if at_a_count and self.counted_bound not in (None, self.bound):
+            return replace(self, bound=self.counted_bound).tie(read_from_the_end, fixed=fixed)
         if self._words():
             return [f"(assert (= {self.count} {self._words_count()}))"], False
         if read_from_the_end and self._separated() and self.hold:
             return self._counted_tie()
+        if fixed and self.hold:
+            return self._fixed_tie(), True
         beyond = self._there(self.bound)
         if beyond != FALSE and self.hold and self._pinned():
             return self._pinned_tie(), True
@@ -229,24 +266,31 @@ class SplitList:
             tied.append(f"(assert {negated(beyond)})")
         return tied, beyond != FALSE
 
+    def _fixed_tie(self) -> list[str]:
+        """The count a read from the end fixed, and the string as one with that many pieces, by
+        the walks the read takes: tied to every piece up to a bound two past it as well, the
+        count ran past the limit at 8 to 12 lines, and past 16 kept the input's own string."""
+        count = self.read_count
+        assert count is not None
+        exact = both(self._there(count - 1), negated(self._there(count)))
+        return [f"(assert (= {self.count} {count}))", f"(assert {exact})"]
+
     def _pinned(self) -> bool:
         """Whether a count tied by walks is held to the input's own count: where the input's
-        own pieces, not a number the path compares with, take the bound past
-        `MOST_WALKED_PAST`, a tie of that many walks ran past the limit (17 lines, 24 pieces on
-        `--`), so the count is read as Python counted the input's string, and a path that needs
-        another count is asked loosened."""
+        own pieces, which no fork on the split's length moves, take the bound past
+        `MOST_TIED_BY_WALKS`, the count is read as Python counted the input's string, and a
+        path that needs another count is asked loosened."""
         count = self.input_count
         moved = count != self.read_count
-        return (
-            count is not None and not moved and self.bound == count + BOUND_PAST > MOST_WALKED_PAST
-        )
+        own = self.bound == (count or 0) + BOUND_PAST
+        return count is not None and not moved and own and self.bound > MOST_TIED_BY_WALKS
 
     def _pinned_tie(self) -> list[str]:
         """The count as the input's own, and the string as one with that many pieces: on a
         separator by memberships, which answered 24 pieces on `--` where the walks and a replace
-        term ran past the limit; on lines and words as the input's own string, since 17 lines
-        counted by their walks or by a replace term ran past the limit, where origin/v2, whose
-        length is plain, answers at once."""
+        term ran past the limit; on lines as the input's own string, since 17 lines counted by
+        their walks or by a replace term ran past the limit, where origin/v2, whose length is
+        plain, answers at once."""
         count, text = self.input_count, self.input_text
         assert count is not None and text is not None
         separator = self.operands[0] if self._separated() else None
@@ -301,7 +345,7 @@ class SplitList:
 
     def read(self, position: Lin, kind: str, least: Least) -> SplitRead:
         """The piece at ``position``, and when it is there; whether the read holds the program,
-        a choice by the bound or the input's count, or an rsplit's restriction; and whether it
+        a choice by the bound or a count it fixes, or an rsplit's restriction; and whether it
         puts the piece where the input's own few pieces put it, which a later ask may choose
         among every count instead."""
         if kind != "str":
@@ -325,8 +369,8 @@ class SplitList:
         if walked is not None:
             return SplitRead(Read(walked, self._there(back)), restricted, False)
         if self._at_input_count(back):
-            return SplitRead(self._held_back(back), True, self._few())
-        return SplitRead(self._counted_back(back), True, False)
+            return SplitRead(self._held_back(back), True, self._few(), fixes_the_count=True)
+        return SplitRead(self._counted_back(back), True, False, among_counts=True)
 
     def from_the_end(self, position: Lin) -> bool:
         """Whether a position is the count less a number."""
@@ -347,14 +391,18 @@ class SplitList:
         count = self.read_count
         if count is None or back >= count:
             return False
-        if self.head == "splitlines" and self.bound <= MOST_CHOSEN_BACK:
+        if self.head == "splitlines" and self._counted() <= MOST_CHOSEN_BACK:
             return False
         return count > MOST_CHOSEN_BACK or not self.back_among_counts
+
+    def _counted(self) -> int:
+        """The most pieces a count is tied to where a read from the end puts a piece at it."""
+        return self.bound if self.counted_bound is None else self.counted_bound
 
     def _few(self) -> bool:
         """Whether the bound is one the choice among every count answers within, which also
         makes the input's pieces few: the bound is two past the input's count."""
-        return self.bound <= MOST_CHOSEN_BOUND
+        return self._counted() <= MOST_CHOSEN_BOUND
 
     def _held_back(self, back: int) -> Read:
         """Piece ``back`` from the end where the string has as many pieces as the input's: the
@@ -374,13 +422,13 @@ class SplitList:
         self._held()
         branches = [
             (both(self.past(at + back), negated(self.past(at + back + 1))), self.piece(at))
-            for at in range(self.bound)
+            for at in range(self._counted())
         ]
         kept = [(condition, value) for condition, value in branches if condition != FALSE]
         if not kept:
             return Read(None, FALSE)
         value = nested(kept[:-1], kept[-1][1])
-        guard = both(self.past(back), negated(self.past(self.bound + back)))
+        guard = both(self.past(back), negated(self.past(self._counted() + back)))
         return Read(value, both(guard, self.restriction()))
 
     def _chosen(self, position: Lin, least: Least) -> Read:

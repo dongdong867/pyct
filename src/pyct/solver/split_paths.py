@@ -4,10 +4,9 @@ tied to, and what the path's reads and ties say of the program (see ``split_list
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LISTED_SPLITS, measured_splits, splits_read_from_the_end
+from pyct.core.str_splits import LISTED_SPLITS, measured_splits
 from pyct.solver.list_terms import Least, Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_lists import BOUND_PAST, MOST_BOUND, SplitList
@@ -65,22 +64,40 @@ class Splits:
         # most the forks on its own length let it be, by the split's part
         self.numbers: dict[int, int] = {}
         self.ranges: dict[int, tuple[int, int | None]] = {}
-        # each split the path reads counted back from its end, by its part
-        self.ended: set[int] = set()
+        # each count a read from the end chose a piece among, and each one a read fixed
+        self.among_counts: set[str] = set()
+        self.fixed: set[str] = set()
+        # the largest number a fork compares each tracked name with, and the names a fork on
+        # each split's length compares it with, each with the pieces its slices leave out, by
+        # the split's part
+        self.named: dict[str, int] = {}
+        self.meets: dict[int, set[tuple[str, int]]] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """The largest number a fork compares each split's list's length with, or the length
-        of a list built from it."""
+        of a list built from it, and each tracked name it meets."""
         for fork in prefix:
             expression = fork.expression
-            self.ended.update(id(split) for split in splits_read_from_the_end(expression))
             if not isinstance(expression, list) or len(expression) != 3:
                 continue
             numbers = [part for part in expression[1:] if type(part) is int]
             for split, start in measured_splits(expression):
                 most = [number + start for number in numbers]
                 self.numbers[id(split)] = max([self.numbers.get(id(split), 0), *most])
+                met = [_names(part) for part in expression[1:] if not _measures(part)]
+                names = {(name, start) for found in met for name in found}
+                self.meets.setdefault(id(split), set()).update(names)
+            self._named(expression)
             self._range(expression, fork.taken)
+
+    def _named(self, expression: list[Expression]) -> None:
+        """The largest number a fork compares a tracked name with, ``n > 8`` say, which a split's
+        length that meets ``n`` may need."""
+        _, left, right = expression
+        for name, number in ((left, right), (right, left)):
+            if _is_name(name) and type(number) is int:
+                assert isinstance(name, str)
+                self.named[name] = max(self.named.get(name, 0), number)
 
     def _range(self, expression: list[Expression], taken: bool) -> None:
         """Narrow the least and the most a split's count can be by a fork that compares its
@@ -109,24 +126,38 @@ class Splits:
         plain = tuple(plain_operand(part) for part in operands)
         text = self.given(string)
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
-        # the input's own count bounds only a list the path reads from its end, which may read
-        # it there: tied to every piece of a long input, a count no fork needs that large ran
-        # past the limit at 12 lines, and past 16 kept the input's own string
-        own = held or 0 if id(node) in self.ended else 0
-        most = max(self.numbers.get(id(node), 0), own) + BOUND_PAST
-        bound = min(most, MOST_BOUND)
-        count = f"count!{len(self.lists)}!"
-        choose = self.back_among_counts
-        known = text if isinstance(text, str) else None
-        compared = self.numbers.get(id(node), 0)
         listed = SplitList(
-            term, str(head), plain, count, bound, self.hold, held, choose, known, compared
+            term=term,
+            head=str(head),
+            operands=plain,
+            count=f"count!{len(self.lists)}!",
+            bound=self._bound(node, None),
+            counted_bound=self._bound(node, held),
+            hold=self.hold,
+            input_count=held,
+            back_among_counts=self.back_among_counts,
+            input_text=text if isinstance(text, str) else None,
+            compared=self.numbers.get(id(node), 0),
+            read_count=self._read_count(node, held),
         )
-        listed = replace(listed, read_count=self._read_count(node, held))
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
         return listed
+
+    def _bound(self, node: list[Expression], held: int | None) -> int:
+        """The most pieces a split's count is tied to: two past the largest number a fork
+        compares its length with, or a tracked int its length meets, or past ``held``, the
+        input's own count, given where a read from the end puts a piece at a count. Tied to
+        every piece of a long input, a count no fork needs that large ran past the limit at 12
+        lines, and past 16 kept the input's own string."""
+        met = self.meets.get(id(node), ())
+        names = [self.named[name] + start for name, start in met if name in self.named]
+        # past the cap the path needs more pieces than any bound: left out, the held ask is
+        # unsat at once and the loosened one says the fork is a miss
+        names = [number for number in names if number + BOUND_PAST <= MOST_BOUND]
+        most = max(self.numbers.get(id(node), 0), *names, held or 0)
+        return min(most + BOUND_PAST, MOST_BOUND)
 
     def _read_count(self, node: list[Expression], held: int | None) -> int | None:
         """The count a read from the end puts its piece at: the input's own, moved as little as
@@ -144,6 +175,10 @@ class Splits:
             self.backs.add(listed.count)
         if read.held:
             self.bounds.add(listed.count)
+        if read.among_counts:
+            self.among_counts.add(listed.count)
+        if read.fixes_the_count:
+            self.fixed.add(listed.count)
         self.fixed_few |= read.fixes_a_few
         return read.found
 
@@ -191,14 +226,36 @@ class Splits:
                 continue
             self.emitted.append(count)
             listed = self.lists[count]
-            tie, held = listed.tie(count in self.backs)
+            among = count in self.among_counts
+            tie, held = listed.tie(count in self.backs, among, count in self.fixed)
             if held:
                 self.bounds.add(count)
-                self.refuted |= least.get(count, 0) > listed.bound
+                bound = listed.counted_bound if among or count in self.fixed else listed.bound
+                self.refuted |= least.get(count, 0) > (bound or listed.bound)
             declared.append(f"(declare-const {count} Int)")
             ties += tie
             pending += [other for other in self.lists if other in "\n".join(tie)]
         return declared, ties
+
+
+def _measures(part: Expression) -> bool:
+    """Whether a part is the length of a list, ``["len", ...]``."""
+    return isinstance(part, list) and part[:1] == ["len"]
+
+
+def _is_name(part: Expression) -> bool:
+    """Whether a part is a tracked name, not a quoted string."""
+    return isinstance(part, str) and not part.startswith("'")
+
+
+def _names(part: Expression) -> set[str]:
+    """The tracked names a part reads, each operand past a head."""
+    if _is_name(part):
+        assert isinstance(part, str)
+        return {part}
+    if not isinstance(part, list):
+        return set()
+    return {name for operand in part[1:] for name in _names(operand)}
 
 
 def _counts(part: Expression) -> bool:
