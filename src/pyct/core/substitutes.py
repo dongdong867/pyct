@@ -18,9 +18,10 @@ the link keeps Python's own `in` and searches a container of this module's,
 `Searched` or `Identity`, which asks the same functions.
 
 A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`,
-`range(...)`, or `type(...)` with one argument, and a call of a `math`
-function through a name the module binds to it (`pyct.intercept.constants`),
-asks `call` for its callee first, and calls what it hands back: pyct's
+`range(...)`, or `type(...)` with one argument, a call of a `math` function
+through a name the module binds to it (`pyct.intercept.constants`), and a
+call of a range or dict view method through the type
+(`pyct.core.type_calls`), asks `call` for its callee first, and calls what it hands back: pyct's
 router for Python's own function, which `pyct.core.bound` holds beside the
 `len`, `ord` and `chr` it binds in the module's builtins, and the callee
 itself for anything else, so a function of the target's runs with no frame

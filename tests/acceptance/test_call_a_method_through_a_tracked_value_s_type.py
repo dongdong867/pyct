@@ -14,8 +14,14 @@ from typing import Any
 import pytest
 
 from targets.types import through, through_own
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
-from tests.acceptance.test_ints import forks_of
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     line_of,
@@ -138,7 +144,7 @@ def test_follows_a_walk_through_the_type() -> None:
     ]
     assert seed["downgrades"] == []
     two = line_of(FILE, 'return "two"', "walk")
-    assert any(args_of(s)["n"] >= 3 and two in covered_in(s, str(FILE)) for s in solved)
+    assert any(argument(s, "n") >= 3 and two in covered_in(s, str(FILE)) for s in solved)
 
 
 # call-a-method-through-a-tracked-value-s-type-keeps-other-receivers-and-names-as-written

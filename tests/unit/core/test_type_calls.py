@@ -66,11 +66,21 @@ def test_each_method_a_type_defines_on_a_value_is_routed() -> None:
     assert "__format__" not in type_calls.NAMES
 
 
-@pytest.mark.parametrize("empty", EMPTY, ids=lambda empty: type(empty).__name__)
-def test_python_refuses_a_keyword_to_each_routed_method(empty: object) -> None:
-    # a router hands a keyword to Python's method on an empty value, sure it refuses
-    for method in _methods(type(empty)):
-        assert "keyword" in _refusal(lambda method=method: method(empty, key=0)), method
+def _tracked_and_plain(name: str) -> tuple[object, object]:
+    """A tracked range or view, and the plain value of the same type it stands for."""
+    if name == "range":
+        return _range(3)[0], range(3)
+    view = name.removeprefix("dict_")
+    return getattr(_dict([]), view)(), getattr({"k": 1}, view)()
+
+
+@pytest.mark.parametrize("name", ["range", "dict_keys", "dict_values", "dict_items"])
+def test_a_keyword_to_each_routed_method_is_refused_as_python_refuses_it(name: str) -> None:
+    tracked, plain = _tracked_and_plain(name)
+    for method in _methods(type(plain)):
+        routed = bound.CALLED[id(method)]
+        expected = _refusal(lambda method=method: method(plain, key=0))
+        assert _refusal(lambda routed=routed: routed(tracked, key=0)) == expected, method
 
 
 @pytest.mark.parametrize(

@@ -1,5 +1,5 @@
 """The calls pyct substitutes where the target writes them: conversions, `range`, `type`,
-`math` functions and a str's methods.
+`math` functions, a str's methods, and a range or dict view method called through the type.
 
 - A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
   bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
