@@ -443,3 +443,45 @@ def test_the_last_line_is_read_at_the_count_the_forks_allow_nearest_the_input_s(
     assert isinstance(answer, Sat), answer
     text = str(apply(seed, answer.model).args["s"]).splitlines()
     assert text[-1] == "end" and (len(text) > number) is taken, text
+
+
+_LINES: Expression = ["splitlines", "s"]
+_REST: Expression = ["[:]", _LINES, 1, None]
+
+
+@needs_cvc5
+@pytest.mark.parametrize("count", [12, 16, 17])
+def test_the_first_of_the_rest_of_many_lines_is_flipped(count: int) -> None:
+    path = (
+        fork(["!=", ["len", _REST], 0], taken=True),
+        fork([">", ["len", _REST], 0], taken=True),
+        fork(["==", ["[]", _REST, 0], "'end'"], taken=True),
+    )
+    seed = Seed.of({"s": "a\n" * (count - 1) + "x"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the slice's clamp names the count, which no read from the end bounds by the input's own
+    # lines: tied to each of them it ran past the limit at 12 and kept the string past 16
+    assert isinstance(answer, Sat), answer
+    lines = str(apply(seed, answer.model).args["s"]).splitlines()
+    assert lines[1:] and lines[1:][0] == "end", lines
+
+
+@needs_cvc5
+@pytest.mark.parametrize("count", [12, 16, 17])
+def test_the_first_of_many_lines_past_a_tracked_count_is_flipped(count: int) -> None:
+    path = (
+        fork([">", ["len", _LINES], "n"], taken=True),
+        fork([">", ["len", _LINES], 0], taken=True),
+        fork(["==", ["[]", _LINES, 0], "'end'"], taken=True),
+    )
+    seed = Seed.of({"s": "a\n" * (count - 1) + "x", "n": 0})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the count meets a tracked int, and nothing reads the lines from their end
+    assert isinstance(answer, Sat), answer
+    args = apply(seed, answer.model).args
+    lines = str(args["s"]).splitlines()
+    assert lines[0] == "end" and len(lines) > args["n"], args

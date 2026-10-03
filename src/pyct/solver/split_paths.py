@@ -7,7 +7,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LISTED_SPLITS, measured_splits
+from pyct.core.str_splits import LISTED_SPLITS, measured_splits, splits_read_from_the_end
 from pyct.solver.list_terms import Least, Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_lists import BOUND_PAST, MOST_BOUND, SplitList
@@ -65,12 +65,15 @@ class Splits:
         # most the forks on its own length let it be, by the split's part
         self.numbers: dict[int, int] = {}
         self.ranges: dict[int, tuple[int, int | None]] = {}
+        # each split the path reads counted back from its end, by its part
+        self.ended: set[int] = set()
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """The largest number a fork compares each split's list's length with, or the length
         of a list built from it."""
         for fork in prefix:
             expression = fork.expression
+            self.ended.update(id(split) for split in splits_read_from_the_end(expression))
             if not isinstance(expression, list) or len(expression) != 3:
                 continue
             numbers = [part for part in expression[1:] if type(part) is int]
@@ -106,7 +109,11 @@ class Splits:
         plain = tuple(plain_operand(part) for part in operands)
         text = self.given(string)
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
-        most = max(self.numbers.get(id(node), 0), held or 0) + BOUND_PAST
+        # the input's own count bounds only a list the path reads from its end, which may read
+        # it there: tied to every piece of a long input, a count no fork needs that large ran
+        # past the limit at 12 lines, and past 16 kept the input's own string
+        own = held or 0 if id(node) in self.ended else 0
+        most = max(self.numbers.get(id(node), 0), own) + BOUND_PAST
         bound = min(most, MOST_BOUND)
         count = f"count!{len(self.lists)}!"
         choose = self.back_among_counts
