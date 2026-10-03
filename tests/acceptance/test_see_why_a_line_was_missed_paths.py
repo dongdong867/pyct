@@ -7,6 +7,8 @@ operation that may raise is told apart from the test at the same column.
 """
 
 import json
+import os
+import subprocess
 import time
 
 import pytest
@@ -66,6 +68,42 @@ def not_taken(file: str, line: int, col: int, side: bool, **tries: int) -> dict[
 
 def cause(entry: dict[str, object]) -> dict[str, object]:
     return {key: value for key, value in entry.items() if key not in ("file", "lines")}
+
+
+# each `negated` target's input lines and stderr fork lines as c586d3ba printed them on 3.12, 3.13
+# and 3.14 alike, the repository's folder written <root>. They pin the whole lines, cvc5's answers
+# and each line's `total` among them, so an edit to `targets/why/negated.py` or a new cvc5 that
+# answers otherwise records them again, in one process so no two workers write the file at once:
+# PYCT_RECORD_PRINTED=1 uv run pytest tests/acceptance/test_see_why_a_line_was_missed_paths.py
+#     -n 0 -k "negated or no_fork"
+# and the diff then shows the change, which a person checks is no printed change of pyct's
+NEGATED_PRINTED_FILE = REPO_ROOT / "tests" / "acceptance" / "negated_printed.json"
+RECORD_PRINTED = os.environ.get("PYCT_RECORD_PRINTED") == "1"
+
+
+def printed(result: subprocess.CompletedProcess[str]) -> dict[str, list[str]]:
+    """A run's input lines and stderr fork lines, the repository's folder written <root>."""
+    inputs = result.stdout.splitlines()[:-1]
+    forks = [line for line in result.stderr.splitlines() if line.startswith("fork ")]
+    root = str(REPO_ROOT)
+    return {
+        "inputs": [line.replace(root, "<root>") for line in inputs],
+        "forks": [line.replace(root, "<root>") for line in forks],
+    }
+
+
+def check_printed(function: str, result: subprocess.CompletedProcess[str]) -> None:
+    """That the run printed what the base did, or, while recording, keep what it printed and
+    skip."""
+    held = json.loads(NEGATED_PRINTED_FILE.read_text())
+    if not RECORD_PRINTED:
+        assert printed(result) == held[function]
+        return
+    assert "PYTEST_XDIST_WORKER" not in os.environ, "record the printed lines with -n 0"
+    held[function] = printed(result)
+    NEGATED_PRINTED_FILE.write_text(json.dumps(held, indent=1) + "\n")
+    # a recording checks nothing, so it never reads as a pass
+    pytest.skip("printed lines recorded; run again without PYCT_RECORD_PRINTED to check them")
 
 
 # the guard's line, and every line under it Python may also copy into cleanup code
@@ -220,6 +258,8 @@ def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
 
     assert result.returncode == 0, result.stderr
     assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=unsat)
+    # read-an-is-test-against-a-name-per-pass-keeps-every-shape-that-reads-right
+    check_printed(function, result)
 
 
 # a test no fork was recorded at, read in the sense of its `is` or `in` on every release: `done is
@@ -240,6 +280,7 @@ def test_a_test_with_no_fork_reads_in_the_sense_of_its_is_or_in(
         "reason": "no fork",
         "condition": {"file": file, "line": site[0], "col": site[1], "side": True},
     }
+    check_printed(function, result)
 
 
 def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:

@@ -286,15 +286,14 @@ class _Facts:
                 int() as line,
                 int() as col,
                 bool() as raising,
-                *marked,
-            ]:
-                if marked and (len(marked) != 1 or marked[0] is not True):
-                    raise ValueError("a fork's seventh item marks a split's walk, and is true")
+                *note,
+            ] if _noted(note):
                 site = self._site(file, line, col)
-                walk = bool(marked)
+                held = note[0] if note else None
+                walk = len(note) == 2
                 expression = self._expression(expression)
-                return Branch(expression, taken, site, raising=raising, split_walk=walk)
-        raise ValueError("a fork is [expression, taken, file, line, col, raising]")
+                return Branch(expression, taken, site, raising, is_held=held, split_walk=walk)
+        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its notes")
 
     def _fact(self, value: object) -> Fact:
         """A fact, placed after every fork record read before it."""
@@ -365,3 +364,11 @@ def _ending(value: object) -> Failure | None:
         case [str() as kind, str() as detail, str() | None as traceback]:
             return Failure(kind=FailureKind(kind), detail=detail, traceback=traceback)
     raise ValueError("an ending is null or [kind, detail, traceback]")
+
+
+def _noted(note: list[object]) -> bool:
+    """Whether a fork record's items past the sixth are its notes: whether an `is` held, a bool,
+    and then, for a walk's fork over a split's list, true, the `is` note null there if none."""
+    if len(note) == 2:
+        return (note[0] is None or type(note[0]) is bool) and note[1] is True
+    return len(note) <= 1 and all(type(each) is bool for each in note)
