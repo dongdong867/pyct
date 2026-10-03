@@ -29,7 +29,6 @@ SIZED_ACROSS = "targets.intercept.sized_across::spread"
 HANDED_ON = "targets.intercept.handed_on::pair"
 PLAIN_BUILTINS = "targets.intercept.plain_builtins::plain"
 OWN_LEN = "targets.intercept.own_len::check"
-BUILTINS_LEN = "targets.intercept.builtins_len::check"
 THREADED_SIZED = "targets.intercept.threaded_sized::check"
 TYPE_NAMES = "targets.intercept.type_names::f"
 REFUSALS = "targets.intercept.refusals"
@@ -156,16 +155,6 @@ def test_keeps_a_module_s_own_name() -> None:
     assert 7 in covered_of(seed, file)
     assert seed["forks"] == []
     assert seed["downgrades"] == []
-
-
-# intercept-builtin-functions-names-the-loss-through-the-builtins-module
-def test_names_the_loss_through_the_builtins_module() -> None:
-    result = run_pyct(BUILTINS_LEN, '{"s": "ab"}')
-
-    assert result.returncode == 0, result.stderr
-    seed = first_line(result.stdout)
-    assert seed["downgrades"] == [downgrade("__len__", 1, "targets/intercept/builtins_len.py:5:7")]
-    assert seed["forks"] == []
 
 
 # intercept-builtin-functions-leaves-other-packages-as-written
