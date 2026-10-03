@@ -6,6 +6,7 @@ import inspect
 import sys
 import types
 from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 
 from pyct.binding.annotations import Check
@@ -13,7 +14,7 @@ from pyct.binding.bind import bind
 from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch, Fact
 from pyct.execution.blame import blame, one_line
-from pyct.execution.deadline import DeadlineError, deadline
+from pyct.execution.deadline import DeadlineError, close, deadline
 from pyct.execution.tally import Tally, Watch
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -83,10 +84,15 @@ def execute(
     bound = bind(args, tally, ctx.checks)
     tracer = _LineTracer(ctx.file, tally)
     tracer.start()
+    block = deadline(until)
     try:
-        ending = _call(ctx, bound, until)
+        ending = _call(ctx, bound, block)
     finally:
-        tracer.stop()
+        try:
+            tracer.stop()
+        finally:
+            # from this frame, which called the block's, where the alarm never raises
+            close(block)
     # sealed before the failure is written: writing it asks the raise for its text, which
     # asks any tracked value in it for its own, and that call is pyct's, not the target's
     tally.seal()
@@ -111,8 +117,11 @@ class _Ending:
     called: bool
 
 
-def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | None) -> _Ending:
-    """Call the target and keep how it ended, for ``_failure`` to write once the sink is read.
+def _call(
+    ctx: ExecutionContext, bound: Mapping[str, object], block: AbstractContextManager[None]
+) -> _Ending:
+    """Call the target inside the deadline's ``block`` and keep how it ended, for ``_failure``
+    to write once the sink is read.
 
     A positional-only parameter is passed by position, as ``ctx.positional``
     names it.
@@ -121,7 +130,7 @@ def _call(ctx: ExecutionContext, bound: Mapping[str, object], until: float | Non
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
-        with deadline(until):
+        with block:
             called = True
             ctx.fn(*positional, **keywords)
     except caught as error:
