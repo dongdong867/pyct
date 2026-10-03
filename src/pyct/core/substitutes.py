@@ -21,13 +21,13 @@ A call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`,
 `range(...)`, or `type(...)` with one argument, a call of a `math` function
 through a name the module binds to it (`pyct.intercept.constants`), and a
 call of a range or dict view method through the type
-(`pyct.core.type_calls`), asks `call` for its callee first, and calls what it hands back: pyct's
-router for Python's own function, which `pyct.core.bound` holds beside the
-`len`, `ord` and `chr` it binds in the module's builtins, and the callee
-itself for anything else, so a function of the target's runs with no frame
-of pyct's above it. An operator's right side goes through `handed`
-(`pyct.core.handed`) before Python's own operator runs, so no frame of
-pyct's is above the target's own operator either.
+(`pyct.core.type_calls`), asks `call` for its callee first, and calls what
+it hands back: pyct's router for Python's own function, which
+`pyct.core.bound` holds beside the `len`, `ord` and `chr` it binds in the
+module's builtins, and the callee itself for anything else, so a function of
+the target's runs with no frame of pyct's above it. An operator's right side
+goes through `handed` (`pyct.core.handed`) before Python's own operator runs,
+so no frame of pyct's is above the target's own operator either.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
