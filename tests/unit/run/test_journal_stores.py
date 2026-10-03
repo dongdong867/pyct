@@ -8,6 +8,8 @@ import signal
 import time
 from typing import NoReturn
 
+import pytest
+
 from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.run.journal import RECORDS, JournalWriter
 from pyct.run.journal_reader import read
@@ -98,17 +100,34 @@ def test_a_fact_crosses_the_journal_placed_after_the_forks_before_it() -> None:
     assert reading.facts[0].expression[1] is reading.branches[0].expression[1]  # type: ignore[index]
 
 
-def test_a_fork_record_holds_six_items() -> None:
+@pytest.mark.parametrize(
+    "seventh", [b"1", b"false", b"true, true"], ids=["a number", "false", "two"]
+)
+def test_a_fork_record_holds_six_items_or_a_split_walk_s_mark(seventh: bytes) -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    writer.fork(Branch(expression="abcdef", taken=True, site=Site("m.py", 2, 4)))
-    written = b'"abcdef", true, "m.py", 2, 4, false]'
+    writer.fork(Branch(expression="abcdefghijklmnop", taken=True, site=Site("m.py", 2, 4)))
+    written = b'"abcdefghijklmnop", true, "m.py", 2, 4, false]'
     at = buffer.index(written)
-    buffer[at : at + len(written)] = b'"abc", true, "m.py", 2, 4, false, 1]'
+    rewritten = b'"a", true, "m.py", 2, 4, false, ' + seventh
+    buffer[at : at + len(written)] = rewritten.ljust(len(written) - 1) + b"]"
 
     reading = read(buffer)
 
     assert reading.branches == () and reading.problem is not None
+
+
+def test_a_split_walk_s_fork_keeps_its_mark() -> None:
+    buffer = bytearray(1 << 16)
+    writer = JournalWriter(buffer)
+    walk = Branch([">", ["len", ["splitlines", "s"]], 0], True, Site("m.py", 2, 4), split_walk=True)
+    writer.fork(walk)
+    writer.fork(Branch(expression="t", taken=False, site=Site("m.py", 3, 4)))
+
+    reading = read(buffer)
+
+    assert [branch.split_walk for branch in reading.branches] == [True, False]
+    assert reading.branches[0] == walk
 
 
 def test_a_fact_with_more_than_a_place_beside_it_is_unreadable() -> None:
