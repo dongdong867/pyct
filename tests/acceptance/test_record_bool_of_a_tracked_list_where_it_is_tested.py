@@ -12,7 +12,7 @@ from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
     input_lines,
-    placed,
+    lines_expressions_and_sides,
     run_pyct,
     summary_line,
     took,
@@ -70,7 +70,7 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, FILLED, False)]
+    assert lines_expressions_and_sides(seed) == [(tested, FILLED, False)]
     assert seed_fork_line(result.stderr, tested).endswith("  len(items) != 0  not taken")
     solved = filled(inputs[1:])
     assert solved, inputs
@@ -89,7 +89,7 @@ def test_writes_a_changed_list_as_built() -> None:
     seed = first_line(result.stdout)
     built = ["!=", ["len", ["+", "items", ["[,]", 0]]], 0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, built, True)]
+    assert lines_expressions_and_sides(seed) == [(tested, built, True)]
     assert any(
         line.startswith(f"missed {FILE}:{tested}:") and line.endswith(" unsat")
         for line in result.stderr.splitlines()
@@ -105,7 +105,7 @@ def test_keeps_the_list_as_it_was_at_the_call() -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, FILLED, False)]
+    assert lines_expressions_and_sides(seed) == [(tested, FILLED, False)]
     solved = filled(inputs[1:])
     assert solved, inputs
     assert took(solved, (tested, FILLED, True))
@@ -120,7 +120,7 @@ def test_names_a_list_inside_as_indexed() -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     row = ["!=", ["len", ["[]", "grid", 0]], 0]
-    assert placed(seed) == [
+    assert lines_expressions_and_sides(seed) == [
         (called, [">", ["len", "grid"], 0], True),
         (tested, row, False),
     ]

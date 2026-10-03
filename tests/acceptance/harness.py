@@ -1,7 +1,7 @@
 """What every acceptance test needs: spawn pyct, run it in process, read its stdout.
 
-The line helpers narrow a field of one printed line, and fail on a malformed line with the
-line in the message.
+The line helpers narrow a field of one printed line. ``argument``, ``forks_of`` and
+``numbers_of`` assert the type of the field they read, with the line in the message.
 
 The subprocess runs ``python -P -m pyct`` from the repository root with
 ``PYTHONPATH`` removed, so a test proves the target imports from the working
@@ -214,14 +214,14 @@ def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
     return [dict(fork) for fork in forks]
 
 
-def placed(line: dict[str, object]) -> list[tuple[object, object, object]]:
+def lines_expressions_and_sides(line: dict[str, object]) -> list[tuple[object, object, object]]:
     """Each fork on a printed line, by its line, its expression and the side it took."""
     return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
 
 
 def took(inputs: list[dict[str, object]], fork: tuple[object, object, object]) -> bool:
     """Whether any of the printed lines took this fork: its line, its expression and its side."""
-    return any(fork in placed(line) for line in inputs)
+    return any(fork in lines_expressions_and_sides(line) for line in inputs)
 
 
 def numbers_of(line: dict[str, object], key: str) -> dict[str, list[int]]:

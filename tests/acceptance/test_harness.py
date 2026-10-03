@@ -1,5 +1,5 @@
 """The harness demands the summary line, measures a pyct child only when its deadline is off,
-and narrows a printed line's fields, failing on a malformed line."""
+and narrows a printed line's fields, failing on a field of the wrong type."""
 
 import json
 import re
@@ -12,8 +12,8 @@ from tests.acceptance.harness import (
     check_every_uncovered_line_explained_once,
     forks_of,
     input_lines,
+    lines_expressions_and_sides,
     numbers_of,
-    placed,
     run_pyct,
     took,
     union_of,
@@ -161,7 +161,8 @@ def test_took_finds_a_fork_by_its_line_expression_and_side() -> None:
         {"forks": [{"line": 4, "expression": "x", "taken": True}]},
     ]
 
-    assert placed(lines[1]) == [(4, "x", True)]
+    assert lines_expressions_and_sides(lines[1]) == [(4, "x", True)]
     assert took(lines, (4, "x", True))
     assert not took(lines, (5, "x", True))
+    assert not took(lines, (4, "y", True))
     assert not took(lines[:1], (4, "x", True))
