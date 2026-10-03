@@ -110,6 +110,29 @@ def test_the_input_s_own_alarm_still_ends_a_hang() -> None:
     assert settled_then(hang_until_the_deadline) == 0
 
 
+def after_the_c_call() -> int:
+    """The target's Python after its C call: a call, where Python handles a waiting signal."""
+    return 1
+
+
+def c_call_past_the_deadline_then_python() -> None:
+    started = time.monotonic()
+    try:
+        with deadline(started + 0.02):
+            # one C call that checks for no signal and returns past the deadline
+            sum(range(30_000_000))
+            after_the_c_call()
+    except DeadlineError:
+        return
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_c_call_that_returns_past_its_deadline_still_ends_as_a_timeout() -> None:
+    # the alarm, held briefly where it lands, is still owed when the block ends
+    assert settled_then(c_call_past_the_deadline_then_python) == 0
+
+
 def test_the_input_s_deadline_starts_no_thread() -> None:
     def count_threads() -> None:
         with deadline(time.monotonic() + 10):

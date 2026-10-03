@@ -30,7 +30,8 @@ has ended. How the signal comes depends on who owns the process:
   call that holds it runs to its end first: a backtracking ``re.match`` ran
   2.5 s past a 0.1 s deadline, and a big-int power to its end at 0.665 s,
   where the kernel timer stopped both at about 0.1 s. A Python loop's alarm
-  lands about 12.5 ms late at the median.
+  lands about 17 ms late at the median, and the kernel timer's about 7 ms,
+  each with its brief hold (``_held_back``), measured on macOS arm64.
 
 A target that catches ``BaseException`` swallows the one alarm, and a call
 inside C never returns to Python for the alarm to raise in. Nothing here can
@@ -52,6 +53,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from typing import NoReturn
 
+from pyct.core.branch import PYCT_DIR
 from pyct.execution.stops import STOPS
 
 # a deadline already past still has to fire, and setitimer(0) would cancel instead
@@ -94,8 +96,10 @@ class _Hold:
     """How a block's alarm has been held back so far.
 
     ``since`` is when it was first held for a stop, or None while it has not
-    been. ``brief`` counts the times it was held briefly, where no stop
-    showed, a count of its own that never starts ``since``. ``before`` is the
+    been. ``brief`` is when it was first held briefly, where no stop showed,
+    a clock of its own that never starts ``since``. ``owed`` says it was held
+    briefly outside pyct's own frames, where it would have raised but for the
+    hold, so a block that then ends with no stop still ends by it. ``before`` is the
     exception Python showed as handled when the block began: the caller's,
     or one a frame left set as it ended. From 3.13 a signal handled at a
     loop's backward jump can raise from an offset outside the frame's
@@ -105,7 +109,8 @@ class _Hold:
     """
 
     since: float | None = None
-    brief: int = 0
+    brief: float | None = None
+    owed: bool = False
     before: BaseException | None = None
 
 
@@ -141,8 +146,8 @@ _AGAIN = 0.001
 # how long an alarm waits, from when it was first held for a stop, before it raises anyway
 _HOLD_AT_MOST = 0.5
 
-# how many times, each ``_AGAIN`` apart, an alarm that lands where no stop shows waits
-_BRIEF_HOLDS = 3
+# how long an alarm that lands where no stop shows waits, from when it was first held so
+_BRIEF_HOLD = 0.003
 
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
@@ -151,7 +156,7 @@ def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma
     in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
     if not (in_time and _under(frame, _OWNER.home)):
         return
-    if _held_back(_OWNER.hold):
+    if _held_back(frame, _OWNER.hold):
         signal.setitimer(signal.ITIMER_REAL, _AGAIN)
         return
     _OWNER.running = False
@@ -167,7 +172,7 @@ def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:
     return False
 
 
-def _held_back(hold: _Hold) -> bool:  # pragma: no cover
+def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: no cover
     """Whether the alarm waits, for a stop on its way out or briefly where no stop shows.
 
     A DeadlineError would take a stop's place, so the alarm is held back and
@@ -185,21 +190,38 @@ def _held_back(hold: _Hold) -> bool:  # pragma: no cover
     traces is not yet handled anywhere. And a C call that returns after both
     signals came has Python run SIGALRM's handler before SIGTERM's, so the
     alarm comes before that stop is raised. So an alarm that lands where no
-    stop shows, in whatever frame of the block, waits ``_AGAIN``, at most
-    ``_BRIEF_HOLDS`` times in a block: long enough for the stop to show, and
-    short enough that a hang anywhere in the block, a tracer's callback
-    included, still ends near its deadline.
+    stop shows, in whatever frame of the block, waits for up to
+    ``_BRIEF_HOLD`` from when it was first held so, coming again each
+    ``_AGAIN`` or as soon as the watcher can send: long enough for the stop
+    to show, and short enough that a hang anywhere in the block, a tracer's
+    callback included, still ends near its deadline. One held so outside
+    pyct's own frames is owed (``_Hold.owed``).
     """
+    now = time.monotonic()
     error = sys.exception()
     if isinstance(error, STOPS) and error is not hold.before:
-        now = time.monotonic()
         if hold.since is None:
             hold.since = now
         return now < hold.since + _HOLD_AT_MOST
-    if hold.brief < _BRIEF_HOLDS:
-        hold.brief += 1
-        return True
-    return False
+    if hold.brief is None:
+        hold.brief = now
+    held = now < hold.brief + _BRIEF_HOLD
+    if held and not (frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR)):
+        hold.owed = True
+    return held
+
+
+def _settle(hold: _Hold, error: BaseException | None) -> None:
+    """End the block by its alarm when the alarm is owed and nothing else ended the block.
+
+    A block whose alarm was held briefly outside pyct's frames, and that then
+    ended with no stop and no raise of the alarm's own, ends by DeadlineError,
+    as it would have had the alarm raised where it landed. A raise of the
+    target's own gives way to it, as it would have then. A stop does not.
+    """
+    if hold.owed and not isinstance(error, (DeadlineError, *STOPS)):
+        # the way out has run, so this raise, unlike one in a handler, leaves nothing undone
+        raise DeadlineError from error
 
 
 def _raise_deadline(signal_number: int, frame: types.FrameType | None) -> NoReturn:
@@ -227,13 +249,16 @@ class _Timed:
             self.__exit__()
             raise
 
-    def __exit__(self, *_: object) -> None:
+    def __exit__(
+        self, kind: object = None, error: BaseException | None = None, trace: object = None
+    ) -> None:
         # first, before any call: a signal from here on raises nothing
         _OWNER.running = False
         signal.setitimer(signal.ITIMER_REAL, 0)
         _OWNER.home = None
         # the exception handled as the block began, its traceback and its frames go with it
         _OWNER.hold.before = None
+        _settle(_OWNER.hold, error)
 
 
 class _Sent:
@@ -300,7 +325,9 @@ class _Sent:
             signal.pthread_sigmask(signal.SIG_SETMASK, held)
             raise
 
-    def __exit__(self, *_: object) -> None:
+    def __exit__(
+        self, kind: object = None, error: BaseException | None = None, trace: object = None
+    ) -> None:
         # first, before any call: from here on the handler raises nothing
         self.armed = False
         held: set[signal.Signals | int] | None = None
@@ -310,6 +337,7 @@ class _Sent:
         finally:
             if held is not None:
                 signal.pthread_sigmask(signal.SIG_SETMASK, held)
+        _settle(self.hold, error)
 
     def _way_out(self) -> None:
         """Stop the sends, put the process's own handler back, and end the watcher."""
@@ -354,7 +382,7 @@ class _Sent:
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
         """SIGALRM's handler while the block runs: raise once, for its own watcher, inside it."""
-        if not (self.sent and self.armed and self._in_block(frame)) or _held_back(self.hold):
+        if not (self.sent and self.armed and self._in_block(frame)) or _held_back(frame, self.hold):
             return
         self.armed = False
         _raise_deadline(signal_number, frame)

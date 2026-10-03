@@ -8,7 +8,8 @@ Python, so the two signals are handled together as it returns, after the
 alarm's hold would have run out had it counted from the deadline.
 
 ``spin_in_pyct`` is a loop whose code pyct's package holds, as a core
-operation's is, so an alarm can land in it.
+operation's is, so an alarm can land in pyct's own frames, where it is held
+briefly and owes nothing.
 """
 
 import os
@@ -57,7 +58,7 @@ import time
 
 
 def spin(until, owner=None):
-    while time.monotonic() < until and (owner is None or owner.hold.brief == 0):
+    while time.monotonic() < until and (owner is None or owner.hold.brief is None):
         pass
 """
 

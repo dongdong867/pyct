@@ -6,6 +6,10 @@ inside the tracer: through ``run()`` in a program that installs the tracer,
 ``tests/acceptance/traced_guest.py``, or through ``pyct run``, the tracer installed by the
 target's import. The signal comes from the test once the call's C call has begun. Each test
 times its runs, so it runs alone, after the parallel tests.
+
+The SIGTERM's runs take the module's held call in place of the C call: it lets no signal in
+for a fixed wall time, so it returns within the guard's grace whatever the machine's load,
+where the C call's length moves with it.
 """
 
 import json
@@ -19,7 +23,6 @@ from pathlib import Path
 
 import pytest
 
-from targets.isolate.long_sum import TERMS
 from targets.isolate.traced import MARKER
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, first_line
 
@@ -27,12 +30,11 @@ pytestmark = pytest.mark.serial
 
 TRACERS = ["none", "settrace", "monitoring"]
 CALLS = ["total", "total_then_finally"]
-# the command's budget, and how long after the C call began a Ctrl-C comes: past the deadline,
-# and inside a call that runs more than a second
+HELD_CALLS = ["held", "held_then_finally"]
+# the command's budget, and how long after the call began its signal comes: past the deadline,
+# inside a C call that runs more than a second, and 0.4 s before the held call returns
 BUDGET = "0.4"
-CTRL_C_AFTER = 0.6
-# how long before the C call's measured end a SIGTERM comes, well inside the guard's grace
-SIGTERM_BEFORE_THE_END = 0.4
+SIGNAL_AFTER = 0.6
 
 
 def unmeasured(**variables: str) -> dict[str, str]:
@@ -57,23 +59,14 @@ def guest(tracer: str, name: str, tries: int, interrupt: bool) -> tuple[list[dic
     return [json.loads(line) for line in ran.stdout.splitlines()], ran.stderr
 
 
-@pytest.fixture(scope="module")
-def c_call_seconds() -> float:
-    """How long the targets' C call takes on this Python and machine, measured here."""
-    started = time.monotonic()
-    sum(range(TERMS))
-    return time.monotonic() - started
-
-
 def interrupted(
     tracer: str,
     name: str,
     tmp_path: Path,
     send: Callable[[subprocess.Popen[str]], None],
-    after: float,
 ) -> tuple[int, str, str]:
     """``pyct run --in-process`` on ``name`` in a session of its own, ``send`` called on it
-    ``after`` seconds after its C call began: its exit code, stdout and stderr."""
+    ``SIGNAL_AFTER`` after its call began: its exit code, stdout and stderr."""
     calling = tmp_path / "calling"
     env = unmeasured(PYCT_TEST_TRACER=tracer, PYCT_TEST_CALLING=str(calling))
     spec = f"targets.isolate.traced::{name}"
@@ -91,7 +84,7 @@ def interrupted(
         waited = time.monotonic() + 20
         while not calling.exists() and time.monotonic() < waited:
             time.sleep(0.01)
-        time.sleep(after)
+        time.sleep(SIGNAL_AFTER)
         send(process)
         stdout, stderr = process.communicate(timeout=30)
     finally:
@@ -151,7 +144,7 @@ def sigterm(process: subprocess.Popen[str]) -> None:
 @pytest.mark.parametrize("name", CALLS)
 @pytest.mark.parametrize("tracer", TRACERS)
 def test_ends_pyct_in_process(tracer: str, name: str, tmp_path: Path) -> None:
-    code, stdout, stderr = interrupted(tracer, name, tmp_path, ctrl_c, CTRL_C_AFTER)
+    code, stdout, stderr = interrupted(tracer, name, tmp_path, ctrl_c)
 
     assert code == -signal.SIGINT, stderr
     assert stderr.count("Traceback (most recent call last)") == 1, stderr
@@ -161,19 +154,16 @@ def test_ends_pyct_in_process(tracer: str, name: str, tmp_path: Path) -> None:
 
 
 # let-a-ctrl-c-win-over-the-deadline-under-a-host-tracer-lets-a-sigterm-win-too
-@pytest.mark.parametrize("name", CALLS)
+@pytest.mark.parametrize("name", HELD_CALLS)
 @pytest.mark.parametrize("tracer", TRACERS)
-def test_lets_a_sigterm_win_too(
-    tracer: str, name: str, tmp_path: Path, c_call_seconds: float
-) -> None:
-    # the guard ends a process a SIGTERM has not ended within its grace, so the call must
-    # return within it for its finally to run: the SIGTERM comes shortly before its end
-    after = max(CTRL_C_AFTER, c_call_seconds - SIGTERM_BEFORE_THE_END)
-    code, stdout, stderr = interrupted(tracer, name, tmp_path, sigterm, after)
+def test_lets_a_sigterm_win_too(tracer: str, name: str, tmp_path: Path) -> None:
+    # the guard ends a process a SIGTERM has not ended within its grace, so the call returns
+    # within it, for its finally to run
+    code, stdout, stderr = interrupted(tracer, name, tmp_path, sigterm)
 
     assert code == -signal.SIGTERM, stderr
     assert not any("args" in json.loads(line) for line in stdout.splitlines()), stdout
-    assert (MARKER in stderr) == (name == "total_then_finally"), stderr
+    assert (MARKER in stderr) == (name == "held_then_finally"), stderr
 
 
 # let-a-ctrl-c-win-over-the-deadline-under-a-host-tracer-still-times-out-a-loop-under-a-tracer

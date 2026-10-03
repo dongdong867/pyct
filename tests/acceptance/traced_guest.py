@@ -35,20 +35,32 @@ def _own(signal_number: int, frame: types.FrameType | None) -> None:
     """The program's own SIGALRM handler, which run() borrows and must give back."""
 
 
-def _send_sigint_once_calling(calling: Path) -> None:
-    """Have another process send this one a SIGINT ``SIGINT_AFTER`` after ``calling`` exists."""
+def _send_sigint_once_calling(calling: Path) -> subprocess.Popen[bytes]:
+    """Have another process send this one a SIGINT ``SIGINT_AFTER`` after ``calling`` exists.
+
+    It looks for the file for at most 20 seconds, and the try kills it once it is done.
+    """
     script = (
-        f'while [ ! -e "{calling}" ]; do sleep 0.01; done; sleep {SIGINT_AFTER}; '
-        f"kill -INT {os.getpid()}"
+        f'n=0; while [ ! -e "{calling}" ] && [ $n -lt 2000 ]; do sleep 0.01; n=$((n+1)); done; '
+        f'[ -e "{calling}" ] && sleep {SIGINT_AFTER} && kill -INT {os.getpid()}'
     )
-    subprocess.Popen(["sh", "-c", script])
+    return subprocess.Popen(["sh", "-c", script])
 
 
 def one_try(tracer: str, name: str, interrupt: bool, calling: Path) -> dict[str, object]:
-    """One run() of ``name`` under ``tracer``, and how it ended."""
+    """One run() of ``name`` under ``tracer``, with its SIGINT's sender, if any, ended after."""
     calling.unlink(missing_ok=True)
-    if interrupt:
-        _send_sigint_once_calling(calling)
+    sender = _send_sigint_once_calling(calling) if interrupt else None
+    try:
+        return _ran(tracer, name, interrupt)
+    finally:
+        if sender is not None:
+            sender.kill()
+            sender.wait()
+
+
+def _ran(tracer: str, name: str, interrupt: bool) -> dict[str, object]:
+    """One run() of ``name`` under ``tracer``, and how it ended."""
     target = load_target(f"targets.isolate.traced::{name}")
     limits = Limits(budget=Budget(seconds=0.1 if interrupt else 1.0))
     traced.install(tracer)
