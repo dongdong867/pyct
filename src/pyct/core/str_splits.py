@@ -58,6 +58,26 @@ def built_from_a_split(form: object) -> bool:
     return bool(splits_built_from(form))
 
 
+def a_split_s_list(form: object, depth: int = 64) -> bool:
+    """Whether a list's form is a split's list as the target changed it: the split's, a slice
+    or a repeat of one, or one with a list display joined on, its items all the split's pieces
+    or the target's own; a list joined with another list, an argument's say, is not, nor one
+    whose form nests past ``depth``."""
+    if not isinstance(form, list) or not form or depth == 0:
+        return False
+    head, operands = form[0], form[1:]
+    if head in LISTED_SPLITS:
+        return True
+    if head in ("[:]", "*") and operands:
+        listed = next((part for part in operands if isinstance(part, list)), None)
+        return a_split_s_list(listed, depth - 1)
+    if head == "+" and len(operands) == 2:
+        shown = [part for part in operands if isinstance(part, list) and part[:1] == ["[,]"]]
+        others = [part for part in operands if part not in shown]
+        return len(others) == 1 and a_split_s_list(others[0], depth - 1)
+    return False
+
+
 # each method's arguments in the order Python takes them by position, with the default Python
 # gives one left out; partition takes no keyword
 _KEYWORDS: dict[str, tuple[tuple[str, object], ...]] = {

@@ -22,12 +22,12 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Expression, caller_site
+from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
-from pyct.core.str_splits import built_from_a_split
+from pyct.core.str_splits import a_split_s_list
 from pyct.core.strs import ConcolicStr
-from pyct.core.values import forked
+from pyct.core.values import forked, walked_a_split
 
 
 def plain_index(key: object) -> int | None:
@@ -133,14 +133,11 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
 
 def more(self: ListState, at: int, name: str) -> bool:
     """The walk's fork for step ``at``: whether the list holds an item there. Over a split's
-    list, or one built from it, the fork is marked, so the tree aims at it after the path's
-    other forks (fork-order-a-split-s-walk-forks-after-the-path-s-other-forks)."""
+    list (``str_splits.a_split_s_list``), the fork is marked (``values.walked_a_split``)."""
     expression: Expression = [">", ["len", self.expression], at]
     taken = at < self.length()
-    if not built_from_a_split(self.expression):
-        return forked(self.sink, expression, taken, name)
-    self.sink.append(Branch(expression, taken, caller_site(), lost_as=name, split_walk=True))
-    return taken
+    record = walked_a_split if a_split_s_list(self.expression) else forked
+    return record(self.sink, expression, taken, name)
 
 
 def walk(self: ListState) -> Iterator[object]:

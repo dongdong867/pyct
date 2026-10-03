@@ -63,25 +63,25 @@ class Tree:
         # each side taken, as a plain tuple: its site's number, a fork before a raise, the side
         self._sides: set[tuple[int, bool, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
-        # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
-        # forks sit together, so after a pick the rest of its path leads the queue. A side taken
-        # never becomes new again, so a fork leaves for good
+        # fork first, or shallowest first on a path a timeout turned (`timed_out`); a path's
+        # forks sit together, and a side taken never becomes new again
         self._new: deque[Place] = deque()
-        # where the oldest-path pick starts looking: the oldest path that may still hold an open
-        # fork, and the deepest position on it that may, None before the pick first reaches the
-        # path. A fork that closes never opens again, so every fork past this point is spent
+        # where the oldest-path pick, and the split walks' pick, start looking: the oldest path
+        # that may still hold an open fork, and the deepest position on it that may, None
+        # before the pick first reaches the path; a fork that closes never opens again
         self._path = 0
         self._depth: int | None = None
+        self._walk_path = 0
+        self._walk_depth: int | None = None
         # the path and the site number of the last pick, the paths whose new sides a timeout
         # turned, and the sites' numbers a pick timed out at
         self._picked: int | None = None
         self._picked_number: int | None = None
-        self._turned, self._timed_out = set[int](), set[int]()
+        self._turned: set[int] = set()
+        self._timed_out: set[int] = set()
         # the open forks at a site a pick timed out at, in the order the oldest-path pick passed
         # them, oldest path first and deepest fork first: the last picks (`_next_later`)
         self._later: deque[Place] = deque()
-        self._walk_path = 0  # where the split walks' pick starts looking, and how deep
-        self._walk_depth: int | None = None
 
     def add(self, forks: tuple[Branch, ...], facts: tuple[Fact, ...] = ()) -> None:
         """Record the path one input took. Its forks join the pool the next pick draws from.

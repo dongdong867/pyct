@@ -59,3 +59,35 @@ def test_a_path_whose_split_walks_are_open_is_kept_for_the_answers_that_extend_i
     assert tree.oldest == 0
     assert _lines(tree) == [2, 1]
     assert tree.oldest == 2
+
+
+# the loop of `for i, p in enumerate(s.splitlines()): if i > 0 and p == "end":` over 12 lines,
+# as a run records it: the walk's fork at the loop, then the line's fork at its test, each at
+# one site, and the walk's last fork past the last line
+_LOOP = Site(file="m.py", line=2, col=4)
+_TEST = Site(file="m.py", line=3, col=8)
+
+
+def _loop(lines: int) -> tuple[Branch, ...]:
+    forks: list[Branch] = []
+    for at in range(lines):
+        forks.append(Branch([">", ["len", ["splitlines", "s"]], at], True, _LOOP, split_walk=True))
+        if at:
+            forks.append(Branch(["==", ["[]", ["splitlines", "s"], at], "'end'"], False, _TEST))
+    forks.append(Branch([">", ["len", ["splitlines", "s"]], lines], False, _LOOP, split_walk=True))
+    return tuple(forks)
+
+
+def test_a_loop_s_line_forks_after_a_timeout_still_come_before_its_walk_forks() -> None:
+    tree = Tree()
+    tree.add(_loop(12))
+
+    first = tree.next()
+    tree.timed_out()
+    rest = [picked.aim.site for picked in iter(tree.next, None)]
+
+    # the last line's fork ran out of time; the other line forks wait for the last picks, and
+    # every walk fork after them, where in each path's own order the walk's would come first
+    assert first is not None and first.aim.site == _TEST
+    assert rest[:10] == [_TEST] * 10, rest
+    assert rest[10:] == [_LOOP] * 13, rest

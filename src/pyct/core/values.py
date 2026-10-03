@@ -67,6 +67,15 @@ def forked(
     return taken
 
 
+def walked_a_split(sink: BranchSink, expression: Expression, taken: bool, name: str) -> bool:
+    """Record a walk's fork over a split's list as ``forked`` records a fork, marked so the
+    tree aims at it after the path's other forks
+    (fork-order-a-split-s-walk-forks-after-the-path-s-other-forks)."""
+    site, marked = caller_site(), _BEFORE_A_RAISE[0]
+    sink.append(Branch(expression, taken, site, raising=marked, lost_as=name, split_walk=True))
+    return taken
+
+
 def before_a_raise(test: Callable[[], object]) -> None:
     """Run ``test``, whose truth test is the fork an operation takes before it may raise.
 
