@@ -1,5 +1,6 @@
 """The calls pyct substitutes where the target writes them: conversions, `range`, `type`,
-`math` functions, a str's methods, and a range or dict view method called through the type.
+`math` functions, `len`, `ord` and `chr` through `builtins`, a str's methods, and a range or dict
+view method called through the type.
 
 - A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
   bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
@@ -7,13 +8,16 @@
   argument alone, and a call of a function of `math` that pyct routes
   (`pyct.core.math_calls.NAMES`) through a name the module binds to `math`
   or to that function alone, `math.sqrt(...)` or `root(...)` after `from
-  math import sqrt as root` (`pyct.intercept.constants`), becomes
+  math import sqrt as root` (`pyct.intercept.constants`), and a call of
+  `len`, `ord` or `chr` through a name bound the same way to `builtins` or
+  to that function, `builtins.len(...)` or `size(...)` after `from builtins
+  import len as size`, becomes
   ``__pyct_call__(int)(...)``: the callee is handed to pyct, which hands
   back pyct's router when it is Python's own function and the callee itself
   otherwise, and that is called with the arguments as written. So a name
   the target binds to its own keeps the target's meaning, and its function
-  runs with no frame of pyct's above it. The `math` module itself is never
-  changed. A `range(...)` whose arguments are all int literals, as
+  runs with no frame of pyct's above it. The `math` and `builtins` modules
+  themselves are never changed. A `range(...)` whose arguments are all int literals, as
   `range(3)` or `range(0, 10, 2)`, stays as written: no run can make it
   tracked, and a plain range is searched with one fork all the same
   (`pyct.core.substitutes.in_`).
@@ -64,11 +68,12 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion, `range`, a `math` function, a str literal's method
-    or a range or dict view method called through the type, or None for any other."""
+    """The call that replaces a conversion, `range`, a `math` function, `len`, `ord` or `chr`
+    through `builtins`, a str literal's method or a range or dict view method called through the
+    type, or None for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
-    if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
+    if _asks_for_its_callee(node) or parts.constants.routed_function(node.func):
         return _curried(node, parts)
     if _text_method(node.func, parts):
         # a join has a router of its own, which reads the items it joins
