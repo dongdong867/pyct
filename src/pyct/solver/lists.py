@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from functools import partial
 
 from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch, Expression
@@ -50,6 +49,7 @@ from pyct.solver.list_terms import (
     either,
     equal,
     shape_guard,
+    summed,
 )
 from pyct.solver.split_paths import Splits
 
@@ -94,9 +94,8 @@ class Origin:
     place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
     program is given up, None for no limit (see ``dicts``). ``places`` are the places the
     path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
-    ``back_among_counts`` says whether a piece of a split read from its end, on an input with
-    few pieces, is chosen among every count below the bound rather than put where the input's
-    own count puts it (see ``split_lists``).
+    ``fixed_reads`` says whether a piece of a split read from its end, where no walk of the
+    reversed string reads it, holds the string to the count c* (see ``split_lists``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -113,7 +112,7 @@ class Origin:
     pinned: bool = True
     lookups: int | None = None
     places: tuple[Expression, ...] = ()
-    back_among_counts: bool = False
+    fixed_reads: bool = True
 
 
 class UnencodedError(ValueError):
@@ -245,15 +244,28 @@ class ListTerms(ListTyping, Slices):
 
     def _split(self, node: list[Expression], kinds: Kinds) -> Counted:
         """A split's list: its count, and its pieces as `split_lists` reads them. A count is
-        at least as many pieces as every string has, and the input's own where it is known."""
+        at least as many pieces as every string has, and c* where it meets anything else."""
         listed = self.splits.made(node, self.named(node[1]))
         self.least[listed.count] = listed.least()
         if (fact := listed.fact()) != TRUE:
             self.guards.append(fact)
-        if listed.input_count is not None:
-            self.origin[listed.count] = listed.input_count
-        read = partial(self.splits.read, listed)
+        if listed.read_count is not None:
+            self.origin[listed.count] = listed.read_count
+
+        def read(position: Lin, kind: str, least: Least) -> Read:
+            return self.splits.read(listed, position, kind)
+
         return Counted(Lin.of(listed.count), kinds.kinds, kinds.every, of_a_split=True, at=read)
+
+    def cut(self, base: Piece, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
+        """Where a slice of a split's list with plain bounds starts, and its length, as the
+        splits write them (``Splits.sliced``); None for any other slice."""
+        if not isinstance(base, Counted):
+            return None
+        cut = self.splits.sliced(self.splits.lists[base.length.atoms[0][0]], bounds)
+        if cut is not None and (at := self.splits.values.get(cut[1].atoms[0][0])) is not None:
+            self.origin[cut[1].atoms[0][0]] = at
+        return cut
 
     def counted_compare(self, node: list[Expression]) -> str | None:
         """A compare of a split's length with a number or another length, as the splits write
@@ -266,10 +278,8 @@ class ListTerms(ListTyping, Slices):
         return self.splits.compare(node[0], left, right)
 
     def _side(self, part: Expression) -> Lin | None:
-        """A side of a compare as a sum: a number, or a list's length; None for any other."""
-        if isinstance(part, int):
-            return Lin(int(part))
-        return self.length_of(part)
+        """A side of a compare as a sum (``list_terms.summed``)."""
+        return summed(part, self.length_of)
 
     def counts_length(self, node: list[Expression]) -> bool:
         """Whether a part is the length of a list a split's count adds to: the compares that
@@ -321,8 +331,8 @@ class ListTerms(ListTyping, Slices):
                 self.origin[constant] = value
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
-        self.splits.hold = origin.hold
-        self.splits.back_among_counts = origin.back_among_counts
+        self.splits.fixed_reads = origin.fixed_reads
+        self.splits.evaluated = self.origin_of
         # the value the input holds for a part it names as it is, a split's string say
         names = {constant: name for name, constant in constants.items()}
         self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))
@@ -457,9 +467,8 @@ class ListTerms(ListTyping, Slices):
 
     @property
     def held(self) -> bool:
-        """Whether the program holds the length of a list the target repeats, or a split's
-        count to its bound (see ``split_lists``)."""
-        return bool(self.capped) or self.splits.bounded
+        """Whether the program holds the length of a list the target repeats."""
+        return bool(self.capped)
 
     def asked(self) -> list[str]:
         """What the program asks cvc5 for about the lists: each length and array it declared,

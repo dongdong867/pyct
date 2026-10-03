@@ -1,5 +1,5 @@
-"""A split's bound on a path: how many pieces a count is tied to, the input's own count, and the
-loosened ask past the bound, with cvc5 held against Python on each."""
+"""A split's count on a path where it meets more than a plain int, as c*, and a piece read from
+its end on many pieces, with cvc5 held against Python on each."""
 
 import time
 from typing import Any
@@ -10,10 +10,8 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LONGEST_WALK
-from pyct.solver import cvc5 as cvc5_module
-from pyct.solver.answer import Sat, Unknown, Unsat
+from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
-from pyct.solver.declared import Program
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
@@ -21,7 +19,7 @@ from tests.unit.solver.test_render import fork
 
 
 def test_a_read_from_the_end_of_many_lines_writes_a_program_of_bounded_size() -> None:
-    # the input's own count is held to the cap, so a program over many lines stays small
+    # read where the input's own count puts it, by two walks to it, so the program stays small
     lines: Expression = ["splitlines", "s"]
     path = (
         fork([">=", ["len", lines], 1], taken=True),
@@ -35,29 +33,7 @@ def test_a_read_from_the_end_of_many_lines_writes_a_program_of_bounded_size() ->
 
 
 @needs_cvc5
-@pytest.mark.parametrize(
-    ("parts", "seed"),
-    [(["split", "s", "','"], "a"), (["split", ["strip", "s"], "','"], "a")],
-    ids=["the input's string", "a changed string"],
-)
-def test_a_path_past_the_bound_is_a_miss_that_says_so_never_unsat(
-    parts: Expression, seed: str
-) -> None:
-    path = (
-        fork(["==", ["len", parts], "n"], taken=True),
-        fork(["==", "n", 40], taken=True),
-    )
-    args = Seed.of({"s": seed, "n": 0})
-
-    answer = solve(path, args.leaves, 10.0, args.lists, args.values)
-
-    # Python takes this path with 40 pieces, past the bound of 3: the held ask is unsat, and
-    # the loosened one, which has an answer, says the fork is unknown
-    assert isinstance(answer, Unknown), answer
-
-
-@needs_cvc5
-def test_a_path_that_needs_no_more_pieces_than_the_bound_is_answered_held() -> None:
+def test_a_count_a_tracked_int_meets_is_the_count_the_path_s_numbers_allow() -> None:
     parts: Expression = ["split", "s", "','"]
     path = (
         fork(["<", ["len", parts], 20], taken=False),
@@ -67,37 +43,16 @@ def test_a_path_that_needs_no_more_pieces_than_the_bound_is_answered_held() -> N
 
     answer = solve(path, args.leaves, 10.0, args.lists, args.values)
 
-    # twenty pieces is below the bound of 22, so the held program answers
+    # the count n meets is c*: twenty, the count nearest the input's one piece that the fork
+    # on the count with 20 allows, and that fork holds the string to twenty pieces or more
     assert isinstance(answer, Sat), answer
     values = dict(apply(args, answer.model).args)
     count = len(str(values["s"]).split(","))
-    assert count >= 20 and values["n"] == count, values
+    assert count >= 20 and values["n"] == 20, values
 
 
 @needs_cvc5
-@pytest.mark.parametrize(
-    "other",
-    ["n", ["len", ["split", "t"]]],
-    ids=["a tracked int", "another split's count"],
-)
-def test_a_whitespace_count_that_meets_a_term_is_answered_at_once(other: Expression) -> None:
-    words: Expression = ["split", "s"]
-    path = (fork(["==", ["len", words], other], taken=True), fork([">", "n", 2], taken=True))
-    seed = Seed.of({"s": "a", "t": "b c", "n": 0})
-
-    started = time.perf_counter()
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    assert isinstance(answer, Sat), answer
-    assert time.perf_counter() - started < 3.0
-    args = dict(apply(seed, answer.model).args)
-    s, t, n = str(args["s"]), str(args["t"]), args["n"]
-    counted = n if other == "n" else len(t.split())
-    assert len(s.split()) == counted and isinstance(n, int) and n > 2, args
-
-
-@needs_cvc5
-def test_an_unrelated_number_on_the_path_leaves_a_tie_small() -> None:
+def test_an_unrelated_number_on_the_path_leaves_a_count_s_flip_quick() -> None:
     split: Expression = ["split", "s", "','"]
     path = (
         fork([">", "x", 1000], taken=True),
@@ -161,41 +116,6 @@ def test_the_last_of_many_lines_is_read_where_the_input_s_count_puts_it() -> Non
 
 
 @needs_cvc5
-def test_the_last_of_a_few_lines_is_chosen_among_every_count_once_their_own_is_unsat(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    lines: Expression = ["splitlines", "s"]
-    path = (
-        fork([">=", ["len", lines], 2], taken=True),
-        fork(["==", ["[]", lines, -2], "'end'"], taken=True),
-        fork(["!=", ["len", lines], 7], taken=True),
-        fork(["==", ["len", lines], "n"], taken=True),
-        fork([">", "n", 7], taken=True),
-    )
-    seed = Seed.of({"s": "a\nend\nb", "n": 3})
-    asked: list[bool] = []
-    ask = cvc5_module._ask
-
-    def recorded(written: Program, timeout: float) -> Any:
-        asked.append(written.fixed_few)
-        return ask(written, timeout)
-
-    monkeypatch.setattr(cvc5_module, "_ask", recorded)
-
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # read where the input's three lines put the one before the last, and no fork on the
-    # count with a number moves them, more than seven are unsat; the ask after it chooses that
-    # line among every count, where the path's eight lines can be
-    assert asked[:2] == [True, False], asked
-    assert not isinstance(answer, Unsat), answer
-    if isinstance(answer, Sat):
-        args = apply(seed, answer.model).args
-        lines_of = str(args["s"]).splitlines()
-        assert lines_of[-2] == "end" and len(lines_of) == args["n"] and len(lines_of) > 7, args
-
-
-@needs_cvc5
 @pytest.mark.parametrize("count", [7, 8])
 def test_the_last_of_several_lines_is_flipped(count: int) -> None:
     lines: Expression = ["splitlines", "s"]
@@ -213,7 +133,7 @@ def test_the_last_of_several_lines_is_flipped(count: int) -> None:
 
 
 @needs_cvc5
-def test_a_count_cut_by_a_slice_is_bound_past_what_the_slice_leaves_out() -> None:
+def test_a_slice_s_length_counts_the_pieces_it_leaves_out() -> None:
     parts: Expression = ["split", "s", "','"]
     path = (fork([">", ["len", ["[:]", parts, 2, None]], 3], taken=True),)
     seed = Seed.of({"s": "a"})
@@ -224,38 +144,6 @@ def test_a_count_cut_by_a_slice_is_bound_past_what_the_slice_leaves_out() -> Non
     assert isinstance(answer, Sat), answer
     text = str(apply(seed, answer.model).args["s"])
     assert len(text.split(",")[2:]) > 3, text
-
-
-@needs_cvc5
-def test_a_loosened_ask_holds_no_rsplit_past_its_walk_to_its_limit() -> None:
-    parts: Expression = ["rsplit", "s", "','", LONGEST_WALK + 1]
-    path = (
-        fork([">", ["len", parts], 0], taken=True),
-        fork(["==", ["[]", parts, 0], "'a,b'"], taken=True),
-    )
-    seed = Seed.of({"s": "a"})
-
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # Python takes this path with 'a,b' and seventeen more pieces, a string the read's
-    # restriction rules out: that is a miss that says so, never unsat
-    assert isinstance(answer, Unknown), answer
-
-
-@needs_cvc5
-def test_a_count_held_below_its_forks_is_a_miss_without_asking() -> None:
-    parts: Expression = ["split", "s", "','"]
-    path = (
-        fork(["<", ["len", parts], 36], taken=False),
-        fork(["==", ["len", parts], "n"], taken=True),
-    )
-    seed = Seed.of({"s": "a" + ",a" * 39, "n": 0})
-
-    answer = solve(path, seed.leaves, 3.0, seed.lists, seed.values)
-
-    # the held program holds 34 pieces against a fork that needs 36, so neither it nor the
-    # loosened one, which ran to the limit, is asked: the fork is a miss at once
-    assert isinstance(answer, Unknown), answer
 
 
 @needs_cvc5
@@ -272,34 +160,6 @@ def test_an_rsplit_past_the_walk_counts_its_pieces_on_any_string() -> None:
     # three commas make four pieces, so no string takes both; the string the pieces are read
     # on is the reads' restriction, not the count's, and does not free it
     assert isinstance(answer, Unsat), answer
-
-
-# a read from the end, the next to last piece since the last line is read by one look, and the
-# path's number compared with the count: whether the program puts the piece where the input's
-# own few pieces put it, to be chosen among every count after
-FIXED_FEW: dict[str, tuple[Expression, str, int, bool]] = {
-    "the next to last of three lines, eight asked": (["splitlines", "s"], "a\nend\nb", 7, True),
-    "the next to last of three lines, ten asked": (["splitlines", "s"], "a\nend\nb", 9, False),
-    "the next to last of nine lines": (["splitlines", "s"], "a\n" * 7 + "end\nb", 7, False),
-    "a piece a reversed walk reads": (["split", "s", "','"], "a,end,b", 7, False),
-}
-
-
-@pytest.mark.parametrize(
-    ("split", "text", "number", "fixed"), FIXED_FEW.values(), ids=list(FIXED_FEW)
-)
-def test_a_few_pieces_are_chosen_among_later_only_where_the_choice_answers(
-    split: Expression, text: str, number: int, fixed: bool
-) -> None:
-    path = (
-        fork([">=", ["len", split], 2], taken=True),
-        fork(["==", ["[]", split, -2], "'end'"], taken=True),
-        fork([">", ["len", split], number], taken=True),
-    )
-
-    written = program(path, {"s": str}, Origin(values={"s": text}))
-
-    assert written.fixed_few is fixed
 
 
 # a separator split read from its end: the split, the input's string, and whether the path then
@@ -377,21 +237,6 @@ def test_a_limited_count_that_meets_a_term_holds_no_separators_past_the_limit() 
     args = apply(seed, answer.model).args
     pieces = str(args["s"]).split(",", 1)
     assert len(pieces) == args["n"] and pieces[1] == "b,c,d,e", args
-
-
-@needs_cvc5
-def test_a_count_no_read_from_the_end_needs_past_its_bound_is_a_miss_at_once() -> None:
-    parts: Expression = ["split", "s", "','"]
-    path = (
-        fork(["==", ["len", parts], "n"], taken=True),
-        fork(["==", "n", 40], taken=True),
-    )
-    seed = Seed.of({"s": "a,b,c,d", "n": 4})
-
-    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
-
-    # tied by walks, the held ask is unsat past the bound of 6 and the loosened one says so
-    assert isinstance(answer, Unknown), answer
 
 
 # a count that meets a tracked int with no read from the end, on an input with many pieces

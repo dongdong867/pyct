@@ -134,28 +134,6 @@ def test_a_tracked_index_into_a_split_s_list_is_a_downgrade(changed: bool) -> No
     assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
 
 
-@pytest.mark.parametrize(
-    ("made", "marked"),
-    [
-        (lambda sink: ConcolicStr.made("a\nb", expression="s", sink=sink).splitlines(), True),
-        (lambda sink: ConcolicStr.made("a,b", expression="s", sink=sink).split(",")[1:], True),
-        (lambda sink: tracked(["a", "b"])[0], False),
-    ],
-    ids=["a split's list", "a slice of one", "an argument's list"],
-)
-def test_a_walk_over_a_split_s_list_marks_its_forks(made: Any, marked: bool) -> None:
-    sink: list[SinkItem] = []
-    items = made(sink)
-    sink = sink or items.sink
-
-    list(items)
-    walks = [item for item in sink if isinstance(item, Branch) and item.lost_as == "__iter__"]
-
-    # the tree aims at a split's walk forks after the path's other forks; a list argument's
-    # walk keeps the order it had
-    assert walks and all(branch.split_walk is marked for branch in walks), walks
-
-
 def test_a_tracked_index_into_a_list_that_holds_a_piece_keeps_its_forks() -> None:
     items, sink = tracked(["q"])
     piece = ConcolicStr.made("a", expression=["[]", ["split", "s", "','"], 0], sink=sink)

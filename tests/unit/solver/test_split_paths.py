@@ -1,11 +1,10 @@
-"""The splits of one path as the program writes them: the count a read from the end puts its
-piece at, which the forks on a split's own length narrow, and the tie that says what a count
-is."""
+"""The splits of one path as the program writes them: c*, the count a term that meets the
+count reads and a read from the end puts its piece at, which the forks on a split's own count
+through plain arithmetic narrow, and each count a line reads, written as its c*."""
 
 import pytest
 
 from pyct.core.branch import Expression
-from pyct.solver.split_lists import SplitList
 from pyct.solver.split_paths import Splits
 from tests.unit.solver.test_render import fork
 
@@ -37,6 +36,12 @@ RANGES: dict[str, tuple[list[tuple[Expression, bool]], int]] = {
     "a number not equal to it, not taken": ([(["!=", 7, LENGTH], False)], 7),
     "two forks between": ([([">", LENGTH, 3], True), (["<", LENGTH, 6], True)], 5),
     "a length the forks leave alone": ([([">", LENGTH, 3], True)], 12),
+    "less one, more than": ([([">", ["-", LENGTH, 1], 20], True)], 22),
+    "doubled, fewer than": ([(["<", ["*", 2, LENGTH], 9], True)], 4),
+    "a slice's length": ([([">", ["len", ["[:]", PARTS, 2, None]], 15], True)], 18),
+    "a floor division": ([(["<", ["//", LENGTH, 2], 3], True)], 12),
+    "a tracked int": ([([">", LENGTH, "n"], False)], 12),
+    "ruled out": ([([">", LENGTH, 5], True), (["<", LENGTH, 3], True)], 12),
 }
 
 
@@ -54,66 +59,32 @@ def test_a_read_from_the_end_is_put_at_the_count_the_forks_allow_nearest_the_inp
     assert listed.read_count == count
 
 
-def _listed(
-    head: str, operands: tuple[object, ...], text: str, read_count: int | None = None
-) -> SplitList:
-    """A split's list of ``text`` held to the input's count, its bound two past it, and read
-    from the end at ``read_count``, the input's own count unless given."""
-    count = len(getattr(str, head)(text, *operands))
-    read = count if read_count is None else read_count
-    return SplitList(
-        "s", head, operands, "c", count + 2, input_count=count, input_text=text, read_count=read
-    )
+def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
+    splits = Splits()
+    splits.given = lambda part: TWELVE if part == "s" else None
+    listed = splits.made(PARTS, "s")
+    other = splits.made(["split", "t", "','"], "t")
+    cut = splits.cut(listed, (2, None, None)).atoms[0][0]
+
+    first = splits.defined([f"(> {listed.count} n)", f"(< {cut} 3)"])
+    again = splits.defined([f"(> {listed.count} n)", f"(= {other.count} 1)"])
+
+    assert first == [f"(define-fun {listed.count} () Int 12)", f"(define-fun {cut} () Int 10)"]
+    # t's value is not known: its count is a count no tie holds
+    assert again == [f"(declare-const {other.count} Int)", f"(assert (>= {other.count} 0))"]
 
 
 @pytest.mark.parametrize(
-    ("limit", "held"), [(3, False), (20, True), (None, True)], ids=["under", "past", "none"]
+    ("string", "count"),
+    [(["strip", "s"], 12), (["lower", ["strip", "s"]], 12), (["+", "s", "t"], None)],
+    ids=["a method", "two methods", "an operator"],
 )
-def test_a_replace_count_is_held_to_the_bound_only_where_no_limit_keeps_it_under(
-    limit: int | None, held: bool
+def test_a_string_a_method_makes_of_the_input_s_is_counted(
+    string: Expression, count: int | None
 ) -> None:
-    operands = (",",) if limit is None else (",", limit)
-    listed = SplitList("s", "split", operands, "c", 10)
+    splits = Splits()
+    splits.given = lambda part: f" {TWELVE} " if part == "s" else None
 
-    tie, holds = listed.tie(read_from_the_end=True)
+    listed = splits.made(["split", string, "','"], "s")
 
-    assert holds is held
-    assert len(tie) == (2 if held else 1), tie
-    assert "str.replace_all" in tie[0]
-
-
-def test_a_count_of_many_lines_is_held_to_the_input_s_own_string() -> None:
-    text = "a\n" * 16 + "x"
-
-    tie, holds = _listed("splitlines", (), text).tie()
-
-    assert holds is True
-    assert tie == ["(assert (= c 17))", '(assert (= s "' + text.replace("\n", "\\u{a}") + '"))']
-
-
-def test_a_count_the_forks_move_is_tied_by_walks_not_held_to_the_input_s() -> None:
-    tie, holds = _listed("splitlines", (), "a\n" * 16 + "x", read_count=16).tie()
-
-    assert holds is True
-    assert "(assert (= c 17))" not in tie
-    assert tie[0].startswith("(assert (= c (+ "), tie[0]
-
-
-def test_a_count_of_many_pieces_on_a_separator_holds_only_their_number() -> None:
-    text = "--".join("a" * 24)
-
-    tie, holds = _listed("split", ("--",), text).tie()
-
-    # one membership for each side of the count, and the string free to change
-    assert holds is True
-    assert tie[0] == "(assert (= c 24))"
-    assert tie[1].count("str.in_re") == 2 and '"a--' not in tie[1], tie[1]
-
-
-@pytest.mark.parametrize(("lines", "pinned"), [(14, False), (15, True)], ids=["14", "15"])
-def test_a_count_is_held_to_the_input_s_own_once_its_bound_passes_sixteen(
-    lines: int, pinned: bool
-) -> None:
-    tie, _ = _listed("splitlines", (), "a\n" * (lines - 1) + "x").tie()
-
-    assert (f"(assert (= c {lines}))" in tie) is pinned, tie
+    assert listed.input_count == count

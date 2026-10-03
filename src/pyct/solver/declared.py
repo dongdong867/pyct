@@ -91,13 +91,11 @@ class Program:
     names_by_symbol: Mapping[str, str]
     lists: ListTerms | None = None
     # whether the program holds the answer to more than the path: clamps settled as the input
-    # had them, so unsat is only unknown; or a repeated list's length, or a split's count,
-    # held; and whether what it holds already rules out the path's own forks
+    # had them, so unsat is only unknown; or a repeated list's length held
     narrowed: bool = False
     held: bool = False
-    refuted: bool = False
-    # whether a piece read from a split's end sits where the input's own few pieces put it
-    fixed_few: bool = False
+    # whether a piece read from a split's end holds the string to the count c*
+    fixed: bool = False
     bounded: bool = False
     dicts: DictTerms | None = None
     kept: bool = False

@@ -14,6 +14,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
+from pyct.core.branch import Expression
 
 # a term that holds, and one that does not
 TRUE, FALSE = "true", "false"
@@ -209,19 +210,20 @@ def compare(
 
 def _by_count(difference: Lin, or_equal: bool, counts: Counts) -> str | None:
     """``difference > 0``, or ``>= 0``, as whether a split holds more pieces than a number,
-    when the difference is that split's count, or its negation, and a number."""
+    when the difference is that split's count times a number, and a number."""
     if len(difference.atoms) != 1:
         return None
     ((term, factor),) = difference.atoms
     past = counts.get(term)
-    if past is None or factor not in (1, -1):
+    if past is None or factor == 0:
         return None
-    # the difference is past `beyond`: past 0, or past -1 when it may be 0
-    beyond = -1 if or_equal else 0
-    if factor == 1:
-        return past(beyond - difference.const)
-    # a number less the count is past `beyond` where the count is not past the rest, less one
-    return negated(past(difference.const - beyond - 1))
+    # ``factor * count + rest > 0``; ``>= 0`` is ``> -1`` on ints
+    rest = difference.const + (1 if or_equal else 0)
+    if factor > 0:
+        # the count is past ``-rest / factor``, rounded down
+        return past(-rest // factor)
+    # the count is below ``rest / -factor``: not past that, rounded up, less one
+    return negated(past(-(-rest // -factor) - 1))
 
 
 def negated(condition: str) -> str:
@@ -303,3 +305,32 @@ def shape_guard(shape: ListShape) -> Guard:
         return found
 
     return guard
+
+
+# how deep a compare's side may nest arithmetic and still be read as a sum: a loop that adds on
+# every pass nests thousands deep, which no compare of a split's count does
+_SUM_DEPTH = 8
+
+
+def summed(
+    part: Expression, length_of: Callable[[Expression], Lin | None], depth: int = _SUM_DEPTH
+) -> Lin | None:
+    """A side of a compare as a sum: a number, a list's length (``length_of``), or either
+    through `+`, `-` or `*` with a number, nested at most ``depth`` deep; None for any other."""
+    if isinstance(part, int) and not isinstance(part, bool):
+        return Lin(int(part))
+    length = length_of(part)
+    if length is not None:
+        return length
+    if not isinstance(part, list) or len(part) != 3 or part[0] not in ("+", "-", "*"):
+        return None
+    if depth == 0:
+        return None
+    first, second = (summed(operand, length_of, depth - 1) for operand in part[1:])
+    if first is None or second is None:
+        return None
+    if part[0] == "*":
+        number = first.number() if second.number() is None else second.number()
+        listed = second if second.number() is None else first
+        return None if number is None else listed.times(number)
+    return first.plus(second) if part[0] == "+" else first.minus(second)

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
 from tests.acceptance.test_lists import (
     UNTIL_NO_GAIN,
     args_of,
@@ -288,3 +288,96 @@ def test_raises_on_an_empty_separator() -> None:
     assert failure_detail(seed) == f"ValueError: {plain.value}", seed
     assert listed(seed) == [], seed
     assert downgrade_names(seed) == [], seed
+
+
+LINES = ["splitlines", "s"]
+
+
+# follow-the-length-of-a-split-reads-plain-arithmetic-on-the-count
+def test_reads_plain_arithmetic_on_the_count() -> None:
+    result = run_pyct(f"{LENGTHS}::arithmetic", '{"s": "a"}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    compares: list[tuple[object, Callable[[str], bool]]] = [
+        ([">", ["-", ["len", SPLIT], 1], 3], lambda s: len(s.split(",")) - 1 > 3),
+        (["==", ["*", ["len", SPLIT], 2], 8], lambda s: len(s.split(",")) * 2 == 8),
+        # Python asks the count's own `>` for `3 < len(parts)`
+        ([">", ["len", SPLIT], 3], lambda s: len(s.split(",")) > 3),
+    ]
+    for compare, agrees in compares:
+        assert agreeing(lines, compare, agrees), (compare, lines)
+    first = [
+        line
+        for line in solved(lines)
+        if covers(line, line_of('if parts[0] == "x":') + 1)
+        and len(parts := str(args_of(line)["s"]).split(",")) >= 5
+        and parts[0] == "x"
+    ]
+    assert first, lines
+    assert no_plan_left(lines), lines
+
+
+# follow-the-length-of-a-split-reads-the-last-line-at-the-input-s-count
+def test_reads_the_last_line_at_the_input_s_count() -> None:
+    result = run_pyct(f"{LENGTHS}::last_line", '{"s": "a\\nb\\nc"}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    at = line_of('if lines[-1] == "end":')
+    assert [fork for fork in listed(lines[0]) if fork[0] == at] == [
+        (at, [">=", ["len", LINES], 1], True),
+        (at, ["==", ["[]", LINES, -1], "'end'"], False),
+    ]
+    three = [
+        line
+        for line in solved(lines)
+        if covers(line, at + 1)
+        and len(found := str(args_of(line)["s"]).splitlines()) == 3
+        and found[-1] == "end"
+    ]
+    assert three, lines
+    assert no_plan_left(lines), lines
+
+
+# follow-the-length-of-a-split-asks-the-input-s-count-beside-a-tracked-value
+def test_asks_the_input_s_count_beside_a_tracked_value() -> None:
+    result = run_pyct(f"{LENGTHS}::beside_a_tracked_value", '{"s": "a\\nb\\nc", "n": 5}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    at = line_of("if len(lines) > n:")
+    fork = [">", ["len", LINES], "n"]
+    assert (at, fork, False) in listed(lines[0]), lines[0]
+    assert fork_line(result.stderr, LENGTHS_FILE, at, "len(s.splitlines()) > n", False)
+    below = [
+        line
+        for line in solved(lines)
+        if (at, fork, True) in listed(line) and int(str(args_of(line)["n"])) < 3
+    ]
+    assert below, lines
+    two = [
+        line
+        for line in solved(lines)
+        if covers(line, line_of("return 2"))
+        and (lambda s, n: n < 30 and len(s.splitlines()) > n and s.splitlines()[0] == "end")(
+            **args_of(line)
+        )
+    ]
+    assert two, lines
+    solver = summary_line(result.stdout)["solver"]
+    assert isinstance(solver, dict) and solver["unknown"] == solver["timeout"] == 0, solver
+
+
+# follow-the-length-of-a-split-walks-a-split-after-the-other-forks
+def test_walks_a_split_after_the_other_forks() -> None:
+    result = run_pyct(f"{LENGTHS}::walked_after", '{"s": "a\\nb\\nc\\nd"}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    walk, test = line_of("for i, p in enumerate"), line_of('if i > 0 and p == "end":')
+    aims = [aimed_at(line) for line in solved(lines)]
+    assert walk in aims, aims
+    # the seed's three line forks, `p == "end"` at lines 1 to 3, are all aimed at first
+    assert aims[: aims.index(walk)].count(test) >= 3, aims
+    assert [line for line in solved(lines) if covers(line, test + 1)], lines

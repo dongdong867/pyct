@@ -2,7 +2,6 @@
 and its count where a term reads it, with cvc5 held against Python on each."""
 
 import random
-import subprocess
 
 import pytest
 
@@ -13,8 +12,11 @@ from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
 from pyct.solver.answer import Sat
 from pyct.solver.cvc5 import solve
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
-from pyct.solver.split_lists import LoosenedReadError, SplitList
-from pyct.solver.splits import named_classes
+from pyct.solver.lists import Origin
+from pyct.solver.render import program
+from pyct.solver.split_lists import SplitList
+from pyct.solver.split_paths import Splits
+from pyct.solver.splits import named_classes, right_piece
 from pyct.solver.strings import encode
 from tests.unit.solver.agreement import asked, needs_cvc5
 from tests.unit.solver.test_render import fork, render
@@ -55,9 +57,10 @@ def _program(asks: list[tuple[str, str, str]]) -> list[str]:
 
 
 def _listed(
-    head: str, operands: tuple[object, ...], bound: int = 6, *, hold: bool = True
+    head: str, operands: tuple[object, ...], count: int | None = None, *, fixed: bool = True
 ) -> SplitList:
-    return SplitList("|s|", head, operands, COUNT, bound, hold)
+    """A split's list whose input had ``count`` pieces, which is also its c*."""
+    return SplitList("|s|", head, operands, COUNT, count, count, fixed)
 
 
 @needs_cvc5
@@ -92,7 +95,7 @@ def test_cvc5_counts_many_separators_as_python_does() -> None:
         if head == "rsplit" and overlaps_itself(separator) and not 0 <= (limit or -1) <= 16:
             continue
         count = len(_pieces(value, head, operands))
-        listed = _listed(head, operands, bound=40)
+        listed = _listed(head, operands)
         for number in range(14, 22):
             asks.append((value, "Bool", listed.past(number)))
             expected.append(count > number)
@@ -103,72 +106,40 @@ def test_cvc5_counts_many_separators_as_python_does() -> None:
     assert asked(_program(asks)) == expected
 
 
+def _from_the_end(listed: SplitList, pieces: list[str], back: int) -> tuple[int, bool]:
+    """Where a piece ``back`` from the end is read, and whether it is there: by a walk of the
+    reversed string on any string, else where c* puts it, there only on a string of c* pieces
+    while the read holds it so, or else where the input's own count puts it."""
+    walked = right_piece("|s|", listed.head, listed.operands, back) is not None
+    held = listed.read_count or 0
+    at = len(pieces) - 1 - back if walked else held - 1 - back
+    if not walked and listed.fixed:
+        return at, len(pieces) == held and at >= 0
+    return at, 0 <= at < len(pieces)
+
+
 @needs_cvc5
 def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
     rng = random.Random(5)
     asks: list[tuple[str, str, str]] = []
     expected: list[object] = []
-    for _ in range(200):
+    for _ in range(300):
         value = "".join(rng.choices(LETTERS, k=rng.randint(0, 7)))
         head, operands = _form(rng)
-        listed, pieces = _listed(head, operands, bound=9), _pieces(value, head, operands)
-        back = rng.randint(0, 2)
-        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", {}).found
-        there = back < len(pieces) and len(pieces) <= listed.bound + back
+        pieces, back = _pieces(value, head, operands), rng.randint(0, 2)
+        # c*: the string's own count, or one past or short of it, as another input's would be
+        held = max(len(pieces) + rng.choice([-1, 0, 0, 1]), 0)
+        listed = _listed(head, operands, held, fixed=rng.random() < 0.7)
+        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", None).found
+        at, there = _from_the_end(listed, pieces, back)
         if read.value is None:
-            # a split whose limit leaves no piece that far from the end, on any string
-            assert (read.guard, there) == (FALSE, False), (value, head, operands, back)
+            # no piece that far from the end of the input's own pieces
+            assert read.guard == FALSE and at < 0, (value, head, operands, back)
             continue
-        asks.append((value, "Bool", read.guard))
-        expected.append(there)
-        if there:
-            asks.append((value, "String", read.value))
-            expected.append(pieces[-back - 1])
+        asks += [(value, "Bool", read.guard), *([(value, "String", read.value)] if there else [])]
+        expected += [there, *([pieces[at]] if there else [])]
 
     assert asked(_program(asks)) == expected
-
-
-@needs_cvc5
-@pytest.mark.parametrize("hold", [True, False], ids=["held", "loosened"])
-def test_cvc5_ties_the_count_to_the_pieces_below_its_bound(hold: bool) -> None:
-    rng = random.Random(7)
-    for _ in range(40):
-        value = "".join(rng.choices(LETTERS, k=rng.randint(0, 9)))
-        head, operands = _form(rng)
-        listed = _listed(head, operands, bound=3, hold=hold)
-        count = len(_pieces(value, head, operands))
-        answer = _count_answer(value, listed)
-        # held, a string with more pieces than the bound is no answer; loosened, its count is
-        # at the bound or past it, though not fixed; on whitespace the count is exact either way
-        words = head in ("split", "rsplit") and (not operands or operands[0] is None)
-        exact = count <= 3 or words
-        if exact:
-            assert answer.startswith(f"sat\n((v0 {count}))"), (value, head, operands, answer)
-        elif hold:
-            assert answer.startswith("unsat"), (value, head, operands, answer)
-        else:
-            assert answer.startswith("sat\n((v0 "), (value, head, operands, answer)
-            assert int(answer.split()[-1].rstrip(")")) >= 3, (value, head, operands, answer)
-
-
-def _count_answer(value: str, listed: SplitList) -> str:
-    """What cvc5 says the count is on one fixed string, with the list's tie asserted."""
-    lines = [
-        "(set-logic ALL)",
-        "(declare-const |s| String)",
-        f"(assert (= |s| {encode(value)}))",
-        f"(declare-const {COUNT} Int)",
-        *listed.tie()[0],
-        f"(define-fun v0 () Int {COUNT})",
-    ]
-    lines[1:1] = named_classes("\n".join(lines))
-    return subprocess.run(
-        ["cvc5", "--produce-models", "--lang", "smt", "--quiet"],
-        input="\n".join([*lines, "(check-sat)", "(get-value (v0))"]) + "\n",
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout
 
 
 @needs_cvc5
@@ -183,9 +154,8 @@ def test_cvc5_reads_a_piece_at_a_position_a_term_writes_as_python_does() -> None
         if not pieces:
             continue
         at = rng.randrange(len(pieces))
-        split_read = _listed(head, operands, bound=8).read(Lin.of(f"(+ 0 {at})"), "str", {})
-        read = split_read.found
-        assert split_read.held
+        # read where the input's own values put the position, as origin/v2 reads it
+        read = _listed(head, operands).read(Lin.of(f"(+ 0 {at})"), "str", at).found
         assert read.value is not None
         asks += [(value, "Bool", read.guard), (value, "String", read.value)]
         expected += [True, pieces[at]]
@@ -212,17 +182,10 @@ def test_cvc5_holds_a_walked_rsplit_s_count_on_every_string() -> None:
     assert asked(_program(asks)) == [True] * len(asks)
 
 
-def test_the_loosened_program_reads_no_piece_among_those_below_the_bound() -> None:
-    listed = _listed("splitlines", (), hold=False)
-
-    with pytest.raises(LoosenedReadError):
-        listed.read(Lin(-2).plus(Lin.of(COUNT)), "str", {})
-
-
 def test_a_piece_of_another_kind_is_not_read() -> None:
-    read = _listed("split", (",",)).read(Lin(0), "int", {})
+    read = _listed("split", (",",)).read(Lin(0), "int", None)
 
-    assert (read.found.value, read.found.guard, read.held) == (None, FALSE, False)
+    assert (read.found.value, read.found.guard, read.fixes_the_count) == (None, FALSE, False)
 
 
 # a compare of a count with a number: the difference, whether it may be 0, and the count asked
@@ -234,6 +197,11 @@ BY_COUNT: dict[str, tuple[Lin, Lin, bool, str]] = {
     "count <= 3": (Lin.of("c"), Lin(3), True, "(not P3)"),
     "count > -1": (Lin(-1), Lin.of("c"), False, "true"),
     "count < 0": (Lin.of("c"), Lin(0), False, "false"),
+    "2 * count > 7": (Lin(7), Lin.of("c").times(2), False, "P3"),
+    "2 * count >= 8": (Lin(8), Lin.of("c").times(2), True, "P3"),
+    "2 * count < 9": (Lin.of("c").times(2), Lin(9), False, "(not P4)"),
+    "3 * count <= 6": (Lin.of("c").times(3), Lin(6), True, "(not P2)"),
+    "1 - count > -3": (Lin(-3), Lin(1).minus(Lin.of("c")), False, "(not P3)"),
 }
 
 
@@ -264,11 +232,26 @@ def test_a_count_a_compare_with_a_number_reads_is_not_declared() -> None:
     assert "count!" not in text
 
 
-def test_a_count_that_meets_a_tracked_int_is_declared_and_tied_to_its_pieces() -> None:
-    text = render((fork(["==", ["len", SPLIT], "n"], taken=True),), {"s": str, "n": int})
+@pytest.mark.parametrize(
+    ("values", "written"),
+    [
+        ({"s": "a,b,c", "n": 0}, ["(define-fun count!0! () Int 3)"]),
+        ({}, ["(declare-const count!0! Int)", "(assert (>= count!0! 0))"]),
+    ],
+    ids=["the input's count", "no input"],
+)
+def test_a_count_that_meets_a_tracked_int_is_c_star_with_no_tie(
+    values: dict[str, object], written: list[str]
+) -> None:
+    path = (fork(["==", ["len", SPLIT], "n"], taken=True),)
 
-    assert "(declare-const count!0! Int)" in text
-    assert "(assert (= count!0! " in text
+    text = program(path, {"s": str, "n": int}, Origin(values=values)).text.splitlines()
+
+    assert all(line in text for line in written), text
+    assert [line for line in text if "count!0!" in line] == [
+        *written,
+        "(assert (= count!0! |arg.n|))",
+    ]
 
 
 @needs_cvc5
@@ -305,21 +288,29 @@ def test_a_piece_read_beside_a_spelled_string_is_named_apart_from_its_letters() 
 
 
 @needs_cvc5
-@pytest.mark.parametrize("keep", [(), (False,), (True,)], ids=["plain", "no ends", "ends kept"])
-def test_cvc5_reads_the_last_line_from_the_end_as_python_does(keep: tuple[object, ...]) -> None:
-    rng = random.Random(17)
+def test_cvc5_counts_a_slice_of_every_split_as_python_does() -> None:
+    rng = random.Random(19)
     asks: list[tuple[str, str, str]] = []
     expected: list[object] = []
-    for _ in range(150):
-        value = "".join(rng.choices([*"ab\n\r\x0b", "\r\n", "\x85", " "], k=rng.randint(0, 8)))
-        lines = value.splitlines(*keep)  # pyrefly: ignore[no-matching-overload]
-        read = _listed("splitlines", keep).read(Lin(-1).plus(Lin.of(COUNT)), "str", {})
-        assert not read.held, value
-        asks.append((value, "Bool", read.found.guard))
-        expected.append(bool(lines))
-        if lines:
-            asks.append((value, "String", str(read.found.value)))
-            expected.append(lines[-1])
+    bounds = [None, -3, -1, 0, 1, 2, 4]
+    for _ in range(200):
+        value = "".join(rng.choices(LETTERS, k=rng.randint(0, 7)))
+        head, operands = _form(rng)
+        window = (rng.choice(bounds), rng.choice(bounds), rng.choice([None, 1, -1]))
+        splits = Splits()
+        listed = splits.made([head, "s", *(_written(operand) for operand in operands)], "|s|")
+        cut = splits.cut(listed, window).atoms[0][0]
+        length = len(_pieces(value, head, operands)[slice(*window)])
+        for number in range(-1, 4):
+            asks.append((value, "Bool", splits.counts[cut](number)))
+            expected.append(length > number)
 
-    # read by one look from the end, whatever the count
     assert asked(_program(asks)) == expected
+
+
+def _written(operand: object) -> Expression:
+    """An operand as core writes it in a form: a quoted string, a number, a bool or None."""
+    if isinstance(operand, str):
+        return repr(operand)
+    assert operand is None or isinstance(operand, int)
+    return operand

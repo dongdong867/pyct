@@ -26,7 +26,6 @@ from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, Rende
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
-from pyct.solver.split_lists import LoosenedReadError
 
 logger = logging.getLogger(__name__)
 
@@ -195,9 +194,9 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
-    if isinstance(answer, Unsat) and written is not None and written.fixed_few:
-        logger.debug("unsat with a read from a split's end at the input's count: choosing")
-        origin = replace(origin, back_among_counts=True)
+    if isinstance(answer, Unsat | Unknown) and written is not None and written.fixed:
+        logger.debug("a read from a split's end held to c* pieces: asking at the input's own")
+        origin = replace(origin, fixed_reads=False)
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed
@@ -241,12 +240,6 @@ def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
     written, origin = _written(path, origin, finite)
     if not isinstance(written, Program):
         return written, None
-    if written.refuted:
-        # held to fewer pieces than its own forks need, so the held ask is unsat without
-        # asking; the loosened asks of such paths each ran to the limit, so the fork is a miss
-        # that says so at once
-        logger.debug("a split's count held below what the path needs: unknown without asking")
-        return Unknown(), written
     return _finite_first(path, origin, written, finite), written
 
 
@@ -278,9 +271,8 @@ def _write(
     """The program for the path, written by the origin's instant.
 
     A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is. A
-    path with a read nothing on it types, one whose reads run past the steps the origin
-    gives them all, or a loosened one that reads a split's piece past its bound, is an
-    ``Unknown()``, a miss rather than a crash.
+    path with a read nothing on it types, or one whose reads run past the steps the origin
+    gives them all, is an ``Unknown()``, a miss rather than a crash.
     """
     try:
         return program(*path, origin, finite=finite, cores=cores)
@@ -292,9 +284,6 @@ def _write(
         return Unknown()
     except ProgramTooLargeError as error:
         logger.debug("giving up the unsettled program: %s", error)
-        return Unknown()
-    except LoosenedReadError as error:
-        logger.debug("giving up the loosened program: %s", error)
         return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)

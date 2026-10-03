@@ -34,10 +34,9 @@ def program_text(
     cores: bool,
 ) -> str:
     """The program's lines, in the order cvc5 reads them: each leaf and each list's and dict's
-    parts declared before any term on them, each split's count a line reads among them, the
-    leaves held finite, each class of characters a line names, the definitions, each such
-    count's tie to its pieces, what the lists, the dicts and the path assert, and what to ask
-    for."""
+    parts declared before any term on them, each split's count a line reads among them as its
+    c*, the leaves held finite, each class of characters a line names, the definitions, what
+    the lists, the dicts and the path assert, and what to ask for."""
     terms, dicts = body.lists, body.dicts
     lines = ["(set-option :dump-unsat-cores true)"] if cores else []
     lines.append("(set-logic ALL)")
@@ -48,10 +47,13 @@ def program_text(
     bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
     asserted = terms.assertions() + dicts.assertions()
     forks = [body.assertion(fork) for fork in prefix]
-    counts, ties = terms.splits.tied([*body.definitions, *bounds, *asserted, *forks], terms.least)
-    written = [*body.definitions, *ties, *bounds, *asserted, *forks]
+    written = [*body.definitions, *bounds, *asserted, *forks]
+    counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
-    lines += [f"(get-value ({constant}))" for constant, _ in declared]
+    # a leaf no line reads keeps the input's value: a split's count read as c* names its string
+    # in the path, but not in the program, as origin/v2's plain count never named it
+    read = "\n".join([*counts, *finites, *written])
+    lines += [f"(get-value ({constant}))" for constant, _ in declared if constant in read]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]
     return "\n".join(lines) + "\n"

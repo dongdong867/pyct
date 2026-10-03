@@ -74,3 +74,38 @@ def by_a_tracked_separator(s, t):
 
 def by_an_empty_separator(s):
     return len(s.split(""))
+
+
+def arithmetic(s):
+    parts = s.split(",")
+    if len(parts) - 1 > 3:
+        if parts[0] == "x":
+            return 1
+    if len(parts) * 2 == 8:
+        pass
+    if 3 < len(parts):
+        pass
+    return 0
+
+
+def last_line(s):
+    lines = s.splitlines()
+    if lines[-1] == "end":
+        return 1
+    return 0
+
+
+def beside_a_tracked_value(s, n):
+    lines = s.splitlines()
+    if n < 30:
+        if len(lines) > n:
+            if lines[0] == "end":
+                return 2
+    return 1
+
+
+def walked_after(s):
+    for i, p in enumerate(s.splitlines()):
+        if i > 0 and p == "end":
+            return 1
+    return 0

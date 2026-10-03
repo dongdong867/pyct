@@ -52,6 +52,9 @@ class Slices:
         """A slice of ``base``, clamped to it as Python clamps it; a step of -1 runs back from
         its start. With ``settle``, a clamp the path leaves open goes the way the input went."""
         self.settle = settle
+        cut = self._cut_window(base, bounds, kinds)
+        if cut is not None:
+            return cut
         size = base.length
         start_bound, stop_bound = (self._bound(part) for part in bounds[:2])
         if len(bounds) > 2 and bounds[2] == -1:
@@ -116,6 +119,24 @@ class Slices:
         operands = [self._linear(operand, depth - 1) for operand in part[1:]]
         summed = [operand for operand in operands if operand is not None]
         return _combined(str(part[0]), summed) if len(summed) == len(operands) else None
+
+    def _cut_window(self, base: Piece, bounds: list[Expression], kinds: Kinds) -> Window | None:
+        """A slice with plain bounds of a split's list, as ``cut`` writes it; None for any
+        other."""
+        cut = self.cut(base, bounds)
+        if cut is None:
+            return None
+        start, length = cut
+        step = -1 if len(bounds) > 2 and bounds[2] == -1 else 1
+        split = base.of_a_split
+        return Window(
+            length, kinds.kinds, kinds.every, of_a_split=split, base=base, start=start, step=step
+        )
+
+    def cut(self, base: Piece, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
+        """Where a slice with plain bounds of a list no term holds starts, and its length;
+        None for any other slice, which the clamps write."""
+        return None
 
     def length_of(self, part: Expression) -> Lin | None:
         """A bound that is a list's length, ``len(items[a:b])`` in a slice deletion, as that

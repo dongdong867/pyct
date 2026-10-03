@@ -2,7 +2,7 @@
 fork-order-a-split-s-walk-forks-after-the-path-s-other-forks."""
 
 from pyct.branches.tree import Tree
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Expression, Site
 from pyct.results.record import Aim
 
 
@@ -13,7 +13,7 @@ def fork(line: int, *, taken: bool = True) -> Branch:
 
 def walk(line: int, *, taken: bool = True) -> Branch:
     """A walk's fork over a split's list at its own line."""
-    expression = [">", ["len", ["splitlines", "s"]], line]
+    expression: Expression = [">", ["len", ["splitlines", "s"]], line]
     return Branch(expression, taken, Site(file="m.py", line=line, col=3), split_walk=True)
 
 
