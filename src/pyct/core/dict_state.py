@@ -87,6 +87,9 @@ class DictState(dict):
     # the place the walk read its key (see ``dict_reads.present``)
     stale: dict[object, object]
     walk_pins: dict[object, Expression]
+    # the tracked key each copied key of the target's own was stored under, which a lookup of
+    # a stale copy of it looks up in its place (see ``dict_reads.present``)
+    stood_for: dict[object, Expression]
     # whether popitem changed the dict: it removes whichever key is last on the input, so a
     # change under a tracked key after it is Python's own (see ``dict_changes.followed``)
     popped: bool
@@ -123,7 +126,7 @@ class DictState(dict):
         fields["shadow"] = dict(items)
         fields["walked_at"] = None
         # what walks handed out, none yet (see ``dict_reads.handout``)
-        fields.update(copies={}, shared={}, stale={}, walk_pins={}, popped=False)
+        fields.update(copies={}, shared={}, stale={}, walk_pins={}, stood_for={}, popped=False)
         fields["int_keyed"] = int_keyed
         return made
 

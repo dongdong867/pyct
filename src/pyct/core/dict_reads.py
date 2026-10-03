@@ -39,6 +39,7 @@ from pyct.core.dict_compares import (
     handed_in_place,
     is_tracked,
     own_key,
+    stored_under,
     written_key,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
@@ -126,11 +127,14 @@ def present(
     lookup here reads the key's plain value.
     """
     held = dict.__contains__(self, plain(key))
+    if proven(self, key):
+        return held
+    stand_in = _stand_in(self, key)
+    if stand_in is not None:
+        key, changing = stand_in, True
     written = written_key(key)
     if written is None or (is_tracked(key) and self.changed and not changing):
         return None
-    if proven(self, key):
-        return held
     given = _given(self, key)
     place: Expression = None if given is None else ["given", given]
     # whether the key is one a change was made under holds where the walk read it, too
@@ -138,6 +142,22 @@ def present(
     if changed is not None:
         return changed
     return _in_the_argument(self, key, held, (name, raising, place))
+
+
+def _stand_in(self: DictState, key: object) -> object:
+    """The tracked key a stale copy of the target's own key was stored under, as a key of its
+    value and that key's expression, or None: on another input the walk handed out that key's
+    value in its place, so its lookup is that key's (see ``DictState.stood_for``). A key Python
+    shares has no copy, and the target may write it too, so its lookup is its own."""
+    if self.stale.get(key, MISSING) is not key:
+        return None
+    under = self.stood_for.get(key)
+    if under is None:
+        return None
+    if isinstance(key, str):
+        return ConcolicStr.made(key, under, self.sink)
+    assert isinstance(key, int)
+    return ConcolicInt.made(key, under, self.sink)
 
 
 def _given(self: DictState, key: object) -> Expression:
@@ -228,6 +248,8 @@ def handout(self: DictState, key: object, pin: Expression) -> object:
             self.copies[key] = copied
     if pin is not None:
         (self.shared if copied is key else self.walk_pins)[key] = pin
+    if copied is not key and own_key(self, key):
+        self.stood_for[key] = stored_under(self, key)
     return copied
 
 

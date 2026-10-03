@@ -27,7 +27,13 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, caller_site
-from pyct.core.dict_compares import handed_in_place, is_tracked, own_key, written_key
+from pyct.core.dict_compares import (
+    handed_in_place,
+    is_tracked,
+    own_key,
+    stored_under,
+    written_key,
+)
 from pyct.core.dict_reads import (
     POPPED,
     found,
@@ -130,15 +136,6 @@ def looked_up_to_change(self: DictState, key: object, name: str) -> bool:
     if is_tracked(key) and plain(key) not in self.changed and not held:
         self.settled.setdefault(plain(key), False)
     return held
-
-
-def stored_under(self: DictState, key: object) -> Expression:
-    """The expression of the tracked key the latest change under ``key`` was made under, None
-    when that change was under a plain key."""
-    for under_key, changed, _, _ in reversed(self.log):
-        if type(changed) is type(key) and changed == key:
-            return under_key
-    return None
 
 
 def holds_key(self: DictState, key: object, name: str) -> bool:

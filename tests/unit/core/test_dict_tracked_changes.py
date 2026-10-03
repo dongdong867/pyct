@@ -453,3 +453,19 @@ def test_a_stored_key_python_shares_is_compared_where_a_walk_hands_it_out() -> N
         (["==", "name", "'a'"], True),
         ([">", ["+", ["len", "config"], 1], 1], False),
     ]
+
+
+def test_a_stale_copy_of_a_tracked_store_s_key_is_looked_up_as_that_key() -> None:
+    config, sink = tracked({})
+    name = ConcolicStr.made("zz", "name", sink)
+    config[name] = 1
+    keys = list(config)
+
+    config[name] = 2
+    asked = len(forks(sink))
+    assert [plain(config[key]) for key in keys] == [2]
+
+    # the walk handed out name's own key: on another input name's value, so its lookup asks
+    # nothing a flip of `name == 'zz'` could move
+    assert forks(sink)[asked:] == []
+    hold_against_python(sink, {"config": {}, "name": "zz"})

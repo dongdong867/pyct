@@ -136,6 +136,15 @@ def own_key(self: DictState, key: object) -> bool:
     return self.changed.get(key) is True and self.settled.get(key) is False
 
 
+def stored_under(self: DictState, key: object) -> Expression:
+    """The expression of the tracked key the latest change under ``key`` was made under, None
+    when that change was under a plain key."""
+    for under_key, changed, _, _ in reversed(self.log):
+        if type(changed) is type(key) and changed == key:
+            return under_key
+    return None
+
+
 def compared_in_place(self: DictState, key: object) -> bool:
     """Whether a key of the argument a walk or popitem hands out may be one a tracked key
     stored over (see ``over_the_argument``). The target's own key is wherever its store put
