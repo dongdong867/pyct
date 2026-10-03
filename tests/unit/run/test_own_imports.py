@@ -2,7 +2,8 @@
 
 Each test loads a target from a folder that holds its own ``difflib.py``, and then imports
 ``difflib`` from code compiled under a file name of pyct's, as pyct's own late imports run, or
-under the target's, as the target's run. The run package's conftest puts back ``sys.path`` and
+under the target's, as the target's run. Code compiled under core's folder imports as whoever
+called it, pyct's code or the target's. The run package's conftest puts back ``sys.path`` and
 the working directory; these tests put back ``sys.meta_path`` and ``difflib``.
 """
 
@@ -63,6 +64,18 @@ def pyct_s(source: str, names: dict[str, object] | None = None) -> Callable[[], 
     return code_of(f"{PYCT_DIR}late.py", source, names)
 
 
+def function_of(file: str, source: str) -> Callable[..., object]:
+    """The function ``source`` defines as ``call``, as code of ``file``, so calling it adds that
+    one frame of ``file``'s and no other."""
+    defined = code_of(file, source)()["call"]
+    assert callable(defined)
+    return defined
+
+
+# pyct's core importing difflib, as it does for pyct's own code and in the target's place
+CORE_IMPORTS = "def call():\n    return importlib.import_module('difflib')\n"
+
+
 def is_the_standard_library_s(module: object) -> bool:
     """Whether ``module`` is the standard library's difflib, not the folder's."""
     return (
@@ -87,6 +100,27 @@ def test_pyct_s_import_through_the_standard_library_comes_from_it_too(folder: Pa
     names = pyct_s("found = importlib.import_module('difflib')")()
 
     assert is_the_standard_library_s(names["found"])
+
+
+def test_core_s_import_under_pyct_s_call_comes_from_the_standard_library(folder: Path) -> None:
+    load_target("target::f")
+    core = function_of(f"{PYCT_DIR}core{os.sep}late.py", CORE_IMPORTS)
+
+    # the walk passes core's frame and reaches pyct's own further out
+    names = pyct_s("found = core()", {"core": core})()
+
+    assert is_the_standard_library_s(names["found"])
+
+
+def test_core_s_import_under_the_target_s_call_comes_from_its_folder(folder: Path) -> None:
+    load_target("target::f")
+    core = function_of(f"{PYCT_DIR}core{os.sep}late.py", CORE_IMPORTS)
+    target_s = function_of(str(folder / "target.py"), "def call(core):\n    return core()\n")
+
+    # core runs the target's own operation, so the import is the target's
+    names = pyct_s("found = target_s(core)", {"target_s": target_s, "core": core})()
+
+    assert getattr(names["found"], "MARK", None) == "folder"
 
 
 def test_the_target_s_import_comes_from_its_folder(folder: Path) -> None:
