@@ -27,7 +27,8 @@ kind) and its payload, padded to 8 bytes:
   written out on every pass, so each list is written once, however many
   places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col, raising]``, the
-  expression a leaf or ``[n]``.
+  expression a leaf or ``[n]``, and a seventh item, a bool, for a fork an
+  `is` noted with whether it held (``Branch.is_held``).
 - fact: a fact the path holds beside its forks (``Fact``), written as a fork
   is, its expression null for a fact that is only a place, and a seventh item
   for its place, written the same way. Its ``after`` is not written: the
@@ -127,6 +128,8 @@ class JournalWriter:
         try:
             expression = self._written(branch.expression)
             fork = [expression, branch.taken, site.file, site.line, site.col, branch.raising]
+            if branch.is_held is not None:
+                fork.append(branch.is_held)
             self._json(FORK, fork)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:

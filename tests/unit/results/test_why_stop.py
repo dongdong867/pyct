@@ -9,13 +9,15 @@ import threading
 import time
 import tracemalloc
 import types
+from collections.abc import Iterable, Iterator
 from pathlib import Path
 
 import pytest
 
 from pyct.core.branch import Branch, Site
-from pyct.results import blocks, why
+from pyct.results import blocks, senses, why
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace, UnaffordableError
+from pyct.results.senses import At
 from pyct.results.way import Flow
 from pyct.results.why import Reason, Run, Walked, explain
 
@@ -220,6 +222,24 @@ def _named_identities(
     return source, frozenset(line + 1 for line in tests), covered, walked
 
 
+NOTED = (
+    "FLAG = False\n\n\ndef f(xs):\n    y = 0\n    for v in xs:\n        if v is FLAG:\n"
+    "            y += 1\n    return y\n"
+)
+
+
+def _noted_identities(
+    forks: int, file: str
+) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
+    covered = frozenset({5, 6, 7, 9})
+    # one input whose `is` against a name forked on every pass, each fork noted with its `is`
+    tested = tuple(
+        Branch([">", ["[]", "xs", k], 0], True, Site(file, 7, 11), is_held=False)
+        for k in range(forks)
+    )
+    return NOTED, frozenset({8}), covered, [Walked(tested, False, covered)]
+
+
 def _spread_inputs(
     size: int, file: str
 ) -> tuple[str, frozenset[int], frozenset[int], list[Walked]]:
@@ -253,6 +273,8 @@ SHAPES = {
     "one_long_and": (_one_long_and, 4000),
     "identities": (_identities, 4000),
     "named_identities": (_named_identities, 300),
+    # read-an-is-test-against-a-name-per-pass-stops-reading-forks-at-the-analysis-stop
+    "noted_identities": (_noted_identities, 100_000),
     "spread_inputs": (_spread_inputs, 1000),
 }
 
@@ -286,6 +308,38 @@ def test_the_clock_is_read_often_through_each_large_shape(
     # before its grace ends; each mark is the thread's CPU time, so a stretch is CPU seconds
     longest = max(later - earlier for earlier, later in itertools.pairwise(marks))
     assert longest < LONGEST_STRETCH, longest
+
+
+# read-an-is-test-against-a-name-per-pass-stops-reading-forks-at-the-analysis-stop
+def test_a_stop_while_the_is_tests_own_forks_are_read_leaves_the_lines_not_worked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = str(tmp_path / "noted.py")
+    source, uncovered, covered, walked = _noted_identities(100_000, file)
+    Path(file).write_text(source)
+    # a clock that stands still until the notes are read, then is past the stop
+    now = [0]
+    monkeypatch.setattr(why, "clock", lambda: now[0])
+    agreements_of = senses.agreements_of
+    read: list[int] = []
+
+    def reading(notes: Iterable[tuple[At, bool, bool]]) -> dict[At, frozenset[bool]]:
+        now[0] = 10
+
+        def counted() -> Iterator[tuple[At, bool, bool]]:
+            for note in notes:
+                read.append(1)
+                yield note
+
+        return agreements_of(counted())
+
+    monkeypatch.setattr(why, "agreements_of", reading)
+
+    entries = explain(file, uncovered, covered, Run(walked, {}, stop_at=5))
+
+    assert [(entry.lines, entry.reason) for entry in entries] == [((8,), Reason.NOT_WORKED_OUT)]
+    # the stop is seen within the pace's 256 steps of the reading's start
+    assert 0 < len(read) <= 256, len(read)
 
 
 def test_a_stop_lands_while_the_instructions_are_read(monkeypatch: pytest.MonkeyPatch) -> None:

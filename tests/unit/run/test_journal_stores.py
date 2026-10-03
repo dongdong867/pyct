@@ -98,7 +98,7 @@ def test_a_fact_crosses_the_journal_placed_after_the_forks_before_it() -> None:
     assert reading.facts[0].expression[1] is reading.branches[0].expression[1]  # type: ignore[index]
 
 
-def test_a_fork_record_holds_six_items() -> None:
+def test_a_fork_record_holds_six_items_and_a_bool_note_alone() -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
     writer.fork(Branch(expression="abcdef", taken=True, site=Site("m.py", 2, 4)))

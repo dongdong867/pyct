@@ -51,6 +51,10 @@ class Branch:
     ``lost_as`` names the operation that took it, which a call that is over names its loss by
     when a value it kept records one (see ``execution.tally``). It is not part of the fork, and
     it is not printed.
+
+    ``is_held`` is set on a fork an `is` records as it tests its operand, and says whether the
+    `is` held on that pass; None on any other fork. see-why reads an `is` test's sides from it
+    (``results.senses``). Like ``lost_as``, it is not part of the fork, and it is not printed.
     """
 
     expression: Expression
@@ -58,6 +62,7 @@ class Branch:
     site: Site
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
+    is_held: bool | None = field(default=None, compare=False)
 
     @property
     def where(self) -> ForkSite:
