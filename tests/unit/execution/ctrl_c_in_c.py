@@ -57,7 +57,7 @@ import time
 
 
 def spin(until, owner=None):
-    while time.monotonic() < until and (owner is None or owner.hold.in_pyct == 0):
+    while time.monotonic() < until and (owner is None or owner.hold.brief == 0):
         pass
 """
 
@@ -66,7 +66,7 @@ def spin_in_pyct() -> Callable[..., object]:
     """A loop compiled as a file in pyct's package: ``spin(until, owner=None)``.
 
     It runs until the monotonic instant ``until``, or, given the owned
-    deadline's state, until the alarm was held for pyct's frames. It calls
+    deadline's state, until the alarm was held briefly once. It calls
     no Python function, so an alarm lands in its own frame.
     """
     namespace: dict[str, object] = {}

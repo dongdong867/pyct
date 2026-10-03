@@ -52,7 +52,6 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from typing import NoReturn
 
-from pyct.core.branch import PYCT_DIR
 from pyct.execution.stops import STOPS
 
 # a deadline already past still has to fire, and setitimer(0) would cancel instead
@@ -95,8 +94,8 @@ class _Hold:
     """How a block's alarm has been held back so far.
 
     ``since`` is when it was first held for a stop, or None while it has not
-    been. ``in_pyct`` counts the times it was held for landing in pyct's own
-    frames, a count of its own that never starts ``since``. ``before`` is the
+    been. ``brief`` counts the times it was held briefly, where no stop
+    showed, a count of its own that never starts ``since``. ``before`` is the
     exception Python showed as handled when the block began: the caller's,
     or one a frame left set as it ended. From 3.13 a signal handled at a
     loop's backward jump can raise from an offset outside the frame's
@@ -106,7 +105,7 @@ class _Hold:
     """
 
     since: float | None = None
-    in_pyct: int = 0
+    brief: int = 0
     before: BaseException | None = None
 
 
@@ -117,7 +116,7 @@ class _Owner:
     The handler raises only while a block runs, only once its instant has
     come, and only in the frames under ``home``, the frame that entered the
     block, and never over a stop on its way out, for up to ``_HOLD_AT_MOST``;
-    one that lands in pyct's own frames waits a few milliseconds
+    one that lands where no stop shows waits a few milliseconds
     (``_held_back``). A signal the timer of an earlier block posts late,
     into a later block, comes before that block's instant, since a timer
     never fires early. A signal that comes after a Ctrl-C cut a block's way
@@ -142,8 +141,8 @@ _AGAIN = 0.001
 # how long an alarm waits, from when it was first held for a stop, before it raises anyway
 _HOLD_AT_MOST = 0.5
 
-# how many times, each ``_AGAIN`` apart, an alarm that lands in pyct's own frames waits for them
-_PYCT_HOLDS = 3
+# how many times, each ``_AGAIN`` apart, an alarm that lands where no stop shows waits
+_BRIEF_HOLDS = 3
 
 
 # the tests that fire the alarm run without coverage, which a raise here can hang
@@ -152,7 +151,7 @@ def _owned(signal_number: int, frame: types.FrameType | None) -> None:  # pragma
     in_time = _OWNER.running and time.monotonic() >= _OWNER.at - _EARLY
     if not (in_time and _under(frame, _OWNER.home)):
         return
-    if _held_back(frame, _OWNER.hold):
+    if _held_back(_OWNER.hold):
         signal.setitimer(signal.ITIMER_REAL, _AGAIN)
         return
     _OWNER.running = False
@@ -168,8 +167,8 @@ def _under(frame: types.FrameType | None, home: types.FrameType | None) -> bool:
     return False
 
 
-def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: no cover
-    """Whether the alarm waits, for a stop on its way out or briefly for pyct's own frames.
+def _held_back(hold: _Hold) -> bool:  # pragma: no cover
+    """Whether the alarm waits, for a stop on its way out or briefly where no stop shows.
 
     A DeadlineError would take a stop's place, so the alarm is held back and
     comes again ``_AGAIN`` later, until the stop has left the block or target
@@ -180,11 +179,16 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
     was first held for one, it raises anyway: a handler that never lets its
     stop go would otherwise run with no deadline.
 
-    The line tracer's callback runs a handler's first line before Python
-    marks the stop there as handled, so no stop shows in pyct's own frames at
-    that moment. An alarm that lands in one of them waits ``_AGAIN``, at most
-    ``_PYCT_HOLDS`` times in a block, long enough for Python to mark it, and
-    short enough that a hang in pyct's frames still ends near its deadline.
+    A stop does not show everywhere it is on its way out. A line tracer's
+    callback, pyct's own or a host's ``sys.settrace`` function or
+    ``sys.monitoring`` tool, runs in a frame of its own while the stop it
+    traces is not yet handled anywhere. And a C call that returns after both
+    signals came has Python run SIGALRM's handler before SIGTERM's, so the
+    alarm comes before that stop is raised. So an alarm that lands where no
+    stop shows, in whatever frame of the block, waits ``_AGAIN``, at most
+    ``_BRIEF_HOLDS`` times in a block: long enough for the stop to show, and
+    short enough that a hang anywhere in the block, a tracer's callback
+    included, still ends near its deadline.
     """
     error = sys.exception()
     if isinstance(error, STOPS) and error is not hold.before:
@@ -192,9 +196,8 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
         if hold.since is None:
             hold.since = now
         return now < hold.since + _HOLD_AT_MOST
-    in_pyct = frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR)
-    if in_pyct and hold.in_pyct < _PYCT_HOLDS:
-        hold.in_pyct += 1
+    if hold.brief < _BRIEF_HOLDS:
+        hold.brief += 1
         return True
     return False
 
@@ -241,8 +244,8 @@ class _Sent:
     deadline's handler is SIGALRM's. The handler raises once, only for its
     own watcher's signal, only while ``armed`` holds, only in the frames the
     block runs, and never over a stop on its way out, for up to
-    ``_HOLD_AT_MOST``, waiting a few milliseconds when it lands in pyct's own
-    frames (``_held_back``): the block's frame is the one that
+    ``_HOLD_AT_MOST``, waiting a few milliseconds when it lands where no
+    stop shows (``_held_back``): the block's frame is the one that
     entered it. The way in and the way out are not the block: a signal
     that lands as ``__exit__`` begins, before its first line, is past it,
     and one that lands in ``__enter__``, as ``Thread.start`` waits on a
@@ -351,7 +354,7 @@ class _Sent:
     # the tests that fire the alarm run without coverage, which a raise here can hang
     def _fire(self, signal_number: int, frame: types.FrameType | None) -> None:  # pragma: no cover
         """SIGALRM's handler while the block runs: raise once, for its own watcher, inside it."""
-        if not (self.sent and self.armed and self._in_block(frame)) or _held_back(frame, self.hold):
+        if not (self.sent and self.armed and self._in_block(frame)) or _held_back(self.hold):
             return
         self.armed = False
         _raise_deadline(signal_number, frame)

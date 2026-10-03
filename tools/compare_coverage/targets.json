@@ -335,6 +335,7 @@
     {"set": "v2", "target": "targets.isolate.terminates::stop", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.threaded::count", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.isolate.threaded_closure", "left_out": "a factory: the target is the closure it returns, which no module attribute names"},
+    {"set": "v2", "module": "targets.isolate.traced", "left_out": "installs a tracer at import and runs one long C call or hangs by design, for the deadline tests"},
     {"set": "v2", "target": "targets.lists.append::check", "seed": {"items": [1, 2], "x": 0}},
     {"set": "v2", "target": "targets.lists.changes::added", "seed": {"items": [1, 2, 3, 4, 5, 6]}},
     {"set": "v2", "target": "targets.lists.changes::added_in_place", "seed": {"items": [1, 2, 3, 4, 5, 6]}},
