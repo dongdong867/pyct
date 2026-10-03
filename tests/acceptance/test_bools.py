@@ -7,14 +7,15 @@ answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
+    forks_of,
     input_lines,
     one_line,
     run_pyct,
     summary_line,
 )
-from tests.acceptance.test_ints import argument, forks_of
 
 AND_OR = "targets.bools.and_or::both"
 AND_OR_FILE = str(REPO_ROOT / "targets" / "bools" / "and_or.py")

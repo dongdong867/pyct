@@ -10,16 +10,9 @@ import re
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line, union_of
 from tests.acceptance.test_dicts import UNTIL_NO_GAIN, dict_of
-from tests.acceptance.test_lists import (
-    args_of,
-    covered_of,
-    downgrade_names,
-    listed,
-    number,
-    solved,
-)
+from tests.acceptance.test_lists import args_of, downgrade_names, listed, number, solved
 
 DICTS = REPO_ROOT / "targets" / "dicts"
 MADE_UP_INTS = "targets.dicts.made_up_ints"
@@ -66,7 +59,7 @@ def test_int_only_misses_line_12_through_the_walk_s_place() -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert 12 not in covered_of(lines)[SETTLED_FILE], covered_of(lines)
+    assert 12 not in union_of(lines)[SETTLED_FILE], union_of(lines)
     for line in lines:
         # asserts that each key an answer holds, a made-up one included, is an int's JSON text
         int_keyed(line)
@@ -99,7 +92,7 @@ def test_skips_held_and_named_keys() -> None:
 
     assert result.returncode == 0, result.stderr
     lines = solved(input_lines(result.stdout))
-    covering = [line for line in lines if 23 in covered_of([line]).get(MADE_UP_INTS_FILE, [])]
+    covering = [line for line in lines if 23 in union_of([line]).get(MADE_UP_INTS_FILE, [])]
     ds = [dict_of(line, "d") for line in covering]
     assert any(list(d) == ["0", "2"] and d["0"] == 5 for d in ds), lines
 
@@ -145,7 +138,7 @@ INT_EQUAL_FILE = str(DICTS / "int_equal_keys.py")
 
 
 def _own_lines(lines: list[dict[str, object]]) -> list[int]:
-    return covered_of(lines).get(INT_EQUAL_FILE, [])
+    return union_of(lines).get(INT_EQUAL_FILE, [])
 
 
 # make-up-an-int-key-for-an-int-keyed-dict: a plain key Python's lookup makes the same as an int,
@@ -256,7 +249,7 @@ def test_setdefault_and_a_merge_name_the_int(
     assert listed(printed[0])[0] == fork, listed(printed[0])
     assert all(entry["downgrades"] == [] for entry in printed), printed
     assert [entry["mismatch_at"] for entry in solved(printed)] == [None] * len(solved(printed))
-    assert line in covered_of(printed).get(INT_EQUAL_NUMBERS_FILE, []), covered_of(printed)
+    assert line in union_of(printed).get(INT_EQUAL_NUMBERS_FILE, []), union_of(printed)
 
 
 # make-up-an-int-key-for-an-int-keyed-dict: a `dict[int, X]` holding a str key makes up no key, but

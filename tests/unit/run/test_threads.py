@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import threading
 
@@ -6,6 +7,19 @@ import pytest
 
 from pyct.run import threads
 from pyct.run.threads import running
+from tests.acceptance.harness import COVERAGE_STARTUP
+
+# threads imported and asked for a count, printing what ctypes, which reads the count on macOS,
+# left in sys.modules: itself, its C half, or the sysconfig it imports on 3.13 and later
+COUNTS_THREADS = (
+    "import sys\n"
+    "before = set(sys.modules)\n"
+    "from pyct.run.threads import running\n"
+    "assert running() >= 1\n"
+    "added = set(sys.modules) - before\n"
+    "kept = {'ctypes', '_ctypes', 'sysconfig'}\n"
+    "print(sorted(n for n in added if n in kept or n.startswith(('ctypes.', 'sysconfig.'))))\n"
+)
 
 
 def test_a_thread_left_running_counts_once() -> None:
@@ -53,3 +67,19 @@ def test_a_task_count_the_system_will_not_give_leaves_python_s_count(
     monkeypatch.setattr(threads, "_TASK_INFO", 999)
 
     assert running() == threading.active_count()
+
+
+def test_counting_threads_leaves_neither_ctypes_nor_sysconfig_in_sys_modules() -> None:
+    # what ctypes imports, sysconfig on 3.13 and later, would otherwise hide a target's own;
+    # coverage.py's start-up would import sysconfig first, so the child runs unmeasured
+    unmeasured = {k: v for k, v in os.environ.items() if k not in COVERAGE_STARTUP}
+    imported = subprocess.run(
+        [sys.executable, "-P", "-c", COUNTS_THREADS],
+        env=unmeasured,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+
+    assert imported.stdout == "[]\n", imported.stdout

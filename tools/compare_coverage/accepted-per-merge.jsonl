@@ -77,7 +77,14 @@
 {"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.truth_test::tell", "seed": {"x": 1.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.intercept.across::spread", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [17]}
-{"set": "v2", "target": "targets.intercept.builtins_len::check", "seed": {"s": "ab"}, "status": "differs", "only_legacy": [6], "only_v2": []}
+{"set": "v2", "target": "targets.intercept.builtins_bare::character", "seed": {"n": 66}, "status": "differs", "only_legacy": [], "only_v2": [15]}
+{"set": "v2", "target": "targets.intercept.builtins_bare::code", "seed": {"c": "b"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.intercept.builtins_rebound::check", "seed": {"s": "ab"}, "status": "differs", "only_legacy": [10], "only_v2": []}
+{"set": "v2", "target": "targets.intercept.builtins_spellings::character", "seed": {"n": 66}, "status": "differs", "only_legacy": [], "only_v2": [20]}
+{"set": "v2", "target": "targets.intercept.builtins_spellings::code", "seed": {"c": "b"}, "status": "differs", "only_legacy": [], "only_v2": [8]}
+{"set": "v2", "target": "targets.intercept.builtins_spellings::sized", "seed": {"s": "ab"}, "status": "differs", "only_legacy": [], "only_v2": [14]}
+{"set": "v2", "target": "targets.intercept.builtins_star::code", "seed": {"c": "b"}, "status": "differs", "only_legacy": [], "only_v2": [6]}
+{"set": "v2", "target": "targets.intercept.builtins_star_other::check", "seed": {"s": "ab"}, "status": "differs", "only_legacy": [7], "only_v2": []}
 {"set": "v2", "target": "targets.intercept.codes::codes", "seed": {"c": "a", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.intercept.conversions::float_of_bool", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [61]}
 {"set": "v2", "target": "targets.intercept.conversions::float_of_float", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [55]}
@@ -237,6 +244,13 @@
 {"set": "v2", "target": "targets.types.read::range_type", "seed": {"n": 2}, "status": "differs", "only_legacy": [107], "only_v2": [99, 106]}
 {"set": "v2", "target": "targets.types.read::rebuilt", "seed": {"n": 1, "r": 2.5, "s": "a", "b": true, "xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [52]}
 {"set": "v2", "target": "targets.types.read_dict::dict_type", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [8]}
+{"set": "v2", "target": "targets.types.through::direct", "seed": {"n": 3, "d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [324, 325, 326]}
+{"set": "v2", "target": "targets.types.through::lookup", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [331]}
+{"set": "v2", "target": "targets.types.through::range_methods", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [113, 114]}
+{"set": "v2", "target": "targets.types.through::through", "seed": {"n": 3, "d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [314, 315, 316]}
+{"set": "v2", "target": "targets.types.through::view_methods", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [306]}
+{"set": "v2", "target": "targets.types.through::walk", "seed": {"n": 1}, "status": "differs", "only_legacy": [], "only_v2": [337, 338, 339]}
+{"set": "v2", "target": "targets.types.through::wrong", "seed": {"n": 3, "d": {"k": 1}}, "status": "differs", "only_legacy": [368], "only_v2": [367]}
 {"set": "v2", "target": "targets.types.views::guarded", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [28]}
 {"set": "v2", "target": "targets.why.negated::while_is_not_true", "seed": {"x": 0}, "status": "differs", "only_legacy": [105], "only_v2": [103, 106]}
 {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}

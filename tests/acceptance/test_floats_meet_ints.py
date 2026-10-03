@@ -10,13 +10,13 @@ import math
 from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
     two_lines,
 )
 from tests.acceptance.test_floats import expressions, failure_of, reached, real, taken
-from tests.acceptance.test_strs import forks_of
 
 FLOATS = REPO_ROOT / "targets" / "floats"
 BODY_MASS = "targets.floats.body_mass::classify"

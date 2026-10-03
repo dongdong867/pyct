@@ -1,6 +1,8 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
 `bool`, `map`, `range` and `type`: pyct's own routers, one table for all of them
-(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`).
+(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`),
+of each range and dict view method called through the type (`pyct.core.type_calls`), and pyct's
+`len`, `ord` and `chr` for a call through a name bound to `builtins` or to one of them.
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
@@ -32,7 +34,16 @@ import types
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core import codes, conversions, dict_reads, list_reads, math_calls, ranges, strs
+from pyct.core import (
+    codes,
+    conversions,
+    dict_reads,
+    list_reads,
+    math_calls,
+    ranges,
+    strs,
+    type_calls,
+)
 from pyct.core.bools import ConcolicBool
 from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.dicts import ConcolicDict
@@ -210,14 +221,20 @@ def type_(value: object, /) -> Any:
 
 
 # what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
-# `type(...)`, or a call of a `math` function through a name the module binds to it, calls in
-# place of Python's own function, by its identity (see `pyct.core.substitutes.call`)
+# `type(...)`, a call of a `math` function or of `len`, `ord` or `chr` through a name the module
+# binds to it or to its module, or a call of a range or dict view method through the type
+# (`pyct.core.type_calls`), calls in place of Python's own function, by its identity (see
+# `pyct.core.substitutes.call`)
 CALLED: Mapping[int, Callable[..., object]] = {
     **_CONVERTERS,
+    id(_LEN): len,
+    id(_ORD): ord,
+    id(_CHR): chr,
     id(map): map_,
     id(range): range_,
     id(type): type_,
     **math_calls.ROUTERS,
+    **type_calls.ROUTERS,
 }
 
 
@@ -242,8 +259,8 @@ for _python, _bound in BOUND.values():
     _dressed(_bound, _python)
 
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
-# `chr`, a conversion, `range` or a `math` function, or from the target's own `__len__`,
-# `__int__` or `__index__`, is the target's
+# `chr`, a conversion, `range`, a `math` function or a range or dict view method, or from the
+# target's own `__len__`, `__int__` or `__index__`, is the target's
 PASSING: frozenset[types.CodeType] = (
     frozenset(
         function.__code__
@@ -262,4 +279,5 @@ PASSING: frozenset[types.CodeType] = (
         )
     )
     | math_calls.PASSING
+    | type_calls.PASSING
 )

@@ -9,10 +9,16 @@ through the command line and checks the seed's side against the same call in pla
 import pytest
 
 from targets.ints import searched_members
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_bool_parameters import covered
 from tests.acceptance.test_bools import failure_of
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_write_an_int_subclass_operand_as_a_plain_int import (
     fork_lines,
     solver_lines,

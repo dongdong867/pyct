@@ -6,9 +6,16 @@ a set or a dict is followed element by element, and `in` and `is` are followed i
 compare. Each test runs pyct through the command line, as the rest of the story's tests do.
 """
 
-from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    downgrade,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_bools import at, expressions, failure_of, sides
-from tests.acceptance.test_ints import argument, forks_of
 
 FLAG_PARAMETER = "targets.bools.flag_parameter::flip"
 FLAG_PARAMETER_FILE = str(REPO_ROOT / "targets" / "bools" / "flag_parameter.py")

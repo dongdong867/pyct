@@ -228,9 +228,12 @@ def tracked_int(value: int, sink: list[SinkItem]) -> ConcolicInt:
         (bool, bound.bool_),
         (map, bound.map_),
         (range, bound.range_),
+        (len, bound.BOUND["len"][1]),
+        (ord, bound.BOUND["ord"][1]),
+        (chr, bound.BOUND["chr"][1]),
     ],
 )
-def test_python_s_own_conversion_is_handed_pyct_s_router(builtin: object, router: object) -> None:
+def test_python_s_own_builtin_is_handed_pyct_s_router(builtin: object, router: object) -> None:
     assert call(builtin) is router
 
 
@@ -238,7 +241,7 @@ def test_any_other_callee_is_handed_back_to_be_called_as_written() -> None:
     def own_int(value: object) -> int:
         return 7
 
-    for callee in (own_int, str, len, [1], None):
+    for callee in (own_int, str, abs, [1], None):
         assert call(callee) is callee
 
 
@@ -428,6 +431,8 @@ def test_the_passing_frames_are_the_routers() -> None:
         *_ROUTERS,
         # each `math` function's router
         "route",
+        # each range and dict view method's router, for a call through the type
+        "routed",
         # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a
         # link hands on to the next
         "__contains__",

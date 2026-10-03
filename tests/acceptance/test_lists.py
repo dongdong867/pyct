@@ -10,7 +10,15 @@ import json
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 
 LISTS = REPO_ROOT / "targets" / "lists"
 EMPTIES = "targets.lists.empties::check"
@@ -78,13 +86,6 @@ def items_of(line: dict[str, object], name: str = "items") -> list[object]:
     return items
 
 
-def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
-    """The forks off a printed line, narrowed so a field lookup means something."""
-    forks = line["forks"]
-    assert isinstance(forks, list), line
-    return [dict(fork) for fork in forks]
-
-
 def listed(line: dict[str, object]) -> list[tuple[object, object, object]]:
     """Each fork of a line as its line, its expression and the side it took."""
     return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
@@ -118,17 +119,6 @@ def failure_detail(line: dict[str, object]) -> str | None:
         return None
     assert isinstance(failure, dict) and failure["kind"] == "target_raised", line
     return str(failure["detail"])
-
-
-def covered_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
-    """Every input's covered map added up, written the way a printed line writes one."""
-    union: dict[str, set[int]] = {}
-    for line in lines:
-        covered = line["covered"]
-        assert isinstance(covered, dict), line
-        for file, numbers in covered.items():
-            union[str(file)] = union.get(str(file), set()) | {int(n) for n in numbers}
-    return {file: sorted(numbers) for file, numbers in union.items()}
 
 
 def fork_line(stderr: str, file: str, line: int, text: str, taken: bool) -> bool:
@@ -202,7 +192,7 @@ def test_empties_a_list() -> None:
     answers = [items_of(line) for line in solved(lines)]
     assert [] in answers, answers
     assert any(answer and number(answer[-1]) > 5 for answer in answers), answers
-    assert covered_of(lines) == {EMPTIES_FILE: [2, 3, 4, 5, 6]}
+    assert union_of(lines) == {EMPTIES_FILE: [2, 3, 4, 5, 6]}
 
 
 # follow-lists-and-dicts-as-they-change-lengthens-a-list-to-reach-an-index

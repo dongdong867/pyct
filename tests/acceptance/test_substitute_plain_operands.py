@@ -5,9 +5,15 @@ a tracked number, are handed to the tracked value where the code writes them. Ea
 ``python -P -m pyct`` through the harness, as only a run through the command line substitutes.
 """
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_bools import expressions, failure_of, sides
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_strs import text
 from tests.acceptance.test_substitute_conversions import downgrade_names, forks_taken
 

@@ -10,6 +10,7 @@ from pathlib import Path
 from tests.acceptance.harness import (
     CRASH_DETAIL,
     REPO_ROOT,
+    argument,
     crashing_cvc5,
     first_line,
     one_line,
@@ -36,15 +37,6 @@ UNTAUGHT_GUARD = "targets.flip.untaught_guard::route"
 UNTAUGHT_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "untaught_guard.py")
 CUT_SHORT = "targets.flip.cut_short_on_the_other_side::cut"
 CUT_SHORT_FILE = str(REPO_ROOT / "targets" / "flip" / "cut_short_on_the_other_side.py")
-
-
-def argument(line: dict[str, object], name: str) -> int:
-    """One int argument off a printed line, narrowed so the comparison means something."""
-    args = line["args"]
-    assert isinstance(args, dict), line
-    value = args[name]
-    assert isinstance(value, int), line
-    return value
 
 
 # flip-one-fork-refuses-without-cvc5

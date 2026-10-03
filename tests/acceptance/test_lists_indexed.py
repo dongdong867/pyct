@@ -7,8 +7,8 @@ import time
 
 import pytest
 
-from tests.acceptance.harness import input_lines, run_pyct
-from tests.acceptance.test_lists import UNTIL_NO_GAIN, forks_of, sides_of, solved
+from tests.acceptance.harness import forks_of, input_lines, run_pyct
+from tests.acceptance.test_lists import UNTIL_NO_GAIN, sides_of, solved
 
 MIXED = "targets.lists.mixed"
 

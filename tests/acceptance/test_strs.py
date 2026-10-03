@@ -8,12 +8,15 @@ solver's answer runs, so only a real run through the command line proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
+    forks_of,
     input_lines,
     one_line,
     run_pyct,
     summary_line,
     two_lines,
+    union_of,
 )
 
 EQUALITY = "targets.strs.equality::greet"
@@ -64,39 +67,12 @@ def text(line: dict[str, object], name: str) -> str:
     return value
 
 
-def number(line: dict[str, object], name: str) -> int:
-    """One int argument off a printed line, narrowed so the comparison means something."""
-    args = line["args"]
-    assert isinstance(args, dict), line
-    value = args[name]
-    assert isinstance(value, int), line
-    return value
-
-
-def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
-    """The forks off a printed line, narrowed so a field lookup means something."""
-    forks = line["forks"]
-    assert isinstance(forks, list), line
-    return [dict(fork) for fork in forks]
-
-
 def followed(stdout: str) -> list[tuple[object, list[tuple[object, object]]]]:
     """Each input's arguments and the forks it took, with nothing that names the file."""
     return [
         (line["args"], [(fork["expression"], fork["taken"]) for fork in forks_of(line)])
         for line in input_lines(stdout)
     ]
-
-
-def covered_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
-    """Every input's covered map added up, written the way a printed line writes one."""
-    union: dict[str, set[int]] = {}
-    for line in lines:
-        covered = line["covered"]
-        assert isinstance(covered, dict), line
-        for file, numbers in covered.items():
-            union[str(file)] = union.get(str(file), set()) | {int(n) for n in numbers}
-    return {file: sorted(numbers) for file, numbers in union.items()}
 
 
 # follow-strings-flips-a-string-equality
@@ -110,7 +86,7 @@ def test_flips_a_string_equality() -> None:
     assert forks_of(seed) == [{**fork, "taken": False}]
     assert forks_of(solved) == [{**fork, "taken": True}]
     assert text(solved, "s") == "abc"
-    assert covered_of([seed, solved]) == {EQUALITY_FILE: [2, 3, 4]}
+    assert union_of([seed, solved]) == {EQUALITY_FILE: [2, 3, 4]}
 
 
 # follow-strings-follows-every-string-compare
@@ -133,7 +109,7 @@ def test_follows_every_string_compare() -> None:
     sides = {(fork["line"], fork["taken"]) for line in inputs for fork in forks_of(line)}
     assert sides == {(line, taken) for line in COMPARE_LINES for taken in (True, False)}
     assert [line["mismatch_at"] for line in inputs[1:]] == [None] * (len(inputs) - 1)
-    assert covered_of(inputs) == {SIX_COMPARES_FILE: COUNT_LINES}
+    assert union_of(inputs) == {SIX_COMPARES_FILE: COUNT_LINES}
     summary = summary_line(result.stdout)
     # a fork the solver gave no input for is one whose other side no input can take: unsat,
     # never a question the solver ran out of time on
@@ -155,7 +131,7 @@ def test_follows_the_truth_test() -> None:
     assert seed["downgrades"] == []
     assert text(solved, "s") == ""
     assert [fork["taken"] for fork in forks_of(solved)] == [False]
-    assert covered_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
+    assert union_of([seed, solved]) == {TRUTH_TEST_FILE: [2, 3, 4]}
 
 
 # follow-strings-prints-the-fork-in-infix-on-stderr
@@ -219,7 +195,7 @@ def test_tracks_an_int_made_from_a_string() -> None:
     ]
     assert solved["mismatch_at"] is None
     # the solver may change s, n, or both; Python has to agree the input takes the other side
-    assert text(solved, "s").find("x") >= number(solved, "n")
+    assert text(solved, "s").find("x") >= argument(solved, "n")
 
 
 # follow-strings-downgrades-a-literal-the-solver-cannot-hold

@@ -8,9 +8,16 @@ through the command line, since only a run through it substitutes the call writt
 import pytest
 
 from targets.lists import truth_kept
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
-from tests.acceptance.test_bools import at, sides
-from tests.acceptance.test_ints import forks_of
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    input_lines,
+    lines_expressions_and_sides,
+    run_pyct,
+    summary_line,
+    took,
+)
+from tests.acceptance.test_bools import at
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     line_of,
@@ -32,11 +39,6 @@ def lines_of(function: str) -> tuple[int, int, int]:
         line_of(FILE, "if ok:", function),
         line_of(FILE, 'return "filled"', function),
     )
-
-
-def placed(line: dict[str, object]) -> list[tuple[object, object, object]]:
-    """Each fork on a printed line, by its line, its expression and the side it took."""
-    return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
 
 
 def filled(inputs: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -68,12 +70,12 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, FILLED, False)]
+    assert lines_expressions_and_sides(seed) == [(tested, FILLED, False)]
     assert seed_fork_line(result.stderr, tested).endswith("  len(items) != 0  not taken")
     solved = filled(inputs[1:])
     assert solved, inputs
     assert all(at(line, tested) == [FILLED] for line in solved)
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
     assert any(under in covered_in(line, str(FILE)) for line in solved)
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -87,7 +89,7 @@ def test_writes_a_changed_list_as_built() -> None:
     seed = first_line(result.stdout)
     built = ["!=", ["len", ["+", "items", ["[,]", 0]]], 0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, built, True)]
+    assert lines_expressions_and_sides(seed) == [(tested, built, True)]
     assert any(
         line.startswith(f"missed {FILE}:{tested}:") and line.endswith(" unsat")
         for line in result.stderr.splitlines()
@@ -103,10 +105,10 @@ def test_keeps_the_list_as_it_was_at_the_call() -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     assert at(seed, called) == []
-    assert placed(seed) == [(tested, FILLED, False)]
+    assert lines_expressions_and_sides(seed) == [(tested, FILLED, False)]
     solved = filled(inputs[1:])
     assert solved, inputs
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
 
 
 # record-bool-of-a-tracked-list-where-it-is-tested-names-a-list-inside-as-indexed
@@ -118,12 +120,12 @@ def test_names_a_list_inside_as_indexed() -> None:
     inputs = input_lines(result.stdout)
     seed = inputs[0]
     row = ["!=", ["len", ["[]", "grid", 0]], 0]
-    assert placed(seed) == [
+    assert lines_expressions_and_sides(seed) == [
         (called, [">", ["len", "grid"], 0], True),
         (tested, row, False),
     ]
     assert seed_fork_line(result.stderr, tested).endswith("  len(grid[0]) != 0  not taken")
-    assert True in sides(inputs[1:], row)
+    assert took(inputs[1:], (tested, row, True))
 
 
 # record-bool-of-a-tracked-list-where-it-is-tested-downgrades-a-list-changed-outside
