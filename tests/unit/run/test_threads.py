@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import threading
 
@@ -6,6 +7,15 @@ import pytest
 
 from pyct.run import threads
 from pyct.run.threads import running
+
+# the modules threads imports for itself, loaded first, then threads, printing what that added
+IMPORTS_THREADS = (
+    "import __future__, collections.abc, contextlib, functools, importlib, os, struct, sys\n"
+    "import threading\n"
+    "before = set(sys.modules)\n"
+    "import pyct.run.threads\n"
+    "print(sorted(name for name in set(sys.modules) - before if name.split('.')[0] != 'pyct'))\n"
+)
 
 
 def test_a_thread_left_running_counts_once() -> None:
@@ -53,3 +63,16 @@ def test_a_task_count_the_system_will_not_give_leaves_python_s_count(
     monkeypatch.setattr(threads, "_TASK_INFO", 999)
 
     assert running() == threading.active_count()
+
+
+def test_counting_threads_leaves_no_module_of_its_own_in_sys_modules() -> None:
+    # what ctypes imports, sysconfig on 3.13 and later, would otherwise hide a target's own
+    imported = subprocess.run(
+        [sys.executable, "-P", "-c", IMPORTS_THREADS],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+
+    assert imported.stdout == "[]\n", imported.stdout

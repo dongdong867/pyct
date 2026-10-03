@@ -46,10 +46,14 @@ from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
 from pyct.run.target import load_target
 
-# what the new interpreter runs: the pyct this process runs, then main on the two files
+# what the new interpreter runs: the pyct package this process runs, imported from the folder
+# that holds it, which then leaves the path again; then pyct's run code, whose own modules come
+# through the package and the rest from where this interpreter finds them; then main on the two
+# files. So nothing else in that folder, which for an installed pyct is site-packages, can stand
+# in for a module of the standard library's
 _BOOT = (
-    "import sys; sys.path.insert(0, sys.argv[1]); from pyct.run.fresh import main; "
-    "main(int(sys.argv[2]), int(sys.argv[3]))"
+    "import sys; sys.path.insert(0, sys.argv[1]); import pyct; del sys.path[0]; "
+    "from pyct.run.fresh import main; main(int(sys.argv[2]), int(sys.argv[3]))"
 )
 
 

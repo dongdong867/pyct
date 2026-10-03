@@ -10,10 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import pytest
-
 from tests.acceptance.harness import input_lines, run_pyct, summary_line
-from tests.acceptance.sweeping import environment, row_named, sweep
+from tests.acceptance.sweeping import row_named, sweep
 from tests.acceptance.test_keep_a_sweep_entry_s_folder_from_hiding_pyct_s_modules import (
     a_thread_at_startup,
     folder_of,
@@ -104,19 +102,6 @@ def run_from(folder: Path, spec: str) -> subprocess.CompletedProcess[str]:
     return run_pyct(spec, "--args", '{"x": 0}', "--budget", "10", cwd=folder, timeout=60)
 
 
-def imported_by_the_command_line(name: str) -> bool:
-    """Whether importing pyct's command line imports the module ``name``, with coverage.py left
-    out as the runs here leave it: its start-up imports much of the standard library."""
-    result = subprocess.run(
-        [sys.executable, "-P", "-c", f"import sys, pyct.cli; print({name!r} in sys.modules)"],
-        env=environment(measured=False),
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    return result.stdout.strip() == "True"
-
-
 def syntax_error_line() -> str:
     """Plain Python's one line for ``FAILS``'s SyntaxError, from a folder of no modules."""
     result = subprocess.run(
@@ -201,8 +186,6 @@ def test_runs_a_target_named_as_a_stdlib_module(tmp_path: Path) -> None:
 
 # keep-pyct-s-late-imports-from-the-target-s-folder-lets-the-target-import-its-own-sysconfig
 def test_lets_the_target_import_its_own_sysconfig(tmp_path: Path) -> None:
-    if imported_by_the_command_line("sysconfig"):
-        pytest.skip("pyct's command line imports sysconfig on this Python, so the target shares it")
     uses = FORKS.replace("x > 3", "x > sysconfig.MARK")
     folder = folder_of(
         tmp_path, {"sysconfig.py": "MARK = 7\n", "usesc.py": f"import sysconfig\n\n\n{uses}"}
