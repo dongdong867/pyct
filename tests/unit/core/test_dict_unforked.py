@@ -1,19 +1,23 @@
-"""A tracked dict changed in a way pyct answers without a fork, as under a tracked key: such a
-change may touch any key on another input, so no lookup after it is decided, and the fewest keys
-count only what holds whichever key it touched."""
+"""A tracked dict changed in a way pyct answers without a fork, as under a tracked key of
+another kind than the dict's keys: such a change may touch any key on another input, so no
+lookup after it is decided, and the fewest keys count only what holds whichever key it touched.
+A change under a tracked key of the dict's own kind is followed by its forks, and marks
+nothing."""
 
 from collections.abc import Callable
 from typing import Any
 
 import pytest
 
+from pyct.core.branch import SinkItem
 from pyct.core.dicts import ConcolicDict
+from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_dicts import decided, forks, tracked
 
-# each change under a tracked key, which pyct answers without a fork; `name` is "pyct1", which
-# the argument does not hold, so on another input the change may touch "a" or "b". Each with the
-# fewest keys the dict holds after it: the two it knew before, one less after a removal
+# each change under a tracked int into a dict whose keys are strs, which pyct answers without a
+# fork and so marks, whatever the key may equal. Each with the fewest keys the dict holds after
+# it: the two it knew before, one less after a removal
 UNFORKED_CHANGES: dict[str, tuple[Callable[[Any, Any], object], int]] = {
     "store": (lambda c, name: c.__setitem__(name, 0), 2),
     "pop": (lambda c, name: c.pop(name, None), 1),
@@ -31,7 +35,7 @@ def test_after_a_forkless_change_lookups_are_forks_and_counts_reach_only_the_flo
 ) -> None:
     config, sink = tracked({"a": 1})
     config["b"] = 2  # changed, so a tracked key's lookup is Python's own
-    name = ConcolicStr.made("pyct1", "name", sink)
+    name = ConcolicInt.made(7, "name", sink)
     assert "a" in config
     made, fewest = UNFORKED_CHANGES[change]
 
@@ -49,13 +53,43 @@ def test_after_a_forkless_change_lookups_are_forks_and_counts_reach_only_the_flo
     assert facts == ["!=", *[">"] * fewest]
 
 
+# each change above under a tracked str, which a str-keyed dict follows, but `{n: 0} | c`, which
+# keeps v2's own answer since the solver may move n among the other dict's keys
+FOLLOWED_CHANGES = [change for change in UNFORKED_CHANGES if change != "reflected or"]
+
+
+@pytest.mark.parametrize("change", FOLLOWED_CHANGES)
+def test_a_followed_tracked_change_marks_nothing_and_its_forks_decide_what_follows(
+    change: str,
+) -> None:
+    config, sink = tracked({"a": 1})
+    config["b"] = 2
+    name = ConcolicStr.made("pyct1", "name", sink)
+    assert "a" in config
+    made, _ = UNFORKED_CHANGES[change]
+
+    changed = made(config, name)
+    after = changed if isinstance(changed, ConcolicDict) else config
+    asked = len(forks(sink))
+    assert "a" in after and bool(after)
+
+    # the change asked whether name is "b" and whether the argument holds it, so "a" is decided
+    # once name is not "a", which a store asks; the pop found nothing, so it changed nothing
+    stored = [] if change == "pop" else [(["==", "name", "'a'"], False)]
+    assert not after.unforked
+    assert forks(sink)[asked:] == stored
+    assert decided(sink)[-2:] == [
+        (["in", "'a'", "config"], True),
+        (["!=", after.size_term(), 0], True),
+    ]
+
+
 def test_a_copy_made_before_a_forkless_change_still_decides_its_repeat_lookup() -> None:
     config, sink = tracked({"a": 1})
-    name = ConcolicStr.made("pyct1", "name", sink)
     kept = config.copy()
     assert "a" in config
 
-    config[name] = 0
+    config[ConcolicInt.made(7, "n", sink)] = 0
     assert "a" in config and "a" in kept
 
     # the copy made before the change still knows the key it found
@@ -63,10 +97,11 @@ def test_a_copy_made_before_a_forkless_change_still_decides_its_repeat_lookup() 
 
 
 def test_a_store_that_hit_a_key_the_argument_holds_decides_no_count_its_term_misses() -> None:
-    # `d |= {n: 1}` with n "a" on {"a": 1} grows nothing here, so the size term stays `len(d)`,
+    # `d |= {n: 1}` with n 1 on {1: 1} grows nothing here, so the size term stays `len(d)`,
     # which the empty argument with the same n makes 0, though the dict then holds n
-    config, sink = tracked({"a": 1})
-    name = ConcolicStr.made("a", "name", sink)
+    sink: list[SinkItem] = []
+    config = ConcolicDict.made({1: 1}, "config", sink)
+    name = ConcolicInt.made(1, "name", sink)
 
     config |= {name: 1}
     assert bool(config)
@@ -79,10 +114,10 @@ def test_a_removal_answered_without_a_fork_after_a_mark_may_take_a_key() -> None
     config, sink = tracked({})
     config["b"] = 1
     del config["b"]
-    name = ConcolicStr.made("pyct1", "name", sink)
-    config[name] = 0
+    config[ConcolicInt.made(7, "name", sink)] = 0
 
-    # "b" is answered from what the target changed, with no fork; n "b" would have stored it
+    # "b" is answered from what the target changed, with no fork; a forkless store may have
+    # stored it
     assert config.pop("b", None) is None
     assert bool(config)
 

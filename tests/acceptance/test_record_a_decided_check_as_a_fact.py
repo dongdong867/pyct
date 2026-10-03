@@ -292,54 +292,86 @@ def test_keeps_a_dying_input_s_facts() -> None:
     assert tries(entry)["decided"] == summary_line(result.stdout)["inputs"]
 
 
-# a change pyct answers without a fork, as one under a tracked key, may touch any key on another
-# input: no lookup after it is decided, and the fewest keys count only what holds whichever key
-# it touched
-# (record-a-decided-check-as-a-fact, review round 1: unforked-dict-change-read-as-decided)
-def test_a_lookup_after_a_tracked_store_stays_a_fork() -> None:
+# a change under a tracked key of the dict's own kind is followed (follow-a-store-under-a-tracked-
+# key): its forks settle which key it changed, so the checks after it are decided from them, and
+# an answer that makes the key another one takes the other side. Each target below was a change
+# pyct answered without a fork when record-a-decided-check-as-a-fact merged
+# (review round 1: unforked-dict-change-read-as-decided)
+def test_a_lookup_after_a_tracked_store_asks_whether_it_is_that_key() -> None:
     seed = '{"n": "pyct1", "d": {}}'
     result = run_pyct(f"{DECIDED}::repeat_after_tracked_store", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
     again = line_of(FILE, 'if "a" in d:', "repeat_after_tracked_store") + 3
-    assert at(first_line(result.stdout), again) == [STORED_A]
-    entry = entry_for(result.stdout, line_of(FILE, "return 1", "repeat_after_tracked_store"))
-    assert tries(entry)["decided"] == 0, entry
+    assert at(first_line(result.stdout), again) == [["==", "n", "'a'"]]
+    assert line_of(FILE, "return 1", "repeat_after_tracked_store") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
-def test_a_walk_after_a_tracked_pop_stays_a_fork() -> None:
+def test_a_walk_after_a_tracked_pop_counts_what_its_forks_left() -> None:
     seed = '{"n": "pyct1", "d": {"b": 1}}'
     result = run_pyct(f"{DECIDED}::walk_after_tracked_pop", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
-    # the pop may take a or b on another input, so only one key is known: the second pass
-    # is a fork
+    # the pop asked whether n is "a" or held, and took neither, so both keys stay and the
+    # second pass is a fact; an answer that makes n one of them walks one key
     walked = line_of(FILE, "for k in d:", "walk_after_tracked_pop")
-    assert [">", ["+", ["len", "d"], 1], 1] in at(first_line(result.stdout), walked)
-    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+    assert at(first_line(result.stdout), walked) == [[">", ["+", ["len", "d"], 1], 2]]
+    assert line_of(FILE, 'return "one"', "walk_after_tracked_pop") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
-def test_a_truth_test_after_a_tracked_pop_stays_a_fork() -> None:
+def test_a_truth_test_after_a_tracked_pop_is_decided_by_its_forks() -> None:
     seed = '{"n": "pyct1", "d": {"b": 1}}'
     result = run_pyct(f"{DECIDED}::truth_after_tracked_pop", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
-    entry = entry_for(result.stdout, line_of(FILE, "return 2", "truth_after_tracked_pop"))
-    assert entry["reason"] == "not taken"
-    assert tries(entry)["decided"] == 0, entry
+    tested = line_of(FILE, "if d:", "truth_after_tracked_pop")
+    assert at(first_line(result.stdout), tested) == []
+    assert line_of(FILE, "return 2", "truth_after_tracked_pop") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
-def test_a_truth_test_after_a_removal_a_forkless_store_may_feed_stays_a_fork() -> None:
-    # n "b" stores the key the pop then removes, so the dict may be empty at the test
+def test_a_truth_test_after_a_removal_a_tracked_store_may_feed_is_decided_by_its_forks() -> None:
+    # n "b" stores the key the pop then removes, so the dict may be empty at the test: the
+    # store asks whether n is "b", and an answer that makes it so reaches `return 0`
     seed = '{"n": "pyct1", "d": {}}'
     result = run_pyct(f"{DECIDED}::removed_after_tracked_store", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
-    entry = entry_for(result.stdout, line_of(FILE, "return 0", "removed_after_tracked_store"))
-    assert entry["reason"] == "not taken"
+    tested = line_of(FILE, "if d:", "removed_after_tracked_store")
+    assert at(first_line(result.stdout), tested) == []
+    assert line_of(FILE, "return 0", "removed_after_tracked_store") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
+
+
+# a change pyct answers without a fork, as one under a tracked int into a dict of str keys, marks
+# the dict: no lookup after it is decided, and a count only as far as its floor
+# (record-a-decided-check-as-a-fact, review round 1: unforked-dict-change-read-as-decided)
+def test_a_lookup_after_a_store_answered_without_a_fork_stays_a_fork() -> None:
+    result = run_pyct(f"{DECIDED}::repeat_after_int_store", '{"n": 7, "d": {}}', "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    again = line_of(FILE, 'if "a" in d:', "repeat_after_int_store") + 3
+    assert at(first_line(result.stdout), again) == [STORED_A]
+    entry = entry_for(result.stdout, line_of(FILE, "return 1", "repeat_after_int_store"))
     assert tries(entry)["decided"] == 0, entry
 
 
+def test_a_walk_after_a_pop_answered_without_a_fork_stays_a_fork() -> None:
+    seed = '{"n": 7, "d": {"b": 1}}'
+    result = run_pyct(f"{DECIDED}::walk_after_int_pop", seed, "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    # the pop may take a or b on another input, so only one key is known: the second pass
+    # is a fork
+    walked = line_of(FILE, "for k in d:", "walk_after_int_pop")
+    assert [">", ["+", ["len", "d"], 1], 1] in at(first_line(result.stdout), walked)
+
+
+# a change pyct answers without a fork, as one under a tuple key, may touch any key on another
+# input: no lookup after it is decided, and the fewest keys count only what holds whichever key
+# it touched (review round 3: untracked-removal-keeps-floor)
 def test_a_truth_test_after_any_removal_on_a_marked_dict_stays_a_fork() -> None:
     # n "b" stores the tuple key the pop then removes, so the dict may be empty at the test
     seed = '{"n": "pyct1", "d": {}}'

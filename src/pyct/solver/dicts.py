@@ -1,12 +1,12 @@
 """The tracked dicts a path names, written for cvc5.
 
 A dict the seed names is declared by what the path asks of it (containers-arrays-counted-keys-
-and-copied-walk-keys, dict-keys-named-held-or-made-up-by-key-type): a `Bool` for each key a fork
-names, in the order the path first names it; an `Int` for how many of the input's other keys
-stay, from the first, so a smaller dict loses them from its end; an `Int` for how many keys pyct
-makes up to meet a count, for a dict whose keys are all of the type its made-up keys are; and
-its size, one `Int` with one defining equation, at most 1,000,000 (answers-hold-at-most-a-
-million-items).
+and-copied-walk-keys, dict-keys-named-held-made-up-or-changed-under-a-tracked-key): a `Bool` for
+each key a fork names, in the order the path first names it; an `Int` for how many of the
+input's other keys stay, from the first, so a smaller dict loses them from its end; an `Int` for
+how many keys pyct makes up to meet a count, for a dict whose keys are all of the type its made-
+up keys are; and its size, one `Int` with one defining equation, at most 1,000,000 (answers-
+hold-at-most-a-million-items).
 
 A value a fork reads under a key says the dict holds that key, and so does a dict or a list a
 fork reads under one. A tracked key names no key: `["in", "name", "prices"]` is whether it

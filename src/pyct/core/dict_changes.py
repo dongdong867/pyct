@@ -5,11 +5,19 @@ the key is recorded before Python may raise KeyError, and the change's effect on
 known. Python then makes the change through `own`, so what it takes, refuses and raises is its
 own, and the dict notes it in its shadow and in ``changed``.
 
-A change under a key pyct does not follow as a literal, a tracked key or one of another kind,
-is Python's own and a downgrade named by the operation; the dict notes what it did to that key,
-as the plain key it is, so the forks after it still read the dict's size. Storing a value no
-expression holds, anything but an int, str, float, bool, None, or a list or dict of those, is a
-downgrade too, and the dict is plain from then on.
+A change under a tracked key of the dict's own key kind is followed as one under a literal: its
+lookup records whether the key equals each key changed before and then whether the argument
+holds it (``dict_compares.after_changes``), so the path settles which key it changes, and the
+dict changes the key's plain value and logs the change under the key's expression.
+
+A change under a key pyct does not follow is Python's own and a downgrade named by the
+operation: a tracked bool or float, a tracked key of the other kind, a key of another kind, and
+a tracked key past ``MOST_TRACKED_CHANGES``, among the other keys of an `update` or a `|`, in
+the `other` of `other | config`, or after a popitem, where an answer that moves it leaves the
+plan. Such a change marks the dict (``changed_as_python``). The dict
+notes what it did to that key, as the plain key it is, so the forks after it still read the
+dict's size. Storing a value no expression holds, anything but an int, str, float, bool, None,
+or a list or dict of those, is a downgrade too, and the dict is plain from then on.
 """
 
 from __future__ import annotations
@@ -18,19 +26,26 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Fact, caller_site
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, caller_site
+from pyct.core.dict_compares import (
+    handed_in_place,
+    is_tracked,
+    own_key,
+    stored_under,
+    written_key,
+)
 from pyct.core.dict_reads import (
     POPPED,
     found,
     handout,
     int_key,
-    is_tracked,
     may_equal_added,
     placed,
     present,
     recorded,
+    settled_as,
+    stand_in,
     value,
-    written_key,
 )
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.floats import ConcolicFloat
@@ -70,9 +85,62 @@ def holdable(value: object) -> bool:
     return True
 
 
-def follows(key: object) -> bool:
-    """Whether a change under ``key`` is followed: a plain str or int, a literal a fork writes."""
+def plain_key(key: object) -> bool:
+    """Whether ``key`` is a plain str or int, a literal a fork writes."""
     return type(key) is str or type(key) is int
+
+
+# the most changes under a tracked key one dict follows: each later lookup compares its key with
+# every one, so past this many a change under a tracked key is Python's own and a downgrade
+MOST_TRACKED_CHANGES = 16
+
+
+def followed(self: DictState, key: object) -> bool:
+    """Whether a change under ``key`` is followed: a plain str or int, or a tracked key of the
+    kind the dict's keys are, an int under `dict[int, X]` and a str elsewhere, while the dict
+    follows fewer than ``MOST_TRACKED_CHANGES`` such changes, no popitem changed it, and no
+    lookup of that key was Python's own: which key popitem took is the input's last, and such
+    a lookup's answer follows the key with no fork, so no fork names either."""
+    if plain_key(key):
+        return True
+    kind = ConcolicInt if self.int_keyed else ConcolicStr
+    if type(key) is not kind or self.popped or settled_as(key) in self.unfollowed:
+        return False
+    return self.tracked_changes < MOST_TRACKED_CHANGES
+
+
+def _joined_key(self: DictState, made: DictState, key: object) -> None:
+    """One of ``other``'s keys in ``other | config``, looked up in the dict: a key it does not
+    hold is one ``made`` adds. A tracked key is Python's own and a downgrade: ``made`` holds
+    ``other``'s keys first, where the solver may move it, so a walk over ``made`` would read
+    another key in its place."""
+    looked = int_key(key)
+    if plain_key(looked):
+        held = looked_up_to_change(self, looked, "__ror__")
+    else:
+        held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, key)))
+        # ``made`` holds a key no fork settles: marked, as a change without a fork marks
+        made.changed_unforked()
+        made.held_one()
+    if not held:
+        made.logged(plain(looked), (True, False))
+        made.__dict__["grown"] += 1
+
+
+def under(key: object) -> Expression:
+    """The expression a change under ``key`` is logged by: a tracked key's, None for a plain."""
+    return key.expression if isinstance(key, ConcolicStr | ConcolicInt) else None
+
+
+def looked_up_to_change(self: DictState, key: object, name: str) -> bool:
+    """A followed change's lookup, recorded before the change: whether the dict holds the key.
+    A tracked key the path found the argument lacks is the target's own for a walk (see
+    ``dict_reads.placed``), as a plain one is; one it holds names no key the argument settles,
+    since the solver may move it."""
+    held = bool(present(self, key, name, changing=True))
+    if is_tracked(key) and plain(key) not in self.changed and not held:
+        self.settled.setdefault(plain(key), False)
+    return held
 
 
 def holds_key(self: DictState, key: object, name: str) -> bool:
@@ -121,11 +189,12 @@ def looked_up_as_python(self: DictState, key: object) -> bool:
     return is_tracked(key) and bool(self.changed)
 
 
-def unforked_lookup(self: DictState, key: object) -> bool:
+def unforked_lookup(self: DictState, key: object, follow: bool) -> bool:
     """Whether a change's lookup of ``key`` is Python's own and a downgrade (see
-    ``looked_up_as_python``). Then whether the change happens on another input is answered
-    without a fork, so the dict is marked (``DictState.changed_unforked``)."""
-    named = looked_up_as_python(self, key)
+    ``looked_up_as_python``): a change pyct does not follow (``follow``). Then whether the
+    change happens on another input is answered without a fork, so the dict is marked
+    (``DictState.changed_unforked``)."""
+    named = looked_up_as_python(self, key) and not follow
     if named:
         self.changed_unforked()
     return named
@@ -134,23 +203,41 @@ def unforked_lookup(self: DictState, key: object) -> bool:
 def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
     """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
     says the call's own lookup already named it (see ``as_python``). A key Python's lookup
-    makes the same as an int is looked up as that int, and stored as it is."""
+    makes the same as an int is looked up as that int, and stored as it is. A stale walked
+    copy of the target's own key is the tracked key it was stored under (see ``stand_in``)."""
+    if _stored_plainly(self, key, stored, name):
+        return
+    key = stand_in(self, key)
     looked = int_key(key)
+    if not followed(self, looked):
+        stored_as_python(self, key, stored, (name, named))
+        return
+    looked_up_to_change(self, looked, name)
     bare = plain(looked)
+    own(dict.__setitem__, self, bare if is_tracked(looked) else key, stored)
+    self.noted(bare, stored, under(looked))
+
+
+def _stored_plainly(self: DictState, key: object, stored: object, name: str) -> bool:
+    """Whether a store is Python's own and the dict notes nothing of it: the form no longer
+    describes the dict, or the value is one no expression holds, which turns it plain."""
     if not holds_key(self, key, name):
         own(dict.__setitem__, self, key, stored)
-        return
+        return True
     if not holdable(stored):
         own(dict.__setitem__, self, key, stored)
         self.lose(name)
-        return
-    if follows(looked):
-        present(self, looked, name)
-        own(dict.__setitem__, self, key, stored)
-    else:
-        changed_as_python(
-            self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named
-        )
+        return True
+    return False
+
+
+def stored_as_python(self: DictState, key: object, stored: object, how: tuple[str, bool]) -> None:
+    """A store pyct does not follow: Python's own, named as ``as_python`` names it, and noted
+    under the key's plain value. It marks the dict (see ``changed_as_python``). ``how`` is the
+    call's name and whether its lookup named it."""
+    name, named = how
+    bare = plain(int_key(key))
+    changed_as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named)
     self.noted(bare, stored)
 
 
@@ -158,27 +245,30 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     """``del config[key]`` and ``pop``: the lookup's fork first, then the value it hands out.
 
     A key the dict does not hold raises KeyError where Python does, after its fork, or hands
-    back the default. A tracked key is looked up as any lookup is; the removal itself is a
-    downgrade, since the solver may change which key it names.
+    back the default. A tracked key of the dict's key kind is followed as a literal is; one of
+    another kind is looked up as any lookup is, and the removal itself is a downgrade.
     """
     if not holds_key(self, key, name):
         return own(dict.pop, self, key, *default)
+    key = stand_in(self, key)
     looked = int_key(key)
     if written_key(looked) is None:
         return _removed_as_python(self, key, name, default)
-    named = unforked_lookup(self, key)
-    if not found(self, key, name, raising=not default):
+    follow = followed(self, looked)
+    named = unforked_lookup(self, key, follow)
+    if not found(self, key, name, raising=not default, changing=follow):
         if self.unforked:
             # on a marked dict every removal may take a key: another input on the path may
             # hold this one, which a forkless change stored there
             self.lost_one()
         return default[0] if default else own(dict.__getitem__, self, plain(key))
-    handed = value(self, key)
+    handed = value(self, key, changing=follow)
     bare = plain(looked)
-    if follows(looked):
+    if follow:
         own(dict.__delitem__, self, bare)
-    else:
-        changed_as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
+        self.dropped(bare, under(looked))
+        return handed
+    changed_as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
     self.dropped(bare)
     return handed
 
@@ -202,7 +292,9 @@ def _removed_as_python(
 
 def last_item(self: DictState) -> tuple[object, object]:
     """``config.popitem()``: whether the dict holds anything, recorded before KeyError, and then
-    its last key and value, handed out as a walk from the end hands them."""
+    its last key and value, handed out as a walk from the end hands them. After a change under
+    a tracked key, which key is last may follow that key's value with no fork saying so, so
+    popitem marks the dict (``DictState.changed_unforked``)."""
     if not self.holds("popitem"):
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
@@ -215,9 +307,16 @@ def last_item(self: DictState) -> tuple[object, object]:
         self.sink.append(Fact(None, True, fork.site, True, pin, lost_as="popitem"))
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
+    handed_in_place(self, key, "popitem", pin)
+    if self.tracked_changes:
+        # which key is last may follow a change under a tracked key, which no fork here says
+        self.changed_unforked()
+    self.__dict__["popped"] = True
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
-    self.dropped(key)
+    # the target's own key is the one its latest store put last: under a tracked key, the key
+    # that one names
+    self.dropped(key, stored_under(self, key) if own_key(self, key) else None)
     # the key a walk handed out for it, so a walk and popitem hand out one object, as in Python
     return handout(self, key, None), handed
 
@@ -226,6 +325,7 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
     """``config.setdefault(key, default)``: the value when the dict holds the key, else a store."""
     if not holds_key(self, key, "setdefault"):
         return own(dict.setdefault, self, key, default)
+    key = stand_in(self, key)
     if written_key(int_key(key)) is None:
         held = own(dict.__contains__, self, key)
         answer = changed_as_python(
@@ -234,9 +334,10 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
         if not held:
             self.noted(key, default)
         return answer
-    named = unforked_lookup(self, key)
-    if found(self, key, "setdefault"):
-        return value(self, key)
+    follow = followed(self, int_key(key))
+    named = unforked_lookup(self, key, follow)
+    if found(self, key, "setdefault", changing=follow):
+        return value(self, key, changing=follow)
     store(self, key, default, "setdefault", named=named)
     return default
 
@@ -249,8 +350,14 @@ def update(self: DictState, name: str, *args: Any, **kwargs: Any) -> None:
     """
     taken: dict[object, object] = {}
     own(dict.update, taken, *args, **kwargs)
+    crowded = len(taken) > 1
     for key, stored in dict.items(taken):
-        store(self, key, stored, name)
+        # a tracked key among others is Python's own (see the module's docstring)
+        if crowded and is_tracked(int_key(key)):
+            if not _stored_plainly(self, key, stored, name):
+                stored_as_python(self, key, stored, (name, False))
+        else:
+            store(self, key, stored, name)
 
 
 def emptied(self: DictState) -> None:
@@ -289,16 +396,7 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
         if self.expression is None:
             # a key the dict could not follow turned it plain: it records nothing more
             break
-        looked = int_key(key)
-        if follows(looked):
-            held = present(self, looked, "__ror__")
-        else:
-            held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
-            made.changed_unforked()
-            made.held_one()
-        if not held:
-            made.changed[plain(looked)] = True
-            made.__dict__["grown"] += 1
+        _joined_key(self, made, key)
     if self.expression is None:
         # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()
