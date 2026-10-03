@@ -1,5 +1,6 @@
 """One input's record, and the result of one run."""
 
+import contextlib
 import dataclasses
 import functools
 from collections import Counter
@@ -7,10 +8,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
-from pyct.results.graphs import LONGEST_STRETCH
+from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
 
 # how long past a run's deadline pyct goes on working out why lines were missed
@@ -58,7 +59,8 @@ class InputRecord:
 
     ``aim`` is the fork the solver was asked for, and ``mismatch_at`` the
     first position where the run left that plan. A seed is aimed at nothing,
-    so both stay ``None``.
+    so both stay ``None``. ``facts`` are what its path held beside the forks,
+    which no line prints.
     """
 
     args: Mapping[str, object]
@@ -69,6 +71,7 @@ class InputRecord:
     source: Source = Source.SEED
     aim: Aim | None = None
     mismatch_at: int | None = None
+    facts: tuple[Fact, ...] = ()
 
 
 class StopKind(StrEnum):
@@ -213,13 +216,18 @@ class RunResult:
         grace = ANALYSIS_GRACE - LONGEST_STRETCH
         stop_at = None if self.deadline is None else self.deadline + grace
         run = Run((), {}, stop_at=stop_at)
-        # the inputs and their tries are read only when a cause can still be worked out
+        # the inputs and their tries are read only when a cause can still be worked out; tries
+        # the stop cut short leave every line not worked out
         if not run.late():
-            walked = [
-                Walked(record.forks, record.failure is not None, record.covered_lines)
-                for record in self.records
-            ]
-            run = Run(walked, _tries(self), stop_at=stop_at)
+            with contextlib.suppress(OutOfTimeError):
+                tries = _tries(self, Pace(run.late))
+                walked = [
+                    Walked(
+                        record.forks, record.failure is not None, record.covered_lines, record.facts
+                    )
+                    for record in self.records
+                ]
+                run = Run(walked, tries, stop_at=stop_at)
         covered = self.coverage.covered
         return tuple(
             entry
@@ -228,8 +236,11 @@ class RunResult:
         )
 
 
-def _tries(result: RunResult) -> dict[ForkSite, Tries]:
-    """What happened at each site each time the run could have flipped a fork there."""
+def _tries(result: RunResult, pace: Pace) -> dict[ForkSite, Tries]:
+    """What happened at each site each time the run could have flipped a fork there.
+
+    An input may hold many facts, so each is a step of ``pace``, which raises OutOfTimeError
+    when the analysis's stop comes."""
     counts: dict[ForkSite, Counter[str]] = {}
     for where, count in result.untried.items():
         counts.setdefault(where, Counter())["not_tried"] += count
@@ -239,5 +250,8 @@ def _tries(result: RunResult) -> dict[ForkSite, Tries]:
         if record.aim is not None and record.mismatch_at is not None:
             aimed = ForkSite(record.aim.site, record.aim.raising)
             counts.setdefault(aimed, Counter())["left_the_plan"] += 1
+        # one an input, however often it decided the check there
+        for where in {fact.where for fact in pace.each(record.facts) if fact.decided}:
+            counts.setdefault(where, Counter())["decided"] += 1
     fields = [field.name for field in dataclasses.fields(Tries)]
     return {site: Tries(*(counted[name] for name in fields)) for site, counted in counts.items()}

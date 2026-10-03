@@ -92,9 +92,11 @@ class Origin:
     monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
     keys no fork names and makes none up, ``pinned`` whether it keeps each key a walk read at its
     place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
-    program is given up, None for no limit (see ``dicts``). ``back_among_counts`` says whether a
-    piece of a split read from its end, on an input with few pieces, is chosen among every count
-    below the bound rather than put where the input's own count puts it (see ``split_lists``).
+    program is given up, None for no limit (see ``dicts``). ``places`` are the places the
+    path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
+    ``back_among_counts`` says whether a piece of a split read from its end, on an input with
+    few pieces, is chosen among every count below the bound rather than put where the input's
+    own count puts it (see ``split_lists``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -110,6 +112,7 @@ class Origin:
     keep: bool = True
     pinned: bool = True
     lookups: int | None = None
+    places: tuple[Expression, ...] = ()
     back_among_counts: bool = False
 
 

@@ -1,24 +1,26 @@
 """How a tracked dict is read: whether it holds a key, the value under one, and a walk.
 
 Every lookup records whether the key is there, where it runs, the first time the path asks
-about that key: `["in", "'port'", config]`. After that the path settles the answer, and later
-lookups of that key record nothing more. A key the target stored or removed is known, and one a
-walk handed out was there. A key is a plain str or int, written as a literal, or a tracked one,
-written as its expression, which the solver may change; a tracked key into a dict the target
-changed is Python's own answer and a downgrade, since no expression writes the dict whole.
+about that key: `["in", "'port'", config]`. After that the path settles the answer, and a later
+lookup of that key is a fact of the path, not a fork (``core.branch.Fact``). A key the target
+stored or removed is known, and one a walk handed out was there. A key is a plain str or int,
+written as a literal, or a tracked one, written as its expression, which the solver may change;
+a tracked key into a dict the target changed is Python's own answer and a downgrade, since no
+expression writes the dict whole.
 
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
-and once more, taken false, where it ends, in insertion order. Each key it hands out is plain,
-and each value as the dict holds it: an argument's value tracked, the target's own as it is.
-A walk is not a lookup, so it settles nothing; each fork it records carries which key it read
-at its place (``placed``), so an answer keeps that key there, as a read keeps a list's item. It
+and once more, taken false, where it ends, in insertion order. A pass the dict's fewest keys
+reach (``DictState.fewest``) is a fact, not a fork. Each key it hands out is plain, and each
+value as the dict holds it: an argument's value tracked, the target's own as it is. A walk is
+not a lookup, so it settles nothing; after each pass it records a fact of which key it read at
+its place (``placed``), so an answer keeps that key there, as a read keeps a list's item. It
 hands out its own copy of each key, so a lookup of that very object, whenever it runs, is one no
 input fails and records no fork (``proven``); a key Python shares with the target's literals has
-no copy, and its lookup is recorded given the place the walk read it (``handout``).
+no copy, and its lookup records the place the walk read it first (``handout``).
 
 `len(config)` and `bool(config)` where pyct binds or routes them, and on each of its views, read
 the size term, `["len", config]` and what the target added or removed, and record no fork where
-they run.
+they run. A truth test of a dict whose fewest keys are above zero is a fact, not a fork.
 """
 
 from __future__ import annotations
@@ -29,8 +31,8 @@ from collections.abc import Callable, Iterator
 from typing import Any
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, caller_site
-from pyct.core.dict_state import MISSING, DictState
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, caller_site
+from pyct.core.dict_state import MISSING, TRACKED, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -111,9 +113,15 @@ def settled_as(key: object) -> object:
 
 
 def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
-    """Whether the dict holds ``key``, recording the fork at each lookup, as a string's `in`
-    does, so each condition that reads it has a fork of its own: the path settles the answer
-    the first time it asks, and a later fork's flip asks for the same key.
+    """Whether the dict holds ``key``, recording the fork the first time the path asks, which
+    settles the answer: a later lookup of the same key, with no change under it since, is a
+    fact that holds what the first found. On a dict changed without a fork no lookup is a
+    fact, since that change may have touched the key on another input: one recorded here is a
+    fork, and a key the target changed or a walk handed out is answered without either.
+
+    A key Python shares with the target's literals that a walk handed out keeps the place the
+    walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
+    sides.
 
     None when pyct does not follow this lookup, which the caller answers as Python does and
     names as a downgrade: a key of another kind, or a tracked key into a dict the target
@@ -127,16 +135,28 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     known = settled_as(key)
     if plain(key) in self.changed or proven(self, key):
         return held
-    self.settled.setdefault(known, held)
     given = self.shared.get(key) if type(key) in (str, int) else None
-    written_given: Expression = None if given is None else ["given", given]
-    fork = ["in", written, self.expression]
-    return recorded(self, Branch(fork, held, caller_site(), raising, name, written_given))
+    place: Expression = None if given is None else ["given", given]
+    test = ["in", written, self.expression]
+    site = caller_site()
+    self.settled.setdefault(known, held)
+    # after a change without a fork, a lookup recorded here is a fork, and adds nothing to the
+    # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
+    # is still noted
+    if not self.unforked:
+        if known in self.asked:
+            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
+            return held
+        self.asked.add(known)
+        if held:
+            self.found.add(TRACKED if is_tracked(key) else known)
+    if place is not None:
+        self.sink.append(Fact(None, True, site, raising, place, lost_as=name))
+    return recorded(self, Branch(test, held, site, raising, name))
 
 
 def recorded(self: DictState, branch: Branch) -> bool:
-    """Record a fork that carries what the input keeps (see ``Branch.holds``), and answer with
-    the side it took."""
+    """Record a fork, and answer with the side it took."""
     self.sink.append(branch)
     return branch.taken
 
@@ -245,9 +265,12 @@ def length(self: DictState) -> int:
 
 
 def truth(self: DictState) -> bool:
-    """``if config:``: Python tests a dict by its size, so the fork is `len(config) != 0`."""
+    """``if config:``: Python tests a dict by its size, so the fork is `len(config) != 0`, or a
+    fact where the dict holds a key on every input that takes the path."""
     if not self.holds("__bool__"):
         return self.size() != 0
+    if decided_filled(self):
+        return True
     return forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0)
 
 
@@ -257,12 +280,24 @@ def condition(self: DictState) -> Any:
 
     It holds the dict's size term at the call, which a later change replaces rather than edits.
     A dict with no form gives Python's plain answer; one whose form stopped describing it does
-    too, naming `__bool__` as `if config:` does.
+    too, naming `__bool__` as `if config:` does. A dict that holds a key on every input that
+    takes the path records the fact where `bool` is called, and answers a plain True.
     """
     filled = self.size() != 0
     if not self.holds("__bool__"):
         return filled
+    if decided_filled(self):
+        return True
     return ConcolicBool.made(filled, ["!=", self.size_term(), 0], self.sink)
+
+
+def decided_filled(self: DictState) -> bool:
+    """Whether the dict holds a key on every input that takes the path, recording the truth
+    test as a fact where it does."""
+    if self.fewest() <= 0:
+        return False
+    self.sink.append(Fact(["!=", self.size_term(), 0], True, caller_site()))
+    return True
 
 
 def key_of(self: DictState, key: object) -> object:
@@ -278,7 +313,8 @@ def item_of(self: DictState, key: object) -> object:
 
 
 def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[object]:
-    """A walk over the dict from its first key: one fork per key and one where it ends.
+    """A walk over the dict from its first key: a fork or a fact per key, and a fork where it
+    ends (see ``passed``).
 
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
@@ -287,7 +323,7 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
-    """A walk over the dict from its last key, forking as a walk from the first does."""
+    """A walk over the dict from its last key, recording as a walk from the first does."""
     return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
 
 
@@ -330,10 +366,7 @@ def _walked(
         if not self.holds(name, *(() if key is MISSING else (key,))):
             break
         pin = None if key is MISSING else placed(self, key, end)
-        fork = Branch(
-            [">", self.size_term(), at], key is not MISSING, caller_site(), False, name, pin
-        )
-        if not recorded(self, fork):
+        if not passed(self, at, key, pin, name):
             return
         handout(self, key, pin)
         yield pick(self, key)
@@ -341,6 +374,23 @@ def _walked(
     while key is not MISSING:
         yield plain_pick(pick, self, key)
         key = own(next, keys, MISSING)
+
+
+def passed(self: DictState, at: int, key: object, pin: Expression, name: str) -> bool:
+    """Record whether a walk takes pass ``at``, and answer it: a fact where the dict holds more
+    than ``at`` keys on every input that takes the path, else a fork; then the place the pass
+    read its key at, a fact that holds only on the side the pass took."""
+    test = [">", self.size_term(), at]
+    site = caller_site()
+    taken = key is not MISSING
+    if taken and self.fewest() > at:
+        self.sink.append(Fact(test, True, site, False, pin, lost_as=name))
+        return True
+    if not recorded(self, Branch(test, taken, site, False, name)):
+        return False
+    if pin is not None:
+        self.sink.append(Fact(None, True, site, False, pin, lost_as=name))
+    return True
 
 
 def plain_pick(pick: Pick, self: DictState, key: object) -> object:

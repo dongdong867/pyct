@@ -1,6 +1,6 @@
 """execute tells a watch each fact of the call as it happens, before the call ends."""
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
@@ -14,6 +14,9 @@ class Heard:
 
     def fork(self, branch: Branch) -> None:
         self.told.append(("fork", branch.expression, branch.taken))
+
+    def fact(self, fact: Fact) -> None:
+        self.told.append(("fact", fact.expression, fact.taken))
 
     def line(self, number: int) -> None:
         self.told.append(("line", number))

@@ -38,7 +38,14 @@ ENDS, ENDS_FILE = spec("ends", "ends")
 SITES, SITES_FILE = spec("sites", "sites")
 TWO_GUARDS, TWO_GUARDS_FILE = spec("two_guards", "two")
 
-NO_TRIES = {"not_tried": 0, "unsat": 0, "unknown": 0, "timeout": 0, "left_the_plan": 0}
+NO_TRIES = {
+    "not_tried": 0,
+    "unsat": 0,
+    "unknown": 0,
+    "timeout": 0,
+    "left_the_plan": 0,
+    "decided": 0,
+}
 
 
 def why_uncovered(stdout: str) -> list[dict[str, object]]:

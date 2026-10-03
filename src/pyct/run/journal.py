@@ -27,9 +27,11 @@ kind) and its payload, padded to 8 bytes:
   written out on every pass, so each list is written once, however many
   places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col, raising]``, the
-  expression a leaf or ``[n]``, and a seventh item for a fork that carries
-  what the input keeps once it went this way (``Branch.holds``), written the
-  same way.
+  expression a leaf or ``[n]``.
+- fact: a fact the path holds beside its forks (``Fact``), written as a fork
+  is, its expression null for a fact that is only a place, and a seventh item
+  for its place, written the same way. Its ``after`` is not written: the
+  reader counts the fork records before it.
 - downgrade: a native u64 count, the site's line and column as two i64,
   then the name and the site's file, a NUL between them. A repeat of the
   last entry rewrites its count in place.
@@ -71,7 +73,7 @@ import mmap
 import struct
 from typing import TypeGuard
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.results.failure import Failure
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes
@@ -92,7 +94,7 @@ NUMBER = struct.Struct("<q")
 # a downgrade's count, then its site's line and column
 COUNTED = struct.Struct("=Qqq")
 
-LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON = 1, 2, 3, 4, 5, 6, 7
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT = 1, 2, 3, 4, 5, 6, 7, 8
 OPEN, FULL, UNENCODABLE = 0, 1, 2
 
 
@@ -125,12 +127,22 @@ class JournalWriter:
         try:
             expression = self._written(branch.expression)
             fork = [expression, branch.taken, site.file, site.line, site.col, branch.raising]
-            if branch.holds is not None:
-                fork.append(self._written(branch.holds))
             self._json(FORK, fork)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:
             self._stop(UNENCODABLE, f"could not keep a fork the input took: {error}")
+
+    def fact(self, fact: Fact) -> None:
+        """Write a fact the path came to hold, and every part of it not written yet."""
+        site = fact.site
+        try:
+            expression = self._written(fact.expression)
+            held = [expression, fact.taken, site.file, site.line, site.col, fact.raising]
+            if fact.place is not None:
+                held.append(self._written(fact.place))
+            self._json(FACT, held)
+        except (_UnencodableError, ValueError) as error:
+            self._stop(UNENCODABLE, f"could not keep a fact the input's path holds: {error}")
 
     def start(self) -> None:
         """Write that pyct's side of the input's process is up and the call is about to begin."""
