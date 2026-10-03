@@ -10,15 +10,20 @@ import json
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 from tests.acceptance.test_lists import (
     answered_every_fork,
     args_of,
-    covered_of,
     downgrade_names,
     failure_detail,
     fork_line,
-    forks_of,
     listed,
     number,
     sides_of,
@@ -168,7 +173,7 @@ def test_compares_dicts_as_python_does() -> None:
     lines = input_lines(result.stdout)
     assert listed(lines[0]) == [(2, ["==", ["len", "config"], 1], False)]
     assert {"mode": "fast"} in [dict_of(line, "config") for line in lines], lines
-    assert covered_of(lines) == {COMPARED_FILE: [2, 3, 4]}
+    assert union_of(lines) == {COMPARED_FILE: [2, 3, 4]}
 
 
 # follow-lists-and-dicts-as-they-change-follows-dicts-inside-lists
@@ -330,7 +335,7 @@ def test_a_lookup_after_a_walk_records_its_fork(name: str, key: str, line: int) 
     assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
     misses = summary_line(result.stdout)["misses"]
     assert isinstance(misses, list)
-    reached = line + 1 in covered_of(lines)[WALKED_FILE]
+    reached = line + 1 in union_of(lines)[WALKED_FILE]
     # the literal "alpha" is not the walk's own object: an answer reaches the target
     assert reached if len(key) > 1 else reached or line in {m["line"] for m in misses}, misses
 
@@ -376,7 +381,7 @@ def test_a_literal_python_shares_with_a_walked_key_records_its_fork() -> None:
     misses = summary_line(result.stdout)["misses"]
     assert isinstance(misses, list)
     # `{"d": {"b": 1}}` takes the other side; where no answer pyct writes is found, it is a miss
-    assert 25 in covered_of(lines)[SHAPES_FILE] or 23 in {m["line"] for m in misses}, misses
+    assert 25 in union_of(lines)[SHAPES_FILE] or 23 in {m["line"] for m in misses}, misses
 
 
 # follow-dicts-as-they-change: a key nothing reads the value of may go from where a walk passed
@@ -390,7 +395,7 @@ def test_a_key_no_fork_reads_is_free_to_go(name: str, seed: str, line: int) -> N
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert line in covered_of(lines)[SHAPES_FILE], lines
+    assert line in union_of(lines)[SHAPES_FILE], lines
     assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
 
 

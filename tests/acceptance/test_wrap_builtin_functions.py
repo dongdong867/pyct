@@ -9,14 +9,15 @@ import re
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
 )
 from tests.acceptance.test_bools import expressions, failure_of, sides
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_strs import text
 from tests.acceptance.test_substitute_is_and_in import compiled_total, covered_of, plain_lines
 

@@ -8,9 +8,8 @@ run through the command line proves the condition reaches the solver.
 
 import math
 
-from tests.acceptance.harness import input_lines, run_pyct, summary_line
+from tests.acceptance.harness import argument, forks_of, input_lines, run_pyct, summary_line
 from tests.acceptance.test_bools import expressions, sides
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_substitute_conversions import downgrade_names, no_line_lists
 
 TEXT = "targets.strs.text_of_values"

@@ -10,6 +10,7 @@ import pytest
 from targets.ints import own_subclass
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
     input_lines,
@@ -17,7 +18,6 @@ from tests.acceptance.harness import (
     summary_line,
 )
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
-from tests.acceptance.test_strs import number
 
 OWN_SUBCLASS = "targets.ints.own_subclass"
 OWN_SUBCLASS_FILE = str(REPO_ROOT / "targets" / "ints" / "own_subclass.py")
@@ -47,7 +47,7 @@ def test_writes_the_value(isolation: tuple[str, ...]) -> None:
     assert result.returncode == 0, result.stderr
     assert fork_lines(result.stderr)[0] == "x > 3"
     assert any(
-        number(line, "x") > 3 and BIG in covered_in(line, OWN_SUBCLASS_FILE)
+        argument(line, "x") > 3 and BIG in covered_in(line, OWN_SUBCLASS_FILE)
         for line in solver_lines(result.stdout)
     ), result.stdout
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
@@ -60,7 +60,7 @@ def test_runs_no_target_method() -> None:
     assert result.returncode == 0, result.stderr
     assert MARKER not in result.stderr
     assert fork_lines(result.stderr)[0] == "x > -3"
-    assert any(number(line, "x") > -3 for line in solver_lines(result.stdout)), result.stdout
+    assert any(argument(line, "x") > -3 for line in solver_lines(result.stdout)), result.stdout
 
 
 # write-an-int-subclass-operand-as-a-plain-int-writes-an-enum-member-by-value
@@ -71,7 +71,7 @@ def test_writes_an_enum_member_by_value() -> None:
     # the fork line writes a sum under a compare bare, as Python's precedence reads it
     assert fork_lines(result.stderr)[0] == "x + 3 > 5"
     assert any(
-        number(line, "x") > 2 and HIGH in covered_in(line, OWN_SUBCLASS_FILE)
+        argument(line, "x") > 2 and HIGH in covered_in(line, OWN_SUBCLASS_FILE)
         for line in solver_lines(result.stdout)
     ), result.stdout
 
@@ -83,7 +83,7 @@ def test_survives_a_repr_that_raises() -> None:
     assert result.returncode == 0, result.stderr
     assert input_lines(result.stdout)[0]["failure"] is None
     assert fork_lines(result.stderr)[0] == "x > 3"
-    assert any(number(line, "x") > 3 for line in solver_lines(result.stdout)), result.stdout
+    assert any(argument(line, "x") > 3 for line in solver_lines(result.stdout)), result.stdout
     assert "Traceback" not in result.stderr
 
 
