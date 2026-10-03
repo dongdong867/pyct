@@ -93,7 +93,8 @@ def printed(result: subprocess.CompletedProcess[str]) -> dict[str, list[str]]:
 
 
 def check_printed(function: str, result: subprocess.CompletedProcess[str]) -> None:
-    """That the run printed what the base did, or, while recording, keep what it printed."""
+    """That the run printed what the base did, or, while recording, keep what it printed and
+    skip."""
     held = json.loads(NEGATED_PRINTED_FILE.read_text())
     if not RECORD_PRINTED:
         assert printed(result) == held[function]
@@ -101,6 +102,8 @@ def check_printed(function: str, result: subprocess.CompletedProcess[str]) -> No
     assert "PYTEST_XDIST_WORKER" not in os.environ, "record the printed lines with -n 0"
     held[function] = printed(result)
     NEGATED_PRINTED_FILE.write_text(json.dumps(held, indent=1) + "\n")
+    # a recording checks nothing, so it never reads as a pass
+    pytest.skip("printed lines recorded; run again without PYCT_RECORD_PRINTED to check them")
 
 
 # the guard's line, and every line under it Python may also copy into cleanup code
@@ -273,11 +276,11 @@ def test_a_test_with_no_fork_reads_in_the_sense_of_its_is_or_in(
     result = run_pyct(target, '{"x": 0}')
 
     assert result.returncode == 0, result.stderr
-    check_printed(function, result)
     assert cause(entry_for(result.stdout, line)) == {
         "reason": "no fork",
         "condition": {"file": file, "line": site[0], "col": site[1], "side": True},
     }
+    check_printed(function, result)
 
 
 def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
