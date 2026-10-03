@@ -88,13 +88,17 @@ class EchoSide:
         return SideReport(file=str(file), stopped="done", library=library)
 
 
-def on_this_release(entry: Entry) -> Entry:
-    """The entry, with a standard-library pin moved to the running Python's release.
+# the release the list pins the standard library to, the one its accepted lines come from
+LISTED_PYTHON = Library("python", "3.12")
 
-    The list pins the standard library to the release its accepted lines come from, and the
-    project runs on every release from 3.12.
+
+def on_this_release(entry: Entry) -> Entry:
+    """The entry, with a pin of the listed Python release moved to the running one.
+
+    The project runs on every release from 3.12. Any other pin stays, so its row fails on
+    every release.
     """
-    if entry.library is None or entry.library.name != "python":
+    if entry.library != LISTED_PYTHON:
         return entry
     release = f"{sys.version_info.major}.{sys.version_info.minor}"
     return replace(entry, library=Library("python", release))
