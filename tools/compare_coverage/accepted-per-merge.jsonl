@@ -58,16 +58,18 @@
 {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.tracked_store::defaulted_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [29]}
-{"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [76]}
-{"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [99]}
+{"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [66]}
+{"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [89]}
 {"set": "v2", "target": "targets.dicts.tracked_store::int_store", "seed": {"n": 0, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.dicts.tracked_store::merged_in_place_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [47]}
 {"set": "v2", "target": "targets.dicts.tracked_store::merged_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [56]}
-{"set": "v2", "target": "targets.dicts.tracked_store::missing_deleted", "seed": {"n": "z", "d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [104]}
-{"set": "v2", "target": "targets.dicts.tracked_store::missing_popped", "seed": {"n": "z", "d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [109]}
-{"set": "v2", "target": "targets.dicts.tracked_store::popped", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [85]}
-{"set": "v2", "target": "targets.dicts.tracked_store::popped_or_none", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [92]}
-{"set": "v2", "target": "targets.dicts.tracked_store::snapshot", "seed": {"n": "a", "d": {"x1": 1, "x2": 2}}, "status": "differs", "only_legacy": [], "only_v2": [121]}
+{"set": "v2", "target": "targets.dicts.tracked_store::missing_deleted", "seed": {"n": "z", "d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [94]}
+{"set": "v2", "target": "targets.dicts.tracked_store::missing_popped", "seed": {"n": "z", "d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [99]}
+{"set": "v2", "target": "targets.dicts.tracked_store::own_walked", "seed": {"name": "a", "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [137]}
+{"set": "v2", "target": "targets.dicts.tracked_store::own_walked_int", "seed": {"n": 0, "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [150]}
+{"set": "v2", "target": "targets.dicts.tracked_store::popped", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [75]}
+{"set": "v2", "target": "targets.dicts.tracked_store::popped_or_none", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [82]}
+{"set": "v2", "target": "targets.dicts.tracked_store::snapshot", "seed": {"n": "a", "d": {"x1": 1, "x2": 2}}, "status": "differs", "only_legacy": [], "only_v2": [111]}
 {"set": "v2", "target": "targets.dicts.tracked_store::store_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [20]}
 {"set": "v2", "target": "targets.dicts.tracked_store::untyped_store", "seed": {"n": "pyct1", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.dicts.tracked_store::updated_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [38]}
