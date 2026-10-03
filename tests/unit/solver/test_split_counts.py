@@ -3,13 +3,17 @@ directly or through plain arithmetic, and c* where it meets anything else; a pie
 read where c* puts it, and asked once more where the input's own count puts it; with cvc5 held
 against Python on each."""
 
+import contextlib
 from typing import Any
 
 import pytest
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.core.branch import Expression
+from pyct.core import bound
+from pyct.core.branch import Branch, Expression
+from pyct.core.ints import ConcolicInt
+from pyct.core.strs import ConcolicStr
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Answer, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
@@ -209,8 +213,8 @@ def _python(part: Expression) -> str:
 @needs_cvc5
 @pytest.mark.parametrize(
     ("window", "read"),
-    [([-2, None], 0), ([None, None, -1], 1), ([-3, -1], 1)],
-    ids=["the last two", "stepped back", "between two from the end"],
+    [([-2, None], 0), ([None, None, -1], 1), ([-3, -1], 1), ([-3, None], 1), ([-3, None], 2)],
+    ids=["the last two", "stepped back", "between two from the end", "second", "third"],
 )
 def test_a_piece_through_a_slice_from_the_end_is_read_where_c_star_puts_it(
     window: list[int | None], read: int
@@ -252,3 +256,84 @@ def test_the_last_piece_of_an_rsplit_past_its_walk_is_read_where_c_star_puts_it(
     assert isinstance(answer, Sat), answer
     pieces = str(apply(seed, answer.model).args["s"]).rsplit(",", 20)
     assert pieces[-1] == "end" and len(pieces) > 10, pieces
+
+
+def _recorded(target: Any, args: dict[str, Any]) -> list[Branch]:
+    """The forks core records running ``target`` on tracked ``args``, as a run records them."""
+    sink: list[Any] = []
+    tracked = {
+        name: (ConcolicStr if isinstance(value, str) else ConcolicInt).made(value, name, sink)
+        for name, value in args.items()
+    }
+    with contextlib.suppress(IndexError):
+        target(**tracked)
+    return [item for item in sink if isinstance(item, Branch)]
+
+
+def _length(items: Any) -> Any:
+    """``len(items)`` as the target's package calls it, a tracked int on a tracked list."""
+    return bound.len(items)
+
+
+def _sliced_split(s: Any, n: Any) -> int:
+    parts = s[1:].split(",")
+    if _length(parts) < n and parts[0] == "end":
+        return 2
+    return 0
+
+
+def _split_piece_split(s: Any, n: Any) -> int:
+    parts = s.split(";")[0].split(",")
+    if _length(parts) < n and parts[0] == "end":
+        return 2
+    return 0
+
+
+def _sliced_lines(s: Any, n: Any) -> int:
+    lines = s[1:].splitlines()
+    return 1 if lines[-1] == "end" else 0
+
+
+def _appended_lines(s: Any, n: Any) -> int:
+    lines = s.splitlines()
+    lines.append("")
+    return 1 if lines[-2] == "end" and _length(lines) > 4 else 0
+
+
+def _slice_of_a_slice(s: Any, n: Any) -> int:
+    return 1 if _length(s.split(",")[1:][1:]) == 2 else 0
+
+
+def _slice_of_a_reversal(s: Any, n: Any) -> int:
+    return 1 if _length(s.split(",")[::-1][1:]) == 2 else 0
+
+
+# a target and a seed whose last fork, flipped, an answer must take as Python does: a split of
+# a string the arguments make, whose count is the one this run produced, worked out from them;
+# a count c* learns through a list changed as the encoder reads it; and a slice of a slice
+SHAPES: dict[str, tuple[Any, dict[str, Any]]] = {
+    "a slice's split": (_sliced_split, {"s": "xa,b,c", "n": 4}),
+    "a piece's split": (_split_piece_split, {"s": "a,b,c;d", "n": 4}),
+    "a slice's lines": (_sliced_lines, {"s": "xa\nb\nc", "n": 0}),
+    "an appended line": (_appended_lines, {"s": "end", "n": 0}),
+    "a slice of a slice": (_slice_of_a_slice, {"s": "a", "n": 0}),
+    "a slice of a reversal": (_slice_of_a_reversal, {"s": "a", "n": 0}),
+}
+
+
+@needs_cvc5
+@pytest.mark.parametrize(("target", "args"), SHAPES.values(), ids=list(SHAPES))
+def test_a_flipped_count_or_piece_is_taken_as_python_takes_it(
+    target: Any, args: dict[str, Any]
+) -> None:
+    forks = _recorded(target, args)
+    seed = Seed.of(args)
+    path = (*forks[:-1], fork(forks[-1].expression, taken=not forks[-1].taken))
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the last fork flipped, with every fork before it kept, as Python runs the answer
+    assert isinstance(answer, Sat), answer
+    new = dict(apply(seed, answer.model).args)
+    taken = [(branch.expression, branch.taken) for branch in _recorded(target, new)]
+    assert taken[: len(path)] == [(branch.expression, branch.taken) for branch in path], new

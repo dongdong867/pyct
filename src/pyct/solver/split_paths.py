@@ -7,9 +7,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LISTED_SPLITS
-from pyct.solver.list_terms import FALSE, TRUE, Lin, Read, both, compare, negated
+from pyct.solver.list_terms import FALSE, Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
+from pyct.solver.split_counts import FARTHEST, condition, input_value, windowed, windows_past
 from pyct.solver.split_lists import SplitList, SplitRead
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
@@ -20,34 +20,6 @@ _ORDERS: Mapping[str, tuple[bool, bool]] = {
     ">": (True, False),
     ">=": (True, True),
 }
-
-# each compare on two ints, as Python takes it
-_COMPARES: Mapping[str, Callable[[int, int], bool]] = {
-    "<": lambda left, right: left < right,
-    "<=": lambda left, right: left <= right,
-    ">": lambda left, right: left > right,
-    ">=": lambda left, right: left >= right,
-    "==": lambda left, right: left == right,
-    "!=": lambda left, right: left != right,
-}
-
-# plain arithmetic on a count with a plain int, as Python takes it
-_ARITHMETIC: Mapping[str, Callable[[int, int], int]] = {
-    "+": lambda left, right: left + right,
-    "-": lambda left, right: left - right,
-    "*": lambda left, right: left * right,
-}
-
-# how far from the input's own count c* is looked for: past it, the path's compares with plain
-# ints rule out every count near the input's, and c* stays the input's own
-_FARTHEST = 10_000
-
-# how deep a compare's side may nest arithmetic and still be read as a split's count: a loop
-# that adds on every pass nests thousands deep, which no compare of a count does
-_SUM_DEPTH = 8
-
-# what a side of a compare is: the split whose count it reads, and its value at each count
-type Counting = tuple[list[Expression], Callable[[int], int]]
 
 
 class Splits:
@@ -76,14 +48,16 @@ class Splits:
         # each slice's length that is its split's count less a plain start, wherever the slice
         # holds an item, by name: the split's count and the start
         self.tails: dict[str, tuple[str, int]] = {}
-        # each slice's start that is where c* puts it, by name: the split and the slice
+        # each slice's start that is where c* puts it, by name: the split and the slice; and
+        # each slice's length, by name: the split and the slices it is cut by, in turn
         self.starts: dict[str, tuple[SplitList, slice]] = {}
+        self.cuts: dict[str, tuple[SplitList, tuple[slice, ...]]] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
         int says of the count, the side it took included."""
         for fork in prefix:
-            found = _condition(fork)
+            found = condition(fork)
             if found is not None:
                 split, holds = found
                 self.conditions.setdefault(id(split), []).append(holds)
@@ -93,7 +67,7 @@ class Splits:
         string in the input whose path this is, where its value is known, and c*."""
         head, string, *operands = node
         plain = tuple(plain_operand(part) for part in operands)
-        text = _text(string, self.given)
+        text = input_value(string, self.given)
         held = len(getattr(str, str(head))(text, *plain)) if isinstance(text, str) else None
         listed = SplitList(
             term=term,
@@ -116,48 +90,61 @@ class Splits:
         if held is None:
             return None
         conditions = self.conditions.get(id(node), [])
-        for away in range(_FARTHEST):
+        for away in range(FARTHEST):
             for near in (held + away, held - away):
                 if near >= 0 and all(holds(near) for holds in conditions):
                     return near
         return held
 
-    def sliced(self, listed: SplitList, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
-        """Where a slice of a split's list with plain bounds and a step of 1 or -1 starts, and
-        its length: a start from the start, or the last piece for a slice that steps back from
-        the end, is exact on every string, and any other is a name of its own, which a read
-        takes where c* puts it, the string held to c* pieces (see ``read``); the length is
-        ``cut``'s. None for any other slice."""
+    def sliced(self, length: Lin, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
+        """Where a slice with plain bounds and a step of 1 or -1 of a split's list, or of a slice
+        of one, starts, and its length, from the list's ``length``: a start from the start, or
+        the last item for a slice that steps back from the end, is exact on every string; any
+        other start of a split's own list is a name of its own, which a read takes where c*
+        puts it, the string held to c* pieces (see ``read``); the length is ``cut``'s. None for
+        any other slice, or any other start."""
+        cut = self._windows(length)
         plain = [bound for bound in bounds if bound is None or type(bound) is int]
         start, stop, step = (*plain, None, None, None)[:3]
-        if len(plain) != len(bounds) or len(bounds) > 3 or step not in (None, 1, -1):
+        if cut is None or len(plain) != len(bounds) or len(bounds) > 3 or step not in (None, 1, -1):
             return None
-        assert start is None or isinstance(start, int)
-        assert stop is None or isinstance(stop, int)
-        length = self.cut(listed, (start, stop, step))
-        if stop is None and step != -1 and (start is None or start >= 0):
-            # a slice that holds an item is that many pieces short of the split
-            self.tails[length.atoms[0][0]] = (listed.count, start or 0)
-        if step == -1 and start is None:
-            return Lin.of(listed.count).minus(Lin(1)), length
-        if step != -1 and (start is None or start >= 0):
-            return Lin(start or 0), length
-        if listed.read_count is None:
-            return None
+        assert isinstance(start, int | None) and isinstance(stop, int | None)
+        listed, windows = cut
         window = slice(start, stop, step)
+        cut_length = self.cut(listed, (*windows, window))
+        if not windows and stop is None and step != -1 and (start is None or start >= 0):
+            # a slice that holds an item is that many pieces short of the split
+            self.tails[cut_length.atoms[0][0]] = (listed.count, start or 0)
+        if step == -1 and start is None:
+            return length.minus(Lin(1)), cut_length
+        if step != -1 and (start is None or start >= 0):
+            return Lin(start or 0), cut_length
+        if windows or listed.read_count is None:
+            return None
         name = f"start!{len(self.values)}!"
         self.starts[name] = (listed, window)
         self.values[name] = window.indices(listed.read_count)[0]
-        return Lin.of(name), length
+        return Lin.of(name), cut_length
 
-    def cut(self, listed: SplitList, bounds: tuple[int | None, ...]) -> Lin:
-        """The length of a slice of a split's list with plain bounds, as a name of its own that
-        a compare with a number reads as whether a piece is there, exact on every string."""
+    def _windows(self, length: Lin) -> tuple[SplitList, tuple[slice, ...]] | None:
+        """The split a list's length counts, and the slices that cut the list from it, where
+        the length is a split's count or a slice's length of it."""
+        if len(length.atoms) != 1 or length.atoms[0][1] != 1 or length.const != 0:
+            return None
+        name = length.atoms[0][0]
+        if name in self.lists:
+            return self.lists[name], ()
+        return self.cuts.get(name)
+
+    def cut(self, listed: SplitList, windows: tuple[slice, ...]) -> Lin:
+        """The length of a list cut from a split's by slices with plain bounds, one after
+        another, as a name of its own that a compare with a number reads as whether a piece is
+        there, exact on every string."""
         name = f"cut!{len(self.values)}!"
-        window = slice(*bounds)
-        self.counts[name] = lambda number: _cut_past(listed.past, window, number)
+        self.counts[name] = lambda number: windows_past(listed.past, windows, number)
+        self.cuts[name] = (listed, windows)
         at = listed.read_count
-        self.values[name] = None if at is None else len(range(*window.indices(at)))
+        self.values[name] = None if at is None else windowed(windows, at)
         return Lin.of(name)
 
     def read(self, listed: SplitList, position: Lin, kind: str) -> Read:
@@ -227,9 +214,9 @@ class Splits:
         return compare(low, high, {}, or_equal=or_equal, counts=self.counts)
 
     def defined(self, lines: list[str]) -> list[str]:
-        """Each count, and each slice's length of one, that a line of the program reads as a
-        term, as its c*: a number where the input's own count is known, or else a count no
-        tie holds."""
+        """Each count, each slice's length of one and each slice's start, that a line of the
+        program reads as a term, as its c*: the number this run produced, worked out from the
+        input's values, or, where they do not give it, an Int of its own past zero."""
         text = "\n".join(lines)
         written: list[str] = []
         for name, value in self.values.items():
@@ -241,107 +228,3 @@ class Splits:
             else:
                 written.append(f"(define-fun {name} () Int {value})")
         return written
-
-
-def _condition(fork: Branch) -> tuple[list[Expression], Callable[[int], bool]] | None:
-    """The split a fork compares the count of, through plain arithmetic, with a plain int, and
-    whether a count takes the fork's side; None for any other fork."""
-    expression = fork.expression
-    if not isinstance(expression, list) or len(expression) != 3:
-        return None
-    test = _COMPARES.get(str(expression[0]))
-    left, right = expression[1], expression[2]
-    if test is None or (type(left) is int) == (type(right) is int):
-        return None
-    side = _counting(left) if type(right) is int else _counting(right)
-    if side is None:
-        return None
-    split, value = side
-    number = right if type(right) is int else left
-    assert isinstance(number, int)
-    if type(right) is int:
-        return split, lambda at: test(value(at), number) is fork.taken
-    return split, lambda at: test(number, value(at)) is fork.taken
-
-
-def _text(part: Expression, given: Callable[[Expression], object]) -> object:
-    """A string's value in the input whose path this is: a name's, or a str method with plain
-    operands called on one, `s.strip()` say; None where neither."""
-    value = given(part)
-    if value is not None or not isinstance(part, list) or len(part) < 2:
-        return value
-    head, string, *operands = part
-    method = getattr(str, head, None) if isinstance(head, str) else None
-    if not callable(method) or any(isinstance(operand, list) for operand in operands):
-        return None
-    text = _text(string, given)
-    if not isinstance(text, str):
-        return None
-    try:
-        plain = [plain_operand(operand) for operand in operands]
-    except ValueError:
-        return None
-    try:
-        value = method(text, *plain)
-    except (TypeError, ValueError):
-        return None
-    return value if isinstance(value, str) else None
-
-
-def _counting(part: Expression, depth: int = _SUM_DEPTH) -> Counting | None:
-    """A side of a compare that reads a split's count, ``len(parts)``, the length of a slice of
-    it with plain bounds, or either through `+`, `-` or `*` with a plain int, nested at most
-    ``depth`` deep, and its value at each count; None for any other side."""
-    if not isinstance(part, list) or len(part) not in (2, 3):
-        return None
-    if part[0] == "len" and len(part) == 2:
-        return _measured(part[1])
-    combine = _ARITHMETIC.get(str(part[0]))
-    if combine is None or len(part) != 3 or depth == 0:
-        return None
-    left, right = part[1], part[2]
-    if type(right) is int and (side := _counting(left, depth - 1)) is not None:
-        split, value = side
-        return split, lambda at: combine(value(at), right)
-    if type(left) is int and (side := _counting(right, depth - 1)) is not None:
-        split, value = side
-        return split, lambda at: combine(left, value(at))
-    return None
-
-
-def _measured(form: Expression) -> Counting | None:
-    """A split's list, or a slice of it with plain bounds, and its length at each count."""
-    if not isinstance(form, list) or not form:
-        return None
-    if form[0] in LISTED_SPLITS:
-        return form, lambda at: at
-    inner = form[1] if len(form) > 2 else None
-    bounds = form[2:]
-    plain = all(bound is None or type(bound) is int for bound in bounds)
-    if form[0] != "[:]" or not plain or not isinstance(inner, list) or not inner:
-        return None
-    if inner[0] not in LISTED_SPLITS:
-        return None
-    window = slice(*bounds)
-    return inner, lambda at: len(range(*window.indices(at)))
-
-
-def _cut_past(past: Callable[[int], str], window: slice, number: int) -> str:
-    """That a slice of a split's list holds more items than ``number``: as Python slices, for
-    each run of counts that make it that long, the split holding at least the first and no
-    more than the last. Past ``reach`` every bound counts from where it does at any count, so
-    the length grows, shrinks or stays with the count, and the last run is open there."""
-    if number < 0:
-        return TRUE
-    reach = number + 2 + sum(abs(bound) for bound in (window.start, window.stop) if bound)
-    long = [len(range(*window.indices(at))) > number for at in range(reach + 1)]
-    runs: list[str] = []
-    first = TRUE
-    for at, inside in enumerate(long):
-        if inside and (at == 0 or not long[at - 1]):
-            first = past(at - 1)
-        if inside and (at == reach or not long[at + 1]):
-            runs.append(first if at == reach else both(first, negated(past(at))))
-    if not runs:
-        return FALSE
-    return runs[0] if len(runs) == 1 else f"(or {' '.join(runs)})"

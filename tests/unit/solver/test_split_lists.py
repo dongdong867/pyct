@@ -301,7 +301,7 @@ def test_cvc5_counts_a_slice_of_every_split_as_python_does() -> None:
         window = (rng.choice(bounds), rng.choice(bounds), rng.choice([None, 1, -1]))
         splits = Splits()
         listed = splits.made([head, "s", *(_written(operand) for operand in operands)], "|s|")
-        cut = splits.cut(listed, window).atoms[0][0]
+        cut = splits.cut(listed, (slice(*window),)).atoms[0][0]
         length = len(_pieces(value, head, operands)[slice(*window)])
         for number in range(-1, 4):
             asks.append((value, "Bool", splits.counts[cut](number)))

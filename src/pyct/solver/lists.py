@@ -258,11 +258,11 @@ class ListTerms(ListTyping, Slices):
         return Counted(Lin.of(listed.count), kinds.kinds, kinds.every, of_a_split=True, at=read)
 
     def cut(self, base: Piece, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
-        """Where a slice of a split's list with plain bounds starts, and its length, as the
-        splits write them (``Splits.sliced``); None for any other slice."""
-        if not isinstance(base, Counted):
+        """Where a slice of a split's list, or of a slice of one, with plain bounds starts, and
+        its length, as the splits write them (``Splits.sliced``); None for any other slice."""
+        if not base.of_a_split:
             return None
-        cut = self.splits.sliced(self.splits.lists[base.length.atoms[0][0]], bounds)
+        cut = self.splits.sliced(base.length, bounds)
         if cut is not None and (at := self.splits.values.get(cut[1].atoms[0][0])) is not None:
             self.origin[cut[1].atoms[0][0]] = at
         return cut

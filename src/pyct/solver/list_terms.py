@@ -307,13 +307,14 @@ def shape_guard(shape: ListShape) -> Guard:
     return guard
 
 
-# how deep a compare's side may nest arithmetic and still be read as a sum: a loop that adds on
-# every pass nests thousands deep, which no compare of a split's count does
-_SUM_DEPTH = 8
+# how deep a compare's side may nest arithmetic, or a list built from a split's, and still be
+# read as a sum: a loop that adds on every pass nests thousands deep, which no compare of a
+# split's count does
+SUM_DEPTH = 8
 
 
 def summed(
-    part: Expression, length_of: Callable[[Expression], Lin | None], depth: int = _SUM_DEPTH
+    part: Expression, length_of: Callable[[Expression], Lin | None], depth: int = SUM_DEPTH
 ) -> Lin | None:
     """A side of a compare as a sum: a number, a list's length (``length_of``), or either
     through `+`, `-` or `*` with a number, nested at most ``depth`` deep; None for any other."""

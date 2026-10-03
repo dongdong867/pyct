@@ -64,7 +64,7 @@ def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
     splits.given = lambda part: TWELVE if part == "s" else None
     listed = splits.made(PARTS, "s")
     other = splits.made(["split", "t", "','"], "t")
-    cut = splits.cut(listed, (2, None, None)).atoms[0][0]
+    cut = splits.cut(listed, (slice(2, None, None),)).atoms[0][0]
 
     first = splits.defined([f"(> {listed.count} n)", f"(< {cut} 3)"])
     again = splits.defined([f"(> {listed.count} n)", f"(= {other.count} 1)"])
