@@ -49,31 +49,41 @@ def repeated(span: Span, times: int) -> Span:
 
 
 def sliced(span: Span, start: int | None, stop: int | None, step: int | None = None) -> Span:
-    """The range of a slice with plain bounds, as Python's own clamp cuts it from a value of
-    any length in ``span``."""
+    """The range of a slice with plain bounds and step, as Python's own clamp cuts it from a
+    value of any length in ``span``."""
     cut = slice(start, stop, step)
-    return over(span, lambda count: len(range(count)[cut]), _breaks(start, stop))
+    return over(span, lambda count: taken(cut, count), _breaks(start, stop), abs(step or 1))
 
 
 def cut_out(span: Span, start: int | None, stop: int | None) -> Span:
     """The range of what is left once a slice with plain bounds is deleted."""
     cut = slice(start, stop)
-    return over(span, lambda count: count - len(range(count)[cut]), _breaks(start, stop))
+    return over(span, lambda count: count - taken(cut, count), _breaks(start, stop), 1)
 
 
-def over(span: Span, count: Callable[[int], int], breaks: tuple[int, ...]) -> Span:
+def taken(cut: slice, count: int) -> int:
+    """How many items ``cut`` takes from ``count``, as Python's own clamp
+    (``slice.indices``) cuts it, counted by arithmetic so a bound past ``sys.maxsize`` is
+    one more int."""
+    start, stop, step = cut.indices(count)
+    if step > 0:
+        return max(0, (stop - start + step - 1) // step)
+    return max(0, (start - stop - step - 1) // -step)
+
+
+def over(span: Span, count: Callable[[int], int], breaks: tuple[int, ...], step: int) -> Span:
     """The fewest and the most ``count`` gives for any length in ``span``.
 
-    ``count`` is linear between its ``breaks``, as a clamp is, so its ends on the range are
-    found at the range's own ends and at each break inside it; past the last break it keeps
-    one slope, so it grows without a most, or stays.
+    Between its ``breaks`` ``count`` is monotone, as a clamp and a count of every ``step``-th
+    item are, so its ends on the range are found at the range's own ends and at each break
+    inside it; past the last break it grows without a most, one item every ``step``, or stays.
     """
     least, top = span[0] or 0, span[1]
     far = max((least, *breaks)) + 2
     last = far if top is None else top
     points = {least, last, *(at for at in breaks if least <= at <= last)}
     counts = [count(at) for at in points]
-    endless = top is None and count(far + 1) > count(far)
+    endless = top is None and count(far + step) > count(far)
     return (min(counts), None if endless else max(counts))
 
 
@@ -82,10 +92,11 @@ def proves(span: Span, op: str, number: int) -> bool | None:
     answers so, None when lengths in it answer both ways."""
     fewest, most = span
     if op in ("==", "!="):
-        apart = (most is not None and most < number) or (fewest is not None and fewest > number)
-        same = fewest == number and most == number
-        answer = True if same else False if apart else None
-        return answer if op == "==" or answer is None else not answer
+        if fewest == number and most == number:
+            return op == "=="
+        if (most is not None and most < number) or (fewest is not None and fewest > number):
+            return op == "!="
+        return None
     if op in ("<", "<="):
         flipped = proves(span, ">=" if op == "<" else ">", number)
         return None if flipped is None else not flipped
@@ -161,10 +172,11 @@ def _answered(op: str, number: int, taken: bool, span: Span) -> Span:
 
 
 def _breaks(start: int | None, stop: int | None) -> tuple[int, ...]:
-    """Where a slice's clamp may change its slope, as the length grows: at each bound's size,
-    and one past it, which a step back from the end reads."""
+    """Where a slice's count may change its slope, as the length grows: at each bound's size,
+    where the two clamped bounds cross, at the sum of the sizes, and one past each, which a
+    step back from the end reads."""
     sizes = [abs(bound) for bound in (start, stop) if bound is not None]
-    return tuple(at for size in sizes for at in (size, size + 1))
+    return tuple(at for size in (*sizes, sum(sizes)) for at in (size, size + 1))
 
 
 def _sum(left: int | None, right: int | None) -> int | None:

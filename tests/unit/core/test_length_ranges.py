@@ -1,6 +1,7 @@
 """Each tracked list, string and dict's length range: how a change moves it, which forks narrow
 it, which checks it decides, and the range the int `len(x)` carries."""
 
+import sys
 from typing import Any
 
 import pytest
@@ -272,3 +273,75 @@ def test_len_carries_the_range_its_value_had_at_the_call() -> None:
     assert not (before > 0).decided and (length_of(items) > 0).decided
     expression: Expression = length_of(items).expression
     assert expression == ["len", "items"] and len(forks(sink)) == 2
+
+
+def test_a_slice_bound_past_sys_maxsize_cuts_as_python_cuts() -> None:
+    big = sys.maxsize * 4
+    items, _ = tracked([1, 2])
+    s, _ = text("ab")
+
+    # nothing measured them yet: the count is followed past the bound
+    assert span_of(items[:big]) == (0, big) and span_of(s[1:big]) == (0, big - 1)
+    assert span_of(items[-big:]) == (0, big) and span_of(s[-big:]) == (0, big)
+    list(items)
+    del items[big:]
+    items[-big:-big] = [0]
+
+    assert items.span == (3, 3)
+
+
+# wide and open ranges a length's int may carry, and the compares written on it
+RANGES: list[Span] = [(1, None), (0, None), (1, 3), (2, 5), (0, 0), (3, 3)]
+FORMS: list[Any] = [
+    *PROVEN,
+    lambda n: n > 0,
+    lambda n: n >= 1,
+    lambda n: n == 0,
+    lambda n: n != 0,
+    lambda n: n + 2 > 3,
+    lambda n: 10 - n < 9,
+    lambda n: n * 0 == 0,
+    lambda n: n * -2 <= -4,
+    lambda n: n - 1 - 1 >= 0,
+]
+
+
+@pytest.mark.parametrize("span", RANGES)
+def test_a_compare_is_a_fact_exactly_where_every_length_in_the_range_answers_alike(
+    span: Span,
+) -> None:
+    fewest, most = span
+    lengths = range(fewest or 0, (most if most is not None else 40) + 1)
+    for form in FORMS:
+        sink: list[SinkItem] = []
+        measured = ConcolicInt.made(lengths[0], ["len", "xs"], sink)
+        measured.__dict__["span"] = span
+        answer = form(measured)
+        assert isinstance(answer, ConcolicBool), form
+        # an open range never proves a compare a length past those listed could answer
+        # otherwise, so every length listed answering alike is what proves it
+        alike = len({bool(form(length)) for length in lengths}) == 1
+        open_and_rising = most is None and bool(form(lengths[-1])) != bool(form(10**6))
+        assert answer.decided is (alike and not open_and_rising), (span, form)
+
+
+def test_a_string_kept_from_an_earlier_call_knows_nothing_of_this_path() -> None:
+    s, _ = text("ab")
+    kept, _ = text("xy", name="kept")
+    list(s)
+    list(kept)
+
+    assert span_of(s + kept) == (2, None) and span_of(kept + s) == (2, None)
+    assert span_of(s + s) == (4, 4) and span_of(s + "!") == (3, 3)
+
+
+def test_a_length_s_truth_test_and_a_forked_compare_narrow_nothing() -> None:
+    items, sink = tracked([1, 2])
+
+    assert length_of(items) and length_of(items) > 1
+
+    assert [check for check, _ in forks(sink)] == [
+        ["!=", ["len", "items"], 0],
+        [">", ["len", "items"], 1],
+    ]
+    assert items.span == UNKNOWN and decided(sink) == []

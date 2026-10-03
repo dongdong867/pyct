@@ -1,6 +1,7 @@
 """The length range a tracked value keeps, and what it proves, held against Python."""
 
 import itertools
+import sys
 
 import pytest
 
@@ -19,10 +20,16 @@ from pyct.core.spans import (
     sliced,
 )
 
-# every bound a slice in these tests is cut with, missing ones included
-BOUNDS = [None, -4, -2, -1, 0, 1, 2, 3, 5]
+# every bound a slice in these tests is cut with: missing, negative, and past sys.maxsize
+BIG = sys.maxsize * 4
+BOUNDS = [None, -BIG, -7, -4, -2, -1, 0, 1, 2, 3, 5, 8, BIG]
+# every step a slice in these tests takes
+STEPS = [None, 1, -1, 2, -2, 3, -3, 5]
 # ranges with a most, and each length inside them
-CLOSED = [(0, 0), (0, 3), (1, 4), (2, 2), (3, 7), (5, 9)]
+CLOSED = [(0, 0), (0, 3), (1, 4), (2, 2), (3, 7), (5, 9), (0, 14)]
+# open ranges, and how far a slice of one is followed to find its count past the last bound
+OPEN = [(0, None), (1, None), (3, None), (6, None)]
+FAR = 60
 OPS = ["<", "<=", ">", ">=", "==", "!="]
 
 
@@ -34,7 +41,7 @@ def lengths(span: Span) -> range:
 
 @pytest.mark.parametrize("span", CLOSED)
 def test_a_slice_s_range_is_python_s_clamp_at_every_length(span: Span) -> None:
-    for start, stop, step in itertools.product(BOUNDS, BOUNDS, [None, 1, -1]):
+    for start, stop, step in itertools.product(BOUNDS, BOUNDS, STEPS):
         cut = slice(start, stop, step)
         counts = [len(range(count)[cut]) for count in lengths(span)]
         assert sliced(span, start, stop, step) == (min(counts), max(counts)), cut
@@ -46,6 +53,30 @@ def test_a_deleted_slice_leaves_what_python_leaves_at_every_length(span: Span) -
         cut = slice(start, stop)
         counts = [count - len(range(count)[cut]) for count in lengths(span)]
         assert cut_out(span, start, stop) == (min(counts), max(counts)), cut
+
+
+@pytest.mark.parametrize("span", OPEN)
+def test_a_slice_of_an_open_range_is_python_s_clamp_at_every_length(span: Span) -> None:
+    small = [bound for bound in BOUNDS if bound is None or abs(bound) < BIG]
+    for start, stop, step in itertools.product(small, small, STEPS):
+        cut = slice(start, stop, step)
+        counts = [len(range(count)[cut]) for count in range(span[0] or 0, FAR)]
+        grows = counts[-1] > counts[-11]
+        assert sliced(span, start, stop, step) == (min(counts), None if grows else max(counts))
+        if step is None:
+            left = [count - len(range(count)[cut]) for count in range(span[0] or 0, FAR)]
+            most = None if left[-1] > left[-11] else max(left)
+            assert cut_out(span, start, stop) == (min(left), most)
+
+
+def test_a_slice_bound_past_sys_maxsize_is_counted_as_any_other() -> None:
+    # a value longer than the bound keeps that many items, as Python keeps them
+    assert sliced((0, None), None, BIG) == (0, BIG)
+    assert sliced((2, 5), -BIG, None) == (2, 5)
+    assert sliced((0, None), 1, BIG, 2) == (0, BIG // 2)
+    assert sliced((0, None), 1, None, 2) == (0, None)
+    assert cut_out((3, 3), BIG, None) == (3, 3)
+    assert cut_out((0, 4), -BIG, 1) == (0, 3)
 
 
 def test_a_slice_of_an_unbounded_range_grows_or_stays() -> None:

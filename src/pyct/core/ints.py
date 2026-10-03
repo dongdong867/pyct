@@ -52,9 +52,11 @@ def _itself(self: ConcolicInt) -> ConcolicInt:
 _PLAIN = (int, bool)
 
 
-def _carried(op: str, method: Callable[..., Any], *, reflected: bool = False) -> Callable[..., Any]:
-    """A tracked int's `+`, `-` or `*`, carrying the range of a length (``ConcolicInt.span``)
-    through it where the other operand is a plain int, on either side."""
+def _carried(op: str, name: str, *, reflected: bool = False) -> Callable[..., Any]:
+    """A tracked int's `+`, `-` or `*` by its dunder ``name``, carrying the range of a length
+    (``ConcolicInt.span``) through it where the other operand is a plain int, on either side.
+    One asked of a number subclass on the right first is asked so (``asked_first``)."""
+    method = numbers.arithmetic(op, *promoted(getattr(int, name)), reflected=reflected)
 
     def compute(self: ConcolicInt, other: object) -> Any:
         answer = method(self, other)
@@ -64,7 +66,7 @@ def _carried(op: str, method: Callable[..., Any], *, reflected: bool = False) ->
             answer.__dict__["span"] = _through(op, span, number, reflected=reflected)
         return answer
 
-    return compute
+    return compute if reflected else asked_first(name, compute)
 
 
 def _through(op: str, span: Span, number: int, *, reflected: bool) -> Span:
@@ -76,9 +78,11 @@ def _through(op: str, span: Span, number: int, *, reflected: bool) -> Span:
     return added(scaled(span, -1), exactly(number)) if reflected else added(span, exactly(-number))
 
 
-def _proven(op: str, method: Callable[..., Any]) -> Callable[..., Any]:
-    """A tracked int's compare, answering a bool that records a fact where it is tested when the
-    int carries a length's range that proves the answer against a plain int."""
+def _proven(op: str, name: str) -> Callable[..., Any]:
+    """A tracked int's compare by its dunder ``name``, asked of a number subclass on the right
+    first, answering a bool that records a fact where it is tested when the int carries a
+    length's range that proves the answer against a plain int."""
+    method = compare(op, *promoted(getattr(int, name)))
 
     def compute(self: ConcolicInt, other: object) -> Any:
         answer = method(self, other)
@@ -89,7 +93,7 @@ def _proven(op: str, method: Callable[..., Any]) -> Callable[..., Any]:
                 answer.__dict__["decided"] = True
         return answer
 
-    return compute
+    return asked_first(name, compute)
 
 
 class ConcolicInt(int):
@@ -105,7 +109,9 @@ class ConcolicInt(int):
     __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
     # set on the int `len(x)` returns, the range ``x`` had at that call (see `core.spans`), and
     # carried through `+`, `-` and `*` with a plain int: a compare with a plain int it proves
-    # is a fact where it is tested. Any other operation answers an int with none
+    # is a fact where it is tested. An operation that hands back the int itself, as `+x` does,
+    # keeps it; one that makes another int, `+`, `-` or `*` with any other operand among them,
+    # makes one with none
     span: Span | None = None
     # set on the int a tracked bool is (`bools._the_int`), whose expression is the bool's own
     # condition: what its text reads that condition as, the int it is
@@ -119,12 +125,12 @@ class ConcolicInt(int):
     # (see `numbers.promoted`), so `n < 2.5` is ["<", "n", 2.5] and `n + 0.5` a tracked float.
     # Each one Python would ask an int subclass on the right for first, it asks first too, the
     # derived downgrades among them (see `numbers.answered_first`)
-    __lt__ = asked_first("__lt__", _proven("<", compare("<", *promoted(int.__lt__))))
-    __le__ = asked_first("__le__", _proven("<=", compare("<=", *promoted(int.__le__))))
-    __gt__ = asked_first("__gt__", _proven(">", compare(">", *promoted(int.__gt__))))
-    __ge__ = asked_first("__ge__", _proven(">=", compare(">=", *promoted(int.__ge__))))
-    __eq__ = asked_first("__eq__", _proven("==", compare("==", *promoted(int.__eq__))))
-    __ne__ = asked_first("__ne__", _proven("!=", compare("!=", *promoted(int.__ne__))))
+    __lt__ = _proven("<", "__lt__")
+    __le__ = _proven("<=", "__le__")
+    __gt__ = _proven(">", "__gt__")
+    __ge__ = _proven(">=", "__ge__")
+    __eq__ = _proven("==", "__eq__")
+    __ne__ = _proven("!=", "__ne__")
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = int.__hash__
     __copy__ = copy_as_itself
@@ -132,18 +138,12 @@ class ConcolicInt(int):
     # a pickle holds the plain value and loads as an int, and writing it is a downgrade
     __reduce_ex__, __reduce__ = pickled(int)
 
-    __add__ = asked_first("__add__", _carried("+", numbers.arithmetic("+", *promoted(int.__add__))))
-    __radd__ = _carried(
-        "+", numbers.arithmetic("+", *promoted(int.__radd__), reflected=True), reflected=True
-    )
-    __sub__ = asked_first("__sub__", _carried("-", numbers.arithmetic("-", *promoted(int.__sub__))))
-    __rsub__ = _carried(
-        "-", numbers.arithmetic("-", *promoted(int.__rsub__), reflected=True), reflected=True
-    )
-    __mul__ = asked_first("__mul__", _carried("*", numbers.arithmetic("*", *promoted(int.__mul__))))
-    __rmul__ = _carried(
-        "*", numbers.arithmetic("*", *promoted(int.__rmul__), reflected=True), reflected=True
-    )
+    __add__ = _carried("+", "__add__")
+    __radd__ = _carried("+", "__radd__", reflected=True)
+    __sub__ = _carried("-", "__sub__")
+    __rsub__ = _carried("-", "__rsub__", reflected=True)
+    __mul__ = _carried("*", "__mul__")
+    __rmul__ = _carried("*", "__rmul__", reflected=True)
     # `/` answers a float even on two ints, which numbers tracks as a tracked float
     __truediv__ = asked_first("__truediv__", numbers.division("/", *promoted(int.__truediv__)))
     __rtruediv__ = numbers.division("/", *promoted(int.__rtruediv__), reflected=True)
