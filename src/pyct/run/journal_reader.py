@@ -287,7 +287,7 @@ class _Facts:
                 int() as col,
                 bool() as raising,
                 *note,
-            ] if _noted(note):
+            ] if _fork_notes(note):
                 site = self._site(file, line, col)
                 held = note[0] if note else None
                 walk = len(note) == 2
@@ -366,7 +366,7 @@ def _ending(value: object) -> Failure | None:
     raise ValueError("an ending is null or [kind, detail, traceback]")
 
 
-def _noted(note: list[object]) -> bool:
+def _fork_notes(note: list[object]) -> bool:
     """Whether a fork record's items past the sixth are its notes: whether an `is` held, a bool,
     and then, for a walk's fork over a split's list, true, the `is` note null there if none."""
     if len(note) == 2:
