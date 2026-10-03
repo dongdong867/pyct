@@ -1,5 +1,5 @@
 """The calls pyct substitutes where the target writes them: conversions, `range`, `type`,
-`math` functions and a str's methods.
+`math` functions, a str's methods, and a range or dict view method called through the type.
 
 - A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
   bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
@@ -17,6 +17,13 @@
   `range(3)` or `range(0, 10, 2)`, stays as written: no run can make it
   tracked, and a plain range is searched with one fork all the same
   (`pyct.core.substitutes.in_`).
+- A call ``<receiver>.<name>(...)`` whose name is a method Python's range or
+  a dict view type defines (`pyct.core.type_calls.NAMES`), and whose receiver
+  is written `type(x)` with one argument, `x.__class__`, or a name spelled
+  `range`, `dict_keys`, `dict_values` or `dict_items`, bare or after a dot,
+  becomes ``__pyct_call__(<receiver>.<name>)(...)`` as a conversion does:
+  Python's own method checks its receiver's real class, which for a tracked
+  range or view is pyct's (`pyct.core.type_calls`).
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
@@ -35,12 +42,15 @@ from __future__ import annotations
 
 import ast
 
+from pyct.core.type_calls import NAMES as TYPE_METHODS
 from pyct.intercept.positions import Parts
 
 # the names whose calls are conversions pyct follows, which a `map` may also hand its items to
 _CONVERSIONS = frozenset({"int", "float", "bool"})
 # every method a str has
 _TEXT_METHODS = frozenset(name for name in dir(str) if not name.startswith("_"))
+# the names of the types whose methods a call through the type routes, as Python spells them
+_TYPE_NAMES = frozenset({"range", "dict_keys", "dict_values", "dict_items"})
 
 BOUND: dict[str, str] = {
     "__pyct_call__": "call",
@@ -54,8 +64,8 @@ _MOST_ARGUMENTS = 20
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
-    """The call that replaces a conversion, `range`, a `math` function or a str literal's
-    method, or None for any other."""
+    """The call that replaces a conversion, `range`, a `math` function, a str literal's method
+    or a range or dict view method called through the type, or None for any other."""
     if not isinstance(node, ast.Call) or not _written_out(node):
         return None
     if _asks_for_its_callee(node) or parts.constants.math_function(node.func):
@@ -66,6 +76,8 @@ def replaced(node: ast.AST, parts: Parts) -> ast.Call | None:
         callee = parts.named(router, node)
         call = ast.Call(func=callee, args=[node.func, *node.args], keywords=node.keywords)
         return ast.copy_location(call, node)
+    if _through_a_type(node.func):
+        return _curried(node, parts)
     return None
 
 
@@ -96,6 +108,24 @@ def _text_method(callee: ast.expr, parts: Parts) -> bool:
     if isinstance(receiver, ast.Constant):
         return type(receiver.value) is str
     return parts.constants.kind(receiver) == {str}
+
+
+def _through_a_type(callee: ast.expr) -> bool:
+    """Whether a callee is a method range or a dict view type defines, on a receiver written
+    `type(x)` with one argument, `x.__class__`, or a name spelled as one of those types."""
+    if not isinstance(callee, ast.Attribute) or callee.attr not in TYPE_METHODS:
+        return False
+    receiver = callee.value
+    if isinstance(receiver, ast.Call):
+        return _spelled(receiver.func) == "type" and _one_argument(receiver)
+    if isinstance(receiver, ast.Attribute) and receiver.attr == "__class__":
+        return True
+    return _spelled(receiver) in _TYPE_NAMES
+
+
+def _one_argument(call: ast.Call) -> bool:
+    """Whether a call is written with one argument alone, not unpacked."""
+    return len(call.args) == 1 and not call.keywords and not isinstance(call.args[0], ast.Starred)
 
 
 def _spelled(node: ast.expr) -> str | None:
