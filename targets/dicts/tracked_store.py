@@ -109,8 +109,24 @@ def missing_popped(n: str, d: dict):
     return len(d)
 
 
-def plain_walked(d: dict):
-    d["x"] = 5
+def snapshot(n: str, d: dict):
+    keys = list(d)
+    d[n] = 0
+    hits = 0
+    for k in keys:
+        if k in d:
+            hits += 1
+    if hits > 1:
+        return "two"
+    return "fewer"
+
+
+def popped_then_stored(n: str, d: dict):
+    if d:
+        d.popitem()
+    d[n] = 0
+    if "a" in d:
+        return "a"
     count = 0
     for k in d:
         count += 1

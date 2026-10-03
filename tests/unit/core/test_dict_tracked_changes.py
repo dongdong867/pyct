@@ -153,6 +153,8 @@ def test_a_tracked_key_of_another_kind_stays_python_s(make: Any, keyed: bool) ->
 
     assert downgrades(sink) == ["__setitem__"]
     assert not any(isinstance(item, Branch) for item in sink)
+    # answered without a fork, so the dict is marked: nothing after it is decided
+    assert d.unforked
 
 
 def moves_a_fork(sink: list[SinkItem], args: dict[str, object]) -> bool:
@@ -202,11 +204,13 @@ def test_a_tracked_key_among_others_stays_python_s(change: Any, name: str) -> No
     first = ConcolicStr.made("a", "n", sink)
     second = ConcolicStr.made("b", "m", sink)
 
-    change(config, first, second)
+    made = change(config, first, second)
 
     # Python compared the keys as it built them, recording a fork only where the hashes met
     assert name in downgrades(sink)
     assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
+    # the dict the change made, or changed, is marked
+    assert (made if isinstance(made, ConcolicDict) else config).unforked
 
 
 def test_past_the_most_tracked_changes_a_change_is_python_s() -> None:
@@ -216,9 +220,11 @@ def test_past_the_most_tracked_changes_a_change_is_python_s() -> None:
     for key in keys[:-1]:
         config[key] = 1
     assert downgrades(sink) == []
+    assert not config.unforked
     config[keys[-1]] = 1
 
     assert downgrades(sink) == ["__setitem__"]
+    assert config.unforked
 
 
 def test_popitem_removes_the_key_a_tracked_store_put_last() -> None:
@@ -365,3 +371,85 @@ def test_a_shared_key_a_walk_handed_out_keeps_its_place_on_its_compare() -> None
     before = sink[at - 1]
     assert isinstance(before, Fact)
     assert (before.expression, before.place) == (None, ["given", ["walked", "config", "'b'"]])
+
+
+def test_a_store_over_a_held_key_asks_again_for_a_walked_key_given_its_place() -> None:
+    config, sink = tracked({"x1": 1, "x2": 2})
+    name = ConcolicStr.made("x1", "name", sink)
+    keys = list(config)
+
+    config[name] = 0
+    assert [key in config for key in keys] == [True, True]
+
+    # the store may be over either key, so the lookup asks whether it is, once n is "x1" for
+    # both; the walk read each key in the argument, which its place, given before, says holds
+    assert [fork for fork in forks(sink) if part(fork[0], 0) == "=="] == [
+        (["==", "name", "'x1'"], True)
+    ]
+    assert decided(sink)[-1] == (["in", "'x2'", "config"], True)
+    given = [item.place for item in sink if isinstance(item, Fact)]
+    assert ["given", ["walked", "config", "'x1'"]] in given
+    assert ["given", ["walked", "config", "'x2'"]] in given
+    hold_against_python(sink, {"config": {"x1": 1, "x2": 2}, "name": "x1"})
+
+
+def test_a_store_of_a_new_key_keeps_a_walked_key_proven() -> None:
+    config, sink = tracked({"x1": 1, "x2": 2})
+    name = ConcolicStr.made("a", "name", sink)
+    keys = list(config)
+
+    config[name] = 0
+    asked = len(forks(sink))
+    assert [key in config for key in keys] == [True, True]
+
+    # the store's fork keeps its key apart from the argument's, so the walked keys stay
+    assert forks(sink)[asked:] == []
+    assert forks(sink)[-1] == (["in", "name", "config"], False)
+
+
+def test_popitem_after_a_tracked_change_marks_the_dict() -> None:
+    config, sink = tracked({"b": 0, "a": 0, "xx": 0})
+    name = ConcolicStr.made("b", "n", sink)
+
+    config.pop(name)
+    assert "a" in config
+    config.popitem()
+    assert "a" in config
+
+    # which key popitem took follows n, which no fork says: with n "xx" it takes "a", so the
+    # lookup after it is a fork, though the path asked it before
+    assert config.unforked
+    assert forks(sink)[-1] == (["in", "'a'", "config"], True)
+
+
+def test_a_tracked_store_after_popitem_is_python_s() -> None:
+    config, sink = tracked({"b": 0})
+    name = ConcolicStr.made("a", "n", sink)
+
+    config.popitem()
+    config[name] = 0
+
+    # popitem took the input's last key, which no fork names, so the store may be over any
+    assert downgrades(sink) == ["__setitem__"]
+    assert config.unforked
+    derived = config.copy()
+    derived[name] = 1
+    assert downgrades(sink) == ["__setitem__", "__setitem__"]
+
+
+def test_a_stored_key_python_shares_is_compared_where_a_walk_hands_it_out() -> None:
+    # n's own key "a" has no copy, so a lookup of what the walk handed out is a lookup of "a",
+    # and asks whether n is "a": an answer that flips it walks another key there (see the
+    # Cost of dict-keys-named-held-made-up-or-changed-under-a-tracked-key)
+    config, sink = tracked({})
+    name = ConcolicStr.made("a", "name", sink)
+
+    config[name] = 0
+    for key in config:
+        assert key in config
+
+    assert forks(sink) == [
+        (["in", "name", "config"], False),
+        (["==", "name", "'a'"], True),
+        ([">", ["+", ["len", "config"], 1], 1], False),
+    ]

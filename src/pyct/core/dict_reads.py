@@ -131,7 +131,7 @@ def present(
         return None
     if proven(self, key):
         return held
-    given = self.shared.get(key) if type(key) in (str, int) else None
+    given = _given(self, key)
     place: Expression = None if given is None else ["given", given]
     # whether the key is one a change was made under holds where the walk read it, too
     changed = after_changes(self, key, written, (name, raising, place))
@@ -140,12 +140,24 @@ def present(
     return _in_the_argument(self, key, held, (name, raising, place))
 
 
+def _given(self: DictState, key: object) -> Expression:
+    """Where a walk read a key whose lookup holds there whatever a fork reads, or None: a key
+    Python shares, which no copy stands for, and a copy a change made stale (see
+    ``DictState.logged``)."""
+    if type(key) is not str and type(key) is not int:
+        return None
+    if self.stale.get(key, MISSING) is key:
+        return self.walk_pins.get(key)
+    return self.shared.get(key)
+
+
 def _in_the_argument(
     self: DictState, key: object, held: bool, how: tuple[str, bool, Expression]
 ) -> bool:
     """Whether the argument holds ``key``, a key no change decides: the fork, or a fact where
-    the path asked before (see ``present``). ``how`` is the lookup's name, whether Python may
-    raise after it, and the place a walk read a shared key at, which holds on both sides."""
+    the path asked before (see ``present``) or a walk read the key in the argument. ``how`` is
+    the lookup's name, whether Python may raise after it, and the place a walk read the key at,
+    which holds on both sides."""
     name, raising, place = how
     known = settled_as(key)
     test = ["in", written_key(key), self.expression]
@@ -155,15 +167,25 @@ def _in_the_argument(
     # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
     # is still noted
     if not self.unforked:
-        if known in self.asked:
-            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
-            return held
+        decided = known in self.asked or (held and _walked_in_the_argument(self, key))
         self.asked.add(known)
         if held:
             self.found.add(TRACKED if is_tracked(key) else known)
+        if decided:
+            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
+            return held
     if place is not None:
         self.sink.append(Fact(None, True, site, raising, place, lost_as=name))
     return recorded(self, Branch(test, held, site, raising, name))
+
+
+def _walked_in_the_argument(self: DictState, key: object) -> bool:
+    """Whether ``key`` is a stale copy of a key a walk read in the argument: the place the walk
+    read it at, which its lookup is given, says the argument holds it (see ``_given``)."""
+    if self.stale.get(key, MISSING) is not key:
+        return False
+    pin = self.walk_pins.get(key)
+    return isinstance(pin, list) and pin[0] in (FIRST, LAST)
 
 
 def recorded(self: DictState, branch: Branch) -> bool:
@@ -199,11 +221,13 @@ def handout(self: DictState, key: object, pin: Expression) -> object:
         return key
     copied = self.copies.get(key, MISSING)
     if copied is MISSING:
-        copied = _copy(key)
+        # a copy a change made stale is handed out again, and proven again from here
+        copied = self.stale.pop(key, MISSING)
+        copied = _copy(key) if copied is MISSING else copied
         if copied is not key:
             self.copies[key] = copied
-    if copied is key and pin is not None:
-        self.shared[key] = pin
+    if pin is not None:
+        (self.shared if copied is key else self.walk_pins)[key] = pin
     return copied
 
 

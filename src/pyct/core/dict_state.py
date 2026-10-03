@@ -52,7 +52,7 @@ class DictState(dict):
     # they were equal; and each tracked key found equal to a literal, paired with "=="
     compared: dict[tuple[str, str], bool]
     # every change in the order the target made it, and how many were under a tracked key,
-    # which a later lookup compares its own key with (see ``dict_reads.after_changes``)
+    # which a later lookup compares its own key with (see ``dict_compares.after_changes``)
     log: list[Change]
     tracked_changes: int
     # where in ``log`` each plain key's latest change under a plain key sits, and where each
@@ -82,6 +82,14 @@ class DictState(dict):
     # it (see ``dict_reads.proven``)
     copies: dict[object, object]
     shared: dict[object, Expression]
+    # the copies a change under a tracked key may have touched, which a lookup no longer takes
+    # as proven, and where a walk last read each copied key: such a lookup asks again, given
+    # the place the walk read its key (see ``dict_reads.present``)
+    stale: dict[object, object]
+    walk_pins: dict[object, Expression]
+    # whether popitem changed the dict: it removes whichever key is last on the input, so a
+    # change under a tracked key after it is Python's own (see ``dict_changes.followed``)
+    popped: bool
     # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,
     # named or made up: a key pyct does not follow that may equal an int turns such a dict
     # plain (see ``dict_reads.may_equal_added``)
@@ -114,8 +122,8 @@ class DictState(dict):
         fields["grown"] = 0
         fields["shadow"] = dict(items)
         fields["walked_at"] = None
-        fields["copies"] = {}
-        fields["shared"] = {}
+        # what walks handed out, none yet (see ``dict_reads.handout``)
+        fields.update(copies={}, shared={}, stale={}, walk_pins={}, popped=False)
         fields["int_keyed"] = int_keyed
         return made
 
@@ -215,6 +223,7 @@ class DictState(dict):
         fields["tracked_at"] = list(self.tracked_at)
         fields["tracked_changes"] = self.tracked_changes
         fields["grown"] = self.grown
+        fields["popped"] = self.popped
         return made
 
     def noted(self, key: object, value: object, tracked: Expression = None) -> None:
@@ -253,9 +262,11 @@ class DictState(dict):
         """Log a change: whether it stored the key or removed it, and whether the dict held the
         key when it ran (``how``).
 
-        A change under a tracked key drops the walks' copies: the solver may make that key a
-        copied one, which a removal takes out and a store gives another value, so a lookup of
-        a copy handed out before it asks again.
+        A change under a tracked key that may touch a key the dict holds, a removal or a store
+        over a held key, makes the walks' copies stale: the solver may make that key a copied
+        one, which a removal takes out and a store gives another value, so a lookup of a copy
+        handed out before it asks again, given where the walk read it. A store of a key the dict
+        did not hold is apart, by its forks, from every key a walk handed out.
         """
         stored, held = how
         self.changed[key] = stored
@@ -266,4 +277,6 @@ class DictState(dict):
         else:
             self.tracked_at.append(at)
             self.__dict__["tracked_changes"] += 1
-            self.copies.clear()
+            if held or not stored:
+                self.stale.update(self.copies)
+                self.copies.clear()

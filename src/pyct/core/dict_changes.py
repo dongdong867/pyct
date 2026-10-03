@@ -7,13 +7,14 @@ own, and the dict notes it in its shadow and in ``changed``.
 
 A change under a tracked key of the dict's own key kind is followed as one under a literal: its
 lookup records whether the key equals each key changed before and then whether the argument
-holds it (``dict_reads.after_changes``), so the path settles which key it changes, and the dict
-changes the key's plain value and logs the change under the key's expression.
+holds it (``dict_compares.after_changes``), so the path settles which key it changes, and the
+dict changes the key's plain value and logs the change under the key's expression.
 
 A change under a key pyct does not follow is Python's own and a downgrade named by the
 operation: a tracked bool or float, a tracked key of the other kind, a key of another kind, and
-a tracked key past ``MOST_TRACKED_CHANGES``, among the other keys of an `update` or a `|`, or in
-the `other` of `other | config`, where an answer that moves it leaves the plan. The dict
+a tracked key past ``MOST_TRACKED_CHANGES``, among the other keys of an `update` or a `|`, in
+the `other` of `other | config`, or after a popitem, where an answer that moves it leaves the
+plan. Such a change marks the dict (``changed_as_python``). The dict
 notes what it did to that key, as the plain key it is, so the forks after it still read the
 dict's size. Storing a value no expression holds, anything but an int, str, float, bool, None,
 or a list or dict of those, is a downgrade too, and the dict is plain from then on.
@@ -89,11 +90,12 @@ MOST_TRACKED_CHANGES = 16
 def followed(self: DictState, key: object) -> bool:
     """Whether a change under ``key`` is followed: a plain str or int, or a tracked key of the
     kind the dict's keys are, an int under `dict[int, X]` and a str elsewhere, while the dict
-    follows fewer than ``MOST_TRACKED_CHANGES`` such changes."""
+    follows fewer than ``MOST_TRACKED_CHANGES`` such changes and no popitem changed it: which
+    key popitem took is the input's last, and no fork names it."""
     if plain_key(key):
         return True
     kind = ConcolicInt if self.int_keyed else ConcolicStr
-    return type(key) is kind and self.tracked_changes < MOST_TRACKED_CHANGES
+    return type(key) is kind and self.tracked_changes < MOST_TRACKED_CHANGES and not self.popped
 
 
 def _joined_key(self: DictState, made: DictState, key: object) -> None:
@@ -285,7 +287,9 @@ def _removed_as_python(
 
 def last_item(self: DictState) -> tuple[object, object]:
     """``config.popitem()``: whether the dict holds anything, recorded before KeyError, and then
-    its last key and value, handed out as a walk from the end hands them."""
+    its last key and value, handed out as a walk from the end hands them. After a change under
+    a tracked key, which key is last may follow that key's value with no fork saying so, so
+    popitem marks the dict (``DictState.changed_unforked``)."""
     if not self.holds("popitem"):
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
@@ -299,6 +303,10 @@ def last_item(self: DictState) -> tuple[object, object]:
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
     handed_in_place(self, key, "popitem", pin)
+    if self.tracked_changes:
+        # which key is last may follow a change under a tracked key, which no fork here says
+        self.changed_unforked()
+    self.__dict__["popped"] = True
     handed = dict.__getitem__(self, key)
     own(dict.__delitem__, self, key)
     # the target's own key is the one its latest store put last: under a tracked key, the key
@@ -338,7 +346,7 @@ def update(self: DictState, name: str, *args: Any, **kwargs: Any) -> None:
     own(dict.update, taken, *args, **kwargs)
     crowded = len(taken) > 1
     for key, stored in dict.items(taken):
-        # a tracked key among others is Python's own (see ``_joined_key``)
+        # a tracked key among others is Python's own (see the module's docstring)
         if crowded and is_tracked(int_key(key)):
             if not _stored_plainly(self, key, stored, name):
                 stored_as_python(self, key, stored, (name, False))

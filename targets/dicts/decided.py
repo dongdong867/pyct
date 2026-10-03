@@ -118,3 +118,25 @@ def removed_tuple_after_tracked_store(n: str, d: dict):
     if d:
         return 1
     return 0
+
+
+def repeat_after_int_store(n: int, d: dict):
+    if "a" in d:
+        return 0
+    d[n] = 0
+    if "a" in d:
+        return 1
+    return 2
+
+
+def walk_after_int_pop(n: int, d: dict):
+    d["a"] = 5
+    if "b" in d:
+        d.pop(n, None)
+        count = 0
+        for k in d:
+            count += 1
+        if count == 1:
+            return "one"
+        return "more"
+    return "none"
