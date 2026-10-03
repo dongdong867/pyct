@@ -10,14 +10,14 @@ import pytest
 
 from targets.dicts import truth_kept
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
-from tests.acceptance.test_bools import at, sides
+from tests.acceptance.test_bools import at
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     line_of,
     python_raise,
     raised,
 )
-from tests.acceptance.test_record_bool_of_a_tracked_list_where_it_is_tested import placed
+from tests.acceptance.test_record_bool_of_a_tracked_list_where_it_is_tested import placed, took
 from tests.acceptance.test_substitute_conversions import downgrade_names
 
 TARGET = "targets.dicts.truth_kept"
@@ -69,7 +69,7 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     solved = filled(inputs[1:])
     assert solved, inputs
     assert all(at(line, tested) == [FILLED] for line in solved)
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
     assert any(under in covered_in(line, str(FILE)) for line in solved)
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -105,7 +105,7 @@ def test_keeps_the_dict_as_it_was_at_the_call() -> None:
     assert placed(seed) == [(stored, ["in", "'b'", "config"], False), (tested, FILLED, False)]
     solved = filled(inputs[1:])
     assert solved, inputs
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
 
 
 # record-bool-of-a-tracked-dict-where-it-is-tested-names-a-dict-inside-by-its-key
@@ -119,7 +119,7 @@ def test_names_a_dict_inside_by_its_key() -> None:
     row = ["!=", ["len", ["[]", "cfg", "'a'"]], 0]
     assert placed(seed) == [(called, ["in", "'a'", "cfg"], True), (tested, row, False)]
     assert seed_fork_line(result.stderr, tested).endswith("  len(cfg['a']) != 0  not taken")
-    assert True in sides(inputs[1:], row)
+    assert took(inputs[1:], (tested, row, True))
 
 
 # record-bool-of-a-tracked-dict-where-it-is-tested-records-a-view-at-the-test
@@ -135,7 +135,7 @@ def test_records_a_view_at_the_test(view: str) -> None:
     assert placed(seed) == [(tested, FILLED, False)]
     solved = filled(inputs[1:])
     assert solved, inputs
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
 
 
 # record-bool-of-a-tracked-dict-where-it-is-tested-downgrades-a-dict-changed-outside
