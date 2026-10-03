@@ -122,3 +122,17 @@ def test_every_removal_on_a_marked_dict_may_take_a_key(removal: str) -> None:
     assert bool(config)
 
     assert decided(sink) == []
+
+
+def test_a_removal_that_raises_here_may_take_a_key_on_another_input() -> None:
+    config, sink = tracked({})
+    flag = ConcolicStr.made("b", "m", sink) == "a"
+    config |= {flag: 1}
+    other = ConcolicStr.made("a", "n", sink) == "a"
+
+    # the key is not there on this input, so `del` raises; with m "a" it removes the only key
+    with pytest.raises(KeyError):
+        del config[other]
+    assert bool(config)
+
+    assert decided(sink) == []

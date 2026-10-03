@@ -187,13 +187,16 @@ def _removed_as_python(
     self: DictState, key: object, name: str, default: tuple[object, ...]
 ) -> object:
     """A removal under a key of another kind: Python's own, named ``name``. It marks the dict,
-    and on a marked dict every removal may take a key, held here or not."""
+    and on a marked dict every removal may take a key, held here or not: one this input does
+    not hold lowers the floor before Python may raise KeyError, since on another input the
+    removal goes through."""
     held = own(dict.__contains__, self, key)
+    self.changed_unforked()
+    if not held:
+        self.lost_one()
     answer = changed_as_python(self, key, name, lambda: dict.pop(self, key, *default))
     if held:
         self.dropped(key)
-    else:
-        self.lost_one()
     return answer
 
 
