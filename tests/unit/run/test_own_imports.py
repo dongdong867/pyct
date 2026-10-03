@@ -106,7 +106,7 @@ def test_core_s_import_under_pyct_s_call_comes_from_the_standard_library(folder:
     load_target("target::f")
     core = function_of(f"{PYCT_DIR}core{os.sep}late.py", CORE_IMPORTS)
 
-    # the walk passes core's frame and reaches pyct's own further out
+    # core's import for pyct's own code is pyct's, not taken as the target's
     names = pyct_s("found = core()", {"core": core})()
 
     assert is_the_standard_library_s(names["found"])
