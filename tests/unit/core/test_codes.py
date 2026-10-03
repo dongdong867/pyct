@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyct.core import codes, strs
+from pyct.core import codes, str_lengths
 from pyct.core.branch import Branch, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -25,7 +25,7 @@ def python_raise(operation: object, *args: object) -> tuple[type, str]:
 def test_the_length_of_a_tracked_string_is_a_tracked_int_and_records_nothing() -> None:
     sink: list[SinkItem] = []
 
-    size = strs.length(ConcolicStr.made("abc", expression="s", sink=sink))
+    size = str_lengths.length(ConcolicStr.made("abc", expression="s", sink=sink))
 
     assert type(size) is ConcolicInt
     assert int.__int__(size) == 3

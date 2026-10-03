@@ -41,7 +41,7 @@ from pyct.core import (
     list_reads,
     math_calls,
     ranges,
-    strs,
+    str_lengths,
     type_calls,
 )
 from pyct.core.bools import ConcolicBool
@@ -70,7 +70,7 @@ _VIEWED_TRUTH: Callable[[Any], object] = lambda view: dict_reads.condition(view.
 # `range`, which follows a tracked int in any of its arguments and is handed all of them
 _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] = {
     _LEN: {
-        ConcolicStr: strs.length,
+        ConcolicStr: str_lengths.length,
         ConcolicList: list_reads.length,
         ConcolicDict: dict_reads.length,
         ConcolicKeys: _VIEWED,

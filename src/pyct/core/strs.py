@@ -5,12 +5,14 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Self
 
-from pyct.core import numbers, str_joins, texts, values
+from pyct.core import numbers, str_joins, str_lengths, texts, values
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
+from pyct.core.spans import UNKNOWN, Span, added, exactly
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
+from pyct.core.str_lengths import spanned
 from pyct.core.str_operands import literal, position, within_cvc5
 from pyct.core.str_positions import long_enough, placed, search_positions, slice_bounds
 from pyct.core.str_splits import (
@@ -201,17 +203,6 @@ def not_contains(s: ConcolicStr, sub: object) -> object:
     return ConcolicBool.made(not own(str.__contains__, s, sub), expression=expression, sink=s.sink)
 
 
-def length(s: ConcolicStr) -> ConcolicInt:
-    """`len(s)` where pyct binds `len`: str's own length, carrying `["len", s]`.
-
-    Python's `len` makes what `__len__` hands back a plain int, so a
-    tracked string's `__len__` stays a downgrade; this is what pyct's own
-    `len` asks for instead (`pyct.core.bound.len`). A length cannot fail, so
-    it records no fork.
-    """
-    return ConcolicInt.made(own(str.__len__, s), expression=["len", s.expression], sink=s.sink)
-
-
 def in_text(sub: ConcolicStr, text: str) -> object:
     """`sub in text` for a plain text: str's own answer, carrying `["in", sub, 'text']`.
 
@@ -260,7 +251,8 @@ def _item(self: ConcolicStr, key: object) -> object:
     if bounds is None:
         return _GETITEM_DOWNGRADE(self, key)
     expression = ["[:]", self.expression, *bounds]
-    return ConcolicStr.made(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+    piece = ConcolicStr.made(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
+    return spanned(piece, str_lengths.cut(self, key))  # pyrefly: ignore[bad-argument-type]
 
 
 def _one_str(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
@@ -328,7 +320,8 @@ def _appended(self: ConcolicStr, other: object) -> object:
     if form is None:
         return _ADD_DOWNGRADE(self, other)
     expression = ["+", self.expression, form]
-    return ConcolicStr.made(own(str.__add__, self, other), expression=expression, sink=self.sink)
+    joined = ConcolicStr.made(own(str.__add__, self, other), expression=expression, sink=self.sink)
+    return spanned(joined, added(self.span, str_lengths.of_other(self, other)))
 
 
 def _joined_after(self: ConcolicStr, other: str) -> str:
@@ -353,7 +346,10 @@ def _prepended(self: ConcolicStr, other: object) -> object:
     if not _within_cvc5(other):
         return _RADD_DOWNGRADE(self, other)
     expression = ["+", _operand(other), self.expression]
-    return ConcolicStr.made(own(_joined_after, self, other), expression=expression, sink=self.sink)
+    joined = ConcolicStr.made(
+        own(_joined_after, self, other), expression=expression, sink=self.sink
+    )
+    return spanned(joined, added(str_lengths.of_other(self, other), self.span))
 
 
 def one_character(value: str, expression: Expression, sink: BranchSink) -> ConcolicStr:
@@ -361,7 +357,7 @@ def one_character(value: str, expression: Expression, sink: BranchSink) -> Conco
     or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
     character = ConcolicStr.made(value, expression=expression, sink=sink)
     character.__dict__["single"] = True
-    return character
+    return spanned(character, exactly(1))
 
 
 class ConcolicStr(str):
@@ -380,6 +376,8 @@ class ConcolicStr(str):
     __class__ = values.REPORTED_CLASS  # pyrefly: ignore[bad-override]
     # set by `one_character` alone: a value any other operation makes may have any length
     single: bool = False
+    # the fewest and the most characters it holds on every input on the path (`str_lengths`)
+    span: Span = UNKNOWN
 
     # Python swaps the operands of a reflected compare itself, so `"b" < s` runs
     # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.
@@ -488,8 +486,10 @@ class ConcolicStr(str):
 
     def __bool__(self) -> bool:
         # str has no __bool__ and Python falls to __len__; this one comes first. The empty
-        # string is the one value that takes the other side, written as repr writes it
-        return forked(self.sink, ["!=", self.expression, "''"], own(str.__len__, self) > 0)
+        # string is the one value that takes the other side, written as repr writes it. It
+        # stays a fork, and narrows the string's range
+        filled = str_lengths.tested(self, own(str.__len__, self) > 0)
+        return forked(self.sink, ["!=", self.expression, "''"], filled)
 
 
 # the class body above is everything ConcolicStr teaches. The rest of str differs only in the

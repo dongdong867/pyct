@@ -4,7 +4,8 @@
 `x`, `["==", ["[]", items, j], x]`, each compare a fork where the operation runs. Two lists
 compare as Python compares them: `==` checks the lengths first, `["==", ["len", items], 2]`,
 then each pair until one differs; an order finds the first pair that differs the same way and
-answers with that pair's own compare, or with the lengths' when one list runs out first.
+answers with that pair's own compare, or with the lengths' when one list runs out first. A
+length check the lists' ranges prove is a fact, not a fork (`core.spans`).
 """
 
 from __future__ import annotations
@@ -17,7 +18,8 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.list_reads import handed, more
 from pyct.core.list_state import ListState
-from pyct.core.values import forked, own
+from pyct.core.spans import Span, added, proves, scaled
+from pyct.core.values import forked, held, own
 
 # Python's order on two lists, by the operator's head
 ORDERS: dict[str, Callable[[Any, Any], Any]] = {
@@ -84,6 +86,10 @@ class _Side:
         tracked = self.form()
         return list.__len__(self.value) if tracked is None else ["len", tracked.expression]
 
+    def span(self, owner: ListState) -> Span:
+        """The length's range, as the list ``owner`` reads another it is compared with."""
+        return owner.span_of(self.value)
+
     def has(self, at: int) -> bool:
         """Whether this side holds an item at ``at``, a fork when it is tracked."""
         tracked = self.form()
@@ -103,9 +109,27 @@ def equal(self: ListState, other: list[object], name: str) -> bool:
     """``self == other`` as Python answers it: the lengths first, then each pair in turn."""
     left, right = _Side(self, name), _Side(other, name)
     same = self.length() == list.__len__(other)
-    if not forked(self.sink, ["==", left.size(), right.size()], same, name):
+    if not _same_length(self, left, right, same, name):
         return False
     return all(matches(left.item(at), right.item(at)) for at in range(self.length()))
+
+
+def _same_length(self: ListState, left: _Side, right: _Side, same: bool, name: str) -> bool:
+    """The length check a compare for equality makes first: against a plain list's length, on
+    this list's range; against another tracked list's, a fact only where both ranges prove it,
+    and a fork that narrows neither, since it is written on two lengths."""
+    theirs = right.size()
+    if type(theirs) is int:
+        return self.measure("==", theirs, same, name)
+    test: Expression = ["==", left.size(), theirs]
+    if apart(left.span(self), right.span(self), "==") is same:
+        return held(self.sink, test, same, name)
+    return forked(self.sink, test, same, name)
+
+
+def apart(left: Span, right: Span, op: str) -> bool | None:
+    """What two lengths' ranges say of ``left op right``: their difference's range against 0."""
+    return proves(added(left, scaled(right, -1)), op, 0)
 
 
 def ordered(self: ListState, other: list[object], op: str) -> object:
@@ -123,7 +147,11 @@ def ordered(self: ListState, other: list[object], op: str) -> object:
             return own(ORDERS[op], mine, theirs)
         at += 1
     answer = bool(own(ORDERS[op], self.length(), list.__len__(other)))
-    return ConcolicBool.made(answer, expression=[op, left.size(), right.size()], sink=self.sink)
+    ran_out = ConcolicBool.made(answer, expression=[op, left.size(), right.size()], sink=self.sink)
+    if apart(left.span(self), right.span(self), op) is answer:
+        # the ranges prove which list runs out first: where the target tests it, a fact
+        ran_out.__dict__["decided"] = True
+    return ran_out
 
 
 _NAMES = {"<": "lt", "<=": "le", ">": "gt", ">=": "ge"}

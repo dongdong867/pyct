@@ -248,8 +248,9 @@ def test_a_walk_s_pass_fork_is_the_condition_at_its_for_line() -> None:
     result = run_pyct(target, '{"s": "a"}')
 
     assert result.returncode == 0, result.stderr
-    # the walk over s[:0] ends at once; its pass fork sits where the loop steps, at 3:13
-    assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 13, True, unsat=1)
+    # the walk over s[:0] ends at once; its pass check sits where the loop steps, at 3:13, and
+    # a slice to 0 holds no character, so the check is decided on every input
+    assert cause(entry_for(result.stdout, 4)) == not_taken(file, 3, 13, True, decided=1)
 
 
 # see-why-a-line-was-missed-names-the-side-no-input-took
@@ -438,5 +439,5 @@ def test_the_line_after_popping_an_empty_list_waits_on_its_not_empty_fork() -> N
 
     assert result.returncode == 0, result.stderr
     # pop checks the list is not empty before Python may raise, as pop(0) and items[0] do; past
-    # `if items:` the list is empty, so that check is never true
-    assert cause(entry_for(result.stdout, 5)) == not_taken(file, 4, 8, True, unsat=1)
+    # `if items:` the list is empty, so that check is never true, and decided on every input
+    assert cause(entry_for(result.stdout, 5)) == not_taken(file, 4, 8, True, decided=1)
