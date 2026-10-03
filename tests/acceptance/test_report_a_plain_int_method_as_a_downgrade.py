@@ -10,14 +10,15 @@ import pytest
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     first_line,
+    forks_of,
     input_lines,
     one_line,
     run_pyct,
     summary_line,
 )
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
-from tests.acceptance.test_strs import forks_of, number
 
 PLAIN_METHODS = "targets.ints.plain_methods"
 PLAIN_METHODS_FILE = str(REPO_ROOT / "targets" / "ints" / "plain_methods.py")
@@ -90,7 +91,7 @@ def test_reads_a_tracked_bool_as_its_int() -> None:
         (["==", [">", "x", 0], 1], False)
     ]
     assert downgrades_of(seed) == [("bit_length", 1)]
-    assert any(number(line, "x") > 0 for line in lines if line["source"] == "solver")
+    assert any(argument(line, "x") > 0 for line in lines if line["source"] == "solver")
 
 
 # report-a-plain-int-method-as-a-downgrade-treats-a-float-the-same-way

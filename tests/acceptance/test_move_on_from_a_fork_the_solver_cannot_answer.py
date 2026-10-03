@@ -46,7 +46,7 @@ def misses_of(stdout: str) -> list[tuple[int, str]]:
     return [(int(miss["line"]), str(miss["why"])) for miss in misses]
 
 
-def forks_of(line: dict[str, object]) -> list[tuple[int, bool]]:
+def lines_and_sides(line: dict[str, object]) -> list[tuple[int, bool]]:
     """Each fork one input took, as its line and the side taken."""
     forks = line["forks"]
     assert isinstance(forks, list), line
@@ -71,7 +71,7 @@ def assert_it_went_on(result: subprocess.CompletedProcess[str]) -> None:
         line
         for line in input_lines(result.stdout)
         if line["source"] == "solver"
-        and (OUTER, False) in forks_of(line)
+        and (OUTER, False) in lines_and_sides(line)
         and NOT_BELOW in covered_of(line)
     ]
     assert went_on, result.stdout

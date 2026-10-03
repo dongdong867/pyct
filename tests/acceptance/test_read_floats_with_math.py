@@ -7,10 +7,17 @@ package as Python imports it, so only a run through the command line proves it.
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    downgrade,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_bools import sides
 from tests.acceptance.test_floats import expressions, failure_of, real, taken
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_substitute_conversions import no_line_lists
 
 FLOATS = REPO_ROOT / "targets" / "floats"

@@ -11,13 +11,15 @@ from collections.abc import Callable
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
 )
 from tests.acceptance.test_str_pieces import sides_of
-from tests.acceptance.test_strs import forks_of, number, text
+from tests.acceptance.test_strs import text
 
 FOUND_KEY = "targets.strs.found_key::key_of"
 TRACKED_INDEX = "targets.strs.tracked_index::pick"
@@ -110,7 +112,7 @@ def test_follows_a_tracked_index() -> None:
     assert no_downgrade(result.stdout)
     # the input aimed at the compare, position 2 on the path, takes its other side
     aimed = [line for line in solved(result.stdout) if aimed_at(line) == 2]
-    assert aimed and all(text(line, "s")[number(line, "n")] == "z" for line in aimed)
+    assert aimed and all(text(line, "s")[argument(line, "n")] == "z" for line in aimed)
 
 
 # follow-positions-into-a-string-follows-a-search-from-a-tracked-position
@@ -180,7 +182,7 @@ def test_reads_an_empty_needle_past_the_end_as_python_does() -> None:
     result = run_pyct(EMPTY_NEEDLE, '{"s": "abc", "n": 0}')
 
     assert result.returncode == 0, result.stderr
-    assert any_line(result.stdout, lambda line: number(line, "n") > len(text(line, "s")))
+    assert any_line(result.stdout, lambda line: argument(line, "n") > len(text(line, "s")))
     assert flipped_every_fork(result.stdout)
 
 
@@ -202,7 +204,9 @@ def test_follows_a_step_of_minus_one_between_bounds() -> None:
     seed = first_line(result.stdout)
     expression = ["==", ["[:]", "s", "n", 0, -1], "'cb'"]
     assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [(expression, False)]
-    assert any_line(result.stdout, lambda line: text(line, "s")[number(line, "n") : 0 : -1] == "cb")
+    assert any_line(
+        result.stdout, lambda line: text(line, "s")[argument(line, "n") : 0 : -1] == "cb"
+    )
 
 
 # follow-positions-into-a-string-keeps-the-other-forms-downgrades
@@ -303,7 +307,7 @@ def test_reports_a_search_from_a_position_that_finds_nothing() -> None:
     found: list[object] = ["!=", ["find", "s", "'x'", "n"], -1]
     assert [(f["line"], f["expression"], f["taken"]) for f in forks_of(seed)] == [(2, found, True)]
     assert aimed_at(second) == 0
-    assert text(second, "s").find("x", number(second, "n")) == -1
+    assert text(second, "s").find("x", argument(second, "n")) == -1
     assert [(f["expression"], f["taken"]) for f in forks_of(second)] == [(found, False)]
     assert failure_of(second) == "target_raised ValueError:"
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"

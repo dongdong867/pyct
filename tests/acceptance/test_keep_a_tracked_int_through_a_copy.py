@@ -5,7 +5,15 @@ tests do: a copy keeps the int tracked only if the fork after it reaches the sol
 the solver's answer runs, so only a real run through the command line proves it.
 """
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line, two_lines
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    two_lines,
+)
 
 DEEP_COPY = "targets.ints.deep_copy::check"
 DEEP_COPY_FILE = str(REPO_ROOT / "targets" / "ints" / "deep_copy.py")
@@ -14,22 +22,6 @@ COMPARE_DEEP_COPY_FILE = str(REPO_ROOT / "targets" / "ints" / "compare_deep_copy
 EACH_COPY = "targets.ints.each_copy::count"
 # the line of each fork in ``count``: three on a copied int, then three on a copied compare
 EACH_COPY_LINES = [12, 14, 16, 18, 20, 22]
-
-
-def argument(line: dict[str, object], name: str) -> int:
-    """One int argument off a printed line, narrowed so the comparison means something."""
-    args = line["args"]
-    assert isinstance(args, dict), line
-    value = args[name]
-    assert isinstance(value, int), line
-    return value
-
-
-def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
-    """The forks off a printed line, narrowed so a field lookup means something."""
-    forks = line["forks"]
-    assert isinstance(forks, list), line
-    return [dict(fork) for fork in forks]
 
 
 # keep-a-tracked-int-through-a-copy-flips-an-int-after-a-deep-copy

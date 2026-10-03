@@ -13,6 +13,7 @@ from tests.acceptance.harness import (
     REPO_ROOT,
     downgrade,
     first_line,
+    forks_of,
     hanging_cvc5,
     input_lines,
     run_pyct,
@@ -20,7 +21,7 @@ from tests.acceptance.harness import (
 )
 from tests.acceptance.test_let_cvc5_answer_unknown_at_its_time_limit import misses_of
 from tests.acceptance.test_str_pieces import answered_every_fork, sides_of
-from tests.acceptance.test_strs import forks_of, text
+from tests.acceptance.test_strs import text
 
 CHECKS = "targets.strs.checks::classify"
 CHECK_NAMES = [

@@ -8,14 +8,16 @@ proves it.
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
 )
 from tests.acceptance.test_loops import covers
-from tests.acceptance.test_strs import forks_of, number, text
+from tests.acceptance.test_strs import text
 from tests.acceptance.test_substitute_conversions import forks_taken
 
 RANGES = REPO_ROOT / "targets" / "ranges"
@@ -54,7 +56,7 @@ def test_follows_a_range_bound() -> None:
         (2, [">", "n", 2], False),
     ]
     assert {fork["col"] for fork in forks_of(inputs[0])} == {13}
-    five = [line for line in inputs[1:] if number(line, "n") > 5]
+    five = [line for line in inputs[1:] if argument(line, "n") > 5]
     assert five and covers(five[0], file_of("bound"), 4), [line["args"] for line in inputs]
 
 
@@ -126,7 +128,7 @@ def test_follows_a_range_wherever_it_is_iterated() -> None:
         (2, [">", "n", 1], True),
         (2, [">", "n", 2], False),
     ]
-    big = [line for line in inputs[1:] if number(line, "n") > 5]
+    big = [line for line in inputs[1:] if argument(line, "n") > 5]
     assert big and covers(big[0], file_of("summed"), 4), [line["args"] for line in inputs]
 
 
@@ -140,9 +142,9 @@ def test_tests_membership_in_a_range_with_one_fork() -> None:
         (2, ["in", "port", ["range", 1, 65536]], False),
         (4, ["in", "x", ["range", 0, 10, 2]], False),
     ]
-    ports = [number(line, "port") for line in inputs[1:]]
+    ports = [argument(line, "port") for line in inputs[1:]]
     assert any(1 <= port <= 65535 for port in ports), ports
-    evens = [number(line, "x") for line in inputs[1:] if covers(line, file_of("membership"), 5)]
+    evens = [argument(line, "x") for line in inputs[1:] if covers(line, file_of("membership"), 5)]
     assert evens and all(x in range(0, 10, 2) for x in evens), evens
 
 
@@ -164,7 +166,7 @@ def test_follows_a_tracked_step() -> None:
     aim = {"file": file_of("tracked_step"), "line": 3, "col": 13, "position": 1}
     backward = [line for line in inputs[1:] if line["aim"] == aim]
     assert backward, [line["aim"] for line in inputs]
-    assert number(backward[0], "k") < 0 and backward[0]["mismatch_at"] is None
+    assert argument(backward[0], "k") < 0 and backward[0]["mismatch_at"] is None
     # a negative step runs no pass: the step's forks are all the line lists
     assert forks_taken(backward[0]) == [(["!=", "k", 0], True), ([">", "k", 0], False)]
 
@@ -205,7 +207,7 @@ def test_finds_the_zero_step() -> None:
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
     assert at_lines(inputs[0])[0] == (2, ["!=", "k", 0], True)
-    zero = [line for line in inputs[1:] if number(line, "k") == 0]
+    zero = [line for line in inputs[1:] if argument(line, "k") == 0]
     assert zero, [line["args"] for line in inputs]
     failure = failure_of(zero[0])
     assert failure["kind"] == "target_raised"
@@ -233,7 +235,7 @@ def test_compares_two_ranges_as_python_does() -> None:
     assert covers(inputs[0], file_of("compared"), 3)
     differ = [line for line in inputs[1:] if covers(line, file_of("compared"), 4)]
     assert differ, [line["args"] for line in inputs]
-    assert range(number(differ[0], "n")) != range(number(differ[0], "m"))
+    assert range(argument(differ[0], "n")) != range(argument(differ[0], "m"))
 
 
 # review of follow-ranges, RNG-2: a tracked bool searched in a range is the int it is
@@ -244,7 +246,7 @@ def test_searches_a_range_for_a_tracked_bool() -> None:
     inputs = input_lines(result.stdout)
     assert at_lines(inputs[0]) == [(3, ["in", [">", "x", 3], ["range", 1, 2]], False)]
     yes = [line for line in inputs[1:] if covers(line, file_of("bool_item"), 4)]
-    assert yes and number(yes[0], "x") > 3, [line["args"] for line in inputs]
+    assert yes and argument(yes[0], "x") > 3, [line["args"] for line in inputs]
 
 
 # review of follow-ranges, RNG-3: a tracked range is a sequence, as random.sample asks
