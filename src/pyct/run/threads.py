@@ -16,29 +16,22 @@ from __future__ import annotations
 
 import contextlib
 import functools
-import importlib
 import os
 import struct
 import sys
 import threading
 from collections.abc import Callable
-from types import ModuleType
 
 from pyct.run.as_found import modules_as_found
+
+# ctypes stays this module's, out of sys.modules with what it imported
+with modules_as_found():
+    import ctypes
 
 # proc_pidinfo's PROC_PIDTASKINFO flavor: a proc_taskinfo, 96 bytes, pti_threadnum at byte 84
 _TASK_INFO = 4
 _TASK_INFO_SIZE = 96
 _THREAD_COUNT_AT = 84
-
-
-def _ctypes() -> ModuleType:
-    """ctypes, imported with ``sys.modules`` left as it was found."""
-    with modules_as_found():
-        return importlib.import_module("ctypes")
-
-
-_CTYPES = _ctypes()
 
 
 def running() -> int:
@@ -54,7 +47,7 @@ def running() -> int:
 
 def _darwin() -> int | None:
     """The task's own thread count, or None when the system does not give it."""
-    info = _CTYPES.create_string_buffer(_TASK_INFO_SIZE)
+    info = ctypes.create_string_buffer(_TASK_INFO_SIZE)
     written = _proc_pidinfo()(os.getpid(), _TASK_INFO, 0, info, _TASK_INFO_SIZE)
     if written != _TASK_INFO_SIZE:
         return None
@@ -64,4 +57,4 @@ def _darwin() -> int | None:
 @functools.cache
 def _proc_pidinfo() -> Callable[..., int]:
     """libproc's proc_pidinfo, looked up once: pyct asks before every input."""
-    return _CTYPES.CDLL(None).proc_pidinfo
+    return ctypes.CDLL(None).proc_pidinfo

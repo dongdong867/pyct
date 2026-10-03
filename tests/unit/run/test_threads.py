@@ -8,13 +8,16 @@ import pytest
 from pyct.run import threads
 from pyct.run.threads import running
 
-# the modules threads imports for itself, loaded first, then threads, printing what that added
-IMPORTS_THREADS = (
-    "import __future__, collections.abc, contextlib, functools, importlib, os, struct, sys\n"
-    "import threading\n"
+# threads imported and asked for a count, printing what ctypes, which reads the count on macOS,
+# left in sys.modules: itself, its C half, or the sysconfig it imports on 3.13 and later
+COUNTS_THREADS = (
+    "import sys\n"
     "before = set(sys.modules)\n"
-    "import pyct.run.threads\n"
-    "print(sorted(name for name in set(sys.modules) - before if name.split('.')[0] != 'pyct'))\n"
+    "from pyct.run.threads import running\n"
+    "assert running() >= 1\n"
+    "added = set(sys.modules) - before\n"
+    "kept = {'ctypes', '_ctypes', 'sysconfig'}\n"
+    "print(sorted(n for n in added if n in kept or n.startswith(('ctypes.', 'sysconfig.'))))\n"
 )
 
 
@@ -68,7 +71,7 @@ def test_a_task_count_the_system_will_not_give_leaves_python_s_count(
 def test_counting_threads_leaves_no_module_of_its_own_in_sys_modules() -> None:
     # what ctypes imports, sysconfig on 3.13 and later, would otherwise hide a target's own
     imported = subprocess.run(
-        [sys.executable, "-P", "-c", IMPORTS_THREADS],
+        [sys.executable, "-P", "-c", COUNTS_THREADS],
         capture_output=True,
         text=True,
         check=True,

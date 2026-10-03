@@ -3,7 +3,9 @@
 Each runs pyct from a folder that holds modules named as standard-library modules. Every run
 leaves coverage.py out: its start-up imports much of the standard library before the folder
 joins the import path, which would hide a module pyct imports late. The criterion
-keeps-any-late-import-of-pyct-s-from-the-folder is in ``tests/unit/run/test_own_imports.py``.
+keeps-any-late-import-of-pyct-s-from-the-folder is in ``tests/unit/run/test_own_imports.py``. The
+sysconfig test checks keep-pyct-s-early-sysconfig-from-hiding-a-target-s-own's criterion, which
+supersedes this ticket's.
 """
 
 import subprocess
@@ -184,7 +186,7 @@ def test_runs_a_target_named_as_a_stdlib_module(tmp_path: Path) -> None:
     assert [fork["expression"] for fork in forks] == [[">", "x", 3]], forks
 
 
-# keep-pyct-s-late-imports-from-the-target-s-folder-lets-the-target-import-its-own-sysconfig
+# keep-pyct-s-early-sysconfig-from-hiding-a-target-s-own-lets-the-target-import-its-own-sysconfig
 def test_lets_the_target_import_its_own_sysconfig(tmp_path: Path) -> None:
     uses = FORKS.replace("x > 3", "x > sysconfig.MARK")
     folder = folder_of(
