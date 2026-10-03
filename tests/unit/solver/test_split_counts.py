@@ -204,3 +204,29 @@ def _python(part: Expression) -> str:
     if head == "split":
         return "parts"
     return f"({_python(operands[0])} {head} {_python(operands[1])})"
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("window", "read"),
+    [([-2, None], 0), ([None, None, -1], 1), ([-3, -1], 1)],
+    ids=["the last two", "stepped back", "between two from the end"],
+)
+def test_a_piece_through_a_slice_from_the_end_is_read_where_c_star_puts_it(
+    window: list[Expression], read: int
+) -> None:
+    parts: Expression = ["[:]", ["split", "s", "','"], *window]
+    path = (
+        fork([">", ["len", parts], read], taken=True),
+        fork(["==", ["[]", parts, read], "'x'"], taken=True),
+    )
+    seed = Seed.of({"s": "a,b,c"})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # a slice stepped back from the end is read by a walk of the reversed string; any other
+    # starts where the input's three pieces put it, and the string keeps three
+    assert isinstance(answer, Sat), answer
+    pieces = str(apply(seed, answer.model).args["s"]).split(",")
+    assert pieces[slice(*window)][read] == "x", pieces
+    assert len(pieces) == 3 or window == [None, None, -1], pieces

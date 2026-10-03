@@ -10,7 +10,7 @@ from pyct.core.branch import Branch, Expression
 from pyct.core.str_splits import LISTED_SPLITS
 from pyct.solver.list_terms import FALSE, TRUE, Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
-from pyct.solver.split_lists import SplitList
+from pyct.solver.split_lists import SplitList, SplitRead
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -76,6 +76,8 @@ class Splits:
         # each slice's length that is its split's count less a plain start, wherever the slice
         # holds an item, by name: the split's count and the start
         self.tails: dict[str, tuple[str, int]] = {}
+        # each slice's start that is where c* puts it, by name: the split and the slice
+        self.starts: dict[str, tuple[SplitList, slice]] = {}
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
@@ -123,7 +125,8 @@ class Splits:
     def sliced(self, listed: SplitList, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
         """Where a slice of a split's list with plain bounds and a step of 1 or -1 starts, and
         its length: a start from the start, or the last piece for a slice that steps back from
-        the end, is exact on every string, and any other is where c* puts it; the length is
+        the end, is exact on every string, and any other is a name of its own, which a read
+        takes where c* puts it, the string held to c* pieces (see ``read``); the length is
         ``cut``'s. None for any other slice."""
         plain = [bound for bound in bounds if bound is None or type(bound) is int]
         start, stop, step = (*plain, None, None, None)[:3]
@@ -141,7 +144,11 @@ class Splits:
             return Lin(start or 0), length
         if listed.read_count is None:
             return None
-        return Lin(slice(start, stop, step).indices(listed.read_count)[0]), length
+        window = slice(start, stop, step)
+        name = f"start!{len(self.values)}!"
+        self.starts[name] = (listed, window)
+        self.values[name] = window.indices(listed.read_count)[0]
+        return Lin.of(name), length
 
     def cut(self, listed: SplitList, bounds: tuple[int | None, ...]) -> Lin:
         """The length of a slice of a split's list with plain bounds, as a name of its own that
@@ -155,9 +162,27 @@ class Splits:
 
     def read(self, listed: SplitList, position: Lin, kind: str) -> Read:
         """A split's piece at ``position``, noting whether the read held the string to c*."""
-        read = listed.read(self._counted_back(position), kind, self.evaluated(position))
+        started = self._started(listed, position, kind)
+        read = started or listed.read(self._counted_back(position), kind, self.evaluated(position))
         self.fixed |= read.fixes_the_count
         return read.found
+
+    def _started(self, listed: SplitList, position: Lin, kind: str) -> SplitRead | None:
+        """A piece read through a slice whose start is where c* puts it: there, the string held
+        to c* pieces, or, with ``fixed_reads`` false, where the input's own count puts it with
+        no count held, as origin/v2 reads it; None for any other position."""
+        if len(position.atoms) != 1 or position.atoms[0][1] != 1 or kind != "str":
+            return None
+        start = self.starts.get(position.atoms[0][0])
+        if start is None:
+            return None
+        window = start[1]
+        if self.fixed_reads and listed.read_count is not None:
+            return listed.held_at(window.indices(listed.read_count)[0] + position.const)
+        own = listed.input_count
+        if own is None:
+            return SplitRead(Read(None, FALSE))
+        return SplitRead(listed.at(window.indices(own)[0] + position.const))
 
     def _counted_back(self, position: Lin) -> Lin:
         """A position counted back from the end of a slice that runs to the split's end, as

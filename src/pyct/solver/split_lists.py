@@ -165,9 +165,9 @@ class SplitList:
             if back is not None:
                 return self._back(back)
             number = at_input
-        if number is None or number < 0:
+        if number is None:
             return SplitRead(Read(None, FALSE))
-        return SplitRead(self._at(number))
+        return SplitRead(self.at(number))
 
     def from_the_end(self, position: Lin) -> bool:
         """Whether a position is the count less a number."""
@@ -180,9 +180,23 @@ class SplitList:
             return -position.const - 1
         return None
 
-    def _at(self, index: int) -> Read:
-        """Piece ``index`` from the start, and that it is there."""
+    def at(self, index: int) -> Read:
+        """Piece ``index`` from the start, and that it is there; none before the first."""
+        if index < 0:
+            return Read(None, FALSE)
         return Read(self.piece(index), both(self._there(index), self.restriction()))
+
+    def held_at(self, index: int) -> SplitRead:
+        """Piece ``index`` from the start on a string held to c* pieces; none past them."""
+        count = self.read_count
+        assert count is not None
+        if not 0 <= index < count:
+            return SplitRead(Read(None, FALSE))
+        # by the walks the piece is read with: past 16 pieces, a count by membership beside
+        # the walk ran past the limit where these answered in 1.4 to 2.9 s
+        exact = both(self._there(count - 1), negated(self._there(count)))
+        found = Read(self.piece(index), both(exact, self.restriction()))
+        return SplitRead(found, fixes_the_count=True)
 
     def _back(self, back: int) -> SplitRead:
         """Piece ``back`` from the end: by a walk of the reversed string where one reads it,
@@ -193,12 +207,8 @@ class SplitList:
             return SplitRead(Read(walked, both(self._there(back), self.restriction())))
         count = self.read_count
         if self.fixed and count is not None and back < count:
-            # by the walks the piece is read with: past 16 pieces, a count by membership beside
-            # the walk ran past the limit where these answered in 1.4 to 2.9 s
-            exact = both(self._there(count - 1), negated(self._there(count)))
-            found = Read(self.piece(count - 1 - back), both(exact, self.restriction()))
-            return SplitRead(found, fixes_the_count=True)
+            return self.held_at(count - 1 - back)
         own = self.input_count
-        if own is None or back >= own:
+        if own is None:
             return SplitRead(Read(None, FALSE))
-        return SplitRead(self._at(own - 1 - back))
+        return SplitRead(self.at(own - 1 - back))
