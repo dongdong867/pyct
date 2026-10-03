@@ -27,7 +27,7 @@ import struct
 from collections.abc import Buffer
 from dataclasses import dataclass, field
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import (
@@ -36,6 +36,7 @@ from pyct.run.journal import (
     COUNTED,
     DOWNGRADE,
     END,
+    FACT,
     FORK,
     FULL,
     HEAD,
@@ -90,6 +91,7 @@ class Reading:
     ended: bool = False
     end: Failure | None = None
     problem: str | None = None
+    facts: tuple[Fact, ...] = ()
 
 
 def read(buffer: Journal) -> Reading:
@@ -185,6 +187,8 @@ class _Facts:
 
     lines: set[int] = field(default_factory=set)
     branches: list[Branch] = field(default_factory=list)
+    # the facts the path holds, each placed after the fork records read before it
+    facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
     parts: dict[int, list[Expression]] = field(default_factory=dict)
     sites: dict[tuple[str, int, int], Site] = field(default_factory=dict)
@@ -221,11 +225,8 @@ class _Facts:
 
     def _take(self, at: int, kind: int, payload: memoryview) -> None:
         """Add one record's fact. A record of an unknown kind or the wrong shape is unreadable."""
-        if kind == PART:
-            number, items = _numbered(_decoded(payload))
-            self.parts[number] = [self._expression(item) for item in items]
-        elif kind == FORK:
-            self.branches.append(self._fork(_decoded(payload)))
+        if kind in (PART, FORK, FACT):
+            self._written(kind, _decoded(payload))
         elif kind == LINE:
             self.lines.add(NUMBER.unpack(payload)[0])
         elif kind in (DOWNGRADE, CARRY_ON):
@@ -240,6 +241,16 @@ class _Facts:
             self.ended, self.end = True, ending
         else:
             raise ValueError(f"no record of kind {kind}")
+
+    def _written(self, kind: int, value: object) -> None:
+        """Add a record written as JSON: a part, a fork or a fact."""
+        if kind == PART:
+            number, items = _numbered(value)
+            self.parts[number] = [self._expression(item) for item in items]
+        elif kind == FORK:
+            self.branches.append(self._fork(value))
+        else:
+            self.facts.append(self._fact(value))
 
     def _downgrade(self, payload: bytes, *, carries_on: bool) -> None:
         """Start an entry, or carry the last one on when this record is its later count.
@@ -275,17 +286,28 @@ class _Facts:
                 int() as line,
                 int() as col,
                 bool() as raising,
-                *kept,
             ]:
-                if len(kept) > 1:
-                    raise ValueError("a fork carries at most one fact beside it")
                 site = self._site(file, line, col)
-                holds = self._expression(kept[0]) if kept else None
-                expression = self._expression(expression)
-                return Branch(expression, taken, site, raising=raising, holds=holds)
-        raise ValueError(
-            "a fork is [expression, taken, file, line, col, raising] and what it keeps"
-        )
+                return Branch(self._expression(expression), taken, site, raising=raising)
+        raise ValueError("a fork is [expression, taken, file, line, col, raising]")
+
+    def _fact(self, value: object) -> Fact:
+        """A fact, placed after every fork record read before it."""
+        match value:
+            case [
+                expression,
+                bool() as taken,
+                str() as file,
+                int() as line,
+                int() as col,
+                bool() as raising,
+                *place,
+            ] if len(place) <= 1:
+                site = self._site(file, line, col)
+                held = self._expression(place[0]) if place else None
+                fact = Fact(self._expression(expression), taken, site, raising, held)
+                return fact.placed_after(len(self.branches))
+        raise ValueError("a fact is [expression, taken, file, line, col, raising] and its place")
 
     def _site(self, file: str, line: int, col: int) -> Site:
         """The one ``Site`` for this place, made the first time a fork names it."""
@@ -309,6 +331,7 @@ class _Facts:
             lines=frozenset(self.lines),
             branches=tuple(self.branches),
             downgrades=tuple(self.downgrades),
+            facts=tuple(self.facts),
             started=self.started,
             ended=self.ended,
             end=self.end,

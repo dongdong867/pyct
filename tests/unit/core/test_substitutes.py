@@ -17,7 +17,7 @@ from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_i
 def expressions(sink: list[SinkItem]) -> list[object]:
     """What the sink holds, each fork as its expression and side, each downgrade by name."""
     return [
-        (item.expression, item.taken) if isinstance(item, Branch) else item.name for item in sink
+        item.name if isinstance(item, Downgrade) else (item.expression, item.taken) for item in sink
     ]
 
 

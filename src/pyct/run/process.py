@@ -286,6 +286,7 @@ def ending(reading: Reading, waited: Waited) -> ExecutionResult:
         lines=reading.lines,
         branches=reading.branches,
         downgrades=reading.downgrades,
+        facts=reading.facts,
         failure=_failure(reading, waited),
     )
 

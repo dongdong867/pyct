@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.results.record import DowngradeCount
 
 # the tally of the call running now in this process, if one is
@@ -20,13 +20,16 @@ _LIVE: list[Tally | None] = [None]
 class Watch(Protocol):
     """Who hears each fact of one call, the moment the call makes it.
 
-    A fork as it is taken, and a line the first time the call reaches it. A
-    downgrade comes with its site and its count so far: a count of 1 starts an
-    entry, and a higher count means the last entry grew by one. The tally
-    decides what an entry is; a watch only mirrors it.
+    A fork as it is taken, a fact as the path comes to hold it, and a line the
+    first time the call reaches it. A downgrade comes with its site and its
+    count so far: a count of 1 starts an entry, and a higher count means the
+    last entry grew by one. The tally decides what an entry is; a watch only
+    mirrors it.
     """
 
     def fork(self, branch: Branch) -> None: ...
+
+    def fact(self, fact: Fact) -> None: ...
 
     def line(self, number: int) -> None: ...
 
@@ -34,7 +37,7 @@ class Watch(Protocol):
 
 
 class Tally:
-    """What one call did so far: its lines, its forks, and its downgrades, in call order.
+    """What one call did so far: its lines, its forks, its facts and its downgrades, in call order.
 
     It is the call's sink, so core pushes forks and downgrades into it, and
     the line tracer feeds it lines. Consecutive downgrades of one name at one
@@ -48,6 +51,8 @@ class Tally:
     def __init__(self, watch: Watch | None = None) -> None:
         self.lines: set[int] = set()
         self.branches: list[Branch] = []
+        # each fact as the path came to hold it, placed after the forks recorded before it
+        self.facts: list[Fact] = []
         self.watch = watch
         self.sealed = False
         # each entry one object, so the deadline landing between two steps can lose a call,
@@ -55,7 +60,7 @@ class Tally:
         self._entries: list[_Entry] = []
 
     def append(self, item: SinkItem, /) -> None:
-        """Keep a fork or a downgrade the call just made. The ``BranchSink`` core pushes to.
+        """Keep a fork, a fact or a downgrade the call just made. The ``BranchSink`` core pushes to.
 
         A sealed tally keeps nothing. A value the target kept from this call can still reach it
         from a later call in the same process, and that call's condition is then lost: the
@@ -64,8 +69,10 @@ class Tally:
         """
         if self.sealed:
             live = _LIVE[0]
-            if live is not None and live is not self:
-                name = item.lost_as if isinstance(item, Branch) else item.name
+            # a place names no check the target ran, so it names no loss
+            placed = isinstance(item, Fact) and not item.decided
+            if live is not None and live is not self and not placed:
+                name = item.name if isinstance(item, Downgrade) else item.lost_as
                 live.append(Downgrade(name=name, site=item.site))
             return
         if isinstance(item, Branch):
@@ -73,7 +80,17 @@ class Tally:
             if self.watch is not None:
                 self.watch.fork(item)
             return
+        if isinstance(item, Fact):
+            self._fact(item)
+            return
         self._downgrade(item.name, item.site)
+
+    def _fact(self, fact: Fact) -> None:
+        """Keep a fact, placed after the forks recorded so far, and tell the watch."""
+        placed = fact.placed_after(len(self.branches))
+        self.facts.append(placed)
+        if self.watch is not None:
+            self.watch.fact(placed)
 
     def line(self, number: int) -> None:
         """Keep a line the call reached. Only its first sight reaches the watch."""

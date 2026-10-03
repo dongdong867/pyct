@@ -3,7 +3,7 @@ import time
 import pytest
 
 from pyct.branches.tree import ForkKey, Tree
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Fact, Site
 from pyct.results.record import Aim
 
 
@@ -400,3 +400,26 @@ def test_the_oldest_path_a_pick_can_still_extend_moves_on_as_paths_are_spent() -
     # the pick spent the last open fork, so no path is left to extend
     assert tree.oldest == 2
     assert tree.next() is None
+
+
+def test_a_pick_plans_with_the_facts_its_own_path_held_before_the_fork() -> None:
+    tree = Tree()
+    site = Site(file="m.py", line=9, col=4)
+    held = Fact([">", "n", 0], True, site, after=0)
+    placed = Fact(None, True, site, place=["walked", "d", "'a'"], after=1)
+    tree.add((fork(2, taken=True),), (held, placed))
+    # another input that took the same fork, whose walk read another key there
+    tree.add((fork(2, taken=True),), (Fact(None, True, site, place=["walked", "d", "'b'"]),))
+
+    picked = tree.next()
+
+    assert picked is not None and picked.path == 0
+    assert picked.facts == (held,)
+
+
+def test_facts_add_no_fork_to_aim_at() -> None:
+    tree = Tree()
+    tree.add((), (Fact([">", "n", 0], True, Site(file="m.py", line=9, col=4)),))
+
+    assert tree.next() is None
+    assert tree.untried() == {}

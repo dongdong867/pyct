@@ -88,7 +88,8 @@ class Origin:
     monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
     keys no fork names and makes none up, ``pinned`` whether it keeps each key a walk read at its
     place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
-    program is given up, None for no limit (see ``dicts``).
+    program is given up, None for no limit (see ``dicts``). ``places`` are the places the
+    path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -104,6 +105,7 @@ class Origin:
     keep: bool = True
     pinned: bool = True
     lookups: int | None = None
+    places: tuple[Expression, ...] = ()
 
 
 class UnencodedError(ValueError):

@@ -1,5 +1,5 @@
 from pyct.branches.plan import plan
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Fact, Site
 from pyct.results.record import Aim
 
 
@@ -44,14 +44,44 @@ def test_the_path_it_was_given_is_left_alone() -> None:
     assert forks == (fork(2, taken=True),)
 
 
-def test_what_held_after_the_fork_is_dropped_and_what_held_before_it_is_kept() -> None:
-    site = Site("m.py", 2, 4)
-    after = Branch(expression="x", taken=True, site=site, holds=["walked", "d", "'a'"])
-    given: Expression = ["given", ["walked", "d", "'a'"]]
-    before = Branch(expression="y", taken=True, site=site, holds=given)
+def placed(after: int) -> Fact:
+    """A place a walk read, recorded after ``after`` forks."""
+    return Fact(None, True, Site("m.py", 9, 4), place=["walked", "d", f"'{after}'"], after=after)
 
-    flipped_after = plan((after,))
-    flipped_before = plan((before,))
 
-    assert flipped_after is not None and flipped_after.prefix[-1].holds is None
-    assert flipped_before is not None and flipped_before.prefix[-1].holds == given
+def test_a_fact_recorded_before_the_flipped_fork_is_kept_and_one_after_it_dropped() -> None:
+    forks = (fork(2, taken=True), fork(3, taken=True))
+    facts = (placed(0), placed(1), placed(2))
+
+    planned = plan(forks, 0, facts)
+
+    assert planned is not None
+    # the place recorded after the second fork held only on the side the path took
+    assert planned.facts == (placed(0), placed(1))
+
+
+def test_a_plan_asks_its_forks_and_kept_facts_in_the_order_they_were_recorded() -> None:
+    forks = (fork(2, taken=True), fork(3, taken=True), fork(4, taken=False))
+    decided = Fact([">", "n", 0], True, Site("m.py", 5, 4), after=2)
+    facts = (placed(0), placed(1), placed(1), decided, placed(3))
+
+    planned = plan(forks, 0, facts)
+
+    assert planned is not None
+    assert planned.asked == (
+        placed(0),
+        forks[0],
+        placed(1),
+        placed(1),
+        forks[1],
+        decided,
+        fork(4, taken=True),
+    )
+
+
+def test_a_plan_with_no_facts_asks_its_forks() -> None:
+    forks = (fork(2, taken=True), fork(3, taken=False))
+
+    planned = plan(forks)
+
+    assert planned is not None and planned.asked == planned.prefix

@@ -12,7 +12,7 @@ import pytest
 
 from pyct.core import bound
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
@@ -38,6 +38,13 @@ def tracked(values: dict[str, Any], name: str = "config") -> tuple[Any, list[Sin
 
 def forks(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
     return [(item.expression, item.taken) for item in sink if isinstance(item, Branch)]
+
+
+def decided(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
+    """Each check the sink holds as a fact, with the side it took."""
+    return [
+        (item.expression, item.taken) for item in sink if isinstance(item, Fact) and item.decided
+    ]
 
 
 def downgrades(sink: list[SinkItem]) -> list[str]:
@@ -123,20 +130,25 @@ def _plain(value: object) -> object:
     return plain(value)
 
 
-def test_a_lookup_records_whether_the_key_is_there_each_time_the_path_asks() -> None:
+def test_a_lookup_records_its_fork_the_first_time_and_a_fact_each_time_after() -> None:
     config, sink = tracked({"total": 5})
 
     assert "coupon" not in config
     assert config.get("tip", 0) == 0
     assert config["total"] > 100 or config["total"] < 0 or True
+    assert "coupon" not in config
 
     assert forks(sink) == [
         (["in", "'coupon'", "config"], False),
         (["in", "'tip'", "config"], False),
         (["in", "'total'", "config"], True),
         ([">", ["[]", "config", "'total'"], 100], False),
-        (["in", "'total'", "config"], True),
         (["<", ["[]", "config", "'total'"], 0], False),
+    ]
+    # the path settled each key the first time: a later lookup holds what that one found
+    assert decided(sink) == [
+        (["in", "'total'", "config"], True),
+        (["in", "'coupon'", "config"], False),
     ]
 
 
@@ -157,12 +169,13 @@ def test_the_size_is_the_argument_s_plus_what_the_target_changed() -> None:
     config["b"] = 5
     config["new"] = 2
 
+    # a and b were found in the argument, and one key more was added than removed
     assert bool(config)
-    assert forks(sink)[-1] == (["!=", ["+", ["len", "config"], 1], 0], True)
+    assert decided(sink)[-1] == (["!=", ["+", ["len", "config"], 1], 0], True)
     config.pop("seen")
     config.pop("new")
     assert bool(config)
-    assert forks(sink)[-1] == (["!=", ["-", ["len", "config"], 1], 0], True)
+    assert decided(sink)[-1] == (["!=", ["-", ["len", "config"], 1], 0], True)
     assert "seen" not in config and "a" not in config
     assert forks(sink).count((["in", "'seen'", "config"], False)) == 1
 
@@ -203,15 +216,49 @@ def test_pyct_s_bool_is_the_truth_test_untested(
 
 
 def test_pyct_s_bool_keeps_the_size_the_dict_had_at_the_call() -> None:
-    config, sink = tracked({})
-    config["a"] = 0
+    config, sink = tracked({"a": 0})
+    del config["a"]
 
     truth = bound.bool_(config)
     config["b"] = 1
 
-    assert truth.expression == ["!=", ["+", ["len", "config"], 1], 0]
-    assert int.__bool__(truth) is True
-    assert forks(sink) == [(["in", "'a'", "config"], False), (["in", "'b'", "config"], False)]
+    assert truth.expression == ["!=", ["-", ["len", "config"], 1], 0]
+    assert int.__bool__(truth) is False
+    assert forks(sink) == [(["in", "'a'", "config"], True), (["in", "'b'", "config"], False)]
+
+
+@pytest.mark.parametrize(
+    "read",
+    [lambda c: c, lambda c: c.keys(), lambda c: c.values(), lambda c: c.items()],
+    ids=["dict", "keys", "values", "items"],
+)
+def test_pyct_s_bool_of_a_dict_that_holds_a_key_on_every_input_is_a_fact(
+    read: Callable[[Any], object],
+) -> None:
+    config, sink = tracked({})
+    config["a"] = 0
+
+    truth = bound.bool_(read(config))
+
+    # recorded where `bool` is called, so the test of what it answers records nothing
+    assert truth is True
+    assert decided(sink) == [(["!=", ["+", ["len", "config"], 1], 0], True)]
+    assert forks(sink) == [(["in", "'a'", "config"], False)]
+
+
+def test_a_truth_test_of_a_dict_that_holds_a_key_on_every_input_is_a_fact() -> None:
+    config, sink = tracked({"a": 1})
+
+    assert "a" in config
+    assert config and config.keys()
+    del config["a"]
+    assert not config
+
+    filled = ["!=", ["len", "config"], 0]
+    # the removal looks a up again, which the path settled
+    assert decided(sink) == [(filled, True), (filled, True), (["in", "'a'", "config"], True)]
+    # with a removed, nothing says the dict holds a key, so its truth is a fork
+    assert forks(sink)[-1] == (["!=", ["-", ["len", "config"], 1], 0], False)
 
 
 def test_pyct_s_bool_of_a_dict_whose_form_stopped_describing_it_is_plain() -> None:
@@ -269,7 +316,7 @@ def test_a_walk_forks_on_each_key_and_settles_none_of_them() -> None:
     ]
 
 
-def test_a_walk_s_fork_keeps_the_key_it_read_at_its_place() -> None:
+def test_a_walk_keeps_the_key_it_read_at_its_place_as_a_fact_after_its_pass() -> None:
     config, sink = tracked({"a": 0, "b": 1})
     config["n"] = 2
 
@@ -278,19 +325,25 @@ def test_a_walk_s_fork_keeps_the_key_it_read_at_its_place() -> None:
     assert config.popitem() == ("n", 2)
     assert config.popitem() == ("b", 1)
 
-    assert [item.holds for item in sink if isinstance(item, Branch)] == [
-        None,  # the store's lookup of n
+    # B a fork, F a fact: the store's lookup of n; then, as n is a key on every input, the
+    # first pass is a fact with its place, each later pass a fork and its place, and the end a
+    # fork; the same from the end, whose first key, n, is the target's own and pins nothing;
+    # popitem's forks, the second with its place; and the test's own compare of the value
+    shape = "B FBFBFB FBFBFB BBF B".replace(" ", "")
+    assert "".join("F" if isinstance(item, Fact) else "B" for item in sink) == shape
+    assert [item.place for item in sink if isinstance(item, Fact)] == [
         ["walked", "config", "'a'"],
         ["walked", "config", "'b'"],
         ["exactly", "config"],  # the target's own key: the argument holds only its own keys
-        None,  # the walk's end
-        None,  # from the end, the target's own key
+        None,
         ["last", "config", "'b'"],
         ["last", "config", "'a'"],
-        None,
-        None,  # popitem of the target's own key
         ["popped", "config", "'b'"],
-        None,  # the test's own compare of the value popped
+    ]
+    grown = ["+", ["len", "config"], 1]
+    assert [item.expression for item in sink if isinstance(item, Fact)][:2] == [
+        [">", grown, 0],
+        None,
     ]
 
 
@@ -324,7 +377,8 @@ def test_a_tracked_key_is_looked_up_by_its_expression() -> None:
     read = config[name]
 
     assert type(read) is ConcolicInt and read.expression == ["[]", "config", "name"]
-    assert forks(sink) == [(["in", "name", "config"], True)] * 2
+    assert forks(sink) == [(["in", "name", "config"], True)]
+    assert decided(sink) == [(["in", "name", "config"], True)]
 
 
 def test_a_tracked_key_into_a_changed_dict_is_python_s_answer() -> None:
@@ -361,3 +415,19 @@ def test_marks_a_fork_before_key_error_as_raising(program: str) -> None:
 
     marked = [item.raising for item in sink if isinstance(item, Branch)]
     assert marked and marked[0] is raising and not any(marked[1:])
+
+
+def test_a_tracked_key_found_counts_as_one_key_only_where_no_plain_key_was_found() -> None:
+    config, sink = tracked({"a": 1, "b": 2})
+    name = ConcolicStr.made("a", "name", sink)
+
+    assert config.fewest() == 0
+    assert name in config
+    # the tracked key may equal any key, so it counts one, and a plain one found adds nothing
+    assert config.fewest() == 1
+    assert "a" in config
+    assert config.fewest() == 1
+    assert "b" in config and "z" not in config
+    assert config.fewest() == 2
+    config["z"] = 0
+    assert config.fewest() == 3

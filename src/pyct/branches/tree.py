@@ -3,14 +3,14 @@
 from collections import Counter, deque
 
 from pyct.branches.plan import Plan, plan
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 
 # what tells one fork from another: the id of the fork before it, -1 at the root, then its own
 # site's number (see `Tree._number`)
 type ForkKey = tuple[int, int]
 
-# one input's path: the forks it took, and the key of each
-type Walked = tuple[tuple[Branch, ...], tuple[ForkKey, ...]]
+# one input's path: the forks it took, the key of each, and the facts it held beside them
+type Walked = tuple[tuple[Branch, ...], tuple[ForkKey, ...], tuple[Fact, ...]]
 
 # a fork where it sits in the tree: its path's index, and its position on that path
 type Place = tuple[int, int]
@@ -76,8 +76,12 @@ class Tree:
         # them, oldest path first and deepest fork first: the last picks (`_next_later`)
         self._later: deque[Place] = deque()
 
-    def add(self, forks: tuple[Branch, ...]) -> None:
-        """Record the path one input took. Its forks join the pool the next pick draws from."""
+    def add(self, forks: tuple[Branch, ...], facts: tuple[Fact, ...] = ()) -> None:
+        """Record the path one input took. Its forks join the pool the next pick draws from.
+
+        Its facts stay beside its forks, the path's own: two inputs that share a fork can read
+        different keys at one place. Only the plan reads them; no key, queue or count does.
+        """
         parent: int = -1
         keys: list[ForkKey] = []
         for fork in forks:
@@ -88,7 +92,7 @@ class Tree:
             parent = self._ids.setdefault((parent, number, fork.taken), len(self._ids))
             self._sides.add((number, fork.raising, fork.taken))
         index = len(self._paths)
-        self._paths.append((forks, tuple(keys)))
+        self._paths.append((forks, tuple(keys), facts))
         self._new.extend(
             (index, depth)
             for depth in reversed(range(len(forks)))
@@ -131,10 +135,10 @@ class Tree:
         if picked is None:
             return None
         path, depth = picked
-        forks, keys = self._paths[path]
+        forks, keys, facts = self._paths[path]
         self._aimed.add(keys[depth])
         self._picked, self._picked_number = path, keys[depth][1]
-        return plan(forks[: depth + 1], path)
+        return plan(forks[: depth + 1], path, facts)
 
     def timed_out(self) -> None:
         """The last pick's ask ran to the solver's limit: its path's other new sides, still
@@ -172,7 +176,7 @@ class Tree:
         """
         while self._new:
             path, depth = self._new.popleft()
-            forks, keys = self._paths[path]
+            forks, keys, _ = self._paths[path]
             fork, key = forks[depth], keys[depth]
             waits = key[1] in self._timed_out
             if not waits and self._open(key, fork.taken) and self._new_side(key, fork):
@@ -190,7 +194,7 @@ class Tree:
         """The first fork at a site a pick timed out at that is still open."""
         while self._later:
             path, depth = self._later.popleft()
-            forks, keys = self._paths[path]
+            forks, keys, _ = self._paths[path]
             if self._open(keys[depth], forks[depth].taken):
                 return path, depth
         return None
@@ -212,7 +216,7 @@ class Tree:
         """The deepest position from where the oldest-path pick starts looking that holds an open
         fork at a site no pick timed out at, or -1; each open fork passed on the way waits for
         the last picks."""
-        forks, keys = self._paths[self._path]
+        forks, keys, _ = self._paths[self._path]
         depth = len(forks) - 1 if self._depth is None else self._depth
         while depth >= 0:
             key = keys[depth]
@@ -240,7 +244,7 @@ class Tree:
         """
         still_open = {
             key: fork.raising
-            for forks, keys in self._paths
+            for forks, keys, _ in self._paths
             for fork, key in zip(forks, keys, strict=True)
             if self._open(key, fork.taken)
         }
