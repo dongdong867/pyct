@@ -139,8 +139,8 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     test = ["in", written, self.expression]
     site = caller_site()
     self.settled.setdefault(known, held)
-    # after a change without a fork the lookup is a fork, and settles nothing the argument's
-    # other dicts read
+    # after a change without a fork, a lookup recorded here is a fork, and settles nothing the
+    # argument's other dicts read
     if not self.unforked:
         if known in self.asked:
             self.sink.append(Fact(test, held, site, raising, place, lost_as=name))

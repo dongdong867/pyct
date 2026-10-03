@@ -86,8 +86,8 @@ class WhyEntry:
 @dataclass(frozen=True)
 class Walked:
     """One input as the cause reads it: its forks in order, whether it ended in a failure,
-    the lines it covered, and its facts, each decided check of which shows the side it took
-    as a fork does."""
+    the lines it covered, and its facts. A decided one (``Fact.decided``) shows the side it
+    took as a fork does."""
 
     forks: tuple[Branch, ...]
     failed: bool

@@ -86,16 +86,14 @@ def holds_key(self: DictState, key: object, name: str) -> bool:
 def as_python(
     self: DictState, key: object, name: str, change: Callable[[], object], *, named: bool = False
 ) -> object:
-    """A change under a key pyct does not follow: Python's own, and a downgrade named ``name``,
+    """A call under a key pyct does not follow: Python's own, and a downgrade named ``name``,
     with whether the key was there noted from the dict itself, so the size stays the dict's.
-    No fork says what it did on another input, so no check after it is decided
-    (``DictState.unforked``). ``named`` says the call's own lookup already named it, so the
-    call is named once. A key that may equal an int key the solver adds turns the dict plain
-    (see ``may_equal_added``)."""
+    ``named`` says the call's own lookup already named it, so the call is named once. A key
+    that may equal an int key the solver adds turns the dict plain (see ``may_equal_added``).
+    A call that changes the dict goes through ``changed_as_python``."""
     bare = plain(key)
     held = own(dict.__contains__, self, bare)
     answer = own(change)
-    self.changed_unforked()
     if not named:
         self.sink.append(Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
@@ -103,6 +101,18 @@ def as_python(
     if may_equal_added(self, key):
         self.turn_plain()
     return answer
+
+
+def changed_as_python(
+    self: DictState, key: object, name: str, change: Callable[[], object], *, named: bool = False
+) -> object:
+    """A change under a key pyct does not follow, made as ``as_python`` makes it. No fork says
+    what it did on another input, so the dict is marked (``DictState.changed_unforked``): no
+    lookup after it is decided, and a count only as far as its floor. pyct does not tell a key
+    whose answer is the same on every input from one whose answer may differ, so every such
+    change marks the dict."""
+    self.changed_unforked()
+    return as_python(self, key, name, change, named=named)
 
 
 def looked_up_as_python(self: DictState, key: object) -> bool:
@@ -114,7 +124,7 @@ def looked_up_as_python(self: DictState, key: object) -> bool:
 def unforked_lookup(self: DictState, key: object) -> bool:
     """Whether a change's lookup of ``key`` is Python's own and a downgrade (see
     ``looked_up_as_python``). Then whether the change happens on another input is answered
-    without a fork, so the dict decides nothing from now on."""
+    without a fork, so the dict is marked (``DictState.changed_unforked``)."""
     named = looked_up_as_python(self, key)
     if named:
         self.changed_unforked()
@@ -138,7 +148,9 @@ def store(self: DictState, key: object, stored: object, name: str, *, named: boo
         present(self, looked, name)
         own(dict.__setitem__, self, key, stored)
     else:
-        as_python(self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named)
+        changed_as_python(
+            self, key, name, lambda: dict.__setitem__(self, bare, stored), named=named
+        )
     self.noted(bare, stored)
 
 
@@ -156,8 +168,9 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
         return _removed_as_python(self, key, name, default)
     named = unforked_lookup(self, key)
     if not found(self, key, name, raising=not default):
-        if named:
-            # another input on the path may hold the key, and lose it
+        if named or self.unforked:
+            # another input on the path may hold the key, and lose it: a key the dict's
+            # lookup answers without a fork after a mark may be one a forkless change stored
             self.lost_one()
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
@@ -165,7 +178,7 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     if follows(looked):
         own(dict.__delitem__, self, bare)
     else:
-        as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
+        changed_as_python(self, key, name, lambda: dict.__delitem__(self, bare), named=named)
     self.dropped(bare)
     return handed
 
@@ -175,7 +188,7 @@ def _removed_as_python(
 ) -> object:
     """A removal under a key of another kind: Python's own, named ``name``."""
     held = own(dict.__contains__, self, key)
-    answer = as_python(self, key, name, lambda: dict.pop(self, key, *default))
+    answer = changed_as_python(self, key, name, lambda: dict.pop(self, key, *default))
     if held:
         self.dropped(key)
     return answer
@@ -209,7 +222,9 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
         return own(dict.setdefault, self, key, default)
     if written_key(int_key(key)) is None:
         held = own(dict.__contains__, self, key)
-        answer = as_python(self, key, "setdefault", lambda: dict.setdefault(self, key, default))
+        answer = changed_as_python(
+            self, key, "setdefault", lambda: dict.setdefault(self, key, default)
+        )
         if not held:
             self.noted(key, default)
         return answer

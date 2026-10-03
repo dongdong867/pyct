@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from pyct.core.branch import Branch, Fact, ForkSite, Site
-from pyct.results import record
+from pyct.results import record, why
 from pyct.results.coverage import Coverage
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.record import (
@@ -147,7 +147,7 @@ def test_a_run_read_past_the_analysis_stop_reads_no_input_and_no_try(
     # a run whose deadline is long past: no cause can be worked out in the time left
     run = dataclasses.replace(run_of(str(file), Site(str(file), 3, 7)), deadline=0.0)
 
-    def never(_result: RunResult) -> object:
+    def never(_result: RunResult, _pace: Pace) -> object:
         raise AssertionError("the tries are read")
 
     monkeypatch.setattr(record, "_tries", never)
@@ -172,3 +172,21 @@ def test_the_tries_look_at_the_clock_as_they_read_each_input_s_facts(tmp_path: P
 
     with pytest.raises(OutOfTimeError):
         record._tries(result, Pace(lambda _ahead: True))
+
+
+def test_tries_the_stop_cuts_short_leave_every_line_not_worked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    site = Site(file=str(file), line=3, col=7)
+    facts = (Fact(["!=", "x", "x"], False, site),) * 10_000
+    seed = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({3, 5}), facts=facts)
+    result = dataclasses.replace(run_of(str(file), site), records=(seed,), deadline=100.0)
+    # the first look finds time left; every later one, inside the tries, finds the stop passed
+    looks = iter([0.0])
+    monkeypatch.setattr(why, "clock", lambda: next(looks, 1e9))
+
+    assert result.why_uncovered == (
+        WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
+    )

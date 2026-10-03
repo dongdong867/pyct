@@ -327,3 +327,14 @@ def test_a_truth_test_after_a_tracked_pop_stays_a_fork() -> None:
     entry = entry_for(result.stdout, line_of(FILE, "return 2", "truth_after_tracked_pop"))
     assert entry["reason"] == "not taken"
     assert tries(entry)["decided"] == 0, entry
+
+
+def test_a_truth_test_after_a_removal_a_forkless_store_may_feed_stays_a_fork() -> None:
+    # n "b" stores the key the pop then removes, so the dict may be empty at the test
+    seed = '{"n": "pyct1", "d": {}}'
+    result = run_pyct(f"{DECIDED}::removed_after_tracked_store", seed, "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    entry = entry_for(result.stdout, line_of(FILE, "return 0", "removed_after_tracked_store"))
+    assert entry["reason"] == "not taken"
+    assert tries(entry)["decided"] == 0, entry

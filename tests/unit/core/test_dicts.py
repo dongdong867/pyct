@@ -43,9 +43,7 @@ def forks(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
 def decided(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
     """Each check the sink holds as a fact, with the side it took."""
     return [
-        (item.expression, item.taken)
-        for item in sink
-        if isinstance(item, Fact) and item.expression is not None
+        (item.expression, item.taken) for item in sink if isinstance(item, Fact) and item.decided
     ]
 
 

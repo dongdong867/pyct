@@ -100,3 +100,13 @@ def truth_after_tracked_pop(n: str, d: dict):
             return 1
         return 2
     return 0
+
+
+def removed_after_tracked_store(n: str, d: dict):
+    d["b"] = 1
+    del d["b"]
+    d[n] = 0
+    d.pop("b", None)
+    if d:
+        return 1
+    return 0

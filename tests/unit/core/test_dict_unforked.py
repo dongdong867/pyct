@@ -26,7 +26,7 @@ UNFORKED_CHANGES: dict[str, tuple[Callable[[Any, Any], object], int]] = {
 
 
 @pytest.mark.parametrize("change", list(UNFORKED_CHANGES))
-def test_after_a_change_without_a_fork_only_what_holds_for_any_key_is_decided(
+def test_after_a_forkless_change_lookups_are_forks_and_counts_reach_only_the_floor(
     change: str,
 ) -> None:
     config, sink = tracked({"a": 1})
@@ -73,3 +73,30 @@ def test_a_store_that_hit_a_key_the_argument_holds_decides_no_count_its_term_mis
 
     assert forks(sink) == [(["!=", ["len", "config"], 0], True)]
     assert decided(sink) == []
+
+
+def test_a_removal_answered_without_a_fork_after_a_mark_may_take_a_key() -> None:
+    config, sink = tracked({})
+    config["b"] = 1
+    del config["b"]
+    name = ConcolicStr.made("pyct1", "name", sink)
+    config[name] = 0
+
+    # "b" is answered from what the target changed, with no fork; n "b" would have stored it
+    assert config.pop("b", None) is None
+    assert bool(config)
+
+    assert forks(sink)[-1] == (["!=", ["+", ["len", "config"], 1], 0], True)
+    assert decided(sink) == []
+
+
+def test_a_merge_with_the_dict_on_the_right_marks_only_what_it_makes() -> None:
+    config, sink = tracked({"a": 1})
+    name = ConcolicStr.made("pyct1", "name", sink)
+    assert "a" in config
+
+    made = {name: 0} | config
+    assert "a" in config and "a" in made
+
+    # the dict itself did not change, so its lookup holds what the first found
+    assert decided(sink) == [(["in", "'a'", "config"], True)]

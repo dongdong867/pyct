@@ -50,8 +50,9 @@ def test_a_key_of_another_kind_is_python_s_answer() -> None:
     assert config.pop((5, 6), 0) == 0
     assert bool(config)
 
-    # Python answered each change without a fork, and a removal may take any key, so the
-    # truth test after them is a fork
+    # Python answered each change without a fork, which marks the dict though no tuple key can
+    # equal an argument's key: pyct does not tell such keys apart, so it marks for every one.
+    # The removal of (1, 2) leaves the floor at 0, so the truth test after them is a fork
     assert forks(sink) == [(["!=", ["+", ["len", "config"], 1], 0], True)]
     assert decided(sink) == []
     assert downgrades(sink) == [
