@@ -49,7 +49,7 @@ def test_after_a_forkless_change_lookups_are_forks_and_counts_reach_only_the_flo
     assert facts == ["!=", *[">"] * fewest]
 
 
-def test_a_dict_changed_without_a_fork_decides_nothing_its_copies_decide() -> None:
+def test_a_copy_made_before_a_forkless_change_still_decides_its_repeat_lookup() -> None:
     config, sink = tracked({"a": 1})
     name = ConcolicStr.made("pyct1", "name", sink)
     kept = config.copy()
@@ -100,3 +100,25 @@ def test_a_merge_with_the_dict_on_the_right_marks_only_what_it_makes() -> None:
 
     # the dict itself did not change, so its lookup holds what the first found
     assert decided(sink) == [(["in", "'a'", "config"], True)]
+
+
+# each removal over a key of each kind, which Python answers on a marked dict; the key is not
+# there on this input, but a forkless store may have put it there on another
+REMOVALS: dict[str, Callable[[Any], object]] = {
+    "pop a tuple": lambda c: c.pop(("b",), None),
+    "pop a float": lambda c: c.pop(1.5, None),
+    "pop a str": lambda c: c.pop("b", None),
+    "pop a tracked key": lambda c: c.pop(ConcolicStr.made("b", "m", []), None),
+}
+
+
+@pytest.mark.parametrize("removal", list(REMOVALS))
+def test_every_removal_on_a_marked_dict_may_take_a_key(removal: str) -> None:
+    config, sink = tracked({})
+    name = ConcolicStr.made("pyct1", "name", sink)
+    config[(name,)] = 1
+
+    REMOVALS[removal](config)
+    assert bool(config)
+
+    assert decided(sink) == []

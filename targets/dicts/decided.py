@@ -110,3 +110,11 @@ def removed_after_tracked_store(n: str, d: dict):
     if d:
         return 1
     return 0
+
+
+def removed_tuple_after_tracked_store(n: str, d: dict):
+    d[(n,)] = 1
+    d.pop(("b",), None)
+    if d:
+        return 1
+    return 0

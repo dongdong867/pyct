@@ -168,9 +168,9 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
         return _removed_as_python(self, key, name, default)
     named = unforked_lookup(self, key)
     if not found(self, key, name, raising=not default):
-        if named or self.unforked:
-            # another input on the path may hold the key, and lose it: a key the dict's
-            # lookup answers without a fork after a mark may be one a forkless change stored
+        if self.unforked:
+            # on a marked dict every removal may take a key: another input on the path may
+            # hold this one, which a forkless change stored there
             self.lost_one()
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
@@ -186,11 +186,14 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
 def _removed_as_python(
     self: DictState, key: object, name: str, default: tuple[object, ...]
 ) -> object:
-    """A removal under a key of another kind: Python's own, named ``name``."""
+    """A removal under a key of another kind: Python's own, named ``name``. It marks the dict,
+    and on a marked dict every removal may take a key, held here or not."""
     held = own(dict.__contains__, self, key)
     answer = changed_as_python(self, key, name, lambda: dict.pop(self, key, *default))
     if held:
         self.dropped(key)
+    else:
+        self.lost_one()
     return answer
 
 

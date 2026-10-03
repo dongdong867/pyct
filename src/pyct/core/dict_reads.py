@@ -115,8 +115,9 @@ def settled_as(key: object) -> object:
 def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
     """Whether the dict holds ``key``, recording the fork the first time the path asks, which
     settles the answer: a later lookup of the same key, with no change under it since, is a
-    fact that holds what the first found. On a dict changed without a fork every lookup is a
-    fork, since that change may have touched the key on another input.
+    fact that holds what the first found. On a dict changed without a fork no lookup is a
+    fact, since that change may have touched the key on another input: one recorded here is a
+    fork, and a key the target changed or a walk handed out is answered without either.
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -139,8 +140,9 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     test = ["in", written, self.expression]
     site = caller_site()
     self.settled.setdefault(known, held)
-    # after a change without a fork, a lookup recorded here is a fork, and settles nothing the
-    # argument's other dicts read
+    # after a change without a fork, a lookup recorded here is a fork, and adds nothing to the
+    # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
+    # is noted as at the base
     if not self.unforked:
         if known in self.asked:
             self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
