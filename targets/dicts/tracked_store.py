@@ -14,53 +14,53 @@ def untyped_store(n, d):
 
 def store_named(n: str, d: dict):
     d[n] = 5
-    if "bb" in d:
+    if "b" in d:
         return 1
-    if n.startswith("bb"):
+    if n.startswith("b"):
         return 2
     return 0
 
 
 def defaulted_named(n: str, d: dict):
     d.setdefault(n, 5)
-    if "bb" in d:
+    if "b" in d:
         return 1
-    if n.startswith("bb"):
+    if n.startswith("b"):
         return 2
     return 0
 
 
 def updated_named(n: str, d: dict):
     d.update({n: 5})
-    if "bb" in d:
+    if "b" in d:
         return 1
-    if n.startswith("bb"):
+    if n.startswith("b"):
         return 2
     return 0
 
 
 def merged_in_place_named(n: str, d: dict):
     d |= {n: 5}
-    if "bb" in d:
+    if "b" in d:
         return 1
-    if n.startswith("bb"):
+    if n.startswith("b"):
         return 2
     return 0
 
 
 def merged_named(n: str, d: dict):
     d = d | {n: 5}
-    if "bb" in d:
+    if "b" in d:
         return 1
-    if n.startswith("bb"):
+    if n.startswith("b"):
         return 2
     return 0
 
 
 def deleted(n: str, d: dict):
     del d[n]
-    if "bb" in d:
-        if n.startswith("bb"):
+    if "b" in d:
+        if n.startswith("b"):
             return 2
         return 1
     return 0
@@ -68,8 +68,8 @@ def deleted(n: str, d: dict):
 
 def popped(n: str, d: dict):
     d.pop(n)
-    if "bb" in d:
-        if n.startswith("bb"):
+    if "b" in d:
+        if n.startswith("b"):
             return 2
         return 1
     return 0
@@ -77,8 +77,8 @@ def popped(n: str, d: dict):
 
 def popped_or_none(n: str, d: dict):
     d.pop(n, None)
-    if "bb" in d:
-        if n.startswith("bb"):
+    if "b" in d:
+        if n.startswith("b"):
             return 2
         return 1
     return 0

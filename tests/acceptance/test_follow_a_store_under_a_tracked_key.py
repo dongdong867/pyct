@@ -136,7 +136,7 @@ def test_counts_the_stored_key(function: str, seed: dict[str, object], int_keyed
 
 # follow-a-store-under-a-tracked-key-reads-a-plain-key-after-the-store
 def test_reads_a_plain_key_after_the_store() -> None:
-    result = run_pyct(f"{MODULE}::store_named", '{"n": "aa", "d": {}}', *BUDGET, timeout=PATIENCE)
+    result = run_pyct(f"{MODULE}::store_named", '{"n": "a", "d": {}}', *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -151,7 +151,7 @@ def test_reads_a_plain_key_after_the_store() -> None:
     "function", ["defaulted_named", "updated_named", "merged_in_place_named", "merged_named"]
 )
 def test_stores_through_every_store_method(function: str) -> None:
-    result = run_pyct(f"{MODULE}::{function}", '{"n": "aa", "d": {}}', *BUDGET, timeout=PATIENCE)
+    result = run_pyct(f"{MODULE}::{function}", '{"n": "a", "d": {}}', *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -226,7 +226,7 @@ def test_a_store_between_a_walk_or_popitem_and_a_lookup_keeps_every_answer_on_th
 # follow-a-store-under-a-tracked-key-removes-under-a-tracked-key
 @pytest.mark.parametrize("function", ["deleted", "popped", "popped_or_none"])
 def test_removes_under_a_tracked_key(function: str) -> None:
-    seed = '{"n": "aa", "d": {"aa": 1, "bb": 2}}'
+    seed = '{"n": "a", "d": {"a": 1, "b": 2}}'
     result = run_pyct(f"{MODULE}::{function}", seed, *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr

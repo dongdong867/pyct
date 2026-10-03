@@ -3,18 +3,14 @@ what a later lookup of that copy knows (containers-arrays-counted-keys-and-copie
 
 A copy no code can write proves its key was there when the walk handed it out. A change under a
 tracked key that may touch a held key makes the copies stale: their lookups ask again, given
-where the walk read the key, and a copy of the target's own key stands for the tracked key it
-was stored under. A key Python shares has no copy, so after a change under a tracked key it
-runs as where that change is Python's own (``dict_compares.shared_after_tracked``).
+where the walk read the key. A key Python shares has no copy. Once a walk follows a change
+under a tracked key, the dict runs as v2 runs it (``DictState.after_walk``).
 """
 
 from __future__ import annotations
 
 from pyct.core.branch import Expression
-from pyct.core.dict_compares import own_key, stored_under
 from pyct.core.dict_state import MISSING, DictState
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
 
 # the end a walk starts from, which says what keeps a key it reads at its place, and popitem's,
 # which reads the last key and removes it
@@ -58,8 +54,7 @@ def handout(self: DictState, key: object, pin: Expression) -> object:
         if pin is not None:
             self.shared[key] = pin
         return copied
-    under = stored_under(self, key) if own_key(self, key) else None
-    self.handed[id(copied)] = (copied, pin, under)
+    self.handed[id(copied)] = (copied, pin)
     return copied
 
 
@@ -72,26 +67,16 @@ def copy_of(key: object) -> object:
     return key
 
 
-def _stale(self: DictState, key: object) -> tuple[object, Expression, Expression] | None:
-    """What a walk handed out a stale copy with, when ``key`` is that copy: the copy, where the
-    walk read its key, and the tracked key a key of the target's own was stored under."""
+def _stale(self: DictState, key: object) -> tuple[object, Expression] | None:
+    """What a walk handed out a stale copy with, when ``key`` is that copy: the copy, and where
+    the walk read its key."""
     entry = self.handed.get(id(key)) if id(key) in self.stale else None
     return entry if entry is not None and entry[0] is key else None
 
 
-def stand_in(self: DictState, key: object) -> object:
-    """``key``, or the tracked key a stale copy of the target's own key was stored under, as a
-    key of its value and that key's expression: on another input the walk handed out that
-    key's value in its place, so its lookup and a change under it are that key's. A key Python
-    shares has no copy, and the target may write it too, so it stands for itself."""
-    entry = _stale(self, key)
-    under = None if entry is None else entry[2]
-    if under is None:
-        return key
-    if isinstance(key, str):
-        return ConcolicStr.made(key, under, self.sink)
-    assert isinstance(key, int)
-    return ConcolicInt.made(key, under, self.sink)
+def stale_copy(self: DictState, key: object) -> bool:
+    """Whether ``key`` is a copy a walk handed out that a change made stale."""
+    return _stale(self, key) is not None
 
 
 def given_place(self: DictState, key: object) -> Expression:

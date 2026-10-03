@@ -152,30 +152,6 @@ def stored_under(self: DictState, key: object) -> Expression:
     return None
 
 
-def shared_key(key: object) -> bool:
-    """Whether ``key`` is a plain str or int Python shares with the target's literals: a str of
-    at most one character, or a small int, so a walk hands it out as the very object a literal
-    is and no lookup tells the two apart."""
-    if type(key) is str:
-        return len(key) <= 1
-    return type(key) is int and int.__add__(int.__add__(key, 1), -1) is key
-
-
-def shared_after_tracked(self: DictState, key: object) -> bool:
-    """Whether ``key`` is a key Python shares, after a change under a tracked key of its kind
-    that its own latest change does not decide. Comparing the two would pin the tracked key to
-    the shared one wherever a walk handed out the tracked key's own (see the decision
-    dict-keys-named-held-made-up-or-changed-under-a-tracked-key), so such a key is looked up,
-    stored and removed as where that change is Python's own (follow-a-store-under-a-shared-
-    tracked-key is the story that follows it)."""
-    if not self.tracked_changes or not shared_key(key):
-        return False
-    return any(
-        under is not None and type(changed) is type(key)
-        for under, changed, _, _ in _after_the_last_plain(self, key)
-    )
-
-
 def compared_in_place(self: DictState, key: object) -> bool:
     """Whether a key of the argument a walk or popitem hands out may be one a tracked key
     stored over (see ``over_the_argument``). The target's own key is wherever its store put
@@ -196,11 +172,7 @@ def handed_in_place(self: DictState, key: object, name: str, pin: Expression) ->
     given place recorded before it, so the key it compares is the one an answer's walk reads
     there; the walk's own place holds only on the side its pass took, so its flip may still
     end the walk sooner."""
-    if not compared_in_place(self, key):
-        return
-    if shared_key(key):
-        # as where the tracked change is Python's own: the dict is marked, nothing compared
-        self.changed_unforked()
+    if self.after_walk() or not compared_in_place(self, key):
         return
     place: Expression = None if pin is None else ["given", pin]
     after_changes(self, key, written_key(key), (name, False, place), handed=True)

@@ -11,7 +11,6 @@ from tests.unit.core.test_dicts import (
     downgrades,
     forks,
     hold_against_python,
-    plain_dict,
     tracked,
 )
 
@@ -87,7 +86,8 @@ def test_a_tracked_store_after_popitem_is_python_s() -> None:
 
 def test_a_stored_key_python_shares_leaves_its_tracked_key_free_where_a_walk_hands_it_out() -> None:
     # n's own key "a" has no copy, so a lookup of what the walk handed out is a lookup of "a":
-    # comparing it with n would pin n to "a", and a later fork on n could not be flipped
+    # comparing it with n would pin n to "a". The walk follows the store, so the dict runs as
+    # v2 runs it from then on
     config, sink = tracked({})
     name = ConcolicStr.made("a", "name", sink)
 
@@ -104,10 +104,11 @@ def test_a_stored_key_python_shares_leaves_its_tracked_key_free_where_a_walk_han
     assert config.unforked
 
 
-def test_a_key_python_shares_after_a_tracked_change_runs_as_where_that_change_is_python_s() -> None:
+def test_a_lookup_after_a_walk_that_followed_a_tracked_change_runs_as_on_v2() -> None:
     config, sink = tracked({"b": 1})
     name = ConcolicStr.made("zz", "name", sink)
     config[name] = 0
+    list(config)
     asked = len(forks(sink))
 
     assert "b" in config
@@ -115,46 +116,27 @@ def test_a_key_python_shares_after_a_tracked_change_runs_as_where_that_change_is
     config["b"] = 2
     del config["b"]
 
-    # no compare names name, and the dict is marked, so each lookup is a fork, no fact (with
-    # name "b" the store would have been over "b", which no fork here says); the removal reads
-    # what the store before it changed
+    # the walk handed out name's own key: from then on no lookup compares a key with name, the
+    # dict is marked, so each lookup is a fork, no fact, and the removal reads the store before
     assert forks(sink)[asked:] == [(["in", "'b'", "config"], True)] * 3
-    assert decided(sink) == []
+    assert decided(sink)[-1][0] != ["in", "'b'", "config"]
     assert config.unforked
     hold_against_python(sink, {"config": {"b": 1}, "name": "zz"})
 
 
-def test_a_walk_after_a_tracked_change_compares_no_key_python_shares() -> None:
+def test_a_walk_after_a_tracked_change_compares_nothing_and_marks_the_dict() -> None:
     config, sink = tracked({"b": 1, "cd": 2})
     name = ConcolicStr.made("b", "name", sink)
     config[name] = 0
 
     list(config)
 
-    # "b" may be under name's store; comparing would pin name, so the dict is marked instead.
-    # "cd", which Python does not share, is compared
-    compared = [expression for expression, _ in forks(sink) if part(expression, 0) == "=="]
-    assert compared == [["==", "name", "'cd'"]]
+    # as on v2, where the store is Python's own
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
     assert config.unforked
 
 
-def test_a_stale_copy_of_a_tracked_store_s_key_is_looked_up_as_that_key() -> None:
-    config, sink = tracked({})
-    name = ConcolicStr.made("zz", "name", sink)
-    config[name] = 1
-    keys = list(config)
-
-    config[name] = 2
-    asked = len(forks(sink))
-    assert [plain(config[key]) for key in keys] == [2]
-
-    # the walk handed out name's own key: on another input name's value, so its lookup asks
-    # nothing a flip of `name == 'zz'` could move
-    assert forks(sink)[asked:] == []
-    hold_against_python(sink, {"config": {}, "name": "zz"})
-
-
-def test_a_later_walk_leaves_a_stale_copy_stale() -> None:
+def test_a_later_walk_runs_a_stale_copy_s_lookup_as_on_v2() -> None:
     config, sink = tracked({"xx": 1, "yy": 2, "zz": 3})
     name = ConcolicStr.made("zz", "name", sink)
     keys = list(config)
@@ -165,22 +147,12 @@ def test_a_later_walk_leaves_a_stale_copy_stale() -> None:
     asked = len(forks(sink))
     assert [key in config for key in keys] == [True, True, False]
 
-    # the removal may have taken any key the first walk handed out: each lookup asks again
-    assert forks(sink)[asked:][:1] == [(["==", "name", "'xx'"], False)]
-    hold_against_python(sink, {"config": {"xx": 1, "yy": 2, "zz": 3}, "name": "zz"})
-
-
-def test_a_change_through_a_stale_copy_of_a_tracked_store_s_key_is_that_key_s() -> None:
-    config, sink = tracked({})
-    name = ConcolicStr.made("zz", "name", sink)
-    config[name] = 0
-    keys = list(config)
+    # the second walk follows the removal, so the dict runs as v2 runs it: a copy a walk
+    # handed out is answered with no fork, and no tracked change is followed after it
+    assert forks(sink)[asked:] == []
+    assert config.unforked
     config[name] = 1
-
-    config[keys[0]] = 5
-
-    assert config.log[-1][0] == "name"
-    assert plain_dict(config) == {"zz": 5}
+    assert "__setitem__" in downgrades(sink)
 
 
 def test_a_store_over_a_key_a_change_moved_is_not_over_the_argument_s_place() -> None:
@@ -190,11 +162,12 @@ def test_a_store_over_a_key_a_change_moved_is_not_over_the_argument_s_place() ->
     config.pop(name, None)
     config[name] = 2
     made = config | {name: 0}
-    list(made)
+    asked = len(forks(sink))
+    made.popitem()
 
-    # the pop and the store put name's key last, so the walk compares no key of the argument
-    # with it: an answer that makes name "cd" walks "bc" first
-    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
+    # the pop and the store put name's key last, so popitem compares no key of the argument
+    # with it: an answer that makes name "cd" pops "bc" all the same
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[asked:])
 
 
 def test_a_change_under_a_key_python_looked_up_is_python_s() -> None:

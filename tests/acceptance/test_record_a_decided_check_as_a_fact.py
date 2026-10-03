@@ -297,17 +297,15 @@ def test_keeps_a_dying_input_s_facts() -> None:
 # an answer that makes the key another one takes the other side. Each target below was a change
 # pyct answered without a fork when record-a-decided-check-as-a-fact merged
 # (review round 1: unforked-dict-change-read-as-decided)
-def test_a_lookup_of_a_key_python_shares_after_a_tracked_store_stays_a_fork() -> None:
-    # "a" is a key Python shares, so its lookup after the store runs as where the store is
-    # Python's own: the dict is marked and the repeat lookup is a fork, as on v2
+def test_a_lookup_after_a_tracked_store_asks_whether_it_is_that_key() -> None:
     seed = '{"n": "pyct1", "d": {}}'
     result = run_pyct(f"{DECIDED}::repeat_after_tracked_store", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
     again = line_of(FILE, 'if "a" in d:', "repeat_after_tracked_store") + 3
-    assert at(first_line(result.stdout), again) == [STORED_A]
-    entry = entry_for(result.stdout, line_of(FILE, "return 1", "repeat_after_tracked_store"))
-    assert tries(entry)["decided"] == 0, entry
+    assert at(first_line(result.stdout), again) == [["==", "n", "'a'"]]
+    assert line_of(FILE, "return 1", "repeat_after_tracked_store") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
 def test_a_walk_after_a_tracked_pop_counts_what_its_forks_left() -> None:
@@ -334,17 +332,17 @@ def test_a_truth_test_after_a_tracked_pop_is_decided_by_its_forks() -> None:
     assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
-def test_a_truth_test_after_a_removal_of_a_key_python_shares_stays_a_fork() -> None:
-    # n "b" stores the key the pop then removes, so the dict may be empty at the test; "b" is a
-    # key Python shares, so the pop runs as where the store is Python's own, as on v2
+def test_a_truth_test_after_a_removal_a_tracked_store_may_feed_is_decided_by_its_forks() -> None:
+    # n "b" stores the key the pop then removes, so the dict may be empty at the test: the
+    # store asks whether n is "b", and an answer that makes it so reaches `return 0`
     seed = '{"n": "pyct1", "d": {}}'
     result = run_pyct(f"{DECIDED}::removed_after_tracked_store", seed, "--budget", "10")
 
     assert result.returncode == 0, result.stderr
     tested = line_of(FILE, "if d:", "removed_after_tracked_store")
-    assert at(first_line(result.stdout), tested) == [["!=", GROWN, 0]]
-    # the store's own fork asks whether n is "b", whose flip empties the dict
+    assert at(first_line(result.stdout), tested) == []
     assert line_of(FILE, "return 0", "removed_after_tracked_store") in covered(result.stdout)
+    assert all(line["mismatch_at"] is None for line in solver_lines(result.stdout))
 
 
 # a change pyct answers without a fork, as one under a tracked int into a dict of str keys, marks

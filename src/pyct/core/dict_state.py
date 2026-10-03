@@ -83,11 +83,10 @@ class DictState(dict):
     # it (see ``dict_handouts.proven``)
     copies: dict[object, object]
     shared: dict[object, Expression]
-    # each copy a walk handed out, by its identity: the copy, where the walk last read its key,
-    # and the tracked key a key of the target's own was stored under, or None; and the copies
-    # a change under a tracked key may have touched, which a lookup no longer takes as proven
-    # and asks again, given that place, whatever walk runs later (see ``dict_handouts``)
-    handed: dict[int, tuple[object, Expression, Expression]]
+    # each copy a walk handed out, by its identity: the copy, and where the walk last read its
+    # key; and the copies a change under a tracked key may have touched, which a lookup no
+    # longer takes as proven and asks again, given that place (see ``dict_handouts``)
+    handed: dict[int, tuple[object, Expression]]
     stale: set[int]
     # whether popitem changed the dict: it removes whichever key is last on the input, so a
     # change under a tracked key after it is Python's own (see ``dict_changes.followed``)
@@ -95,6 +94,10 @@ class DictState(dict):
     # each tracked key a lookup answered as Python's own, with no fork, as ``settled`` knows it:
     # a change under it after that is Python's own too (see ``dict_changes.followed``)
     unfollowed: set[object]
+    # whether a walk of this dict, or of one made from the same argument, ran after a change
+    # under a tracked key: one list shared by reference, so a copy's walk counts too. From
+    # then on the dict runs as v2 runs it (see ``after_walk``)
+    walked_after: list[bool]
     # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,
     # named or made up: a key pyct does not follow that may equal an int turns such a dict
     # plain (see ``dict_reads.may_equal_added``)
@@ -135,6 +138,7 @@ class DictState(dict):
             stale=set(),
             popped=False,
             unfollowed=set(),
+            walked_after=[False],
         )
         fields["int_keyed"] = int_keyed
         return made
@@ -237,6 +241,7 @@ class DictState(dict):
         fields["grown"] = self.grown
         fields["popped"] = self.popped
         fields["unfollowed"] = set(self.unfollowed)
+        fields["walked_after"] = self.walked_after
         return made
 
     def noted(self, key: object, value: object, tracked: Expression = None) -> None:
@@ -248,6 +253,23 @@ class DictState(dict):
         self.shadow[key] = value
         self.logged(key, (True, held), tracked)
         self.held_one()
+
+    def after_walk(self) -> bool:
+        """Whether a walk followed a change under a tracked key on this argument's dicts: then
+        every operation runs as v2 runs it, where that change is Python's own. A walk hands out
+        the tracked key's own key, and a key Python shares is the very object a literal is, so
+        no later lookup tells the two apart, and comparing them pins the tracked key. The dict
+        is marked when that starts (``changed_unforked``), as v2's change marked it."""
+        if not self.walked_after[0]:
+            return False
+        self.changed_unforked()
+        return True
+
+    def walk_started(self) -> None:
+        """Note a walk of the dict: after a change under a tracked key, from now on it runs as
+        v2 runs it (see ``after_walk``)."""
+        if self.tracked_changes:
+            self.walked_after[0] = True
 
     def changed_unforked(self) -> None:
         """Note a change pyct answered without a fork: from now on no lookup is decided, and

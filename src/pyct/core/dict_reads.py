@@ -39,7 +39,6 @@ from pyct.core.dict_compares import (
     handed_in_place,
     is_tracked,
     own_key,
-    shared_after_tracked,
     written_key,
 )
 from pyct.core.dict_handouts import (
@@ -49,7 +48,7 @@ from pyct.core.dict_handouts import (
     given_place,
     handout,
     proven,
-    stand_in,
+    stale_copy,
     walked_in_the_argument,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
@@ -124,8 +123,8 @@ def present(
     fact, since that change may have touched the key on another input: one recorded here is a
     fork, and a key the target changed or a walk handed out is answered without either. After
     a change under a tracked key the lookup first records whether its key is that one
-    (``after_changes``), unless its key is one Python shares, which runs as where that change
-    is Python's own (``shared_after_tracked``).
+    (``after_changes``), until a walk follows such a change: from then on the lookup runs as
+    v2 runs it (``DictState.after_walk``).
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -140,10 +139,8 @@ def present(
     held = dict.__contains__(self, plain(key))
     if proven(self, key):
         return held
-    if shared_after_tracked(self, key):
-        return _as_unfollowed(self, key, held, (name, raising))
-    looked = stand_in(self, key)
-    key, changing = looked, changing or looked is not key
+    if self.after_walk():
+        return _as_on_v2(self, key, held, (name, raising))
     written = written_key(key)
     if written is None or (is_tracked(key) and self.changed and not changing):
         return None
@@ -156,16 +153,17 @@ def present(
     return _in_the_argument(self, key, held, (name, raising, place))
 
 
-def _as_unfollowed(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool:
-    """A lookup of a key Python shares after a change under a tracked key that may be it (see
-    ``dict_compares.shared_after_tracked``), as it runs where that change is Python's own: the
-    dict is marked, a key the target changed is answered with no fork, and any other is the
-    argument's fork, given where a walk read the key."""
+def _as_on_v2(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool | None:
+    """A lookup after a walk that followed a change under a tracked key, as v2 runs it (see
+    ``DictState.after_walk``): None for a key of another kind and a tracked key, no fork for a
+    key the target changed or a walk handed out, a stale copy among them, and otherwise the
+    argument's fork on the marked dict, given where a walk read a key Python shares."""
     name, raising = how
-    self.changed_unforked()
-    if plain(key) in self.changed:
+    if written_key(key) is None or is_tracked(key):
+        return None
+    if plain(key) in self.changed or stale_copy(self, key):
         return held
-    given = given_place(self, key)
+    given = self.shared.get(key)
     place: Expression = None if given is None else ["given", given]
     return _in_the_argument(self, key, held, (name, raising, place))
 
@@ -365,6 +363,7 @@ def _walked(
     while it walks. A change made without the dict's methods turns the walk plain there. Each
     key is handed out as the walk's own copy of it (see ``handout``)."""
     name, end = how
+    self.walk_started()
     at = 0
     while True:
         key = own(next, keys, MISSING)
