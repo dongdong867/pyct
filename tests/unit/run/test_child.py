@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import functools
 import mmap
 import os
 import signal
@@ -18,6 +19,7 @@ import pytest
 
 from pyct.execution import deadline as deadline_module
 from pyct.execution.deadline import DeadlineError, deadline, own_the_alarm
+from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 from pyct.run import child
 from pyct.run.child import serve, settle
@@ -147,6 +149,19 @@ def c_call_past_the_deadline_then_a_caught_alarm() -> None:
 def test_an_alarm_that_raised_owes_nothing_once_the_target_caught_it() -> None:
     # the block ends as the target ended it, as when the alarm raises where it lands
     assert settled_then(c_call_past_the_deadline_then_a_caught_alarm) == 0
+
+
+def c_callable_target_past_the_deadline() -> None:
+    # a target that is itself one C call, which returns past the deadline straight into pyct
+    ctx = ExecutionContext(fn=functools.partial(sum, range(30_000_000)), file=__file__)
+    result = execute(ctx, {}, time.monotonic() + 0.02)
+    child._EXIT(0 if result.failure is None else 2)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_c_callable_target_that_returns_past_its_deadline_keeps_its_own_ending() -> None:
+    # the alarm lands first in pyct's own frames, held there, so it owes nothing
+    assert settled_then(c_callable_target_past_the_deadline) == 0
 
 
 def test_the_input_s_deadline_starts_no_thread() -> None:

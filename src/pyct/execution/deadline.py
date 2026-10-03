@@ -99,7 +99,8 @@ class _Hold:
     been. ``brief`` is when it was first held briefly, where no stop showed,
     a clock of its own that never starts ``since``. ``owed`` says it was held
     briefly outside pyct's own frames, where it would have raised but for the
-    hold, so a block that then ends with no stop still ends by it. ``before`` is the
+    hold, so a block that then ends with no stop still ends by it (``_settle``).
+    ``before`` is the
     exception Python showed as handled when the block began: the caller's,
     or one a frame left set as it ended. From 3.13 a signal handled at a
     loop's backward jump can raise from an offset outside the frame's
@@ -190,12 +191,19 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
     traces is not yet handled anywhere. And a C call that returns after both
     signals came has Python run SIGALRM's handler before SIGTERM's, so the
     alarm comes before that stop is raised. So an alarm that lands where no
-    stop shows, in whatever frame of the block, waits for up to
-    ``_BRIEF_HOLD`` from when it was first held so, coming again each
-    ``_AGAIN`` or as soon as the watcher can send: long enough for the stop
-    to show, and short enough that a hang anywhere in the block, a tracer's
-    callback included, still ends near its deadline. One held so outside
-    pyct's own frames is owed (``_Hold.owed``) until it raises.
+    stop shows, in whatever frame of the block, is held while less than
+    ``_BRIEF_HOLD`` has passed since it was first held so, and raises at its
+    first landing after that. It comes again ``_AGAIN`` later with the
+    kernel timer, so it raises about 3 ms after its first hold; the watcher
+    sends again only once it has the GIL, so on the guest path it raises
+    about one switch interval later, about 6 ms. That is long enough for the
+    stop to show, and short enough that a hang anywhere in the block, a
+    tracer's callback included, still ends near its deadline. The window
+    starts once per block, so a C call that begins within it, after the
+    alarm was first held, and outlives it, meets the alarm with no window
+    left; a stop that comes during that call can then still lose to it under
+    a tracer. One held so outside pyct's own frames is owed (``_Hold.owed``)
+    until it raises.
     """
     now = time.monotonic()
     error = sys.exception()
@@ -220,7 +228,11 @@ def _settle(hold: _Hold, error: BaseException | None) -> None:
     A block whose alarm was held briefly outside pyct's frames, and that then
     ended with no stop and no raise of the alarm's own, ends by DeadlineError,
     as it would have had the alarm raised where it landed. A raise of the
-    target's own gives way to it, as it would have then. A stop does not.
+    target's own gives way to it, as it would have then. A stop does not. So
+    a C call that returns past the deadline into the target's own code, where
+    the alarm lands first, ends as a timeout. A target that is itself a C
+    callable returns straight into pyct's frames, where the alarm is held and
+    owes nothing, so it keeps its own ending, as it did before the hold.
     """
     if hold.owed and not isinstance(error, (DeadlineError, *STOPS)):
         # the way out has run, so this raise, unlike one in a handler, leaves nothing undone
