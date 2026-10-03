@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind
 from pyct.binding.call import call_arguments
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Fact
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, close, deadline
 from pyct.execution.tally import Tally, Watch
@@ -50,13 +50,15 @@ class ExecutionContext:
 class ExecutionResult:
     """What one call did: the lines it reached, the forks it took, and how it ended.
 
-    On a failure the lines and forks are those reached before it.
+    On a failure the lines, forks and facts are those reached before it. ``facts`` are what its
+    path holds beside the forks, each placed after the forks recorded before it.
     """
 
     lines: frozenset[int]
     branches: tuple[Branch, ...]
     downgrades: tuple[DowngradeCount, ...] = ()
     failure: Failure | None = None
+    facts: tuple[Fact, ...] = ()
 
 
 def execute(
@@ -99,6 +101,7 @@ def execute(
         branches=tuple(tally.branches),
         downgrades=tally.counted(),
         failure=_failure(ctx.fn, ending),
+        facts=tuple(tally.facts),
     )
 
 

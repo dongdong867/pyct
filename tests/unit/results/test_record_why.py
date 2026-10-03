@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Branch, ForkSite, Site
-from pyct.results import record
+from pyct.core.branch import Branch, Fact, ForkSite, Site
+from pyct.results import record, why
 from pyct.results.coverage import Coverage
-from pyct.results.graphs import LONGEST_STRETCH
+from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.record import (
     Aim,
     Environment,
@@ -85,6 +85,37 @@ def test_the_tries_at_a_condition_count_every_way_the_run_could_have_flipped_it(
     assert result.why_uncovered is result.why_uncovered
 
 
+def test_a_decided_check_shows_its_side_and_counts_once_an_input(tmp_path: Path) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    site = Site(file=str(file), line=3, col=7)
+    # `x != x` decided false, twice on one input, and a place no check holds beside it
+    decided = Fact(["!=", "x", "x"], False, site)
+    seed = InputRecord(
+        args={"x": 1},
+        forks=(),
+        covered_lines=frozenset({3, 5}),
+        facts=(decided, decided, Fact(None, True, Site(str(file), 5, 4), place=["walked"])),
+    )
+    result = RunResult(
+        entry="m::same",
+        records=(seed, dataclasses.replace(seed, args={"x": 2})),
+        coverage=Coverage(
+            covered={str(file): frozenset({3, 5})}, lines={str(file): frozenset({1, 3, 4, 5})}
+        ),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    assert result.why_uncovered[1] == WhyEntry(
+        file=str(file),
+        lines=(4,),
+        reason=Reason.NOT_TAKEN,
+        condition=Condition(site=site, side=True),
+        tries=Tries(decided=2),
+    )
+
+
 def test_the_analysis_stops_so_its_longest_stretch_still_ends_within_the_grace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -116,11 +147,46 @@ def test_a_run_read_past_the_analysis_stop_reads_no_input_and_no_try(
     # a run whose deadline is long past: no cause can be worked out in the time left
     run = dataclasses.replace(run_of(str(file), Site(str(file), 3, 7)), deadline=0.0)
 
-    def never(_result: RunResult) -> object:
+    def never(_result: RunResult, _pace: Pace) -> object:
         raise AssertionError("the tries are read")
 
     monkeypatch.setattr(record, "_tries", never)
 
     assert run.why_uncovered == (
+        WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
+    )
+
+
+def test_the_tries_look_at_the_clock_as_they_read_each_input_s_facts(tmp_path: Path) -> None:
+    site = Site(file=str(tmp_path / "m.py"), line=3, col=7)
+    # far past the steps the analysis takes between two looks at the clock, on one input
+    facts = (Fact(["!=", "x", "x"], False, site),) * 10_000
+    seed = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), facts=facts)
+    result = RunResult(
+        entry="m::same",
+        records=(seed,),
+        coverage=Coverage(covered={}, lines={}),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    with pytest.raises(OutOfTimeError):
+        record._tries(result, Pace(lambda _ahead: True))
+
+
+def test_tries_the_stop_cuts_short_leave_every_line_not_worked_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    site = Site(file=str(file), line=3, col=7)
+    facts = (Fact(["!=", "x", "x"], False, site),) * 10_000
+    seed = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({3, 5}), facts=facts)
+    result = dataclasses.replace(run_of(str(file), site), records=(seed,), deadline=100.0)
+    # the first look finds time left; every later one, inside the tries, finds the stop passed
+    looks = iter([0.0])
+    monkeypatch.setattr(why, "clock", lambda: next(looks, 1e9))
+
+    assert result.why_uncovered == (
         WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
     )

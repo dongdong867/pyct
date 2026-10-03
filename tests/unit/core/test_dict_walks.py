@@ -1,11 +1,12 @@
 """A tracked dict's lookups after a walk: a key the walk handed out is looked up with no fork,
-and a key Python shares with the target's literals is looked up given the walk's place."""
+and a key Python shares with the target's literals is looked up after a fact of the walk's
+place."""
 
 from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Fact
 from pyct.core.dicts import ConcolicDict
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -35,13 +36,14 @@ def test_a_key_python_shares_records_its_lookup_given_the_walk_s_place() -> None
     for key in numbers:
         numbers[key]
 
-    lookups = [
-        item.holds
-        for item in sink
+    # each lookup's fork comes right after the fact of the place the walk read its key at
+    given = [
+        before.place
+        for before, item in zip(sink, sink[1:], strict=False)
         if isinstance(item, Branch) and isinstance(item.expression, list)
-        if item.expression[0] == "in"
+        if item.expression[0] == "in" and isinstance(before, Fact)
     ]
-    assert lookups == [
+    assert given == [
         ["given", ["walked", "config", "'a'"]],
         ["given", ["walked", "numbers", 7]],
     ]

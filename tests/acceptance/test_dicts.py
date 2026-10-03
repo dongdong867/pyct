@@ -99,9 +99,10 @@ def test_adds_and_removes_a_named_key() -> None:
         (4, ["in", "'tip'", "order"], False),
         (6, ["in", "'total'", "order"], True),
     ]
-    # each lookup records its own fork, where it runs
+    # the first lookup settles the key, and the second is a fact of the path, not a fork
+    # (record-a-decided-check-as-a-fact)
     presence = [fork[0] for fork in seed if fork[1] == ["in", "'total'", "order"]]
-    assert presence == [6, 8], seed
+    assert presence == [6], seed
     assert fork_line(result.stderr, NAMED_KEY_FILE, 2, "'coupon' in order", False)
     orders = [dict_of(line, "order") for line in solved(lines)]
     assert any(list(order) == ["total", "coupon"] for order in orders), orders
@@ -193,7 +194,9 @@ def test_follows_dicts_inside_lists() -> None:
     assert any(isinstance(order, list) and len(order) == 2 and order[1] == {} for order in orders)
 
 
-# follow-lists-and-dicts-as-they-change-counts-a-dict-s-own-changes
+# record-a-decided-check-as-a-fact-counts-a-dict-s-own-changes, which replaces
+# follow-lists-and-dicts-as-they-change-counts-a-dict-s-own-changes: the walk's first pass, which
+# the stored key always reaches, is a fact, not a fork
 def test_counts_a_dict_s_own_changes() -> None:
     result = run_pyct(OWN_CHANGES, '{"config": {"a": 0}}', *UNTIL_NO_GAIN)
 
@@ -203,7 +206,6 @@ def test_counts_a_dict_s_own_changes() -> None:
     assert (2, ["in", "'seen'", "config"], False) in seed
     size = ["+", ["len", "config"], 1]
     assert [fork for fork in seed if fork[0] == 3] == [
-        (3, [">", size, 0], True),
         (3, [">", size, 1], True),
         (3, [">", size, 2], False),
     ]
@@ -416,13 +418,14 @@ SETTLED = "targets.dicts.settled"
 SETTLED_FILE = str(DICTS / "settled.py")
 
 
-# see-why: a lookup of a key the path already asked about records its fork again, so the
-# condition that reads it names that fork and its tries, not `no fork`, which blames the program
+# see-why: a lookup of a key the path already asked about is a decided check, so the condition
+# that reads it names that site and its decided count, not `no fork`, which blames the program
+# (record-a-decided-check-as-a-fact)
 @pytest.mark.parametrize(
     ("function", "seed", "at", "missed"),
     [("only_a", {"a": 9}, (3, 24), 4), ("int_only", {"1": 9}, (11, 15), 12)],
 )
-def test_names_the_fork_of_a_key_the_path_asked_about_before(
+def test_names_the_decided_lookup_of_a_key_the_path_asked_about_before(
     function: str, seed: dict[str, int], at: tuple[int, int], missed: int
 ) -> None:
     result = run_pyct(f"{SETTLED}::{function}", json.dumps({"d": seed}), "--plateau", "5")
@@ -434,4 +437,4 @@ def test_names_the_fork_of_a_key_the_path_asked_about_before(
     line, col = at
     assert cause["reason"] == "not taken", cause
     assert cause["condition"] == {"file": SETTLED_FILE, "line": line, "col": col, "side": False}
-    assert cause["tries"]["unsat"] == 1, cause
+    assert cause["tries"]["unsat"] == 0 and cause["tries"]["decided"] > 0, cause

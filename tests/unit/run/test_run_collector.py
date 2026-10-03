@@ -21,9 +21,9 @@ def test_each_report_and_its_path_are_handled_with_the_collector_off(
     added: list[bool] = []
     add = Tree.add
 
-    def adding(tree: Tree, forks: tuple[object, ...]) -> None:
+    def adding(tree: Tree, forks: tuple[object, ...], facts: tuple[object, ...] = ()) -> None:
         added.append(gc.isenabled())
-        add(tree, forks)  # pyrefly: ignore[bad-argument-type]
+        add(tree, forks, facts)  # pyrefly: ignore[bad-argument-type]
 
     def report(record: InputRecord, coverage: Coverage) -> None:
         reported.append(gc.isenabled())

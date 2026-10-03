@@ -17,7 +17,14 @@ def test_an_entry_writes_its_file_lines_and_reason_then_what_its_reason_names() 
         "lines": [4],
         "reason": "not taken",
         "condition": {"file": "m.py", "line": 3, "col": 7, "side": True},
-        "tries": {"not_tried": 0, "unsat": 1, "unknown": 0, "timeout": 0, "left_the_plan": 0},
+        "tries": {
+            "not_tried": 0,
+            "unsat": 1,
+            "unknown": 0,
+            "timeout": 0,
+            "left_the_plan": 0,
+            "decided": 0,
+        },
     }
 
 

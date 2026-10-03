@@ -81,25 +81,8 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
-# record-bool-of-a-tracked-dict-where-it-is-tested-writes-a-changed-dict-by-its-size
-def test_writes_a_changed_dict_by_its_size() -> None:
-    result = run_pyct(f"{TARGET}::changed_before", EMPTY, "--budget", "10")
-
-    assert result.returncode == 0, result.stderr
-    called, tested, _ = lines_of("changed_before")
-    seed = first_line(result.stdout)
-    grown = ["!=", ["+", ["len", "config"], 1], 0]
-    stored = line_of(FILE, 'config["a"] = 0', "changed_before")
-    assert at(seed, called) == []
-    # the store records its own lookup where it runs
-    assert lines_expressions_and_sides(seed) == [
-        (stored, ["in", "'a'", "config"], False),
-        (tested, grown, True),
-    ]
-    assert any(
-        line.startswith(f"missed {FILE}:{tested}:") and line.endswith(" unsat")
-        for line in result.stderr.splitlines()
-    ), result.stderr
+# record-bool-of-a-tracked-dict-where-it-is-tested-writes-a-changed-dict-by-its-size is replaced
+# by record-a-decided-check-as-a-fact-tests-a-changed-dict-as-decided
 
 
 # record-bool-of-a-tracked-dict-where-it-is-tested-keeps-the-dict-as-it-was-at-the-call
