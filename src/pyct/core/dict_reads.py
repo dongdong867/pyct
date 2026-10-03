@@ -142,7 +142,7 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     self.settled.setdefault(known, held)
     # after a change without a fork, a lookup recorded here is a fork, and adds nothing to the
     # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
-    # is noted as at the base
+    # is still noted
     if not self.unforked:
         if known in self.asked:
             self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
