@@ -115,8 +115,9 @@ def ctrl_c_at(call: str, monkeypatch: pytest.MonkeyPatch) -> None:
     def pending(how: int, mask: Iterable[int]) -> object:
         previous = real(how, mask)
         held = set(mask)
-        kind = "hold" if {signal.SIGINT, signal.SIGTERM} <= held else "read" if not held else ""
-        if how == signal.SIG_BLOCK and kind == call and not raised:
+        holds = {signal.SIGINT, signal.SIGTERM} <= held
+        reads = not held
+        if how == signal.SIG_BLOCK and (holds if call == "hold" else reads) and not raised:
             raised.append(True)
             raise KeyboardInterrupt
         return previous

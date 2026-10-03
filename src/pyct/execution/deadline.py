@@ -94,9 +94,10 @@ def close(block: AbstractContextManager[None]) -> None:
     ``with`` line's exit event can raise there, by the alarm, a Ctrl-C or
     its own. The block's way out then runs here, from the frame that called
     the block's frame, where the alarm never raises: it puts the program's
-    SIGALRM handler back and ends the watcher. A block never entered, or
-    whose way out has run, is left alone, and so is a deadline of a process
-    pyct owns, whose handler stays pyct's.
+    SIGALRM handler back and ends the watcher, past one stop raised in it. A
+    stop that lands as this begins, or a second one, can still leave it
+    borrowed. A block never entered, or whose way out has run, is left
+    alone, and so is a deadline of a process pyct owns.
     """
     if isinstance(block, _Sent):
         block.leave()
@@ -346,8 +347,8 @@ class _Sent:
         self.previous = _restorable(signal.getsignal(signal.SIGALRM))
         # from here on the way out has the handler to give back
         self.out = False
-        # read before the stops are held: the call that holds them can raise a Ctrl-C that came
-        # just before after the mask has changed, so the mask goes back in the except below
+        # read first: a Ctrl-C that came just before raises from the holding call once the mask
+        # has changed, and the except below puts the mask back
         held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
         try:
             signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
