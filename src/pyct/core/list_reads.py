@@ -17,6 +17,7 @@ it takes and once more, taken false, where it ends.
 from __future__ import annotations
 
 import sys
+import types
 from collections.abc import Iterator
 from typing import Any, Protocol
 
@@ -181,13 +182,20 @@ def _backward(self: ListState, size: int) -> Iterator[object]:
             yield list.__getitem__(self, at)
 
 
+# the frames a call through the type puts between the code and the value's own method, which
+# `pyct.core.type_calls` adds: `type(r).__len__(r)` is asked by the code that wrote it
+CALLED_THROUGH: set[types.CodeType] = set()
+
+
 def caller(depth: int) -> tuple[int, int]:
     """The frame ``depth`` calls up from here, and the instruction it runs.
 
     That is the code that called the list's own method, the target's or a library's; C code
-    between the two leaves no frame.
+    between the two leaves no frame, and a call through the type's frame is read past.
     """
     frame = sys._getframe(depth)
+    while frame.f_code in CALLED_THROUGH and frame.f_back is not None:
+        frame = frame.f_back
     return id(frame), frame.f_lasti
 
 
