@@ -26,8 +26,10 @@ has ended. How the signal comes depends on who owns the process:
   watcher thread sends it to the main thread with ``pthread_kill``, under a
   lock and only while the block runs. The way out stops the sends under
   that lock and takes a signal still on its way before the handler goes
-  back, so none comes after it. The watcher needs the GIL to send, so a C
-  call that holds it runs to its end first: a backtracking ``re.match`` ran
+  back, so none comes after it. When a raise skips the block's
+  ``__exit__``, the caller of the block's frame takes the way out
+  (``close``). The watcher needs the GIL to send, so a C call that holds
+  it runs to its end first: a backtracking ``re.match`` ran
   2.5 s past a 0.1 s deadline, and a big-int power to its end at 0.665 s,
   where the kernel timer stopped both at about 0.1 s. A Python loop's alarm
   lands about 17 ms late at the median, and the kernel timer's about 7 ms,
@@ -72,12 +74,32 @@ class DeadlineError(BaseException):
 
 
 def deadline(at: float | None) -> AbstractContextManager[None]:
-    """Raise DeadlineError at the monotonic instant ``at``. ``None`` sets nothing."""
+    """Raise DeadlineError at the monotonic instant ``at``. ``None`` sets nothing.
+
+    The caller of the frame that enters the block calls ``close`` on it once
+    that frame is done, however it ended.
+    """
     if at is None:
         return nullcontext()
     if _OWNER.owns:
         return _Timed(at)
     return _Sent(at)
+
+
+def close(block: AbstractContextManager[None]) -> None:
+    """Give back what a guest's block borrowed, if a raise skipped the block's ``__exit__``.
+
+    A raise that lands after the block's body ends, before ``__exit__`` is
+    called, leaves the ``with`` without it: a host tracer's callback on the
+    ``with`` line's exit event can raise there, by the alarm, a Ctrl-C or
+    its own. The block's way out then runs here, from the frame that called
+    the block's frame, where the alarm never raises: it puts the program's
+    SIGALRM handler back and ends the watcher. A block whose way out has run
+    is left alone, and so is a deadline of a process pyct owns, whose
+    handler stays pyct's.
+    """
+    if isinstance(block, _Sent):
+        block.leave()
 
 
 def own_the_alarm() -> None:
@@ -314,6 +336,8 @@ class _Sent:
         self.previous: Handler = signal.SIG_DFL
         self.handler = self._fire
         self.watcher: threading.Thread | None = None
+        # whether the way out has run, from ``__exit__``, ``close`` or a raise as the block began
+        self.out = False
 
     def __enter__(self) -> None:
         self.home = sys._getframe(1)
@@ -344,6 +368,14 @@ class _Sent:
     ) -> None:
         # first, before any call: from here on the handler raises nothing
         self.armed = False
+        self.leave()
+        _settle(self.hold, error)
+
+    def leave(self) -> None:
+        """Take the way out, with a Ctrl-C and a SIGTERM held, unless it has run already."""
+        self.armed = False
+        if self.out:
+            return
         held: set[signal.Signals | int] | None = None
         try:
             held = signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
@@ -351,7 +383,6 @@ class _Sent:
         finally:
             if held is not None:
                 signal.pthread_sigmask(signal.SIG_SETMASK, held)
-        _settle(self.hold, error)
 
     def _way_out(self) -> None:
         """Stop the sends, put the process's own handler back, and end the watcher."""
@@ -371,6 +402,7 @@ class _Sent:
             self.home = None
             # the handler holds this deadline in a cycle, so the exception goes with the block
             self.hold.before = None
+            self.out = True
 
     def _let_go(self) -> None:
         """Let the watcher end now rather than at the instant. Letting go twice does nothing."""
