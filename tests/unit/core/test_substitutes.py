@@ -428,6 +428,8 @@ def test_the_passing_frames_are_the_routers() -> None:
         *_ROUTERS,
         # each `math` function's router
         "route",
+        # each range and dict view method's router, for a call through the type
+        "routed",
         # a chained compare's link: `Searched`'s and `Identity`'s `in`, and the compares a
         # link hands on to the next
         "__contains__",

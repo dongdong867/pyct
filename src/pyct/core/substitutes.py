@@ -287,7 +287,8 @@ class Identity(_Link):
 
 def call(callee: object, /) -> Any:
     """What a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
-    `type(...)` calls, and a call of a `math` function through a name the module binds to it.
+    `type(...)` calls, a call of a `math` function through a name the module binds to it, and
+    a call of a range or dict view method through the type (`pyct.core.type_calls`).
 
     ``callee`` is what the name the code wrote holds when the call runs.
     Python's own builtin gets pyct's router for it (`bound.CALLED`), and
