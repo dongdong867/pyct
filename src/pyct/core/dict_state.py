@@ -125,15 +125,19 @@ class DictState(dict):
 
         A tracked key found counts only where no plain key was found, since it may equal any
         of them. A key found is the argument's, whatever the target did since: a removal of it
-        is counted in ``grown``. A dict changed without a fork (``unforked``) counts from what
-        it knew before that change: a store keeps every key and adds one that may be any of
-        them, so at least one, and a removal may take any one.
+        is counted in ``grown``. That count is what the size term, `len` of the argument plus
+        ``grown``, reaches on every input the forks allow, so a check it decides holds as
+        written.
+
+        A dict changed without a fork (``unforked``) set ``grown`` from this input's own keys,
+        so the dict may hold fewer on another input. It holds at least ``floor``, counted from
+        what it knew before that change: a store keeps every key and leaves one, whichever it
+        is, and a removal may take any one. A check is decided only where both counts reach it.
         """
-        if self.unforked:
-            return self.floor
         found = self.found
         plain_found = len(found) - (TRACKED in found)
-        return max(plain_found, 1 if found else 0) + self.grown
+        written = max(plain_found, 1 if found else 0) + self.grown
+        return min(written, self.floor) if self.unforked else written
 
     def current(self, *keys: object) -> bool:
         """Whether the form still describes the dict: its size and each key read.

@@ -60,3 +60,16 @@ def test_a_dict_changed_without_a_fork_decides_nothing_its_copies_decide() -> No
 
     # the copy made before the change still knows the key it found
     assert decided(sink) == [(["in", "'a'", "config"], True)]
+
+
+def test_a_store_that_hit_a_key_the_argument_holds_decides_no_count_its_term_misses() -> None:
+    # `d |= {n: 1}` with n "a" on {"a": 1} grows nothing here, so the size term stays `len(d)`,
+    # which the empty argument with the same n makes 0, though the dict then holds n
+    config, sink = tracked({"a": 1})
+    name = ConcolicStr.made("a", "name", sink)
+
+    config |= {name: 1}
+    assert bool(config)
+
+    assert forks(sink) == [(["!=", ["len", "config"], 0], True)]
+    assert decided(sink) == []
