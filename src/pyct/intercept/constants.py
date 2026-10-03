@@ -30,9 +30,11 @@ an ``import math`` or ``import math as m``, and the names it binds to a
 function of `math` pyct routes alone, every binding a ``from math import f``
 or ``from math import f as g``; ``from math import *`` binds each of those
 functions under its own name. It finds the names bound to `builtins` and to
-its `len`, `ord` and `chr` the same way. A star import from any other module
-makes no such name count. A call of ``m.f(...)`` or ``g(...)`` asks for its
-callee first, and the callee is still read when the code runs.
+its `len`, `ord` and `chr` the same way. A star import from any module but
+the one a name's imports read from, `builtins` for a `math` name and `math`
+for a `builtins` one included, makes that name not count. A call of
+``m.f(...)`` or ``g(...)`` asks for its callee first, and the callee is
+still read when the code runs.
 """
 
 from __future__ import annotations
@@ -146,17 +148,15 @@ class _Bindings:
         """The names bound to one routed module alone, and those bound to its routed functions
         alone.
 
-        A star import from any module but a routed one, a relative one included, may bind any
-        name, so none counts.
+        A star import from any module but the routed one a name comes from, a relative one and
+        the other routed module included, may bind that name, so it does not count.
         """
-        if self.stars - {(module, 0) for module in ROUTED}:
-            return {}, frozenset()
         held = {name: kinds for name, kinds in self.imported.items() if name not in self.refused}
         modules = {}
         functions = set()
         for name, kinds in held.items():
             (module, kind), *others = kinds
-            if others:
+            if others or self.stars - {(module, 0)}:
                 continue
             if kind == _MODULE:
                 modules[name] = module

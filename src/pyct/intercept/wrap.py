@@ -14,8 +14,8 @@ or a nested function, and a function the module hands on, as in
 such as the `_` that ``gettext.install`` adds, is found as plain Python
 finds it. A module that defines or imports its own `len` finds that first.
 A call through ``builtins.len`` or a name imported from ``builtins`` never
-reads this mapping; the call-site substitution routes it
-(`pyct.intercept.calls`).
+reads this mapping; the call-site substitution routes the forms
+`pyct.intercept.constants` reads, and every other runs Python's own.
 The module's code, its globals, its ``dir()`` and ``builtins`` itself stay
 as they are.
 

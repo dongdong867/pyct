@@ -269,11 +269,6 @@ def test_any_other_call_of_a_math_name_is_left_as_written(source: str) -> None:
         ),
         ("from builtins import chr\nchr(n)", "from builtins import chr\n__pyct_call__(chr)(n)"),
         ("from builtins import *\nord(c)", "from builtins import *\n__pyct_call__(ord)(c)"),
-        # a star import from builtins binds no math name, so math's names still count
-        (
-            "import math\nfrom builtins import *\nmath.sqrt(x)",
-            "import math\nfrom builtins import *\n__pyct_call__(math.sqrt)(x)",
-        ),
         (
             "def f():\n    import builtins\ndef g():\n    return builtins.chr(n)",
             "\ndef f():\n    import builtins\n\ndef g():\n"
@@ -301,8 +296,12 @@ def test_a_call_of_len_ord_or_chr_through_the_builtins_module_is_substituted(
         "from builtins import len as size\nimport builtins as size\nsize(s)",
         # a math function and a builtin under one name
         "from builtins import len as f\nfrom math import sqrt as f\nf(s)",
-        # another module's star import may bind any name
+        # another module's star import may bind any name, the other routed module's included:
+        # builtins holds a `pow` of its own
         "import builtins\nfrom os.path import *\nbuiltins.len(s)",
+        "from math import pow\nfrom builtins import *\npow(x, 2)",
+        "import math\nfrom builtins import *\nmath.sqrt(x)",
+        "import builtins\nfrom math import *\nbuiltins.len(s)",
         "from builtins import len\nfrom .builtins import *\nlen(s)",
         # an attribute chain, a name builtins holds but pyct does not route, and a relative import
         "import builtins\nself.b.len(s)",
