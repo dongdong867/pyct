@@ -29,9 +29,10 @@ The same walk finds the names a module binds to `math` alone, every binding
 an ``import math`` or ``import math as m``, and the names it binds to a
 function of `math` pyct routes alone, every binding a ``from math import f``
 or ``from math import f as g``; ``from math import *`` binds each of those
-functions under its own name. A star import from any other module makes no
-such name count. A call of ``m.f(...)`` or ``g(...)`` asks for its callee
-first, and the callee is still read when the code runs.
+functions under its own name. It finds the names bound to `builtins` and to
+its `len`, `ord` and `chr` the same way. A star import from any other module
+makes no such name count. A call of ``m.f(...)`` or ``g(...)`` asks for its
+callee first, and the callee is still read when the code runs.
 """
 
 from __future__ import annotations
@@ -39,9 +40,13 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
+from pyct.core.bound import BOUND
 from pyct.core.math_calls import NAMES as MATH_NAMES
 
-# what an import of `math` binds a name to: the module, or one of its functions pyct routes
+# each module whose functions pyct routes when a call names them through it, with those functions
+ROUTED: dict[str, frozenset[str]] = {"math": MATH_NAMES, "builtins": frozenset(BOUND)}
+
+# what an import of a routed module binds a name to: the module, or one of its routed functions
 _MODULE, _FUNCTION = "module", "function"
 
 
@@ -60,8 +65,9 @@ class Constants:
     kinds: dict[str, frozenset[type]]
     in_class: frozenset[int]
     bools: frozenset[str] = frozenset()
-    math_modules: frozenset[str] = frozenset()
-    math_functions: frozenset[str] = frozenset()
+    # each name bound to one routed module alone, with that module's name
+    modules: dict[str, str] = field(default_factory=dict)
+    functions: frozenset[str] = frozenset()
 
     def kind(self, node: ast.expr) -> frozenset[type] | None:
         """The kinds of literal a name read holds, or None for anything else."""
@@ -75,13 +81,14 @@ class Constants:
             isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and node.id in self.bools
         )
 
-    def math_function(self, callee: ast.expr) -> bool:
-        """Whether a callee names a function of `math` pyct routes, through a name the module
-        binds to `math` alone, ``m.sqrt``, or to such a function alone, ``sqrt``."""
+    def routed_function(self, callee: ast.expr) -> bool:
+        """Whether a callee names a function pyct routes, through a name the module binds to its
+        module alone, ``m.sqrt`` or ``builtins.len``, or to such a function alone, ``sqrt``."""
         if isinstance(callee, ast.Name):
-            return callee.id in self.math_functions
+            return callee.id in self.functions
         if isinstance(callee, ast.Attribute) and isinstance(callee.value, ast.Name):
-            return callee.attr in MATH_NAMES and callee.value.id in self.math_modules
+            module = self.modules.get(callee.value.id)
+            return module is not None and callee.attr in ROUTED[module]
         return False
 
 
@@ -98,9 +105,10 @@ class _Bindings:
     counted: set[int] = field(default_factory=set)
     # `*args` and `**kwargs`, which hold a tuple or a dict whatever their annotation says
     gathered: set[int] = field(default_factory=set)
-    # what each import of `math` binds a name to, and the modules star imports read from, each
-    # with its import level, so a relative one is the package's own module
-    imported: dict[str, set[str]] = field(default_factory=dict)
+    # what each import of a routed module binds a name to, by the module and the kind, and the
+    # modules star imports read from, each with its import level, so a relative one is the
+    # package's own module
+    imported: dict[str, set[tuple[str, str]]] = field(default_factory=dict)
     stars: set[tuple[str | None, int]] = field(default_factory=set)
 
     def literal(self, target: ast.Name, value: object) -> None:
@@ -121,30 +129,40 @@ class _Bindings:
     def held(self, in_class: frozenset[int]) -> Constants:
         """The names that count: a star import or a bound `bool` refuses as the docstring says."""
         self.refused |= self.imported.keys() & (self.kinds.keys() | self.bools)
-        modules, functions = self._math_names()
+        modules, functions = self._routed_names()
         if self.stars:
-            return Constants({}, in_class, math_modules=modules, math_functions=functions)
+            return Constants({}, in_class, modules=modules, functions=functions)
         kinds = {name: frozenset(types) for name, types in self.kinds.items()}
         kinds = {name: types for name, types in kinds.items() if name not in self.refused}
         refused = self.not_bools | (self.by_builtin if "bool" in self._bound() else set())
         refused |= self.imported.keys()
         bools = frozenset(self.bools - refused)
-        return Constants(kinds, in_class, bools, math_modules=modules, math_functions=functions)
+        return Constants(kinds, in_class, bools, modules=modules, functions=functions)
 
     def _bound(self) -> set[str]:
         return set(self.kinds) | self.refused | self.bools
 
-    def _math_names(self) -> tuple[frozenset[str], frozenset[str]]:
-        """The names bound to `math` alone, and those bound to one of its functions alone.
+    def _routed_names(self) -> tuple[dict[str, str], frozenset[str]]:
+        """The names bound to one routed module alone, and those bound to its routed functions
+        alone.
 
-        A star import from any module but the standard `math`, a relative one included, may bind
-        any name, so none counts.
+        A star import from any module but a routed one, a relative one included, may bind any
+        name, so none counts.
         """
-        if self.stars - {("math", 0)}:
-            return frozenset(), frozenset()
+        if self.stars - {(module, 0) for module in ROUTED}:
+            return {}, frozenset()
         held = {name: kinds for name, kinds in self.imported.items() if name not in self.refused}
-        modules = frozenset(name for name, kinds in held.items() if kinds == {_MODULE})
-        return modules, frozenset(name for name, kinds in held.items() if kinds == {_FUNCTION})
+        modules = {}
+        functions = set()
+        for name, kinds in held.items():
+            (module, kind), *others = kinds
+            if others:
+                continue
+            if kind == _MODULE:
+                modules[name] = module
+            else:
+                functions.add(name)
+        return modules, frozenset(functions)
 
 
 def literal_names(tree: ast.AST) -> Constants:
@@ -155,7 +173,7 @@ def literal_names(tree: ast.AST) -> Constants:
     pending: list[tuple[ast.AST, bool]] = [(tree, False)]
     while pending:
         node, classed = pending.pop()
-        _math_bindings(node, bindings)
+        _routed_bindings(node, bindings)
         _bindings(node, bindings)
         if _star_import(node):
             bindings.stars.add((getattr(node, "module", None), getattr(node, "level", 0)))
@@ -165,23 +183,26 @@ def literal_names(tree: ast.AST) -> Constants:
     return bindings.held(frozenset(in_class))
 
 
-def _math_bindings(node: ast.AST, bindings: _Bindings) -> None:
-    """Note what an import of `math` or of its functions binds, each name it binds counted.
+def _routed_bindings(node: ast.AST, bindings: _Bindings) -> None:
+    """Note what an import of a routed module or of its routed functions binds, each name it
+    binds counted.
 
-    A name `math` holds that pyct does not route, `floor` or `pi` say, is
-    left to the other bindings, which refuse it.
+    A name the module holds that pyct does not route, `floor` or `abs` say,
+    is left to the other bindings, which refuse it.
     """
     if isinstance(node, ast.Import):
-        aliases = [(alias, _MODULE) for alias in node.names if alias.name == "math"]
-    elif isinstance(node, ast.ImportFrom) and node.module == "math" and node.level == 0:
-        aliases = [(alias, _FUNCTION) for alias in node.names if alias.name in MATH_NAMES]
+        aliases = [(alias, alias.name, _MODULE) for alias in node.names if alias.name in ROUTED]
+    elif isinstance(node, ast.ImportFrom) and node.module in ROUTED and node.level == 0:
+        module = node.module
+        names = ROUTED[module]
+        aliases = [(alias, module, _FUNCTION) for alias in node.names if alias.name in names]
         if any(alias.name == "*" for alias in node.names):
-            for name in MATH_NAMES:
-                bindings.imported.setdefault(name, set()).add(_FUNCTION)
+            for name in names:
+                bindings.imported.setdefault(name, set()).add((module, _FUNCTION))
     else:
         return
-    for alias, kind in aliases:
-        bindings.imported.setdefault(alias.asname or alias.name, set()).add(kind)
+    for alias, module, kind in aliases:
+        bindings.imported.setdefault(alias.asname or alias.name, set()).add((module, kind))
         bindings.counted.add(id(alias))
 
 

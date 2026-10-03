@@ -1,7 +1,8 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
 `bool`, `map`, `range` and `type`: pyct's own routers, one table for all of them
-(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`)
-and of each range and dict view method called through the type (`pyct.core.type_calls`).
+(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`),
+of each range and dict view method called through the type (`pyct.core.type_calls`), and pyct's
+`len`, `ord` and `chr` for a call through a name bound to `builtins` or to one of them.
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
@@ -220,11 +221,15 @@ def type_(value: object, /) -> Any:
 
 
 # what a call written `int(...)`, `float(...)`, `bool(...)`, `map(...)`, `range(...)` or
-# `type(...)`, a call of a `math` function through a name the module binds to it, or a call of
-# a range or dict view method through the type (`pyct.core.type_calls`), calls in place of
-# Python's own function, by its identity (see `pyct.core.substitutes.call`)
+# `type(...)`, a call of a `math` function or of `len`, `ord` or `chr` through a name the module
+# binds to it or to its module, or a call of a range or dict view method through the type
+# (`pyct.core.type_calls`), calls in place of Python's own function, by its identity (see
+# `pyct.core.substitutes.call`)
 CALLED: Mapping[int, Callable[..., object]] = {
     **_CONVERTERS,
+    id(_LEN): len,
+    id(_ORD): ord,
+    id(_CHR): chr,
     id(map): map_,
     id(range): range_,
     id(type): type_,

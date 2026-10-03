@@ -256,3 +256,61 @@ def test_a_call_of_a_math_function_by_the_name_the_module_imports_it_under_is_su
 )
 def test_any_other_call_of_a_math_name_is_left_as_written(source: str) -> None:
     assert substituted(source) == ast.unparse(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("import builtins\nbuiltins.len(s)", "import builtins\n__pyct_call__(builtins.len)(s)"),
+        ("import builtins as b\nb.ord(c)", "import builtins as b\n__pyct_call__(b.ord)(c)"),
+        (
+            "from builtins import len as size\nsize(s)",
+            "from builtins import len as size\n__pyct_call__(size)(s)",
+        ),
+        ("from builtins import chr\nchr(n)", "from builtins import chr\n__pyct_call__(chr)(n)"),
+        ("from builtins import *\nord(c)", "from builtins import *\n__pyct_call__(ord)(c)"),
+        # a star import from builtins binds no math name, so math's names still count
+        (
+            "import math\nfrom builtins import *\nmath.sqrt(x)",
+            "import math\nfrom builtins import *\n__pyct_call__(math.sqrt)(x)",
+        ),
+        (
+            "def f():\n    import builtins\ndef g():\n    return builtins.chr(n)",
+            "\ndef f():\n    import builtins\n\ndef g():\n"
+            "    return __pyct_call__(builtins.chr)(n)",
+        ),
+    ],
+)
+def test_a_call_of_len_ord_or_chr_through_the_builtins_module_is_substituted(
+    source: str, expected: str
+) -> None:
+    assert substituted(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # the bare names, which the module's builtins bind
+        "len(s)",
+        "ord(c)",
+        # a name bound another way too, or to another module
+        "import builtins as bi\ndef f():\n    bi = None\nbi.len(s)",
+        "import os as builtins\nbuiltins.len(s)",
+        "import builtins as m\nimport math as m\nm.len(s)",
+        "from builtins import len\ndef len(v):\n    return v\nlen(s)",
+        "from builtins import len as size\nimport builtins as size\nsize(s)",
+        # a math function and a builtin under one name
+        "from builtins import len as f\nfrom math import sqrt as f\nf(s)",
+        # another module's star import may bind any name
+        "import builtins\nfrom os.path import *\nbuiltins.len(s)",
+        "from builtins import len\nfrom .builtins import *\nlen(s)",
+        # an attribute chain, a name builtins holds but pyct does not route, and a relative import
+        "import builtins\nself.b.len(s)",
+        "import builtins\nbuiltins.abs(x)",
+        "from builtins import abs\nabs(x)",
+        "from .builtins import len\nlen(s)",
+        "import builtins\nbuiltins.len(*args)",
+    ],
+)
+def test_any_other_call_through_a_builtins_name_is_left_as_written(source: str) -> None:
+    assert substituted(source) == ast.unparse(ast.parse(source))
