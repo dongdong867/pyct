@@ -158,8 +158,10 @@ def compared_in_place(self: DictState, key: object) -> bool:
     it."""
     if not self.tracked_changes or written_key(key) is None or own_key(self, key):
         return False
+    # only a change under a tracked key can be over it: read those, not every change
+    log = self.log
     return any(
-        type(change[1]) is type(key) and over_the_argument(self, change) for change in self.log
+        type(log[at][1]) is type(key) and over_the_argument(self, log[at]) for at in self.tracked_at
     )
 
 

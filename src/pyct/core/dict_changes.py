@@ -43,6 +43,8 @@ from pyct.core.dict_reads import (
     placed,
     present,
     recorded,
+    settled_as,
+    stand_in,
     value,
 )
 from pyct.core.dict_state import MISSING, DictState
@@ -96,12 +98,15 @@ MOST_TRACKED_CHANGES = 16
 def followed(self: DictState, key: object) -> bool:
     """Whether a change under ``key`` is followed: a plain str or int, or a tracked key of the
     kind the dict's keys are, an int under `dict[int, X]` and a str elsewhere, while the dict
-    follows fewer than ``MOST_TRACKED_CHANGES`` such changes and no popitem changed it: which
-    key popitem took is the input's last, and no fork names it."""
+    follows fewer than ``MOST_TRACKED_CHANGES`` such changes, no popitem changed it, and no
+    lookup of that key was Python's own: which key popitem took is the input's last, and such
+    a lookup's answer follows the key with no fork, so no fork names either."""
     if plain_key(key):
         return True
     kind = ConcolicInt if self.int_keyed else ConcolicStr
-    return type(key) is kind and self.tracked_changes < MOST_TRACKED_CHANGES and not self.popped
+    if type(key) is not kind or self.popped or settled_as(key) in self.unfollowed:
+        return False
+    return self.tracked_changes < MOST_TRACKED_CHANGES
 
 
 def _joined_key(self: DictState, made: DictState, key: object) -> None:
@@ -198,9 +203,11 @@ def unforked_lookup(self: DictState, key: object, follow: bool) -> bool:
 def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
     """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
     says the call's own lookup already named it (see ``as_python``). A key Python's lookup
-    makes the same as an int is looked up as that int, and stored as it is."""
+    makes the same as an int is looked up as that int, and stored as it is. A stale walked
+    copy of the target's own key is the tracked key it was stored under (see ``stand_in``)."""
     if _stored_plainly(self, key, stored, name):
         return
+    key = stand_in(self, key)
     looked = int_key(key)
     if not followed(self, looked):
         stored_as_python(self, key, stored, (name, named))
@@ -243,6 +250,7 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     """
     if not holds_key(self, key, name):
         return own(dict.pop, self, key, *default)
+    key = stand_in(self, key)
     looked = int_key(key)
     if written_key(looked) is None:
         return _removed_as_python(self, key, name, default)
@@ -317,6 +325,7 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
     """``config.setdefault(key, default)``: the value when the dict holds the key, else a store."""
     if not holds_key(self, key, "setdefault"):
         return own(dict.setdefault, self, key, default)
+    key = stand_in(self, key)
     if written_key(int_key(key)) is None:
         held = own(dict.__contains__, self, key)
         answer = changed_as_python(

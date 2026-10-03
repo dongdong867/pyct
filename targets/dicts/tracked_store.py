@@ -57,16 +57,6 @@ def merged_named(n: str, d: dict):
     return 0
 
 
-def walked(n: str, d: dict):
-    d[n] = 0
-    count = 0
-    for k in d:
-        count += 1
-    if count > 1:
-        return "more"
-    return "one"
-
-
 def deleted(n: str, d: dict):
     del d[n]
     if "b" in d:
@@ -133,3 +123,43 @@ def popped_then_stored(n: str, d: dict):
     if count > 1:
         return "more"
     return "one"
+
+
+def own_walked(name: str, config: dict):
+    config[name] = 0
+    hits = 0
+    for k in config:
+        if k in config:
+            hits += 1
+    if hits > 1:
+        return "two"
+    if name == "q":
+        return "q"
+    return "one"
+
+
+def own_walked_int(n: int, config: dict[int, int]):
+    config[n] = 0
+    hits = 0
+    for k in config:
+        if k in config:
+            hits += 1
+    if hits > 1:
+        return "two"
+    if n == 7:
+        return "seven"
+    return "one"
+
+
+def rewalked(n: str, d: dict):
+    keys = list(d)
+    d.pop(n, None)
+    for k in d:
+        pass
+    hits = 0
+    for k in keys:
+        if k in d:
+            hits += 1
+    if hits > 1:
+        return "two"
+    return "fewer"

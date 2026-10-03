@@ -166,31 +166,51 @@ def unsat_misses(stderr: str) -> list[str]:
     return [entry for entry in missed if entry.endswith(" unsat")]
 
 
-# follow-a-store-under-a-tracked-key-walks-the-stored-key
+# follow-a-store-under-a-tracked-key-walks-the-stored-key, on the target
+# record-a-decided-check-as-a-fact shares with it
+WALKED = "tracked_store_walk"
+WALKED_FILE = REPO_ROOT / "targets" / "dicts" / "decided.py"
+
+
+def walked_line(text: str) -> int:
+    """The line of the shared walk target that holds ``text``."""
+    lines = WALKED_FILE.read_text().splitlines()
+    start = next(n for n, line in enumerate(lines) if line.startswith(f"def {WALKED}("))
+    return next(n for n, line in enumerate(lines[start:], start + 1) if text in line)
+
+
 def test_walks_the_stored_key() -> None:
-    result = run_pyct(f"{MODULE}::walked", '{"n": "pyct1", "d": {}}', *BUDGET, timeout=PATIENCE)
+    target = f"targets.dicts.decided::{WALKED}"
+    result = run_pyct(target, '{"n": "pyct1", "d": {}}', *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    more = [line for line in solved(lines) if covers(line, return_line("walked", "more"))]
+    walked = getattr(importlib.import_module("targets.dicts.decided"), WALKED)
+    more = [
+        line
+        for line in solved(lines)
+        if walked_line('return "more"') in union_of([line]).get(str(WALKED_FILE), [])
+    ]
     assert more, [args_of(line) for line in lines[:10]]
-    assert all(plain_python("walked", called(line)) == "more" for line in more)
+    assert all(walked(**copy.deepcopy(called(line))) == "more" for line in more)
     left = [(args_of(line), line["aim"], line["mismatch_at"]) for line in lines]
     assert [entry for entry in left if entry[2] is not None] == [], len(lines)
     # the flip the story found unsat with a witness: past a key the argument holds, n's own
-    walk = line_of("walked", "for k in d")
-    held = [line for line in lines if (line_of("walked", "d[n]"), LOOKED_UP, True) in listed(line)]
+    walk, store = walked_line("for k in d"), walked_line("d[n]")
+    held = [line for line in lines if (store, LOOKED_UP, True) in listed(line)]
     assert any((walk, [">", ["len", "d"], 1], True) in listed(line) for line in held), held[:3]
     assert unsat_misses(result.stderr) == []
 
 
-# a store under a tracked key between a walk and the lookups of the keys it handed out, and one
-# after a popitem: no answer leaves the plan (review of PR #131)
+# a store under a tracked key between a walk and the lookups of the keys it handed out, one
+# after a popitem, and a removal between them with a second walk: no answer leaves the plan
+# (review of PR #131)
 @pytest.mark.parametrize(
     ("function", "seed"),
     [
         ("snapshot", {"n": "a", "d": {"x1": 1, "x2": 2}}),
         ("popped_then_stored", {"n": "a", "d": {}}),
+        ("rewalked", {"n": "zz", "d": {"xx": 1, "yy": 2, "zz": 3}}),
     ],
 )
 def test_a_store_between_a_walk_or_popitem_and_a_lookup_keeps_every_answer_on_the_plan(
@@ -249,3 +269,26 @@ def test_raises_a_missing_key_as_python_does(function: str) -> None:
     taken = [line for line in solved(lines) if (removal, LOOKED_UP, True) in listed(line)]
     assert taken, [args_of(line) for line in lines]
     assert any(line["mismatch_at"] is None and line["failure"] is None for line in taken), taken
+
+
+# a walk hands out the key a store under a tracked key put there, one Python shares; its lookup
+# leaves the tracked key free, so a later fork on it is flipped (review of PR #131, round 2)
+@pytest.mark.parametrize(
+    ("function", "seed", "line", "int_keyed"),
+    [
+        ("own_walked", {"name": "a", "config": {}}, 'return "q"', False),
+        ("own_walked_int", {"n": 0, "config": {}}, 'return "seven"', True),
+    ],
+)
+def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
+    function: str, seed: dict[str, object], line: str, int_keyed: bool
+) -> None:
+    result = run_pyct(f"{MODULE}::{function}", json.dumps(seed), "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert line_of(function, line) in union_of(lines)[str(FILE)]
+    if not int_keyed:
+        assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
+    # under `dict[int, X]` an answer that adds key 0 walks it ahead of n's own, so the lookup's
+    # fork for it comes before the pass the answer aimed at: one answer leaves there, as on v2

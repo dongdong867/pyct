@@ -71,7 +71,6 @@
 {"set": "v2", "target": "targets.dicts.tracked_store::store_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [20]}
 {"set": "v2", "target": "targets.dicts.tracked_store::untyped_store", "seed": {"n": "pyct1", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.dicts.tracked_store::updated_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [38]}
-{"set": "v2", "target": "targets.dicts.tracked_store::walked", "seed": {"n": "pyct1", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [66]}
 {"set": "v2", "target": "targets.dicts.truth_kept::changed_after", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [20]}
 {"set": "v2", "target": "targets.dicts.truth_kept::inside", "seed": {"cfg": {"a": {}}}, "status": "differs", "only_legacy": [], "only_v2": [27]}
 {"set": "v2", "target": "targets.dicts.truth_kept::items", "seed": {"config": {}}, "status": "differs", "only_legacy": [], "only_v2": [48]}
