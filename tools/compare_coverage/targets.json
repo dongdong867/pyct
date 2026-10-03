@@ -350,6 +350,7 @@
     {"set": "v2", "target": "targets.isolate.long_digits::parse", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.isolate.long_sum", "left_out": "spends one to two seconds in one C call by design, for the deadline tests"},
     {"set": "v2", "target": "targets.isolate.many_inputs::pick", "seed": {"x": -1}},
+    {"set": "v2", "module": "targets.isolate.on_the_way_out", "left_out": "for the tests where a host tracer acts as the call ends, with one target that loops forever by design"},
     {"set": "v2", "target": "targets.isolate.prints::speak", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.process_state::disturb", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.isolate.reads_stdin::ask", "seed": {"x": 0}},
