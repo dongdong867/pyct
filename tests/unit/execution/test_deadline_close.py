@@ -104,38 +104,50 @@ def test_a_raise_as_the_line_tracer_stops_still_closes_the_block(
     assert watchers() == []
 
 
-def ctrl_c_as_the_stops_are_held(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Have the call that holds a Ctrl-C and a SIGTERM raise KeyboardInterrupt once it has, as
-    CPython's does when a Ctrl-C came just before: it handles waiting signals as it returns."""
+def ctrl_c_at(call: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Have the first mask call of the kind ``call`` names raise KeyboardInterrupt once it has
+    done its work, as CPython's does when a Ctrl-C came just before: it handles waiting signals
+    as it returns. ``hold`` is the call that holds a Ctrl-C and a SIGTERM, ``read`` one that
+    reads the mask and changes nothing."""
     real = signal.pthread_sigmask
+    raised: list[bool] = []
 
     def pending(how: int, mask: Iterable[int]) -> object:
         previous = real(how, mask)
-        if how == signal.SIG_BLOCK and {signal.SIGINT, signal.SIGTERM} <= set(mask):
+        held = set(mask)
+        kind = "hold" if {signal.SIGINT, signal.SIGTERM} <= held else "read" if not held else ""
+        if how == signal.SIG_BLOCK and kind == call and not raised:
+            raised.append(True)
             raise KeyboardInterrupt
         return previous
 
     monkeypatch.setattr(signal, "pthread_sigmask", pending)
 
 
-@pytest.mark.parametrize("where", ["enter", "leave"])
-def test_a_ctrl_c_as_the_stops_are_held_leaves_the_mask_as_it_was(
-    where: str, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("where", "call"), [("enter", "hold"), ("leave", "hold"), ("leave", "read")]
+)
+def test_a_ctrl_c_on_the_way_in_or_out_leaves_the_program_as_it_was(
+    where: str, call: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     before = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    previous = signal.signal(signal.SIGALRM, _own)
     block = deadline(time.monotonic() + 60)
     if where == "leave":
         block.__enter__()
     try:
         with monkeypatch.context() as patch:
-            ctrl_c_as_the_stops_are_held(patch)
+            ctrl_c_at(call, patch)
+            # the Ctrl-C reaches the caller
             with pytest.raises(KeyboardInterrupt):
                 block.__enter__() if where == "enter" else close(block)
-        after = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+        after = (signal.pthread_sigmask(signal.SIG_BLOCK, set()), signal.getsignal(signal.SIGALRM))
+        left = watchers()
     finally:
-        # the mask as it was, whatever happened, so no other test runs with the stops held
+        # as it was, whatever happened, so no other test runs with the stops held
         signal.pthread_sigmask(signal.SIG_SETMASK, before)
         close(block)
+        signal.signal(signal.SIGALRM, previous)
 
-    assert after == before
-    assert watchers() == []
+    assert after == (before, _own)
+    assert left == []

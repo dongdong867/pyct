@@ -346,8 +346,8 @@ class _Sent:
         self.previous = _restorable(signal.getsignal(signal.SIGALRM))
         # from here on the way out has the handler to give back
         self.out = False
-        # read before the stops are held: the call that holds them raises a Ctrl-C that came
-        # just before, once it has, so the mask goes back in the except below
+        # read before the stops are held: the call that holds them can raise a Ctrl-C that came
+        # just before after the mask has changed, so the mask goes back in the except below
         held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
         try:
             signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
@@ -383,14 +383,19 @@ class _Sent:
         self.armed = False
         if self.out:
             return
-        # read before the stops are held, as in ``__enter__``, so a Ctrl-C the holding call
-        # raises leaves the mask as it was
-        held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+        held: set[signal.Signals | int] | None = None
         try:
+            # read before the stops are held, as in ``__enter__``: either call can raise a
+            # Ctrl-C that came just before, the holding one after the mask has changed
+            held = signal.pthread_sigmask(signal.SIG_BLOCK, set())
             signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
-            self._way_out()
         finally:
-            signal.pthread_sigmask(signal.SIG_SETMASK, held)
+            # such a Ctrl-C goes on once the handler is back and the watcher has ended
+            try:
+                self._way_out()
+            finally:
+                if held is not None:
+                    signal.pthread_sigmask(signal.SIG_SETMASK, held)
 
     def _way_out(self) -> None:
         """Stop the sends, put the process's own handler back, and end the watcher."""
