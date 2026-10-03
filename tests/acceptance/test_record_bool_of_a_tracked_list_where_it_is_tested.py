@@ -9,7 +9,7 @@ import pytest
 
 from targets.lists import truth_kept
 from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
-from tests.acceptance.test_bools import at, sides
+from tests.acceptance.test_bools import at
 from tests.acceptance.test_ints import forks_of
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
@@ -37,6 +37,11 @@ def lines_of(function: str) -> tuple[int, int, int]:
 def placed(line: dict[str, object]) -> list[tuple[object, object, object]]:
     """Each fork on a printed line, by its line, its expression and the side it took."""
     return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
+
+
+def took(inputs: list[dict[str, object]], fork: tuple[object, object, object]) -> bool:
+    """Whether any of the printed lines took this fork: its line, its expression and its side."""
+    return any(fork in placed(line) for line in inputs)
 
 
 def filled(inputs: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -73,7 +78,7 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     solved = filled(inputs[1:])
     assert solved, inputs
     assert all(at(line, tested) == [FILLED] for line in solved)
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
     assert any(under in covered_in(line, str(FILE)) for line in solved)
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
@@ -106,7 +111,7 @@ def test_keeps_the_list_as_it_was_at_the_call() -> None:
     assert placed(seed) == [(tested, FILLED, False)]
     solved = filled(inputs[1:])
     assert solved, inputs
-    assert True in sides(solved, FILLED)
+    assert took(solved, (tested, FILLED, True))
 
 
 # record-bool-of-a-tracked-list-where-it-is-tested-names-a-list-inside-as-indexed
@@ -123,7 +128,7 @@ def test_names_a_list_inside_as_indexed() -> None:
         (tested, row, False),
     ]
     assert seed_fork_line(result.stderr, tested).endswith("  len(grid[0]) != 0  not taken")
-    assert True in sides(inputs[1:], row)
+    assert took(inputs[1:], (tested, row, True))
 
 
 # record-bool-of-a-tracked-list-where-it-is-tested-downgrades-a-list-changed-outside
