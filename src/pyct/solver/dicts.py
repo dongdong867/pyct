@@ -159,7 +159,7 @@ class DictTerms(Keyed):
         terms.keep = origin.keep
         terms.pinned = origin.pinned
         terms.most_lookups = origin.lookups
-        terms.learn(prefix)
+        terms.learn(prefix, origin.places)
         return terms
 
     def of(self, part: Expression) -> Tracked | None:
@@ -173,9 +173,10 @@ class DictTerms(Keyed):
             self.dicts[name] = Tracked(name, symbol, self.shapes[name])
         return self.dicts[name]
 
-    def learn(self, prefix: tuple[Branch, ...]) -> None:
+    def learn(self, prefix: tuple[Branch, ...], places: tuple[Expression, ...] = ()) -> None:
         """Note what the path asks of each dict, in the order it asks: each part once, first to
-        last, on a stack of its own, however deep or shared the parts are."""
+        last, on a stack of its own, however deep or shared the parts are; then each place the
+        path keeps, a lookup's given one as ``["given", place]``."""
         seen: set[int] = set()
         for fork in prefix:
             stack: list[Expression] = [fork.expression]
@@ -185,12 +186,11 @@ class DictTerms(Keyed):
                     seen.add(id(part))
                     self._note(part)
                     stack.extend(reversed(part[1:]))
-        for fork in prefix:
-            holds = fork.holds
-            if isinstance(holds, list) and holds[:1] == ["given"]:
-                self._placed(holds[1], given=True)
-            elif isinstance(holds, list):
-                self._placed(holds)
+        for place in places:
+            if isinstance(place, list) and place[:1] == ["given"]:
+                self._placed(place[1], given=True)
+            else:
+                self._placed(place)
         for found in self.dicts.values():
             found.asked = frozenset(found.named)
             if found.tracked:

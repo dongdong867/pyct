@@ -7,9 +7,9 @@ from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.shapes import DictAnswer, DictShape
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.solver.answer import Sat, SolverAnswerError, Unknown, Unsat
-from pyct.solver.cvc5 import solve
+from pyct.solver.cvc5 import held, solve
 from pyct.solver.dict_keys import made_up_number
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
@@ -24,7 +24,7 @@ def fork(expression: Expression, *, taken: bool = True) -> Branch:
 
 
 def answered(
-    args: dict[str, object], *forks: Branch, checks: dict[str, object] | None = None
+    args: dict[str, object], *forks: Branch | Fact, checks: dict[str, object] | None = None
 ) -> dict[str, object]:
     """The arguments cvc5 answers for the path, from an input of these arguments."""
     seed = Seed.of(args, checks)  # pyrefly: ignore[bad-argument-type]
@@ -300,9 +300,38 @@ def test_a_tracked_int_key_equals_an_int_key() -> None:
     assert solved["n"] == 1 and isinstance(config, dict) and config[1] > 7
 
 
-def kept(expression: Expression, holds: Expression, *, taken: bool = True) -> Branch:
-    """A fork that keeps what a walk read at its place."""
-    return Branch(expression=expression, taken=taken, site=SITE, holds=holds)
+def kept(expression: Expression, place: Expression, *, taken: bool = True) -> Fact:
+    """A check the path holds, with the key a walk read at its place: a fork the plan keeps and
+    the place recorded after it hold as one such fact does."""
+    return Fact(expression=expression, taken=taken, site=SITE, place=place)
+
+
+def test_a_path_holds_its_forks_and_its_facts_checks_in_order_and_their_places() -> None:
+    place: Expression = ["walked", "config", "'a'"]
+    decided = Fact(["in", "'a'", "config"], False, SITE, raising=True)
+    path = (Fact(None, True, SITE, place=place), fork([">", ["len", "config"], 0]), decided)
+
+    conditions, places = held(path)
+
+    assert conditions == (
+        fork([">", ["len", "config"], 0]),
+        Branch(["in", "'a'", "config"], taken=False, site=SITE, raising=True),
+    )
+    assert places == (place,)
+
+
+@needs_cvc5
+def test_a_fact_holds_as_it_was_recorded_and_is_never_flipped() -> None:
+    # `"a" in config` settled true, then looked up again, then `"b" in config` flipped to true
+    solved = answered(
+        {"config": {"a": 1}},
+        fork(["in", "'a'", "config"]),
+        Fact(["in", "'a'", "config"], True, SITE),
+        fork(["in", "'b'", "config"]),
+    )
+
+    config = solved["config"]
+    assert isinstance(config, dict) and "a" in config and "b" in config
 
 
 @needs_cvc5
@@ -357,7 +386,8 @@ def test_a_given_place_holds_whatever_a_fork_reads() -> None:
     # lookup is asked with a at its place, unsat, and then without, where a model is unknown
     forks = (
         kept([">", ["len", "config"], 0], ["walked", "config", "'a'"]),
-        kept(["in", "'a'", "config"], ["given", ["walked", "config", "'a'"]], taken=False),
+        Fact(None, True, SITE, place=["given", ["walked", "config", "'a'"]]),
+        fork(["in", "'a'", "config"], taken=False),
     )
     seed = Seed.of({"config": {"a": 1}})
 
@@ -408,14 +438,11 @@ def test_a_path_no_key_order_takes_is_unsat_with_the_places_left_out() -> None:
 
 
 def test_a_place_on_a_dict_the_input_does_not_hold_or_by_a_key_no_fork_writes_is_no_fact() -> None:
+    places: tuple[Expression, ...] = (["walked", "other", "'a'"], ["walked", "config", "name"])
     text = program(
-        (
-            kept([">", ["len", "config"], 0], ["walked", "other", "'a'"]),
-            kept([">", ["len", "config"], 0], ["walked", "config", "name"]),
-            fork(["in", "'a'", "config"]),
-        ),
+        (fork([">", ["len", "config"], 0]), fork(["in", "'a'", "config"])),
         {},
-        _origin({"config": DictShape(("a",), ("int",))}),
+        Origin(dicts={"config": DictShape(("a",), ("int",))}, places=places),
     ).text
 
     assert "kept| 1" not in text and "other" not in text

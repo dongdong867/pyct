@@ -49,7 +49,14 @@ def entry_for(stdout: str, line: int) -> dict[str, object]:
 
 def not_taken(file: str, line: int, col: int, side: bool, **tries: int) -> dict[str, object]:
     """What an entry says past its lines when no input took ``side`` of the fork at the site."""
-    counts = {"not_tried": 0, "unsat": 0, "unknown": 0, "timeout": 0, "left_the_plan": 0}
+    counts = {
+        "not_tried": 0,
+        "unsat": 0,
+        "unknown": 0,
+        "timeout": 0,
+        "left_the_plan": 0,
+        "decided": 0,
+    }
     return {
         "reason": "not taken",
         "condition": {"file": file, "line": line, "col": col, "side": side},

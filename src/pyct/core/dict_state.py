@@ -23,6 +23,9 @@ from pyct.core.list_state import plain
 # what a key maps to where the dict holds no such key: apart from every value a dict holds
 MISSING = object()
 
+# what ``found`` holds for any tracked key a fork found, which may equal any other key
+TRACKED = object()
+
 
 class DictState(dict):
     """The state a tracked dict keeps beside its items, and what every operation checks first.
@@ -41,6 +44,12 @@ class DictState(dict):
     changed: dict[object, bool]
     # how many keys the dict holds past the argument's own: each change's, kept as it happens
     grown: int
+    # each key a fork of the path asked about, as ``settled`` knows it, and those it found in
+    # the argument, a tracked key as ``TRACKED`` (see ``fewest``), both shared as ``settled`` is.
+    # Kept apart from ``settled``, which also notes a key a change pyct does not follow met,
+    # with no fork
+    asked: set[object]
+    found: set[object]
     shadow: dict[object, object]
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
@@ -72,6 +81,8 @@ class DictState(dict):
         fields["expression"] = expression
         fields["sink"] = sink
         fields["settled"] = {}
+        fields["asked"] = set()
+        fields["found"] = set()
         fields["changed"] = {}
         fields["grown"] = 0
         fields["shadow"] = dict(items)
@@ -98,6 +109,19 @@ class DictState(dict):
         if grown == 0:
             return measured
         return ["+", measured, grown] if grown > 0 else ["-", measured, -grown]
+
+    def fewest(self) -> int:
+        """The fewest keys the dict holds on every input that takes the path so far: the keys a
+        fork of the path found in the argument, plus the keys the target added less those it
+        removed.
+
+        A tracked key found counts only where no plain key was found, since it may equal any
+        of them. A key found is the argument's, whatever the target did since: a removal of it
+        is counted in ``grown``.
+        """
+        found = self.found
+        plain_found = len(found) - (TRACKED in found)
+        return max(plain_found, 1 if found else 0) + self.grown
 
     def current(self, *keys: object) -> bool:
         """Whether the form still describes the dict: its size and each key read.
@@ -145,6 +169,8 @@ class DictState(dict):
         made = type(self).made(items, self.expression, self.sink, int_keyed=self.int_keyed)
         fields = made.__dict__
         fields["settled"] = self.settled
+        fields["asked"] = self.asked
+        fields["found"] = self.found
         fields["changed"] = dict(self.changed)
         fields["grown"] = self.grown
         return made

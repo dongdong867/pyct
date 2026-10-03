@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results import record
 from pyct.results.coverage import Coverage
 from pyct.results.graphs import LONGEST_STRETCH
@@ -83,6 +83,37 @@ def test_the_tries_at_a_condition_count_every_way_the_run_could_have_flipped_it(
     )
     # worked out once, on the first read
     assert result.why_uncovered is result.why_uncovered
+
+
+def test_a_decided_check_shows_its_side_and_counts_once_an_input(tmp_path: Path) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(SOURCE)
+    site = Site(file=str(file), line=3, col=7)
+    # `x != x` decided false, twice on one input, and a place no check holds beside it
+    decided = Fact(["!=", "x", "x"], False, site)
+    seed = InputRecord(
+        args={"x": 1},
+        forks=(),
+        covered_lines=frozenset({3, 5}),
+        facts=(decided, decided, Fact(None, True, Site(str(file), 5, 4), place=["walked"])),
+    )
+    result = RunResult(
+        entry="m::same",
+        records=(seed, dataclasses.replace(seed, args={"x": 2})),
+        coverage=Coverage(
+            covered={str(file): frozenset({3, 5})}, lines={str(file): frozenset({1, 3, 4, 5})}
+        ),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    assert result.why_uncovered[1] == WhyEntry(
+        file=str(file),
+        lines=(4,),
+        reason=Reason.NOT_TAKEN,
+        condition=Condition(site=site, side=True),
+        tries=Tries(decided=2),
+    )
 
 
 def test_the_analysis_stops_so_its_longest_stretch_still_ends_within_the_grace(

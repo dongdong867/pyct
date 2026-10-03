@@ -17,7 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError
@@ -45,13 +45,15 @@ class Reason(StrEnum):
 
 @dataclass(frozen=True)
 class Tries:
-    """What happened each time the run could have flipped the forks at one site."""
+    """What happened each time the run could have flipped the forks at one site, and how many
+    inputs ran a check there whose answer pyct's own values already knew (``decided``)."""
 
     not_tried: int = 0
     unsat: int = 0
     unknown: int = 0
     timeout: int = 0
     left_the_plan: int = 0
+    decided: int = 0
 
 
 @dataclass(frozen=True)
@@ -83,11 +85,18 @@ class WhyEntry:
 @dataclass(frozen=True)
 class Walked:
     """One input as the cause reads it: its forks in order, whether it ended in a failure,
-    and the lines it covered."""
+    the lines it covered, and its facts, each decided check of which shows the side it took
+    as a fork does."""
 
     forks: tuple[Branch, ...]
     failed: bool
     lines: frozenset[int] = frozenset()
+    facts: tuple[Fact, ...] = ()
+
+    @property
+    def tested(self) -> tuple[Branch | Fact, ...]:
+        """Each condition the input tested, a fork or a decided check."""
+        return self.forks + tuple(fact for fact in self.facts if fact.expression is not None)
 
 
 # what the analysis reads the time from; a test sets another
@@ -210,7 +219,7 @@ class _Seen:
                     each.lines,
                     tuple(
                         _fork(branch)
-                        for branch in pace.each(each.forks)
+                        for branch in pace.each(each.tested)
                         if branch.site.file == file
                     ),
                     each.failed,
@@ -221,7 +230,7 @@ class _Seen:
         heads = heads_of(
             ((branch.site.line, branch.site.col), branch.expression)
             for each in pace.each(run.walked)
-            for branch in pace.each(each.forks)
+            for branch in pace.each(each.tested)
             if branch.site.file == file and not branch.raising
         )
         return cls(file, covered, inputs, run, _owners(file), heads)
@@ -253,7 +262,7 @@ class _Seen:
         return self.flows[id(code)].cause_of(line)
 
 
-def _fork(branch: Branch) -> Fork:
+def _fork(branch: Branch | Fact) -> Fork:
     return (branch.site.line, branch.site.col, branch.taken, branch.raising)
 
 

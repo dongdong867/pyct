@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH
@@ -58,7 +58,8 @@ class InputRecord:
 
     ``aim`` is the fork the solver was asked for, and ``mismatch_at`` the
     first position where the run left that plan. A seed is aimed at nothing,
-    so both stay ``None``.
+    so both stay ``None``. ``facts`` are what its path held beside the forks,
+    which no line prints.
     """
 
     args: Mapping[str, object]
@@ -69,6 +70,7 @@ class InputRecord:
     source: Source = Source.SEED
     aim: Aim | None = None
     mismatch_at: int | None = None
+    facts: tuple[Fact, ...] = ()
 
 
 class StopKind(StrEnum):
@@ -216,7 +218,7 @@ class RunResult:
         # the inputs and their tries are read only when a cause can still be worked out
         if not run.late():
             walked = [
-                Walked(record.forks, record.failure is not None, record.covered_lines)
+                Walked(record.forks, record.failure is not None, record.covered_lines, record.facts)
                 for record in self.records
             ]
             run = Run(walked, _tries(self), stop_at=stop_at)
@@ -239,5 +241,8 @@ def _tries(result: RunResult) -> dict[ForkSite, Tries]:
         if record.aim is not None and record.mismatch_at is not None:
             aimed = ForkSite(record.aim.site, record.aim.raising)
             counts.setdefault(aimed, Counter())["left_the_plan"] += 1
+        # one an input, however often it decided the check there
+        for where in {fact.where for fact in record.facts if fact.expression is not None}:
+            counts.setdefault(where, Counter())["decided"] += 1
     fields = [field.name for field in dataclasses.fields(Tries)]
     return {site: Tries(*(counted[name] for name in fields)) for site, counted in counts.items()}

@@ -18,7 +18,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, caller_site
+from pyct.core.branch import Branch, Downgrade, Fact, caller_site
 from pyct.core.dict_reads import (
     POPPED,
     found,
@@ -172,11 +172,12 @@ def last_item(self: DictState) -> tuple[object, object]:
         return own(dict.popitem, self)
     key = next(reversed(dict.keys(self)), MISSING)
     pin = None if key is MISSING else placed(self, key, POPPED)
-    fork = Branch(
-        ["!=", self.size_term(), 0], key is not MISSING, caller_site(), True, "popitem", pin
-    )
+    fork = Branch(["!=", self.size_term(), 0], key is not MISSING, caller_site(), True, "popitem")
     if not recorded(self, fork):
         return own(dict.popitem, self)
+    if pin is not None:
+        # the key it read, which holds only once the dict held one
+        self.sink.append(Fact(None, True, fork.site, True, pin, lost_as="popitem"))
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
     handed = dict.__getitem__(self, key)

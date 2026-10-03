@@ -288,7 +288,7 @@ def _handled(record: InputRecord, told: _Told, tree: Tree) -> None:
     """Hand out a finished input, then add its path to the tree, with the collector paused."""
     with collector_paused():
         told.record(record)
-        tree.add(record.forks)
+        tree.add(record.forks, record.facts)
 
 
 def _attempt(
@@ -326,7 +326,7 @@ def _attempt(
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
     origin = inputs[wanted.path]
     limit = _solve_limit(bounds, left)
-    answer = solve(wanted.prefix, origin.leaves, limit, origin.containers(), origin.values)
+    answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
     if isinstance(answer, Timeout):
         tree.timed_out()
     if isinstance(answer, Error):
@@ -387,6 +387,7 @@ def _record_of(
     return InputRecord(
         args=args,
         forks=executed.branches,
+        facts=executed.facts,
         covered_lines=executed.lines,
         failure=executed.failure,
         downgrades=executed.downgrades,

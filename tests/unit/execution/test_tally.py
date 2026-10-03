@@ -1,7 +1,7 @@
 import functools
 import sys
 
-from pyct.core.branch import Branch, Downgrade, Site
+from pyct.core.branch import Branch, Downgrade, Fact, Site
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
 from tests.unit.interrupted import Interrupt, at_every_line
@@ -20,6 +20,9 @@ class Heard:
 
     def fork(self, branch: Branch) -> None:
         self.told.append(("fork", branch))
+
+    def fact(self, fact: Fact) -> None:
+        self.told.append(("fact", fact))
 
     def line(self, number: int) -> None:
         self.told.append(("line", number))
@@ -160,3 +163,32 @@ def test_an_alarm_between_a_downgrade_s_steps_leaves_the_tally_readable() -> Non
         assert tally.counted()[-1] == DowngradeCount(name="__neg__", count=1, site=SITE), at
 
     at_every_line(TALLY, trial)
+
+
+def test_a_tally_places_each_fact_after_the_forks_before_it_and_tells_the_watch() -> None:
+    heard = Heard()
+    tally = Tally(heard)
+    decided = Fact([">", ["len", "d"], 0], True, SITE)
+
+    tally.append(decided)
+    tally.append(FORK)
+    tally.append(decided)
+
+    assert tally.branches == [FORK]
+    assert tally.facts == [decided, Fact([">", ["len", "d"], 0], True, SITE, after=1)]
+    assert heard.told == [("fact", tally.facts[0]), ("fork", FORK), ("fact", tally.facts[1])]
+
+
+def test_a_fact_from_a_call_that_is_over_names_its_operation_in_the_live_call() -> None:
+    over = Tally()
+    over.seal()
+    live = Tally()
+    live.go_live()
+
+    try:
+        over.append(Fact(["!=", ["len", "d"], 0], True, SITE, lost_as="__iter__"))
+    finally:
+        live.seal()
+
+    assert over.facts == [] and live.facts == []
+    assert live.counted() == (DowngradeCount(name="__iter__", count=1, site=SITE),)

@@ -1,4 +1,4 @@
-"""A fork the target took, a condition it lost, and where both are pushed."""
+"""A fork the target took, a fact its path holds, a condition it lost, and where they go."""
 
 from __future__ import annotations
 
@@ -49,10 +49,8 @@ class Branch:
     tells whose side a fork took.
 
     ``lost_as`` names the operation that took it, which a call that is over names its loss by
-    when a value it kept records one (see ``execution.tally``). ``holds`` is a fact about the
-    input that holds once the fork went the way it went: which key a walk over a dict read at
-    its place (see ``core.dict_reads``). The solver asserts it wherever a path keeps the fork,
-    and drops it where the path flips it. Neither is part of the fork, and neither is printed.
+    when a value it kept records one (see ``execution.tally``). It is not part of the fork, and
+    it is not printed.
     """
 
     expression: Expression
@@ -60,11 +58,47 @@ class Branch:
     site: Site
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
-    holds: Expression = field(default=None, compare=False)
 
     @property
     def where(self) -> ForkSite:
         """The fork's site, told apart from another kind of fork at the same column."""
+        return ForkSite(self.site, self.raising)
+
+
+@dataclass(frozen=True)
+class Fact:
+    """Something the path holds that no input taking it can change, kept beside the forks.
+
+    ``expression`` is a check whose answer pyct's own values already knew when the target ran
+    it, held in the sense Python took (``taken``), or None for a fact that is only a place.
+    ``place`` is which key a walk over a dict read at its place (see ``core.dict_reads``), or
+    None; a lookup's, which holds whether or not a fork reads the value there, is written
+    ``["given", place]``. A fact is never a fork: no input line lists it, pyct never aims at
+    it, and the solver holds it true as recorded and never negates it.
+
+    ``after`` is how many forks the input recorded before it, which the tally sets: a plan
+    aimed at fork ``d`` keeps the facts whose ``after`` is at most ``d``. ``lost_as`` names the
+    operation, as a fork's does.
+    """
+
+    expression: Expression
+    taken: bool
+    site: Site
+    raising: bool = False
+    place: Expression = None
+    after: int = 0
+    lost_as: str = field(default="__bool__", compare=False)
+
+    def placed_after(self, forks: int) -> Fact:
+        """This fact, recorded after ``forks`` forks."""
+        return Fact(
+            self.expression, self.taken, self.site, self.raising, self.place, forks, self.lost_as
+        )
+
+    @property
+    def where(self) -> ForkSite:
+        """The fact's site, told apart from an operation's fork before a raise at the same
+        column."""
         return ForkSite(self.site, self.raising)
 
 
@@ -92,12 +126,12 @@ class Downgrade:
     site: Site
 
 
-# what a sink holds: the forks and the downgrades, in the order they happened
-type SinkItem = Branch | Downgrade
+# what a sink holds: the forks, the facts and the downgrades, in the order they happened
+type SinkItem = Branch | Fact | Downgrade
 
 
 class BranchSink(Protocol):
-    """Where forks and downgrades go, in the order they happened.
+    """Where forks, facts and downgrades go, in the order they happened.
 
     core defines the one method and pushes, never reads. A plain list
     serves in tests; a real tree serves in a run. The parameter is

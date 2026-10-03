@@ -8,7 +8,7 @@ from dataclasses import replace
 from time import monotonic
 
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import Branch
+from pyct.core.branch import Branch, Expression, Fact
 from pyct.solver.answer import (
     Answer,
     Error,
@@ -82,7 +82,7 @@ type _Path = tuple[tuple[Branch, ...], Mapping[str, type]]
 
 
 def solve(
-    prefix: tuple[Branch, ...],
+    prefix: tuple[Branch | Fact, ...],
     leaves: Mapping[str, type],
     timeout: float,
     shapes: Mapping[str, ListShape | DictShape] | None = None,
@@ -90,6 +90,11 @@ def solve(
 ) -> Answer:
     """The input that takes ``prefix``, if there is one. ``timeout`` is the seconds the solve
     gets, writing the program included.
+
+    ``prefix`` is the path's forks with the facts it keeps beside them, in the order the path
+    recorded them (see ``Plan.asked``). Each fork and each decided check a fact holds is
+    asserted as it was recorded, and a fact is never negated; each place a fact keeps holds a
+    key a walk read where it read it (see ``dicts``).
 
     ``leaves``, ``shapes`` and ``values`` are what the input whose path it extends holds: each
     leaf the solver may change, each tracked list and dict with its shape, and each leaf's
@@ -140,14 +145,33 @@ def solve(
     solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
-    origin = _origin(shapes or {}, values or {}, timeout)
-    path = (prefix, leaves)
+    conditions, places = held(prefix)
+    origin = replace(_origin(shapes or {}, values or {}, timeout), places=places)
+    path = (conditions, leaves)
     answer, placed = _asked(path, origin, timeout)
     if isinstance(answer, Unsat) and placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")
         answer, _ = _asked(path, replace(origin, keep=False, pinned=False), timeout)
         return Unknown() if isinstance(answer, Sat) else answer
     return answer
+
+
+def held(
+    prefix: tuple[Branch | Fact, ...],
+) -> tuple[tuple[Branch, ...], tuple[Expression, ...]]:
+    """What a path holds: each fork, and each decided check a fact holds in its recorded sense,
+    in order, and each place a fact keeps."""
+    conditions = tuple(
+        step
+        if isinstance(step, Branch)
+        else Branch(step.expression, step.taken, step.site, step.raising)
+        for step in prefix
+        if isinstance(step, Branch) or step.expression is not None
+    )
+    places = tuple(
+        step.place for step in prefix if isinstance(step, Fact) and step.place is not None
+    )
+    return conditions, places
 
 
 def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
