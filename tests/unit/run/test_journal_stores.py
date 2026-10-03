@@ -108,7 +108,9 @@ def test_a_fact_crosses_the_journal_placed_after_the_forks_before_it() -> None:
 def test_a_fork_record_holds_six_items_and_its_notes_alone(notes: bytes) -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    writer.fork(Branch(expression="abcdefghijklmnopqrstuvwxyz", taken=True, site=Site("m.py", 2, 4)))
+    writer.fork(
+        Branch(expression="abcdefghijklmnopqrstuvwxyz", taken=True, site=Site("m.py", 2, 4))
+    )
     written = b'"abcdefghijklmnopqrstuvwxyz", true, "m.py", 2, 4, false]'
     at = buffer.index(written)
     rewritten = b'"a", true, "m.py", 2, 4, false, ' + notes

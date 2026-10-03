@@ -308,10 +308,45 @@ def _slice_of_a_reversal(s: Any, n: Any) -> int:
     return 1 if _length(s.split(",")[::-1][1:]) == 2 else 0
 
 
+def _number_s_text(s: Any, n: Any) -> int:
+    parts = (s + str(n)).split(",")
+    return 2 if _length(parts) < n and parts[0] == "end" else 0
+
+
+def _stripped_count(s: Any, n: Any) -> int:
+    return 1 if _length(s.strip().split(",")) != n else 0
+
+
+def _joined_count(s: Any, n: Any) -> int:
+    return 1 if _length((s + ",x").split(",")) == n else 0
+
+
+def _stripped_lines(s: Any, n: Any) -> int:
+    return 1 if _length(s.strip().splitlines()) == n else 0
+
+
+def _inserted(s: Any, n: Any) -> int:
+    parts = s.split(",")
+    parts.insert(0, "x")
+    return 1 if parts[1] == "end" else 0
+
+
+def _cut_twice(s: Any, n: Any) -> int:
+    return 1 if _length(s.split(",")[5:][:-3]) > 0 else 0
+
+
 # a target and a seed whose last fork, flipped, an answer must take as Python does: a split of
-# a string the arguments make, whose count is the one this run produced, worked out from them;
-# a count c* learns through a list changed as the encoder reads it; and a slice of a slice
+# a string the arguments make, whose count is the one this run produced, worked out from them,
+# or, where the solver cannot work it out, Python's own list, as on origin/v2; a count c*
+# learns through a list changed as the encoder reads it; a piece of a list changed at a
+# position, which is Python's own; and slices of slices
 SHAPES: dict[str, tuple[Any, dict[str, Any]]] = {
+    "a number's text split": (_number_s_text, {"s": "a,b", "n": 5}),
+    "a stripped split's count": (_stripped_count, {"s": "a,b,c\n", "n": 2}),
+    "a joined split's count": (_joined_count, {"s": "a", "n": 1}),
+    "stripped lines' count": (_stripped_lines, {"s": "a\nb\n", "n": 1}),
+    "an inserted split": (_inserted, {"s": "a,b", "n": 0}),
+    "a slice of a slice from the end": (_cut_twice, {"s": "a", "n": 0}),
     "a slice's split": (_sliced_split, {"s": "xa,b,c", "n": 4}),
     "a piece's split": (_split_piece_split, {"s": "a,b,c;d", "n": 4}),
     "a slice's lines": (_sliced_lines, {"s": "xa\nb\nc", "n": 0}),
@@ -337,3 +372,34 @@ def test_a_flipped_count_or_piece_is_taken_as_python_takes_it(
     new = dict(apply(seed, answer.model).args)
     taken = [(branch.expression, branch.taken) for branch in _recorded(target, new)]
     assert taken[: len(path)] == [(branch.expression, branch.taken) for branch in path], new
+
+
+@needs_cvc5
+def test_a_piece_through_a_slice_held_to_c_star_is_asked_again_at_the_input_s_count(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parts: Expression = ["split", "s", "','"]
+    last: Expression = ["[:]", parts, -2, None]
+    path = (
+        fork([">", ["len", last], 0], taken=True),
+        fork(["==", ["[]", last, 0], "'x'"], taken=True),
+        fork(["==", ["[]", parts, 3], "'z'"], taken=True),
+    )
+    seed = Seed.of({"s": "a,b,c"})
+    held: list[bool] = []
+    ask = cvc5_module._ask
+
+    def recorded(written: Program, timeout: float) -> Any:
+        held.append(written.fixed)
+        return ask(written, timeout)
+
+    monkeypatch.setattr(cvc5_module, "_ask", recorded)
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # held to the input's three pieces, no fourth is there: unsat; asked again, the slice
+    # starts where the input's own three put it, at the second piece, with no count held
+    assert held == [True, False], held
+    assert isinstance(answer, Sat), answer
+    pieces = str(apply(seed, answer.model).args["s"]).split(",")
+    assert pieces[1] == "x" and pieces[3] == "z", pieces

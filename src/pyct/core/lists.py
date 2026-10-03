@@ -227,7 +227,7 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     The items are taken by a walk, and Python's own sort compares them, each compare of tracked
     items a fork. The list becomes ``[items[1], items[0]]`` say.
     """
-    if args or set(kwargs) - {"key", "reverse"} or not self.holds("sort"):
+    if self.leave_the_split() or args or set(kwargs) - {"key", "reverse"} or not self.holds("sort"):
         own(list.sort, self, *args, **kwargs)
         return
     items = list(reads.walk(self))

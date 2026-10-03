@@ -58,24 +58,91 @@ def built_from_a_split(form: object) -> bool:
     return bool(splits_built_from(form))
 
 
-def a_split_s_list(form: object, depth: int = 64) -> bool:
-    """Whether a list's form is a split's list as the target changed it: the split's, a slice
-    or a repeat of one, or one with a list display joined on, its items all the split's pieces
-    or the target's own; a list joined with another list, an argument's say, is not, nor one
-    whose form nests past ``depth``."""
+# how deep a split's list's form, or the form of the string a split splits, may nest and still
+# be one the solver writes exactly
+_DEEPEST = 64
+
+# the str methods whose answer the solver works out from the input's string, each called with
+# plain operands
+WORKED_METHODS = frozenset(
+    {
+        *("lower", "upper", "casefold", "swapcase", "title", "capitalize"),
+        *("strip", "lstrip", "rstrip", "removeprefix", "removesuffix", "replace"),
+        *("center", "ljust", "rjust", "zfill", "expandtabs"),
+    }
+)
+
+
+def a_split_s_list(form: object, depth: int = _DEEPEST) -> bool:
+    """Whether a list's form is a split's list the solver writes exactly: a cut of one
+    (``_cut``), or one with a list display joined on either side; not a list joined with
+    another list, a repeat, one changed at a position, or one whose form nests past
+    ``depth``."""
+    if not isinstance(form, list) or not form or depth == 0:
+        return False
+    if form[0] == "+" and len(form) == 3:
+        shown = [part for part in form[1:] if isinstance(part, list) and part[:1] == ["[,]"]]
+        others = [part for part in form[1:] if part not in shown]
+        return len(others) == 1 and a_split_s_list(others[0], depth - 1)
+    return _cut(form, depth)
+
+
+def _cut(form: object, depth: int) -> bool:
+    """Whether a list's form is a split's list, or a slice of one with plain bounds and a step
+    of 1 or -1, or a slice so of such a slice that starts from its start or steps back from its
+    end: the solver writes a slice of a slice only with such a start."""
     if not isinstance(form, list) or not form or depth == 0:
         return False
     head, operands = form[0], form[1:]
     if head in LISTED_SPLITS:
         return True
-    if head in ("[:]", "*") and operands:
-        listed = next((part for part in operands if isinstance(part, list)), None)
-        return a_split_s_list(listed, depth - 1)
+    if head != "[:]" or not _plain_bounds(operands[1:]) or operands[3:] not in _STEPS:
+        return False
+    inner, start, step = operands[0], operands[1], (*operands[3:], None)[0]
+    from_its_start = step != -1 and (start is None or start >= 0)
+    stepped_back = step == -1 and start is None
+    if isinstance(inner, list) and inner[:1] == ["[:]"] and not (from_its_start or stepped_back):
+        return False
+    return _cut(inner, depth - 1)
+
+
+# the steps of a slice the solver writes exactly: none, 1 or -1
+_STEPS = ([], [None], [1], [-1])
+
+
+def _plain_bounds(bounds: list[Expression]) -> bool:
+    return all(bound is None or type(bound) is int for bound in bounds)
+
+
+def kept_form(form: Expression) -> Expression:
+    """A list's form, or None where a split's list was changed into one the solver does not
+    write exactly, which then leaves the split's machinery for Python's own list, as origin/v2
+    hands it back: its pieces stay tracked and the list records nothing."""
+    return None if built_from_a_split(form) and not a_split_s_list(form) else form
+
+
+def worked_out(form: Expression, depth: int = _DEEPEST) -> bool:
+    """Whether the solver works out the value a string's form has in the input from the input's
+    own values: an argument or a literal, or a slice with plain bounds, an index by a plain int,
+    a join, a repeat by a plain int, a split's piece or a `WORKED_METHODS` call with plain
+    operands, of parts worked out so."""
+    if not isinstance(form, list):
+        return isinstance(form, str)
+    if not form or depth == 0:
+        return False
+    head, operands = form[0], form[1:]
     if head == "+" and len(operands) == 2:
-        shown = [part for part in operands if isinstance(part, list) and part[:1] == ["[,]"]]
-        others = [part for part in operands if part not in shown]
-        return len(others) == 1 and a_split_s_list(others[0], depth - 1)
+        return all(worked_out(part, depth - 1) for part in operands)
+    if head in ("[:]", "[]", "*") and _plain_bounds(operands[1:]):
+        return worked_out(operands[0], depth - 1)
+    if head in WORKED_METHODS or head in LISTED_SPLITS:
+        return worked_out(operands[0], depth - 1) and all(_plain(part) for part in operands[1:])
     return False
+
+
+def _plain(part: Expression) -> bool:
+    """A plain operand: a literal, an int, a bool or None."""
+    return part is None or isinstance(part, int) or (isinstance(part, str) and part[:1] in "'\"")
 
 
 # each method's arguments in the order Python takes them by position, with the default Python
@@ -233,6 +300,10 @@ def split_up(name: str, reader: Reader) -> Callable[..., object]:
         pieces = list(_pieces(self, whole, parts))
         if isinstance(parts, tuple):
             return tuple(pieces)
+        if not worked_out(self.expression):
+            # a string the solver cannot work out from the input's values has no count it can
+            # ask at; its pieces come back in Python's own list, as on origin/v2
+            return pieces
         return _LISTED[0].made(pieces, whole, self.sink)
 
     return compute

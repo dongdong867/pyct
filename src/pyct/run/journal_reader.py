@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import struct
-from collections.abc import Buffer
+from collections.abc import Buffer, Sequence
 from dataclasses import dataclass, field
 
 from pyct.core.branch import Branch, Expression, Fact, Site
@@ -366,7 +366,7 @@ def _ending(value: object) -> Failure | None:
     raise ValueError("an ending is null or [kind, detail, traceback]")
 
 
-def _fork_notes(note: list[object]) -> bool:
+def _fork_notes(note: Sequence[object]) -> bool:
     """Whether a fork record's items past the sixth are its notes: whether an `is` held, a bool,
     and then, for a walk's fork over a split's list, true, the `is` note null there if none."""
     if len(note) == 2:

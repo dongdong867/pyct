@@ -262,10 +262,7 @@ class ListTerms(ListTyping, Slices):
         its length, as the splits write them (``Splits.sliced``); None for any other slice."""
         if not base.of_a_split:
             return None
-        cut = self.splits.sliced(base.length, bounds)
-        if cut is not None and (at := self.splits.values.get(cut[1].atoms[0][0])) is not None:
-            self.origin[cut[1].atoms[0][0]] = at
-        return cut
+        return self.splits.sliced(base.length, bounds)
 
     def counted_compare(self, node: list[Expression]) -> str | None:
         """A compare of a split's length with a number or another length, as the splits write
@@ -332,7 +329,6 @@ class ListTerms(ListTyping, Slices):
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
         self.splits.fixed_reads = origin.fixed_reads
-        self.splits.evaluated = self.origin_of
         # the value the input holds for a part it names as it is, a split's string say
         names = {constant: name for name, constant in constants.items()}
         self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))

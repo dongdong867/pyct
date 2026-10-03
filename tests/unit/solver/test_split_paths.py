@@ -2,9 +2,13 @@
 count reads and a read from the end puts its piece at, which the forks on a split's own count
 through plain arithmetic narrow, and each count a line reads, written as its c*."""
 
+import random
+import re
+
 import pytest
 
 from pyct.core.branch import Expression
+from pyct.solver.split_counts import windowed, windows_past
 from pyct.solver.split_paths import Splits
 from tests.unit.solver.test_render import fork
 
@@ -42,6 +46,16 @@ RANGES: dict[str, tuple[list[tuple[Expression, bool]], int]] = {
     "a floor division": ([(["<", ["//", LENGTH, 2], 3], True)], 12),
     "a tracked int": ([([">", LENGTH, "n"], False)], 12),
     "ruled out": ([([">", LENGTH, 5], True), (["<", LENGTH, 3], True)], 12),
+    "a slice of a slice": (
+        [([">", ["len", ["[:]", ["[:]", PARTS, 1, None], 1, None]], 15], True)],
+        18,
+    ),
+    "a display joined on": ([([">", ["len", ["+", PARTS, ["[,]", "'z'"]]], 15], True)], 15),
+    "a display joined before": (
+        [([">", ["len", ["+", ["[,]", "'z'", "'y'"], PARTS]], 15], True)],
+        14,
+    ),
+    "a repeat": ([([">", ["len", ["*", PARTS, 2]], 30], True)], 12),
 }
 
 
@@ -76,8 +90,32 @@ def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
 
 @pytest.mark.parametrize(
     ("string", "count"),
-    [(["strip", "s"], 12), (["lower", ["strip", "s"]], 12), (["+", "s", "t"], None)],
-    ids=["a method", "two methods", "an operator"],
+    [
+        (["strip", "s"], 12),
+        (["lower", ["strip", "s"]], 12),
+        (["+", "s", "t"], None),
+        (["+", "s", "','"], 13),
+        (["*", "s", 2], 23),
+        (["*", "s", 10**7], None),
+        (["[]", ["split", ["strip", "s"], "';'"], 0], 12),
+        (["[:]", ["strip", "s"], 2, None], 11),
+        (["format", "s"], None),
+        (["+", (twice := ["*", "s", 2]), twice], 45),
+        (["+", (long := ["*", "s", 80_000]), long], None),
+    ],
+    ids=[
+        "a method",
+        "two methods",
+        "an unknown name",
+        "a join",
+        "a repeat",
+        "a repeat past the longest",
+        "a piece",
+        "a slice",
+        "a method not worked out",
+        "one part twice",
+        "a join past the longest",
+    ],
 )
 def test_a_string_a_method_makes_of_the_input_s_is_counted(
     string: Expression, count: int | None
@@ -88,3 +126,39 @@ def test_a_string_a_method_makes_of_the_input_s_is_counted(
     listed = splits.made(["split", string, "','"], "s")
 
     assert listed.input_count == count
+
+
+def test_a_cut_s_length_is_more_than_a_number_where_python_s_is() -> None:
+    rng = random.Random(23)
+    bounds = [None, -7, -3, -1, 0, 1, 2, 5]
+    for _ in range(2000):
+        windows = tuple(
+            slice(rng.choice(bounds), rng.choice(bounds), rng.choice([None, 1, -1]))
+            for _ in range(rng.randint(1, 3))
+        )
+        number = rng.randint(-1, 9)
+        # read with a count of `count` pieces, piece j is there where the count is past j
+        written = windows_past(lambda j: f"(> c {j})", windows, number)
+        for count in range(0, 90):
+            python = (
+                len(range(count)[windows[0]]) if len(windows) == 1 else windowed(windows, count)
+            )
+            assert _holds(written, count) is (python > number), (windows, number, count)
+
+
+def _holds(condition: str, count: int) -> bool:
+    """A condition ``windows_past`` writes, read where the count is ``count``."""
+    text = re.sub(r"\(> c (-?\d+)\)", lambda found: str(count > int(found[1])), condition)
+    text = text.replace("true", "True").replace("false", "False")
+    while "(" in text:
+        text = re.sub(
+            r"\((and|or|not) ([^()]*)\)",
+            lambda found: str(_apply(found[1], found[2].split())),
+            text,
+        )
+    return text == "True"
+
+
+def _apply(head: str, values: list[str]) -> bool:
+    truths = [value == "True" for value in values]
+    return all(truths) if head == "and" else any(truths) if head == "or" else not truths[0]

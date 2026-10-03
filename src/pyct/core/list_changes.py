@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.str_splits import built_from_a_split
+from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.values import forked, own
 
 # one change, made the same way on the items and on the shadow
@@ -79,7 +79,7 @@ def made(self: ListState, change: Change, form: Expression, kinds: frozenset[str
     answer = own(change, self)
     change(self.shadow)
     fields = self.__dict__
-    fields["expression"] = form
+    fields["expression"] = kept_form(form)
     fields["kinds"] = self.kinds | kinds
     return answer
 
@@ -88,9 +88,12 @@ def unfollowed(self: ListState, name: str, change: Change) -> object:
     """A change pyct does not follow: Python makes it, and the list is plain from then on.
 
     A change that raises changes nothing, so it records nothing. The loss is named unless the
-    list was plain already.
+    list was plain already. A split's list leaves the split's machinery instead
+    (``ListState.leave_the_split``): it names no loss, and its pieces stay tracked.
     """
     answer = own(change, self)
+    if self.leave_the_split():
+        return answer
     if self.expression is not None:
         self.lose(name)
     return plain(answer)

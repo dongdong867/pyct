@@ -128,8 +128,6 @@ class SplitList:
         """That piece ``index`` is there, as the walk that reads it writes it: the pieces a
         path takes out are asserted there by the same walk, which cvc5 answered faster beside
         the pieces themselves than one membership."""
-        if index < 0:
-            return TRUE
         if 0 <= self.limit() < index:
             return FALSE
         if self.head == "rsplit" and not self._walked():
@@ -153,25 +151,16 @@ class SplitList:
         counts = (right_count(self.term, self.operands), left_count(self.term, self.operands))
         return f"(= {counts[0]} {counts[1]})"
 
-    def read(self, position: Lin, kind: str, at_input: int | None) -> SplitRead:
-        """The piece at ``position``, and when it is there. ``at_input`` is the position's value
-        in the input whose path this is, where it is known, which a position a term writes is
-        read at."""
-        if kind != "str":
+    def read(self, position: Lin, kind: str) -> SplitRead:
+        """The piece at ``position``, a number from the start or the count less a number, and
+        when it is there; no piece of another kind, or at any other position."""
+        number, back = position.number(), self._from_the_end(position)
+        if kind != "str" or (number is None and back is None):
             return SplitRead(Read(None, FALSE))
-        number = position.number()
-        if number is None:
-            back = self._from_the_end(position)
-            if back is not None:
-                return self._back(back)
-            number = at_input
-        if number is None:
-            return SplitRead(Read(None, FALSE))
+        if back is not None:
+            return self._back(back)
+        assert number is not None
         return SplitRead(self.at(number))
-
-    def from_the_end(self, position: Lin) -> bool:
-        """Whether a position is the count less a number."""
-        return self._from_the_end(position) is not None
 
     def _from_the_end(self, position: Lin) -> int | None:
         """How far from the last piece a position is, 0 the last, when it is the count less a
@@ -189,9 +178,7 @@ class SplitList:
     def held_at(self, index: int) -> SplitRead:
         """Piece ``index`` from the start on a string held to c* pieces; none past them."""
         count = self.read_count
-        assert count is not None
-        if not 0 <= index < count:
-            return SplitRead(Read(None, FALSE))
+        assert count is not None and 0 <= index < count
         # by the walks the piece is read with: past 16 pieces, a count by membership beside
         # the walk ran past the limit where these answered in 1.4 to 2.9 s
         exact = both(self._there(count - 1), negated(self._there(count)))
@@ -214,10 +201,8 @@ class SplitList:
             walked = right_piece(self.term, self.head, self.operands, back)
         if walked is not None:
             return SplitRead(Read(walked, both(self._there(back), self.restriction())))
-        count = self.read_count
-        if self.fixed and count is not None and back < count:
+        count, own = self.read_count, self.input_count
+        assert count is not None and own is not None
+        if self.fixed and back < count:
             return self.held_at(count - 1 - back)
-        own = self.input_count
-        if own is None:
-            return SplitRead(Read(None, FALSE))
         return SplitRead(self.at(own - 1 - back))

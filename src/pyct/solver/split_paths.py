@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 
 from pyct.core.branch import Branch, Expression
-from pyct.solver.list_terms import FALSE, Lin, Read, both, compare, negated
+from pyct.solver.list_terms import Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_counts import FARTHEST, condition, input_value, windowed, windows_past
 from pyct.solver.split_lists import SplitList, SplitRead
@@ -37,7 +37,6 @@ class Splits:
         # the value the input holds for a part it names as it is, a split's string say, and a
         # position's value in that input
         self.given: Callable[[Expression], object] = lambda part: None
-        self.evaluated: Callable[[Lin], int | None] = lambda position: None
         # whether a piece read from the end, where no walk of the reversed string reads it,
         # holds its string to c* pieces, and whether a read did
         self.fixed_reads = True
@@ -96,20 +95,18 @@ class Splits:
                     return near
         return held
 
-    def sliced(self, length: Lin, bounds: list[Expression]) -> tuple[Lin, Lin] | None:
-        """Where a slice with plain bounds and a step of 1 or -1 of a split's list, or of a slice
-        of one, starts, and its length, from the list's ``length``: a start from the start, or
-        the last item for a slice that steps back from the end, is exact on every string; any
-        other start of a split's own list is a name of its own, which a read takes where c*
-        puts it, the string held to c* pieces (see ``read``); the length is ``cut``'s. None for
-        any other slice, or any other start."""
-        cut = self._windows(length)
-        plain = [bound for bound in bounds if bound is None or type(bound) is int]
-        start, stop, step = (*plain, None, None, None)[:3]
-        if cut is None or len(plain) != len(bounds) or len(bounds) > 3 or step not in (None, 1, -1):
-            return None
+    def sliced(self, length: Lin, bounds: list[Expression]) -> tuple[Lin, Lin]:
+        """Where a slice of a split's list, or of a slice of one, starts, and its length, from
+        the list's ``length``; core keeps only the slices ``str_splits.a_split_s_list`` takes.
+        A start from the start, or the last item for a slice that steps back from the end, is
+        exact on every string; any other start of a split's own list is a name of its own,
+        which a read takes where c* puts it, the string held to c* pieces (see ``read``); the
+        length is ``cut``'s."""
+        start, stop, step = (*bounds, None, None, None)[:3]
         assert isinstance(start, int | None) and isinstance(stop, int | None)
-        listed, windows = cut
+        assert isinstance(step, int | None)
+        name = length.atoms[0][0]
+        listed, windows = (self.lists[name], ()) if name in self.lists else self.cuts[name]
         window = slice(start, stop, step)
         cut_length = self.cut(listed, (*windows, window))
         if not windows and stop is None and step != -1 and (start is None or start >= 0):
@@ -119,22 +116,11 @@ class Splits:
             return length.minus(Lin(1)), cut_length
         if step != -1 and (start is None or start >= 0):
             return Lin(start or 0), cut_length
-        if windows or listed.read_count is None:
-            return None
+        assert not windows and listed.read_count is not None
         name = f"start!{len(self.values)}!"
         self.starts[name] = (listed, window)
         self.values[name] = window.indices(listed.read_count)[0]
         return Lin.of(name), cut_length
-
-    def _windows(self, length: Lin) -> tuple[SplitList, tuple[slice, ...]] | None:
-        """The split a list's length counts, and the slices that cut the list from it, where
-        the length is a split's count or a slice's length of it."""
-        if len(length.atoms) != 1 or length.atoms[0][1] != 1 or length.const != 0:
-            return None
-        name = length.atoms[0][0]
-        if name in self.lists:
-            return self.lists[name], ()
-        return self.cuts.get(name)
 
     def cut(self, listed: SplitList, windows: tuple[slice, ...]) -> Lin:
         """The length of a list cut from a split's by slices with plain bounds, one after
@@ -150,7 +136,7 @@ class Splits:
     def read(self, listed: SplitList, position: Lin, kind: str) -> Read:
         """A split's piece at ``position``, noting whether the read held the string to c*."""
         started = self._started(listed, position, kind)
-        read = started or listed.read(self._counted_back(position), kind, self.evaluated(position))
+        read = started or listed.read(self._counted_back(position), kind)
         self.fixed |= read.fixes_the_count
         return read.found
 
@@ -163,12 +149,10 @@ class Splits:
         start = self.starts.get(position.atoms[0][0])
         if start is None:
             return None
-        window = start[1]
-        if self.fixed_reads and listed.read_count is not None:
-            return listed.held_at(window.indices(listed.read_count)[0] + position.const)
-        own = listed.input_count
-        if own is None:
-            return SplitRead(Read(None, FALSE))
+        window, count, own = start[1], listed.read_count, listed.input_count
+        assert count is not None and own is not None
+        if self.fixed_reads:
+            return listed.held_at(window.indices(count)[0] + position.const)
         return SplitRead(listed.at(window.indices(own)[0] + position.const))
 
     def _counted_back(self, position: Lin) -> Lin:

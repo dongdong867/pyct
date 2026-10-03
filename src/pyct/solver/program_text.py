@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Protocol
 
 from pyct.core.branch import Branch
@@ -10,6 +11,9 @@ from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import SORTS
 from pyct.solver.lists import ListTerms
 from pyct.solver.splits import named_classes
+
+# a symbol or a constant a program line names: a run of what is neither space nor a paren
+_SYMBOL = re.compile(r"[^\s()]+")
 
 
 class Body(Protocol):
@@ -51,9 +55,27 @@ def program_text(
     counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
-    # a leaf no line reads keeps the input's value: a split's count read as c* names its string
-    # in the path, but not in the program, as origin/v2's plain count never named it
-    read = "\n".join([*counts, *finites, *written])
+    # a leaf no assertion reads, through the definitions it names, keeps the input's value: a
+    # split's count asked as c* names its string in the path, but not in what the program
+    # asserts, as origin/v2's plain count never named it
+    read = _read(body.definitions, [*counts, *bounds, *asserted, *forks])
     lines += [f"(get-value ({constant}))" for constant, _ in declared if constant in read]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]
     return "\n".join(lines) + "\n"
+
+
+def _read(definitions: list[str], lines: list[str]) -> str:
+    """The lines, and each definition they name, and each one that names, in turn: the text a
+    leaf is read in. A definition is named by a symbol with no space in it."""
+    defined = {definition.split()[1]: definition for definition in definitions}
+    reached: list[str] = []
+    seen: set[str] = set()
+    pending = list(lines)
+    while pending:
+        line = pending.pop()
+        reached.append(line)
+        for symbol in _SYMBOL.findall(line):
+            if symbol in defined and symbol not in seen:
+                seen.add(symbol)
+                pending.append(defined[symbol])
+    return "\n".join(reached)

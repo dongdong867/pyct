@@ -132,7 +132,7 @@ def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
         # c*: the string's own count, or one past or short of it, as another input's would be
         held = max(len(pieces) + rng.choice([-1, 0, 0, 1]), 0)
         listed = _listed(head, operands, held, fixed=rng.random() < 0.7)
-        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str", None).found
+        read = listed.read(Lin(-back - 1).plus(Lin.of(COUNT)), "str").found
         at, there = _from_the_end(listed, pieces, back)
         if read.value is None:
             # no piece that far from the end of the input's own pieces
@@ -144,25 +144,17 @@ def test_cvc5_reads_each_piece_from_the_end_as_python_does() -> None:
     assert asked(_program(asks)) == expected
 
 
-@needs_cvc5
-def test_cvc5_reads_a_piece_at_a_position_a_term_writes_as_python_does() -> None:
-    rng = random.Random(11)
-    asks: list[tuple[str, str, str]] = []
-    expected: list[object] = []
-    for _ in range(100):
-        value = "".join(rng.choices(LETTERS, k=rng.randint(1, 7)))
-        head, operands = _form(rng)
-        pieces = _pieces(value, head, operands)
-        if not pieces:
-            continue
-        at = rng.randrange(len(pieces))
-        # read where the input's own values put the position, as origin/v2 reads it
-        read = _listed(head, operands).read(Lin.of(f"(+ 0 {at})"), "str", at).found
-        assert read.value is not None
-        asks += [(value, "Bool", read.guard), (value, "String", read.value)]
-        expected += [True, pieces[at]]
+@pytest.mark.parametrize(
+    ("position", "kind"),
+    [(Lin.of("i"), "str"), (Lin.of(COUNT).plus(Lin(1)), "str"), (Lin(0), "int")],
+    ids=["a term", "past the count", "another kind"],
+)
+def test_no_piece_is_read_at_another_position_or_of_another_kind(position: Lin, kind: str) -> None:
+    # core keeps a split's list only where every read is from the start or the end: a tracked
+    # index is a downgrade, and a list cut at a tracked bound is Python's own
+    read = _listed("split", (",",), 3).read(position, kind)
 
-    assert asked(_program(asks)) == expected
+    assert (read.found.value, read.found.guard, read.fixes_the_count) == (None, FALSE, False)
 
 
 def test_a_walked_rsplit_asserts_it_has_the_split_s_count_and_no_other_split_does() -> None:
@@ -182,12 +174,6 @@ def test_cvc5_holds_a_walked_rsplit_s_count_on_every_string() -> None:
         asks.append((value, "Bool", _listed("rsplit", (separator, rng.randint(0, 3))).fact()))
 
     assert asked(_program(asks)) == [True] * len(asks)
-
-
-def test_a_piece_of_another_kind_is_not_read() -> None:
-    read = _listed("split", (",",)).read(Lin(0), "int", None)
-
-    assert (read.found.value, read.found.guard, read.fixes_the_count) == (None, FALSE, False)
 
 
 # a compare of a count with a number: the difference, whether it may be 0, and the count asked
