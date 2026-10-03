@@ -8,6 +8,7 @@ import signal
 import threading
 import time
 import types
+from collections.abc import Iterable
 from contextlib import AbstractContextManager
 from pathlib import Path
 
@@ -100,4 +101,41 @@ def test_a_raise_as_the_line_tracer_stops_still_closes_the_block(
         execute(ctx, {}, time.monotonic() + 60)
 
     assert signal.getsignal(signal.SIGALRM) is previous
+    assert watchers() == []
+
+
+def ctrl_c_as_the_stops_are_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Have the call that holds a Ctrl-C and a SIGTERM raise KeyboardInterrupt once it has, as
+    CPython's does when a Ctrl-C came just before: it handles waiting signals as it returns."""
+    real = signal.pthread_sigmask
+
+    def pending(how: int, mask: Iterable[int]) -> object:
+        previous = real(how, mask)
+        if how == signal.SIG_BLOCK and {signal.SIGINT, signal.SIGTERM} <= set(mask):
+            raise KeyboardInterrupt
+        return previous
+
+    monkeypatch.setattr(signal, "pthread_sigmask", pending)
+
+
+@pytest.mark.parametrize("where", ["enter", "leave"])
+def test_a_ctrl_c_as_the_stops_are_held_leaves_the_mask_as_it_was(
+    where: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    block = deadline(time.monotonic() + 60)
+    if where == "leave":
+        block.__enter__()
+    try:
+        with monkeypatch.context() as patch:
+            ctrl_c_as_the_stops_are_held(patch)
+            with pytest.raises(KeyboardInterrupt):
+                block.__enter__() if where == "enter" else close(block)
+        after = signal.pthread_sigmask(signal.SIG_BLOCK, set())
+    finally:
+        # the mask as it was, whatever happened, so no other test runs with the stops held
+        signal.pthread_sigmask(signal.SIG_SETMASK, before)
+        close(block)
+
+    assert after == before
     assert watchers() == []
