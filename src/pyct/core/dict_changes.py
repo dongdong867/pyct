@@ -298,7 +298,7 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             made.held_one()
         if not held:
             made.changed[plain(looked)] = True
-            made.__dict__["grown"] += 1
+            made.grew(1)
     if self.expression is None:
         # the dict built holds the key that turned this one plain, so it cannot be followed either
         made.turn_plain()

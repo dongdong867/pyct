@@ -19,6 +19,7 @@ from typing import Self
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.list_state import plain
+from pyct.core.spans import UNKNOWN, Span, added, exactly
 
 # what a key maps to where the dict holds no such key: apart from every value a dict holds
 MISSING = object()
@@ -56,6 +57,11 @@ class DictState(dict):
     # moves as it would move whichever key it touched (see ``fewest``)
     unforked: bool
     floor: int
+    # the fewest and the most keys the dict holds on every input that takes the path, from the
+    # forks its walks and truth tests recorded on its size (see `core.spans`), carried through
+    # each change whose effect on the size is the same on every such input. On a marked dict
+    # (``unforked``) it starts over at each change, and holds only what the forks since say
+    span: Span
     shadow: dict[object, object]
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
@@ -91,6 +97,7 @@ class DictState(dict):
         fields["found"] = set()
         fields["unforked"] = False
         fields["floor"] = 0
+        fields["span"] = UNKNOWN
         fields["changed"] = {}
         fields["grown"] = 0
         fields["shadow"] = dict(items)
@@ -189,14 +196,28 @@ class DictState(dict):
         fields["found"] = self.found
         fields["unforked"] = self.unforked
         fields["floor"] = self.floor
+        fields["span"] = self.span
         fields["changed"] = dict(self.changed)
         fields["grown"] = self.grown
         return made
 
+    def measured(self) -> Span:
+        """The dict's range, its fewest keys raised to what ``fewest`` counts."""
+        fewest, most = self.span
+        return (max(fewest or 0, self.fewest()), most)
+
+    def grew(self, by: int) -> None:
+        """Note that a change added ``by`` keys, or took them out: the range moves with it, or
+        starts over on a marked dict."""
+        self.__dict__["grown"] += by
+        fewest, most = added(self.span, exactly(by))
+        moved = (max(fewest or 0, 0), None if most is None else max(most, 0))
+        self.__dict__["span"] = UNKNOWN if self.unforked else moved
+
     def noted(self, key: object, value: object) -> None:
         """Note a change the dict's own method made: the key now holds ``value``. The shadow
         still says whether it held the key before, which is how the size grew."""
-        self.__dict__["grown"] += key not in self.shadow
+        self.grew(int(key not in self.shadow))
         self.shadow[key] = value
         self.changed[key] = True
         self.held_one()
@@ -207,18 +228,23 @@ class DictState(dict):
         if not self.unforked:
             self.__dict__["floor"] = self.fewest()
             self.__dict__["unforked"] = True
+        self.__dict__["span"] = UNKNOWN
 
     def held_one(self) -> None:
         """Note that a change left a key in the dict, whichever key it is on another input."""
         self.__dict__["floor"] = max(self.floor, 1)
+        if self.unforked:
+            self.__dict__["span"] = UNKNOWN
 
     def lost_one(self) -> None:
         """Note that a change may have removed one key on another input that takes the path."""
         self.__dict__["floor"] = max(self.floor - 1, 0)
+        if self.unforked:
+            self.__dict__["span"] = UNKNOWN
 
     def dropped(self, key: object) -> None:
         """Note a removal the dict's own method made."""
-        self.__dict__["grown"] -= key in self.shadow
+        self.grew(-int(key in self.shadow))
         self.shadow.pop(key, None)
         self.changed[key] = False
         self.lost_one()
