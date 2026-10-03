@@ -50,9 +50,10 @@ def test_a_key_of_another_kind_is_python_s_answer() -> None:
     assert config.pop((5, 6), 0) == 0
     assert bool(config)
 
-    # the key it stored is one key more on every input, so the truth test is a fact
-    assert forks(sink) == []
-    assert decided(sink) == [(["!=", ["+", ["len", "config"], 1], 0], True)]
+    # Python answered each change without a fork, and a removal may take any key, so the
+    # truth test after them is a fork
+    assert forks(sink) == [(["!=", ["+", ["len", "config"], 1], 0], True)]
+    assert decided(sink) == []
     assert downgrades(sink) == [
         "__contains__",
         "__setitem__",

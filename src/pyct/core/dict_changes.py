@@ -88,11 +88,14 @@ def as_python(
 ) -> object:
     """A change under a key pyct does not follow: Python's own, and a downgrade named ``name``,
     with whether the key was there noted from the dict itself, so the size stays the dict's.
-    ``named`` says the call's own lookup already named it, so the call is named once. A key
-    that may equal an int key the solver adds turns the dict plain (see ``may_equal_added``)."""
+    No fork says what it did on another input, so no check after it is decided
+    (``DictState.unforked``). ``named`` says the call's own lookup already named it, so the
+    call is named once. A key that may equal an int key the solver adds turns the dict plain
+    (see ``may_equal_added``)."""
     bare = plain(key)
     held = own(dict.__contains__, self, bare)
     answer = own(change)
+    self.changed_unforked()
     if not named:
         self.sink.append(Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
@@ -106,6 +109,16 @@ def looked_up_as_python(self: DictState, key: object) -> bool:
     """Whether a lookup of ``key`` names its call as a downgrade: a tracked key into a dict the
     target changed, which no expression writes whole."""
     return is_tracked(key) and bool(self.changed)
+
+
+def unforked_lookup(self: DictState, key: object) -> bool:
+    """Whether a change's lookup of ``key`` is Python's own and a downgrade (see
+    ``looked_up_as_python``). Then whether the change happens on another input is answered
+    without a fork, so the dict decides nothing from now on."""
+    named = looked_up_as_python(self, key)
+    if named:
+        self.changed_unforked()
+    return named
 
 
 def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
@@ -141,8 +154,11 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
     looked = int_key(key)
     if written_key(looked) is None:
         return _removed_as_python(self, key, name, default)
-    named = looked_up_as_python(self, key)
+    named = unforked_lookup(self, key)
     if not found(self, key, name, raising=not default):
+        if named:
+            # another input on the path may hold the key, and lose it
+            self.lost_one()
         return default[0] if default else own(dict.__getitem__, self, plain(key))
     handed = value(self, key)
     bare = plain(looked)
@@ -197,7 +213,7 @@ def defaulted(self: DictState, key: object, default: object = None) -> object:
         if not held:
             self.noted(key, default)
         return answer
-    named = looked_up_as_python(self, key)
+    named = unforked_lookup(self, key)
     if found(self, key, "setdefault"):
         return value(self, key)
     store(self, key, default, "setdefault", named=named)
@@ -257,6 +273,8 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
             held = present(self, looked, "__ror__")
         else:
             held = as_python(self, key, "__ror__", lambda key=key: dict.__contains__(self, key))
+            made.changed_unforked()
+            made.held_one()
         if not held:
             made.changed[plain(looked)] = True
             made.__dict__["grown"] += 1

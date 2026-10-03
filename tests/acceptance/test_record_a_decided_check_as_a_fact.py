@@ -150,6 +150,8 @@ def test_says_why_a_decided_side_is_never_taken() -> None:
     assert entry["reason"] == "not taken"
     assert entry["condition"] == condition(F, tested, 7, False)
     assert tries(entry) == {**NO_TRIES, "decided": inputs}
+    # every `tries` object carries `decided`, after `left_the_plan`
+    assert list(tries(entry)) == [*NO_TRIES]
     why = f"why {empty} in {F}: {F}:{tested}:7 never false: {inputs} decided"
     assert why in result.stderr.splitlines(), result.stderr
     assert not [line for line in missed(result.stderr) if f"{F}:{tested}:" in line]
@@ -288,3 +290,40 @@ def test_keeps_a_dying_input_s_facts() -> None:
     assert entry["reason"] == "not taken"
     assert entry["condition"] == condition(F, tested, 7, False)
     assert tries(entry)["decided"] == summary_line(result.stdout)["inputs"]
+
+
+# a change pyct answers without a fork, as one under a tracked key, may touch any key on another
+# input: no lookup after it is decided, and the fewest keys count only what holds whichever key
+# it touched
+# (record-a-decided-check-as-a-fact, review round 1: unforked-dict-change-read-as-decided)
+def test_a_lookup_after_a_tracked_store_stays_a_fork() -> None:
+    seed = '{"n": "pyct1", "d": {}}'
+    result = run_pyct(f"{DECIDED}::repeat_after_tracked_store", seed, "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    again = line_of(FILE, 'if "a" in d:', "repeat_after_tracked_store") + 3
+    assert at(first_line(result.stdout), again) == [STORED_A]
+    entry = entry_for(result.stdout, line_of(FILE, "return 1", "repeat_after_tracked_store"))
+    assert tries(entry)["decided"] == 0, entry
+
+
+def test_a_walk_after_a_tracked_pop_stays_a_fork() -> None:
+    seed = '{"n": "pyct1", "d": {"b": 1}}'
+    result = run_pyct(f"{DECIDED}::walk_after_tracked_pop", seed, "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    # the pop may take a or b on another input, so only one key is known: the second pass
+    # is a fork
+    walked = line_of(FILE, "for k in d:", "walk_after_tracked_pop")
+    assert [">", ["+", ["len", "d"], 1], 1] in at(first_line(result.stdout), walked)
+    assert summary_line(result.stdout)["stopped"] == "no fork to flip"
+
+
+def test_a_truth_test_after_a_tracked_pop_stays_a_fork() -> None:
+    seed = '{"n": "pyct1", "d": {"b": 1}}'
+    result = run_pyct(f"{DECIDED}::truth_after_tracked_pop", seed, "--budget", "10")
+
+    assert result.returncode == 0, result.stderr
+    entry = entry_for(result.stdout, line_of(FILE, "return 2", "truth_after_tracked_pop"))
+    assert entry["reason"] == "not taken"
+    assert tries(entry)["decided"] == 0, entry

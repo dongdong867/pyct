@@ -50,6 +50,12 @@ class DictState(dict):
     # with no fork
     asked: set[object]
     found: set[object]
+    # whether the target changed the dict in a way pyct answered without a fork, as a store
+    # under a tracked key: that change may touch any key on another input, so after it no
+    # lookup is decided, and the fewest keys are only ``floor``, which each change since
+    # moves as it would move whichever key it touched (see ``fewest``)
+    unforked: bool
+    floor: int
     shadow: dict[object, object]
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
@@ -83,6 +89,8 @@ class DictState(dict):
         fields["settled"] = {}
         fields["asked"] = set()
         fields["found"] = set()
+        fields["unforked"] = False
+        fields["floor"] = 0
         fields["changed"] = {}
         fields["grown"] = 0
         fields["shadow"] = dict(items)
@@ -117,8 +125,12 @@ class DictState(dict):
 
         A tracked key found counts only where no plain key was found, since it may equal any
         of them. A key found is the argument's, whatever the target did since: a removal of it
-        is counted in ``grown``.
+        is counted in ``grown``. A dict changed without a fork (``unforked``) counts from what
+        it knew before that change: a store keeps every key and adds one that may be any of
+        them, so at least one, and a removal may take any one.
         """
+        if self.unforked:
+            return self.floor
         found = self.found
         plain_found = len(found) - (TRACKED in found)
         return max(plain_found, 1 if found else 0) + self.grown
@@ -171,6 +183,8 @@ class DictState(dict):
         fields["settled"] = self.settled
         fields["asked"] = self.asked
         fields["found"] = self.found
+        fields["unforked"] = self.unforked
+        fields["floor"] = self.floor
         fields["changed"] = dict(self.changed)
         fields["grown"] = self.grown
         return made
@@ -181,9 +195,26 @@ class DictState(dict):
         self.__dict__["grown"] += key not in self.shadow
         self.shadow[key] = value
         self.changed[key] = True
+        self.held_one()
+
+    def changed_unforked(self) -> None:
+        """Note a change pyct answered without a fork: from now on no lookup is decided, and
+        the fewest keys count from what the dict knew before it."""
+        if not self.unforked:
+            self.__dict__["floor"] = self.fewest()
+            self.__dict__["unforked"] = True
+
+    def held_one(self) -> None:
+        """Note that a change left a key in the dict, whichever key it is on another input."""
+        self.__dict__["floor"] = max(self.floor, 1)
+
+    def lost_one(self) -> None:
+        """Note that a change may have removed one key on another input that takes the path."""
+        self.__dict__["floor"] = max(self.floor - 1, 0)
 
     def dropped(self, key: object) -> None:
         """Note a removal the dict's own method made."""
         self.__dict__["grown"] -= key in self.shadow
         self.shadow.pop(key, None)
         self.changed[key] = False
+        self.lost_one()

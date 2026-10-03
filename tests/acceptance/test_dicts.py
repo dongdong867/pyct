@@ -425,7 +425,7 @@ SETTLED_FILE = str(DICTS / "settled.py")
     ("function", "seed", "at", "missed"),
     [("only_a", {"a": 9}, (3, 24), 4), ("int_only", {"1": 9}, (11, 15), 12)],
 )
-def test_names_the_fork_of_a_key_the_path_asked_about_before(
+def test_names_the_decided_lookup_of_a_key_the_path_asked_about_before(
     function: str, seed: dict[str, int], at: tuple[int, int], missed: int
 ) -> None:
     result = run_pyct(f"{SETTLED}::{function}", json.dumps({"d": seed}), "--plateau", "5")

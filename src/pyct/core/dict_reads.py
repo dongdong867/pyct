@@ -115,7 +115,8 @@ def settled_as(key: object) -> object:
 def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
     """Whether the dict holds ``key``, recording the fork the first time the path asks, which
     settles the answer: a later lookup of the same key, with no change under it since, is a
-    fact that holds what the first found.
+    fact that holds what the first found. On a dict changed without a fork every lookup is a
+    fork, since that change may have touched the key on another input.
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -137,13 +138,16 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     place: Expression = None if given is None else ["given", given]
     test = ["in", written, self.expression]
     site = caller_site()
-    if known in self.asked:
-        self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
-        return held
     self.settled.setdefault(known, held)
-    self.asked.add(known)
-    if held:
-        self.found.add(TRACKED if is_tracked(key) else known)
+    # after a change without a fork the lookup is a fork, and settles nothing the argument's
+    # other dicts read
+    if not self.unforked:
+        if known in self.asked:
+            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
+            return held
+        self.asked.add(known)
+        if held:
+            self.found.add(TRACKED if is_tracked(key) else known)
     if place is not None:
         self.sink.append(Fact(None, True, site, raising, place, lost_as=name))
     return recorded(self, Branch(test, held, site, raising, name))
@@ -307,7 +311,8 @@ def item_of(self: DictState, key: object) -> object:
 
 
 def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[object]:
-    """A walk over the dict from its first key: one fork per key and one where it ends.
+    """A walk over the dict from its first key: a fork or a fact per key, and a fork where it
+    ends (see ``passed``).
 
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
@@ -316,7 +321,7 @@ def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
-    """A walk over the dict from its last key, forking as a walk from the first does."""
+    """A walk over the dict from its last key, recording as a walk from the first does."""
     return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
 
 

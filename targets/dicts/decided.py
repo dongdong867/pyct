@@ -67,3 +67,36 @@ def store_then_die(config: dict):
         os.kill(os.getpid(), signal.SIGKILL)
     else:
         return 1
+
+
+def repeat_after_tracked_store(n: str, d: dict):
+    if "a" in d:
+        return 0
+    d[n] = 0
+    if "a" in d:
+        return 1
+    return 2
+
+
+def walk_after_tracked_pop(n: str, d: dict):
+    d["a"] = 5
+    if "b" in d:
+        d.pop(n, None)
+        count = 0
+        for k in d:
+            count += 1
+        if count == 1:
+            return "one"
+        return "more"
+    return "none"
+
+
+def truth_after_tracked_pop(n: str, d: dict):
+    d["zz"] = 1
+    del d["zz"]
+    if "b" in d:
+        d.pop(n, None)
+        if d:
+            return 1
+        return 2
+    return 0
