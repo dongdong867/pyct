@@ -194,6 +194,10 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat | Unknown) and written is not None and written.fixed:
+        logger.debug("a read from a split's end held to c* pieces: asking at the input's own")
+        origin = replace(origin, fixed_reads=False)
+        answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed
     return answer, placed

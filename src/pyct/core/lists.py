@@ -17,6 +17,7 @@ from typing import Any
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
+from pyct.core import str_splits
 from pyct.core.branch import Downgrade, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
@@ -341,3 +342,6 @@ class ConcolicList(ListState):
 # and `__format__` it inherits, differ only in the name they call and record, so the derivation
 # writes them
 downgrade_the_rest(ConcolicList, list, kept=_KEPT, inherited=_INHERITED)
+
+# a split hands back its pieces in a tracked list (follow-the-length-of-a-split)
+str_splits.enter_list(ConcolicList)

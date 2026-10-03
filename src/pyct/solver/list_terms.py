@@ -14,12 +14,17 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
+from pyct.core.branch import Expression
 
 # a term that holds, and one that does not
 TRUE, FALSE = "true", "false"
 
 # the least value each named term can take on the path, by its text
 type Least = Mapping[str, int]
+
+# each split's count by its term, as a compare writes it: whether the split holds more pieces
+# than a number, which is whether the piece there is present (see ``split_lists``)
+type Counts = Mapping[str, Callable[[int], str]]
 
 
 @dataclass(frozen=True)
@@ -90,12 +95,14 @@ class Piece:
     """A list as cvc5 reads it: its length, and the kinds of the items it can hand out.
 
     ``kinds`` are the kinds of the items the input and the target put in it, as core counts
-    them; ``every`` adds the kinds of items the solver may add.
+    them; ``every`` adds the kinds of items the solver may add. ``of_a_split`` says it is a
+    split's list or built from one, whose piece keeps the condition that it is there.
     """
 
     length: Lin
     kinds: frozenset[str]
     every: frozenset[str]
+    of_a_split: bool = False
 
 
 # where a list the seed names holds an item of a kind: the guard at a position
@@ -156,6 +163,16 @@ class Window(Piece):
 
 
 @dataclass
+class Counted(Piece):
+    """A split's list: its length the split's count, and the piece at a position, with when
+    it is there, of the kind read (see ``split_lists``)."""
+
+    at: Callable[[Lin, str, Least], Read] = field(
+        default=lambda position, kind, least: Read(None, FALSE)
+    )
+
+
+@dataclass
 class Repeated(Piece):
     """A list repeated a plain number of times: its position ``q`` reads the list at
     ``q mod len``, so a repeat costs one piece however many times it repeats."""
@@ -172,8 +189,11 @@ class Read:
     guard: str
 
 
-def compare(low: Lin, high: Lin, least: Least, *, or_equal: bool = False) -> str:
-    """``low < high``, or ``low <= high``, decided here when the difference says."""
+def compare(
+    low: Lin, high: Lin, least: Least, *, or_equal: bool = False, counts: Counts | None = None
+) -> str:
+    """``low < high``, or ``low <= high``, decided here when the difference says, and written as
+    whether a split holds a piece when the difference is one split's count and a number."""
     difference = high.minus(low)
     lowest = difference.lowest(least)
     highest = difference.highest(least)
@@ -181,8 +201,36 @@ def compare(low: Lin, high: Lin, least: Least, *, or_equal: bool = False) -> str
         return TRUE
     if highest is not None and (highest < 0 or (not or_equal and highest <= 0)):
         return FALSE
+    counted = None if counts is None else _by_count(difference, or_equal, counts)
+    if counted is not None:
+        return counted
     op = "<=" if or_equal else "<"
     return f"({op} {low.text()} {high.text()})"
+
+
+def _by_count(difference: Lin, or_equal: bool, counts: Counts) -> str | None:
+    """``difference > 0``, or ``>= 0``, as whether a split holds more pieces than a number,
+    when the difference is that split's count times a number, and a number."""
+    if len(difference.atoms) != 1:
+        return None
+    ((term, factor),) = difference.atoms
+    past = counts.get(term)
+    if past is None or factor == 0:
+        return None
+    # ``factor * count + rest > 0``; ``>= 0`` is ``> -1`` on ints
+    rest = difference.const + (1 if or_equal else 0)
+    if factor > 0:
+        # the count is past ``-rest / factor``, rounded down
+        return past(-rest // factor)
+    # the count is below ``rest / -factor``: not past that, rounded up, less one
+    return negated(past(-(-rest // -factor) - 1))
+
+
+def negated(condition: str) -> str:
+    """The condition's negation, a constant turned over here."""
+    if condition in (TRUE, FALSE):
+        return FALSE if condition == TRUE else TRUE
+    return f"(not {condition})"
 
 
 def equal(position: Lin, at: int, least: Least) -> str:
@@ -257,3 +305,32 @@ def shape_guard(shape: ListShape) -> Guard:
         return found
 
     return guard
+
+
+# how deep a compare's side may nest arithmetic and still be read as a sum: a loop that adds on
+# every pass nests thousands deep, which no compare of a split's count does
+_SUM_DEPTH = 8
+
+
+def summed(
+    part: Expression, length_of: Callable[[Expression], Lin | None], depth: int = _SUM_DEPTH
+) -> Lin | None:
+    """A side of a compare as a sum: a number, a list's length (``length_of``), or either
+    through `+`, `-` or `*` with a number, nested at most ``depth`` deep; None for any other."""
+    if isinstance(part, int) and not isinstance(part, bool):
+        return Lin(int(part))
+    length = length_of(part)
+    if length is not None:
+        return length
+    if not isinstance(part, list) or len(part) != 3 or part[0] not in ("+", "-", "*"):
+        return None
+    if depth == 0:
+        return None
+    first, second = (summed(operand, length_of, depth - 1) for operand in part[1:])
+    if first is None or second is None:
+        return None
+    if part[0] == "*":
+        number = first.number() if second.number() is None else second.number()
+        listed = second if second.number() is None else first
+        return None if number is None else listed.times(number)
+    return first.plus(second) if part[0] == "+" else first.minus(second)

@@ -7,7 +7,7 @@ shows what the target was handed and whose raise the line reports.
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, downgrade, one_line, run_pyct
+from tests.acceptance.harness import REPO_ROOT, downgrade, first_line, one_line, run_pyct
 
 SPLIT_KEYWORD = "targets.strs.split_keyword::split_on_comma"
 SPLIT_KEYWORD_FILE = str(REPO_ROOT / "targets" / "strs" / "split_keyword.py")
@@ -34,9 +34,10 @@ def test_returns_what_python_returns() -> None:
     result = run_pyct(SPLIT_KEYWORD, '{"s": "a,b"}')
 
     assert result.returncode == 0, result.stderr
-    seed = one_line(result.stdout)
+    seed = first_line(result.stdout)
     assert seed["failure"] is None
-    # str's own split handed back ["a", "b"], so the target went under its `if`
+    # the split handed back ["a", "b"], so the target went under its `if`; a split's keyword is
+    # now taken (follow-the-length-of-a-split), so its forks are flipped after the seed
     assert UNDER_THE_FORK in covered_in(seed, SPLIT_KEYWORD_FILE)
 
 

@@ -14,7 +14,7 @@ from pyct.core.str_splits import LONGEST_WALK
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.answer_size import longest_string
 from pyct.solver.cvc5 import solve
-from pyct.solver.splits import SPLITS
+from pyct.solver.splits import SPLITS, left_count, named_classes, right_count
 from pyct.solver.strings import encode
 from tests.unit.solver.agreement import (
     SITE,
@@ -72,6 +72,7 @@ def _program(cases: list[tuple[str, Split, int]]) -> tuple[list[str], list[objec
             name = f"v{len(python)}"
             lines += [f"(declare-const {name} {sort})", f"(assert (= {name} {term}))"]
             python.append(answer)
+    lines[1:1] = named_classes("\n".join(lines))
     lines += ["(check-sat)", f"(get-value ({' '.join(f'v{at}' for at in range(len(python)))}))"]
     return lines, python
 
@@ -150,11 +151,12 @@ def test_a_piece_asserts_once_that_the_string_has_it() -> None:
     assert "str.substr |arg.s| 0 2" not in "\n".join(lines)
 
 
-# pieces every string has: partition's three, and the first of a split or rsplit on a separator
+# pieces every string has: partition's three, and the first of a split or an rsplit on a
+# separator, with no limit or one past what the reversed string is walked to
 ALWAYS_THERE: dict[str, Expression] = {
     "partition": ["[]", ["partition", "s", "','"], 2],
     "split": ["[]", ["split", "s", "','", 2], 0],
-    "rsplit": ["[]", ["rsplit", "s", "','", 2], 0],
+    "rsplit": ["[]", ["rsplit", "s", "','"], 0],
 }
 
 
@@ -171,10 +173,23 @@ def test_a_piece_the_string_always_has_asserts_nothing(piece: Expression) -> Non
     ]
 
 
+def test_an_rsplit_walked_to_its_limit_asserts_it_has_the_split_s_number_of_pieces() -> None:
+    prefix = (fork(["==", ["[]", ["rsplit", "s", "','", 2], 0], "'a'"], taken=True),)
+
+    lines = render(prefix, {"s": str}).splitlines()
+
+    counts = f"(= {right_count('|arg.s|', (',', 2))} {left_count('|arg.s|', (',', 2))})"
+    assert [line for line in lines if line.startswith("(assert ")] == [
+        longest_string("|arg.s|"),
+        f"(assert {counts})",
+        lines[-3],
+    ]
+
+
 def test_a_piece_at_a_position_that_is_not_an_int_is_an_error() -> None:
     prefix = (fork(["==", ["[]", ["split", "s"], None], "'a'"], taken=True),)
 
-    with pytest.raises(ValueError, match="piece None"):
+    with pytest.raises(ValueError, match="position None"):
         render(prefix, {"s": str})
 
 

@@ -49,8 +49,10 @@ class Branch:
     tells whose side a fork took.
 
     ``lost_as`` names the operation that took it, which a call that is over names its loss by
-    when a value it kept records one (see ``execution.tally``). It is not part of the fork, and
-    it is not printed.
+    when a value it kept records one (see ``execution.tally``). ``split_walk`` marks a walk's
+    ``len(<form>) > k`` fork over a split's list, or a list built from one, which the tree aims
+    at after the path's other forks (see ``branches.tree``). Neither is part of the fork, and
+    neither is printed.
     """
 
     expression: Expression
@@ -58,6 +60,7 @@ class Branch:
     site: Site
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
+    split_walk: bool = field(default=False, compare=False)
 
     @property
     def where(self) -> ForkSite:

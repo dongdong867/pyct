@@ -286,9 +286,14 @@ class _Facts:
                 int() as line,
                 int() as col,
                 bool() as raising,
+                *marked,
             ]:
+                if marked and (len(marked) != 1 or marked[0] is not True):
+                    raise ValueError("a fork's seventh item marks a split's walk, and is true")
                 site = self._site(file, line, col)
-                return Branch(self._expression(expression), taken, site, raising=raising)
+                walk = bool(marked)
+                expression = self._expression(expression)
+                return Branch(expression, taken, site, raising=raising, split_walk=walk)
         raise ValueError("a fork is [expression, taken, file, line, col, raising]")
 
     def _fact(self, value: object) -> Fact:

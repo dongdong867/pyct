@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pyct.binding.shapes import ArrayValue, ListAnswer
 from pyct.core.branch import Expression
 from pyct.solver.answer import SolverAnswerError
-from pyct.solver.list_kinds import measured
+from pyct.solver.list_kinds import SPLIT_HEADS, measured
 from pyct.solver.lists import ListTerms
 
 # where an item of a list the path built came from: a list the seed names, the positions of the
@@ -130,6 +130,11 @@ class _Answering:
             return [] if positions is None else self._stored(name, positions)
         if head == "[,]":
             return [None] * len(operands)
+        if head in SPLIT_HEADS:
+            # a split's pieces come from no list the seed names; as many as the answer's count,
+            # which the program asks for wherever a term reads it
+            count = self.model.get(self.terms.splits.count_of(node), 0)
+            return [None] * (count if isinstance(count, int) else 0)
         if head == "+":
             return self._marks(operands[0]) + self._marks(operands[1])
         if head == "*":

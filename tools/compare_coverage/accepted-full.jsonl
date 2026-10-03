@@ -1,6 +1,6 @@
 {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0}
 {"set": "examples", "target": "examples.complex_structures.transaction_ledger_analysis::transaction_ledger_analysis", "seed": {"transactions": [{"amount": 100.0, "type": "credit"}, {"amount": 50.0, "type": "debit"}]}, "status": "differs", "only_legacy": [], "only_v2": [79]}
-{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [88, 92], "only_v2": [100]}
+{"set": "examples", "target": "examples.deep_path_dependency.multi_stage_form_validation::multi_stage_form_validation", "seed": {"form_data": "John Doe|john@example.com|30|123 Main Street"}, "status": "differs", "only_legacy": [], "only_v2": [96, 100]}
 {"set": "examples", "target": "examples.library_black_box.datetime_classification::datetime_classification", "seed": {"date_str": "2024-06-15 14:30:00"}, "status": "differs", "only_legacy": [104, 105, 108, 109, 112], "only_v2": []}
 {"set": "examples", "target": "examples.library_black_box.json_config_validation::json_config_validation", "seed": {"config_str": "{\"mode\": \"production\", \"version\": \"1.0.0\"}"}, "status": "differs", "only_legacy": [92], "only_v2": []}
 {"set": "examples", "target": "examples.pure_numeric.tax_bracket_calculator::tax_bracket_calculator", "seed": {"income": 75000, "filing_status": "single"}, "status": "differs", "only_legacy": [], "only_v2": [33]}
@@ -109,4 +109,3 @@
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [5, 7, 9, 11]}
 {"set": "v2", "target": "targets.strs.split_forms::read", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
-{"set": "v2", "target": "targets.strs.split_keyword::split_on_comma", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [5], "only_v2": []}
