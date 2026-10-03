@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import platform
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -43,6 +44,41 @@ from pyct.solver.locate import locate, version
 _NO_LIMITS = Limits()
 
 
+class _Noted:
+    """A finder that finds nothing, and notes each module asked for, by whether the thread that
+    made it asked.
+
+    Python asks every finder in turn for a module it has not imported yet,
+    so with this one first, each module a thread imports passes it.
+    """
+
+    def __init__(self) -> None:
+        self.reader = threading.get_ident()
+        self.names: set[str] = set()
+        self.others: set[str] = set()
+
+    def find_spec(self, name: str, path: object = None, target: object = None) -> None:
+        (self.names if threading.get_ident() == self.reader else self.others).add(name)
+
+    def imported(self, name: str) -> bool:
+        """Whether the module ``name`` is the reading thread's alone.
+
+        It is when that thread asked for it, for a package above it, since a
+        module can put another in ``sys.modules`` itself, or for a module
+        under it, since a package the read imported goes with its modules;
+        and no other thread asked for it, for a package above it or for a
+        module under it, whose import needs its package to stay.
+        """
+        return _in_the_family(name, self.names) and not _in_the_family(name, self.others)
+
+
+def _in_the_family(name: str, names: set[str]) -> bool:
+    """Whether ``names`` holds ``name``, a package above it, or a module under it."""
+    return any(
+        each == name or name.startswith(f"{each}.") or each.startswith(f"{name}.") for each in names
+    )
+
+
 def _platform() -> str:
     """The platform the summary line names, read with ``sys.modules`` left as it was found.
 
@@ -50,16 +86,25 @@ def _platform() -> str:
     on macOS. Made here, as this module imports, it runs before a target's
     folder joins the import path, so none of them comes from that folder.
     Each one is then dropped again, so a target that imports one gets it
-    from its own path, as plain Python would. platform keeps what it read,
-    so no later read imports them again. The read also runs one or two short
-    commands, ``uname -p`` among them, about 10 ms in all.
+    from its own path, as plain Python would. So is a module put in
+    ``sys.modules`` under one of them, as pyexpat puts its ``errors``. A
+    module another thread imports meanwhile, such as a thread a host's
+    ``sitecustomize`` started, stays, and so does a package of the read's
+    that such a module lies under. platform keeps what it read, so no later
+    read imports them again. The read also runs one or two short commands,
+    ``uname -p`` among them, about 10 ms in all.
     """
     before = set(sys.modules)
+    noted = _Noted()
+    # a new list each way, never a change to this one: another thread's import may be walking it
+    sys.meta_path = [noted, *sys.meta_path]
     try:
         return platform.platform()
     finally:
+        sys.meta_path = [finder for finder in sys.meta_path if finder is not noted]
         for name in set(sys.modules) - before:
-            sys.modules.pop(name, None)
+            if noted.imported(name):
+                sys.modules.pop(name, None)
 
 
 _PLATFORM = _platform()
