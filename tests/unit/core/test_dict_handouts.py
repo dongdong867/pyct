@@ -99,7 +99,43 @@ def test_a_stored_key_python_shares_leaves_its_tracked_key_free_where_a_walk_han
         (["in", "name", "config"], False),
         ([">", ["+", ["len", "config"], 1], 1], False),
     ]
-    assert downgrades(sink) == ["__contains__"]
+    # as where the store is Python's own: answered from what the target changed, dict marked
+    assert downgrades(sink) == []
+    assert config.unforked
+
+
+def test_a_key_python_shares_after_a_tracked_change_runs_as_where_that_change_is_python_s() -> None:
+    config, sink = tracked({"b": 1})
+    name = ConcolicStr.made("zz", "name", sink)
+    config[name] = 0
+    asked = len(forks(sink))
+
+    assert "b" in config
+    assert "b" in config
+    config["b"] = 2
+    del config["b"]
+
+    # no compare names name, and the dict is marked, so each lookup is a fork, no fact (with
+    # name "b" the store would have been over "b", which no fork here says); the removal reads
+    # what the store before it changed
+    assert forks(sink)[asked:] == [(["in", "'b'", "config"], True)] * 3
+    assert decided(sink) == []
+    assert config.unforked
+    hold_against_python(sink, {"config": {"b": 1}, "name": "zz"})
+
+
+def test_a_walk_after_a_tracked_change_compares_no_key_python_shares() -> None:
+    config, sink = tracked({"b": 1, "cd": 2})
+    name = ConcolicStr.made("b", "name", sink)
+    config[name] = 0
+
+    list(config)
+
+    # "b" may be under name's store; comparing would pin name, so the dict is marked instead.
+    # "cd", which Python does not share, is compared
+    compared = [expression for expression, _ in forks(sink) if part(expression, 0) == "=="]
+    assert compared == [["==", "name", "'cd'"]]
+    assert config.unforked
 
 
 def test_a_stale_copy_of_a_tracked_store_s_key_is_looked_up_as_that_key() -> None:

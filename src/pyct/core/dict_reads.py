@@ -39,13 +39,13 @@ from pyct.core.dict_compares import (
     handed_in_place,
     is_tracked,
     own_key,
+    shared_after_tracked,
     written_key,
 )
 from pyct.core.dict_handouts import (
     FIRST,
     LAST,
     POPPED,
-    copy_of,
     given_place,
     handout,
     proven,
@@ -124,7 +124,8 @@ def present(
     fact, since that change may have touched the key on another input: one recorded here is a
     fork, and a key the target changed or a walk handed out is answered without either. After
     a change under a tracked key the lookup first records whether its key is that one
-    (``after_changes``).
+    (``after_changes``), unless its key is one Python shares, which runs as where that change
+    is Python's own (``shared_after_tracked``).
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -139,8 +140,8 @@ def present(
     held = dict.__contains__(self, plain(key))
     if proven(self, key):
         return held
-    if not changing and _shared_after_a_walk(self, key):
-        return _shared_looked_up(self, key, held, (name, raising))
+    if shared_after_tracked(self, key):
+        return _as_unfollowed(self, key, held, (name, raising))
     looked = stand_in(self, key)
     key, changing = looked, changing or looked is not key
     written = written_key(key)
@@ -155,37 +156,22 @@ def present(
     return _in_the_argument(self, key, held, (name, raising, place))
 
 
-def _shared_after_a_walk(self: DictState, key: object) -> bool:
-    """Whether ``key`` is a key Python shares, looked up after a walk that followed a change
-    under a tracked key: the walk may have handed it out as that key's own, which on another
-    input is the tracked key's value, or the target wrote it, and no lookup tells them apart.
-    So it is not compared with the tracked changes, which would pin the tracked key to it."""
-    if not self.tracked_changes or not self.walked_since:
-        return False
-    return (type(key) is str or type(key) is int) and copy_of(key) is key
-
-
-def _shared_looked_up(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool:
-    """A lookup of a key Python shares after a walk (see ``_shared_after_a_walk``): Python's own
-    answer and a downgrade where the target changed the key, else the argument's fork, given
-    where a walk read the key, and never a fact, since a tracked key may be the key here on
-    another input that takes the path."""
+def _as_unfollowed(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool:
+    """A lookup of a key Python shares after a change under a tracked key that may be it (see
+    ``dict_compares.shared_after_tracked``), as it runs where that change is Python's own: the
+    dict is marked, a key the target changed is answered with no fork, and any other is the
+    argument's fork, given where a walk read the key."""
     name, raising = how
+    self.changed_unforked()
     if plain(key) in self.changed:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
         return held
     given = given_place(self, key)
     place: Expression = None if given is None else ["given", given]
-    return _in_the_argument(self, key, held, (name, raising, place), decide=False)
+    return _in_the_argument(self, key, held, (name, raising, place))
 
 
 def _in_the_argument(
-    self: DictState,
-    key: object,
-    held: bool,
-    how: tuple[str, bool, Expression],
-    *,
-    decide: bool = True,
+    self: DictState, key: object, held: bool, how: tuple[str, bool, Expression]
 ) -> bool:
     """Whether the argument holds ``key``, a key no change decides: the fork, or a fact where
     the path asked before (see ``present``) or a walk read the key in the argument. ``how`` is
@@ -199,7 +185,7 @@ def _in_the_argument(
     # after a change without a fork, a lookup recorded here is a fork, and adds nothing to the
     # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
     # is still noted
-    if not self.unforked and decide:
+    if not self.unforked:
         decided = known in self.asked or (held and walked_in_the_argument(self, key))
         self.asked.add(known)
         if held:
@@ -388,7 +374,6 @@ def _walked(
         if not passed(self, at, key, pin, name):
             return
         handed_in_place(self, key, name, pin)
-        self.__dict__["walked_since"] = bool(self.tracked_changes)
         handout(self, key, pin)
         yield pick(self, key)
         at += 1

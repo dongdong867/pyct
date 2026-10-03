@@ -4,7 +4,8 @@ what a later lookup of that copy knows (containers-arrays-counted-keys-and-copie
 A copy no code can write proves its key was there when the walk handed it out. A change under a
 tracked key that may touch a held key makes the copies stale: their lookups ask again, given
 where the walk read the key, and a copy of the target's own key stands for the tracked key it
-was stored under. A key Python shares has no copy.
+was stored under. A key Python shares has no copy, so after a change under a tracked key it
+runs as where that change is Python's own (``dict_compares.shared_after_tracked``).
 """
 
 from __future__ import annotations
@@ -40,9 +41,9 @@ def handout(self: DictState, key: object, pin: Expression) -> object:
     """The key a walk hands out for a stored key: its own copy, the same for every walk until a
     change makes it stale, and where the walk read it.
 
-    A key Python shares, a one-character str or a small int, has no copy: a literal the target
-    writes is the same object. Its lookup is recorded as any other, and holds where the walk
-    read it (``pin``), so its other side is asked with that place and without it.
+    A key Python shares, a one-character str, the empty str or a small int, has no copy: a
+    literal the target writes is the same object. Its lookup holds where the walk read it
+    (``pin``), so its other side is asked with that place and without it.
     """
     if type(key) is not str and type(key) is not int:
         # a key of another kind is never copied, so it is hashed no more than Python hashes it
@@ -105,7 +106,7 @@ def given_place(self: DictState, key: object) -> Expression:
 
 def walked_in_the_argument(self: DictState, key: object) -> bool:
     """Whether ``key`` is a stale copy of a key a walk read in the argument: the place the walk
-    read it at, which its lookup is given, says the argument holds it (see ``_given``)."""
+    read it at, which its lookup is given, says the argument holds it (see ``given_place``)."""
     entry = _stale(self, key)
     pin = None if entry is None else entry[1]
     return isinstance(pin, list) and pin[0] in (FIRST, LAST)

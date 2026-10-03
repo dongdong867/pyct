@@ -62,24 +62,24 @@ FOLLOWED_CHANGES = [change for change in UNFORKED_CHANGES if change != "reflecte
 def test_a_followed_tracked_change_marks_nothing_and_its_forks_decide_what_follows(
     change: str,
 ) -> None:
-    config, sink = tracked({"a": 1})
-    config["b"] = 2
+    config, sink = tracked({"aa": 1})
+    config["bb"] = 2
     name = ConcolicStr.made("pyct1", "name", sink)
-    assert "a" in config
+    assert "aa" in config
     made, _ = UNFORKED_CHANGES[change]
 
     changed = made(config, name)
     after = changed if isinstance(changed, ConcolicDict) else config
     asked = len(forks(sink))
-    assert "a" in after and bool(after)
+    assert "aa" in after and bool(after)
 
-    # the change asked whether name is "b" and whether the argument holds it, so "a" is decided
-    # once name is not "a", which a store asks; the pop found nothing, so it changed nothing
-    stored = [] if change == "pop" else [(["==", "name", "'a'"], False)]
+    # the change asked whether name is "bb" and whether the argument holds it, so "aa" is decided
+    # once name is not "aa", which a store asks; the pop found nothing, so it changed nothing
+    stored = [] if change == "pop" else [(["==", "name", "'aa'"], False)]
     assert not after.unforked
     assert forks(sink)[asked:] == stored
     assert decided(sink)[-2:] == [
-        (["in", "'a'", "config"], True),
+        (["in", "'aa'", "config"], True),
         (["!=", after.size_term(), 0], True),
     ]
 

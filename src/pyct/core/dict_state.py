@@ -80,18 +80,15 @@ class DictState(dict):
     walked_at: tuple[int, int] | None
     # the copy of each stored key every walk hands out, so a lookup of that very object comes
     # from a walk; and, for a key Python shares, which no copy can stand for, where a walk read
-    # it (see ``dict_reads.proven``)
+    # it (see ``dict_handouts.proven``)
     copies: dict[object, object]
     shared: dict[object, Expression]
     # each copy a walk handed out, by its identity: the copy, where the walk last read its key,
     # and the tracked key a key of the target's own was stored under, or None; and the copies
     # a change under a tracked key may have touched, which a lookup no longer takes as proven
-    # and asks again, given that place, whatever walk runs later (see ``dict_reads.present``)
+    # and asks again, given that place, whatever walk runs later (see ``dict_handouts``)
     handed: dict[int, tuple[object, Expression, Expression]]
     stale: set[int]
-    # whether a walk of the dict handed out a key since a change under a tracked key: a key
-    # Python shares it handed out is one the target may write too (see ``dict_reads.present``)
-    walked_since: bool
     # whether popitem changed the dict: it removes whichever key is last on the input, so a
     # change under a tracked key after it is Python's own (see ``dict_changes.followed``)
     popped: bool
@@ -130,13 +127,12 @@ class DictState(dict):
         fields["grown"] = 0
         fields["shadow"] = dict(items)
         fields["walked_at"] = None
-        # what walks handed out, none yet (see ``dict_reads.handout``)
+        # what walks handed out, none yet (see ``dict_handouts.handout``)
         fields.update(
             copies={},
             shared={},
             handed={},
             stale=set(),
-            walked_since=False,
             popped=False,
             unfollowed=set(),
         )
@@ -241,7 +237,6 @@ class DictState(dict):
         fields["grown"] = self.grown
         fields["popped"] = self.popped
         fields["unfollowed"] = set(self.unfollowed)
-        fields["walked_since"] = self.walked_since
         return made
 
     def noted(self, key: object, value: object, tracked: Expression = None) -> None:

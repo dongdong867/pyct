@@ -14,53 +14,53 @@ def untyped_store(n, d):
 
 def store_named(n: str, d: dict):
     d[n] = 5
-    if "b" in d:
+    if "bb" in d:
         return 1
-    if n.startswith("b"):
+    if n.startswith("bb"):
         return 2
     return 0
 
 
 def defaulted_named(n: str, d: dict):
     d.setdefault(n, 5)
-    if "b" in d:
+    if "bb" in d:
         return 1
-    if n.startswith("b"):
+    if n.startswith("bb"):
         return 2
     return 0
 
 
 def updated_named(n: str, d: dict):
     d.update({n: 5})
-    if "b" in d:
+    if "bb" in d:
         return 1
-    if n.startswith("b"):
+    if n.startswith("bb"):
         return 2
     return 0
 
 
 def merged_in_place_named(n: str, d: dict):
     d |= {n: 5}
-    if "b" in d:
+    if "bb" in d:
         return 1
-    if n.startswith("b"):
+    if n.startswith("bb"):
         return 2
     return 0
 
 
 def merged_named(n: str, d: dict):
     d = d | {n: 5}
-    if "b" in d:
+    if "bb" in d:
         return 1
-    if n.startswith("b"):
+    if n.startswith("bb"):
         return 2
     return 0
 
 
 def deleted(n: str, d: dict):
     del d[n]
-    if "b" in d:
-        if n.startswith("b"):
+    if "bb" in d:
+        if n.startswith("bb"):
             return 2
         return 1
     return 0
@@ -68,8 +68,8 @@ def deleted(n: str, d: dict):
 
 def popped(n: str, d: dict):
     d.pop(n)
-    if "b" in d:
-        if n.startswith("b"):
+    if "bb" in d:
+        if n.startswith("bb"):
             return 2
         return 1
     return 0
@@ -77,8 +77,8 @@ def popped(n: str, d: dict):
 
 def popped_or_none(n: str, d: dict):
     d.pop(n, None)
-    if "b" in d:
-        if n.startswith("b"):
+    if "bb" in d:
+        if n.startswith("bb"):
             return 2
         return 1
     return 0
@@ -163,3 +163,36 @@ def rewalked(n: str, d: dict):
     if hits > 1:
         return "two"
     return "fewer"
+
+
+def stored_through_walk(name: str, config: dict):
+    config[name] = 0
+    for k in list(config):
+        config[k] = 1
+    if name == "q":
+        return "q"
+    return "one"
+
+
+def copied_walk(name: str, config: dict):
+    config[name] = 0
+    hits = 0
+    for k in config.copy():
+        if k in config:
+            hits += 1
+    if hits > 1:
+        return "two"
+    if name == "q":
+        return "q"
+    return "one"
+
+
+def walked_then_read(n: str, d: dict):
+    d[n] = 0
+    for k in d:
+        pass
+    if "b" in d:
+        return 1
+    if n.startswith("b"):
+        return 2
+    return 0

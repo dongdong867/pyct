@@ -29,47 +29,47 @@ def part(expression: Expression, at: int) -> Expression:
 
 
 def test_a_plain_lookup_after_a_tracked_store_asks_whether_it_is_that_key() -> None:
-    config, sink = tracked({"a": 1})
-    name = ConcolicStr.made("k", "name", sink)
+    config, sink = tracked({"aa": 1})
+    name = ConcolicStr.made("kk", "name", sink)
 
     config[name] = 5
-    assert "b" not in config
-    assert "k" in config
+    assert "bb" not in config
+    assert "kk" in config
 
     assert forks(sink) == [
         (["in", "name", "config"], False),
-        (["==", "name", "'b'"], False),
-        (["in", "'b'", "config"], False),
-        (["==", "name", "'k'"], True),
+        (["==", "name", "'bb'"], False),
+        (["in", "'bb'", "config"], False),
+        (["==", "name", "'kk'"], True),
     ]
     assert downgrades(sink) == []
-    hold_against_python(sink, {"config": {"a": 1}, "name": "k"})
+    hold_against_python(sink, {"config": {"aa": 1}, "name": "kk"})
 
 
 def test_a_tracked_removal_answers_a_later_lookup_of_its_key() -> None:
-    config, sink = tracked({"a": 1, "b": 2})
-    name = ConcolicStr.made("a", "name", sink)
+    config, sink = tracked({"aa": 1, "bb": 2})
+    name = ConcolicStr.made("aa", "name", sink)
 
     del config[name]
-    assert "a" not in config
+    assert "aa" not in config
     assert bool(config)
 
-    assert forks(sink)[:2] == [(["in", "name", "config"], True), (["==", "name", "'a'"], True)]
+    assert forks(sink)[:2] == [(["in", "name", "config"], True), (["==", "name", "'aa'"], True)]
     assert downgrades(sink) == []
-    hold_against_python(sink, {"config": {"a": 1, "b": 2}, "name": "a"})
+    hold_against_python(sink, {"config": {"aa": 1, "bb": 2}, "name": "aa"})
 
 
 def test_a_later_change_under_a_plain_key_decides_alone() -> None:
     config, sink = tracked({})
-    name = ConcolicStr.made("k", "name", sink)
+    name = ConcolicStr.made("kk", "name", sink)
 
     config[name] = 1
-    config["b"] = 2
+    config["bb"] = 2
     before = len(forks(sink))
-    assert "b" in config
+    assert "bb" in config
 
     assert len(forks(sink)) == before
-    assert forks(sink)[1:] == [(["==", "name", "'b'"], False), (["in", "'b'", "config"], False)]
+    assert forks(sink)[1:] == [(["==", "name", "'bb'"], False), (["in", "'bb'", "config"], False)]
 
 
 def test_two_tracked_keys_ask_whether_they_are_equal() -> None:
@@ -229,26 +229,26 @@ def test_past_the_most_tracked_changes_a_change_is_python_s() -> None:
 
 def test_popitem_removes_the_key_a_tracked_store_put_last() -> None:
     config, sink = tracked({})
-    name = ConcolicStr.made("b", "name", sink)
+    name = ConcolicStr.made("bb", "name", sink)
 
     config[name] = 5
     config.popitem()
-    assert "b" not in config
+    assert "bb" not in config
 
-    assert (["==", "name", "'b'"], True) in forks(sink)
-    # there Python keeps "b": the store put "a" last, and popitem took it
-    assert moves_a_fork(sink, {"config": {"b": 2}, "name": "a"})
+    assert (["==", "name", "'bb'"], True) in forks(sink)
+    # there Python keeps "bb": the store put "aa" last, and popitem took it
+    assert moves_a_fork(sink, {"config": {"bb": 2}, "name": "aa"})
 
 
 def test_popitem_of_an_argument_s_key_asks_whether_a_tracked_store_was_over_it() -> None:
-    config, sink = tracked({"a": 1, "b": 2})
-    name = ConcolicStr.made("b", "name", sink)
+    config, sink = tracked({"aa": 1, "bb": 2})
+    name = ConcolicStr.made("bb", "name", sink)
 
     config[name] = 0
     config.popitem()
 
     compared = [fork for fork in forks(sink) if part(fork[0], 0) == "=="]
-    assert compared == [(["==", "name", "'b'"], True)]
+    assert compared == [(["==", "name", "'bb'"], True)]
     # the key popitem read stays last on both sides of the compare: a place recorded before it
     at = next(
         at
@@ -257,7 +257,7 @@ def test_popitem_of_an_argument_s_key_asks_whether_a_tracked_store_was_over_it()
     )
     before = sink[at - 1]
     assert isinstance(before, Fact)
-    assert (before.expression, before.place) == (None, ["given", ["popped", "config", "'b'"]])
+    assert (before.expression, before.place) == (None, ["given", ["popped", "config", "'bb'"]])
 
 
 def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
@@ -336,9 +336,11 @@ def test_a_shared_key_after_a_walk_is_python_s_where_the_target_changed_it() -> 
 
     assert "b" in config
 
-    # no lookup tells the two apart, so neither pins n to "b": Python's own answer
+    # no lookup tells the two apart, so neither pins n to "b": the lookup runs as where the
+    # store is Python's own, answered from what the target changed, and the dict is marked
     assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
-    assert downgrades(sink) == ["__contains__"]
+    assert downgrades(sink) == []
+    assert config.unforked
     hold_against_python(sink, {"config": {"c": 0}, "name": "b"})
 
 
@@ -353,24 +355,3 @@ def test_a_plain_lookup_reads_only_the_changes_after_its_key_s_own() -> None:
     assert "b" in config
 
     assert forks(sink)[before:] == []
-
-
-def test_a_shared_key_a_walk_handed_out_keeps_its_place_on_its_compare() -> None:
-    # "b" is a key Python shares, so its lookup is not proven by the walk: it asks whether name
-    # is "b", which holds only where the walk read "b", so the place is a fact before the fork
-    config, sink = tracked({"b": 1})
-    name = ConcolicStr.made("zz", "name", sink)
-    keys = list(config)
-
-    config[name] = 2
-    for key in keys:
-        assert config[key] >= 1
-
-    at = next(
-        at
-        for at, item in enumerate(sink)
-        if isinstance(item, Branch) and item.expression == ["==", "name", "'b'"]
-    )
-    before = sink[at - 1]
-    assert isinstance(before, Fact)
-    assert (before.expression, before.place) == (None, ["given", ["walked", "config", "'b'"]])

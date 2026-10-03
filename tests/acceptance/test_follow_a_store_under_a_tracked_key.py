@@ -136,7 +136,7 @@ def test_counts_the_stored_key(function: str, seed: dict[str, object], int_keyed
 
 # follow-a-store-under-a-tracked-key-reads-a-plain-key-after-the-store
 def test_reads_a_plain_key_after_the_store() -> None:
-    result = run_pyct(f"{MODULE}::store_named", '{"n": "a", "d": {}}', *BUDGET, timeout=PATIENCE)
+    result = run_pyct(f"{MODULE}::store_named", '{"n": "aa", "d": {}}', *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -151,7 +151,7 @@ def test_reads_a_plain_key_after_the_store() -> None:
     "function", ["defaulted_named", "updated_named", "merged_in_place_named", "merged_named"]
 )
 def test_stores_through_every_store_method(function: str) -> None:
-    result = run_pyct(f"{MODULE}::{function}", '{"n": "a", "d": {}}', *BUDGET, timeout=PATIENCE)
+    result = run_pyct(f"{MODULE}::{function}", '{"n": "aa", "d": {}}', *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -226,7 +226,7 @@ def test_a_store_between_a_walk_or_popitem_and_a_lookup_keeps_every_answer_on_th
 # follow-a-store-under-a-tracked-key-removes-under-a-tracked-key
 @pytest.mark.parametrize("function", ["deleted", "popped", "popped_or_none"])
 def test_removes_under_a_tracked_key(function: str) -> None:
-    seed = '{"n": "a", "d": {"a": 1, "b": 2}}'
+    seed = '{"n": "aa", "d": {"aa": 1, "bb": 2}}'
     result = run_pyct(f"{MODULE}::{function}", seed, *BUDGET, timeout=PATIENCE)
 
     assert result.returncode == 0, result.stderr
@@ -292,3 +292,26 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
         assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
     # under `dict[int, X]` an answer that adds key 0 walks it ahead of n's own, so the lookup's
     # fork for it comes before the pass the answer aimed at: one answer leaves there, as on v2
+
+
+# a key Python shares on a dict changed under a tracked key runs as where that change is
+# Python's own, as on v2: a store through a walked shared key, a walk of a copy, and a literal
+# read after a walk (review of PR #131, round 3). Each covers the line v2 covers
+@pytest.mark.parametrize(
+    ("function", "seed", "line", "on_plan"),
+    [
+        ("stored_through_walk", {"name": "a", "config": {}}, 'return "q"', True),
+        ("copied_walk", {"name": "a", "config": {}}, 'return "q"', False),
+        ("walked_then_read", {"n": "a", "d": {}}, "return 1", False),
+    ],
+)
+def test_a_key_python_shares_runs_as_on_v2(
+    function: str, seed: dict[str, object], line: str, on_plan: bool
+) -> None:
+    result = run_pyct(f"{MODULE}::{function}", json.dumps(seed), "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert line_of(function, line) in union_of(lines)[str(FILE)]
+    if on_plan:
+        assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
