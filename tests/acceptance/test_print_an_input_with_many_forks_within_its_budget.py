@@ -20,8 +20,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, summary_line
-from tests.acceptance.test_strs import forks_of
+from tests.acceptance.harness import REPO_ROOT, forks_of, input_lines, summary_line
 from tests.acceptance.timed import Measured, measured, within
 
 COUNTDOWN = "targets.loops.countdown::count_down"

@@ -9,8 +9,7 @@ plain Python's answer from the same fixture called on a plain value in this test
 import pytest
 
 from targets.types import attributes
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
-from tests.acceptance.test_ints import forks_of
+from tests.acceptance.harness import REPO_ROOT, first_line, forks_of, input_lines, run_pyct
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     covers_plainly,

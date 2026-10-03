@@ -12,8 +12,10 @@ from tests.acceptance.harness import (
     REPO_ROOT,
     crashing_cvc5,
     input_lines,
+    numbers_of,
     run_pyct,
     summary_line,
+    union_of,
 )
 
 ONE_CHECK = "targets.flip.one_check::classify"
@@ -38,22 +40,6 @@ NEVER = 8
 BUCKET_LINES = [2, 3, 4, 5, 6]
 # no solver call ended any way at all
 ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
-
-
-def numbers_of(line: dict[str, object], key: str) -> dict[str, list[int]]:
-    """One map of line numbers off a printed line, narrowed so a lookup means something."""
-    payload = line[key]
-    assert isinstance(payload, dict), line
-    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
-
-
-def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
-    """Every input's covered map added up, written the way a printed line writes one."""
-    union: dict[str, set[int]] = {}
-    for line in lines:
-        for file, covered in numbers_of(line, "covered").items():
-            union[file] = union.get(file, set()) | set(covered)
-    return {file: sorted(covered) for file, covered in union.items()}
 
 
 # finish-a-run-covers-every-branch
