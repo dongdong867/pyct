@@ -4,7 +4,6 @@ copy a change made stale, a key Python shares, and a popitem beside a tracked ch
 import json
 
 from pyct.core.branch import Expression, Fact
-from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_dicts import (
     decided,
@@ -124,15 +123,19 @@ def test_a_lookup_after_a_walk_that_followed_a_tracked_change_runs_as_on_v2() ->
     hold_against_python(sink, {"config": {"b": 1}, "name": "zz"})
 
 
-def test_a_walk_after_a_tracked_change_compares_nothing_and_marks_the_dict() -> None:
+def test_the_first_walk_after_a_tracked_change_compares_and_marks_the_dict() -> None:
     config, sink = tracked({"b": 1, "cd": 2})
     name = ConcolicStr.made("b", "name", sink)
     config[name] = 0
 
     list(config)
+    asked = len(forks(sink))
+    list(config)
 
-    # as on v2, where the store is Python's own
-    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
+    # the first walk compares each key the store may be over, as before; from then on the
+    # dict runs as v2 runs it, marked, and a later walk compares nothing
+    assert (["==", "name", "'b'"], True) in forks(sink)[:asked]
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[asked:])
     assert config.unforked
 
 

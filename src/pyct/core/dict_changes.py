@@ -306,7 +306,8 @@ def last_item(self: DictState) -> tuple[object, object]:
         self.sink.append(Fact(None, True, fork.site, True, pin, lost_as="popitem"))
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
-    handed_in_place(self, key, "popitem", pin)
+    if not self.after_walk():
+        handed_in_place(self, key, "popitem", pin)
     if self.tracked_changes:
         # which key is last may follow a change under a tracked key, which no fork here says
         self.changed_unforked()

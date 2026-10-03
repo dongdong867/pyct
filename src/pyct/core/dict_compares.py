@@ -172,7 +172,7 @@ def handed_in_place(self: DictState, key: object, name: str, pin: Expression) ->
     given place recorded before it, so the key it compares is the one an answer's walk reads
     there; the walk's own place holds only on the side its pass took, so its flip may still
     end the walk sooner."""
-    if self.after_walk() or not compared_in_place(self, key):
+    if not compared_in_place(self, key):
         return
     place: Expression = None if pin is None else ["given", pin]
     after_changes(self, key, written_key(key), (name, False, place), handed=True)

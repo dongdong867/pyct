@@ -265,11 +265,15 @@ class DictState(dict):
         self.changed_unforked()
         return True
 
-    def walk_started(self) -> None:
-        """Note a walk of the dict: after a change under a tracked key, from now on it runs as
-        v2 runs it (see ``after_walk``)."""
-        if self.tracked_changes:
-            self.walked_after[0] = True
+    def walk_started(self) -> bool:
+        """Note a walk of the dict, and answer whether it is the first since a change under a
+        tracked key: that walk compares what it hands out as before (``handed_in_place``), and
+        from then on the dict runs as v2 runs it (see ``after_walk``), marked."""
+        if not self.tracked_changes or self.walked_after[0]:
+            return False
+        self.walked_after[0] = True
+        self.changed_unforked()
+        return True
 
     def changed_unforked(self) -> None:
         """Note a change pyct answered without a fork: from now on no lookup is decided, and

@@ -363,7 +363,7 @@ def _walked(
     while it walks. A change made without the dict's methods turns the walk plain there. Each
     key is handed out as the walk's own copy of it (see ``handout``)."""
     name, end = how
-    self.walk_started()
+    first = self.walk_started()
     at = 0
     while True:
         key = own(next, keys, MISSING)
@@ -372,7 +372,8 @@ def _walked(
         pin = None if key is MISSING else placed(self, key, end)
         if not passed(self, at, key, pin, name):
             return
-        handed_in_place(self, key, name, pin)
+        if first or not self.after_walk():
+            handed_in_place(self, key, name, pin)
         handout(self, key, pin)
         yield pick(self, key)
         at += 1

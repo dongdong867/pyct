@@ -163,18 +163,19 @@ def moves_a_fork(sink: list[SinkItem], args: dict[str, object]) -> bool:
     return any(evaluate(expression, args) != taken for expression, taken in forks(sink))
 
 
-def test_a_walk_after_a_tracked_store_runs_as_on_v2() -> None:
+def test_a_walk_after_a_tracked_store_asks_which_key_it_named() -> None:
     config, sink = tracked({"ab": 1, "cd": 2})
     name = ConcolicStr.made("ab", "name", sink)
 
     config[name] = 0
     assert [plain(config[key]) for key in config] == [0, 2]
 
-    # the walk hands out keys the store may be over, which no fork names, as on v2 (the
-    # decision's Cost: a walk reading values after a tracked store)
-    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
-    assert config.unforked
+    assert (["==", "name", "'ab'"], True) in forks(sink)
+    # that settles the name, so the key after it records no compare
+    assert not any(expression == ["==", "name", "'cd'"] for expression, _ in forks(sink))
     hold_against_python(sink, {"config": {"ab": 1, "cd": 2}, "name": "ab"})
+    # Python walks `[1, 0]` there: the path must keep that answer out
+    assert moves_a_fork(sink, {"config": {"ab": 1, "cd": 2}, "name": "cd"})
 
 
 def test_a_tracked_pop_from_a_changed_dict_reads_the_argument_under_the_key() -> None:
@@ -259,17 +260,47 @@ def test_popitem_of_an_argument_s_key_asks_whether_a_tracked_store_was_over_it()
     assert (before.expression, before.place) == (None, ["given", ["popped", "config", "'bb'"]])
 
 
-def test_a_walk_after_a_tracked_store_keeps_each_pass_s_place() -> None:
+def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
     config, sink = tracked({"ab": 1, "cd": 2})
     name = ConcolicStr.made("ab", "name", sink)
 
     config[name] = 0
     list(config)
 
-    places = [item.place for item in sink if isinstance(item, Fact)]
-    # each pass keeps its key in place after it; nothing is compared, as on v2
-    assert places == [["walked", "config", "'ab'"], ["walked", "config", "'cd'"]]
-    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink))
+    places = [
+        ("==", None) if not isinstance(item, Fact) else ("place", item.place)
+        for item in sink
+        if isinstance(item, Fact) or (isinstance(item, Branch) and part(item.expression, 0) == "==")
+    ]
+    # each pass keeps its key in place after it; the compare keeps it on both its sides, by a
+    # given place recorded before it
+    assert places == [
+        ("place", ["walked", "config", "'ab'"]),
+        ("place", ["given", ["walked", "config", "'ab'"]]),
+        ("==", None),
+        ("place", ["walked", "config", "'cd'"]),
+    ]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda config, n, alias, held: (config.__setitem__(n, 1), config.__setitem__(n, 2)),
+        lambda config, n, alias, held: (config.__setitem__(n, 1), config.__setitem__(alias, 2)),
+        lambda config, n, alias, held: config.pop(held, None),
+    ],
+    ids=["twice", "aliased", "removed"],
+)
+def test_a_walk_compares_no_key_the_path_keeps_apart(change: Any) -> None:
+    config, sink = tracked({"ab": 1, "cd": 2})
+    keys = [ConcolicStr.made(text, name, sink) for text, name in (("zz", "n"), ("zz", "m"))]
+    # only a removal takes a key the argument holds, here "ab"
+    change(config, *keys, ConcolicStr.made("ab", "h", sink))
+    before = len(forks(sink))
+
+    list(config)
+
+    assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[before:])
 
 
 def test_a_compare_the_path_already_decides_records_nothing() -> None:
