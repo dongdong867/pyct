@@ -230,3 +230,25 @@ def test_a_piece_through_a_slice_from_the_end_is_read_where_c_star_puts_it(
     pieces = str(apply(seed, answer.model).args["s"]).split(",")
     assert pieces[slice(*window)][read] == "x", pieces
     assert len(pieces) == 3 or window == [None, None, -1], pieces
+
+
+@needs_cvc5
+@pytest.mark.parametrize("count", [18, 24])
+def test_the_last_piece_of_an_rsplit_past_its_walk_is_read_where_c_star_puts_it(
+    count: int,
+) -> None:
+    parts: Expression = ["rsplit", "s", "','", 20]
+    path = (
+        fork([">=", ["len", parts], 1], taken=True),
+        fork(["==", ["[]", parts, -1], "'end'"], taken=True),
+        fork([">", ["len", parts], 10], taken=True),
+    )
+    seed = Seed.of({"s": ",".join("a" * count)})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # read by a walk of the reversed string, the count was free, and a later flip asking for
+    # more than ten pieces beside it ran past the limit; where c* puts it, it answers
+    assert isinstance(answer, Sat), answer
+    pieces = str(apply(seed, answer.model).args["s"]).rsplit(",", 20)
+    assert pieces[-1] == "end" and len(pieces) > 10, pieces

@@ -108,9 +108,11 @@ def test_cvc5_counts_many_separators_as_python_does() -> None:
 
 def _from_the_end(listed: SplitList, pieces: list[str], back: int) -> tuple[int, bool]:
     """Where a piece ``back`` from the end is read, and whether it is there: by a walk of the
-    reversed string on any string, else where c* puts it, there only on a string of c* pieces
-    while the read holds it so, or else where the input's own count puts it."""
-    walked = right_piece("|s|", listed.head, listed.operands, back) is not None
+    reversed string on any string, but for an rsplit past its walk, else where c* puts it,
+    there only on a string of c* pieces while the read holds it so, or else where the input's
+    own count puts it."""
+    unwalked = listed.head == "rsplit" and listed.limit() > LONGEST_WALK
+    walked = not unwalked and right_piece("|s|", listed.head, listed.operands, back) is not None
     held = listed.read_count or 0
     at = len(pieces) - 1 - back if walked else held - 1 - back
     if not walked and listed.fixed:

@@ -195,14 +195,23 @@ class SplitList:
         # by the walks the piece is read with: past 16 pieces, a count by membership beside
         # the walk ran past the limit where these answered in 1.4 to 2.9 s
         exact = both(self._there(count - 1), negated(self._there(count)))
-        found = Read(self.piece(index), both(exact, self.restriction()))
+        # a string of no more pieces than an rsplit's limit lets through has no more separators
+        # than the limit, so its pieces from the start are the rsplit's without the restriction
+        restricted = self.restriction() if count > self.limit() + 1 else TRUE
+        found = Read(self.piece(index), both(exact, restricted))
         return SplitRead(found, fixes_the_count=True)
 
     def _back(self, back: int) -> SplitRead:
         """Piece ``back`` from the end: by a walk of the reversed string where one reads it,
         else where c* puts it with the string held to c* pieces, or, with ``fixed`` false or
-        no c*, where the input's own count puts it."""
-        walked = right_piece(self.term, self.head, self.operands, back)
+        no c*, where the input's own count puts it.
+
+        An rsplit past its walk is read where c*, not a reversed walk, puts its piece: its
+        string's restriction beside a walk to a compared count ran past the limit once the
+        count was free, where origin/v2, reading at the input's count, answered in 2 s."""
+        walked = None
+        if not (self.head == "rsplit" and self.limit() > LONGEST_WALK):
+            walked = right_piece(self.term, self.head, self.operands, back)
         if walked is not None:
             return SplitRead(Read(walked, both(self._there(back), self.restriction())))
         count = self.read_count
