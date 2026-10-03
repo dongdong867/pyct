@@ -100,9 +100,8 @@ class _Hold:
     a clock of its own that never starts ``since``. ``owed`` says it was held
     briefly outside pyct's own frames, where it would have raised but for the
     hold, so a block that then ends with no stop still ends by it (``_settle``).
-    ``before`` is the
-    exception Python showed as handled when the block began: the caller's,
-    or one a frame left set as it ended. From 3.13 a signal handled at a
+    ``before`` is the exception Python showed as handled when the block
+    began: the caller's, or one a frame left set as it ended. From 3.13 a signal handled at a
     loop's backward jump can raise from an offset outside the frame's
     exception table, so an ``except`` body around the loop leaves its
     exception set for the thread. It is not on its way out of the block, so
