@@ -22,8 +22,9 @@ from contextlib import AbstractContextManager
 
 import pytest
 
+from pyct.execution import deadline as deadline_module
 from pyct.execution.deadline import _HOLD_AT_MOST as HOLD_AT_MOST
-from pyct.execution.deadline import DeadlineError, deadline
+from pyct.execution.deadline import DeadlineError, _Sent, _Timed, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
@@ -434,3 +435,30 @@ def test_a_block_keeps_no_exception_handled_as_it_began_once_it_ends() -> None:
 
     # the handler has ended, so nothing holds its exception, its frames or their locals
     assert gone
+
+
+def owing_block(block: _Sent | _Timed, ending: BaseException | None) -> None:
+    """Run ``block``, whose instant is far off, as one whose alarm was held briefly outside
+    pyct's frames, then end it with ``ending``, or with nothing."""
+    with block:
+        hold = block.hold if isinstance(block, _Sent) else deadline_module._OWNER.hold
+        hold.owed = True
+        if ending is not None:
+            raise ending
+
+
+@pytest.mark.parametrize("kind", [_Sent, _Timed])
+def test_a_block_that_ends_owing_its_alarm_ends_by_it(kind: type[_Sent | _Timed]) -> None:
+    previous = signal.getsignal(signal.SIGALRM)
+    try:
+        with pytest.raises(DeadlineError):
+            owing_block(kind(time.monotonic() + 60), None)
+        with pytest.raises(DeadlineError) as raised:
+            owing_block(kind(time.monotonic() + 60), ValueError("the target's own"))
+        with pytest.raises(KeyboardInterrupt):
+            owing_block(kind(time.monotonic() + 60), KeyboardInterrupt())
+    finally:
+        signal.signal(signal.SIGALRM, previous)
+
+    # a raise of the target's own gives way to the alarm, as it would have where it landed
+    assert isinstance(raised.value.__cause__, ValueError)

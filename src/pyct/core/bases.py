@@ -8,6 +8,7 @@ Each tracked type adds its row here.
 
 from pyct.core import values
 from pyct.core.bools import ConcolicBool
+from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -31,3 +32,9 @@ values.BASES.update(_ROWS)
 values.BASES_BY_ID.update({id(tracked): base for tracked, base in _ROWS.items()})
 for tracked, base in _ROWS.items():
     values.named_as(tracked, base)
+
+# a dict's views, which the `type` router reads as Python's view types by their identity alone.
+# They have no row: a row also builds its base type's plain value and routes a join's items,
+# and a view has no plain value of its own (read-a-dict-view-s-type-as-python-s)
+_VIEWS = (ConcolicKeys, ConcolicValues, ConcolicItems)
+values.BASES_BY_ID.update({id(view): type(view.python({})) for view in _VIEWS})

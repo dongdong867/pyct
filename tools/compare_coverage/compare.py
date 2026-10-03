@@ -86,22 +86,24 @@ class Streams:
 def compare(run: Run, sides: Sides, streams: Streams) -> int:
     """Print every row and the summary, rewrite the accepted file if asked, give the exit code."""
     records = {} if run.accepted is None else run.accepted.records
+    # the file --accept rewrites, or None when this run only reads records or has none
+    rewriting = run.accepted if run.accepted is not None and run.accepted.accept else None
+    accepting = rewriting is not None
     rows: list[Row] = []
     # closed however the loop ends, so rows still running stop before the run goes on up
     with contextlib.closing(_rows(run, sides)) as found:
         for row in found:
-            marked = mark(row, records, run.roots)
+            marked = mark(row, records, run.roots, run.limits.budget, accepting)
             print(row_line(marked), file=streams.out, flush=True)
             print(table_line(marked), file=streams.err, flush=True)
             rows.append(marked)
     limits = {"v2": sides.v2.given(run.limits), "legacy": sides.legacy.given(run.limits)}
     print(summary_line(rows, limits, run.facts), file=streams.out, flush=True)
     print(totals_line(rows), file=streams.err, flush=True)
-    # the file --accept rewrites, or None when this run only reads records or has none
-    rewriting = run.accepted if run.accepted is not None and run.accepted.accept else None
     if rewriting is not None:
-        write_records(rewriting.path, run.limits, rewritten(rewriting, rows, run.roots))
-    return exit_code(rows, accepting=rewriting is not None)
+        records = rewritten(rewriting, rows, run.roots, run.limits.budget)
+        write_records(rewriting.path, run.limits, records)
+    return exit_code(rows, accepting=accepting)
 
 
 def exit_code(rows: list[Row], accepting: bool) -> int:

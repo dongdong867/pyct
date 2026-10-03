@@ -14,9 +14,15 @@ from pathlib import Path
 import pytest
 
 from targets.bools import bool_method_raises, bool_methods
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+)
 from tests.acceptance.test_bools import failure_of
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_win_back_three_rows import covered_in
 
 METHODS = "targets.bools.bool_methods"

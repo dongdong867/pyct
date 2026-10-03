@@ -5,18 +5,28 @@ copy of the process can hang on a lock either one held. Python's
 ``threading`` module sees only its own, so the count comes from the system
 where it gives one: the task's thread count on macOS, the task directory on
 Linux.
+
+ctypes, which reads the task's count, is imported as this module imports,
+before a target's folder joins the import path, and leaves ``sys.modules``
+again with what it imported, ``sysconfig`` on Python 3.13 and later, so a
+target imports its own copies from its path, as plain Python would.
 """
 
 from __future__ import annotations
 
 import contextlib
-import ctypes
 import functools
 import os
 import struct
 import sys
 import threading
 from collections.abc import Callable
+
+from pyct.run.as_found import modules_as_found
+
+# ctypes stays this module's, out of sys.modules with what it imported
+with modules_as_found():
+    import ctypes
 
 # proc_pidinfo's PROC_PIDTASKINFO flavor: a proc_taskinfo, 96 bytes, pti_threadnum at byte 84
 _TASK_INFO = 4

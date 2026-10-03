@@ -14,6 +14,7 @@ from types import ModuleType
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_watch import ImportWatch
+from pyct.run.own_imports import keep_own_imports
 
 # the two exceptions inspect raises when it cannot read a signature; one of exactly these types
 # reads by its message alone
@@ -42,13 +43,16 @@ def load_target(spec: str, watch: ImportWatch | None = None) -> Target:
     """Import ``module`` from the current directory and take ``function`` from it.
 
     The working directory goes first on the import path, so a module under
-    it resolves with no ``PYTHONPATH`` set. While the module imports,
-    ``watch`` names it for the process that watches this one, when one does.
+    it resolves with no ``PYTHONPATH`` set. From then on, a module pyct
+    imports for itself is looked for in the standard library first
+    (``own_imports``). While the module imports, ``watch`` names it for
+    the process that watches this one, when one does.
     """
     module_name, function_name = spec.split("::", 1)
     cwd = os.getcwd()
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
+    keep_own_imports(module_name.partition(".")[0])
     module = _imported(module_name, watch)
     fn = getattr(module, function_name, None)
     if not callable(fn):

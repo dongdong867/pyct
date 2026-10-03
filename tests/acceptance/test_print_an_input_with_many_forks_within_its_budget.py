@@ -7,25 +7,21 @@ peak memory among them. The budgets are shorter than the criteria's 20 seconds, 
 stays quick; the bounds they check scale with them.
 
 The criteria bound the wall time from launch, and the tests hold them there: a run that misses
-its wall bound is run again, up to ``_TRIES`` runs, and the test fails only when none is within
-it, so a slow moment of a loaded machine fails no test and a run that is always late still does.
-The same bounds are also held in CPU seconds: the run's processes run one at a time, so on an
-idle machine their CPU time is about the wall time, and a loaded machine stretches it far less.
+its wall bound is run again, up to three runs, and the test fails only when none is within it,
+so a slow moment of a loaded machine fails no test and a run that is always late still does
+(see ``tests.acceptance.timed``). The same bounds are also held in CPU seconds: pyct's process
+mostly waits while an input runs, so on an idle machine their CPU time is about the wall time,
+and a loaded machine stretches it far less. It reads the input's facts while it waits, which
+adds to the CPU time of an input that runs long.
 """
 
 import json
-import os
-import resource
-import subprocess
-import sys
-import time
-from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
-from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, input_lines, summary_line
-from tests.acceptance.test_strs import forks_of
+from tests.acceptance.harness import REPO_ROOT, forks_of, input_lines, summary_line
+from tests.acceptance.timed import Measured, measured, within
 
 COUNTDOWN = "targets.loops.countdown::count_down"
 COUNTDOWN_FILE = str(REPO_ROOT / "targets" / "loops" / "countdown.py")
@@ -33,74 +29,19 @@ COUNTDOWN_FILE = str(REPO_ROOT / "targets" / "loops" / "countdown.py")
 # the line's budget of expression nodes, as the criteria write it
 LINE_NODES = 100_000
 
-# how often the wait looks at the child, which bounds what the wall time overstates
-_POLL = 0.01
 
-# the runs a wall bound gets before a test fails
-_TRIES = 3
-
-
-@dataclass(frozen=True)
-class Measured:
-    """What one run printed, how it exited, and what it cost."""
-
-    stdout: str
-    stderr: str
-    returncode: int
-    wall: float
-    cpu: float
-    peak_bytes: int
-
-
-def _measured(tmp_path: Path, seed: int, budget: str, *, timeout: float = 45) -> Measured:
-    """Run pyct on the countdown loop, from launch to exit, with its CPU time and peak memory.
-
-    Like the harness, it leaves coverage.py out of a run with a budget. The wait
-    reads the resource use of pyct's process and of every process it waited
-    for, each input's and each cvc5's, as ``/usr/bin/time`` does.
-    """
-    env = {k: v for k, v in os.environ.items() if k not in {"PYTHONPATH", *COVERAGE_STARTUP}}
-    argv = [sys.executable, "-P", "-m", "pyct", "run", COUNTDOWN, "--args", json.dumps({"x": seed})]
-    out, err = tmp_path / "out", tmp_path / "err"
-    with out.open("w") as stdout, err.open("w") as stderr:
-        start = time.monotonic()
-        child = subprocess.Popen(
-            [*argv, "--budget", budget], cwd=REPO_ROOT, env=env, stdout=stdout, stderr=stderr
-        )
-        status, usage = _waited(child, start + timeout)
-        wall = time.monotonic() - start
-    # macOS counts the peak in bytes, Linux in KiB
-    unit = 1 if sys.platform == "darwin" else 1024
-    return Measured(
-        out.read_text(),
-        err.read_text(),
-        os.waitstatus_to_exitcode(status),
-        wall,
-        usage.ru_utime + usage.ru_stime,
-        usage.ru_maxrss * unit,
-    )
+def _measured(tmp_path: Path, seed: int, budget: str) -> Measured:
+    """One run of the countdown loop from ``seed``, with ``budget`` seconds."""
+    return measured(tmp_path, _countdown(seed, budget))
 
 
 def _within(tmp_path: Path, seed: int, budget: str, wall: float) -> Measured:
-    """The first of up to ``_TRIES`` runs whose wall time is under ``wall``, or the last run."""
-    for _ in range(_TRIES - 1):
-        run = _measured(tmp_path, seed, budget)
-        if run.wall < wall:
-            return run
-    return _measured(tmp_path, seed, budget)
+    """The first of up to three runs whose wall time is under ``wall``, or the last run."""
+    return within(tmp_path, _countdown(seed, budget), lambda run: run.wall < wall)
 
 
-def _waited(child: subprocess.Popen[bytes], until: float) -> tuple[int, resource.struct_rusage]:
-    """The child's exit status and resource use, or a failed test when it outlives ``until``."""
-    while time.monotonic() < until:
-        pid, status, usage = os.wait4(child.pid, os.WNOHANG)
-        if pid:
-            child.returncode = os.waitstatus_to_exitcode(status)
-            return status, usage
-        time.sleep(_POLL)
-    child.kill()
-    child.wait()
-    pytest.fail("pyct ran past the test's own limit")
+def _countdown(seed: int, budget: str) -> list[str]:
+    return [COUNTDOWN, "--args", json.dumps({"x": seed}), "--budget", budget]
 
 
 def _inputs(stdout: str) -> int:
@@ -181,6 +122,8 @@ def test_a_line_within_its_budget_prints_as_it_did(tmp_path: Path) -> None:
     assert after.startswith("covered "), after
 
 
+# its fixture's runs are held to a wall bound, so it runs alone, whichever test takes it first
+@pytest.mark.serial
 # print-an-input-with-many-forks-within-its-budget-cuts-forks-past-the-line-budget
 def test_forks_past_the_line_budget_print_one_cut_part_each(
     ten_thousand_passes: Measured,
@@ -211,13 +154,14 @@ def test_forks_past_the_line_budget_print_one_cut_part_each(
 @pytest.mark.serial
 # print-an-input-with-many-forks-within-its-budget-ends-a-seed-stopped-at-its-deadline
 def test_a_seed_stopped_at_its_deadline_ends_soon_after(tmp_path: Path) -> None:
-    run = _within(tmp_path, 100_000_000, "1", 3)
+    run = _within(tmp_path, 100_000_000, "1", 2)
 
     assert run.returncode == 0, run.stderr[-2000:]
-    # the criterion's bound, three seconds from launch: reading the input's journal of about
-    # 100,000 forks takes the rest of the second the isolation rule gives
-    assert run.wall < 3, run.wall
-    assert run.cpu < 3, run.cpu
+    # the criterion's bound, two seconds from launch: the one second the isolation rule gives
+    assert run.wall < 2, run.wall
+    # pyct's process reads the input's facts while the input runs its one second, so the two
+    # processes' CPU time can pass the wall time by up to the budget
+    assert run.cpu < 2 + 1, run.cpu
     seed = input_lines(run.stdout)[0]
     assert seed["failure"] == {"kind": "timeout", "detail": "deadline passed"}
     fork_lines = [line for line in run.stderr.splitlines() if line.startswith("fork ")]

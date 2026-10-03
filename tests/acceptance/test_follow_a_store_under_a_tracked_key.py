@@ -14,10 +14,9 @@ import re
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, union_of
 from tests.acceptance.test_lists import (
     args_of,
-    covered_of,
     downgrade_names,
     failure_detail,
     listed,
@@ -93,7 +92,7 @@ def check_forks_read_as_python(stderr: str, *, int_keyed: bool = False) -> None:
 
 def covers(line: dict[str, object], number: int) -> bool:
     """Whether a line covers that line of the fixture."""
-    return number in covered_of([line]).get(str(FILE), [])
+    return number in union_of([line]).get(str(FILE), [])
 
 
 def check_every_line_reaches_its_aim(
@@ -141,7 +140,7 @@ def test_reads_a_plain_key_after_the_store() -> None:
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    covered = covered_of(lines)[str(FILE)]
+    covered = union_of(lines)[str(FILE)]
     assert {return_line("store_named", value) for value in (1, 2, 0)} <= set(covered), covered
     check_every_line_reaches_its_aim("store_named", lines)
     check_forks_read_as_python(result.stderr)
@@ -178,13 +177,6 @@ def test_walks_the_stored_key() -> None:
     assert any((walk, [">", ["len", "d"], 1], True) in listed(line) for line in held), held[:3]
 
 
-# a walk after a store records `len(d) + 1 > 0`, whose flip no input takes, as it has since
-# follow-dicts-as-they-change; record-a-decided-check-as-a-fact stops asking it
-DECIDED_CHECK = pytest.mark.xfail(
-    strict=True, reason="record-a-decided-check-as-a-fact: a walk asks a check its stores decide"
-)
-
-
 def unsat_misses(stderr: str) -> list[str]:
     """Each `missed` line on stderr whose ask cvc5 answered unsat."""
     missed = [entry for entry in stderr.splitlines() if entry.startswith("missed ")]
@@ -193,7 +185,6 @@ def unsat_misses(stderr: str) -> list[str]:
 
 # follow-a-store-under-a-tracked-key-walks-the-stored-key: stderr has no missed line that ends in
 # unsat
-@DECIDED_CHECK
 def test_walks_the_stored_key_with_no_unsat_miss() -> None:
     result = run_pyct(f"{MODULE}::walked", '{"n": "pyct1", "d": {}}', *BUDGET, timeout=PATIENCE)
 
@@ -203,7 +194,6 @@ def test_walks_the_stored_key_with_no_unsat_miss() -> None:
 
 # follow-a-store-under-a-tracked-key-walks-the-stored-key: a walk after a store under a plain
 # key leaves no unsat miss either
-@DECIDED_CHECK
 def test_a_walk_after_a_plain_store_leaves_no_unsat_miss() -> None:
     result = run_pyct(f"{MODULE}::plain_walked", '{"d": {}}', *BUDGET, timeout=PATIENCE)
 
@@ -224,7 +214,7 @@ def test_removes_under_a_tracked_key(function: str) -> None:
     removal = line_of(function, "d[n]" if function == "deleted" else "d.pop(n")
     assert (removal, LOOKED_UP, True) in listed(lines[0]), listed(lines[0])
     assert downgrade_names(lines[0]) == [], lines[0]
-    covered = covered_of(lines)[str(FILE)]
+    covered = union_of(lines)[str(FILE)]
     assert {return_line(function, 1), return_line(function, 0)} <= set(covered), covered
     check_every_line_reaches_its_aim(function, solved(lines))
     check_forks_read_as_python(result.stderr)

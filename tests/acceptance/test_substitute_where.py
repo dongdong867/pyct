@@ -10,9 +10,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, first_line, run_pyct
+from tests.acceptance.harness import REPO_ROOT, first_line, forks_of, run_pyct
 from tests.acceptance.test_bools import at, expressions
-from tests.acceptance.test_ints import forks_of
 
 INTERCEPT = REPO_ROOT / "targets" / "intercept"
 ACROSS = "targets.intercept.across::spread"

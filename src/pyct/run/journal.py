@@ -1,12 +1,13 @@
 """One input's facts on their way out of the input's process, in shared memory.
 
 The input's process writes each fact the moment the call makes it, and
-pyct's process reads them all once that process has ended, however it
-ended: a crash or a kill keeps every fact already written. Shared memory
+pyct's process reads them back, as they are committed while that process
+runs and the rest once it has ended, however it ended: a crash or a kill
+keeps every fact already written (see ``journal_reader``). Shared memory
 rather than a pipe, because a write costs a store and not a system call
 (0.05 to 0.33 µs a fact against 0.6 to 0.75 µs), a downgrade loop repeats
-one fact millions of times, and pyct's process only waits instead of
-reading as it goes.
+one fact millions of times, and the input's process never waits for
+pyct's to read.
 
 The layout. A header of two words, each a native u64 since both
 processes run on one machine: the committed mark, where the complete
@@ -26,9 +27,11 @@ kind) and its payload, padded to 8 bytes:
   written out on every pass, so each list is written once, however many
   places hold it, and read back as one list in all of them.
 - fork: JSON ``[expression, taken, file, line, col, raising]``, the
-  expression a leaf or ``[n]``, and a seventh item for a fork that carries
-  what the input keeps once it went this way (``Branch.holds``), written the
-  same way.
+  expression a leaf or ``[n]``.
+- fact: a fact the path holds beside its forks (``Fact``), written as a fork
+  is, its expression null for a fact that is only a place, and a seventh item
+  for its place, written the same way. Its ``after`` is not written: the
+  reader counts the fork records before it.
 - downgrade: a native u64 count, the site's line and column as two i64,
   then the name and the site's file, a NUL between them. A repeat of the
   last entry rewrites its count in place.
@@ -68,13 +71,10 @@ from __future__ import annotations
 import json
 import mmap
 import struct
-from collections.abc import Iterator
-from dataclasses import dataclass, field
 from typing import TypeGuard
 
-from pyct.core.branch import Branch, Expression, Site
-from pyct.results.failure import Failure, FailureKind
-from pyct.results.record import DowngradeCount
+from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.results.failure import Failure
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes
 CAPACITY = 256 * 1024 * 1024
@@ -82,20 +82,20 @@ CAPACITY = 256 * 1024 * 1024
 type Journal = mmap.mmap | bytearray
 
 # the header's words, by index into the journal's native u64 view
-_COMMITTED, _STATE = 0, 1
-_WORD = struct.Struct("=Q")
-_NOTE_AT = 16
-_NOTE_SIZE = 1024
+COMMITTED, STATE = 0, 1
+WORD = struct.Struct("=Q")
+NOTE_AT = 16
+NOTE_SIZE = 1024
 # where the first record starts, after the header
-RECORDS = _NOTE_AT + _NOTE_SIZE
+RECORDS = NOTE_AT + NOTE_SIZE
 
-_HEAD = struct.Struct("<IB3x")
-_NUMBER = struct.Struct("<q")
+HEAD = struct.Struct("<IB3x")
+NUMBER = struct.Struct("<q")
 # a downgrade's count, then its site's line and column
-_COUNTED = struct.Struct("=Qqq")
+COUNTED = struct.Struct("=Qqq")
 
-_LINE, _PART, _FORK, _DOWNGRADE, _END, _START, _CARRY_ON = 1, 2, 3, 4, 5, 6, 7
-_OPEN, _FULL, _UNENCODABLE = 0, 1, 2
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT = 1, 2, 3, 4, 5, 6, 7, 8
+OPEN, FULL, UNENCODABLE = 0, 1, 2
 
 
 class _UnencodableError(Exception):
@@ -111,7 +111,7 @@ class JournalWriter:
 
     def __init__(self, buffer: Journal) -> None:
         self._buffer = buffer
-        self._words = memoryview(buffer)[: len(buffer) // _WORD.size * _WORD.size].cast("Q")
+        self._words = memoryview(buffer)[: len(buffer) // WORD.size * WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
         # where the last downgrade entry's count sits, and the name and site it counts
@@ -127,41 +127,51 @@ class JournalWriter:
         try:
             expression = self._written(branch.expression)
             fork = [expression, branch.taken, site.file, site.line, site.col, branch.raising]
-            if branch.holds is not None:
-                fork.append(self._written(branch.holds))
-            self._json(_FORK, fork)
+            self._json(FORK, fork)
         # ValueError: an int longer than Python writes out, under a limit the target may lower
         except (_UnencodableError, ValueError) as error:
-            self._stop(_UNENCODABLE, f"could not keep a fork the input took: {error}")
+            self._stop(UNENCODABLE, f"could not keep a fork the input took: {error}")
+
+    def fact(self, fact: Fact) -> None:
+        """Write a fact the path came to hold, and every part of it not written yet."""
+        site = fact.site
+        try:
+            expression = self._written(fact.expression)
+            held = [expression, fact.taken, site.file, site.line, site.col, fact.raising]
+            if fact.place is not None:
+                held.append(self._written(fact.place))
+            self._json(FACT, held)
+        except (_UnencodableError, ValueError) as error:
+            self._stop(UNENCODABLE, f"could not keep a fact the input's path holds: {error}")
 
     def start(self) -> None:
         """Write that pyct's side of the input's process is up and the call is about to begin."""
-        self._record(_START, b"")
+        self._record(START, b"")
 
     def line(self, number: int) -> None:
         """Write a line the call reached for the first time."""
-        self._record(_LINE, _NUMBER.pack(number))
+        self._record(LINE, NUMBER.pack(number))
 
     def downgrade(self, name: str, site: Site, count: int) -> None:
         """Grow the last entry in place when it counts ``name`` at ``site``, or write a new one."""
         if count > 1 and self._counting == (name, site) and self._count_at is not None:
             if self._open:
-                self._words[self._count_at // _WORD.size] = count
+                self._words[self._count_at // WORD.size] = count
             return
         self._counting = None
         at = self._at
-        kind = _DOWNGRADE if count == 1 else _CARRY_ON
-        head = _COUNTED.pack(count, site.line, site.col)
+        kind = DOWNGRADE if count == 1 else CARRY_ON
+        head = COUNTED.pack(count, site.line, site.col)
         if self._record(kind, head + f"{name}\0{site.file}".encode(errors="surrogatepass")):
-            self._count_at = at + _HEAD.size
+            self._count_at = at + HEAD.size
             self._counting = (name, site)
 
     def end(self, failure: Failure | None) -> None:
         """Write how the call ended. The reader takes it as the input's own ending."""
         if failure is None:
-            self._json(_END, None)
+            self._json(END, None)
             return
-        self._json(_END, [failure.kind.value, failure.detail, failure.traceback])
+        self._json(END, [failure.kind.value, failure.detail, failure.traceback])
 
     def detach(self) -> None:
         """Write nothing more. A process the input's process forks calls this in its child."""
@@ -199,7 +209,7 @@ class JournalWriter:
         ]
         number = self._next_part
         self._next_part = number + 1
-        if self._json(_PART, [number, *items]):
+        if self._json(PART, [number, *items]):
             self._parts[id(part)] = (number, part)
 
     def _json(self, kind: int, value: object) -> bool:
@@ -210,23 +220,23 @@ class JournalWriter:
         if not self._open:
             return False
         at = self._at
-        after = at + _HEAD.size + _padded(len(payload))
+        after = at + HEAD.size + padded(len(payload))
         if after > len(self._buffer):
-            self._stop(_FULL, f"the journal is full at {len(self._buffer)} bytes")
+            self._stop(FULL, f"the journal is full at {len(self._buffer)} bytes")
             return False
-        _HEAD.pack_into(self._buffer, at, len(payload), kind)
-        self._buffer[at + _HEAD.size : at + _HEAD.size + len(payload)] = payload
+        HEAD.pack_into(self._buffer, at, len(payload), kind)
+        self._buffer[at + HEAD.size : at + HEAD.size + len(payload)] = payload
         self._at = after
-        self._words[_COMMITTED] = after
+        self._words[COMMITTED] = after
         return True
 
     def _stop(self, state: int, note: str) -> None:
         """Note why nothing more is written, and write nothing more."""
         if not self._open:
             return
-        noted = note.encode("utf-8", "replace")[:_NOTE_SIZE]
-        self._buffer[_NOTE_AT : _NOTE_AT + len(noted)] = noted
-        self._words[_STATE] = state | len(noted) << 16
+        noted = note.encode("utf-8", "replace")[:NOTE_SIZE]
+        self._buffer[NOTE_AT : NOTE_AT + len(noted)] = noted
+        self._words[STATE] = state | len(noted) << 16
         self._open = False
 
 
@@ -246,188 +256,5 @@ def _is_leaf(value: object) -> TypeGuard[Expression]:
     return value is None or isinstance(value, str | int | float)
 
 
-def _padded(length: int) -> int:
+def padded(length: int) -> int:
     return -(-length // 8) * 8
-
-
-class _UnreadableError(Exception):
-    """A record the reader cannot read. It carries the byte the record starts at."""
-
-    def __init__(self, at: int) -> None:
-        super().__init__(at)
-        self.at = at
-
-
-@dataclass(frozen=True)
-class Reading:
-    """What one input's journal held: its facts, its own ending, and why it may be incomplete.
-
-    ``started`` says pyct's side of the input's process came up. ``ended``
-    says the call finished and wrote ``end``, which is its failure or None.
-    ``problem`` says the facts are known to be incomplete: the writer
-    stopped, or a record could not be read.
-    """
-
-    lines: frozenset[int]
-    branches: tuple[Branch, ...]
-    downgrades: tuple[DowngradeCount, ...]
-    started: bool = False
-    ended: bool = False
-    end: Failure | None = None
-    problem: str | None = None
-
-
-def read(buffer: Journal) -> Reading:
-    """Every fact the journal committed, in the order the call made them."""
-    facts = _Facts()
-    problem = None
-    with memoryview(buffer) as view:
-        try:
-            problem = _noted(view)
-            for at, kind, payload in _records(view):
-                facts.take(at, kind, payload)
-        except _UnreadableError as error:
-            problem = problem or f"could not read the input's facts at byte {error.at}"
-    return facts.reading(problem)
-
-
-def _noted(view: memoryview) -> str | None:
-    """Why the writer stopped, or None while it was still writing."""
-    (word,) = _WORD.unpack_from(view, _STATE * _WORD.size)
-    state, length = word & 0xFFFF, word >> 16
-    if state == _OPEN:
-        return None
-    if state not in (_FULL, _UNENCODABLE):
-        raise _UnreadableError(_STATE * _WORD.size)
-    return bytes(view[_NOTE_AT : _NOTE_AT + min(length, _NOTE_SIZE)]).decode("utf-8", "replace")
-
-
-def _records(view: memoryview) -> Iterator[tuple[int, int, bytes]]:
-    """Each committed record: where it starts, its kind, and its payload."""
-    (committed,) = _WORD.unpack_from(view, _COMMITTED * _WORD.size)
-    if committed == 0:
-        return
-    if not RECORDS <= committed <= len(view):
-        raise _UnreadableError(0)
-    at = RECORDS
-    while at < committed:
-        if at + _HEAD.size > committed:
-            raise _UnreadableError(at)
-        length, kind = _HEAD.unpack_from(view, at)
-        start = at + _HEAD.size
-        if start + length > committed:
-            raise _UnreadableError(at)
-        yield at, kind, bytes(view[start : start + length])
-        at = start + _padded(length)
-
-
-@dataclass
-class _Facts:
-    """The facts read so far, and every part, by number, as the one list each stands for."""
-
-    lines: set[int] = field(default_factory=set)
-    branches: list[Branch] = field(default_factory=list)
-    downgrades: list[DowngradeCount] = field(default_factory=list)
-    parts: dict[int, list[Expression]] = field(default_factory=dict)
-    started: bool = False
-    ended: bool = False
-    end: Failure | None = None
-
-    def take(self, at: int, kind: int, payload: bytes) -> None:
-        """Add one record's fact. A record of an unknown kind or the wrong shape is unreadable."""
-        try:
-            self._take(kind, payload)
-        except (ValueError, TypeError, struct.error) as error:
-            raise _UnreadableError(at) from error
-
-    def _take(self, kind: int, payload: bytes) -> None:
-        if kind == _START:
-            self.started = True
-        elif kind == _LINE:
-            self.lines.add(_NUMBER.unpack(payload)[0])
-        elif kind == _PART:
-            number, items = _numbered(json.loads(payload))
-            self.parts[number] = [self._expression(item) for item in items]
-        elif kind == _FORK:
-            self.branches.append(self._fork(json.loads(payload)))
-        elif kind in (_DOWNGRADE, _CARRY_ON):
-            self._downgrade(payload, carries_on=kind == _CARRY_ON)
-        elif kind == _END:
-            self.ended, self.end = True, _ending(json.loads(payload))
-        else:
-            raise ValueError(f"no record of kind {kind}")
-
-    def _downgrade(self, payload: bytes, *, carries_on: bool) -> None:
-        """Start an entry, or carry the last one on when this record is its later count.
-
-        Only the writer knows a count carries an entry on, so it says so by the
-        record's kind. A new entry after a lost one of another name is a plain
-        downgrade record, and stays its own however far it grows.
-        """
-        count, line, col = _COUNTED.unpack_from(payload)
-        name, file = payload[_COUNTED.size :].decode(errors="surrogatepass").split("\0")
-        entry = DowngradeCount(name, count, Site(file=file, line=line, col=col))
-        last = self.downgrades[-1] if self.downgrades else None
-        if carries_on and last is not None and (last.name, last.site) == (name, entry.site):
-            self.downgrades[-1] = entry
-        else:
-            self.downgrades.append(entry)
-
-    def _fork(self, value: object) -> Branch:
-        match value:
-            case [
-                expression,
-                bool() as taken,
-                str() as file,
-                int() as line,
-                int() as col,
-                bool() as raising,
-                *kept,
-            ]:
-                if len(kept) > 1:
-                    raise ValueError("a fork carries at most one fact beside it")
-                site = Site(file=file, line=line, col=col)
-                holds = self._expression(kept[0]) if kept else None
-                expression = self._expression(expression)
-                return Branch(expression, taken, site, raising=raising, holds=holds)
-        raise ValueError(
-            "a fork is [expression, taken, file, line, col, raising] and what it keeps"
-        )
-
-    def _expression(self, value: object) -> Expression:
-        """A leaf, or the one list a part number stands for, shared wherever it is named."""
-        match value:
-            case [int() as number] if not isinstance(number, bool) and number in self.parts:
-                return self.parts[number]
-        if isinstance(value, list) or not _is_leaf(value):
-            raise ValueError("an expression holds leaves and parts already read")
-        return value
-
-    def reading(self, problem: str | None) -> Reading:
-        return Reading(
-            lines=frozenset(self.lines),
-            branches=tuple(self.branches),
-            downgrades=tuple(self.downgrades),
-            started=self.started,
-            ended=self.ended,
-            end=self.end,
-            problem=problem,
-        )
-
-
-def _numbered(value: object) -> tuple[int, list[object]]:
-    """A part as written: its number, and its items, head first."""
-    match value:
-        case [int() as number, head, *rest] if not isinstance(number, bool):
-            return number, [head, *rest]
-    raise ValueError("a part is [number, head, ...]")
-
-
-def _ending(value: object) -> Failure | None:
-    """The call's own ending: None when it returned, else its failure."""
-    match value:
-        case None:
-            return None
-        case [str() as kind, str() as detail, str() | None as traceback]:
-            return Failure(kind=FailureKind(kind), detail=detail, traceback=traceback)
-    raise ValueError("an ending is null or [kind, detail, traceback]")

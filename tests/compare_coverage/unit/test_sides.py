@@ -147,3 +147,8 @@ def test_a_probe_that_prints_no_library_says_it_was_the_probe(
 
     assert failed.failure is not None
     assert failed.failure.startswith(f"cannot read which werkzeug it has: {says}")
+
+
+def test_the_report_says_how_long_its_side_ran_however_it_ended() -> None:
+    for finished in (Finished(0, f"{LINE}\n", "", seconds=5.3), Finished(0, "", "", seconds=5.3)):
+        assert read_report(finished, "covered", parse).seconds == 5.3

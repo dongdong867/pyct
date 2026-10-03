@@ -4,7 +4,8 @@ import sys
 
 from pyct.core.branch import Branch, Site
 from pyct.results.record import DowngradeCount
-from pyct.run.journal import JournalWriter, read
+from pyct.run.journal import JournalWriter
+from pyct.run.journal_reader import read
 
 SITE = Site(file="t.py", line=3, col=7)
 

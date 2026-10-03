@@ -1,6 +1,8 @@
 """The input's own process, served for real in a child this test forks."""
 
 import asyncio
+import contextlib
+import functools
 import mmap
 import os
 import signal
@@ -17,10 +19,12 @@ import pytest
 
 from pyct.execution import deadline as deadline_module
 from pyct.execution.deadline import DeadlineError, deadline, own_the_alarm
+from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 from pyct.run import child
 from pyct.run.child import serve, settle
-from pyct.run.journal import CAPACITY, JournalWriter, read
+from pyct.run.journal import CAPACITY, JournalWriter
+from pyct.run.journal_reader import read
 from pyct.run.process import STOP_SIGNALS
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
 
@@ -107,6 +111,57 @@ def hang_until_the_deadline() -> None:
 @pytest.mark.usefixtures("deadline_fires_in_a_child")
 def test_the_input_s_own_alarm_still_ends_a_hang() -> None:
     assert settled_then(hang_until_the_deadline) == 0
+
+
+def after_the_c_call() -> int:
+    """The target's Python after its C call: a call, where Python handles a waiting signal."""
+    return 1
+
+
+def c_call_past_the_deadline_then_python() -> None:
+    started = time.monotonic()
+    try:
+        with deadline(started + 0.02):
+            # one C call that checks for no signal and returns past the deadline
+            sum(range(30_000_000))
+            after_the_c_call()
+    except DeadlineError:
+        return
+    child._EXIT(1)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_c_call_that_returns_past_its_deadline_still_ends_as_a_timeout() -> None:
+    # the alarm, held briefly where it lands, is still owed when the block ends
+    assert settled_then(c_call_past_the_deadline_then_python) == 0
+
+
+def c_call_past_the_deadline_then_a_caught_alarm() -> None:
+    started = time.monotonic()
+    with deadline(started + 0.02):
+        sum(range(30_000_000))
+        # the alarm, held briefly here, raises once its hold is over, and the target catches it
+        with contextlib.suppress(DeadlineError):
+            spin_until(time.monotonic() + 0.5)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_alarm_that_raised_owes_nothing_once_the_target_caught_it() -> None:
+    # the block ends as the target ended it, as when the alarm raises where it lands
+    assert settled_then(c_call_past_the_deadline_then_a_caught_alarm) == 0
+
+
+def c_callable_target_past_the_deadline() -> None:
+    # a target that is itself one C call, which returns past the deadline straight into pyct
+    ctx = ExecutionContext(fn=functools.partial(sum, range(30_000_000)), file=__file__)
+    result = execute(ctx, {}, time.monotonic() + 0.02)
+    child._EXIT(0 if result.failure is None else 2)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_a_c_callable_target_that_returns_past_its_deadline_keeps_its_own_ending() -> None:
+    # the alarm lands first in pyct's own frames, held there, so it owes nothing
+    assert settled_then(c_callable_target_past_the_deadline) == 0
 
 
 def test_the_input_s_deadline_starts_no_thread() -> None:

@@ -19,7 +19,7 @@ from pyct.core.list_state import kind_of
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
-from tests.unit.core.test_dicts import downgrades, forks, plain_dict, tracked
+from tests.unit.core.test_dicts import decided, downgrades, forks, plain_dict, tracked
 
 
 def test_a_change_under_a_tracked_key_is_followed_by_the_key_it_names() -> None:
@@ -54,7 +54,11 @@ def test_a_key_of_another_kind_is_python_s_answer() -> None:
     assert config.pop((5, 6), 0) == 0
     assert bool(config)
 
+    # Python answered each change without a fork, which marks the dict though no tuple key can
+    # equal an argument's key: pyct does not tell such keys apart, so it marks for every one.
+    # The removal of (1, 2) leaves the floor at 0, so the truth test after them is a fork
     assert forks(sink) == [(["!=", ["+", ["len", "config"], 1], 0], True)]
+    assert decided(sink) == []
     assert downgrades(sink) == [
         "__contains__",
         "__setitem__",
@@ -174,7 +178,9 @@ def test_copies_look_keys_up_in_the_argument() -> None:
     deep = copy.deepcopy(config)
     assert "a" in deep and type(deep) is ConcolicDict
 
-    assert forks(sink) == [(["in", "'a'", "config"], True)] * 4
+    # a copy shares what the path settled about the argument's keys
+    assert forks(sink) == [(["in", "'a'", "config"], True)]
+    assert decided(sink) == [(["in", "'a'", "config"], True)] * 3
 
 
 def test_a_merge_either_way_is_a_tracked_dict_of_the_argument() -> None:
@@ -185,7 +191,7 @@ def test_a_merge_either_way_is_a_tracked_dict_of_the_argument() -> None:
 
     assert list(left) == ["n", "a"] and left["a"] == 1
     assert bool(right) and bool(left)
-    assert forks(sink)[-2:] == [
+    assert decided(sink)[-2:] == [
         (["!=", ["+", ["len", "config"], 1], 0], True),
         (["!=", ["+", ["len", "config"], 1], 0], True),
     ]
@@ -343,7 +349,7 @@ def test_a_key_of_another_kind_the_dict_holds_is_not_stored_again() -> None:
 
     assert list(merged) == [(5, 6), "a", (1, 2)] and merged["a"] == 1
     assert bool(merged)
-    assert forks(sink)[-1] == (["!=", ["+", ["len", "config"], 2], 0], True)
+    assert decided(sink)[-1] == (["!=", ["+", ["len", "config"], 2], 0], True)
     assert downgrades(sink) == ["__setitem__", "setdefault", "__ror__"]
 
 
@@ -407,11 +413,12 @@ def test_setdefault_under_a_tracked_key_into_a_changed_dict_compares_the_changed
 
     assert config.setdefault(name, 5) == 5
 
-    # the lookup asks whether the key is the one stored before, once, and the lookup and then
-    # the store each ask whether the argument holds it
+    # the lookup asks whether the key is the one stored before, once, and whether the argument
+    # holds it; the store's own lookup then holds what that one found
     unequal = (["==", "name", "'n'"], False)
     absent = (["in", "name", "config"], False)
-    assert forks(sink) == [(["in", "'n'", "config"], False), unequal, absent, absent]
+    assert forks(sink) == [(["in", "'n'", "config"], False), unequal, absent]
+    assert decided(sink) == [absent]
     assert downgrades(sink) == []
     assert plain_dict(config) == {"a": 1, "n": 2, "b": 5}
 
@@ -462,3 +469,17 @@ def test_a_walk_after_many_stores_writes_its_size_at_once() -> None:
     assert sum(1 for _ in config) == 10_001
     # the scan measured 6.96 s here when each fork summed every change
     assert time.monotonic() - started < 2.0
+
+
+def test_a_key_only_a_change_pyct_does_not_follow_noted_is_looked_up_with_a_fork() -> None:
+    config, sink = tracked({"a": 1})
+    name = ConcolicStr.made("pyct1", "name", sink)
+
+    config["b"] = 2
+    # Python's own removal under a tracked key into a changed dict notes the key is not there,
+    # with no fork, so the lookup after it is the path's first
+    assert config.pop(name, 0) == 0
+    assert "pyct1" not in config
+
+    assert forks(sink)[-1] == (["in", "'pyct1'", "config"], False)
+    assert decided(sink) == []

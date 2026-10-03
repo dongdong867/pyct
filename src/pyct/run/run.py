@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import dataclasses
 import platform
-import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -32,6 +31,8 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
+from pyct.run.as_found import modules_as_found
+from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target
@@ -47,18 +48,14 @@ def _platform() -> str:
 
     The first read imports modules of its own, such as plistlib and datetime
     on macOS. Made here, as this module imports, it runs before a target's
-    folder joins the import path, so none of them comes from that folder.
-    Each one is then dropped again, so a target that imports one gets it
-    from its own path, as plain Python would. platform keeps what it read,
-    so no later read imports them again. The read also runs one or two short
-    commands, ``uname -p`` among them, about 10 ms in all.
+    folder joins the import path, so none of them comes from that folder;
+    ``modules_as_found`` then drops each one again, so a target that imports
+    one gets it from its own path, as plain Python would. platform keeps
+    what it read, so no later read imports them again. The read also runs
+    one or two short commands, ``uname -p`` among them, about 10 ms in all.
     """
-    before = set(sys.modules)
-    try:
+    with modules_as_found():
         return platform.platform()
-    finally:
-        for name in set(sys.modules) - before:
-            sys.modules.pop(name, None)
 
 
 _PLATFORM = _platform()
@@ -222,7 +219,6 @@ def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
         seeded = _record_of(copied.args, call(copied.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
-    told.record(seeded)
     looped = _loop(call, copied, seeded, bounds, told)
     return dataclasses.replace(looped, records=(seeded, *looped.records))
 
@@ -269,7 +265,7 @@ def _loop(
     misses: list[Miss] = []
     covered = [seeded.covered_lines & told.scope.lines]
     tree = Tree()
-    tree.add(seeded.forks)
+    _handled(seeded, told, tree)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)
     inputs = {0: seed}
@@ -284,9 +280,15 @@ def _loop(
         if attempt.ran is not None:
             records.append(attempt.ran.record)
             covered.append(attempt.ran.record.covered_lines & told.scope.lines)
-            tree.add(attempt.ran.record.forks)
             inputs[len(records)] = attempt.ran.seed
-            told.record(attempt.ran.record)
+            _handled(attempt.ran.record, told, tree)
+
+
+def _handled(record: InputRecord, told: _Told, tree: Tree) -> None:
+    """Hand out a finished input, then add its path to the tree, with the collector paused."""
+    with collector_paused():
+        told.record(record)
+        tree.add(record.forks, record.facts)
 
 
 def _attempt(
@@ -324,7 +326,7 @@ def _attempt(
         return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
     origin = inputs[wanted.path]
     limit = _solve_limit(bounds, left)
-    answer = solve(wanted.prefix, origin.leaves, limit, origin.containers(), origin.values)
+    answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
     if isinstance(answer, Timeout):
         tree.timed_out()
     if isinstance(answer, Error):
@@ -341,8 +343,9 @@ def _attempt(
 
 def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
     """How many forks the run never tried at each site: the open ones, and one picked but not
-    run."""
-    counts = tree.untried()
+    run. Counted with the collector paused, as each input's path was added."""
+    with collector_paused():
+        counts = tree.untried()
     if attempt.unrun is not None:
         counts[attempt.unrun] = counts.get(attempt.unrun, 0) + 1
     return counts
@@ -384,6 +387,7 @@ def _record_of(
     return InputRecord(
         args=args,
         forks=executed.branches,
+        facts=executed.facts,
         covered_lines=executed.lines,
         failure=executed.failure,
         downgrades=executed.downgrades,

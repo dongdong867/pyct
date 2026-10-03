@@ -10,15 +10,20 @@ import json
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 from tests.acceptance.test_lists import (
     answered_every_fork,
     args_of,
-    covered_of,
     downgrade_names,
     failure_detail,
     fork_line,
-    forks_of,
     listed,
     number,
     sides_of,
@@ -93,9 +98,10 @@ def test_adds_and_removes_a_named_key() -> None:
         (4, ["in", "'tip'", "order"], False),
         (6, ["in", "'total'", "order"], True),
     ]
-    # each lookup records its own fork, where it runs
+    # the first lookup settles the key, and the second is a fact of the path, not a fork
+    # (record-a-decided-check-as-a-fact)
     presence = [fork[0] for fork in seed if fork[1] == ["in", "'total'", "order"]]
-    assert presence == [6, 8], seed
+    assert presence == [6], seed
     assert fork_line(result.stderr, NAMED_KEY_FILE, 2, "'coupon' in order", False)
     orders = [dict_of(line, "order") for line in solved(lines)]
     assert any(list(order) == ["total", "coupon"] for order in orders), orders
@@ -167,7 +173,7 @@ def test_compares_dicts_as_python_does() -> None:
     lines = input_lines(result.stdout)
     assert listed(lines[0]) == [(2, ["==", ["len", "config"], 1], False)]
     assert {"mode": "fast"} in [dict_of(line, "config") for line in lines], lines
-    assert covered_of(lines) == {COMPARED_FILE: [2, 3, 4]}
+    assert union_of(lines) == {COMPARED_FILE: [2, 3, 4]}
 
 
 # follow-lists-and-dicts-as-they-change-follows-dicts-inside-lists
@@ -187,7 +193,9 @@ def test_follows_dicts_inside_lists() -> None:
     assert any(isinstance(order, list) and len(order) == 2 and order[1] == {} for order in orders)
 
 
-# follow-lists-and-dicts-as-they-change-counts-a-dict-s-own-changes
+# record-a-decided-check-as-a-fact-counts-a-dict-s-own-changes, which replaces
+# follow-lists-and-dicts-as-they-change-counts-a-dict-s-own-changes: the walk's first pass, which
+# the stored key always reaches, is a fact, not a fork
 def test_counts_a_dict_s_own_changes() -> None:
     result = run_pyct(OWN_CHANGES, '{"config": {"a": 0}}', *UNTIL_NO_GAIN)
 
@@ -197,7 +205,6 @@ def test_counts_a_dict_s_own_changes() -> None:
     assert (2, ["in", "'seen'", "config"], False) in seed
     size = ["+", ["len", "config"], 1]
     assert [fork for fork in seed if fork[0] == 3] == [
-        (3, [">", size, 0], True),
         (3, [">", size, 1], True),
         (3, [">", size, 2], False),
     ]
@@ -320,7 +327,7 @@ def test_a_lookup_after_a_walk_records_its_fork(name: str, key: str, line: int) 
     assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
     misses = summary_line(result.stdout)["misses"]
     assert isinstance(misses, list)
-    reached = line + 1 in covered_of(lines)[WALKED_FILE]
+    reached = line + 1 in union_of(lines)[WALKED_FILE]
     # the literal "alpha" is not the walk's own object: an answer reaches the target
     assert reached if len(key) > 1 else reached or line in {m["line"] for m in misses}, misses
 
@@ -366,7 +373,7 @@ def test_a_literal_python_shares_with_a_walked_key_records_its_fork() -> None:
     misses = summary_line(result.stdout)["misses"]
     assert isinstance(misses, list)
     # `{"d": {"b": 1}}` takes the other side; where no answer pyct writes is found, it is a miss
-    assert 25 in covered_of(lines)[SHAPES_FILE] or 23 in {m["line"] for m in misses}, misses
+    assert 25 in union_of(lines)[SHAPES_FILE] or 23 in {m["line"] for m in misses}, misses
 
 
 # follow-dicts-as-they-change: a key nothing reads the value of may go from where a walk passed
@@ -380,7 +387,7 @@ def test_a_key_no_fork_reads_is_free_to_go(name: str, seed: str, line: int) -> N
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert line in covered_of(lines)[SHAPES_FILE], lines
+    assert line in union_of(lines)[SHAPES_FILE], lines
     assert [row["mismatch_at"] for row in solved(lines)] == [None] * len(solved(lines))
 
 
@@ -401,13 +408,14 @@ SETTLED = "targets.dicts.settled"
 SETTLED_FILE = str(DICTS / "settled.py")
 
 
-# see-why: a lookup of a key the path already asked about records its fork again, so the
-# condition that reads it names that fork and its tries, not `no fork`, which blames the program
+# see-why: a lookup of a key the path already asked about is a decided check, so the condition
+# that reads it names that site and its decided count, not `no fork`, which blames the program
+# (record-a-decided-check-as-a-fact)
 @pytest.mark.parametrize(
     ("function", "seed", "at", "missed"),
     [("only_a", {"a": 9}, (3, 24), 4), ("int_only", {"1": 9}, (11, 15), 12)],
 )
-def test_names_the_fork_of_a_key_the_path_asked_about_before(
+def test_names_the_decided_lookup_of_a_key_the_path_asked_about_before(
     function: str, seed: dict[str, int], at: tuple[int, int], missed: int
 ) -> None:
     result = run_pyct(f"{SETTLED}::{function}", json.dumps({"d": seed}), "--plateau", "5")
@@ -419,4 +427,4 @@ def test_names_the_fork_of_a_key_the_path_asked_about_before(
     line, col = at
     assert cause["reason"] == "not taken", cause
     assert cause["condition"] == {"file": SETTLED_FILE, "line": line, "col": col, "side": False}
-    assert cause["tries"]["unsat"] == 1, cause
+    assert cause["tries"]["unsat"] == 0 and cause["tries"]["decided"] > 0, cause

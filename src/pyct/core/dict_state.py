@@ -29,6 +29,9 @@ MISSING = object()
 # whether the dict held the key when it ran, so a store kept the key in its place
 type Change = tuple[Expression, object, bool, bool]
 
+# what ``found`` holds for any tracked key a fork found, which may equal any other key
+TRACKED = object()
+
 
 class DictState(dict):
     """The state a tracked dict keeps beside its items, and what every operation checks first.
@@ -58,6 +61,18 @@ class DictState(dict):
     tracked_at: list[int]
     # how many keys the dict holds past the argument's own: each change's, kept as it happens
     grown: int
+    # each key a fork of the path asked about, as ``settled`` knows it, and those it found in
+    # the argument, a tracked key as ``TRACKED`` (see ``fewest``), both shared as ``settled`` is.
+    # Kept apart from ``settled``, which also notes a key a change pyct does not follow met,
+    # with no fork
+    asked: set[object]
+    found: set[object]
+    # whether the target changed the dict in a way pyct answered without a fork, as a store
+    # under a tracked float key: that change may touch any key on another input, so after it no
+    # lookup is decided, and the fewest keys are only ``floor``, which each change since
+    # moves as it would move whichever key it touched (see ``fewest``)
+    unforked: bool
+    floor: int
     shadow: dict[object, object]
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # size that follows it in the same call is not taken for the target's `len`
@@ -89,12 +104,13 @@ class DictState(dict):
         fields["expression"] = expression
         fields["sink"] = sink
         fields["settled"] = {}
+        fields["asked"] = set()
+        fields["found"] = set()
+        fields["unforked"] = False
+        fields["floor"] = 0
         fields["changed"] = {}
-        fields["compared"] = {}
-        fields["log"] = []
-        fields["plain_at"] = {}
-        fields["tracked_at"] = []
-        fields["tracked_changes"] = 0
+        # the changes, none yet (see ``logged``)
+        fields.update(compared={}, log=[], plain_at={}, tracked_at=[], tracked_changes=0)
         fields["grown"] = 0
         fields["shadow"] = dict(items)
         fields["walked_at"] = None
@@ -120,6 +136,27 @@ class DictState(dict):
         if grown == 0:
             return measured
         return ["+", measured, grown] if grown > 0 else ["-", measured, -grown]
+
+    def fewest(self) -> int:
+        """The fewest keys the dict holds on every input that takes the path so far: the keys a
+        fork of the path found in the argument, plus the keys the target added less those it
+        removed.
+
+        A tracked key found counts only where no plain key was found, since it may equal any
+        of them. A key found is the argument's, whatever the target did since: a removal of it
+        is counted in ``grown``. That count is what the size term, `len` of the argument plus
+        ``grown``, reaches on every input the forks allow, so a check it decides holds as
+        written.
+
+        A dict changed without a fork (``unforked``) set ``grown`` from this input's own keys,
+        so the dict may hold fewer on another input. It holds at least ``floor``, counted from
+        what it knew before that change: a store keeps every key and leaves one, whichever it
+        is, and a removal may take any one. A check is decided only where both counts reach it.
+        """
+        found = self.found
+        plain_found = len(found) - (TRACKED in found)
+        written = max(plain_found, 1 if found else 0) + self.grown
+        return min(written, self.floor) if self.unforked else written
 
     def current(self, *keys: object) -> bool:
         """Whether the form still describes the dict: its size and each key read.
@@ -168,6 +205,10 @@ class DictState(dict):
         fields = made.__dict__
         fields["settled"] = self.settled
         fields["compared"] = self.compared
+        fields["asked"] = self.asked
+        fields["found"] = self.found
+        fields["unforked"] = self.unforked
+        fields["floor"] = self.floor
         fields["changed"] = dict(self.changed)
         fields["log"] = list(self.log)
         fields["plain_at"] = dict(self.plain_at)
@@ -184,12 +225,29 @@ class DictState(dict):
         self.__dict__["grown"] += not held
         self.shadow[key] = value
         self.logged(key, (True, held), tracked)
+        self.held_one()
+
+    def changed_unforked(self) -> None:
+        """Note a change pyct answered without a fork: from now on no lookup is decided, and
+        the fewest keys count from what the dict knew before it."""
+        if not self.unforked:
+            self.__dict__["floor"] = self.fewest()
+            self.__dict__["unforked"] = True
+
+    def held_one(self) -> None:
+        """Note that a change left a key in the dict, whichever key it is on another input."""
+        self.__dict__["floor"] = max(self.floor, 1)
+
+    def lost_one(self) -> None:
+        """Note that a change may have removed one key on another input that takes the path."""
+        self.__dict__["floor"] = max(self.floor - 1, 0)
 
     def dropped(self, key: object, tracked: Expression = None) -> None:
         """Note a removal the dict's own method made."""
         self.__dict__["grown"] -= key in self.shadow
         self.shadow.pop(key, None)
         self.logged(key, (False, True), tracked)
+        self.lost_one()
 
     def logged(self, key: object, how: tuple[bool, bool], tracked: Expression = None) -> None:
         """Log a change: whether it stored the key or removed it, and whether the dict held the

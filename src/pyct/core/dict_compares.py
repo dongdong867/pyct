@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 
-from pyct.core.branch import Branch, Expression, caller_site
+from pyct.core.branch import Branch, Expression, Fact, caller_site
 from pyct.core.dict_state import Change, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
@@ -50,9 +50,9 @@ def after_changes(
     solver may make the two keys equal or apart, so the lookup records whether they are,
     `["==", "n", "'b'"]`, the side Python took, at the lookup's own site; a key equal to the
     change's decides. Keys of different kinds never are equal, and one expression always is.
-    ``how`` is the lookup's name, whether Python may raise after it, and what each fork it
-    records keeps of the input (see ``Branch.holds``). A key a walk ``handed`` out is compared
-    only with the tracked stores that may be over it (see ``over_the_argument``).
+    ``how`` is the lookup's name, whether Python may raise after it, and the place each fork it
+    records keeps, a fact recorded before it (see ``Fact.place``). A key a walk ``handed`` out
+    is compared only with the tracked stores that may be over it (see ``over_the_argument``).
     """
     bare = plain(key)
     tracked = is_tracked(key)
@@ -103,11 +103,15 @@ def _compared(
     pinned = self.compared.get((tracked, "=="))
     if (tracked, other) in self.compared or (pinned is not None and _literal(pair[1])):
         return equal
-    name, raising, holds = how
+    name, raising, place = how
     self.compared[(tracked, other)] = equal
     if equal and _literal(pair[1]):
         self.compared[(tracked, "==")] = True
-    self.sink.append(Branch(["==", *pair], equal, caller_site(), raising, name, holds))
+    site = caller_site()
+    if place is not None:
+        # the place holds on both sides of the fork, so it is a fact recorded before it
+        self.sink.append(Fact(None, True, site, raising, place, lost_as=name))
+    self.sink.append(Branch(["==", *pair], equal, site, raising, name))
     return equal
 
 
@@ -146,9 +150,10 @@ def compared_in_place(self: DictState, key: object) -> bool:
 def handed_in_place(self: DictState, key: object, name: str, pin: Expression) -> None:
     """Record, for a key of the argument a walk or popitem hands out, whether each tracked key
     that may have changed it did, so an answer keeps the value there (``compared_in_place``).
-    Each such fork keeps the key where the walk read it (``pin``) whatever a fork reads, so the
-    key it compares is the one an answer's walk reads there; the walk's own fork keeps only
-    its plain place, so its flip may still end the walk sooner."""
+    Each such fork keeps the key where the walk read it (``pin``) whatever a fork reads, a
+    given place recorded before it, so the key it compares is the one an answer's walk reads
+    there; the walk's own place holds only on the side its pass took, so its flip may still
+    end the walk sooner."""
     if compared_in_place(self, key):
-        holds: Expression = None if pin is None else ["given", pin]
-        after_changes(self, key, written_key(key), (name, False, holds), handed=True)
+        place: Expression = None if pin is None else ["given", pin]
+        after_changes(self, key, written_key(key), (name, False, place), handed=True)

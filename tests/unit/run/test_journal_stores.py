@@ -1,14 +1,16 @@
 """The journal's committed mark and a growing count, read while another process writes them."""
 
 import contextlib
+import dataclasses
 import mmap
 import os
 import signal
 import time
 from typing import NoReturn
 
-from pyct.core.branch import Branch, Expression, Site
-from pyct.run.journal import RECORDS, JournalWriter, read
+from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.run.journal import RECORDS, JournalWriter
+from pyct.run.journal_reader import read
 
 SITE = Site(file="t.py", line=3, col=7)
 
@@ -75,33 +77,47 @@ def zeros_seen(words: memoryview) -> int:
     return zeros
 
 
-def test_what_a_fork_keeps_crosses_the_journal_beside_it() -> None:
+def test_a_fact_crosses_the_journal_placed_after_the_forks_before_it() -> None:
     buffer = bytearray(1 << 16)
     config: list[Expression] = ["len", "config"]
-    kept = Branch(
-        expression=[">", config, 0],
-        taken=True,
-        site=Site("m.py", 2, 4),
-        holds=["walked", "config", "'a'"],
-    )
+    passed = Branch(expression=[">", config, 1], taken=True, site=Site("m.py", 2, 4))
     plain = Branch(expression=["!=", config, 0], taken=False, site=Site("m.py", 3, 4))
+    decided = Fact([">", config, 0], True, Site("m.py", 2, 4), place=["walked", "config", "'a'"])
+    placed = Fact(None, True, Site("m.py", 2, 4), place=["walked", "config", "'b'"])
 
     writer = JournalWriter(buffer)
-    writer.fork(kept)
+    writer.fact(decided)
+    writer.fork(passed)
+    writer.fact(placed)
     writer.fork(plain)
-    branches = read(buffer).branches
+    reading = read(buffer)
 
-    assert branches == (kept, plain)
-    assert [branch.holds for branch in branches] == [["walked", "config", "'a'"], None]
+    assert reading.branches == (passed, plain)
+    assert reading.facts == (decided, dataclasses.replace(placed, after=1))
+    # one part, however many records name it
+    assert reading.facts[0].expression[1] is reading.branches[0].expression[1]  # type: ignore[index]
 
 
-def test_a_fork_with_more_than_one_fact_beside_it_is_unreadable() -> None:
+def test_a_fork_record_holds_six_items() -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    writer.fork(Branch(expression="x", taken=True, site=Site("m.py", 2, 4), holds="y"))
+    writer.fork(Branch(expression="abcdef", taken=True, site=Site("m.py", 2, 4)))
+    written = b'"abcdef", true, "m.py", 2, 4, false]'
+    at = buffer.index(written)
+    buffer[at : at + len(written)] = b'"abc", true, "m.py", 2, 4, false, 1]'
+
+    reading = read(buffer)
+
+    assert reading.branches == () and reading.problem is not None
+
+
+def test_a_fact_with_more_than_a_place_beside_it_is_unreadable() -> None:
+    buffer = bytearray(1 << 16)
+    writer = JournalWriter(buffer)
+    writer.fact(Fact("x", True, Site("m.py", 2, 4), place="y"))
     at = buffer.index(b'"y"')
     buffer[at : at + 3] = b"1,2"
 
     reading = read(buffer)
 
-    assert reading.branches == () and reading.problem is not None
+    assert reading.facts == () and reading.problem is not None

@@ -91,7 +91,7 @@ def test_a_failed_row_is_recorded_with_its_reasons_and_what_the_other_side_cover
     file = tmp_path / "accepted.jsonl"
     accepted = Accepted(path=file, records={}, accept=True, listed=frozenset())
 
-    records = rewritten(accepted, [FAILED], ROOTS)
+    records = rewritten(accepted, [FAILED], ROOTS, 5.0)
     write_records(file, LIMITS, records)
 
     assert records == [FAILED_RECORD]
@@ -104,7 +104,7 @@ def test_both_sides_failing_records_both_reasons_and_no_lines() -> None:
     both = replace(FAILED, status=Status.BOTH_FAILED, v2=v2_failed)
     accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
 
-    (record,) = rewritten(accepted, [both], ROOTS)
+    (record,) = rewritten(accepted, [both], ROOTS, 5.0)
 
     assert record.failures == {"v2": "exit 2: refused", "legacy": "error: boom"}
     assert record.covered == ()
@@ -128,7 +128,7 @@ def test_a_failed_row_matches_a_record_made_at_another_address_and_place() -> No
     elsewhere = {Origin.V2: Path("/other/v2"), Origin.LEGACY: Path("/other/legacy")}
     at = replace(LEGACY_FAILED, failure="error: <object at 0xabc> in /work/legacy/src/a.py")
     accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
-    (record,) = rewritten(accepted, [replace(FAILED, legacy=at)], ROOTS)
+    (record,) = rewritten(accepted, [replace(FAILED, legacy=at)], ROOTS, 5.0)
     moved = replace(LEGACY_FAILED, failure="error: <object at 0xdef> in /other/legacy/src/a.py")
 
     marked = mark(replace(FAILED, legacy=moved), {record.key: record}, elsewhere)
@@ -163,7 +163,7 @@ def test_a_failed_row_matches_its_record_from_nested_or_spaced_checkouts(
     made: dict[Origin, Path], moved: dict[Origin, Path]
 ) -> None:
     accepted = Accepted(path=Path("/unused"), records={}, accept=True, listed=frozenset())
-    (record,) = rewritten(accepted, [failed_in(made)], made)
+    (record,) = rewritten(accepted, [failed_in(made)], made, 5.0)
 
     marked = mark(failed_in(moved), {record.key: record}, moved)
 
@@ -378,7 +378,7 @@ def test_a_rewrite_replaces_run_rows_keeps_the_rest_and_drops_the_gone() -> None
         replace(DIFFERS, set="fixtures", target="b::new", status=Status.V2_FAILED, only_legacy=()),
     ]
 
-    records = rewritten(accepted, rows, ROOTS)
+    records = rewritten(accepted, rows, ROOTS, 5.0)
 
     assert records == [
         replace(RECORD, set="fixtures", target="b::new", status="v2 failed", only_legacy=()),

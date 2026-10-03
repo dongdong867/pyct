@@ -4,8 +4,7 @@ Each test spawns ``python -P -m pyct`` through the harness and reads the seed's 
 stderr, since the fork line is what a person reads a condition from.
 """
 
-from tests.acceptance.harness import first_line, run_pyct
-from tests.acceptance.test_strs import forks_of
+from tests.acceptance.harness import first_line, forks_of, run_pyct
 
 ABOVE = "targets.ints.printed_calls::above"
 CALLS = "targets.ints.printed_calls::calls"

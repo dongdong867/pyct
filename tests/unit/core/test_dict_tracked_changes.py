@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, SinkItem
+from pyct.core.branch import Branch, Expression, Fact, SinkItem
 from pyct.core.dict_changes import MOST_TRACKED_CHANGES
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
@@ -13,7 +13,14 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.python_forms import evaluate
-from tests.unit.core.test_dicts import downgrades, forks, hold_against_python, plain_dict, tracked
+from tests.unit.core.test_dicts import (
+    decided,
+    downgrades,
+    forks,
+    hold_against_python,
+    plain_dict,
+    tracked,
+)
 
 
 def part(expression: Expression, at: int) -> Expression:
@@ -123,7 +130,9 @@ def test_a_tracked_int_into_an_int_keyed_dict_is_followed() -> None:
     d[ConcolicInt.made(0, "n", sink)] = 5
     assert bool(d)
 
-    assert forks(sink) == [(["in", "n", "d"], False), (["!=", ["+", ["len", "d"], 1], 0], True)]
+    # the store's own fork settles the key, so the dict holds one on every input that takes it
+    assert forks(sink) == [(["in", "n", "d"], False)]
+    assert decided(sink) == [(["!=", ["+", ["len", "d"], 1], 0], True)]
     assert downgrades(sink) == []
 
 
@@ -232,11 +241,17 @@ def test_popitem_of_an_argument_s_key_asks_whether_a_tracked_store_was_over_it()
     config[name] = 0
     config.popitem()
 
-    compared = [
-        item for item in sink if isinstance(item, Branch) and part(item.expression, 0) == "=="
-    ]
-    assert [(item.expression, item.taken) for item in compared] == [(["==", "name", "'b'"], True)]
-    assert compared[0].holds == ["given", ["popped", "config", "'b'"]]
+    compared = [fork for fork in forks(sink) if part(fork[0], 0) == "=="]
+    assert compared == [(["==", "name", "'b'"], True)]
+    # the key popitem read stays last on both sides of the compare: a place recorded before it
+    at = next(
+        at
+        for at, item in enumerate(sink)
+        if isinstance(item, Branch) and part(item.expression, 0) == "=="
+    )
+    before = sink[at - 1]
+    assert isinstance(before, Fact)
+    assert (before.expression, before.place) == (None, ["given", ["popped", "config", "'b'"]])
 
 
 def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
@@ -246,14 +261,18 @@ def test_a_walk_keeps_a_compared_key_in_place_on_its_compare_only() -> None:
     config[name] = 0
     list(config)
 
-    walked = [item for item in sink if isinstance(item, Branch)][1:]
-    compares = [item for item in walked if part(item.expression, 0) == "=="]
-    sizes = [item for item in walked if part(item.expression, 0) == ">"]
-    assert [item.holds for item in compares] == [["given", ["walked", "config", "'ab'"]]]
-    assert [item.holds for item in sizes] == [
-        ["walked", "config", "'ab'"],
-        ["walked", "config", "'cd'"],
-        None,
+    places = [
+        ("==", None) if not isinstance(item, Fact) else ("place", item.place)
+        for item in sink
+        if isinstance(item, Fact) or (isinstance(item, Branch) and part(item.expression, 0) == "==")
+    ]
+    # each pass keeps its key in place after it; the compare keeps it on both its sides, by a
+    # given place recorded before it
+    assert places == [
+        ("place", ["walked", "config", "'ab'"]),
+        ("place", ["given", ["walked", "config", "'ab'"]]),
+        ("==", None),
+        ("place", ["walked", "config", "'cd'"]),
     ]
 
 

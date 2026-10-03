@@ -3,13 +3,14 @@
 from collections import Counter, deque
 
 from pyct.branches.plan import Plan, plan
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.branch import Branch, Fact, ForkSite, Site
 
-# what tells one fork from another: the id of the fork before it, -1 at the root, then its own site
-type ForkKey = tuple[int, Site]
+# what tells one fork from another: the id of the fork before it, -1 at the root, then its own
+# site's number (see `Tree._number`)
+type ForkKey = tuple[int, int]
 
-# one input's path: the forks it took, and the key of each
-type Walked = tuple[tuple[Branch, ...], tuple[ForkKey, ...]]
+# one input's path: the forks it took, the key of each, and the facts it held beside them
+type Walked = tuple[tuple[Branch, ...], tuple[ForkKey, ...], tuple[Fact, ...]]
 
 # a fork where it sits in the tree: its path's index, and its position on that path
 type Place = tuple[int, int]
@@ -37,15 +38,24 @@ class Tree:
     A pick whose ask ran to the solver's limit turns the rest of its path's
     new sides shallowest first, and every other fork at its site waits until
     each fork elsewhere was aimed at (see `timed_out`).
+
+    Each site gets a number the first time the tree meets it, and the tree
+    keys a fork by that number: a ``Site`` hashes in Python, a number in C,
+    and a path of 100,000 forks hashes its sites half a million times.
     """
 
     def __init__(self) -> None:
-        self._ids: dict[tuple[int, Site, bool], int] = {}
+        # each site met, by value, as its number; each number's site; and each number by the
+        # identity of every Site object met, which a path's forks keep alive, so no id is reused
+        self._number_by_value: dict[Site, int] = {}
+        self._sites: list[Site] = []
+        self._number_by_identity: dict[int, int] = {}
+        self._ids: dict[tuple[int, int, bool], int] = {}
         self._paths: list[Walked] = []
         self._aimed: set[ForkKey] = set()
-        # each side taken: its site, whether it is an operation's fork before a raise, and the
-        # side; a plain tuple, so a fork adds no object of its own
-        self._sides: set[tuple[Site, bool, bool]] = set()
+        # each side taken: its site's number, whether it is an operation's fork before a raise,
+        # and the side; a plain tuple, so a fork adds no object of its own
+        self._sides: set[tuple[int, bool, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
         # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
         # forks sit together, so after a pick the rest of its path leads the queue. A side taken
@@ -56,30 +66,46 @@ class Tree:
         # path. A fork that closes never opens again, so every fork past this point is spent
         self._path = 0
         self._depth: int | None = None
-        # the path and the site of the last pick, the paths whose new sides a timeout turned,
-        # and the sites a pick timed out at
+        # the path and the site number of the last pick, the paths whose new sides a timeout
+        # turned, and the sites' numbers a pick timed out at
         self._picked: int | None = None
-        self._picked_site: Site | None = None
+        self._picked_number: int | None = None
         self._turned: set[int] = set()
-        self._timed_out: set[Site] = set()
+        self._timed_out: set[int] = set()
         # the open forks at a site a pick timed out at, in the order the oldest-path pick passed
         # them, oldest path first and deepest fork first: the last picks (`_next_later`)
         self._later: deque[Place] = deque()
 
-    def add(self, forks: tuple[Branch, ...]) -> None:
-        """Record the path one input took. Its forks join the pool the next pick draws from."""
+    def add(self, forks: tuple[Branch, ...], facts: tuple[Fact, ...] = ()) -> None:
+        """Record the path one input took. Its forks join the pool the next pick draws from.
+
+        Its facts stay beside its forks, the path's own: two inputs that share a fork can read
+        different keys at one place. Only the plan reads them; no key, queue or count does.
+        """
         parent: int = -1
         keys: list[ForkKey] = []
         for fork in forks:
-            key = (parent, fork.site)
-            parent = self._ids.setdefault((parent, fork.site, fork.taken), len(self._ids))
-            keys.append(key)
-            self._sides.add((fork.site, fork.raising, fork.taken))
+            number = self._number_by_identity.get(id(fork.site))
+            if number is None:
+                number = self._number(fork.site)
+            keys.append((parent, number))
+            parent = self._ids.setdefault((parent, number, fork.taken), len(self._ids))
+            self._sides.add((number, fork.raising, fork.taken))
         index = len(self._paths)
-        self._paths.append((forks, tuple(keys)))
+        self._paths.append((forks, tuple(keys), facts))
         self._new.extend(
-            (index, depth) for depth in reversed(range(len(forks))) if self._new_side(forks[depth])
+            (index, depth)
+            for depth in reversed(range(len(forks)))
+            if self._new_side(keys[depth], forks[depth])
         )
+
+    def _number(self, site: Site) -> int:
+        """The site's number, given the first time the tree meets a site equal to it."""
+        number = self._number_by_value.setdefault(site, len(self._number_by_value))
+        if number == len(self._sites):
+            self._sites.append(site)
+        self._number_by_identity[id(site)] = number
+        return number
 
     @property
     def oldest(self) -> int:
@@ -109,10 +135,10 @@ class Tree:
         if picked is None:
             return None
         path, depth = picked
-        forks, keys = self._paths[path]
+        forks, keys, facts = self._paths[path]
         self._aimed.add(keys[depth])
-        self._picked, self._picked_site = path, forks[depth].site
-        return plan(forks[: depth + 1], path)
+        self._picked, self._picked_number = path, keys[depth][1]
+        return plan(forks[: depth + 1], path, facts)
 
     def timed_out(self) -> None:
         """The last pick's ask ran to the solver's limit: its path's other new sides, still
@@ -129,8 +155,8 @@ class Tree:
         fork-order-shallowest-first-after-a-timeout and
         fork-order-a-timed-out-site-waits-for-the-last-picks.
         """
-        if self._picked_site is not None:
-            self._timed_out.add(self._picked_site)
+        if self._picked_number is not None:
+            self._timed_out.add(self._picked_number)
         path = self._picked
         if path is None or path in self._turned:
             return
@@ -150,10 +176,10 @@ class Tree:
         """
         while self._new:
             path, depth = self._new.popleft()
-            forks, keys = self._paths[path]
-            fork = forks[depth]
-            waits = fork.site in self._timed_out
-            if not waits and self._open(keys[depth], fork.taken) and self._new_side(fork):
+            forks, keys, _ = self._paths[path]
+            fork, key = forks[depth], keys[depth]
+            waits = key[1] in self._timed_out
+            if not waits and self._open(key, fork.taken) and self._new_side(key, fork):
                 return path, depth
         return None
 
@@ -168,7 +194,7 @@ class Tree:
         """The first fork at a site a pick timed out at that is still open."""
         while self._later:
             path, depth = self._later.popleft()
-            forks, keys = self._paths[path]
+            forks, keys, _ = self._paths[path]
             if self._open(keys[depth], forks[depth].taken):
                 return path, depth
         return None
@@ -190,24 +216,24 @@ class Tree:
         """The deepest position from where the oldest-path pick starts looking that holds an open
         fork at a site no pick timed out at, or -1; each open fork passed on the way waits for
         the last picks."""
-        forks, keys = self._paths[self._path]
+        forks, keys, _ = self._paths[self._path]
         depth = len(forks) - 1 if self._depth is None else self._depth
         while depth >= 0:
-            fork = forks[depth]
-            if self._open(keys[depth], fork.taken):
-                if fork.site not in self._timed_out:
+            key = keys[depth]
+            if self._open(key, forks[depth].taken):
+                if key[1] not in self._timed_out:
                     return depth
                 self._later.append((self._path, depth))
             depth -= 1
         return depth
 
-    def _new_side(self, fork: Branch) -> bool:
+    def _new_side(self, key: ForkKey, fork: Branch) -> bool:
         """Whether no input took the other side of this fork's site, whatever came before it.
 
         A site is told apart from an operation's fork at the same column, as an
         index's in ``if s[0] == "q":``, so one never makes the other's side old.
         """
-        return (fork.site, fork.raising, not fork.taken) not in self._sides
+        return (key[1], fork.raising, not fork.taken) not in self._sides
 
     def untried(self) -> dict[ForkSite, int]:
         """How many forks at each site are still open: no input aimed at them, no other side ran.
@@ -217,14 +243,17 @@ class Tree:
         never tried.
         """
         still_open = {
-            key: fork
-            for forks, keys in self._paths
+            key: fork.raising
+            for forks, keys, _ in self._paths
             for fork, key in zip(forks, keys, strict=True)
             if self._open(key, fork.taken)
         }
         # counted by site and kind, so a site's ForkSite is made once, not once a fork
-        counts = Counter((fork.site, fork.raising) for fork in still_open.values())
-        return {ForkSite(site, raising): count for (site, raising), count in counts.items()}
+        counts = Counter((key[1], raising) for key, raising in still_open.items())
+        return {
+            ForkSite(self._sites[number], raising): count
+            for (number, raising), count in counts.items()
+        }
 
     def _open(self, key: ForkKey, taken: bool) -> bool:
         """A fork no input aimed at, whose other side no input ran."""

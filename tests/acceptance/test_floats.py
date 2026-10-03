@@ -13,13 +13,14 @@ from tests.acceptance.harness import (
     REPO_ROOT,
     downgrade,
     first_line,
+    forks_of,
     input_lines,
     one_line,
     run_pyct,
     summary_line,
     two_lines,
+    union_of,
 )
-from tests.acceptance.test_strs import covered_of, forks_of
 
 FLOATS = REPO_ROOT / "targets" / "floats"
 ABOVE = "targets.floats.above::rate"
@@ -94,7 +95,7 @@ def test_flips_a_float_compare() -> None:
     assert expressions(seed) == [[">", "x", 2.5]]
     assert real(solved, "x") > 2.5
     assert taken(solved) == [True]
-    assert covered_of([seed, solved]) == {ABOVE_FILE: [2, 3, 4]}
+    assert union_of([seed, solved]) == {ABOVE_FILE: [2, 3, 4]}
 
 
 # follow-floats-follows-every-float-compare

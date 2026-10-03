@@ -14,7 +14,7 @@ from pyct.intercept.hook import Interception, intercepting
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import fresh
 from pyct.run.fresh import _journal, _request, fresh_for, in_a_fresh_interpreter, main
-from pyct.run.journal import read
+from pyct.run.journal_reader import read
 from pyct.run.process import KILL_GRACE, InputStartError
 from pyct.run.target import load_target
 
@@ -174,6 +174,28 @@ def test_a_module_in_the_working_directory_does_not_break_the_boot(
     fresh_result = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
 
     assert fresh_result == execute(ctx, {"x": 3})
+
+
+def test_a_module_in_pyct_s_own_folder_does_not_stand_in_for_the_standard_library_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    target = load_target(ONE_CHECK)
+    ctx = ExecutionContext(fn=target.fn, file=target.file)
+    # pyct's folder as an install has it: site-packages, which can hold a module named as one
+    # of the standard library's; here one for every name, each saying so and raising
+    root = tmp_path / "site-packages"
+    root.mkdir()
+    (root / "pyct").symlink_to(Path(fresh.PYCT_ROOT) / "pyct")
+    for name in sys.stdlib_module_names:
+        (root / f"{name}.py").write_text(
+            f"import sys\nsys.stderr.write('SHADOW {name}\\n')\nraise RuntimeError\n"
+        )
+    monkeypatch.setattr(fresh, "PYCT_ROOT", str(root))
+
+    fresh_result = in_a_fresh_interpreter(fresh_for(target.spec, target.file), {"x": 3}, None)
+
+    assert fresh_result == execute(ctx, {"x": 3})
+    assert "SHADOW" not in capfd.readouterr().err
 
 
 def test_a_fresh_interpreter_runs_with_pyct_s_own_interpreter_flags(

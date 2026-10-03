@@ -13,13 +13,14 @@ from pathlib import Path
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
 )
 from tests.acceptance.test_bools import at, expressions, failure_of, sides
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_strs import text
 
 INTERCEPT = REPO_ROOT / "targets" / "intercept"
