@@ -195,19 +195,22 @@ def _held_back(frame: types.FrameType | None, hold: _Hold) -> bool:  # pragma: n
     ``_AGAIN`` or as soon as the watcher can send: long enough for the stop
     to show, and short enough that a hang anywhere in the block, a tracer's
     callback included, still ends near its deadline. One held so outside
-    pyct's own frames is owed (``_Hold.owed``).
+    pyct's own frames is owed (``_Hold.owed``) until it raises.
     """
     now = time.monotonic()
     error = sys.exception()
     if isinstance(error, STOPS) and error is not hold.before:
         if hold.since is None:
             hold.since = now
-        return now < hold.since + _HOLD_AT_MOST
-    if hold.brief is None:
-        hold.brief = now
-    held = now < hold.brief + _BRIEF_HOLD
-    if held and not (frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR)):
-        hold.owed = True
+        held = now < hold.since + _HOLD_AT_MOST
+    else:
+        if hold.brief is None:
+            hold.brief = now
+        held = now < hold.brief + _BRIEF_HOLD
+        in_pyct = frame is not None and frame.f_code.co_filename.startswith(PYCT_DIR)
+        hold.owed = hold.owed or (held and not in_pyct)
+    # an alarm that raises now owes nothing, whatever target code does with its raise
+    hold.owed = hold.owed and held
     return held
 
 

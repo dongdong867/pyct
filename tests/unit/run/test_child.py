@@ -1,6 +1,7 @@
 """The input's own process, served for real in a child this test forks."""
 
 import asyncio
+import contextlib
 import mmap
 import os
 import signal
@@ -131,6 +132,21 @@ def c_call_past_the_deadline_then_python() -> None:
 def test_a_c_call_that_returns_past_its_deadline_still_ends_as_a_timeout() -> None:
     # the alarm, held briefly where it lands, is still owed when the block ends
     assert settled_then(c_call_past_the_deadline_then_python) == 0
+
+
+def c_call_past_the_deadline_then_a_caught_alarm() -> None:
+    started = time.monotonic()
+    with deadline(started + 0.02):
+        sum(range(30_000_000))
+        # the alarm, held briefly here, raises once its hold is over, and the target catches it
+        with contextlib.suppress(DeadlineError):
+            spin_until(time.monotonic() + 0.5)
+
+
+@pytest.mark.usefixtures("deadline_fires_in_a_child")
+def test_an_alarm_that_raised_owes_nothing_once_the_target_caught_it() -> None:
+    # the block ends as the target ended it, as when the alarm raises where it lands
+    assert settled_then(c_call_past_the_deadline_then_a_caught_alarm) == 0
 
 
 def test_the_input_s_deadline_starts_no_thread() -> None:
