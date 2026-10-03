@@ -131,20 +131,23 @@ def present(
         return None
     if proven(self, key):
         return held
-    changed = after_changes(self, key, written, (name, raising, None))
-    if changed is not None:
-        return changed
-    return _in_the_argument(self, key, held, (name, raising))
-
-
-def _in_the_argument(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool:
-    """Whether the argument holds ``key``, a key no change decides: the fork, or a fact where
-    the path asked before (see ``present``). ``how`` is the lookup's name and whether Python
-    may raise after it."""
-    name, raising = how
-    known = settled_as(key)
     given = self.shared.get(key) if type(key) in (str, int) else None
     place: Expression = None if given is None else ["given", given]
+    # whether the key is one a change was made under holds where the walk read it, too
+    changed = after_changes(self, key, written, (name, raising, place))
+    if changed is not None:
+        return changed
+    return _in_the_argument(self, key, held, (name, raising, place))
+
+
+def _in_the_argument(
+    self: DictState, key: object, held: bool, how: tuple[str, bool, Expression]
+) -> bool:
+    """Whether the argument holds ``key``, a key no change decides: the fork, or a fact where
+    the path asked before (see ``present``). ``how`` is the lookup's name, whether Python may
+    raise after it, and the place a walk read a shared key at, which holds on both sides."""
+    name, raising, place = how
+    known = settled_as(key)
     test = ["in", written_key(key), self.expression]
     site = caller_site()
     self.settled.setdefault(known, held)

@@ -345,3 +345,23 @@ def test_a_plain_lookup_reads_only_the_changes_after_its_key_s_own() -> None:
     assert "b" in config
 
     assert forks(sink)[before:] == []
+
+
+def test_a_shared_key_a_walk_handed_out_keeps_its_place_on_its_compare() -> None:
+    # "b" is a key Python shares, so its lookup is not proven by the walk: it asks whether name
+    # is "b", which holds only where the walk read "b", so the place is a fact before the fork
+    config, sink = tracked({"b": 1})
+    name = ConcolicStr.made("zz", "name", sink)
+
+    config[name] = 2
+    for key in list(config):
+        assert config[key] >= 1
+
+    at = next(
+        at
+        for at, item in enumerate(sink)
+        if isinstance(item, Branch) and item.expression == ["==", "name", "'b'"]
+    )
+    before = sink[at - 1]
+    assert isinstance(before, Fact)
+    assert (before.expression, before.place) == (None, ["given", ["walked", "config", "'b'"]])
