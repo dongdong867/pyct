@@ -138,8 +138,15 @@ def own_key(self: DictState, key: object) -> bool:
 
 def stored_under(self: DictState, key: object) -> Expression:
     """The expression of the tracked key the latest change under ``key`` was made under, None
-    when that change was under a plain key."""
-    for under_key, changed, _, _ in reversed(self.log):
+    when that change was under a plain key: read from the changes under a tracked key after
+    the key's latest plain one, so a walk of many plain changes reads few."""
+    last = self.plain_at.get(key, -1)
+    if last >= 0 and type(self.log[last][1]) is not type(key):
+        last = -1
+    for at in reversed(self.tracked_at):
+        if at < last:
+            break
+        under_key, changed, _, _ = self.log[at]
         if type(changed) is type(key) and changed == key:
             return under_key
     return None
