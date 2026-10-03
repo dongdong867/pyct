@@ -95,8 +95,8 @@ LISTED_PYTHON = Library("python", "3.12")
 def on_this_release(entry: Entry) -> Entry:
     """The entry, with a pin of the listed Python release moved to the running one.
 
-    The project runs on every release from 3.12. Any other pin stays, so its row fails on
-    every release.
+    The project runs on every release from 3.12. A pin of any other Python release stays, so
+    its row fails wherever that release is not the one running.
     """
     if entry.library != LISTED_PYTHON:
         return entry
