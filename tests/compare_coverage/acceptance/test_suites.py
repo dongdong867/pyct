@@ -9,6 +9,7 @@ version there, runs against the stub engine with a library only the stub has.
 import os
 import platform
 import subprocess
+import sys
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import replace
@@ -87,12 +88,25 @@ class EchoSide:
         return SideReport(file=str(file), stopped="done", library=library)
 
 
+def on_this_release(entry: Entry) -> Entry:
+    """The entry, with a standard-library pin moved to the running Python's release.
+
+    The list pins the standard library to the release its accepted lines come from, and the
+    project runs on every release from 3.12.
+    """
+    if entry.library is None or entry.library.name != "python":
+        return entry
+    release = f"{sys.version_info.major}.{sys.version_info.minor}"
+    return replace(entry, library=Library("python", release))
+
+
 @pytest.mark.legacy
 # the first legacy test to run builds the checkout, as the conftest says
 @pytest.mark.timeout(180)
 def test_runs_every_set(legacy_checkout: Path) -> None:
     """compare-coverage-against-legacy-runs-every-set"""
     run, _ = prepare(["--legacy", str(legacy_checkout)], os.environ)
+    run = replace(run, entries=tuple(on_this_release(entry) for entry in run.entries))
 
     code, found, _ = compare_on(run, Sides(v2=EchoSide(), legacy=EchoSide()))
 
