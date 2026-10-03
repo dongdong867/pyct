@@ -43,6 +43,9 @@ def raised_by_target(error: BaseException) -> bool:
 # set while pyct tests a value for truth on its way into an operation that may raise, so the
 # fork that test records is marked as that operation's
 _BEFORE_A_RAISE = [False]
+# set while an `is` tests a tracked bool's truth, to the bool the `is` compares it with, so the
+# fork that test records notes whether the `is` held
+_AGAINST: list[bool | None] = [None]
 
 
 def forked(
@@ -62,9 +65,25 @@ def forked(
     ``raising`` marks a fork taken before an operation that may raise.
     """
     marked = raising or _BEFORE_A_RAISE[0]
-    branch = Branch(expression, taken, caller_site(), raising=marked, lost_as=name)
+    against = _AGAINST[0]
+    held = None if against is None else taken is against
+    branch = Branch(expression, taken, caller_site(), marked, name, held)
     sink.append(branch)
     return taken
+
+
+def tested_against(value: object, against: bool) -> bool:
+    """``bool(value)``, the truth test an `is` makes of a tracked bool it compares with ``against``.
+
+    The test goes through the value's own ``__bool__``, which records the
+    fork as any truth test does; this notes on it whether the `is` held,
+    whether the side the value took is ``against`` (``Branch.is_held``).
+    """
+    try:
+        _AGAINST[0] = against
+        return bool(value)
+    finally:
+        _AGAINST[0] = None
 
 
 def before_a_raise(test: Callable[[], object]) -> None:
