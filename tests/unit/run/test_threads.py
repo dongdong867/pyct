@@ -7,6 +7,7 @@ import pytest
 
 from pyct.run import threads
 from pyct.run.threads import running
+from tests.acceptance.harness import COVERAGE_STARTUP
 
 # threads imported and asked for a count, printing what ctypes, which reads the count on macOS,
 # left in sys.modules: itself, its C half, or the sysconfig it imports on 3.13 and later
@@ -68,10 +69,13 @@ def test_a_task_count_the_system_will_not_give_leaves_python_s_count(
     assert running() == threading.active_count()
 
 
-def test_counting_threads_leaves_no_module_of_its_own_in_sys_modules() -> None:
-    # what ctypes imports, sysconfig on 3.13 and later, would otherwise hide a target's own
+def test_counting_threads_leaves_neither_ctypes_nor_sysconfig_in_sys_modules() -> None:
+    # what ctypes imports, sysconfig on 3.13 and later, would otherwise hide a target's own;
+    # coverage.py's start-up would import sysconfig first, so the child runs unmeasured
+    unmeasured = {k: v for k, v in os.environ.items() if k not in COVERAGE_STARTUP}
     imported = subprocess.run(
         [sys.executable, "-P", "-c", COUNTS_THREADS],
+        env=unmeasured,
         capture_output=True,
         text=True,
         check=True,
