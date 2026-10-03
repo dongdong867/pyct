@@ -251,3 +251,27 @@ def test_passes_whose_is_held_on_one_and_not_the_other_read_in_the_is_sense() ->
     own = senses.agreements_of([((4, 11), True, True), ((4, 11), True, False)])
 
     assert side_at(FLAGS, 5, (4, 11), seen, own) is True
+
+
+def chain_sides(test: str, own: Own) -> list[bool]:
+    """The sides of each link the body's way passes, with an `>` fork recorded at 2:7."""
+    flow = flow_of(test)
+    flow.swap(against_the_forks(flow, {(2, 7): frozenset({">"})}, [], own))
+    return [step.side for step in flow.way(3)]
+
+
+def test_a_chain_of_is_links_reads_as_with_no_fork_of_its_own() -> None:
+    mixed = senses.agreements_of([((2, 7), True, True), ((2, 7), True, False)])
+    unheld = senses.agreements_of([((2, 7), True, False)])
+
+    # two links' forks share the site, so no link can tell its own: each reads as before
+    for test in ("x is c is False", "x is c is b", "x in c is b"):
+        before = chain_sides(test, NONE_OWN)
+        assert chain_sides(test, mixed) == before
+        assert chain_sides(test, unheld) == before
+
+
+def test_a_chain_s_links_before_the_last_are_marked_chained() -> None:
+    reads = [step.reads for step in flow_of("x is c is False").sides().values() if step.reads]
+
+    assert sorted(each.chained for each in reads) == [False, False, True, True]

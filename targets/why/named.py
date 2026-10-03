@@ -44,3 +44,24 @@ def chain_link(x: int, b: bool) -> int:
     if x not in {10, 11} is b:
         return 1
     return 2
+
+
+def two_is_links(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    a = x < 9
+    b = x < 20
+    if a is b is False:
+        n += 1
+    return n
+
+
+def compare_then_is(x: int) -> int:
+    n = 0
+    if x > 5:
+        return 0
+    b = x < 9
+    if 0 <= b is FLAG:
+        n += 1
+    return n

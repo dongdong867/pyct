@@ -71,3 +71,23 @@ def test_a_chain_s_is_link_with_no_fork_reads_in_the_is_sense() -> None:
     assert result.returncode == 0, result.stderr
     condition = entry_for(result.stdout, 45)["condition"]
     assert condition == {"file": file, "line": 44, "col": 7, "side": True}
+
+
+# a chain's two `is` links share one site and both fork there: each reads as on the base
+def test_a_chain_of_two_forking_is_links_reads_as_before() -> None:
+    target, file = spec("named", "two_is_links")
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert cause(entry_for(result.stdout, 56)) == not_taken(file, 55, 7, False, unsat=2)
+
+
+# a chain whose one `is` link forks: its forks are its own, and the body needs b false
+def test_a_chain_s_one_forking_is_link_reads_per_fork() -> None:
+    target, file = spec("named", "compare_then_is")
+
+    result = run_pyct(target, '{"x": 0}')
+
+    assert result.returncode == 0, result.stderr
+    assert cause(entry_for(result.stdout, 66)) == not_taken(file, 65, 7, False, unsat=2)

@@ -111,6 +111,19 @@ def test_a_fork_record_holds_six_items_and_a_bool_note_alone() -> None:
     assert reading.branches == () and reading.problem is not None
 
 
+def test_a_fork_record_with_more_than_its_note_is_unreadable() -> None:
+    buffer = bytearray(1 << 16)
+    writer = JournalWriter(buffer)
+    writer.fork(Branch(expression="abcdefg", taken=True, site=Site("m.py", 2, 4), is_held=True))
+    written = b'"abcdefg", true, "m.py", 2, 4, false, true]'
+    at = buffer.index(written)
+    buffer[at : at + len(written)] = b'"a", true, "m.py", 2, 4, false, true, true]'
+
+    reading = read(buffer)
+
+    assert reading.branches == () and reading.problem is not None
+
+
 def test_a_fact_with_more_than_a_place_beside_it_is_unreadable() -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)

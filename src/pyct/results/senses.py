@@ -13,7 +13,10 @@ where the code cannot say, the forks recorded at its site:
   the `is` held exactly when the fork took the side it recorded. Every fork
   agreeing reads in the forks' sense, every one disagreeing the other way,
   and forks that disagree among themselves in the `is` sense. Another chain
-  link's forks at the site, and a decided check, are not the test's own;
+  link's forks at the site, and a decided check, are not the test's own. A
+  chain whose link before its last is an `in` or `is` shares one site among
+  links that may each fork, so every `is` there reads as with no fork of its
+  own;
 - an `is` with no fork of its own, and nothing recorded there, in the `is`
   sense;
 - an `is` with no fork of its own against a True or False the code loads,
@@ -59,20 +62,26 @@ def against_the_forks(
     chain at one site keep theirs.
     """
     tests: dict[tuple[At, Reads], Sides] = {}
+    chains: set[At] = set()
     for node, step in flow.pace.each(flow.sides().items()):
         if step.reads is not None:
             tests.setdefault(((step.line, step.col), step.reads), []).append((node, step))
-    # the inputs are asked only of an `is` against a name with no fork of its own, and read
-    # only at those tests' sites
+            if step.reads.chained:
+                chains.add((step.line, step.col))
+    # a chain's links share its site, so where one link before the last is an `in` or `is`, no
+    # `is` link can tell its own forks from another's, and each reads as with none
+    per_fork = {site: agreed for site, agreed in own.items() if site not in chains}
+    # the inputs are asked only of an `is` against a name read with no fork of its own, and
+    # read only at those tests' sites
     named = {
         site
         for site, reads in tests
-        if site not in own and _asks_inputs(reads, heads.get(site, frozenset()))
+        if site not in per_fork and _asks_inputs(reads, heads.get(site, frozenset()))
     }
     shown = _Shown(flow, seen, frozenset(named))
     swapped: list[int] = []
     for (site, reads), sides in flow.pace.each(tests.items()):
-        agreed = own.get(site, frozenset()) if reads.name == "IS_OP" else frozenset()
+        agreed = per_fork.get(site, frozenset()) if reads.name == "IS_OP" else frozenset()
         if agreed:
             other_way = _per_fork(reads, agreed)
         else:
