@@ -94,9 +94,9 @@ def close(block: AbstractContextManager[None]) -> None:
     ``with`` line's exit event can raise there, by the alarm, a Ctrl-C or
     its own. The block's way out then runs here, from the frame that called
     the block's frame, where the alarm never raises: it puts the program's
-    SIGALRM handler back and ends the watcher. A block whose way out has run
-    is left alone, and so is a deadline of a process pyct owns, whose
-    handler stays pyct's.
+    SIGALRM handler back and ends the watcher. A block never entered, or
+    whose way out has run, is left alone, and so is a deadline of a process
+    pyct owns, whose handler stays pyct's.
     """
     if isinstance(block, _Sent):
         block.leave()
@@ -336,13 +336,16 @@ class _Sent:
         self.previous: Handler = signal.SIG_DFL
         self.handler = self._fire
         self.watcher: threading.Thread | None = None
-        # whether the way out has run, from ``__exit__``, ``close`` or a raise as the block began
-        self.out = False
+        # whether nothing is borrowed: true until ``__enter__`` has read the handler, and again
+        # once the way out has run, from ``__exit__``, ``close`` or a raise as the block began
+        self.out = True
 
     def __enter__(self) -> None:
         self.home = sys._getframe(1)
         self.hold = _Hold(before=sys.exception())
         self.previous = _restorable(signal.getsignal(signal.SIGALRM))
+        # from here on the way out has the handler to give back
+        self.out = False
         held = signal.pthread_sigmask(signal.SIG_BLOCK, _STOPS)
         try:
             self.cancel.acquire()

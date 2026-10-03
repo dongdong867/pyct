@@ -86,9 +86,11 @@ def execute(
     try:
         ending = _call(ctx, bound, block)
     finally:
-        tracer.stop()
-        # from this frame, which called the block's, where the alarm never raises
-        close(block)
+        try:
+            tracer.stop()
+        finally:
+            # from this frame, which called the block's, where the alarm never raises
+            close(block)
     # sealed before the failure is written: writing it asks the raise for its text, which
     # asks any tracked value in it for its own, and that call is pyct's, not the target's
     tally.seal()

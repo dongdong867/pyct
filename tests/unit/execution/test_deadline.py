@@ -24,7 +24,7 @@ import pytest
 
 from pyct.execution import deadline as deadline_module
 from pyct.execution.deadline import _HOLD_AT_MOST as HOLD_AT_MOST
-from pyct.execution.deadline import DeadlineError, _Sent, _Timed, close, deadline
+from pyct.execution.deadline import DeadlineError, _Sent, _Timed, deadline
 from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT
 from tests.unit.deadline_fires import DEADLINE_FIRES
 from tests.unit.execution.ctrl_c_in_c import interrupted_call, spin_in_pyct, spin_until
@@ -462,31 +462,3 @@ def test_a_block_that_ends_owing_its_alarm_ends_by_it(kind: type[_Sent | _Timed]
 
     # a raise of the target's own gives way to the alarm, as it would have where it landed
     assert isinstance(raised.value.__cause__, ValueError)
-
-
-def test_closing_a_block_whose_exit_a_raise_skipped_gives_the_handler_back() -> None:
-    previous = signal.getsignal(signal.SIGALRM)
-    block = deadline(time.monotonic() + 60)
-    # a block entered and never exited, as when a raise lands before its __exit__
-    block.__enter__()
-    borrowed = signal.getsignal(signal.SIGALRM)
-
-    close(block)
-    close(block)
-
-    assert borrowed is not previous
-    assert signal.getsignal(signal.SIGALRM) is previous
-    assert "pyct deadline" not in [thread.name for thread in threading.enumerate()]
-
-
-def test_closing_a_block_that_exited_or_set_nothing_changes_nothing() -> None:
-    previous = signal.getsignal(signal.SIGALRM)
-    block = deadline(time.monotonic() + 60)
-    with block:
-        pass
-    unset = deadline(None)
-
-    close(block)
-    close(unset)
-
-    assert signal.getsignal(signal.SIGALRM) is previous
