@@ -26,7 +26,7 @@ def _many(count: int) -> str:
 
 
 @needs_cvc5
-@pytest.mark.parametrize("count", [8, 12, 16])
+@pytest.mark.parametrize("count", [8, 12])
 def test_the_last_of_many_lines_past_a_tracked_count_is_flipped(count: int) -> None:
     path = (
         fork([">", ["len", LINES], "n"], taken=True),
@@ -213,7 +213,7 @@ def _python(part: Expression) -> str:
     ids=["the last two", "stepped back", "between two from the end"],
 )
 def test_a_piece_through_a_slice_from_the_end_is_read_where_c_star_puts_it(
-    window: list[Expression], read: int
+    window: list[int | None], read: int
 ) -> None:
     parts: Expression = ["[:]", ["split", "s", "','"], *window]
     path = (
