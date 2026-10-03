@@ -9,12 +9,16 @@ from subprocess import CompletedProcess
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
+    forks_of,
     input_lines,
+    numbers_of,
     one_line,
     run_pyct,
     summary_line,
     two_lines,
+    union_of,
 )
 
 SIX_CHECKS = "targets.ints.six_checks::count"
@@ -48,31 +52,6 @@ FLOOR_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "floor_division.py")
 REFLECTED_DIVISION = "targets.ints.reflected_division::share"
 REFLECTED_DIVISION_FILE = str(REPO_ROOT / "targets" / "ints" / "reflected_division.py")
 COUNTED_UP = "targets.ints.counted_up::count_up"
-
-
-def argument(line: dict[str, object], name: str) -> int:
-    """One int argument off a printed line, narrowed so the comparison means something."""
-    args = line["args"]
-    assert isinstance(args, dict), line
-    value = args[name]
-    assert isinstance(value, int), line
-    return value
-
-
-def numbers_of(line: dict[str, object], key: str) -> dict[str, list[int]]:
-    """One map of line numbers off a printed line, narrowed so a lookup means something."""
-    payload = line[key]
-    assert isinstance(payload, dict), line
-    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
-
-
-def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
-    """Every input's covered map added up, written the way a printed line writes one."""
-    union: dict[str, set[int]] = {}
-    for line in lines:
-        for file, covered in numbers_of(line, "covered").items():
-            union[file] = union.get(file, set()) | set(covered)
-    return {file: sorted(covered) for file, covered in union.items()}
 
 
 # follow-integers-flips-every-comparison
@@ -182,13 +161,6 @@ def test_flips_through_arithmetic() -> None:
     ]
     assert (argument(solved, "x") + 1) * 2 - 3 > 10
     assert union_of([seed, solved]) == {ARITHMETIC_CHECK_FILE: [2, 3, 4]}
-
-
-def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
-    """The forks off a printed line, narrowed so a field lookup means something."""
-    forks = line["forks"]
-    assert isinstance(forks, list), line
-    return [dict(fork) for fork in forks]
 
 
 # follow-integers-flips-through-abs-and-negation

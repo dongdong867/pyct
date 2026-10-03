@@ -5,9 +5,18 @@ forks reach the tree, the tree still picks the forks around the loop, and the so
 answers run, so only a real run through the command line proves it.
 """
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    argument,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 from tests.acceptance.test_str_pieces import printed_nodes
-from tests.acceptance.test_strs import covered_of, forks_of, number, text
+from tests.acceptance.test_strs import text
 
 COUNTDOWN = "targets.loops.countdown::count_down"
 COUNTDOWN_FILE = str(REPO_ROOT / "targets" / "loops" / "countdown.py")
@@ -38,7 +47,7 @@ def is_pass(fork: dict[str, object]) -> bool:
 
 def covers(line: dict[str, object], file: str, number: int) -> bool:
     """Whether one input's line covers a line of a file."""
-    return number in covered_of([line]).get(file, [])
+    return number in union_of([line]).get(file, [])
 
 
 # follow-loops-and-ranges-follows-a-while-loop
@@ -55,7 +64,7 @@ def test_follows_a_while_loop() -> None:
         (2, [">", ["-", once, 1], 0], False),
     ]
     # the run does not spend its budget lengthening the loop: the seed's first fork is flipped
-    never = [line for line in inputs[1:] if number(line, "x") <= 0]
+    never = [line for line in inputs[1:] if argument(line, "x") <= 0]
     assert never, [line["args"] for line in inputs]
     assert [(fork["expression"], fork["taken"]) for fork in forks_of(never[0])] == [
         ([">", "x", 0], False)
@@ -141,7 +150,7 @@ def test_reaches_a_fork_before_a_loop() -> None:
     result = run_pyct(BEFORE_A_LOOP, '{"x": 3, "y": 0}', "--budget", "10")
 
     assert result.returncode == 0, result.stderr
-    big = [line for line in input_lines(result.stdout) if number(line, "y") > 100]
+    big = [line for line in input_lines(result.stdout) if argument(line, "y") > 100]
     assert big, [line["args"] for line in input_lines(result.stdout)]
     assert covers(big[0], BEFORE_A_LOOP_FILE, 3)
 
@@ -156,7 +165,7 @@ def test_flips_a_new_side_before_a_long_loop() -> None:
     # so the second input flips it, ahead of the loop's two hundred passes
     second = inputs[1]
     assert second["aim"] == {"file": BEFORE_A_LOOP_FILE, "line": 2, "col": 7, "position": 0}
-    assert number(second, "y") > 100
+    assert argument(second, "y") > 100
     assert covers(second, BEFORE_A_LOOP_FILE, 3)
 
 

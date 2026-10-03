@@ -1,14 +1,22 @@
-"""The harness demands the summary line, and measures a pyct child only when its deadline is off."""
+"""The harness demands the summary line, measures a pyct child only when its deadline is off,
+and narrows a printed line's fields, failing on a malformed line."""
 
 import json
+import re
 import subprocess
 
 import pytest
 
 from tests.acceptance.harness import (
+    argument,
     check_every_uncovered_line_explained_once,
+    forks_of,
     input_lines,
+    numbers_of,
+    placed,
     run_pyct,
+    took,
+    union_of,
 )
 
 
@@ -91,3 +99,69 @@ def test_a_run_without_a_budget_is_measured(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert env["COVERAGE_PROCESS_CONFIG"] == "{}"
     assert env["COVERAGE_PROCESS_START"] == "pyproject.toml"
+
+
+def test_argument_reads_an_int_argument() -> None:
+    assert argument({"args": {"x": 3}}, "x") == 3
+
+
+@pytest.mark.parametrize(
+    "line",
+    [{"args": [3]}, {"args": {"x": "3"}}],
+    ids=["args-not-a-dict", "argument-not-an-int"],
+)
+def test_argument_fails_a_malformed_line(line: dict[str, object]) -> None:
+    with pytest.raises(AssertionError, match=re.escape(str(line))):
+        argument(line, "x")
+
+
+def test_forks_of_copies_each_fork() -> None:
+    fork: dict[str, object] = {"line": 4, "expression": [">", "x", 0], "taken": True}
+
+    (found,) = forks_of({"forks": [fork]})
+
+    assert found == fork
+    assert found is not fork
+
+
+def test_forks_of_fails_forks_that_are_not_a_list() -> None:
+    line: dict[str, object] = {"forks": {"line": 4}}
+    with pytest.raises(AssertionError, match=re.escape(str(line))):
+        forks_of(line)
+
+
+def test_numbers_of_reads_a_map_of_line_numbers() -> None:
+    assert numbers_of({"covered": {"m.py": [1, 2]}}, "covered") == {"m.py": [1, 2]}
+
+
+def test_numbers_of_fails_a_map_that_is_not_a_dict() -> None:
+    line: dict[str, object] = {"covered": [1, 2]}
+    with pytest.raises(AssertionError, match=re.escape(str(line))):
+        numbers_of(line, "covered")
+
+
+def test_union_of_adds_up_every_covered_map() -> None:
+    lines: list[dict[str, object]] = [
+        {"covered": {"m.py": [3, 1]}},
+        {"covered": {"m.py": [2, 3], "n.py": [5]}},
+    ]
+
+    assert union_of(lines) == {"m.py": [1, 2, 3], "n.py": [5]}
+
+
+def test_union_of_fails_a_covered_map_that_is_not_a_dict() -> None:
+    line: dict[str, object] = {"covered": [1]}
+    with pytest.raises(AssertionError, match=re.escape(str(line))):
+        union_of([{"covered": {"m.py": [1]}}, line])
+
+
+def test_took_finds_a_fork_by_its_line_expression_and_side() -> None:
+    lines: list[dict[str, object]] = [
+        {"forks": [{"line": 4, "expression": "x", "taken": False}]},
+        {"forks": [{"line": 4, "expression": "x", "taken": True}]},
+    ]
+
+    assert placed(lines[1]) == [(4, "x", True)]
+    assert took(lines, (4, "x", True))
+    assert not took(lines, (5, "x", True))
+    assert not took(lines[:1], (4, "x", True))

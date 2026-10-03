@@ -8,11 +8,12 @@ runs, so only a real run through the command line proves it.
 from tests.acceptance.harness import (
     REPO_ROOT,
     first_line,
+    forks_of,
     input_lines,
     run_pyct,
     summary_line,
 )
-from tests.acceptance.test_strs import forks_of, text
+from tests.acceptance.test_strs import text
 
 INDEX_AND_SLICE = "targets.strs.index_and_slice::shape"
 # each fork the seed takes in ``shape``, in order: the line, the expression, and the side. An

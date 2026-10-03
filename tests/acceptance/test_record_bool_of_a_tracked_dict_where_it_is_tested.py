@@ -9,7 +9,15 @@ call written `bool(...)`.
 import pytest
 
 from targets.dicts import truth_kept
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    input_lines,
+    placed,
+    run_pyct,
+    summary_line,
+    took,
+)
 from tests.acceptance.test_bools import at
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
@@ -17,7 +25,6 @@ from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     python_raise,
     raised,
 )
-from tests.acceptance.test_record_bool_of_a_tracked_list_where_it_is_tested import placed, took
 from tests.acceptance.test_substitute_conversions import downgrade_names
 
 TARGET = "targets.dicts.truth_kept"

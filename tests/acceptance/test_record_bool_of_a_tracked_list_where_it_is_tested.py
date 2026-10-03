@@ -8,9 +8,16 @@ through the command line, since only a run through it substitutes the call writt
 import pytest
 
 from targets.lists import truth_kept
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    input_lines,
+    placed,
+    run_pyct,
+    summary_line,
+    took,
+)
 from tests.acceptance.test_bools import at
-from tests.acceptance.test_ints import forks_of
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 from tests.acceptance.test_read_a_tracked_value_s_type_as_its_base_type import (
     line_of,
@@ -32,16 +39,6 @@ def lines_of(function: str) -> tuple[int, int, int]:
         line_of(FILE, "if ok:", function),
         line_of(FILE, 'return "filled"', function),
     )
-
-
-def placed(line: dict[str, object]) -> list[tuple[object, object, object]]:
-    """Each fork on a printed line, by its line, its expression and the side it took."""
-    return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
-
-
-def took(inputs: list[dict[str, object]], fork: tuple[object, object, object]) -> bool:
-    """Whether any of the printed lines took this fork: its line, its expression and its side."""
-    return any(fork in placed(line) for line in inputs)
 
 
 def filled(inputs: list[dict[str, object]]) -> list[dict[str, object]]:

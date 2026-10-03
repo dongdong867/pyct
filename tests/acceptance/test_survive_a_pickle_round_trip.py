@@ -11,14 +11,15 @@ import pytest
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
+    forks_of,
     one_line,
     run_pyct,
     second_line,
 )
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
-from tests.acceptance.test_strs import forks_of, number
 
 PICKLED = "targets.ints.pickled"
 PICKLED_FILE = str(REPO_ROOT / "targets" / "ints" / "pickled.py")
@@ -51,7 +52,7 @@ def test_keeps_the_pickled_value_tracked() -> None:
     seed, solved = first_line(result.stdout), second_line(result.stdout)
     assert forks_of(seed) == [{**AFTER_THE_PICKLE, "taken": False}]
     assert seed["downgrades"] == [downgrade("__reduce_ex__", 1, "targets/ints/pickled.py:13:4")]
-    assert number(solved, "n") > 10
+    assert argument(solved, "n") > 10
     assert forks_of(solved) == [{**AFTER_THE_PICKLE, "taken": True}]
 
 

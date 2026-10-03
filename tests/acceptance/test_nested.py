@@ -15,7 +15,14 @@ import sys
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    first_line,
+    forks_of,
+    input_lines,
+    run_pyct,
+    union_of,
+)
 from tests.nesting import nested_text
 
 DICT_VALUES = "targets.nested.dict_values::check"
@@ -53,13 +60,6 @@ def args_of(line: dict[str, object]) -> dict[str, object]:
     return args
 
 
-def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
-    """The forks off a printed line, narrowed so a field lookup means something."""
-    forks = line["forks"]
-    assert isinstance(forks, list), line
-    return [dict(fork) for fork in forks]
-
-
 def solved(lines: list[dict[str, object]]) -> list[dict[str, object]]:
     """The lines of the inputs the solver handed back, without the seed's."""
     return [line for line in lines if line["source"] == "solver"]
@@ -72,17 +72,6 @@ def sides_of(lines: list[dict[str, object]]) -> set[tuple[str, bool]]:
         for line in lines
         for fork in forks_of(line)
     }
-
-
-def covered_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
-    """Every input's covered map added up, written the way a printed line writes one."""
-    union: dict[str, set[int]] = {}
-    for line in lines:
-        covered = line["covered"]
-        assert isinstance(covered, dict), line
-        for file, numbers in covered.items():
-            union[str(file)] = union.get(str(file), set()) | {int(n) for n in numbers}
-    return {file: sorted(numbers) for file, numbers in union.items()}
 
 
 def server_of(line: dict[str, object]) -> dict[str, object]:
@@ -134,7 +123,7 @@ def test_flips_values_inside_a_dict() -> None:
     # a key no fork names keeps what the input had, and so does its value
     for server in servers:
         assert server["workers"] == 2, servers
-    assert covered_of(lines) == {DICT_VALUES_FILE: list(range(2, 10))}
+    assert union_of(lines) == {DICT_VALUES_FILE: list(range(2, 10))}
     # a solver line's args is a seed as it stands
     again = run_pyct(DICT_VALUES, "--args", json.dumps(args_of(solved(lines)[0])))
     assert again.returncode == 0, again.stderr

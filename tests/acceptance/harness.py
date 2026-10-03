@@ -1,5 +1,8 @@
 """What every acceptance test needs: spawn pyct, run it in process, read its stdout.
 
+The line helpers narrow a field of one printed line, and fail on a malformed line with the
+line in the message.
+
 The subprocess runs ``python -P -m pyct`` from the repository root with
 ``PYTHONPATH`` removed, so a test proves the target imports from the working
 directory rather than from an inherited path.
@@ -193,6 +196,48 @@ def two_lines(stdout: str) -> tuple[dict[str, object], dict[str, object]]:
     lines = input_lines(stdout)
     assert len(lines) == 2, stdout
     return lines[0], lines[1]
+
+
+def argument(line: dict[str, object], name: str) -> int:
+    """One int argument off a printed line, narrowed so the comparison means something."""
+    args = line["args"]
+    assert isinstance(args, dict), line
+    value = args[name]
+    assert isinstance(value, int), line
+    return value
+
+
+def forks_of(line: dict[str, object]) -> list[dict[str, object]]:
+    """The forks off a printed line, narrowed so a field lookup means something."""
+    forks = line["forks"]
+    assert isinstance(forks, list), line
+    return [dict(fork) for fork in forks]
+
+
+def placed(line: dict[str, object]) -> list[tuple[object, object, object]]:
+    """Each fork on a printed line, by its line, its expression and the side it took."""
+    return [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(line)]
+
+
+def took(inputs: list[dict[str, object]], fork: tuple[object, object, object]) -> bool:
+    """Whether any of the printed lines took this fork: its line, its expression and its side."""
+    return any(fork in placed(line) for line in inputs)
+
+
+def numbers_of(line: dict[str, object], key: str) -> dict[str, list[int]]:
+    """One map of line numbers off a printed line, narrowed so a lookup means something."""
+    payload = line[key]
+    assert isinstance(payload, dict), line
+    return {str(file): [int(number) for number in lines] for file, lines in payload.items()}
+
+
+def union_of(lines: list[dict[str, object]]) -> dict[str, list[int]]:
+    """Every input's covered map added up, written the way a printed line writes one."""
+    union: dict[str, set[int]] = {}
+    for line in lines:
+        for file, covered in numbers_of(line, "covered").items():
+            union[file] = union.get(file, set()) | set(covered)
+    return {file: sorted(covered) for file, covered in union.items()}
 
 
 def version_then_crashing_cvc5(tmp_path: Path) -> Path:

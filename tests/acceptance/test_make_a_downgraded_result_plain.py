@@ -9,11 +9,12 @@ from tests.acceptance.harness import (
     REPO_ROOT,
     downgrade,
     first_line,
+    forks_of,
     one_line,
     run_pyct,
     second_line,
 )
-from tests.acceptance.test_strs import forks_of, text
+from tests.acceptance.test_strs import text
 
 MOD_EMPTY = "targets.strs.nothing_to_fill::mod_empty"
 FORMAT_EMPTY = "targets.strs.nothing_to_fill::format_empty"

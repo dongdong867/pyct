@@ -15,13 +15,14 @@ import pytest
 from targets.types import copied, dispatched, matched, own_type, read, read_dict
 from tests.acceptance.harness import (
     REPO_ROOT,
+    argument,
     downgrade,
     first_line,
+    forks_of,
     run_pyct,
     second_line,
     summary_line,
 )
-from tests.acceptance.test_ints import argument, forks_of
 from tests.acceptance.test_pass_keywords_through_a_downgrade import covered_in
 
 TYPES = REPO_ROOT / "targets" / "types"

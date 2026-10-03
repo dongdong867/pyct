@@ -26,8 +26,7 @@ from pyct.run import isolation
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
-from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, input_lines, run_pyct
-from tests.acceptance.test_strs import forks_of
+from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, forks_of, input_lines, run_pyct
 from tests.acceptance.timed import Measured, within
 
 COUNTDOWN = "targets.loops.countdown::count_down"
