@@ -2,6 +2,7 @@ import functools
 import sys
 
 from pyct.core.branch import Branch, Downgrade, Fact, Site
+from pyct.core.dicts import ConcolicDict
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
 from tests.unit.interrupted import Interrupt, at_every_line
@@ -192,3 +193,25 @@ def test_a_fact_from_a_call_that_is_over_names_its_operation_in_the_live_call() 
 
     assert over.facts == [] and live.facts == []
     assert live.counted() == (DowngradeCount(name="__iter__", count=1, site=SITE),)
+
+
+def test_a_dict_kept_from_a_call_that_is_over_names_each_check_once_in_the_live_call() -> None:
+    over = Tally()
+    kept = ConcolicDict.made({"a": 1, "b": 2}, "d", over)
+    over.seal()
+    live = Tally()
+    live.go_live()
+
+    try:
+        for _ in kept:
+            pass
+        assert "a" in kept
+    finally:
+        live.seal()
+
+    # each of the walk's three passes and the lookup, as the forks they were before the facts;
+    # a place no check holds names nothing
+    assert [(entry.name, entry.count) for entry in live.counted()] == [
+        ("__iter__", 3),
+        ("__contains__", 1),
+    ]

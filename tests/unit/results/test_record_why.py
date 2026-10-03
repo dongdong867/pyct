@@ -8,7 +8,7 @@ import pytest
 from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results import record
 from pyct.results.coverage import Coverage
-from pyct.results.graphs import LONGEST_STRETCH
+from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.record import (
     Aim,
     Environment,
@@ -155,3 +155,20 @@ def test_a_run_read_past_the_analysis_stop_reads_no_input_and_no_try(
     assert run.why_uncovered == (
         WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
     )
+
+
+def test_the_tries_look_at_the_clock_as_they_read_each_input_s_facts(tmp_path: Path) -> None:
+    site = Site(file=str(tmp_path / "m.py"), line=3, col=7)
+    # far past the steps the analysis takes between two looks at the clock, on one input
+    facts = (Fact(["!=", "x", "x"], False, site),) * 10_000
+    seed = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), facts=facts)
+    result = RunResult(
+        entry="m::same",
+        records=(seed,),
+        coverage=Coverage(covered={}, lines={}),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    with pytest.raises(OutOfTimeError):
+        record._tries(result, Pace(lambda _ahead: True))

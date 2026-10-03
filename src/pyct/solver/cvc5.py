@@ -166,7 +166,7 @@ def held(
         if isinstance(step, Branch)
         else Branch(step.expression, step.taken, step.site, step.raising)
         for step in prefix
-        if isinstance(step, Branch) or step.expression is not None
+        if isinstance(step, Branch) or step.decided
     )
     places = tuple(
         step.place for step in prefix if isinstance(step, Fact) and step.place is not None

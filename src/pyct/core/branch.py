@@ -89,6 +89,11 @@ class Fact:
     after: int = 0
     lost_as: str = field(default="__bool__", compare=False)
 
+    @property
+    def decided(self) -> bool:
+        """Whether the fact is a check whose answer pyct already knew, rather than a place only."""
+        return self.expression is not None
+
     def placed_after(self, forks: int) -> Fact:
         """This fact, recorded after ``forks`` forks."""
         return Fact(

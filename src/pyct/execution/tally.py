@@ -69,7 +69,9 @@ class Tally:
         """
         if self.sealed:
             live = _LIVE[0]
-            if live is not None and live is not self:
+            # a place names no check the target ran, so it names no loss
+            placed = isinstance(item, Fact) and not item.decided
+            if live is not None and live is not self and not placed:
                 name = item.name if isinstance(item, Downgrade) else item.lost_as
                 live.append(Downgrade(name=name, site=item.site))
             return

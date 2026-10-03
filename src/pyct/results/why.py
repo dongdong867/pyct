@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import itertools
 import logging
 import time
 import types
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
@@ -94,9 +95,10 @@ class Walked:
     facts: tuple[Fact, ...] = ()
 
     @property
-    def tested(self) -> tuple[Branch | Fact, ...]:
-        """Each condition the input tested, a fork or a decided check."""
-        return self.forks + tuple(fact for fact in self.facts if fact.expression is not None)
+    def tested(self) -> Iterator[Branch | Fact]:
+        """Each condition the input tested, a fork or a decided check, one at a time, so a
+        paced walk over them steps each."""
+        return itertools.chain(self.forks, (fact for fact in self.facts if fact.decided))
 
 
 # what the analysis reads the time from; a test sets another
