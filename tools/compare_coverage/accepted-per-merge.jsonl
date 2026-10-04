@@ -232,6 +232,7 @@
 {"set": "v2", "target": "targets.strs.split_lengths::counted", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.strs.split_lengths::every_form", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [39]}
 {"set": "v2", "target": "targets.strs.split_lengths::first_two_joined", "seed": {"v": "3.12"}, "status": "differs", "only_legacy": [], "only_v2": [56]}
+{"set": "v2", "target": "targets.strs.split_lengths::last_line_of_a_list_s_item", "seed": {"xs": ["a\nb"]}, "status": "differs", "only_legacy": [], "only_v2": [145]}
 {"set": "v2", "target": "targets.strs.split_lengths::past_the_pieces", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [64]}
 {"set": "v2", "target": "targets.strs.split_lengths::walked_after", "seed": {"s": "a\nb\nc\nd"}, "status": "differs", "only_legacy": [], "only_v2": [110]}
 {"set": "v2", "target": "targets.strs.text_of_values::bool_text", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [24]}
