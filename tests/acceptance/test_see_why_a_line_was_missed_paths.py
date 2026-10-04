@@ -71,9 +71,11 @@ def cause(entry: dict[str, object]) -> dict[str, object]:
 
 
 # each `negated` target's input lines and stderr fork lines as c586d3ba printed them on 3.12, 3.13
-# and 3.14 alike, the repository's folder written <root>. They pin the whole lines, cvc5's answers
-# and each line's `total` among them, so an edit to `targets/why/negated.py` or a new cvc5 that
-# answers otherwise records them again, in one process so no two workers write the file at once:
+# and 3.14 alike, the repository's folder written <root>; `not_in`'s `len(s) < 0` is a fact since
+# record-decided-checks-on-lists-strings-and-second-walks, as no length is below 0. They pin the
+# whole lines, cvc5's answers and each line's `total` among them, so an edit to
+# `targets/why/negated.py` or a new cvc5 that answers otherwise records them again, in one
+# process so no two workers write the file at once:
 # PYCT_RECORD_PRINTED=1 uv run pytest tests/acceptance/test_see_why_a_line_was_missed_paths.py
 #     -n 0 -k "negated or no_fork"
 # and the diff then shows the change, which a person checks is no printed change of pyct's
