@@ -258,8 +258,9 @@ def _loop(
     spent either way.
 
     ``covered`` is the lines of each input that ran, in run order, the seed's
-    first; a miss ran no input and adds none. The scope is applied here
-    because a record carries the tracer's raw lines.
+    first; a miss ran no input and adds none. The scope is applied here,
+    to the seed, and in ``_took``, to each solver input, because a record
+    carries the tracer's raw lines.
     """
     records: list[InputRecord] = []
     misses: list[Miss] = []

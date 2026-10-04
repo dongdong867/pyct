@@ -45,6 +45,7 @@ def test_a_second_turn_on_a_path_keeps_it_shallowest_first() -> None:
     assert positions(tree) == [1, 2]
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-turns-a-path-once
 def test_a_turn_after_a_timeout_on_the_same_path_keeps_it_shallowest_first() -> None:
     tree = Tree()
     tree.add(tuple(fork(line) for line in (2, 3, 4, 5)))
@@ -89,6 +90,7 @@ def test_a_turn_sends_no_fork_at_its_site_last() -> None:
     assert positions(tree) == [0, 1, 2]
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-keeps-the-timeout-rules
 def test_a_timeout_on_a_turned_path_still_sends_its_site_last() -> None:
     tree = Tree()
     tree.add(tuple(fork(line) for line in (2, 9, 9, 6, 4)))

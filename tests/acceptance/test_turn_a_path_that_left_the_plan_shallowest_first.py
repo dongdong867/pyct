@@ -61,6 +61,7 @@ def covered_in_fixture(line: dict[str, object]) -> set[int]:
     return set(covered.get(PAST_A_CACHE_FILE, []))
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-reaches-a-shallow-fork-past-a-cache
 def test_a_leave_without_gain_sends_the_next_pick_past_the_cache_to_the_first_fork() -> None:
     seed = '{"m": 1, "a": 0, "b": 0, "c": 0, "d": 0, "e": 0, "f": 0}'
 
@@ -81,6 +82,7 @@ def test_a_leave_without_gain_sends_the_next_pick_past_the_cache_to_the_first_fo
     }, result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-keeps-deepest-first-on-reached-plans
 def test_inputs_that_reach_their_plans_keep_the_deepest_fork_first() -> None:
     result = run_pyct(f"{GAIN_NOTHING}::three_deep", '{"x": 30}')
 
@@ -89,6 +91,7 @@ def test_inputs_that_reach_their_plans_keep_the_deepest_fork_first() -> None:
     assert positions(result.stdout) == [2, 1, 0], result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-keeps-deepest-first-after-a-leave-that-gains
 def test_a_leave_that_covers_a_new_line_keeps_the_deepest_fork_first() -> None:
     result = run_pyct(f"{PAST_A_CACHE}::apart", '{"m": 2, "a": 0, "b": 0}')
 
@@ -99,6 +102,7 @@ def test_a_leave_that_covers_a_new_line_keeps_the_deepest_fork_first() -> None:
     assert positions(result.stdout)[:2] == [2, 1], result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-turns-a-path-once
 def test_a_turned_path_stays_shallowest_first_after_more_leaves() -> None:
     result = run_pyct(f"{PAST_A_CACHE}::numbers", '{"a": 0, "b": 0, "c": 0, "d": 0, "e": 0}')
 
@@ -109,6 +113,7 @@ def test_a_turned_path_stays_shallowest_first_after_more_leaves() -> None:
     assert positions(result.stdout)[:4] == [3, 0, 1, 2], result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-turns-only-the-picked-path
 def test_a_turn_leaves_the_leaving_input_s_own_path_deepest_first() -> None:
     seed = '{"m": 2, "a": 0, "b": 0, "x": 0, "y": 0}'
 
@@ -122,6 +127,7 @@ def test_a_turn_leaves_the_leaving_input_s_own_path_deepest_first() -> None:
     assert positions(result.stdout)[:5] == [2, 0, 1, 3, 2], result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-prints-nothing-new
 def test_a_turn_prints_no_line_or_field_of_its_own() -> None:
     seed = '{"m": 1, "a": 0, "b": 0, "c": 0, "d": 0, "e": 0, "f": 0}'
     plain = run_pyct(f"{GAIN_NOTHING}::three_deep", '{"x": 30}')
@@ -138,6 +144,7 @@ def test_a_turn_prints_no_line_or_field_of_its_own() -> None:
     assert trace <= TRACE_KINDS, result.stderr
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-a-miss-turns-nothing
 def test_an_unsat_miss_keeps_the_deepest_fork_first() -> None:
     result = run_pyct(f"{GAIN_NOTHING}::implied_deepest", '{"x": 30}')
 
@@ -147,6 +154,7 @@ def test_an_unsat_miss_keeps_the_deepest_fork_first() -> None:
     assert positions(result.stdout) == [1, 0], result.stdout
 
 
+# turn-a-path-that-left-the-plan-shallowest-first-turns-after-a-failing-input
 def test_a_leave_that_raised_turns_its_path_in_a_process_of_its_own_and_in_pyct_s() -> None:
     seed = '{"m": 1, "a": 0, "b": 0, "c": 0}'
 
