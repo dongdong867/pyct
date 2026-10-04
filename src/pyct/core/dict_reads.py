@@ -159,11 +159,11 @@ def _looked_up_unfollowed(
 ) -> bool | None:
     """A lookup in a dict no longer followed (see ``DictState.unfollowed_since_walk``): no key
     is compared with a tracked change. None for a key of another kind and a tracked key, which
-    the caller answers as Python does; no fork for a key the target changed or a walk handed
-    out, a stale copy among them; and otherwise the argument's fork on the marked dict, given
-    where a walk read a key Python shares."""
+    the caller answers as Python does, the dict holding a change; no fork for a key the target
+    changed or a walk handed out, a stale copy among them; and otherwise the argument's fork on
+    the marked dict, given where a walk read a key Python shares."""
     name, raising = how
-    if written_key(key) is None or (is_tracked(key) and self.changed):
+    if written_key(key) is None or is_tracked(key):
         return None
     if plain(key) in self.changed or stale_copy(self, key):
         return held

@@ -223,3 +223,20 @@ def test_a_shared_key_a_walk_handed_out_keeps_its_place_on_its_compare() -> None
     before = sink[at - 1]
     assert isinstance(before, Fact)
     assert (before.expression, before.place) == (None, ["given", ["walked", "config", "'b'"]])
+
+
+def test_a_copy_changed_after_a_walk_of_the_other_dict_stays_followed() -> None:
+    config, sink = tracked({"cd": 1})
+    copied = config.copy()
+    name = ConcolicStr.made("zz", "name", sink)
+    other = ConcolicStr.made("ab", "other", sink)
+    config[name] = 0
+    list(config)
+
+    copied[other] = 5
+
+    # the copy's change came after the walk, so the walk does not end following it
+    assert not copied.unfollowed_since_walk()
+    assert config.unfollowed_since_walk()
+    assert "__setitem__" not in downgrades(sink)
+    assert (["in", "other", "config"], False) in forks(sink)

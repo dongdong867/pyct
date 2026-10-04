@@ -328,3 +328,16 @@ def test_a_copy_made_before_the_change_keeps_its_tracked_lookup() -> None:
     lines = input_lines(result.stdout)
     assert return_line("copy_looked_up", 1) in union_of(lines)[str(FILE)]
     assert downgrade_names(lines[0]) == [], lines[0]
+
+
+# a copy changed under a tracked key after a walk of the other dict: its own change came after
+# that walk, so it is followed, and every answer reaches its aim (review of PR #131, round 5)
+def test_a_copy_changed_after_the_walk_stays_followed() -> None:
+    seed = '{"n": "pyct1", "m": "zz", "d": {}}'
+    result = run_pyct(f"{MODULE}::copy_changed_after", seed, "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert return_line("copy_changed_after", 1) in union_of(lines)[str(FILE)]
+    assert [line["mismatch_at"] for line in lines] == [None] * len(lines)
+    assert "__setitem__" not in downgrade_names(lines[0]), lines[0]

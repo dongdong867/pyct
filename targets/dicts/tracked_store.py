@@ -206,3 +206,14 @@ def copy_looked_up(n: str, m: str, d: dict):
     if m in c:
         return 1
     return 0
+
+
+def copy_changed_after(n: str, m: str, d: dict):
+    c = d.copy()
+    d[n] = 0
+    for k in d:
+        pass
+    c[m] = 5
+    if c.get("bb") == 5:
+        return 1
+    return 0

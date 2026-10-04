@@ -127,6 +127,7 @@
     {"set": "v2", "target": "targets.dicts.settled::only_a", "seed": {"d": {"a": 9}}},
     {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::copied_walk", "seed": {"name": "a", "config": {}}},
+    {"set": "v2", "target": "targets.dicts.tracked_store::copy_changed_after", "seed": {"n": "pyct1", "m": "zz", "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::copy_looked_up", "seed": {"n": "pyct1", "m": "zz", "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::defaulted_named", "seed": {"n": "a", "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}},

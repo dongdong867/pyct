@@ -94,11 +94,13 @@ class DictState(dict):
     # each tracked key a lookup answered as Python's own, with no fork, as ``settled`` knows it:
     # a change under it after that is Python's own too (see ``dict_changes.followed``)
     unfollowed: set[object]
-    # whether a walk of this dict, or of one made from the same argument, ran after a change
-    # under a tracked key: one list shared by reference, so a copy's walk counts too. From
-    # then on a dict of them changed under a tracked key is not followed (see
-    # ``unfollowed_since_walk``)
-    walked_after: list[bool]
+    # one clock shared by every dict made from the same argument, by reference: how many
+    # tracked changes and walks it has counted, and the count at the latest walk of a dict
+    # holding a tracked change; and the count at this dict's first tracked change, None before
+    # one. A walk after that change, of this dict or of one made from the same argument, ends
+    # following this dict (see ``unfollowed_since_walk``)
+    walk_clock: list[int]
+    tracked_since: int | None
     # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,
     # named or made up: a key pyct does not follow that may equal an int turns such a dict
     # plain (see ``dict_reads.may_equal_added``)
@@ -139,7 +141,8 @@ class DictState(dict):
             stale=set(),
             popped=False,
             unfollowed=set(),
-            walked_after=[False],
+            walk_clock=[0, -1],
+            tracked_since=None,
         )
         fields["int_keyed"] = int_keyed
         return made
@@ -242,7 +245,8 @@ class DictState(dict):
         fields["grown"] = self.grown
         fields["popped"] = self.popped
         fields["unfollowed"] = set(self.unfollowed)
-        fields["walked_after"] = self.walked_after
+        fields["walk_clock"] = self.walk_clock
+        fields["tracked_since"] = self.tracked_since
         return made
 
     def noted(self, key: object, value: object, tracked: Expression = None) -> None:
@@ -257,22 +261,28 @@ class DictState(dict):
 
     def unfollowed_since_walk(self) -> bool:
         """Whether this dict was changed under a tracked key and a walk of it, or of a dict made
-        from the same argument, ran after such a change: then its lookups, changes and later
+        from the same argument, ran after its first such change: then its lookups, changes and later
         walks are not followed (see ``dict_reads.present``). A walk hands out the tracked key's
         own key, and a key Python shares is the very object a literal is, so no later lookup
         tells the two apart, and comparing them pins the tracked key. A caller that acts on it
         marks the dict (``changed_unforked``)."""
-        return self.walked_after[0] and self.tracked_changes > 0
+        since = self.tracked_since
+        return since is not None and self.walk_clock[1] > since
 
     def walk_started(self) -> bool:
         """Note a walk of the dict, and answer whether it is the first since a change under a
         tracked key: that walk compares what it hands out as before (``handed_in_place``), and
         the dict is marked; from then on it is not followed (``unfollowed_since_walk``)."""
-        if not self.tracked_changes or self.walked_after[0]:
+        since = self.tracked_since
+        if since is None:
             return False
-        self.walked_after[0] = True
-        self.changed_unforked()
-        return True
+        clock = self.walk_clock
+        first = clock[1] < since
+        clock[0] += 1
+        clock[1] = clock[0]
+        if first:
+            self.changed_unforked()
+        return first
 
     def changed_unforked(self) -> None:
         """Note a change pyct answered without a fork: from now on no lookup is decided, and
@@ -326,6 +336,9 @@ class DictState(dict):
         else:
             self.tracked_at.append(at)
             self.__dict__["tracked_changes"] += 1
+            if self.tracked_since is None:
+                self.walk_clock[0] += 1
+                self.__dict__["tracked_since"] = self.walk_clock[0]
             if held or not stored:
                 self.stale.update(id(copied) for copied in self.copies.values())
                 self.copies.clear()
