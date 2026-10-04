@@ -116,7 +116,7 @@ def test_walks_a_string_of_forty_letters() -> None:
     assert isinstance(solver, dict) and solver["timeout"] <= 1, solver
 
 
-# follow-loops-and-ranges-walks-a-string-wherever-it-is-iterated
+# record-decided-checks-on-lists-strings-and-second-walks-walks-a-measured-string-wherever-it-is-iterated  # noqa: E501
 def test_walks_a_string_wherever_it_is_iterated() -> None:
     result = run_pyct(WALKS, '{"s": "xy", "t": "xy"}', "--budget", "10")
 

@@ -260,7 +260,7 @@ def test_a_negated_test_is_judged_by_the_side_of_the_fork_it_records(
 
     assert result.returncode == 0, result.stderr
     assert cause(entry_for(result.stdout, line)) == not_taken(file, *side, unsat=unsat)
-    # read-an-is-test-against-a-name-per-pass-keeps-every-shape-that-reads-right
+    # record-decided-checks-on-lists-strings-and-second-walks-reads-a-negated-length-check-as-decided  # noqa: E501
     check_printed(function, result)
 
 
