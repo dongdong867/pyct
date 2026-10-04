@@ -26,6 +26,7 @@ from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, Rende
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
+from pyct.solver.split_lists import UnknownCountError
 
 logger = logging.getLogger(__name__)
 
@@ -284,6 +285,9 @@ def _write(
         return Unknown()
     except ProgramTooLargeError as error:
         logger.debug("giving up the unsettled program: %s", error)
+        return Unknown()
+    except UnknownCountError as error:
+        logger.debug("giving up a program that reads a count with no c*: %s", error)
         return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)

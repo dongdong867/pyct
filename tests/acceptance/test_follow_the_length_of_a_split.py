@@ -115,10 +115,10 @@ def test_searches_the_pieces_as_a_list() -> None:
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     at = line_of('if "b" in s.split(","):')
+    # as origin/v2 searches its plain list of pieces: each piece's compare, and no fork on how
+    # many pieces there are, by the user's decision on review round 10
     assert [fork for fork in listed(lines[0]) if fork[0] == at] == [
-        (at, [">", ["len", SPLIT], 0], True),
         (at, ["==", ["[]", SPLIT, 0], "'b'"], False),
-        (at, [">", ["len", SPLIT], 1], False),
     ]
     found = [
         line
@@ -424,8 +424,9 @@ def test_leaves_a_split_of_an_unworked_string_to_python() -> None:
     lines = input_lines(result.stdout)
     length, piece = line_of("if len(parts) < n:"), line_of('if parts[0] == "end":')
     seed_forks = [fork for fork in listed(lines[0]) if fork[0] == length]
-    # Python's own list: the length is a plain int, so the line forks only on `n`
-    assert all("len" not in str(fork[1]) for fork in seed_forks), lines[0]
+    # Python's own list: the length is the plain 2 the seed's string splits into, so the line
+    # forks only on `n`, as on origin/v2
+    assert seed_forks == [(length, [">", "n", 2], False)], lines[0]
     assert "split" not in downgrade_names(lines[0]), lines[0]
 
     def agrees(s: Any, n: Any) -> bool:

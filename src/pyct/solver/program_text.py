@@ -55,9 +55,10 @@ def program_text(
     counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
-    # a leaf no assertion reads, through the definitions it names, keeps the input's value: a
-    # split's count asked as c* names its string in the path, but not in what the program
-    # asserts, as origin/v2's plain count never named it
+    # a leaf named in none of these lines, and in no definition they name, in turn, keeps the
+    # input's value: a split's count asked as c* names its string in the path, but not in
+    # these lines, as origin/v2's plain count never named it. An assertion among the
+    # definitions is not followed: it holds on every input that took the path this far
     read = _read(body.definitions, [*counts, *bounds, *asserted, *forks])
     lines += [f"(get-value ({constant}))" for constant, _ in declared if constant in read]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]

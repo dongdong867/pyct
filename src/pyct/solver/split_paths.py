@@ -10,7 +10,7 @@ from pyct.core.branch import Branch, Expression
 from pyct.solver.list_terms import Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
 from pyct.solver.split_counts import FARTHEST, condition, input_value, windowed, windows_past
-from pyct.solver.split_lists import SplitList, SplitRead
+from pyct.solver.split_lists import SplitList, SplitRead, UnknownCountError
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
 # operands swap, and whether they may be equal
@@ -31,11 +31,11 @@ class Splits:
         self.lists: dict[str, SplitList] = {}
         self.parts: dict[int, str] = {}
         self.counts: dict[str, Callable[[int], str]] = {}
-        # each count's c*, and each slice's length at it, by name; None where not known
-        self.values: dict[str, int | None] = {}
+        # each count's c*, each slice's length at it and each slice's start, by name, where the
+        # input's values give c*
+        self.values: dict[str, int] = {}
         self.emitted: list[str] = []
-        # the value the input holds for a part it names as it is, a split's string say, and a
-        # position's value in that input
+        # the value the input holds for a part it names as it is, a split's string say
         self.given: Callable[[Expression], object] = lambda part: None
         # whether a piece read from the end, where no walk of the reversed string reads it,
         # holds its string to c* pieces, and whether a read did
@@ -80,7 +80,8 @@ class Splits:
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count
         self.counts[listed.count] = listed.past
-        self.values[listed.count] = listed.read_count
+        if listed.read_count is not None:
+            self.values[listed.count] = listed.read_count
         return listed
 
     def _read_count(self, node: list[Expression], held: int | None) -> int | None:
@@ -129,8 +130,8 @@ class Splits:
         name = f"cut!{len(self.values)}!"
         self.counts[name] = lambda number: windows_past(listed.past, windows, number)
         self.cuts[name] = (listed, windows)
-        at = listed.read_count
-        self.values[name] = None if at is None else windowed(windows, at)
+        if listed.read_count is not None:
+            self.values[name] = windowed(windows, listed.read_count)
         return Lin.of(name)
 
     def read(self, listed: SplitList, position: Lin, kind: str) -> Read:
@@ -200,15 +201,14 @@ class Splits:
     def defined(self, lines: list[str]) -> list[str]:
         """Each count, each slice's length of one and each slice's start, that a line of the
         program reads as a term, as its c*: the number this run produced, worked out from the
-        input's values, or, where they do not give it, an Int of its own past zero."""
+        input's values. Core tracks a split's list only for a string the solver works out
+        (``str_splits.worked_out``), so a count read with no c* is a miss, never a guess."""
         text = "\n".join(lines)
         written: list[str] = []
-        for name, value in self.values.items():
-            if name not in text or name in self.emitted:
-                continue
-            self.emitted.append(name)
-            if value is None:
-                written += [f"(declare-const {name} Int)", f"(assert (>= {name} 0))"]
-            else:
-                written.append(f"(define-fun {name} () Int {value})")
+        for name in dict.fromkeys([*self.counts, *self.values]):
+            if name in text and name not in self.emitted:
+                if name not in self.values:
+                    raise UnknownCountError(f"no input count for {name}")
+                self.emitted.append(name)
+                written.append(f"(define-fun {name} () Int {self.values[name]})")
         return written

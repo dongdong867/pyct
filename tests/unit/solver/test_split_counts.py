@@ -18,6 +18,7 @@ from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Answer, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.declared import Program
+from pyct.solver.split_counts import input_value
 from tests.unit.solver.agreement import needs_cvc5
 from tests.unit.solver.test_render import fork
 
@@ -403,3 +404,38 @@ def test_a_piece_through_a_slice_held_to_c_star_is_asked_again_at_the_input_s_co
     assert isinstance(answer, Sat), answer
     pieces = str(apply(seed, answer.model).args["s"]).split(",")
     assert pieces[1] == "x" and pieces[3] == "z", pieces
+
+
+@pytest.mark.parametrize(
+    ("part", "length", "known"),
+    [
+        (["+", "s", "s"], 500_000, True),
+        (["+", "s", "s"], 500_001, False),
+        (["*", "s", 2], 500_000, True),
+        (["*", "s", 2], 500_001, False),
+    ],
+    ids=["a join of the longest", "a join past it", "a repeat of the longest", "a repeat past it"],
+)
+def test_a_string_is_worked_out_up_to_the_longest_value(
+    part: Expression, length: int, known: bool
+) -> None:
+    text = "a" * length
+
+    held = input_value(part, lambda named: text if named == "s" else None)
+
+    # a value past a million characters is not worked out: its count is then a miss
+    assert (held == text * 2) is known and (held is None) is not known
+
+
+class _Unbuilt(str):
+    """A string whose repeat fails the test: a repeat past the longest is never made."""
+
+    def __mul__(self, times: object) -> str:
+        raise AssertionError(f"a repeat by {times} was made")
+
+
+def test_a_repeat_past_the_longest_value_is_not_built() -> None:
+    text = _Unbuilt("ab")
+
+    # a repeat is measured before it is made
+    assert input_value(["*", "s", 500_001], lambda named: text if named == "s" else None) is None

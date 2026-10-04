@@ -46,6 +46,10 @@ from pyct.solver.splits import (
 MOST_WALKED_PAST = 16
 
 
+class UnknownCountError(ValueError):
+    """A program reads a split's count where the input's values give no c*: a miss."""
+
+
 @dataclass(frozen=True)
 class SplitRead:
     """A read of a split's piece: what it found, and whether it held the string to c* pieces."""

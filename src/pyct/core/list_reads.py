@@ -22,7 +22,7 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import PYCT_ROOT, Expression
+from pyct.core.branch import PYCT_DIR, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.str_splits import a_split_s_list
@@ -184,7 +184,7 @@ def _a_split_s_loop(self: ListState) -> bool:
     a join's walk, which pyct makes, keeps its forks, which its encoding reads."""
     if not a_split_s_list(self.expression):
         return False
-    return not sys._getframe(2).f_code.co_filename.startswith(PYCT_ROOT)
+    return not sys._getframe(2).f_code.co_filename.startswith(PYCT_DIR)
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

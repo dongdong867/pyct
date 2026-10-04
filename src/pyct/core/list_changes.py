@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.str_splits import built_from_a_split, kept_form
+from pyct.core.str_splits import a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import forked, own
 
 # one change, made the same way on the items and on the shadow
@@ -105,8 +105,9 @@ def added(value: list[object], name: str) -> tuple[Expression, frozenset[str]] |
     None for a list that holds a value no expression holds. A tracked list whose form no longer
     holds is read as the plain list it is, named by ``name``.
     """
-    if isinstance(value, ListState) and value.holds(name):
+    if isinstance(value, ListState) and value.holds(name) and not a_split_s_list(value.expression):
         return value.expression, value.kinds
+    # a split's list is taken in as origin/v2 takes in its plain list of pieces: a display
     items = list.copy(value)
     form = displayed(items, name)
     return None if form is UNWRITTEN else (form, kinds_of(items))
@@ -142,6 +143,11 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
     Python reads a non-list iterable once, so it is read into a list here and that list is
     what both the items and the form take in.
     """
+    if isinstance(values, ListState) and takes_another(self, values):
+        # as origin/v2's plain list of pieces takes in a tracked list: by Python's own walk
+        self.leave_the_split()
+        list.extend(self, values)
+        return
     taken, other = taken_in(values, name)
     change: Change = lambda items: list.extend(items, taken)  # noqa: E731
     if other is None or not self.holds(name):
@@ -149,6 +155,14 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
         return
     form, kinds = other
     made(self, change, joined(self.expression, form), kinds)
+
+
+def takes_another(self: ListState, values: ListState) -> bool:
+    """Whether a split's list takes in another tracked list that is not a split's list: on
+    origin/v2, a plain list of pieces taking in a tracked list."""
+    if not a_split_s_list(self.expression):
+        return False
+    return values.expression is not None and not built_from_a_split(values.expression)
 
 
 def insert(self: ListState, index: Any, value: object) -> None:

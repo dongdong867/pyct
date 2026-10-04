@@ -128,3 +128,47 @@ def of_an_unworked_string(s, n):
     if parts[0] == "end":
         return 2
     return 0
+
+
+def of_a_list_s_item(xs, n):
+    parts = xs[0].split(",")
+    if len(parts) < n:
+        return 1
+    if parts[0] == "stop":
+        return 2
+    return 0
+
+
+def last_line_of_a_list_s_item(xs):
+    lines = xs[0].splitlines()
+    if lines[-1] == "stop":
+        return 1
+    return 0
+
+
+def joined_after(s, xs):
+    parts = s.split(",") + xs
+    if len(parts) == 4:
+        return 1
+    return 0
+
+
+def joined_before(s, xs):
+    parts = xs + s.split(",")
+    if len(parts) > 3:
+        return 1
+    return 0
+
+
+def found_beside_a_loop(s):
+    lines = s.splitlines()
+    found = "END" in lines
+    total = 0
+    for line in lines:
+        if line == "x":
+            total += 1
+        elif line == "y":
+            total += 2
+    if found:
+        return 2
+    return total

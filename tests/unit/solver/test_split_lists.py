@@ -9,7 +9,7 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
-from pyct.solver.answer import Sat
+from pyct.solver.answer import Sat, Unknown
 from pyct.solver.cvc5 import solve
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
 from pyct.solver.lists import Origin
@@ -220,26 +220,25 @@ def test_a_count_a_compare_with_a_number_reads_is_not_declared() -> None:
     assert "count!" not in text
 
 
-@pytest.mark.parametrize(
-    ("values", "written"),
-    [
-        ({"s": "a,b,c", "n": 0}, ["(define-fun count!0! () Int 3)"]),
-        ({}, ["(declare-const count!0! Int)", "(assert (>= count!0! 0))"]),
-    ],
-    ids=["the input's count", "no input"],
-)
-def test_a_count_that_meets_a_tracked_int_is_c_star_with_no_tie(
-    values: dict[str, object], written: list[str]
-) -> None:
+def test_a_count_that_meets_a_tracked_int_is_c_star_with_no_tie() -> None:
     path = (fork(["==", ["len", SPLIT], "n"], taken=True),)
+    values = {"s": "a,b,c", "n": 0}
 
     text = program(path, {"s": str, "n": int}, Origin(values=values)).text.splitlines()
 
-    assert all(line in text for line in written), text
     assert [line for line in text if "count!0!" in line] == [
-        *written,
+        "(define-fun count!0! () Int 3)",
         "(assert (= count!0! |arg.n|))",
     ]
+
+
+@needs_cvc5
+def test_a_count_with_no_input_value_is_a_miss() -> None:
+    path = (fork(["==", ["len", SPLIT], "n"], taken=True),)
+
+    # core tracks a split's list only for a string the solver works out from the input's
+    # values; a program with none for it asks nothing
+    assert isinstance(solve(path, {"s": str, "n": int}, 10.0), Unknown)
 
 
 @needs_cvc5

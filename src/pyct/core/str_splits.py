@@ -75,9 +75,8 @@ WORKED_METHODS = frozenset(
 
 def a_split_s_list(form: object, depth: int = _DEEPEST) -> bool:
     """Whether a list's form is a split's list the solver writes exactly: a cut of one
-    (``_cut``), or one with a list display joined on either side; not a list joined with
-    another list, a repeat, one changed at a position, or one whose form nests past
-    ``depth``."""
+    (``_cut``), or one with a list display joined on either side, nested at most ``depth``
+    deep."""
     if not isinstance(form, list) or not form or depth == 0:
         return False
     if form[0] == "+" and len(form) == 3:
@@ -123,9 +122,11 @@ def kept_form(form: Expression) -> Expression:
 
 def worked_out(form: Expression, depth: int = _DEEPEST) -> bool:
     """Whether the solver works out the value a string's form has in the input from the input's
-    own values: an argument or a literal, or a slice with plain bounds, an index by a plain int,
-    a join, a repeat by a plain int, a split's piece or a `WORKED_METHODS` call with plain
-    operands, of parts worked out so."""
+    own values: a str argument or a literal, or a slice with plain bounds, a join, a repeat by
+    a plain int, a `WORKED_METHODS` call with plain operands, or an index by a plain int into
+    a string or a split's list that one of those calls made (`_made_by_a_call`), of parts worked
+    out so. Only what a call made is indexed: an argument indexed may be a list's item, whose
+    value the solver does not hold."""
     if not isinstance(form, list):
         return isinstance(form, str)
     if not form or depth == 0:
@@ -133,11 +134,27 @@ def worked_out(form: Expression, depth: int = _DEEPEST) -> bool:
     head, operands = form[0], form[1:]
     if head == "+" and len(operands) == 2:
         return all(worked_out(part, depth - 1) for part in operands)
+    if head == "[]" and not _made_by_a_call(operands[0], depth - 1):
+        return False
     if head in ("[:]", "[]", "*") and _plain_bounds(operands[1:]):
         return worked_out(operands[0], depth - 1)
     if head in WORKED_METHODS or head in LISTED_SPLITS:
         return worked_out(operands[0], depth - 1) and all(_plain(part) for part in operands[1:])
     return False
+
+
+def _made_by_a_call(form: Expression, depth: int) -> bool:
+    """Whether a part is a string or a split's list a `WORKED_METHODS` or split call made, or a
+    slice, a repeat, a character or a piece of one, or a join with one: a value no list
+    argument holds."""
+    if not isinstance(form, list) or not form or depth == 0:
+        return False
+    head, operands = form[0], form[1:]
+    if head in WORKED_METHODS or head in LISTED_SPLITS:
+        return True
+    if head == "+":
+        return any(_made_by_a_call(part, depth - 1) for part in operands)
+    return head in ("[:]", "[]", "*") and _made_by_a_call(operands[0], depth - 1)
 
 
 def _plain(part: Expression) -> bool:

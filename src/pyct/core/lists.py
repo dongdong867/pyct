@@ -91,8 +91,9 @@ def _item(self: ListState, key: object) -> object:
 
 
 def _found(self: ListState, value: object, name: str) -> list[int] | None:
-    """Where a search finds ``value``, or None when the list is plain and Python searches."""
-    if not self.holds(name):
+    """Where a search finds ``value``, or None when Python searches: a plain list, or a split's
+    list (``_python_s_search``)."""
+    if _python_s_search(self) or not self.holds(name):
         return None
     return compares.searched(self, value, name)
 
@@ -113,9 +114,16 @@ def _index(self: ListState, value: object, *bounds: object) -> object:
     return found[0] if found else own(list.index, [], value)
 
 
+def _python_s_search(self: ListState) -> bool:
+    """Whether a search of the list is Python's own: a split's list is searched as origin/v2
+    searches its plain list of pieces, each piece's compare recorded and no fork on how many
+    pieces there are, by the user's decision on review round 10, as the target's own loop."""
+    return str_splits.a_split_s_list(self.expression)
+
+
 def _count(self: ListState, value: object) -> int:
     """``items.count(x)``: every item compared with ``x``."""
-    if not self.holds("count"):
+    if _python_s_search(self) or not self.holds("count"):
         return own(list.count, self, value)
     return len(compares.searched(self, value, "count", every=True))
 
@@ -165,6 +173,14 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     """
     if not isinstance(other, list):
         return NotImplemented
+    if str_splits.a_split_s_list(self.expression) and isinstance(other, ListState):
+        # a split's list joined with another tracked list is that list's join with a plain list
+        # of the pieces, as origin/v2's plain list of pieces makes it, and two splits' lists
+        # joined are two plain lists joined
+        if str_splits.a_split_s_list(other.expression):
+            left, right = (other, self) if reflected else (self, other)
+            return list.copy(left) + list.copy(right)
+        return _joined(other, list.copy(self), name, reflected=not reflected)
     taken = changes.added(other, name) if self.holds(name) else None
     if taken is None:
         left, right = (other, self) if reflected else (self, other)
@@ -271,7 +287,11 @@ def _pickled(self: ListState, protocol: object) -> object:
     return (list, ([plain(item) for item in self.storage()],))
 
 
-def _iadd(self: ListState, values: object) -> ListState:
+def _iadd(self: ListState, values: object) -> object:
+    if isinstance(values, ListState) and changes.takes_another(self, values):
+        # origin/v2's plain list of pieces has no `__iadd__`, so Python hands `+=` to the
+        # tracked list's `__radd__`, a new tracked list
+        return _joined(values, list.copy(self), "__radd__", reflected=True)
     changes.extend(self, values, "__iadd__")
     return self
 

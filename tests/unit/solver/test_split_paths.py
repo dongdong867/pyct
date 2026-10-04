@@ -9,6 +9,7 @@ import pytest
 
 from pyct.core.branch import Expression
 from pyct.solver.split_counts import windowed, windows_past
+from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.split_paths import Splits
 from tests.unit.solver.test_render import fork
 
@@ -81,11 +82,13 @@ def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
     cut = splits.cut(listed, (slice(2, None, None),)).atoms[0][0]
 
     first = splits.defined([f"(> {listed.count} n)", f"(< {cut} 3)"])
-    again = splits.defined([f"(> {listed.count} n)", f"(= {other.count} 1)"])
+    again = splits.defined([f"(> {listed.count} n)"])
 
     assert first == [f"(define-fun {listed.count} () Int 12)", f"(define-fun {cut} () Int 10)"]
-    # t's value is not known: its count is a count no tie holds
-    assert again == [f"(declare-const {other.count} Int)", f"(assert (>= {other.count} 0))"]
+    assert again == []
+    # t's value is not known: a line that reads its count is a miss
+    with pytest.raises(UnknownCountError):
+        splits.defined([f"(= {other.count} 1)"])
 
 
 @pytest.mark.parametrize(
