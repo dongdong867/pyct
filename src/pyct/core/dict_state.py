@@ -34,6 +34,10 @@ type Change = tuple[Expression, object, bool, bool]
 # what ``found`` holds for any tracked key a fork found, which may equal any other key
 TRACKED = object()
 
+# the two counts of ``DictState.walk_clock``: the tracked changes and walks counted so far, and
+# the count at the latest walk of a dict holding a tracked change
+TICKS, LAST_WALK = 0, 1
+
 
 class DictState(dict):
     """The state a tracked dict keeps beside its items, and what every operation checks first.
@@ -144,7 +148,7 @@ class DictState(dict):
             stale=set(),
             popped=False,
             unfollowed=set(),
-            walk_clock=[0, -1],
+            walk_clock=[0, -1],  # TICKS, LAST_WALK: none yet, and no walk
             tracked_since=None,
         )
         fields["int_keyed"] = int_keyed
@@ -282,9 +286,9 @@ class DictState(dict):
         walks are not followed (see ``dict_reads.present``). A walk hands out the tracked key's
         own key, and a key Python shares is the very object a literal is, so no later lookup
         tells the two apart, and comparing them pins the tracked key. A caller that acts on it
-        marks the dict (``marked``)."""
+        marks the dict (``mark``)."""
         since = self.tracked_since
-        return since is not None and self.walk_clock[1] > since
+        return since is not None and self.walk_clock[LAST_WALK] > since
 
     def walk_started(self) -> bool:
         """Note a walk of the dict, and answer whether it is the first since a change under a
@@ -294,20 +298,20 @@ class DictState(dict):
         if since is None:
             return False
         clock = self.walk_clock
-        first = clock[1] < since
-        clock[0] += 1
-        clock[1] = clock[0]
+        first = clock[LAST_WALK] < since
+        clock[TICKS] += 1
+        clock[LAST_WALK] = clock[TICKS]
         if first:
-            self.marked()
+            self.mark()
         return first
 
     def changed_unforked(self) -> None:
         """Note a change pyct answered without a fork: from now on no lookup is decided, and
         the fewest keys count from what the dict knew before it."""
-        self.marked()
+        self.mark()
         self.__dict__["span"] = UNKNOWN
 
-    def marked(self) -> None:
+    def mark(self) -> None:
         """Mark the dict as one whose changes may touch any key on another input (see
         ``unforked``), with no change made: its range, which forks gave it, still holds."""
         if not self.unforked:
@@ -364,8 +368,8 @@ class DictState(dict):
             self.tracked_at.append(at)
             self.__dict__["tracked_changes"] += 1
             if self.tracked_since is None:
-                self.walk_clock[0] += 1
-                self.__dict__["tracked_since"] = self.walk_clock[0]
+                self.walk_clock[TICKS] += 1
+                self.__dict__["tracked_since"] = self.walk_clock[TICKS]
             if held or not stored:
                 self.stale.update(id(copied) for copied in self.copies.values())
                 self.copies.clear()

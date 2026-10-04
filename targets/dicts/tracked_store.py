@@ -230,3 +230,12 @@ def merged_after_store(n: str, d: dict):
     if ("bc", 0) in d.items():
         return hits
     return 0
+
+
+def merged_held(n: str, d: dict):
+    if len(d) == 1:
+        m = {n: 2} | d
+        if len(m) == 2:
+            return 2
+        return 1
+    return 0

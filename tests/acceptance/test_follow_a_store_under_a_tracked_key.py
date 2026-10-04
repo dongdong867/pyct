@@ -355,5 +355,28 @@ def test_a_merge_compares_no_tracked_key_with_its_own_stored_key() -> None:
     merge = line_of("merged_after_store", "{n: 2} | d")
     assert [fork for fork in listed(lines[0]) if fork[0] == merge] == [], listed(lines[0])
     # the flip of the seed's `'bc' in d`, an input without "bc", is found
-    held = [args_of(line)["d"] for line in solved(lines)]
-    assert any(isinstance(d, dict) and "bc" not in d for d in held), len(lines)
+    # the flip of the seed's own `'bc' in d`, an input without "bc", is answered and reached
+    flipped = next(at for at, fork in enumerate(listed(lines[0])) if fork[1] == ["in", "'bc'", "d"])
+    items = line_of("merged_after_store", '("bc", 0) in d.items()')
+    reached = [
+        args_of(line)["d"]
+        for line in solved(lines)
+        if aimed_at(line) == (items, flipped) and line["mismatch_at"] is None
+    ]
+    assert any(isinstance(d, dict) and "bc" not in d for d in reached), len(lines)
+
+
+def aimed_at(line: dict[str, object]) -> tuple[object, object] | None:
+    """The line and the position of the fork a solver line aimed at, None for the seed's."""
+    aim = line["aim"]
+    return None if not isinstance(aim, dict) else (aim["line"], aim["position"])
+
+
+# a merge with a tracked key equal to a key the argument holds: Python's own compare there is
+# the target's choice, recorded, so its other side is asked (review of PR #131, round 6)
+def test_a_merge_compares_a_tracked_key_with_the_argument_s_equal_key() -> None:
+    result = run_pyct(f"{MODULE}::merged_held", '{"n": "b", "d": {"b": 1}}', "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert return_line("merged_held", 2) in union_of(lines)[str(FILE)]

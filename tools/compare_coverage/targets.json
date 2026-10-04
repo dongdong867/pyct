@@ -138,6 +138,7 @@
     {"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::int_store", "seed": {"n": 0, "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::merged_after_store", "seed": {"n": "pyct1", "d": {"bc": 2}}},
+    {"set": "v2", "target": "targets.dicts.tracked_store::merged_held", "seed": {"n": "b", "d": {"b": 1}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::merged_in_place_named", "seed": {"n": "a", "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::merged_named", "seed": {"n": "a", "d": {}}},
     {"set": "v2", "target": "targets.dicts.tracked_store::missing_deleted", "seed": {"n": "z", "d": {"a": 1}}},

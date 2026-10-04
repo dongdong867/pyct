@@ -121,14 +121,28 @@ def _joined_key(self: DictState, made: DictState, key: object) -> None:
     if plain_key(looked):
         held = looked_up_to_change(self, looked, "__ror__")
     else:
-        bare = plain(key)
-        held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, bare)))
+        probe = as_its_store(self, key)
+        held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, probe)))
         # ``made`` holds a key no fork settles: marked, as a change without a fork marks
         made.changed_unforked()
         made.held_one()
     if not held:
         made.logged(plain(looked), (True, False))
         made.grew(1)
+
+
+def as_its_store(self: DictState, key: object) -> object:
+    """``key`` as Python's own merge or lookup meets it: its plain value where the dict holds
+    that value by a store under this very tracked key, the same key on every input, so the
+    compare Python would make there is always true and, recorded, would pin the tracked key to
+    this input's text; otherwise the key itself, whose compare with an equal key Python makes
+    and records, a choice another input may take the other way."""
+    if not is_tracked(key):
+        return key
+    bare = plain(key)
+    if self.changed.get(bare) is not True or stored_under(self, bare) != under(key):
+        return key
+    return bare
 
 
 def under(key: object) -> Expression:
@@ -393,11 +407,9 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
     keys looked up in the dict so the size is known, until a key the dict cannot follow turns
     it plain, and then the dict built from it too.
 
-    The dict built holds each key's plain value, as a store does: Python's own merge would
-    compare a tracked key of ``other`` with an equal key the dict holds, a key that tracked key
-    stored on this input, and that compare, recorded, would pin the tracked key to this
-    input's text."""
-    keys_as_held = {plain(key): held for key, held in dict.items(other)}
+    A tracked key of ``other`` whose own store put an equal key in the dict joins under its
+    plain value, so Python's merge records no compare that would pin it (``as_its_store``)."""
+    keys_as_held = {as_its_store(self, key): held for key, held in dict.items(other)}
     made = self.derived({**keys_as_held, **self.storage()})
     for key in other:
         if self.expression is None:
