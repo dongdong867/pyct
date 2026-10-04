@@ -240,3 +240,18 @@ def test_a_copy_changed_after_a_walk_of_the_other_dict_stays_followed() -> None:
     assert config.unfollowed_since_walk()
     assert "__setitem__" not in downgrades(sink)
     assert (["in", "other", "config"], False) in forks(sink)
+
+
+def test_a_lookup_after_the_walk_keeps_the_range_its_forks_gave() -> None:
+    config, sink = tracked({"b": 0, "c": 0})
+    name = ConcolicStr.made("", "name", sink)
+    config[name] = 0
+    for key in config:
+        assert key in config
+
+    # the lookup of name's own key "" is not followed, but changes nothing: the range the
+    # walk's forks gave still decides a second walk
+    assert config.measured() == (3, 3)
+    asked = len(forks(sink))
+    list(config)
+    assert forks(sink)[asked:] == []

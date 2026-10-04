@@ -143,7 +143,7 @@ def present(
     if proven(self, key):
         return held
     if self.unfollowed_since_walk():
-        self.changed_unforked()
+        self.marked()
         return _looked_up_unfollowed(self, key, held, (name, raising))
     written = written_key(key)
     if written is None or (is_tracked(key) and self.changed and not changing):

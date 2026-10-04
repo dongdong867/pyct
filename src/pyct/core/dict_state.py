@@ -282,7 +282,7 @@ class DictState(dict):
         walks are not followed (see ``dict_reads.present``). A walk hands out the tracked key's
         own key, and a key Python shares is the very object a literal is, so no later lookup
         tells the two apart, and comparing them pins the tracked key. A caller that acts on it
-        marks the dict (``changed_unforked``)."""
+        marks the dict (``marked``)."""
         since = self.tracked_since
         return since is not None and self.walk_clock[1] > since
 
@@ -298,16 +298,21 @@ class DictState(dict):
         clock[0] += 1
         clock[1] = clock[0]
         if first:
-            self.changed_unforked()
+            self.marked()
         return first
 
     def changed_unforked(self) -> None:
         """Note a change pyct answered without a fork: from now on no lookup is decided, and
         the fewest keys count from what the dict knew before it."""
+        self.marked()
+        self.__dict__["span"] = UNKNOWN
+
+    def marked(self) -> None:
+        """Mark the dict as one whose changes may touch any key on another input (see
+        ``unforked``), with no change made: its range, which forks gave it, still holds."""
         if not self.unforked:
             self.__dict__["floor"] = self.fewest()
             self.__dict__["unforked"] = True
-        self.__dict__["span"] = UNKNOWN
 
     def held_one(self) -> None:
         """Note that a change left a key in the dict, whichever key it is on another input."""
