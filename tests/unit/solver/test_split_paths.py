@@ -4,10 +4,12 @@ through plain arithmetic narrow, and each count a line reads, written as its c*.
 
 import random
 import re
+from dataclasses import replace
 
 import pytest
 
 from pyct.core.branch import Expression
+from pyct.solver.list_terms import Lin
 from pyct.solver.split_counts import windowed, windows_past
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.split_paths import Splits
@@ -180,3 +182,25 @@ def _holds(condition: str, count: int) -> bool:
 def _apply(head: str, values: list[str]) -> bool:
     truths = [value == "True" for value in values]
     return all(truths) if head == "and" else any(truths) if head == "or" else not truths[0]
+
+
+def test_a_slice_from_the_end_of_a_split_with_no_input_count_is_a_miss() -> None:
+    splits = Splits()
+    unknown = splits.made(["split", "t", "','"], "t")
+
+    # where c* puts the slice's start is not known: never a guess
+    with pytest.raises(UnknownCountError):
+        splits.sliced(Lin.of(unknown.count), [-2, None])
+
+
+def test_a_read_through_a_slice_whose_split_lost_its_input_count_is_a_miss() -> None:
+    splits = Splits()
+    splits.given = lambda part: TWELVE if part == "s" else None
+    listed = splits.made(PARTS, "s")
+    start, _ = splits.sliced(Lin.of(listed.count), [-2, None])
+    lost = replace(listed, read_count=None, input_count=None)
+
+    with pytest.raises(UnknownCountError):
+        splits.read(lost, start, "str")
+    with pytest.raises(UnknownCountError):
+        lost.held_at(0)

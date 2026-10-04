@@ -378,3 +378,15 @@ def test_a_split_s_list_takes_another_tracked_list_that_is_no_split_s(
     assert takes_another(parts, others) is taken
     # a list that is no split's takes nothing in as a split's list does
     assert takes_another(others, parts) is False
+
+
+def test_a_split_s_list_holding_an_unwritten_item_takes_another_list_in_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    list.append(parts, object())
+    alias, (others, _) = parts, tracked(["x"])
+
+    parts += others
+
+    # no display holds the item: the list is Python's own, the change made in place
+    assert parts is alias and parts.expression is None and list.__len__(parts) == 6
