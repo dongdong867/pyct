@@ -165,7 +165,7 @@ class _Program:
         # define what they write once in the program's own definitions
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
-        lists.constant = self._constant
+        lists.constant, lists.hold = self._constant, self._hold
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)

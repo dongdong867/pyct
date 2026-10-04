@@ -319,3 +319,16 @@ def test_a_last_line_of_a_string_past_the_longest_worked_out_is_a_miss() -> None
 
     # its input count is not worked out past a million characters: the flip is a miss
     assert isinstance(solve(path, seed.leaves, 10.0, seed.lists, seed.values), Unknown)
+
+
+def test_a_piece_is_held_there_before_the_facts_about_what_it_becomes() -> None:
+    # cvc5 ran to its limit on a piece converted to an int when the fact about the int came
+    # before the assertion that the piece is there, and answered at once the other way round
+    piece: Expression = ["[]", SPLIT, 1]
+    path = (fork(["isint", piece], taken=True), fork(["<", ["int", piece], 0], taken=True))
+    there = SplitList("|arg.s|", "split", (",",), COUNT).at(1).guard
+
+    text = program(path, {"s": str}, Origin(values={"s": "a,1"})).text.splitlines()
+
+    fact = next(at for at, line in enumerate(text) if line.startswith("(assert (let ((d!"))
+    assert text.index(f"(assert {there})") < fact, "\n".join(text)

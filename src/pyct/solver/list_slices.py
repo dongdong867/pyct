@@ -28,14 +28,15 @@ class Slices:
     named term takes on the path.
 
     ``named`` is render's term of a part, ``constant`` a leaf's constant or None for any other
-    part, ``definitions`` render's own list, and ``positions`` each tracked position or bound,
-    whose value the answer reads.
+    part, ``definitions`` render's own list, ``hold`` asserts a fact among them where it is
+    written, and ``positions`` each tracked position or bound, whose value the answer reads.
     """
 
     def __init__(self) -> None:
         self.named: Callable[[Expression], str] = str
         self.constant: Callable[[Expression], str | None] = lambda part: None
         self.definitions: list[str] = []
+        self.hold: Callable[[str], None] = lambda fact: self.definitions.append(f"(assert {fact})")
         self.least: dict[str, int] = {}
         # each named term's value in the input whose path this is, where it is known, whether
         # clamps go the way they went there, and what that asserts
