@@ -23,11 +23,11 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import PYCT_DIR, Expression
+from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.spans import UNKNOWN, decided
-from pyct.core.str_splits import a_split_s_list
+from pyct.core.str_splits import JOIN_WALKS, a_split_s_list
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked
 
@@ -191,13 +191,12 @@ def backward(self: ListState) -> Iterator[object]:
 
 
 def _a_split_s_loop(self: ListState) -> bool:
-    """Whether the target's own code, not pyct's, walks a split's list: a loop, a
-    comprehension, an unpacking or a builtin the target calls on it. Such a walk records no
-    "is there another piece" fork, as on origin/v2, by the user's decision in review round 9;
-    a join's walk, which pyct makes, keeps its forks, which its encoding reads."""
-    if not a_split_s_list(self.expression):
-        return False
-    return not sys._getframe(2).f_code.co_filename.startswith(PYCT_DIR)
+    """Whether a walk of a split's list is Python's own: any walk but a join's
+    (``str_splits.JOIN_WALKS``), a loop, a comprehension, an unpacking, or a builtin the target
+    calls on it, ``map`` included. It records no "is there another piece" fork, as on
+    origin/v2, by the user's decision (split-a-target-s-own-walk-records-no-piece-fork); a
+    join's walk keeps its forks, which its encoding reads."""
+    return a_split_s_list(self.expression) and not JOIN_WALKS.get()
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

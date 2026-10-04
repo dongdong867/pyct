@@ -28,7 +28,7 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.spans import Span
+from pyct.core.spans import Span, exactly
 from pyct.core.str_splits import a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
 
@@ -190,6 +190,17 @@ def takes_another(self: ListState, values: ListState) -> bool:
     if not a_split_s_list(self.expression):
         return False
     return values.expression is not None and not built_from_a_split(values.expression)
+
+
+def shown(self: ListState, name: str) -> None:
+    """A split's list read from here on as origin/v2's plain list of pieces: a display of its
+    pieces, each piece's form, or Python's own list where a display is not written."""
+    form = displayed(list.copy(self), name)
+    if form is UNWRITTEN:
+        self.leave_the_split()
+        return
+    self.__dict__["expression"] = form
+    self.resized(exactly(list.__len__(self)))
 
 
 def insert(self: ListState, index: Any, value: object) -> None:

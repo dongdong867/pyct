@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.str_operands import literal, plain, within_cvc5
+from pyct.core.str_splits import JOIN_WALKS
 from pyct.core.values import BASES, downgraded, own
 
 if TYPE_CHECKING:
@@ -48,11 +49,14 @@ def joined(separator: str, iterable: object, tracked: type[ConcolicStr]) -> obje
     separator or an item, is str's own answer and a downgrade named `join`
     (``README.md › Rules › string encodings``).
     """
+    walking = JOIN_WALKS.set(True)
     try:
         iterator = own(iter, iterable)
     except TypeError:
         # Python's join makes any TypeError `iter` raises its own refusal, and calls `iter` once
         return own(str.join, plain(separator), None)
+    finally:
+        JOIN_WALKS.reset(walking)
     form = _form(iterable)
     items: list[object] = own(list, iterator)
     answer = _answer(plain(separator), items)

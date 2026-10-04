@@ -93,3 +93,17 @@ def test_searches_a_split_as_python_does() -> None:
     assert at_search == [(searched, ["==", piece(at), "'END'"], False) for at in range(20)]
     reached = [args_of(each) for each in solved(lines) if covers(each, found + 1)]
     assert any("END" in str(args["s"]).splitlines() for args in reached), lines
+
+
+# follow-the-length-of-a-split-walks-a-split-as-python-does: a `map` over a split's list walks
+# it as Python does, as the target's own loop does, so no fork reads how many pieces there are
+def test_maps_a_split_as_python_does() -> None:
+    result = run_pyct(f"{LENGTHS}::mapped_pieces", '{"s": "1,2"}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    mapped = line_of('numbers = list(map(int, s.split(",")))')
+    at_map = [fork[1] for fork in listed(lines[0]) if fork[0] == mapped]
+    assert at_map == [["isint", ["[]", SPLIT, at]] for at in range(2)], lines[0]
+    reached = [args_of(each) for each in solved(lines) if covers(each, line_of('return "seven"'))]
+    assert any(int(str(args["s"]).split(",")[0]) == 7 for args in reached), lines

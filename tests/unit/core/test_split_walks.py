@@ -1,6 +1,7 @@
-"""A split's list in core: the target's loop over it records no fork, as on origin/v2, while a
-join's walk does; the list stays tracked only while the solver writes it exactly, and is
-Python's own after any other change, as on origin/v2; and the strings the solver works out."""
+"""A split's list in core: the target's loop over it, a `map` of it and a search of it record no
+fork on how many pieces there are, as on origin/v2, while a join's walk does; the list stays
+tracked only while the solver writes it exactly, and is Python's own after any other change,
+as on origin/v2; and the strings the solver works out."""
 
 import os
 from typing import Any
@@ -10,6 +11,7 @@ import pytest
 from pyct.core import substitutes
 from pyct.core.branch import PYCT_ROOT, Branch, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.list_changes import takes_another
 from pyct.core.str_splits import a_split_s_list, worked_out
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_list_reads import tracked
@@ -40,8 +42,8 @@ def test_the_target_s_loop_over_a_split_s_list_records_no_fork(loop: Any) -> Non
 
     walked = loop(parts)
 
-    # each piece keeps its condition, and no "is there another piece" fork is recorded, by the
-    # user's decision in review round 9; sorted's compares of the pieces are Python's own
+    # each piece keeps its condition, and no "is there another piece" fork is recorded
+    # (split-a-target-s-own-walk-records-no-piece-fork); sorted's compares are Python's own
     heads = [part[0] for part in _walks(sink) if isinstance(part, list)]
     assert len([*walked]) in (2, 3) and ">" not in heads, sink
 
@@ -321,11 +323,11 @@ def test_a_tracked_list_added_to_a_split_s_list_joins_onto_its_pieces() -> None:
 
     parts += others
 
-    # origin/v2's plain list has no `+=`, so Python hands it to the tracked list's `__radd__`:
-    # a new list, a display of the pieces joined with the other list
+    # the form origin/v2 gives a plain list of pieces after `+=`, a display of the pieces joined
+    # with the other list, on the same list, so an alias sees the change as Python's does
     pieces: Expression = ["[,]", *(_piece(at) for at in range(4))]
-    assert parts.expression == ["+", pieces, "items"] and parts is not alias
-    assert list.__len__(alias) == 4
+    assert parts is alias and parts.expression == ["+", pieces, "items"]
+    assert list.__len__(alias) == 5 and sink == []
 
 
 @pytest.mark.parametrize(
@@ -347,8 +349,32 @@ def test_a_search_of_a_split_s_list_compares_its_pieces_as_python_does(
 
     found = search(parts)
 
-    # as origin/v2 searches its plain list of pieces, by the user's decision on review round 10:
-    # each piece's compare, and no fork on how many pieces there are
+    # as origin/v2 searches its plain list of pieces: each piece's compare, and no fork on how
+    # many pieces there are
     assert found == answer
     assert _walks(sink) == [["==", _piece(at), value] for at, value in enumerate(compared)], sink
     assert parts.expression == SPLIT
+
+
+@pytest.mark.parametrize(
+    ("form", "taken"),
+    [
+        ("items", True),
+        (["[:]", "items", 1, None], True),
+        (None, False),
+        (["split", "t", "';'"], False),
+        (["[:]", ["split", "t", "';'"], 1, None], False),
+    ],
+    ids=["an argument", "a slice of one", "a plain list", "another split", "a slice of that"],
+)
+def test_a_split_s_list_takes_another_tracked_list_that_is_no_split_s(
+    form: Expression, taken: bool
+) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    others, _ = tracked(["x"])
+    others.__dict__["expression"] = form
+
+    assert takes_another(parts, others) is taken
+    # a list that is no split's takes nothing in as a split's list does
+    assert takes_another(others, parts) is False

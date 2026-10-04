@@ -55,10 +55,9 @@ def program_text(
     counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
-    # a leaf named in none of these lines, and in no definition they name, in turn, keeps the
+    # a leaf named in none of these lines, nor in what `_read` follows from them, keeps the
     # input's value: a split's count asked as c* names its string in the path, but not in
-    # these lines, as origin/v2's plain count never named it. An assertion among the
-    # definitions is not followed: it holds on every input that took the path this far
+    # these lines, as origin/v2's plain count never named it
     read = _read(body.definitions, [*counts, *bounds, *asserted, *forks])
     lines += [f"(get-value ({constant}))" for constant, _ in declared if constant in read]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]
@@ -66,9 +65,23 @@ def program_text(
 
 
 def _read(definitions: list[str], lines: list[str]) -> str:
-    """The lines, and each definition they name, and each one that names, in turn: the text a
-    leaf is read in. A definition is named by a symbol with no space in it."""
+    """The lines, each definition they name, and each assertion among the definitions that
+    names a constant a definition declares, in turn: the text a leaf is read in. A letter read
+    of a spelled string, say, names its letter's constant, and the assertion that spells the
+    string names the string. An assertion that names no such constant, a split's piece held
+    there say, is not followed: it holds on every input that took the path this far. A
+    definition is named by a symbol with no space in it."""
     defined = {definition.split()[1]: definition for definition in definitions}
+    declared = {
+        definition.split()[1]
+        for definition in definitions
+        if definition.startswith(("(declare-const ", "(define-fun "))
+    }
+    held: dict[str, list[str]] = {}
+    for line in definitions:
+        if line.startswith("(assert "):
+            for symbol in set(_SYMBOL.findall(line)) & declared:
+                held.setdefault(symbol, []).append(line)
     reached: list[str] = []
     seen: set[str] = set()
     pending = list(lines)
@@ -78,5 +91,5 @@ def _read(definitions: list[str], lines: list[str]) -> str:
         for symbol in _SYMBOL.findall(line):
             if symbol in defined and symbol not in seen:
                 seen.add(symbol)
-                pending.append(defined[symbol])
+                pending += [defined[symbol], *held.get(symbol, [])]
     return "\n".join(reached)

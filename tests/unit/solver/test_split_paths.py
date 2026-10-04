@@ -74,6 +74,21 @@ def test_a_read_from_the_end_is_put_at_the_count_the_forks_allow_nearest_the_inp
     assert listed.read_count == count
 
 
+def test_each_cut_has_a_name_of_its_own_beside_a_split_with_no_input_count() -> None:
+    splits = Splits()
+    splits.given = lambda part: TWELVE if part == "s" else None
+    listed = splits.made(PARTS, "s")
+    unknown = splits.made(["split", "t", "','"], "t")
+    unknown_cut = splits.cut(unknown, (slice(2, None, None),)).atoms[0][0]
+    cut = splits.cut(listed, (slice(2, None, None),)).atoms[0][0]
+
+    # a cut of a split with no c* names nothing another cut's c* stands for
+    assert cut != unknown_cut
+    assert splits.defined([f"(< {cut} 3)"]) == [f"(define-fun {cut} () Int 10)"]
+    with pytest.raises(UnknownCountError):
+        splits.defined([f"(< {unknown_cut} 3)"])
+
+
 def test_each_count_a_line_reads_is_written_once_as_its_c_star() -> None:
     splits = Splits()
     splits.given = lambda part: TWELVE if part == "s" else None

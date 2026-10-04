@@ -116,7 +116,7 @@ def test_searches_the_pieces_as_a_list() -> None:
     lines = input_lines(result.stdout)
     at = line_of('if "b" in s.split(","):')
     # as origin/v2 searches its plain list of pieces: each piece's compare, and no fork on how
-    # many pieces there are, by the user's decision on review round 10
+    # many pieces there are (split-a-target-s-own-walk-records-no-piece-fork)
     assert [fork for fork in listed(lines[0]) if fork[0] == at] == [
         (at, ["==", ["[]", SPLIT, 0], "'b'"], False),
     ]

@@ -172,3 +172,10 @@ def found_beside_a_loop(s):
     if found:
         return 2
     return total
+
+
+def mapped_pieces(s):
+    numbers = list(map(int, s.split(",")))
+    if numbers[0] == 7:
+        return "seven"
+    return 0

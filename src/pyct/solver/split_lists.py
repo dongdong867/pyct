@@ -182,7 +182,9 @@ class SplitList:
     def held_at(self, index: int) -> SplitRead:
         """Piece ``index`` from the start on a string held to c* pieces; none past them."""
         count = self.read_count
-        assert count is not None and 0 <= index < count
+        if count is None:
+            raise UnknownCountError(f"no input count for {self.count}")
+        assert 0 <= index < count
         # by the walks the piece is read with: past 16 pieces, a count by membership beside
         # the walk ran past the limit where these answered in 1.4 to 2.9 s
         exact = both(self._there(count - 1), negated(self._there(count)))
@@ -206,7 +208,8 @@ class SplitList:
         if walked is not None:
             return SplitRead(Read(walked, both(self._there(back), self.restriction())))
         count, own = self.read_count, self.input_count
-        assert count is not None and own is not None
+        if count is None or own is None:
+            raise UnknownCountError(f"no input count for {self.count}")
         if self.fixed and back < count:
             return self.held_at(count - 1 - back)
         return SplitRead(self.at(own - 1 - back))

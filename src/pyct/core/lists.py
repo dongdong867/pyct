@@ -126,7 +126,7 @@ def _index(self: ListState, value: object, *bounds: object) -> object:
 def _python_s_search(self: ListState) -> bool:
     """Whether a search of the list is Python's own: a split's list is searched as origin/v2
     searches its plain list of pieces, each piece's compare recorded and no fork on how many
-    pieces there are, by the user's decision on review round 10, as the target's own loop."""
+    pieces there are, as the target's own loop (split-a-target-s-own-walk-records-no-piece-fork)."""
     return str_splits.a_split_s_list(self.expression)
 
 
@@ -304,11 +304,12 @@ def _pickled(self: ListState, protocol: object) -> object:
     return (list, ([plain(item) for item in self.storage()],))
 
 
-def _iadd(self: ListState, values: object) -> object:
+def _iadd(self: ListState, values: object) -> ListState:
     if isinstance(values, ListState) and changes.takes_another(self, values):
-        # origin/v2's plain list of pieces has no `__iadd__`, so Python hands `+=` to the
-        # tracked list's `__radd__`, a new tracked list
-        return _joined(values, list.copy(self), "__radd__", reflected=True)
+        # origin/v2's plain list of pieces takes in a tracked list by `+=` as a display of the
+        # pieces joined with that list's form; here the change is made in place, as Python's
+        # `+=` makes it, so an alias of the list sees it
+        changes.shown(self, "__iadd__")
     changes.extend(self, values, "__iadd__")
     return self
 

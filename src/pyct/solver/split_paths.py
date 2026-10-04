@@ -117,8 +117,10 @@ class Splits:
             return length.minus(Lin(1)), cut_length
         if step != -1 and (start is None or start >= 0):
             return Lin(start or 0), cut_length
-        assert not windows and listed.read_count is not None
-        name = f"start!{len(self.values)}!"
+        assert not windows
+        if listed.read_count is None:
+            raise UnknownCountError(f"no input count for {listed.count}")
+        name = f"start!{len(self.starts)}!"
         self.starts[name] = (listed, window)
         self.values[name] = window.indices(listed.read_count)[0]
         return Lin.of(name), cut_length
@@ -127,7 +129,7 @@ class Splits:
         """The length of a list cut from a split's by slices with plain bounds, one after
         another, as a name of its own that a compare with a number reads as whether a piece is
         there, exact on every string."""
-        name = f"cut!{len(self.values)}!"
+        name = f"cut!{len(self.cuts)}!"
         self.counts[name] = lambda number: windows_past(listed.past, windows, number)
         self.cuts[name] = (listed, windows)
         if listed.read_count is not None:
@@ -151,7 +153,8 @@ class Splits:
         if start is None:
             return None
         window, count, own = start[1], listed.read_count, listed.input_count
-        assert count is not None and own is not None
+        if count is None or own is None:
+            raise UnknownCountError(f"no input count for {listed.count}")
         if self.fixed_reads:
             return listed.held_at(window.indices(count)[0] + position.const)
         return SplitRead(listed.at(window.indices(own)[0] + position.const))

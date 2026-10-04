@@ -12,6 +12,7 @@ in a form pyct does not encode is str's own answer and a downgrade named by the 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
+from contextvars import ContextVar
 from typing import Protocol
 
 from pyct.core.branch import BranchSink, Expression
@@ -71,6 +72,12 @@ WORKED_METHODS = frozenset(
         *("center", "ljust", "rjust", "zfill", "expandtabs"),
     }
 )
+
+
+# whether a join is walking the list it joins: the only walk of a split's list that records the
+# "is there another piece" forks, which the join's encoding reads (`str_joins.joined`); every
+# other walk, the target's own or one pyct makes for it, a `map` say, is Python's, as on v2
+JOIN_WALKS: ContextVar[bool] = ContextVar("join_walks", default=False)
 
 
 def a_split_s_list(form: object, depth: int = _DEEPEST) -> bool:

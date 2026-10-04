@@ -602,6 +602,8 @@
     {"set": "v2", "target": "targets.strs.split_lengths::last_line_of_a_list_s_item", "seed": {"xs": ["a\nb"]}},
     {"set": "v2", "target": "targets.strs.split_lengths::joined_after", "seed": {"s": "a,b", "xs": ["x"]}},
     {"set": "v2", "target": "targets.strs.split_lengths::joined_before", "seed": {"s": "a,b", "xs": ["x"]}},
+    {"set": "v2", "target": "targets.strs.split_lengths::found_beside_a_loop", "seed": {"s": "a\na\na"}},
+    {"set": "v2", "target": "targets.strs.split_lengths::mapped_pieces", "seed": {"s": "1,2"}},
     {"set": "v2", "target": "targets.strs.text_conversion::show", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.text_of_values::int_text", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}},

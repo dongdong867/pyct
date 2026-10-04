@@ -14,7 +14,7 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
-from pyct.solver.split_lists import SplitList
+from pyct.solver.split_lists import SplitList, UnknownCountError
 from pyct.solver.split_paths import Splits
 from pyct.solver.splits import named_classes, right_piece
 from pyct.solver.strings import encode
@@ -301,3 +301,21 @@ def _written(operand: object) -> Expression:
         return repr(operand)
     assert operand is None or isinstance(operand, int)
     return operand
+
+
+def test_a_piece_from_the_end_with_no_input_count_is_a_miss() -> None:
+    listed = SplitList(term="|s|", head="splitlines", operands=(), count="count!0!")
+
+    # no walk of the reversed string reads a line, and no count holds it: never a guess
+    with pytest.raises(UnknownCountError):
+        listed.read(Lin.of("count!0!").minus(Lin(1)), "str")
+
+
+@needs_cvc5
+def test_a_last_line_of_a_string_past_the_longest_worked_out_is_a_miss() -> None:
+    lines: Expression = ["splitlines", ["+", "s", "s"]]
+    path = (fork(["==", ["[]", lines, -1], "'x'"], taken=True),)
+    seed = Seed.of({"s": "a" * 600_001})
+
+    # its input count is not worked out past a million characters: the flip is a miss
+    assert isinstance(solve(path, seed.leaves, 10.0, seed.lists, seed.values), Unknown)
