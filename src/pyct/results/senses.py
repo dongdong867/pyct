@@ -8,14 +8,25 @@ where the code cannot say, the forks recorded at its site:
 
 - an `in` in the `in` sense, unless every membership fork recorded there
   is a `not in`, which pyct records for a `not` it folds: then in that sense;
-- an `is` with no fork recorded there in the `is` sense;
-- an `is` against a True or False the code loads, where a fork was
-  recorded, in the sense of that fork, its operand's truth: ``x is True``
-  holds when the operand does, ``x is False`` when it does not;
-- any other `is`, as against a name bound to bools, as the inputs show it:
-  each input that recorded one side of a fork there, and covered a line only
-  one of the test's sides leads to, says whether the two agree. With none,
-  or inputs that disagree, in the `is` sense.
+- an `is` with forks of its own, the forks it recorded as it tested its
+  operand (``Branch.is_held``), per fork: a fork agrees with its test when
+  the `is` held exactly when the fork took the side it recorded. Every fork
+  agreeing reads in the forks' sense, every one disagreeing the other way,
+  and forks that disagree among themselves in the `is` sense. Another chain
+  link's forks at the site, and a decided check, are not the test's own. A
+  chain whose link before its last is an `in` or `is` shares one site among
+  links that may each fork, so every `is` there reads as with no fork of its
+  own;
+- an `is` with no fork of its own, and nothing recorded there, in the `is`
+  sense;
+- an `is` with no fork of its own against a True or False the code loads,
+  where something was recorded, in the sense of what was recorded, its
+  operand's truth: ``x is True`` holds when the operand does, ``x is False``
+  when it does not;
+- any other `is` with no fork of its own, as the inputs show it: each input
+  that recorded one side there, and covered a line only one of the test's
+  sides leads to, says whether the two agree. With none, or inputs that
+  disagree, in the `is` sense.
 """
 
 from __future__ import annotations
@@ -33,31 +44,64 @@ type At = tuple[int, int]
 type Seen = tuple[frozenset[int], tuple[Fork, ...]]
 # a test's two sides: each node and its step
 type Sides = list[tuple[int, Step]]
+# for each site an `is` test recorded forks of its own at, whether each agreed with the `is`
+type Own = Mapping[At, frozenset[bool]]
 
 # the heads a membership test's forks carry: its own, and an element search's
 _MEMBERSHIP = frozenset({"in", "not in", "=="})
 
 
 def against_the_forks(
-    flow: Flow, heads: Mapping[At, frozenset[str]], seen: list[Seen]
+    flow: Flow, heads: Mapping[At, frozenset[str]], seen: list[Seen], own: Own
 ) -> list[int]:
     """The side nodes of every `in` and `is` test whose sides read the other way from its value.
 
-    ``heads`` holds the operator of each fork recorded at each site. Each test
-    is decided on its own, so two links of one chain at one site keep theirs.
+    ``heads`` holds the operator of each fork recorded at each site, and
+    ``own`` whether each fork an `is` test recorded of its own agreed with it
+    (`agreements_of`). Each test is decided on its own, so two links of one
+    chain at one site keep theirs.
     """
     tests: dict[tuple[At, Reads], Sides] = {}
+    chains: set[At] = set()
     for node, step in flow.pace.each(flow.sides().items()):
         if step.reads is not None:
             tests.setdefault(((step.line, step.col), step.reads), []).append((node, step))
-    # the inputs are asked only of an `is` against a name, and read only at those tests' sites
-    named = {site for site, reads in tests if _asks_inputs(reads, heads.get(site, frozenset()))}
+            if step.reads.chained:
+                chains.add((step.line, step.col))
+    # a chain's links share its site, so where one link before the last is an `in` or `is`, no
+    # `is` link can tell its own forks from another's, and each reads as with none
+    per_fork = {site: agreed for site, agreed in own.items() if site not in chains}
+    # the inputs are asked only of an `is` against a name read with no fork of its own, and
+    # read only at those tests' sites
+    named = {
+        site
+        for site, reads in tests
+        if site not in per_fork and _asks_inputs(reads, heads.get(site, frozenset()))
+    }
     shown = _Shown(flow, seen, frozenset(named))
     swapped: list[int] = []
     for (site, reads), sides in flow.pace.each(tests.items()):
-        if _other_way(reads, heads.get(site, frozenset()), shown, site, sides):
+        agreed = per_fork.get(site, frozenset()) if reads.name == "IS_OP" else frozenset()
+        if agreed:
+            other_way = _per_fork(reads, agreed)
+        else:
+            other_way = _other_way(reads, heads.get(site, frozenset()), shown, site, sides)
+        if other_way:
             swapped.extend(node for node, _ in sides)
     return swapped
+
+
+def _per_fork(reads: Reads, agreed: frozenset[bool]) -> bool:
+    """Whether an `is` test with forks of its own reads the other way from its value.
+
+    Its value is the `is` for an `is` and the other way for an `is not`; its
+    forks' sense is the `is` when they agree with it and the other way when
+    they do not, and the `is` when they disagree among themselves.
+    """
+    if len(agreed) != 1:
+        return reads.negated
+    (agrees,) = agreed
+    return reads.negated == agrees
 
 
 def _other_way(reads: Reads, heads: frozenset[str], shown: _Shown, site: At, sides: Sides) -> bool:
@@ -119,6 +163,18 @@ def _taken_at(forks: Iterable[Fork], sites: frozenset[At], pace: Pace) -> dict[A
         if not raising and (line, col) in sites:
             found.setdefault((line, col), set()).add(taken)
     return found
+
+
+def agreements_of(notes: Iterable[tuple[At, bool, bool]]) -> dict[At, frozenset[bool]]:
+    """Whether each fork an `is` test recorded of its own agreed with it, by site.
+
+    Each note is a fork's site, the side it took and whether its `is` held:
+    the fork agrees when the `is` held exactly when it took that side.
+    """
+    found: dict[At, set[bool]] = {}
+    for site, taken, held in notes:
+        found.setdefault(site, set()).add(taken is held)
+    return {site: frozenset(each) for site, each in found.items()}
 
 
 def heads_of(forks: Iterable[tuple[At, object]]) -> dict[At, frozenset[str]]:

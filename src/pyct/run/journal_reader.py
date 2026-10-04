@@ -286,10 +286,12 @@ class _Facts:
                 int() as line,
                 int() as col,
                 bool() as raising,
-            ]:
+                *note,
+            ] if len(note) <= 1 and all(type(each) is bool for each in note):
                 site = self._site(file, line, col)
-                return Branch(self._expression(expression), taken, site, raising=raising)
-        raise ValueError("a fork is [expression, taken, file, line, col, raising]")
+                held = note[0] if note else None
+                return Branch(self._expression(expression), taken, site, raising, is_held=held)
+        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its note")
 
     def _fact(self, value: object) -> Fact:
         """A fact, placed after every fork record read before it."""

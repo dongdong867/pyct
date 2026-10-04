@@ -276,5 +276,6 @@
 {"set": "v2", "target": "targets.types.through::walk", "seed": {"n": 1}, "status": "differs", "only_legacy": [], "only_v2": [337, 338, 339]}
 {"set": "v2", "target": "targets.types.through::wrong", "seed": {"n": 3, "d": {"k": 1}}, "status": "differs", "only_legacy": [368], "only_v2": [367]}
 {"set": "v2", "target": "targets.types.views::guarded", "seed": {"d": {"k": 1}}, "status": "differs", "only_legacy": [], "only_v2": [28]}
+{"set": "v2", "target": "targets.why.named::is_not_false_flag", "seed": {"x": 0}, "status": "differs", "only_legacy": [27], "only_v2": []}
 {"set": "v2", "target": "targets.why.negated::while_is_not_true", "seed": {"x": 0}, "status": "differs", "only_legacy": [105], "only_v2": [103, 106]}
 {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}

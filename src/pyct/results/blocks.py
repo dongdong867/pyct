@@ -75,12 +75,15 @@ class Reads:
 
     ``negated`` is `not in` or `is not`, the compare's argument 1, and
     ``flag`` the True or False an `is` compares with, when the code loads it
-    as a constant on either side, else None.
+    as a constant on either side, else None. ``chained`` marks a chain's
+    link before its last, whose compare follows the SWAP and COPY that keep
+    the operand it shares with the next link; it is no part of the compare.
     """
 
     name: str
     negated: bool
     flag: bool | None = None
+    chained: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -207,7 +210,8 @@ def _reads(instruction: dis.Instruction, before: list[Op]) -> Reads | None:
     if at < 0 or before[at].name not in _COMPARES:
         return None
     compare = before[at]
-    return Reads(compare.name, compare.arg == 1, _flag(before, at))
+    chained = at >= 2 and before[at - 1].name == "COPY" and before[at - 2].name == "SWAP"
+    return Reads(compare.name, compare.arg == 1, _flag(before, at), chained)
 
 
 def _end(positions: dis.Positions | None) -> tuple[int, int] | None:

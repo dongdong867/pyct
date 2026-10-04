@@ -53,6 +53,7 @@ from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ints import ConcolicInt
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
+from pyct.core.values import tested_against
 
 # the tracked ints and bools, by their exact type: a plain range is searched for one with one
 # fork
@@ -80,16 +81,17 @@ def is_(left: object, right: object) -> bool:
     """`left is right`, with a tracked bool against True or False read as the bool it stands for.
 
     Testing the tracked bool for truth records its fork, as `if b:` would,
-    where the `is` runs. Two tracked bools stand for two of the two bool
-    singletons, so they are the same object when they are equal, and the
-    fork is their `==`. Any other pair is Python's own identity.
+    where the `is` runs, noted with whether the `is` held. Two tracked bools
+    stand for two of the two bool singletons, so they are the same object
+    when they are equal, and the fork is their `==`. Any other pair is
+    Python's own identity.
     """
     if isinstance(left, ConcolicBool) and isinstance(right, ConcolicBool) and left is not right:
-        return bool(left == right)
+        return tested_against(left == right, True)
     if _stands_for(left, right):
-        return bool(left) is right
+        return tested_against(left, right is True) is right
     if _stands_for(right, left):
-        return left is bool(right)
+        return left is tested_against(right, left is True)
     return left is right
 
 
