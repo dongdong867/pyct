@@ -7,6 +7,7 @@ number of pieces the path fixes.
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -369,16 +370,69 @@ def test_asks_the_input_s_count_beside_a_tracked_value() -> None:
     assert isinstance(solver, dict) and solver["unknown"] == solver["timeout"] == 0, solver
 
 
-# follow-the-length-of-a-split-walks-a-split-after-the-other-forks, as the user decided in
-# review round 9 (wording with PM): the target's loop over a split's list is Python's own walk
-def test_a_loop_over_a_split_records_no_piece_fork() -> None:
+# follow-the-length-of-a-split-walks-a-split-as-python-does
+def test_walks_a_split_as_python_does() -> None:
     result = run_pyct(f"{LENGTHS}::walked_after", '{"s": "a\\nb\\nc\\nd"}', *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     walk, test = line_of("for i, p in enumerate"), line_of('if i > 0 and p == "end":')
-    # no "is there another piece" fork at the loop, as on origin/v2: only the lines' own forks
     assert [fork for fork in listed(lines[0]) if fork[0] == walk] == [], lines[0]
-    tests = [fork[1] for fork in listed(lines[0]) if fork[0] == test]
-    assert [part[0] for part in tests if isinstance(part, list)] == ["=="] * 3, lines[0]
-    assert [line for line in solved(lines) if covers(line, test + 1)], lines
+    assert [fork for fork in listed(lines[0]) if fork[0] == test] == [
+        (test, ["==", ["[]", LINES, at], "'end'"], False) for at in (1, 2, 3)
+    ], lines[0]
+
+    def agrees(s: Any) -> bool:
+        return any(at > 0 and line == "end" for at, line in enumerate(s.splitlines()))
+
+    covered = [line for line in solved(lines) if covers(line, test + 1) and agrees(**args_of(line))]
+    assert covered, lines
+
+
+# follow-the-length-of-a-split-leaves-a-split-changed-at-a-position-to-python
+def test_leaves_a_split_changed_at_a_position_to_python() -> None:
+    result = run_pyct(f"{LENGTHS}::popped_at_a_position", '{"s": "a,b"}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    popped = line_of("parts.pop(0)")
+    length, piece = popped + 1, popped + 3
+    assert [fork for fork in listed(lines[0]) if fork[0] == length] == [], lines[0]
+    assert downgrade_names(lines[0]) == [], lines[0]
+    # plain Python, for the seed, takes the `len` line's false side: one piece is left
+    plain = str(args_of(lines[0])["s"]).split(",")
+    plain.pop(0)
+    assert covers(lines[0], piece) is (len(plain) != 3), lines[0]
+    assert [fork for fork in listed(lines[0]) if fork[0] == piece], lines[0]
+
+    def agrees(s: Any) -> bool:
+        parts = s.split(",")
+        parts.pop(0)
+        return len(parts) != 3 and parts[0] == "x"
+
+    covered = [
+        line for line in solved(lines) if covers(line, piece + 1) and agrees(**args_of(line))
+    ]
+    assert covered, lines
+
+
+# follow-the-length-of-a-split-leaves-a-split-of-an-unworked-string-to-python
+def test_leaves_a_split_of_an_unworked_string_to_python() -> None:
+    result = run_pyct(f"{LENGTHS}::of_an_unworked_string", '{"s": "a,b", "n": 1}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    length, piece = line_of("if len(parts) < n:"), line_of('if parts[0] == "end":')
+    seed_forks = [fork for fork in listed(lines[0]) if fork[0] == length]
+    # Python's own list: the length is a plain int, so the line forks only on `n`
+    assert all("len" not in str(fork[1]) for fork in seed_forks), lines[0]
+    assert "split" not in downgrade_names(lines[0]), lines[0]
+
+    def agrees(s: Any, n: Any) -> bool:
+        parts = (s + str(n)).split(",")
+        return not len(parts) < n and parts[0] == "end"
+
+    covered = [
+        line for line in solved(lines) if covers(line, piece + 1) and agrees(**args_of(line))
+    ]
+    assert covered, lines

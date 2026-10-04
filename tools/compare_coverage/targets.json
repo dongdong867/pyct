@@ -578,6 +578,8 @@
     {"set": "v2", "target": "targets.strs.split_lengths::last_line", "seed": {"s": "a\nb\nc"}},
     {"set": "v2", "target": "targets.strs.split_lengths::beside_a_tracked_value", "seed": {"s": "a\nb\nc", "n": 5}},
     {"set": "v2", "target": "targets.strs.split_lengths::walked_after", "seed": {"s": "a\nb\nc\nd"}},
+    {"set": "v2", "target": "targets.strs.split_lengths::popped_at_a_position", "seed": {"s": "a,b"}},
+    {"set": "v2", "target": "targets.strs.split_lengths::of_an_unworked_string", "seed": {"s": "a,b", "n": 1}},
     {"set": "v2", "target": "targets.strs.text_conversion::show", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.text_of_values::int_text", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}},

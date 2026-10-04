@@ -109,3 +109,22 @@ def walked_after(s):
         if i > 0 and p == "end":
             return 1
     return 0
+
+
+def popped_at_a_position(s):
+    parts = s.split(",")
+    parts.pop(0)
+    if len(parts) == 3:
+        return 1
+    if parts[0] == "x":
+        return 2
+    return 0
+
+
+def of_an_unworked_string(s, n):
+    parts = (s + str(n)).split(",")
+    if len(parts) < n:
+        return 1
+    if parts[0] == "end":
+        return 2
+    return 0
