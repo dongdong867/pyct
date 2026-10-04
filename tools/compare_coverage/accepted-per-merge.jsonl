@@ -58,6 +58,7 @@
 {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.tracked_store::copied_walk", "seed": {"name": "a", "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [186]}
+{"set": "v2", "target": "targets.dicts.tracked_store::copy_looked_up", "seed": {"n": "pyct1", "m": "zz", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [207]}
 {"set": "v2", "target": "targets.dicts.tracked_store::defaulted_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [29]}
 {"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [66]}
 {"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [89]}
