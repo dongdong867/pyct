@@ -74,10 +74,11 @@ WORKED_METHODS = frozenset(
 )
 
 
-# whether a join is walking the list it joins: the only walk of a split's list that records the
-# "is there another piece" forks, which the join's encoding reads (`str_joins.joined`); every
-# other walk, the target's own or one pyct makes for it, a `map` say, is Python's, as on v2
-JOIN_WALKS: ContextVar[bool] = ContextVar("join_walks", default=False)
+# the list a join is walking, itself, when the join reads it: the only walk of a split's list
+# that records the "is there another piece" forks, which the join's encoding reads
+# (`str_joins.joined`); every other walk, the target's own, one a user `__iter__` makes, or one
+# pyct makes for the target, a `map` say, is Python's, as on v2
+JOIN_WALKS: ContextVar[object] = ContextVar("join_walks", default=None)
 
 
 def a_split_s_list(form: object, depth: int = _DEEPEST) -> bool:

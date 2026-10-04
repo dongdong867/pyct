@@ -49,7 +49,7 @@ def joined(separator: str, iterable: object, tracked: type[ConcolicStr]) -> obje
     separator or an item, is str's own answer and a downgrade named `join`
     (``README.md › Rules › string encodings``).
     """
-    walking = JOIN_WALKS.set(True)
+    walking = JOIN_WALKS.set(iterable)
     try:
         iterator = own(iter, iterable)
     except TypeError:

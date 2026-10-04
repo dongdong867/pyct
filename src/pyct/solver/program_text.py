@@ -65,22 +65,17 @@ def program_text(
 
 
 def _read(definitions: list[str], lines: list[str]) -> str:
-    """The lines, each definition they name, and each assertion among the definitions that
-    names a constant a definition declares, in turn: the text a leaf is read in. A letter read
+    """The lines, and each definition they name, with each assertion among the definitions
+    that names it, and each one those name, in turn: the text a leaf is read in. A letter read
     of a spelled string, say, names its letter's constant, and the assertion that spells the
-    string names the string. An assertion that names no such constant, a split's piece held
-    there say, is not followed: it holds on every input that took the path this far. A
-    definition is named by a symbol with no space in it."""
+    string names the string. A leaf is no definition, so an assertion that names only leaves,
+    a split's piece held there say, is not followed: it holds on every input that took the
+    path this far. A definition is named by a symbol with no space in it."""
     defined = {definition.split()[1]: definition for definition in definitions}
-    declared = {
-        definition.split()[1]
-        for definition in definitions
-        if definition.startswith(("(declare-const ", "(define-fun "))
-    }
     held: dict[str, list[str]] = {}
     for line in definitions:
         if line.startswith("(assert "):
-            for symbol in set(_SYMBOL.findall(line)) & declared:
+            for symbol in set(_SYMBOL.findall(line)):
                 held.setdefault(symbol, []).append(line)
     reached: list[str] = []
     seen: set[str] = set()

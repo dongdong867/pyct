@@ -159,9 +159,9 @@ def walk(self: ListState) -> Iterator[object]:
     The target's own loop over a split's list records no fork, as on origin/v2: a loop is
     Python's own walk of the pieces (``_a_split_s_loop``).
     """
+    self.__dict__["walked_at"] = caller(2)
     if _a_split_s_loop(self):
         return list.__iter__(self)
-    self.__dict__["walked_at"] = caller(2)
     return _walked(self)
 
 
@@ -191,12 +191,13 @@ def backward(self: ListState) -> Iterator[object]:
 
 
 def _a_split_s_loop(self: ListState) -> bool:
-    """Whether a walk of a split's list is Python's own: any walk but a join's
-    (``str_splits.JOIN_WALKS``), a loop, a comprehension, an unpacking, or a builtin the target
-    calls on it, ``map`` included. It records no "is there another piece" fork, as on
-    origin/v2, by the user's decision (split-a-target-s-own-walk-records-no-piece-fork); a
-    join's walk keeps its forks, which its encoding reads."""
-    return a_split_s_list(self.expression) and not JOIN_WALKS.get()
+    """Whether a walk of a split's list is Python's own: any walk but a join's of the list
+    itself (``str_splits.JOIN_WALKS``): a loop, a comprehension, an unpacking, a builtin the
+    target calls on it, ``map`` included, or a user ``__iter__`` a join reads. It records no
+    "is there another piece" fork, as on origin/v2, by the user's decision
+    (split-a-target-s-own-walk-records-no-piece-fork); a join's walk of the list keeps its
+    forks, which its encoding reads."""
+    return a_split_s_list(self.expression) and JOIN_WALKS.get() is not self
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

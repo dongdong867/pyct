@@ -3,13 +3,12 @@ fork on how many pieces there are, as on origin/v2, while a join's walk does; th
 tracked only while the solver writes it exactly, and is Python's own after any other change,
 as on origin/v2; and the strings the solver works out."""
 
-import os
 from typing import Any
 
 import pytest
 
 from pyct.core import substitutes
-from pyct.core.branch import PYCT_ROOT, Branch, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_changes import takes_another
 from pyct.core.str_splits import a_split_s_list, worked_out
@@ -48,17 +47,56 @@ def test_the_target_s_loop_over_a_split_s_list_records_no_fork(loop: Any) -> Non
     assert len([*walked]) in (2, 3) and ">" not in heads, sink
 
 
-def test_a_loop_in_a_library_installed_beside_pyct_records_no_fork() -> None:
+@pytest.mark.parametrize(
+    "build",
+    [list, tuple, sorted, lambda parts: [*parts], lambda parts: list(map(str.upper, parts))],
+    ids=["list", "tuple", "sorted", "an unpacking", "a map"],
+)
+def test_a_builtin_that_walks_a_split_s_list_records_nothing_on_it(build: Any) -> None:
     sink: list[SinkItem] = []
     parts = _split(sink)
-    # a module of another package in the folder that holds pyct's: site-packages, say
-    beside = compile("walked = [part for part in parts]", f"{PYCT_ROOT}{os.sep}lib.py", "exec")
-    scope: dict[str, Any] = {"parts": parts}
+    sink.clear()
 
-    exec(beside, scope)
+    built = build(parts)
 
-    # only pyct's own frames are pyct: this loop is the target's, and records no piece fork
-    assert len(scope["walked"]) == 2 and _walks(sink) == [], sink
+    # as origin/v2's plain list of pieces: no piece fork, and the size Python guesses for what
+    # it builds names no loss
+    assert len(built) == 2
+    assert [item for item in sink if isinstance(item, Downgrade)] == [], sink
+    assert all(isinstance(fork, list) and fork[0] != ">" for fork in _walks(sink)), sink
+
+
+def test_a_loop_after_a_join_of_the_list_records_no_fork() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    substitutes.join("-".join, parts)
+    sink.clear()
+
+    walked = [part for part in parts]
+
+    # the join's walk ends with the join: the target's own loop after it is Python's, which
+    # records nothing, not even a check the join's walk already decided
+    assert len(walked) == 2 and sink == [], sink
+
+
+def test_a_join_through_a_user_iterable_walks_the_split_as_python_does() -> None:
+    class Wrapped:
+        def __init__(self, items: Any) -> None:
+            self.items = items
+
+        def __iter__(self) -> Any:
+            return iter(self.items)
+
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    separator = ConcolicStr.made("-", expression="t", sink=sink)
+    sink.clear()
+
+    joined = separator.join(Wrapped(parts))  # pyrefly: ignore[bad-argument-type]
+
+    # only a join's own walk of the list reads its count; this walk is the user's `__iter__`
+    assert _walks(sink) == [], sink
+    assert isinstance(joined, str) and str.__str__(joined) == "a-b"
 
 
 def test_a_join_s_walk_over_a_split_s_list_records_its_forks() -> None:
@@ -328,6 +366,8 @@ def test_a_tracked_list_added_to_a_split_s_list_joins_onto_its_pieces() -> None:
     pieces: Expression = ["[,]", *(_piece(at) for at in range(4))]
     assert parts is alias and parts.expression == ["+", pieces, "items"]
     assert list.__len__(alias) == 5 and sink == []
+    # the display holds its four pieces on every input, and the other list any number
+    assert parts.span == (4, None)
 
 
 @pytest.mark.parametrize(
@@ -390,3 +430,21 @@ def test_a_split_s_list_holding_an_unwritten_item_takes_another_list_in_as_pytho
 
     # no display holds the item: the list is Python's own, the change made in place
     assert parts is alias and parts.expression is None and list.__len__(parts) == 6
+
+
+def test_a_split_s_list_compared_with_a_plain_list_counts_its_pieces() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    sink.clear()
+
+    parts < ["a", "z"]  # noqa: B015
+
+    # a compare with a plain list reads the count against plain numbers, which the solver
+    # writes exactly (split-list-tracked-its-count-the-piece-there-or-the-input-s-own)
+    split = ["split", "s", "','"]
+    assert _walks(sink) == [
+        [">", ["len", split], 0],
+        ["==", _piece(0), "'a'"],
+        [">", ["len", split], 1],
+        ["==", _piece(1), "'z'"],
+    ], sink
