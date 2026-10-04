@@ -1,8 +1,5 @@
 def content_range(value):
-    try:
-        units, rangedef = value.strip().split(None, 1)
-    except ValueError:
-        return "no units"
+    units, rangedef = value.strip().split(None, 1)
     if "/" not in rangedef:
         return "no length"
     rng, length_str = rangedef.split("/", 1)
