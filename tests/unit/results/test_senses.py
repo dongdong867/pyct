@@ -5,12 +5,16 @@ release compiles the `not`.
 """
 
 import types
+from types import MappingProxyType
 
 import pytest
 
 from pyct.results import senses
-from pyct.results.senses import Seen, against_the_forks, heads_of
+from pyct.results.senses import At, Own, Seen, against_the_forks, heads_of
 from pyct.results.way import Flow, Step, StepKind
+
+# no `is` test's own fork anywhere
+NONE_OWN: Own = MappingProxyType({})
 
 
 def flow_of(test: str, raising: frozenset[tuple[int, int]] = frozenset()) -> Flow:
@@ -24,11 +28,14 @@ def _is_code(each: object) -> bool:
     return isinstance(each, types.CodeType)
 
 
-def body_side(test: str, heads: set[str], seen: list[Seen], col: int = 7) -> bool:
-    """The side of the test the body reads as, with these forks recorded at 2:``col``."""
+def body_side(
+    test: str, heads: set[str], seen: list[Seen], col: int = 7, own: Own = NONE_OWN
+) -> bool:
+    """The side of the test the body reads as, with these forks recorded at 2:``col``, and the
+    agreements of the `is` test's own forks there in ``own``."""
     flow = flow_of(test)
     recorded = {(2, col): frozenset(heads)} if heads else {}
-    flow.swap(against_the_forks(flow, recorded, seen))
+    flow.swap(against_the_forks(flow, recorded, seen, own))
     (step,) = flow.way(3)
     assert (step.line, step.col) == (2, col)
     return step.side
@@ -103,7 +110,7 @@ def test_the_inputs_are_not_read_when_no_is_test_is_against_a_name(
     monkeypatch.setattr(senses, "_taken_at", lambda *args: read.append(args) or {})
     flow = flow_of("x is not True")
 
-    against_the_forks(flow, {(2, 7): frozenset({">"})}, [took_the_body(False)])
+    against_the_forks(flow, {(2, 7): frozenset({">"})}, [took_the_body(False)], NONE_OWN)
 
     assert read == []
 
@@ -132,7 +139,7 @@ def test_each_link_of_a_chain_at_one_site_is_read_on_its_own() -> None:
     flow = flow_of("x not in c is b")
 
     # the `not in` link reads in the `in` sense its `==` forks give; the `is` link keeps its own
-    swapped = against_the_forks(flow, {(2, 7): frozenset({"=="})}, [])
+    swapped = against_the_forks(flow, {(2, 7): frozenset({"=="})}, [], NONE_OWN)
 
     sides = flow.sides()
     read = [sides[node].reads for node in swapped]
@@ -143,7 +150,7 @@ def test_a_raising_fork_at_the_compare_s_column_leaves_the_compare_read() -> Non
     # `x[0]` may raise, so its fork at 2:11 splits the block before the test's jump
     flow = flow_of("not x[0] in c", raising=frozenset({(2, 11)}))
 
-    flow.swap(against_the_forks(flow, {(2, 11): frozenset({"not in"})}, []))
+    flow.swap(against_the_forks(flow, {(2, 11): frozenset({"not in"})}, [], NONE_OWN))
 
     assert [step for step in flow.way(3) if not step.raising] == [
         Step(StepKind.CONDITION, 2, 11, True)
@@ -154,3 +161,117 @@ def test_heads_are_each_fork_s_operator_by_site() -> None:
     forks = [((2, 7), ["not in", "s", "'a'"]), ((2, 7), ["==", "x", 1]), ((3, 4), "b")]
 
     assert heads_of(forks) == {(2, 7): frozenset({"not in", "=="}), (3, 4): frozenset({"b"})}
+
+
+def test_an_is_test_s_own_forks_read_each_in_its_pass_s_sense() -> None:
+    held = senses.agreements_of([((2, 7), True, True)])
+    unheld = senses.agreements_of([((2, 7), True, False)])
+    mixed = senses.agreements_of([((2, 7), True, True), ((2, 7), True, False)])
+
+    # every fork agreeing reads in the forks' sense, every one disagreeing the other way
+    assert body_side("x is b", {">"}, [], own=held) is True
+    assert body_side("x is b", {">"}, [], own=unheld) is False
+    assert body_side("x is not b", {">"}, [], own=unheld) is True
+    # forks that disagree among themselves read in the `is` sense
+    assert body_side("x is b", {">"}, [], own=mixed) is True
+    assert body_side("x is not b", {">"}, [], own=mixed) is False
+
+
+def test_an_is_test_s_own_forks_outweigh_what_the_inputs_show() -> None:
+    unheld = senses.agreements_of([((2, 7), True, False)])
+
+    # the input ran the body and forked true, but its own fork says the `is` did not hold then
+    assert body_side("x is b", {">"}, [took_the_body(True)], own=unheld) is False
+
+
+def test_the_inputs_are_not_read_at_a_test_with_forks_of_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read: list[object] = []
+    monkeypatch.setattr(senses, "_taken_at", lambda *args: read.append(args) or {})
+
+    body_side(
+        "x is b", {">"}, [took_the_body(True)], own=senses.agreements_of([((2, 7), True, True)])
+    )
+
+    assert read == []
+
+
+def test_agreements_are_whether_each_fork_s_side_is_whether_its_is_held() -> None:
+    notes = [((2, 7), True, True), ((2, 7), False, False), ((3, 4), True, False)]
+
+    assert senses.agreements_of(notes) == {(2, 7): frozenset({True}), (3, 4): frozenset({False})}
+
+
+def side_at(source: str, body: int, site: At, seen: list[Seen], own: Own) -> bool:
+    """The side the test at ``site`` reads as on the way to line ``body``, in ``source``'s ``f``."""
+    (code,) = [each for each in compile(source, "m.py", "exec").co_consts if _is_code(each)]
+    flow = Flow(code, frozenset())
+    flow.swap(against_the_forks(flow, {site: frozenset({">"})}, seen, own))
+    (step,) = [step for step in flow.way(body) if (step.line, step.col) == site]
+    return step.side
+
+
+LOOP = """\
+FLAG = False
+
+
+def f(c):
+    n = 0
+    for v in (c, True):
+        if v is FLAG:
+            n += 1
+    return n
+"""
+
+
+# read-an-is-test-against-a-name-per-pass-reads-a-loop-by-its-tracked-pass
+def test_a_loop_s_test_reads_by_its_tracked_pass_whatever_the_plain_pass_ran() -> None:
+    # the tracked pass forked true where its `is` did not hold; the plain pass alone ran the body
+    seen: list[Seen] = [(frozenset({5, 6, 7, 8, 9}), ((7, 11, True, False),))]
+    own = senses.agreements_of([((7, 11), True, False)])
+
+    assert side_at(LOOP, 8, (7, 11), seen, own) is False
+
+
+FLAGS = """\
+def f(c):
+    n = 0
+    for flag in (True, False):
+        if c is flag:
+            n += 1
+    return n
+"""
+
+
+# read-an-is-test-against-a-name-per-pass-reads-disagreeing-passes-in-the-is-sense
+def test_passes_whose_is_held_on_one_and_not_the_other_read_in_the_is_sense() -> None:
+    # c forked true on both passes: its `is` held against True and not against False
+    seen: list[Seen] = [(frozenset({2, 3, 4, 5, 6}), ((4, 11, True, False), (4, 11, True, False)))]
+    own = senses.agreements_of([((4, 11), True, True), ((4, 11), True, False)])
+
+    assert side_at(FLAGS, 5, (4, 11), seen, own) is True
+
+
+def chain_sides(test: str, own: Own) -> list[bool]:
+    """The sides of each link the body's way passes, with an `>` fork recorded at 2:7."""
+    flow = flow_of(test)
+    flow.swap(against_the_forks(flow, {(2, 7): frozenset({">"})}, [], own))
+    return [step.side for step in flow.way(3)]
+
+
+def test_a_chain_of_is_links_reads_as_with_no_fork_of_its_own() -> None:
+    mixed = senses.agreements_of([((2, 7), True, True), ((2, 7), True, False)])
+    unheld = senses.agreements_of([((2, 7), True, False)])
+
+    # two links' forks share the site, so no link can tell its own: each reads as before
+    for test in ("x is c is False", "x is c is b", "x in c is b"):
+        before = chain_sides(test, NONE_OWN)
+        assert chain_sides(test, mixed) == before
+        assert chain_sides(test, unheld) == before
+
+
+def test_a_chain_s_links_before_the_last_are_marked_chained() -> None:
+    reads = [step.reads for step in flow_of("x is c is False").sides().values() if step.reads]
+
+    assert sorted(each.chained for each in reads) == [False, False, True, True]
