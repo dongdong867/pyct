@@ -13,6 +13,7 @@ from collections.abc import Sequence
 
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
+from pyct.core.spans import narrowed
 from pyct.core.str_cases import Tracked
 from pyct.core.str_operands import position
 from pyct.core.values import forked, own
@@ -76,9 +77,10 @@ def long_enough(s: Tracked, key: int, index: Expression) -> None:
     at = int.__index__(key)
     measured: Expression = ["len", s.expression]
     if not isinstance(key, ConcolicInt):
-        if at >= 0:
-            forked(s.sink, [">", measured, at], length > at, raising=True)
-        else:
-            forked(s.sink, [">=", measured, -at], length >= -at, raising=True)
+        op, number = (">", at) if at >= 0 else (">=", -at)
+        taken = length > at if at >= 0 else length >= -at
+        # it stays a fork, and narrows the string's range
+        s.__dict__["span"] = narrowed(s.span, op, number, taken)
+        forked(s.sink, [op, measured, number], taken, raising=True)
     elif forked(s.sink, [">", measured, index], length > at, raising=True):
         forked(s.sink, [">=", measured, ["-", index]], length >= -at, raising=True)

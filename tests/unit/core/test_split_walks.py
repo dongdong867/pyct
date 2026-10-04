@@ -331,15 +331,15 @@ def test_a_tracked_list_added_to_a_split_s_list_joins_onto_its_pieces() -> None:
 @pytest.mark.parametrize(
     ("search", "answer", "compared"),
     [
-        (lambda parts: "c" in parts, True, 3),
-        (lambda parts: "z" in parts, False, 4),
-        (lambda parts: parts.index("b"), 1, 2),
-        (lambda parts: parts.count("a"), 1, 4),
+        (lambda parts: "c" in parts, True, ["'c'"] * 3),
+        (lambda parts: "z" in parts, False, ["'z'"] * 4),
+        (lambda parts: parts.index("b"), 1, ["'b'"] * 2),
+        (lambda parts: parts.count("a"), 1, ["'a'"] * 4),
     ],
     ids=["in, found", "in, not found", "index", "count"],
 )
 def test_a_search_of_a_split_s_list_compares_its_pieces_as_python_does(
-    search: Any, answer: object, compared: int
+    search: Any, answer: object, compared: list[str]
 ) -> None:
     sink: list[SinkItem] = []
     parts = _split_of_four(sink)
@@ -350,6 +350,5 @@ def test_a_search_of_a_split_s_list_compares_its_pieces_as_python_does(
     # as origin/v2 searches its plain list of pieces, by the user's decision on review round 10:
     # each piece's compare, and no fork on how many pieces there are
     assert found == answer
-    assert [fork[0] for fork in _walks(sink)] == ["=="] * compared, sink
-    assert all(fork[1] == _piece(at) for at, fork in enumerate(_walks(sink))), sink
+    assert _walks(sink) == [["==", _piece(at), value] for at, value in enumerate(compared)], sink
     assert parts.expression == SPLIT

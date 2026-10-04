@@ -8,7 +8,8 @@ when it holds, `[">=", ["len", items], ["-", i]]`, together Python's `-len <= i 
 An item handed out is written as the target indexed it, `["[]", items, -1]` say, so it names
 the last item of any input. An int or a str comes out tracked; a list inside, a None and every
 other item come out as they are stored. A walk records `[">", ["len", items], j]` for each item
-it takes and once more, taken false, where it ends.
+it takes and once more, taken false, where it ends. Each such check on the length is a fact,
+not a fork, where the list's length range proves it (``ListState.measure``, `core.spans`).
 
 `len(items)` and `bool(items)` where pyct binds or routes them read the length term,
 `["len", items]`, and record no fork where they run.
@@ -25,6 +26,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import PYCT_DIR, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
+from pyct.core.spans import UNKNOWN, decided
 from pyct.core.str_splits import a_split_s_list
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked
@@ -38,16 +40,16 @@ def plain_index(key: object) -> int | None:
 
 
 def long_enough(self: ListState, index: int, name: str = "__getitem__") -> bool:
-    """Record whether the list holds a plain ``index``, and answer it.
+    """Record whether the list holds a plain ``index``, and answer it: a fact where the list's
+    range proves it, else a fork.
 
     Every operation that asks raises IndexError when the list does not hold
-    it, so the fork is the operation's before a raise.
+    it, so the check is the operation's before a raise.
     """
-    measured: Expression = ["len", self.expression]
     length = self.length()
     if index >= 0:
-        return forked(self.sink, [">", measured, index], length > index, name, raising=True)
-    return forked(self.sink, [">=", measured, -index], length >= -index, name, raising=True)
+        return self.measure(">", index, length > index, name, raising=True)
+    return self.measure(">=", -index, length >= -index, name, raising=True)
 
 
 def tracked_long_enough(self: ListState, index: ConcolicInt, name: str = "__getitem__") -> bool:
@@ -93,12 +95,15 @@ def length(self: ListState) -> int:
 
     Python's `len` makes what `__len__` hands back a plain int, so a tracked list's `__len__`
     stays a downgrade; this is what pyct's own `len` asks for instead (`pyct.core.bound.len`).
-    A list with no form, or one whose form stopped describing it, gives its plain length. A
-    length cannot fail, so it records no fork.
+    The int carries the list's range as it is now (see ``ConcolicInt.span``). A list with no
+    form, or one whose form stopped describing it, gives its plain length. A length cannot
+    fail, so it records no fork.
     """
     if not self.holds("__len__"):
         return self.length()
-    return ConcolicInt.made(self.length(), expression=["len", self.expression], sink=self.sink)
+    measured = ConcolicInt.made(self.length(), expression=["len", self.expression], sink=self.sink)
+    measured.__dict__["span"] = self.span
+    return measured
 
 
 def condition(self: ListState) -> Any:
@@ -108,12 +113,16 @@ def condition(self: ListState) -> Any:
     Python's `bool` tests the list on the spot, so this is what `pyct.core.bound.bool_` asks
     for instead. It holds the list's form at the call, which a later change replaces rather
     than edits. A list with no form, or one whose form stopped describing it, gives Python's
-    plain answer, naming `__bool__` as `if items:` does.
+    plain answer, naming `__bool__` as `if items:` does. Where the list's range proves the
+    answer, the fact is recorded here and the answer is a plain bool.
     """
     filled = self.length() != 0
     if not self.holds("__bool__"):
         return filled
-    return ConcolicBool.made(filled, ["!=", ["len", self.expression], 0], self.sink)
+    test: list[Expression] = ["!=", ["len", self.expression], 0]
+    if decided(self.sink, self.span, test, filled):
+        return filled
+    return ConcolicBool.made(filled, test, self.sink)
 
 
 def _named(self: ListState, row: ListState, written: Expression) -> None:
@@ -128,12 +137,16 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
     if is_read(self.expression) and is_read(row.expression):
         wanted: Expression = ["[]", self.expression, written]
         if row.expression != wanted:
-            row.__dict__["expression"] = wanted
+            # a check counts only for the length it was written on, so the row's range starts over
+            fields = row.__dict__
+            fields["expression"] = wanted
+            fields["span"] = UNKNOWN
 
 
 def more(self: ListState, at: int, name: str) -> bool:
-    """The walk's fork for step ``at``: whether the list holds an item there."""
-    return forked(self.sink, [">", ["len", self.expression], at], at < self.length(), name)
+    """The walk's check for step ``at``: whether the list holds an item there, a fact where the
+    list's range proves it, else a fork."""
+    return self.measure(">", at, at < self.length(), name)
 
 
 def walk(self: ListState) -> Iterator[object]:

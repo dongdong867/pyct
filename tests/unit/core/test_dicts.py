@@ -327,9 +327,10 @@ def test_a_walk_keeps_the_key_it_read_at_its_place_as_a_fact_after_its_pass() ->
 
     # B a fork, F a fact: the store's lookup of n; then, as n is a key on every input, the
     # first pass is a fact with its place, each later pass a fork and its place, and the end a
-    # fork; the same from the end, whose first key, n, is the target's own and pins nothing;
+    # fork; from the end, the first walk measured the dict, so each pass and the end are facts,
+    # each pass with its place, but the first key, n, is the target's own and pins nothing;
     # popitem's forks, the second with its place; and the test's own compare of the value
-    shape = "B FBFBFB FBFBFB BBF B".replace(" ", "")
+    shape = "B FBFBFB FFFF BBF B".replace(" ", "")
     assert "".join("F" if isinstance(item, Fact) else "B" for item in sink) == shape
     assert [item.place for item in sink if isinstance(item, Fact)] == [
         ["walked", "config", "'a'"],
@@ -338,6 +339,7 @@ def test_a_walk_keeps_the_key_it_read_at_its_place_as_a_fact_after_its_pass() ->
         None,
         ["last", "config", "'b'"],
         ["last", "config", "'a'"],
+        None,
         ["popped", "config", "'b'"],
     ]
     grown = ["+", ["len", "config"], 1]

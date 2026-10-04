@@ -9,9 +9,9 @@ a tracked key into a dict the target changed is Python's own answer and a downgr
 expression writes the dict whole.
 
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
-and once more, taken false, where it ends, in insertion order. A pass the dict's fewest keys
-reach (``DictState.fewest``) is a fact, not a fork. Each key it hands out is plain, and each
-value as the dict holds it: an argument's value tracked, the target's own as it is. A walk is
+and once more, taken false, where it ends, in insertion order. A pass or an end the dict's
+range proves (``DictState.measured``) is a fact, not a fork. Each key it hands out is plain, and
+each value as the dict holds it: an argument's value tracked, the target's own as it is. A walk is
 not a lookup, so it settles nothing; after each pass it records a fact of which key it read at
 its place (``placed``), so an answer keeps that key there, as a read keeps a list's item. It
 hands out its own copy of each key, so a lookup of that very object, whenever it runs, is one no
@@ -20,7 +20,8 @@ no copy, and its lookup records the place the walk read it first (``handout``).
 
 `len(config)` and `bool(config)` where pyct binds or routes them, and on each of its views, read
 the size term, `["len", config]` and what the target added or removed, and record no fork where
-they run. A truth test of a dict whose fewest keys are above zero is a fact, not a fork.
+they run. A walk's pass or end, and a truth test, that the dict's range proves
+(``DictState.measured``) is a fact, not a fork.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ from pyct.core.dict_state import MISSING, TRACKED, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
+from pyct.core.spans import decided, narrowed, proves
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked, own
 
@@ -115,7 +117,8 @@ def settled_as(key: object) -> object:
 def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
     """Whether the dict holds ``key``, recording the fork the first time the path asks, which
     settles the answer: a later lookup of the same key, with no change under it since, is a
-    fact that holds what the first found. On a dict changed without a fork no lookup is a
+    fact that holds what the first found, and so is a lookup in a dict whose range holds no
+    key (``DictState.measured``). On a dict changed without a fork no lookup is a
     fact, since that change may have touched the key on another input: one recorded here is a
     fork, and a key the target changed or a walk handed out is answered without either.
 
@@ -144,7 +147,9 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
     # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
     # is still noted
     if not self.unforked:
-        if known in self.asked:
+        # a key the path asked about before, or any key of a dict whose range holds none
+        if known in self.asked or (self.measured()[1] == 0 and not held):
+            self.asked.add(known)
             self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
             return held
         self.asked.add(known)
@@ -258,20 +263,27 @@ def looked_up(self: DictState, key: object, name: str, default: object = MISSING
 
 def length(self: DictState) -> int:
     """`len(config)` where pyct binds `len`: the dict's size, carrying its size term, the same
-    term its own forks read. A dict with no form gives its plain size."""
+    term its own forks read, and its range as it is now (see ``ConcolicInt.span``). A dict
+    with no form gives its plain size."""
     if not self.holds("__len__"):
         return self.size()
-    return ConcolicInt.made(self.size(), self.size_term(), self.sink)
+    measured = ConcolicInt.made(self.size(), self.size_term(), self.sink)
+    measured.__dict__["span"] = self.measured()
+    return measured
 
 
 def truth(self: DictState) -> bool:
-    """``if config:``: Python tests a dict by its size, so the fork is `len(config) != 0`, or a
-    fact where the dict holds a key on every input that takes the path."""
+    """``if config:``: Python tests a dict by its size, so the check is `len(config) != 0`: a
+    fact where the dict's range proves it (``DictState.measured``), else a fork, which narrows
+    the range."""
+    filled = self.size() != 0
     if not self.holds("__bool__"):
-        return self.size() != 0
-    if decided_filled(self):
-        return True
-    return forked(self.sink, ["!=", self.size_term(), 0], self.size() != 0)
+        return filled
+    test: list[Expression] = ["!=", self.size_term(), 0]
+    if decided(self.sink, self.measured(), test, filled):
+        return filled
+    self.__dict__["span"] = narrowed(self.span, "!=", 0, filled)
+    return forked(self.sink, test, filled)
 
 
 def condition(self: DictState) -> Any:
@@ -280,24 +292,16 @@ def condition(self: DictState) -> Any:
 
     It holds the dict's size term at the call, which a later change replaces rather than edits.
     A dict with no form gives Python's plain answer; one whose form stopped describing it does
-    too, naming `__bool__` as `if config:` does. A dict that holds a key on every input that
-    takes the path records the fact where `bool` is called, and answers a plain True.
+    too, naming `__bool__` as `if config:` does. Where the dict's range proves the answer, the
+    fact is recorded where `bool` is called, and the answer is a plain bool.
     """
     filled = self.size() != 0
     if not self.holds("__bool__"):
         return filled
-    if decided_filled(self):
-        return True
-    return ConcolicBool.made(filled, ["!=", self.size_term(), 0], self.sink)
-
-
-def decided_filled(self: DictState) -> bool:
-    """Whether the dict holds a key on every input that takes the path, recording the truth
-    test as a fact where it does."""
-    if self.fewest() <= 0:
-        return False
-    self.sink.append(Fact(["!=", self.size_term(), 0], True, caller_site()))
-    return True
+    test: list[Expression] = ["!=", self.size_term(), 0]
+    if decided(self.sink, self.measured(), test, filled):
+        return filled
+    return ConcolicBool.made(filled, test, self.sink)
 
 
 def key_of(self: DictState, key: object) -> object:
@@ -377,15 +381,17 @@ def _walked(
 
 
 def passed(self: DictState, at: int, key: object, pin: Expression, name: str) -> bool:
-    """Record whether a walk takes pass ``at``, and answer it: a fact where the dict holds more
-    than ``at`` keys on every input that takes the path, else a fork; then the place the pass
-    read its key at, a fact that holds only on the side the pass took."""
+    """Record whether a walk takes pass ``at``, and answer it: a fact where the dict's range
+    proves the answer (``DictState.measured``), a pass with the place it read its key at, else
+    a fork, which narrows the range; then the place the pass read its key at, a fact that
+    holds only on the side the pass took."""
     test = [">", self.size_term(), at]
     site = caller_site()
     taken = key is not MISSING
-    if taken and self.fewest() > at:
-        self.sink.append(Fact(test, True, site, False, pin, lost_as=name))
-        return True
+    if proves(self.measured(), ">", at) is taken:
+        self.sink.append(Fact(test, taken, site, False, pin if taken else None, lost_as=name))
+        return taken
+    self.__dict__["span"] = narrowed(self.span, ">", at, taken)
     if not recorded(self, Branch(test, taken, site, False, name)):
         return False
     if pin is not None:

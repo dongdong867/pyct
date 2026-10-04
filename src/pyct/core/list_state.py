@@ -15,6 +15,7 @@ from typing import Any, Self
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
+from pyct.core.spans import UNKNOWN, Span, exactly, measured
 from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.strs import ConcolicStr
 
@@ -105,6 +106,12 @@ class ListState(list):
     # the caller's frame and instruction when a walk last started, so Python's own guess at the
     # length that follows it in the same call is not taken for the target's `len`
     walked_at: tuple[int, int] | None
+    # the fewest and the most items the list holds on every input that takes the path, from how
+    # it was built and the forks on its length (see ``core.spans``), and whether a change pyct
+    # follows without a fork, whose effect on the length may differ on another input, made it:
+    # the range of a marked list starts over at each change
+    span: Span
+    marked: bool
 
     @classmethod
     def made(cls, items: list[object], expression: Expression | None, sink: BranchSink) -> Self:
@@ -118,6 +125,8 @@ class ListState(list):
         fields["expression"] = expression
         fields["kinds"] = kinds_of(items)
         fields["walked_at"] = None
+        fields["span"] = UNKNOWN
+        fields["marked"] = False
         return made
 
     def length(self) -> int:
@@ -178,11 +187,42 @@ class ListState(list):
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
 
     def derived(
-        self, items: list[object], shadow: list[object], expression: Expression
+        self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
-        """A new tracked list built from this one: the items, what pyct saw of them, the form."""
+        """A new tracked list built from this one: the items, what pyct saw of them, the form,
+        and the range that form holds. It carries this one's mark."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds
+        fields["span"] = span
+        fields["marked"] = self.marked
         return made
+
+    def measure(
+        self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False
+    ) -> bool:
+        """Record a check on the list's length, `[op, ["len", items], n]`: a fact where its range
+        proves the side Python took, else a fork, which narrows the range. Answer that side."""
+        check: list[Expression] = [op, ["len", self.expression], number]
+        return measured(self, check, taken, name, raising=raising)
+
+    def resized(self, span: Span) -> None:
+        """Take the range a change leaves the list: ``span``, or none at all once it is marked."""
+        self.__dict__["span"] = UNKNOWN if self.marked else span
+
+    def mark(self) -> None:
+        """Note a change pyct follows without a fork, whose effect on the length may differ on
+        another input that takes the path: the range starts over, here and at each change."""
+        fields = self.__dict__
+        fields["marked"] = True
+        fields["span"] = UNKNOWN
+
+    def span_of(self, other: list[object]) -> Span:
+        """The range of a list this one takes in: a tracked list's own while its form holds and
+        it is on this path, any other list's the items it holds now, which its display writes.
+        A tracked list kept from an earlier call carries that call's path, so it knows nothing
+        here."""
+        if not isinstance(other, ListState) or other.expression is None:
+            return exactly(list.__len__(other))
+        return other.span if other.sink is self.sink else UNKNOWN

@@ -80,20 +80,8 @@ def test_records_at_the_test(where: tuple[str, ...]) -> None:
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"
 
 
-# record-bool-of-a-tracked-list-where-it-is-tested-writes-a-changed-list-as-built
-def test_writes_a_changed_list_as_built() -> None:
-    result = run_pyct(f"{TARGET}::changed_before", EMPTY, "--budget", "10")
-
-    assert result.returncode == 0, result.stderr
-    called, tested, _ = lines_of("changed_before")
-    seed = first_line(result.stdout)
-    built = ["!=", ["len", ["+", "items", ["[,]", 0]]], 0]
-    assert at(seed, called) == []
-    assert lines_expressions_and_sides(seed) == [(tested, built, True)]
-    assert any(
-        line.startswith(f"missed {FILE}:{tested}:") and line.endswith(" unsat")
-        for line in result.stderr.splitlines()
-    ), result.stderr
+# record-bool-of-a-tracked-list-where-it-is-tested-writes-a-changed-list-as-built is replaced
+# by record-decided-checks-on-lists-strings-and-second-walks-tests-a-changed-list-as-decided
 
 
 # record-bool-of-a-tracked-list-where-it-is-tested-keeps-the-list-as-it-was-at-the-call

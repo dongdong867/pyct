@@ -8,7 +8,7 @@ import pytest
 
 from pyct.core import bound
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import handed
 from pyct.core.list_state import plain
@@ -41,6 +41,13 @@ def forks(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
     return [(item.expression, item.taken) for item in sink if isinstance(item, Branch)]
 
 
+def decided(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
+    """Each check the sink holds as a fact, with the side it took."""
+    return [
+        (item.expression, item.taken) for item in sink if isinstance(item, Fact) and item.decided
+    ]
+
+
 def downgrades(sink: list[SinkItem]) -> list[str]:
     return [item.name for item in sink if isinstance(item, Downgrade)]
 
@@ -62,10 +69,9 @@ def test_an_index_records_the_long_enough_fork_and_hands_out_the_item_as_indexed
 
     assert values([first, last]) == [1, 3]
     assert isinstance(last, ConcolicInt) and last.expression == ["[]", "items", -1]
-    assert forks(sink) == [
-        ([">", ["len", "items"], 0], True),
-        ([">=", ["len", "items"], 1], True),
-    ]
+    # the first index measured the list as holding at least one item, which decides the second
+    assert forks(sink) == [([">", ["len", "items"], 0], True)]
+    assert decided(sink) == [([">=", ["len", "items"], 1], True)]
 
 
 def test_an_index_past_the_end_raises_after_its_fork() -> None:
@@ -357,14 +363,26 @@ def test_pyct_s_bool_is_the_truth_test_untested(start: list[int], filled: bool) 
 
 
 def test_pyct_s_bool_keeps_the_form_the_list_had_at_the_call() -> None:
-    items, sink = tracked([])
-    items.append(0)
+    items, sink = tracked([5])
+    items.pop()
 
     truth = bound.bool_(items)
     items.append(1)
 
-    assert truth.expression == ["!=", ["len", ["+", "items", ["[,]", 0]]], 0]
-    assert int.__bool__(truth) is True and forks(sink) == []
+    assert truth.expression == ["!=", ["len", ["[:]", "items", None, -1]], 0]
+    assert int.__bool__(truth) is False
+    assert forks(sink) == [(["!=", ["len", "items"], 0], True)]
+
+
+def test_pyct_s_bool_of_a_list_its_range_proves_filled_is_a_fact_where_it_is_called() -> None:
+    items, sink = tracked([])
+    items.append(0)
+
+    truth = bound.bool_(items)
+
+    assert truth is True
+    assert forks(sink) == []
+    assert decided(sink) == [(["!=", ["len", ["+", "items", ["[,]", 0]]], 0], True)]
 
 
 def test_pyct_s_bool_of_a_list_whose_form_stopped_describing_it_is_plain() -> None:

@@ -1,13 +1,12 @@
 {
  "not_in": {
   "inputs": [
-   "{\"args\": {\"s\": \"a\"}, \"forks\": [{\"file\": \"<root>/targets/why/negated.py\", \"line\": 2, \"col\": 7, \"taken\": false, \"expression\": [\"==\", \"s\", \"''\"]}, {\"file\": \"<root>/targets/why/negated.py\", \"line\": 4, \"col\": 11, \"taken\": true, \"expression\": [\"not in\", \"s\", \"''\"]}, {\"file\": \"<root>/targets/why/negated.py\", \"line\": 5, \"col\": 11, \"taken\": false, \"expression\": [\"<\", [\"len\", \"s\"], 0]}], \"covered\": {\"<root>/targets/why/negated.py\": [2, 4, 5, 7]}, \"total\": {\"<root>/targets/why/negated.py\": 116}, \"failure\": null, \"downgrades\": [], \"source\": \"seed\", \"aim\": null, \"mismatch_at\": null}",
+   "{\"args\": {\"s\": \"a\"}, \"forks\": [{\"file\": \"<root>/targets/why/negated.py\", \"line\": 2, \"col\": 7, \"taken\": false, \"expression\": [\"==\", \"s\", \"''\"]}, {\"file\": \"<root>/targets/why/negated.py\", \"line\": 4, \"col\": 11, \"taken\": true, \"expression\": [\"not in\", \"s\", \"''\"]}], \"covered\": {\"<root>/targets/why/negated.py\": [2, 4, 5, 7]}, \"total\": {\"<root>/targets/why/negated.py\": 116}, \"failure\": null, \"downgrades\": [], \"source\": \"seed\", \"aim\": null, \"mismatch_at\": null}",
    "{\"args\": {\"s\": \"\"}, \"forks\": [{\"file\": \"<root>/targets/why/negated.py\", \"line\": 2, \"col\": 7, \"taken\": true, \"expression\": [\"==\", \"s\", \"''\"]}], \"covered\": {\"<root>/targets/why/negated.py\": [2, 3]}, \"total\": {\"<root>/targets/why/negated.py\": 116}, \"failure\": null, \"downgrades\": [], \"source\": \"solver\", \"aim\": {\"file\": \"<root>/targets/why/negated.py\", \"line\": 2, \"col\": 7, \"position\": 0}, \"mismatch_at\": null}"
   ],
   "forks": [
    "fork <root>/targets/why/negated.py:2:7  s == ''  not taken",
    "fork <root>/targets/why/negated.py:4:11  s not in ''  taken",
-   "fork <root>/targets/why/negated.py:5:11  len(s) < 0  not taken",
    "fork <root>/targets/why/negated.py:2:7  s == ''  taken"
   ]
  },

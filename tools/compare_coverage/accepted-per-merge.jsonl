@@ -50,6 +50,9 @@
 {"set": "v2", "target": "targets.dicts.made_up_ints::counted_unannotated", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [12, 13]}
 {"set": "v2", "target": "targets.dicts.made_up_ints::skips", "seed": {"d": {"0": 5}}, "status": "differs", "only_legacy": [], "only_v2": [21, 23]}
 {"set": "v2", "target": "targets.dicts.made_up_ints::tracked", "seed": {"n": 5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [29]}
+{"set": "v2", "target": "targets.dicts.measured::unproven", "seed": {"d": {}, "e": {}}, "status": "differs", "only_legacy": [], "only_v2": [29, 31, 33, 35, 37]}
+{"set": "v2", "target": "targets.dicts.measured::walked_length", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [16]}
+{"set": "v2", "target": "targets.dicts.measured::walked_truth", "seed": {"d": {}}, "status": "differs", "only_legacy": [], "only_v2": [21, 23]}
 {"set": "v2", "target": "targets.dicts.missing_key::check", "seed": {"config": {"server": {}}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
 {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
@@ -154,6 +157,12 @@
 {"set": "v2", "target": "targets.lists.fills::walk_strs", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [8]}
 {"set": "v2", "target": "targets.lists.keeps::keep", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [8]}
 {"set": "v2", "target": "targets.lists.length::check", "seed": {"items": [1]}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.lists.measured::append_walk", "seed": {"xs": []}, "status": "differs", "only_legacy": [], "only_v2": [23]}
+{"set": "v2", "target": "targets.lists.measured::cut_after_walk", "seed": {"items": [1, 2], "i": 1}, "status": "differs", "only_legacy": [], "only_v2": [62]}
+{"set": "v2", "target": "targets.lists.measured::join_after_walk", "seed": {"parts": ["x", "y"]}, "status": "differs", "only_legacy": [], "only_v2": [78]}
+{"set": "v2", "target": "targets.lists.measured::length_arithmetic", "seed": {"xs": [1, 2, 3, 4]}, "status": "differs", "only_legacy": [], "only_v2": [38, 44]}
+{"set": "v2", "target": "targets.lists.measured::renamed_row", "seed": {"grid": [[1], []], "i": 0}, "status": "differs", "only_legacy": [], "only_v2": [70, 71]}
+{"set": "v2", "target": "targets.lists.measured::unproven", "seed": {"xs": [], "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [50]}
 {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [], "only_v2": [4]}}
 {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
 {"set": "v2", "target": "targets.lists.reaches_an_index::check", "seed": {"items": [1, 2]}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
