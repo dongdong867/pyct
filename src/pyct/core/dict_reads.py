@@ -4,9 +4,11 @@ Every lookup records whether the key is there, where it runs, the first time the
 about that key: `["in", "'port'", config]`. After that the path settles the answer, and a later
 lookup of that key is a fact of the path, not a fork (``core.branch.Fact``). A key the target
 stored or removed is known, and one a walk handed out was there. A key is a plain str or int,
-written as a literal, or a tracked one, written as its expression, which the solver may change;
-a tracked key into a dict the target changed is Python's own answer and a downgrade, since no
-expression writes the dict whole.
+written as a literal, or a tracked one, written as its expression, which the solver may change.
+After a change under a tracked key, a lookup first records whether its key equals that one
+(``after_changes``). A tracked key the target looks up in a dict it changed is Python's own
+answer and a downgrade; only a change under a tracked key looks it up there, and records
+whether it equals each key changed before.
 
 A walk over the keys, the values or the items records `[">", size, j]` for each key it takes
 and once more, taken false, where it ends, in insertion order. A pass or an end the dict's
@@ -33,6 +35,23 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, caller_site
+from pyct.core.dict_compares import (
+    after_changes,
+    handed_in_place,
+    is_tracked,
+    own_key,
+    written_key,
+)
+from pyct.core.dict_handouts import (
+    FIRST,
+    LAST,
+    POPPED,
+    given_place,
+    handout,
+    proven,
+    stale_copy,
+    walked_in_the_argument,
+)
 from pyct.core.dict_state import MISSING, TRACKED, DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
@@ -43,18 +62,6 @@ from pyct.core.values import forked, own
 
 # what a walk hands out for each key: the key, its value, or both
 type Pick = Callable[[DictState, object], object]
-
-
-def written_key(key: object) -> Expression | None:
-    """A key as a fork writes it: a str in its Python quotes, an int as itself, a tracked one by
-    its expression. None for a key of any other kind, which pyct does not follow."""
-    if type(key) is str:
-        return str.__repr__(key)
-    if type(key) is int:
-        return int.__int__(key)
-    if type(key) is ConcolicStr or type(key) is ConcolicInt:
-        return key.expression
-    return None
 
 
 def int_key(key: object) -> object:
@@ -101,11 +108,6 @@ _APART_FROM_INTS = frozenset(
 )
 
 
-def is_tracked(key: object) -> bool:
-    """Whether a key is a tracked str or int, which the solver may change."""
-    return type(key) is ConcolicStr or type(key) is ConcolicInt
-
-
 def settled_as(key: object) -> object:
     """What ``settled`` knows a key by: a plain key as itself, a tracked one by its expression."""
     if is_tracked(key):
@@ -114,13 +116,18 @@ def settled_as(key: object) -> object:
     return key
 
 
-def present(self: DictState, key: object, name: str, *, raising: bool = False) -> bool | None:
+def present(
+    self: DictState, key: object, name: str, *, raising: bool = False, changing: bool = False
+) -> bool | None:
     """Whether the dict holds ``key``, recording the fork the first time the path asks, which
     settles the answer: a later lookup of the same key, with no change under it since, is a
     fact that holds what the first found, and so is a lookup in a dict whose range holds no
     key (``DictState.measured``). On a dict changed without a fork no lookup is a
     fact, since that change may have touched the key on another input: one recorded here is a
-    fork, and a key the target changed or a walk handed out is answered without either.
+    fork, and a key the target changed or a walk handed out is answered without either. After
+    a change under a tracked key the lookup first records whether its key is that one
+    (``after_changes``), until a walk follows such a change: from then on no key is compared
+    with a tracked change (``DictState.unfollowed_since_walk``).
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -128,33 +135,75 @@ def present(self: DictState, key: object, name: str, *, raising: bool = False) -
 
     None when pyct does not follow this lookup, which the caller answers as Python does and
     names as a downgrade: a key of another kind, or a tracked key into a dict the target
-    changed. Python's own lookup compares a key it finds with `==`, which on a tracked key
-    records a fork no target wrote, so every lookup here reads the key's plain value.
+    changed, unless the lookup is a change's own (``changing``). Python's own lookup compares a
+    key it finds with `==`, which on a tracked key records a fork no target wrote, so every
+    lookup here reads the key's plain value.
     """
     held = dict.__contains__(self, plain(key))
-    written = written_key(key)
-    if written is None or (is_tracked(key) and self.changed):
-        return None
-    known = settled_as(key)
-    if plain(key) in self.changed or proven(self, key):
+    if proven(self, key):
         return held
-    given = self.shared.get(key) if type(key) in (str, int) else None
+    if self.unfollowed_since_walk():
+        self.mark()
+        return _looked_up_unfollowed(self, key, held, (name, raising))
+    written = written_key(key)
+    if written is None or (is_tracked(key) and self.changed and not changing):
+        return None
+    given = given_place(self, key)
     place: Expression = None if given is None else ["given", given]
-    test = ["in", written, self.expression]
+    # whether the key is one a change was made under holds where the walk read it, too
+    changed = after_changes(self, key, written, (name, raising, place))
+    if changed is not None:
+        return changed
+    return _in_the_argument(self, key, held, (name, raising, place))
+
+
+def _looked_up_unfollowed(
+    self: DictState, key: object, held: bool, how: tuple[str, bool]
+) -> bool | None:
+    """A lookup in a dict no longer followed (see ``DictState.unfollowed_since_walk``): no key
+    is compared with a tracked change. None for a key of another kind and a tracked key, which
+    the caller answers as Python does, the dict holding a change; no fork for a key the target
+    changed or a walk handed out, a stale copy among them; and otherwise the argument's fork on
+    the marked dict, given where a walk read a key Python shares."""
+    name, raising = how
+    if written_key(key) is None or is_tracked(key):
+        return None
+    if plain(key) in self.changed or stale_copy(self, key):
+        return held
+    given = self.shared.get(key)
+    place: Expression = None if given is None else ["given", given]
+    return _in_the_argument(self, key, held, (name, raising, place))
+
+
+def _in_the_argument(
+    self: DictState, key: object, held: bool, how: tuple[str, bool, Expression]
+) -> bool:
+    """Whether the argument holds ``key``, a key no change decides: the fork, or a fact where
+    the path asked before (see ``present``) or a walk read the key in the argument. ``how`` is
+    the lookup's name, whether Python may raise after it, and the place a walk read the key at,
+    which holds on both sides."""
+    name, raising, place = how
+    known = settled_as(key)
+    test = ["in", written_key(key), self.expression]
     site = caller_site()
     self.settled.setdefault(known, held)
     # after a change without a fork, a lookup recorded here is a fork, and adds nothing to the
     # keys asked and found that the argument's other dicts decide by; ``settled``, shared too,
     # is still noted
     if not self.unforked:
-        # a key the path asked about before, or any key of a dict whose range holds none
-        if known in self.asked or (self.measured()[1] == 0 and not held):
-            self.asked.add(known)
-            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
-            return held
+        # a key the path asked about before, a stale copy of a key a walk read in the
+        # argument, or any key of a dict whose range holds none
+        decided = (
+            known in self.asked
+            or (held and walked_in_the_argument(self, key))
+            or (self.measured()[1] == 0 and not held)
+        )
         self.asked.add(known)
         if held:
             self.found.add(TRACKED if is_tracked(key) else known)
+        if decided:
+            self.sink.append(Fact(test, held, site, raising, place, lost_as=name))
+            return held
     if place is not None:
         self.sink.append(Fact(None, True, site, raising, place, lost_as=name))
     return recorded(self, Branch(test, held, site, raising, name))
@@ -166,51 +215,12 @@ def recorded(self: DictState, branch: Branch) -> bool:
     return branch.taken
 
 
-def proven(self: DictState, key: object) -> bool:
-    """Whether the key is the very object a walk of this dict handed out, whenever the walk ran,
-    as in `for k in sorted(d): d[k]` or Python's own `dict(d)`: the dict held it when the walk
-    handed it out, and no store or removal since (``changed``) moved it, so no input takes the
-    other side of the lookup. A walk hands out a copy of each key no code can write, so a key
-    the target writes as a literal is looked up as any other. A walk hands out only a plain str
-    or int, so any other key, a tracked one among them, is never one: it is refused before it
-    is hashed, which on a tracked key would compare it with a stored key and record a fork."""
-    if type(key) is not str and type(key) is not int:
-        return False
-    return self.copies.get(key, MISSING) is key
-
-
-def handout(self: DictState, key: object, pin: Expression) -> object:
-    """The key a walk hands out for a stored key: its own copy, the same for every walk.
-
-    A key Python shares, a one-character str or a small int, has no copy: a literal the target
-    writes is the same object. Its lookup is recorded as any other, and holds where the walk
-    read it (``pin``), so its other side is asked with that place and without it.
-    """
-    if type(key) is not str and type(key) is not int:
-        # a key of another kind is never copied, so it is hashed no more than Python hashes it
-        return key
-    copied = self.copies.get(key, MISSING)
-    if copied is MISSING:
-        copied = _copy(key)
-        if copied is not key:
-            self.copies[key] = copied
-    if copied is key and pin is not None:
-        self.shared[key] = pin
-    return copied
-
-
-def _copy(key: object) -> object:
-    """A new object equal to a str or int key, or the key itself where Python shares one."""
-    if type(key) is str and len(key) > 1:
-        return "".join([key[:1], key[1:]])
-    if type(key) is int:
-        return int.__add__(int.__add__(key, 1), -1)
-    return key
-
-
-def found(self: DictState, key: object, name: str, *, raising: bool = False) -> bool:
+def found(
+    self: DictState, key: object, name: str, *, raising: bool = False, changing: bool = False
+) -> bool:
     """Whether the dict holds ``key``, answered and recorded where pyct follows the lookup, and
-    otherwise Python's answer, named ``name``: a key of another kind is Python's to hash."""
+    otherwise Python's answer, named ``name``: a key of another kind is Python's to hash.
+    ``changing`` says the lookup is a change's own (see ``present``)."""
     looked = int_key(key)
     if written_key(looked) is None:
         # a tracked key's plain value, so Python's lookup records no `==` the target never wrote
@@ -221,22 +231,29 @@ def found(self: DictState, key: object, name: str, *, raising: bool = False) -> 
     bare = plain(looked)
     if not self.holds(name, bare):
         return dict.__contains__(self, bare)
-    answer = present(self, looked, name, raising=raising)
+    answer = present(self, looked, name, raising=raising, changing=changing)
     if answer is None:
         self.sink.append(Downgrade(name=name, site=caller_site()))
+        if is_tracked(looked):
+            # Python answered for this key's value with no fork, so a fork on the key after it
+            # would move an answer the path already read (see ``dict_changes.followed``)
+            self.unfollowed.add(settled_as(looked))
         return dict.__contains__(self, bare)
     return answer
 
 
-def value(self: DictState, key: object) -> object:
+def value(self: DictState, key: object, *, changing: bool = False) -> object:
     """The value under a key the dict holds, handed out as the target reads it.
 
     A tracked key reads the argument's value as ``config[name]``, so the solver may change the
-    key; any other key, and a tracked one into a dict the target changed, hands out what the
-    dict holds there.
+    key; any other key hands out what the dict holds there. So does a tracked key into a dict
+    the target changed, unless a change's own lookup (``changing``) found the key none of the
+    changed ones, and so the argument's.
     """
     held = dict.__getitem__(self, plain(key))
-    if not is_tracked(key) or self.expression is None or self.changed:
+    if not is_tracked(key) or self.expression is None:
+        return held
+    if self.changed and not (changing and plain(key) not in self.changed):
         return held
     assert isinstance(key, ConcolicStr | ConcolicInt)
     read: Expression = ["[]", self.expression, key.expression]
@@ -331,11 +348,6 @@ def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
     return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
 
 
-# the end a walk starts from, which says what keeps a key it reads at its place, and popitem's,
-# which reads the last key and removes it
-FIRST, LAST, POPPED = "walked", "last", "popped"
-
-
 def placed(self: DictState, key: object, end: str) -> Expression:
     """What keeps ``key`` where a walk from ``end`` read it, as the solver reads it, or None when
     nothing needs to.
@@ -351,10 +363,9 @@ def placed(self: DictState, key: object, end: str) -> Expression:
     written = written_key(key)
     if written is None:
         return None
-    own_key = self.changed.get(key) is True and self.settled.get(key) is False
-    if end in (LAST, POPPED):
-        return None if own_key else [end, self.expression, written]
-    return ["exactly", self.expression] if own_key else ["walked", self.expression, written]
+    if own_key(self, key):
+        return None if end in (LAST, POPPED) else ["exactly", self.expression]
+    return [end if end in (LAST, POPPED) else "walked", self.expression, written]
 
 
 def _walked(
@@ -364,6 +375,7 @@ def _walked(
     while it walks. A change made without the dict's methods turns the walk plain there. Each
     key is handed out as the walk's own copy of it (see ``handout``)."""
     name, end = how
+    first = self.walk_started()
     at = 0
     while True:
         key = own(next, keys, MISSING)
@@ -372,6 +384,8 @@ def _walked(
         pin = None if key is MISSING else placed(self, key, end)
         if not passed(self, at, key, pin, name):
             return
+        if first or not self.unfollowed_since_walk():
+            handed_in_place(self, key, name, pin)
         handout(self, key, pin)
         yield pick(self, key)
         at += 1

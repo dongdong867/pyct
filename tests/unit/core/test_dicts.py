@@ -97,6 +97,12 @@ PROGRAMS: dict[str, Callable[[Any, Any], object]] = {
     "tracked in": lambda c, name: (name in c, c.get(name), c.get(name, 0)),
     "tracked index": lambda c, name: c[name],
     "tracked pop": lambda c, name: c.pop(name, None),
+    "tracked store": lambda c, name: (c.__setitem__(name, 7), "a" in c, "k" in c, bool(c), list(c)),
+    "tracked del": lambda c, name: (c.__delitem__(name), "a" in c, "k" in c, bool(c)),
+    "tracked setdefault": lambda c, name: (c.setdefault(name, 3), "a" in c, list(c.items())),
+    "tracked update": lambda c, name: (c.update({name: 1, "n": 2}), "k" in c, bool(c), list(c)),
+    "tracked ror": lambda c, name: (list({name: 1, "n": 2} | c), "a" in c),
+    "store, then tracked": lambda c, name: (c.__setitem__("k", 1), c.pop(name, 0), bool(c)),
 }
 
 
