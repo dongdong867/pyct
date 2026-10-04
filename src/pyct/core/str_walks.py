@@ -4,7 +4,8 @@ Each pass records a fork saying s has a character at that position,
 ``[">", ["len", s], i]``, taken true, and the pass after the last records the
 same fork taken false: the walk's exit. Flipping the exit asks for a longer
 string, and flipping an earlier pass a shorter one
-(``README.md › Rules › forks``).
+(``README.md › Rules › forks``). A pass or an exit the string's length range
+proves, as a second walk's, is a fact, not a fork (`str_lengths`).
 """
 
 from __future__ import annotations
@@ -13,7 +14,8 @@ from collections.abc import Iterator
 from typing import TYPE_CHECKING
 
 from pyct.core.branch import Expression
-from pyct.core.values import forked, own
+from pyct.core.spans import exactly, measured
+from pyct.core.values import own
 
 if TYPE_CHECKING:
     from pyct.core.strs import ConcolicStr
@@ -30,14 +32,16 @@ def walk(s: ConcolicStr) -> Iterator[ConcolicStr]:
     length, not ``len(s)``, which would record ``__len__``.
     """
     length = own(str.__len__, s)
-    measured: Expression = ["len", s.expression]
+    size: Expression = ["len", s.expression]
     at = 0
-    while forked(s.sink, [">", measured, at], at < length):
+    while measured(s, [">", size, at], at < length):
         character = type(s).made(
             own(str.__getitem__, s, at), expression=["[]", s.expression, at], sink=s.sink
         )
-        # one character on every pass: the pass's fork says position i exists. The str refuses
-        # a set, as a plain one does, so pyct writes the mark straight in
-        character.__dict__["single"] = True
+        # one character on every pass: the pass's check says position i exists. The str
+        # refuses a set, as a plain one does, so pyct writes the mark straight in
+        fields = character.__dict__
+        fields["single"] = True
+        fields["span"] = exactly(1)
         yield character
         at += 1

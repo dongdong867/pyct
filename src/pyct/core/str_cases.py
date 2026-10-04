@@ -17,6 +17,7 @@ from typing import Protocol
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.spans import Span
 from pyct.core.str_operands import literal, position
 from pyct.core.values import downgraded, own
 
@@ -29,6 +30,7 @@ class Tracked(Protocol):
 
     expression: Expression
     sink: BranchSink
+    span: Span
 
 
 def _nothing(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:

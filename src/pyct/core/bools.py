@@ -22,6 +22,7 @@ from pyct.core.values import (
     downgrade_the_rest,
     downgraded,
     forked,
+    held,
     own,
     pickled,
     refused_delete,
@@ -99,6 +100,9 @@ class ConcolicBool(int):
     sink: BranchSink
     # the base type, as `isinstance`, singledispatch and a class pattern read it
     __class__ = REPORTED_CLASS  # pyrefly: ignore[bad-override]
+    # set on a compare whose answer pyct's own values decided, as a length range proves one
+    # (see `core.spans`): testing it records a fact, not a fork
+    decided: bool = False
 
     # a compare or an arithmetic operation reads the bool as the int 1 or 0, as a tracked int
     # teaches it, and meets a float as that int does (see `numbers.promoted`). int promises a
@@ -186,6 +190,8 @@ class ConcolicBool(int):
         return made
 
     def __bool__(self) -> bool:
+        if self.decided:
+            return held(self.sink, self.expression, own(int.__bool__, self))
         return forked(self.sink, self.expression, own(int.__bool__, self))
 
     __repr__ = _written  # pyrefly: ignore[bad-override]

@@ -11,7 +11,7 @@ from pyct.core.list_forms import UNWRITTEN, displayed, written
 from pyct.core.list_state import is_read, kind_of
 from pyct.core.lists import ConcolicList
 from pyct.core.strs import ConcolicStr
-from tests.unit.core.test_list_reads import downgrades, forks, tracked
+from tests.unit.core.test_list_reads import decided, downgrades, forks, tracked
 
 
 def test_in_compares_each_item_until_one_matches() -> None:
@@ -72,7 +72,11 @@ def test_equal_lists_compare_their_lengths_first_then_each_pair() -> None:
         (["==", ["[]", "items", 0], 1], True),
         (["==", ["[]", "items", 1], 2], True),
     ]
-    assert forks(sink)[-1] == (["==", ["len", "items"], 1], False)
+    # the first compare measured the list at two items, which decides each later length check
+    assert decided(sink) == [
+        (["==", ["len", "items"], 2], True),
+        (["==", ["len", "items"], 1], False),
+    ]
 
 
 def test_two_tracked_lists_compare_both_lengths() -> None:

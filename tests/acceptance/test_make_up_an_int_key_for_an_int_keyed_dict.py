@@ -125,12 +125,13 @@ def test_keeps_str_keys_elsewhere() -> None:
     assert all((3, [">", ["len", "d"], 1], True) not in listed(line) for line in lines), lines
     misses = summary_line(str_keyed.stdout)["misses"]
     assert isinstance(misses, list)
-    # the flips of `len(d) > 0` on the empty answer's path and of `len(d) > 1` on the seed's
-    assert [(m["line"], m["why"]) for m in misses if m["line"] == 3] == [(3, "unsat")] * 2, misses
+    # the flip of `len(d) > 1` on the seed's path; past `if d:` the walk's first pass is a fact
+    # (record-decided-checks-on-lists-strings-and-second-walks), never flipped
+    assert [(m["line"], m["why"]) for m in misses if m["line"] == 3] == [(3, "unsat")], misses
     missed = [
         e for e in str_keyed.stderr.splitlines() if e.startswith(f"missed {MADE_UP_INTS_FILE}:3:")
     ]
-    assert len(missed) == 2 and all(entry.endswith(" unsat") for entry in missed), missed
+    assert len(missed) == 1 and all(entry.endswith(" unsat") for entry in missed), missed
 
 
 INT_EQUAL = "targets.dicts.int_equal_keys"

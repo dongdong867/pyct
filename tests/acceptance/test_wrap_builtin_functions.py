@@ -261,6 +261,7 @@ def test_the_stderr_line_reads_each_call() -> None:
 
 
 WALKED = "targets.intercept.walked_codes"
+WALKED_FILE = INTERCEPT / "walked_codes.py"
 
 
 def pass_fork(position: int) -> list[object]:
@@ -293,11 +294,14 @@ def test_follows_len_inside_and_after_a_walk() -> None:
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
-    assert expressions(inputs[0]) == [pass_fork(0), ["==", ["len", "s"], 2]]
-    # the walk's passes and `len(s)` are one length term, so every fork is flipped by an
-    # input Python agrees takes the other side
-    two = [line for line in inputs if sides([line], ["==", ["len", "s"], 2]) == {True}]
-    assert two and all(len(text(line, "s")) == 2 for line in two), inputs
+    # the walk measured s, so `len(s) == 2` after it is a fact, not a fork
+    # (record-decided-checks-on-lists-strings-and-second-walks)
+    assert expressions(inputs[0]) == [pass_fork(0)]
+    # the walk's passes and `len(s)` are one length term: an input that walks two characters
+    # takes the `len(s) == 2` side Python agrees with
+    two = [line for line in inputs if len(text(line, "s")) == 2]
+    assert two and all(15 in covered_of(line, WALKED_FILE) for line in two), inputs
+    assert all(sides([line], ["==", ["len", "s"], 2]) == set() for line in inputs), inputs
     long = [line for line in inputs if sides([line], LONGER) == {True}]
     assert long and all(len(text(line, "s")) > 3 for line in long), inputs
     assert all(line["downgrades"] == [] for line in inputs)
