@@ -34,8 +34,8 @@ type Change = tuple[Expression, object, bool, bool]
 # what ``found`` holds for any tracked key a fork found, which may equal any other key
 TRACKED = object()
 
-# the two counts of ``DictState.walk_clock``: the tracked changes and walks counted so far, and
-# the count at the latest walk of a dict holding a tracked change
+# the two counts of ``DictState.walk_clock``: the first tracked changes and the walks counted so
+# far, and the count at the latest walk of a dict holding a tracked change
 TICKS, LAST_WALK = 0, 1
 
 
@@ -104,11 +104,12 @@ class DictState(dict):
     # each tracked key a lookup answered as Python's own, with no fork, as ``settled`` knows it:
     # a change under it after that is Python's own too (see ``dict_changes.followed``)
     unfollowed: set[object]
-    # one clock shared by every dict made from the same argument, by reference: how many
-    # tracked changes and walks it has counted, and the count at the latest walk of a dict
-    # holding a tracked change; and the count at this dict's first tracked change, None before
-    # one. A walk after that change, of this dict or of one made from the same argument, ends
-    # following this dict (see ``unfollowed_since_walk``)
+    # one clock shared by every dict made from the same argument, by reference: at ``TICKS``
+    # how many first tracked changes and walks it has counted, at ``LAST_WALK`` the count at
+    # the latest walk of a dict holding a tracked change; and ``tracked_since``, the count at
+    # this dict's first tracked change, None before one. A walk after that change, of this
+    # dict or of one made from the same argument, ends following this dict (see
+    # ``unfollowed_since_walk``)
     walk_clock: list[int]
     tracked_since: int | None
     # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,

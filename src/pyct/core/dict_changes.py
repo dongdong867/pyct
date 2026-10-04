@@ -133,10 +133,13 @@ def _joined_key(self: DictState, made: DictState, key: object) -> None:
 
 def as_its_store(self: DictState, key: object) -> object:
     """``key`` as Python's own merge or lookup meets it: its plain value where the dict holds
-    that value by a store under this very tracked key, the same key on every input, so the
-    compare Python would make there is always true and, recorded, would pin the tracked key to
-    this input's text; otherwise the key itself, whose compare with an equal key Python makes
-    and records, a choice another input may take the other way."""
+    that value by a followed store under this very tracked key, logged under its expression,
+    the same key on every input, so the compare Python would make there is always true and,
+    recorded, would pin the tracked key to this input's text; otherwise the key itself, whose
+    compare with an equal key Python makes and records. A store run unfollowed (among other
+    keys of an update, after a walk that ends following, past ``MOST_TRACKED_CHANGES``, after
+    a popitem) is logged by its plain key, so its key meets Python's compare, which records
+    and pins it as before this story (follow-a-store-under-a-shared-tracked-key)."""
     if not is_tracked(key):
         return key
     bare = plain(key)

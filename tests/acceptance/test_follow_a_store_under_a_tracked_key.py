@@ -354,7 +354,6 @@ def test_a_merge_compares_no_tracked_key_with_its_own_stored_key() -> None:
     lines = input_lines(result.stdout)
     merge = line_of("merged_after_store", "{n: 2} | d")
     assert [fork for fork in listed(lines[0]) if fork[0] == merge] == [], listed(lines[0])
-    # the flip of the seed's `'bc' in d`, an input without "bc", is found
     # the flip of the seed's own `'bc' in d`, an input without "bc", is answered and reached
     flipped = next(at for at, fork in enumerate(listed(lines[0])) if fork[1] == ["in", "'bc'", "d"])
     items = line_of("merged_after_store", '("bc", 0) in d.items()')
