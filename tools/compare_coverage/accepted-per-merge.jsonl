@@ -57,6 +57,7 @@
 {"set": "v2", "target": "targets.dicts.named_key::check", "seed": {"order": {"total": 5}}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.dicts.settled::int_only", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [12], "only_v2": []}
 {"set": "v2", "target": "targets.dicts.tracked_key::check", "seed": {"name": "kiwi", "prices": {"apple": 1}}, "status": "differs", "only_legacy": [], "only_v2": [3, 4, 5]}
+{"set": "v2", "target": "targets.dicts.tracked_store::copied_walk", "seed": {"name": "a", "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [186]}
 {"set": "v2", "target": "targets.dicts.tracked_store::defaulted_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [29]}
 {"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [66]}
 {"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [89]}
@@ -69,6 +70,7 @@
 {"set": "v2", "target": "targets.dicts.tracked_store::own_walked_int", "seed": {"n": 0, "config": {}}, "status": "differs", "only_legacy": [], "only_v2": [150]}
 {"set": "v2", "target": "targets.dicts.tracked_store::popped", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [75]}
 {"set": "v2", "target": "targets.dicts.tracked_store::popped_or_none", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [82]}
+{"set": "v2", "target": "targets.dicts.tracked_store::rewalked", "seed": {"n": "zz", "d": {"xx": 1, "yy": 2, "zz": 3}}, "status": "differs", "only_legacy": [], "only_v2": [165]}
 {"set": "v2", "target": "targets.dicts.tracked_store::snapshot", "seed": {"n": "a", "d": {"x1": 1, "x2": 2}}, "status": "differs", "only_legacy": [], "only_v2": [111]}
 {"set": "v2", "target": "targets.dicts.tracked_store::store_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [20]}
 {"set": "v2", "target": "targets.dicts.tracked_store::untyped_store", "seed": {"n": "pyct1", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [11]}
