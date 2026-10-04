@@ -67,6 +67,7 @@
 {"set": "v2", "target": "targets.dicts.tracked_store::deleted", "seed": {"n": "a", "d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [66]}
 {"set": "v2", "target": "targets.dicts.tracked_store::float_store", "seed": {"x": 1.5, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [89]}
 {"set": "v2", "target": "targets.dicts.tracked_store::int_store", "seed": {"n": 0, "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [4]}
+{"set": "v2", "target": "targets.dicts.tracked_store::merged_held", "seed": {"n": "b", "d": {"b": 1}}, "status": "differs", "only_legacy": [], "only_v2": [241]}
 {"set": "v2", "target": "targets.dicts.tracked_store::merged_in_place_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [47]}
 {"set": "v2", "target": "targets.dicts.tracked_store::merged_named", "seed": {"n": "a", "d": {}}, "status": "differs", "only_legacy": [], "only_v2": [56]}
 {"set": "v2", "target": "targets.dicts.tracked_store::missing_deleted", "seed": {"n": "z", "d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [94]}
