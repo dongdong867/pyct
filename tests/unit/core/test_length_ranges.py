@@ -201,9 +201,20 @@ def test_a_dict_s_range_moves_with_a_change_and_starts_over_after_a_forkless_one
     config["b"] = 2
 
     assert config.measured() == (2, 2)
-    config[ConcolicStr.made("pyct1", "n", sink)] = 3
+    # a tracked int into a dict of str keys: a store pyct answers without a fork
+    config[ConcolicInt.made(7, "n", sink)] = 3
 
     assert config.span == UNKNOWN and config.measured() == (1, None)
+
+
+def test_a_dict_s_range_moves_with_a_change_under_a_tracked_key_it_follows() -> None:
+    config, sink = tracked_dict({"a": 1})
+    list(config)
+    config["b"] = 2
+    config[ConcolicStr.made("pyct1", "n", sink)] = 3
+
+    # the store's fork says the key is new, so the range moves by one
+    assert config.measured() == (3, 3)
 
 
 def test_a_lookup_in_a_dict_whose_range_holds_no_key_is_a_fact() -> None:

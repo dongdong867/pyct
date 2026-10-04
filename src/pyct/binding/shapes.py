@@ -148,7 +148,7 @@ _STARTS: Mapping[str, Callable[[], object]] = {"list": list, "dict": dict}
 @dataclass(frozen=True)
 class DictShape:
     """A tracked dict of the input: its keys in order, the kind of each value, and what the
-    solver adds (dict-keys-named-held-or-made-up-by-key-type).
+    solver adds (dict-keys-named-held-made-up-or-changed-under-a-tracked-key).
 
     ``fill`` is the kind of a value the solver adds under a key a fork names or one pyct makes
     up. ``int_keys`` says its annotation is ``dict[int, X]``, whose keys ``--args`` reads back as

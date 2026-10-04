@@ -3,10 +3,10 @@
 A literal key a fork names is its own `Bool`. A tracked key equals a key the dict holds when it
 equals one the input holds, still kept, one the path names, held, or one pyct makes up: `pyct`
 and a number n, written as `str.from_int` writes it, not a text the dict holds or a fork names,
-and among the first ``made`` such texts; under ``dict[int, X]``, a non-negative int the dict does
-not hold and no fork names, among the first ``made`` such ints (dict-keys-named-held-or-made-up-
-by-key-type). A value read under a tracked key is the value under the key it equals; under a
-made-up key, one value declared for them all.
+and among the first ``made`` such texts; under ``dict[int, X]``, a non-negative int the dict
+does not hold and no fork names, among the first ``made`` such ints (dict-keys-named-held-made-
+up-or-changed-under-a-tracked-key). A value read under a tracked key is the value under the key
+it equals; under a made-up key, one value declared for them all.
 """
 
 from __future__ import annotations
