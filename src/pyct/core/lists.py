@@ -17,7 +17,8 @@ from typing import Any
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
-from pyct.core.branch import Downgrade, caller_site
+from pyct.core import spans
+from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
 from pyct.core.values import (
@@ -25,7 +26,6 @@ from pyct.core.values import (
     as_base,
     downgrade_the_rest,
     downgraded,
-    forked,
     own,
     refused_delete,
     refused_set,
@@ -61,12 +61,22 @@ def _slice(self: ListState, key: slice) -> object:
     if bounds is None or step not in (None, 1, -1):
         return _python(self, "__getitem__", key)
     if bounds == (None, None) and step in (None, 1):
-        return self.derived(self.storage(), list(self.shadow), self.expression)
+        return self.derived(self.storage(), list(self.shadow), self.expression, self.span)
     form = sliced(self.expression, *bounds)
     if step is not None:
         form = [*form, step]
     shadow = list.__getitem__(self.shadow, key)
-    return self.derived(list.__getitem__(self, key), shadow, form)
+    return self.derived(list.__getitem__(self, key), shadow, form, _cut_span(self, bounds, step))
+
+
+def _cut_span(self: ListState, bounds: tuple[Expression, Expression], step: object) -> spans.Span:
+    """The range of a slice: Python's clamp of the list's range for plain bounds, and none from
+    the form for a tracked one, which may cut another number of items on another input."""
+    plain = changes.plain_bounds(bounds)
+    if plain is None:
+        return spans.UNKNOWN
+    assert step is None or type(step) is int
+    return spans.sliced(self.span, *plain, step)
 
 
 def _item(self: ListState, key: object) -> object:
@@ -169,8 +179,12 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     if reflected:
         sides.reverse()
     (left_form, left, left_seen), (right_form, right, right_seen) = sides
-    made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form])
-    made.__dict__["kinds"] = self.kinds | kinds
+    span = spans.added(self.span, self.span_of(other))
+    made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form], span)
+    fields = made.__dict__
+    fields["kinds"] = self.kinds | kinds
+    if isinstance(other, ListState) and other.marked:
+        made.mark()
     return made
 
 
@@ -195,14 +209,15 @@ def _repeated(self: ListState, count: object, name: str, *, reflected: bool = Fa
     if not self.holds(name):
         return own(list.__mul__, list.copy(self), times)
     form = ["*", times, self.expression] if reflected else ["*", self.expression, times]
-    return self.derived(self.storage() * times, self.shadow * times, form)
+    span = spans.repeated(self.span, times)
+    return self.derived(self.storage() * times, self.shadow * times, form, span)
 
 
 def _copied(self: ListState) -> object:
     """``items.copy()`` and ``copy.copy(items)``: a tracked list with the same form."""
     if not self.holds("copy"):
         return own(list.copy, self)
-    return self.derived(self.storage(), list(self.shadow), self.expression)
+    return self.derived(self.storage(), list(self.shadow), self.expression, self.span)
 
 
 def _deep_copied(self: ListState, memo: dict[int, object]) -> object:
@@ -211,7 +226,7 @@ def _deep_copied(self: ListState, memo: dict[int, object]) -> object:
     Every position is checked first, since the copy's own shadow is the copies it makes.
     """
     followed = self.holds("__deepcopy__", *range(self.length()))
-    made = self.derived([], [], self.expression) if followed else []
+    made = self.derived([], [], self.expression, self.span) if followed else []
     memo[id(self)] = made
     items = [copy.deepcopy(item, memo) for item in self.storage()]
     list.extend(made, items)
@@ -240,13 +255,16 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     fields = self.__dict__
     fields["shadow"] = [shadow[at] for at in placed]
     fields["expression"] = ["[,]", *(["[]", self.expression, at] for at in placed)]
+    # a display holds exactly its items, as many as the walk took
+    self.resized(spans.exactly(len(placed)))
 
 
 def _truth(self: ListState) -> bool:
-    """``if items:``: Python tests a list by its length, so the fork is `len(items) != 0`."""
+    """``if items:``: Python tests a list by its length, so the check is `len(items) != 0`, a fact
+    where the list's range proves it, else a fork."""
     if not self.holds("__bool__"):
         return self.length() != 0
-    return forked(self.sink, ["!=", ["len", self.expression], 0], self.length() != 0)
+    return self.measure("!=", 0, self.length() != 0)
 
 
 def _size(self: ListState) -> int:

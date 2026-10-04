@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import strs
+from pyct.core import str_lengths
 from pyct.core.bound import chr as chr_
 from pyct.core.bound import len as len_
 from pyct.core.bound import ord as ord_
@@ -67,7 +67,7 @@ def test_a_raise_in_core_s_own_code_under_a_bound_len_is_a_pyct_bug(
         raise RuntimeError("a pyct bug")
 
     # core's own length builds its answer here, below the routers
-    monkeypatch.setattr(strs, "ConcolicInt", broken)
+    monkeypatch.setattr(str_lengths, "ConcolicInt", broken)
 
     def target(s: str) -> object:
         return len_(s)

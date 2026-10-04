@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from pyct.core import spans
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_forms import (
@@ -27,7 +28,8 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.values import forked, own
+from pyct.core.spans import Span
+from pyct.core.values import own
 
 # one change, made the same way on the items and on the shadow
 type Change = Callable[[list[object]], object]
@@ -72,14 +74,37 @@ def _number(key: object) -> int:
     return int.__int__(key)
 
 
-def made(self: ListState, change: Change, form: Expression, kinds: frozenset[str]) -> object:
-    """Make a change Python's own way, then on the shadow, and take on its form."""
+def made(
+    self: ListState, change: Change, form: Expression, kinds: frozenset[str], span: Span
+) -> object:
+    """Make a change Python's own way, then on the shadow, and take on its form and the range
+    that form holds."""
     answer = own(change, self)
     change(self.shadow)
     fields = self.__dict__
     fields["expression"] = form
     fields["kinds"] = self.kinds | kinds
+    self.resized(span)
     return answer
+
+
+def one_more(span: Span) -> Span:
+    """The range once a change adds one item."""
+    return spans.added(span, spans.exactly(1))
+
+
+def one_less(span: Span) -> Span:
+    """The range once a change takes one item out, which the list held."""
+    fewest, most = span
+    return (max((fewest or 0) - 1, 0), None if most is None else max(most - 1, 0))
+
+
+def plain_bounds(bounds: tuple[Expression, Expression]) -> tuple[int | None, int | None] | None:
+    """A slice's bounds as plain ints, a missing one None; None when either is tracked."""
+    start, stop = bounds
+    if (start is None or type(start) is int) and (stop is None or type(stop) is int):
+        return start, stop
+    return None
 
 
 def unfollowed(self: ListState, name: str, change: Change) -> object:
@@ -128,7 +153,8 @@ def append(self: ListState, value: object) -> None:
     if form is UNWRITTEN or not self.holds("append"):
         unfollowed(self, "append", change)
         return
-    made(self, change, joined(self.expression, ["[,]", form]), frozenset({kind_of(value)}))
+    kinds = frozenset({kind_of(value)})
+    made(self, change, joined(self.expression, ["[,]", form]), kinds, one_more(self.span))
 
 
 def extend(self: ListState, values: object, name: str = "extend") -> None:
@@ -143,7 +169,8 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
         unfollowed(self, name, change)
         return
     form, kinds = other
-    made(self, change, joined(self.expression, form), kinds)
+    span = spans.added(self.span, self.span_of(values if isinstance(values, list) else taken))
+    made(self, change, joined(self.expression, form), kinds, span)
 
 
 def insert(self: ListState, index: Any, value: object) -> None:
@@ -156,7 +183,8 @@ def insert(self: ListState, index: Any, value: object) -> None:
     if at is None or form is UNWRITTEN or not self.holds("insert"):
         unfollowed(self, "insert", change)
         return
-    made(self, change, placed(self.expression, at, form), frozenset({kind_of(value)}))
+    kinds = frozenset({kind_of(value)})
+    made(self, change, placed(self.expression, at, form), kinds, one_more(self.span))
 
 
 def pop(self: ListState, *args: Any) -> object:
@@ -179,7 +207,7 @@ def pop(self: ListState, *args: Any) -> object:
     form = (
         ["[:]", self.expression, None, -1] if not args else dropped(self.expression, position(key))
     )
-    made(self, lambda items: list.pop(items, at), form, frozenset())
+    made(self, lambda items: list.pop(items, at), form, frozenset(), one_less(self.span))
     return item
 
 
@@ -187,8 +215,7 @@ def _pops(self: ListState, key: object, given: bool) -> bool:
     """The fork a pop records before Python may raise: not empty, or the index in range."""
     if given:
         return in_range(self, key, "pop")
-    measured: Expression = ["!=", ["len", self.expression], 0]
-    return forked(self.sink, measured, self.length() != 0, "pop", raising=True)
+    return self.measure("!=", 0, self.length() != 0, "pop", raising=True)
 
 
 def remove(self: ListState, value: object, found: int | None) -> None:
@@ -201,7 +228,8 @@ def remove(self: ListState, value: object, found: int | None) -> None:
         form = joined(
             ["[:]", self.expression, None, found], ["[:]", self.expression, found + 1, None]
         )
-        made(self, lambda items: list.__delitem__(items, found), form, frozenset())
+        change: Change = lambda items: list.__delitem__(items, found)  # noqa: E731
+        made(self, change, form, frozenset(), one_less(self.span))
 
 
 def clear(self: ListState) -> None:
@@ -217,7 +245,7 @@ def reverse(self: ListState) -> None:
     if not self.holds("reverse"):
         own(list.reverse, self)
         return
-    made(self, list.reverse, ["[:]", self.expression, None, None, -1], frozenset())
+    made(self, list.reverse, ["[:]", self.expression, None, None, -1], frozenset(), self.span)
 
 
 def repeat(self: ListState, count: Any, name: str) -> None:
@@ -226,7 +254,9 @@ def repeat(self: ListState, count: Any, name: str) -> None:
     if plain_index(count) is None or not self.holds(name):
         unfollowed(self, name, change)
         return
-    made(self, change, ["*", self.expression, plain_index(count)], frozenset())
+    times = plain_index(count)
+    assert times is not None
+    made(self, change, ["*", self.expression, times], frozenset(), spans.repeated(self.span, times))
 
 
 def assign(self: ListState, key: Any, value: object) -> None:
@@ -246,7 +276,8 @@ def assign(self: ListState, key: Any, value: object) -> None:
         return
     if not in_range(self, key, "__setitem__"):
         own(change, self)
-    made(self, change, put(self.expression, position(key), form), frozenset({kind_of(value)}))
+    kinds = frozenset({kind_of(value)})
+    made(self, change, put(self.expression, position(key), form), kinds, self.span)
 
 
 def _assign_slice(self: ListState, key: slice, value: object) -> None:
@@ -257,7 +288,10 @@ def _assign_slice(self: ListState, key: slice, value: object) -> None:
         unfollowed(self, "__setitem__", change)
         return
     form, kinds = other
-    made(self, change, spliced(self.expression, bounds, form), kinds)
+    span = spans.added(
+        _cut(self, bounds), self.span_of(value if isinstance(value, list) else taken)
+    )
+    made(self, change, spliced(self.expression, bounds, form), kinds, span)
 
 
 def delete(self: ListState, key: Any) -> None:
@@ -274,11 +308,21 @@ def delete(self: ListState, key: Any) -> None:
         unfollowed(self, "__delitem__", change)
         return
     if bounds is not None:
-        made(self, change, spliced(self.expression, bounds, None), frozenset())
+        made(self, change, spliced(self.expression, bounds, None), frozenset(), _cut(self, bounds))
         return
     if not in_range(self, key, "__delitem__"):
         own(change, self)
-    made(self, change, dropped(self.expression, position(key)), frozenset())
+    made(self, change, dropped(self.expression, position(key)), frozenset(), one_less(self.span))
+
+
+def _cut(self: ListState, bounds: tuple[Expression, Expression]) -> Span:
+    """The range left once a slice is cut out. A tracked bound may cut another number of items
+    on another input that takes the path, with no fork to say so, so it marks the list."""
+    plain = plain_bounds(bounds)
+    if plain is None:
+        self.mark()
+        return self.span
+    return spans.cut_out(self.span, *plain)
 
 
 def slice_bounds(key: slice) -> tuple[Expression, Expression] | None:

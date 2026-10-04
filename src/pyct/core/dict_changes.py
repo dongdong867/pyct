@@ -127,7 +127,7 @@ def _joined_key(self: DictState, made: DictState, key: object) -> None:
         made.held_one()
     if not held:
         made.logged(plain(looked), (True, False))
-        made.__dict__["grown"] += 1
+        made.grew(1)
 
 
 def under(key: object) -> Expression:

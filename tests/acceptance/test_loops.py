@@ -116,7 +116,7 @@ def test_walks_a_string_of_forty_letters() -> None:
     assert isinstance(solver, dict) and solver["timeout"] <= 1, solver
 
 
-# follow-loops-and-ranges-walks-a-string-wherever-it-is-iterated
+# record-decided-checks-on-lists-strings-and-second-walks-walks-a-measured-string-wherever-it-is-iterated  # noqa: E501
 def test_walks_a_string_wherever_it_is_iterated() -> None:
     result = run_pyct(WALKS, '{"s": "xy", "t": "xy"}', "--budget", "10")
 
@@ -124,15 +124,13 @@ def test_walks_a_string_wherever_it_is_iterated() -> None:
     inputs = input_lines(result.stdout)
     walked = [(fork["line"], fork["expression"]) for fork in forks_of(inputs[0]) if is_pass(fork)]
     # `any` over a generator, `zip` and `enumerate` each walk at their own line, and a full
-    # pass of the zip asks both strings for a character
+    # pass of the zip asks both strings for a character. The first walk measured s, so each
+    # later pass over s is a fact, not a fork (record-decided-checks-on-lists-strings-and-
+    # second-walks): only t's passes are forks at the zip
     assert walked == [
         *((2, pass_fork(k)) for k in range(3)),
-        (4, pass_fork(0)),
         (4, pass_fork(0, "t")),
-        (4, pass_fork(1)),
         (4, pass_fork(1, "t")),
-        (4, pass_fork(2)),
-        *((7, pass_fork(k)) for k in range(3)),
     ]
     # each walk's body ran on an input the solver handed back: its return line is covered
     solved = inputs[1:]

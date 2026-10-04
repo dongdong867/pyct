@@ -19,6 +19,7 @@ from tests.acceptance.harness import (
     summary_line,
     union_of,
 )
+from tests.acceptance.test_see_why_a_line_was_missed import NO_TRIES, condition, entry_for
 
 LISTS = REPO_ROOT / "targets" / "lists"
 EMPTIES = "targets.lists.empties::check"
@@ -38,6 +39,7 @@ THOUSANDS = "targets.lists.thousands::gather"
 MILLION = "targets.lists.million"
 MILLION_FILE = str(LISTS / "million.py")
 LEN = "targets.lists.length::check"
+LEN_FILE = str(LISTS / "length.py")
 LENGTH_BOUNDS = "targets.lists.length_bounds"
 UNTAUGHT = "targets.lists.untaught::check"
 OUTSIDE = "targets.lists.outside_change::check"
@@ -177,7 +179,7 @@ def cut_counts(expression: object) -> list[object]:
     return counts
 
 
-# follow-lists-and-dicts-as-they-change-empties-a-list
+# record-decided-checks-on-lists-strings-and-second-walks-empties-a-list
 def test_empties_a_list() -> None:
     result = run_pyct(EMPTIES, '{"items": [1, 2]}')
 
@@ -185,7 +187,6 @@ def test_empties_a_list() -> None:
     lines = input_lines(result.stdout)
     assert listed(lines[0]) == [
         (2, ["!=", ["len", "items"], 0], True),
-        (4, [">=", ["len", "items"], 1], True),
         (4, [">", ["[]", "items", -1], 5], False),
     ]
     assert fork_line(result.stderr, EMPTIES_FILE, 2, "len(items) != 0", True)
@@ -254,7 +255,7 @@ def test_follows_a_tracked_index() -> None:
     assert past and all("IndexError" in str(failure_detail(line)) for line in past), answers
 
 
-# follow-lists-and-dicts-as-they-change-searches-and-compares-lists-as-python-does
+# record-decided-checks-on-lists-strings-and-second-walks-searches-then-compares-a-measured-list
 def test_searches_and_compares_lists_as_python_does() -> None:
     result = run_pyct(SEARCH, '{"items": [0]}', *UNTIL_NO_GAIN)
 
@@ -266,7 +267,12 @@ def test_searches_and_compares_lists_as_python_does() -> None:
         (2, ["==", ["[]", "items", 0], 7], False),
         (2, [">", ["len", "items"], 1], False),
     ]
-    assert (4, ["==", ["len", "items"], 2], False) in seed
+    measured = [
+        (number, expression)
+        for number, expression, _ in seed
+        if number in (4, 6) and isinstance(expression, list) and ["len", "items"] in expression
+    ]
+    assert measured == [], seed
     answers = [items_of(line) for line in lines]
     assert any(7 in answer for answer in answers), answers
     assert [1, 2] in answers, answers
@@ -407,8 +413,8 @@ def test_limits_an_answer_to_a_million_items() -> None:
     assert f"missed {MILLION_FILE}:8:7 unsat" in past_limit.stderr.splitlines()
 
 
-# follow-lists-and-dicts-as-they-change-follows-len-of-a-list: `len(items)` goes through pyct's
-# own `len`, so it is the list's length term, and an item the target appended counts
+# record-decided-checks-on-lists-strings-and-second-walks-follows-len-of-a-changed-list: `len`
+# is the list's length term, the append counts, and `if items:` after it is decided
 def test_follows_len_of_a_list() -> None:
     result = run_pyct(LEN, '{"items": [1]}')
 
@@ -417,13 +423,18 @@ def test_follows_len_of_a_list() -> None:
     seed = lines[0]
     assert seed["downgrades"] == [], seed
     appended = ["+", "items", ["[,]", 0]]
-    assert [(line, expression) for line, expression, _ in listed(seed)] == [
-        (3, [">", ["len", appended], 3]),
-        (5, ["!=", ["len", appended], 0]),
-    ]
+    assert [(n, e) for n, e, _ in listed(seed)] == [(3, [">", ["len", appended], 3])]
     # the flip takes the long side: three items of the argument's, and the appended one
     long = [items_of(line) for line in solved(lines) if listed(line)[0][2]]
     assert long and all(len(items) >= 3 for items in long), lines
+    # an input that takes the long side returns before `if items:`
+    reached = len([line for line in lines if 5 in union_of([line]).get(LEN_FILE, [])])
+    entry = entry_for(result.stdout, 7)
+    assert entry["reason"] == "not taken"
+    assert entry["condition"] == condition(LEN_FILE, 5, 7, False)
+    assert entry["tries"] == {**NO_TRIES, "decided": reached}
+    why = f"why 7 in {LEN_FILE}: {LEN_FILE}:5:7 never false: {reached} decided"
+    assert why in result.stderr.splitlines(), result.stderr
 
 
 # follow-lists-and-dicts-as-they-change-follows-len-of-a-list: a length inside an index or a

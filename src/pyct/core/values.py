@@ -11,7 +11,7 @@ import types
 from collections.abc import Callable
 from typing import Any, Protocol
 
-from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, caller_site, lost_at
+from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, Fact, caller_site, lost_at
 
 # the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
@@ -69,6 +69,21 @@ def forked(
     held = None if against is None else taken is against
     branch = Branch(expression, taken, caller_site(), marked, name, held)
     sink.append(branch)
+    return taken
+
+
+def held(
+    sink: BranchSink,
+    expression: Expression,
+    taken: bool,
+    name: str = "__bool__",
+    *,
+    raising: bool = False,
+) -> bool:
+    """Record a check pyct's own values already decided as a fact, where ``forked`` records a
+    fork, and answer with the side it took (see ``core.branch.Fact``)."""
+    marked = raising or _BEFORE_A_RAISE[0]
+    sink.append(Fact(expression, taken, caller_site(), marked, lost_as=name))
     return taken
 
 

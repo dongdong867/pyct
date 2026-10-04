@@ -43,11 +43,14 @@ MODULE = "\n".join(
 
 # the import, timed alone in a fresh interpreter, as written or substituted
 TIMED = """
-import sys, time
+import gc, sys, time
 from pathlib import Path
 sys.path.insert(0, ".")
 from pyct.intercept.hook import Interception, intercepting
 mode, cache = sys.argv[1], sys.argv[2]
+# a collection now, so the objects pyct's own imports made do not set when one falls inside
+# the timed import
+gc.collect()
 start = time.perf_counter()
 if mode == "written":
     import generated
