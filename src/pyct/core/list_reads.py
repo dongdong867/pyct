@@ -27,6 +27,7 @@ from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.spans import UNKNOWN, decided
+from pyct.core.str_splits import JOIN_WALKS, a_split_s_list
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked
 
@@ -154,8 +155,13 @@ def walk(self: ListState) -> Iterator[object]:
     The form is read afresh at each step, so a change the target makes while it walks is in the
     next fork. A change made without the list's methods turns the walk plain there, as it turns
     every other operation plain.
+
+    The target's own loop over a split's list records no fork, as on origin/v2: a loop is
+    Python's own walk of the pieces (``_a_split_s_loop``).
     """
     self.__dict__["walked_at"] = caller(2)
+    if _a_split_s_loop(self):
+        return list.__iter__(self)
     return _walked(self)
 
 
@@ -176,9 +182,22 @@ def backward(self: ListState) -> Iterator[object]:
 
     The item j steps from the end is written ``items[-(j + 1)]``, so it follows the length. A
     change to the length while it walks, or one made without the list's methods, turns the
-    walk plain there; it then goes on as Python's own, from the position it had reached.
+    walk plain there; it then goes on as Python's own, from the position it had reached. The
+    target's own loop over a split's list records no fork (``_a_split_s_loop``).
     """
+    if _a_split_s_loop(self):
+        return list.__reversed__(self)
     return _backward(self, self.length())
+
+
+def _a_split_s_loop(self: ListState) -> bool:
+    """Whether a walk of a split's list is Python's own: any walk but a join's of the list
+    itself (``str_splits.JOIN_WALKS``): a loop, a comprehension, an unpacking, a builtin the
+    target calls on it, ``map`` included, or a user ``__iter__`` a join reads. It records no
+    "is there another piece" fork, as on origin/v2, by the user's decision
+    (split-a-target-s-own-walk-records-no-piece-fork); a join's walk of the list keeps its
+    forks, which its encoding reads."""
+    return a_split_s_list(self.expression) and JOIN_WALKS.get() is not self
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

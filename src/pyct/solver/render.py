@@ -34,7 +34,7 @@ from pyct.solver.literals import leaf_term, plain_operand, string_order
 from pyct.solver.program_text import program_text
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.splits import SPLITS
-from pyct.solver.str_joins import COUNTED, counted, expanded
+from pyct.solver.str_joins import expanded
 from pyct.solver.symbols import leaf_sort
 
 
@@ -88,6 +88,7 @@ def program(
         listed,
         narrowed=terms.narrowed,
         held=terms.held,
+        **terms.splits.flags(),
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back,
@@ -102,7 +103,7 @@ def _path(
     order with how many places hold it, and each leaf, list and dict it names by symbol."""
     shapes = origin.shapes
     seed = Leaves(kinds=leaves, constants={}, lists=shapes, dicts=origin.dicts)
-    prefix = expanded(prefix, seed.holds, lambda part: origin.values.get(seed.named(part) or ""))
+    prefix = expanded(prefix, seed.holds)
     listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
     containers = (TrackedList, TrackedDict)
     prefix = joined(
@@ -351,9 +352,9 @@ class _Program:
         """A part's term, its own parts already written: its name if it is defined, else itself.
 
         A part to define is defined once, by name, when it has a sort to define it by. A
-        split's term is the string it splits, for its pieces to read, and a string no term
-        writes is declared (see `_declared`). A tracked list has no term of its own: its reads
-        and its length do.
+        partition's term is the string it splits, for its pieces to read, and a string no term
+        writes is declared (see `_declared`). A tracked list, a split's among them, has no term
+        of its own: its reads and its length do.
         """
         kind = self.types[id(node)]
         if kind is TrackedList:
@@ -365,6 +366,8 @@ class _Program:
             operation = self.dicts.scalar(node)
         elif self.lists.involves(node):
             operation = self.lists.scalar(node, kind)
+            if self.lists.counts_length(node):
+                return operation
         else:
             operation = self._operation(node)
         sort = None if kind is None or not define else SORTS.get(kind)
@@ -379,8 +382,8 @@ class _Program:
         head, *operands = node
         if not isinstance(head, str):
             raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
-        if head == COUNTED:
-            return counted(operands[0], self.term(operands[0]), operands[1])
+        if (counted := self.lists.counted_compare(node)) is not None:
+            return counted
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
@@ -454,14 +457,11 @@ class _Program:
         return value
 
     def _piece(self, split: Node, positions: list[Expression]) -> str:
-        """A piece of a split, and the assertion that the string has it.
-
-        The target took the piece out of the list Python built, so the piece
-        is there on every input that follows the path this far.
-        """
+        """A piece of a partition's tuple, and the assertion that the string has it: the target
+        took the piece out, so it is there on every input that follows the path this far."""
         (index,) = (plain_operand(part) for part in positions)
         if not isinstance(index, int):
-            raise ValueError(f"pyct cannot render piece {index} of a split: core writes an int")
+            raise ValueError(f"pyct cannot render piece {index} of a partition: core writes an int")
         operands = tuple(plain_operand(part) for part in split[2:])
         piece, there = SPLITS[str(split[0])](self.term(split), operands, index)
         self._hold(there)

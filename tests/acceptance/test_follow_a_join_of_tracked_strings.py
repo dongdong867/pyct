@@ -132,37 +132,11 @@ def test_follows_a_list_the_target_builds() -> None:
     assert agrees, lines
 
 
-# follow-a-join-of-tracked-strings-follows-a-join-of-split-pieces
-def test_follows_a_join_of_split_pieces() -> None:
-    result = run_pyct(f"{JOINS}::of_split_pieces", '{"s": "x,y"}')
-
-    assert result.returncode == 0, result.stderr
-    lines = input_lines(result.stdout)
-    at = line_of('"-".join(s.split(",")) == "a-b"')
-    split = ["split", "s", "','"]
-    pieces = ["[,]", ["[]", split, 0], ["[]", split, 1]]
-    compare = ["==", ["join", "'-'", pieces], "'a-b'"]
-    assert listed(lines[0]) == [(at, compare, False)]
-    printed = "'-'.join([s.split(',')[0], s.split(',')[1]]) == 'a-b'"
-    assert fork_line(result.stderr, JOINS_FILE, at, printed, False)
-    assert flipped_by_python(lines, compare, lambda s: "-".join(s.split(",")) == "a-b"), lines
-
-
-# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces
-def test_keeps_the_number_of_split_pieces() -> None:
-    result = run_pyct(f"{JOINS}::of_three_split_pieces", '{"s": "x,y"}')
-
-    assert result.returncode == 0, result.stderr
-    lines = input_lines(result.stdout)
-    answers = solved(lines)
-    assert answers, lines
-    assert all(str(args_of(line)["s"]).count(",") == 1 for line in answers), answers
-    split = ["split", "s", "','"]
-    pieces = ["[,]", ["[]", split, 0], ["[]", split, 1]]
-    compare = ["==", ["join", "'-'", pieces], "'a-b-c'"]
-    agrees = flipped_by_python(lines, compare, lambda s: "-".join(s.split(",")) == "a-b-c")
-    assert agrees, lines
-    assert all(line["mismatch_at"] is None for line in answers), answers
+# follow-a-join-of-tracked-strings-follows-a-join-of-split-pieces and
+# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces are superseded by
+# follow-the-length-of-a-split-joins-a-split-by-its-walk and
+# follow-the-length-of-a-split-joins-another-number-of-pieces
+# (tests/acceptance/test_follow_the_length_of_a_split.py)
 
 
 # follow-a-join-of-tracked-strings-reaches-a-join-from-an-empty-list
@@ -239,20 +213,20 @@ def test_raises_on_a_separator_given_no_iterable() -> None:
     assert downgrade_names(seed) == [], seed
 
 
-# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a join of part of a split's
-# list holds nothing, so a fork the seed's own number of pieces takes is flipped as without a join
+# follow-the-length-of-a-split-frees-a-join-of-the-first-pieces: a join of part of a split's list
+# fixes only the pieces it reads, so a fork another number of pieces takes is flipped
 def test_a_join_of_part_of_a_split_leaves_its_number_of_pieces_free() -> None:
-    result = run_pyct(f"{JOINS}::of_the_first_piece", '{"s": "q,r"}')
+    result = run_pyct(f"{JOINS}::of_the_first_piece", '{"s": "q,r"}', *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     covered = covered_lines(input_lines(result.stdout))
     assert line_of('return "ends"  # first piece') in covered, result.stdout
 
 
-# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a split the join reads only
-# as the string of another split is not one whose pieces it joins
+# follow-the-length-of-a-split-frees-a-join-of-the-first-pieces: a split the join reads only as
+# the string of another split is not one whose pieces it joins
 def test_a_join_of_a_piece_split_again_leaves_the_first_split_free() -> None:
-    result = run_pyct(f"{JOINS}::of_a_piece_split_again", '{"s": "q,r"}')
+    result = run_pyct(f"{JOINS}::of_a_piece_split_again", '{"s": "q,r"}', *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     covered = covered_lines(input_lines(result.stdout))
@@ -269,8 +243,8 @@ def covered_lines(lines: list[dict[str, object]]) -> set[int]:
     return covered
 
 
-# follow-a-join-of-tracked-strings-keeps-the-number-of-split-pieces: a join that reads a split's
-# last piece, or a split of a changed string, keeps every answer on the plan
+# follow-the-length-of-a-split-joins-another-number-of-pieces: a join that reads a split's last
+# piece, or a split of a changed string, keeps every answer on the plan
 @pytest.mark.parametrize(
     ("target", "seed"),
     [
@@ -280,7 +254,7 @@ def covered_lines(lines: list[dict[str, object]]) -> set[int]:
     ],
 )
 def test_a_join_that_reads_to_a_split_s_end_leaves_no_plan(target: str, seed: str) -> None:
-    result = run_pyct(f"{JOINS}::{target}", seed)
+    result = run_pyct(f"{JOINS}::{target}", seed, *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     answers = solved(input_lines(result.stdout))

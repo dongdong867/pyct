@@ -312,10 +312,12 @@ PIECES_CODES = "targets.intercept.pieces_codes"
 
 # intercept-builtin-functions-finds-the-string-ord-refuses, on a piece and on a list's item
 def test_finds_the_string_ord_refuses_on_a_piece_or_an_item() -> None:
-    # a tracked list's item is read once the list is long enough, so it forks on that first
+    # a tracked list's item is read once the list is long enough, a split's list among them
+    # (follow-the-length-of-a-split), so it forks on that first
     long_enough: list[object] = [">", ["len", "words"], 0]
+    split_long_enough: list[object] = [">", ["len", ["split", "s", "','"]], 0]
     for target, seed_text, name, before in (
-        ("piece", '{"s": "ab,c"}', ["[]", ["split", "s", "','"], 0], []),
+        ("piece", '{"s": "ab,c"}', ["[]", ["split", "s", "','"], 0], [split_long_enough]),
         ("item", '{"words": ["ab"]}', ["[]", "words", 0], [long_enough]),
     ):
         result = run_pyct(f"{PIECES_CODES}::{target}", seed_text, "--budget", "5")

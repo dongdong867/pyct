@@ -26,6 +26,7 @@ from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, Rende
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
+from pyct.solver.split_lists import UnknownCountError
 
 logger = logging.getLogger(__name__)
 
@@ -194,6 +195,10 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
+    if isinstance(answer, Unsat | Unknown) and written is not None and written.fixed:
+        logger.debug("a read from a split's end held to c* pieces: asking at the input's own")
+        origin = replace(origin, fixed_reads=False)
+        answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed
     return answer, placed
@@ -280,6 +285,9 @@ def _write(
         return Unknown()
     except ProgramTooLargeError as error:
         logger.debug("giving up the unsettled program: %s", error)
+        return Unknown()
+    except UnknownCountError as error:
+        logger.debug("giving up a program that reads a count with no c*: %s", error)
         return Unknown()
     except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)

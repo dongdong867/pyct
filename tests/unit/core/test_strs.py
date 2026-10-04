@@ -376,12 +376,8 @@ def test_a_raise_inside_strs_own_mod_is_the_targets_and_records_nothing() -> Non
 
 # a keyword each str method takes, taught or not, where pyct encodes no keyword: the call, and
 # the name its downgrade carries. The value has two commas, a tab, a newline and a field, so
-# each keyword changes str's answer
+# each keyword changes str's answer. A split's keywords are encoded (test_str_cases)
 KEYWORD_CALLS: dict[str, tuple[Callable[[str], object], str]] = {
-    's.split(sep=",")': (lambda s: s.split(sep=","), "split"),
-    's.split(",", maxsplit=1)': (lambda s: s.split(",", maxsplit=1), "split"),
-    's.rsplit(sep=",")': (lambda s: s.rsplit(sep=","), "rsplit"),
-    "s.splitlines(keepends=True)": (lambda s: s.splitlines(keepends=True), "splitlines"),
     's.encode(encoding="utf-16")': (lambda s: s.encode(encoding="utf-16"), "encode"),
     "s.expandtabs(tabsize=4)": (lambda s: s.expandtabs(tabsize=4), "expandtabs"),
     "s.format(x=1)": (lambda s: s.format(x=1), "format"),

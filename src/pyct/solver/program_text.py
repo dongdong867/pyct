@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Protocol
 
 from pyct.core.branch import Branch
@@ -9,6 +10,10 @@ from pyct.solver.answer_size import longest_string
 from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import SORTS
 from pyct.solver.lists import ListTerms
+from pyct.solver.splits import named_classes
+
+# a symbol or a constant a program line names: a run of what is neither space nor a paren
+_SYMBOL = re.compile(r"[^\s()]+")
 
 
 class Body(Protocol):
@@ -33,8 +38,9 @@ def program_text(
     cores: bool,
 ) -> str:
     """The program's lines, in the order cvc5 reads them: each leaf and each list's and dict's
-    parts declared before any term on them, the leaves held finite, the definitions, what the
-    lists, the dicts and the path assert, and what to ask for."""
+    parts declared before any term on them, each split's count a line reads among them as its
+    c*, the leaves held finite, each class of characters a line names, the definitions, what
+    the lists, the dicts and the path assert, and what to ask for."""
     terms, dicts = body.lists, body.dicts
     lines = ["(set-option :dump-unsat-cores true)"] if cores else []
     lines.append("(set-logic ALL)")
@@ -42,11 +48,43 @@ def program_text(
     lines += [longest_string(constant) for constant, sort in declared if sort == SORTS[str]]
     lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
     lines += dicts.declarations()
-    lines += finites
-    lines += body.definitions + [f"(assert {bound})" for bound in body.bounds if body.bounded]
-    lines += terms.assertions() + dicts.assertions()
-    lines += [body.assertion(fork) for fork in prefix]
+    bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
+    asserted = terms.assertions() + dicts.assertions()
+    forks = [body.assertion(fork) for fork in prefix]
+    written = [*body.definitions, *bounds, *asserted, *forks]
+    counts = terms.splits.defined(written)
+    lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")
-    lines += [f"(get-value ({constant}))" for constant, _ in declared]
+    # a leaf named in none of these lines, nor in what `_read` follows from them, keeps the
+    # input's value: a split's count asked as c* names its string in the path, but not in
+    # these lines, as origin/v2's plain count never named it
+    read = _read(body.definitions, [*counts, *bounds, *asserted, *forks])
+    lines += [f"(get-value ({constant}))" for constant, _ in declared if constant in read]
     lines += [f"(get-value ({name}))" for name in [*terms.asked(), *dicts.asked()]]
     return "\n".join(lines) + "\n"
+
+
+def _read(definitions: list[str], lines: list[str]) -> str:
+    """The lines, and each definition they name, with each assertion among the definitions
+    that names it, and each one those name, in turn: the text a leaf is read in. A letter read
+    of a spelled string, say, names its letter's constant, and the assertion that spells the
+    string names the string. A leaf is no definition, so an assertion that names only leaves,
+    a split's piece held there say, is not followed: it holds on every input that took the
+    path this far. A definition is named by a symbol with no space in it."""
+    defined = {definition.split()[1]: definition for definition in definitions}
+    held: dict[str, list[str]] = {}
+    for line in definitions:
+        if line.startswith("(assert "):
+            for symbol in set(_SYMBOL.findall(line)):
+                held.setdefault(symbol, []).append(line)
+    reached: list[str] = []
+    seen: set[str] = set()
+    pending = list(lines)
+    while pending:
+        line = pending.pop()
+        reached.append(line)
+        for symbol in _SYMBOL.findall(line):
+            if symbol in defined and symbol not in seen:
+                seen.add(symbol)
+                pending += [defined[symbol], *held.get(symbol, [])]
+    return "\n".join(reached)

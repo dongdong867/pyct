@@ -17,7 +17,7 @@ from typing import Any
 from pyct.core import list_changes as changes
 from pyct.core import list_compares as compares
 from pyct.core import list_reads as reads
-from pyct.core import spans
+from pyct.core import spans, str_splits
 from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.list_forms import sliced
 from pyct.core.list_state import ListState, plain, plain_items
@@ -100,8 +100,9 @@ def _item(self: ListState, key: object) -> object:
 
 
 def _found(self: ListState, value: object, name: str) -> list[int] | None:
-    """Where a search finds ``value``, or None when the list is plain and Python searches."""
-    if not self.holds(name):
+    """Where a search finds ``value``, or None when Python searches: a plain list, or a split's
+    list (``_python_s_search``)."""
+    if _python_s_search(self) or not self.holds(name):
         return None
     return compares.searched(self, value, name)
 
@@ -122,15 +123,26 @@ def _index(self: ListState, value: object, *bounds: object) -> object:
     return found[0] if found else own(list.index, [], value)
 
 
+def _python_s_search(self: ListState) -> bool:
+    """Whether a search of the list is Python's own: a split's list is searched as origin/v2
+    searches its plain list of pieces, each piece's compare recorded and no fork on how many
+    pieces there are, as the target's own loop (split-a-target-s-own-walk-records-no-piece-fork)."""
+    return str_splits.a_split_s_list(self.expression)
+
+
 def _count(self: ListState, value: object) -> int:
     """``items.count(x)``: every item compared with ``x``."""
-    if not self.holds("count"):
+    if _python_s_search(self) or not self.holds("count"):
         return own(list.count, self, value)
     return len(compares.searched(self, value, "count", every=True))
 
 
 def _remove(self: ListState, value: object) -> None:
-    """``items.remove(x)``: the compares, then the change, or ValueError where Python raises."""
+    """``items.remove(x)``: the compares, then the change, or ValueError where Python raises.
+    A split's list is Python's own from the remove on (``ListState.leave_the_split``)."""
+    if self.leave_the_split():
+        own(list.remove, self, value)
+        return
     found = _found(self, value, "remove")
     if found is None or self.expression is None:
         own(list.remove, self, value)
@@ -170,6 +182,14 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     """
     if not isinstance(other, list):
         return NotImplemented
+    if str_splits.a_split_s_list(self.expression) and isinstance(other, ListState):
+        # a split's list joined with another tracked list is that list's join with a plain list
+        # of the pieces, as origin/v2's plain list of pieces makes it, and two splits' lists
+        # joined are two plain lists joined
+        if str_splits.a_split_s_list(other.expression):
+            left, right = (other, self) if reflected else (self, other)
+            return list.copy(left) + list.copy(right)
+        return _joined(other, list.copy(self), name, reflected=not reflected)
     taken = changes.added(other, name) if self.holds(name) else None
     if taken is None:
         left, right = (other, self) if reflected else (self, other)
@@ -241,7 +261,7 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     The items are taken by a walk, and Python's own sort compares them, each compare of tracked
     items a fork. The list becomes ``[items[1], items[0]]`` say.
     """
-    if args or set(kwargs) - {"key", "reverse"} or not self.holds("sort"):
+    if self.leave_the_split() or args or set(kwargs) - {"key", "reverse"} or not self.holds("sort"):
         own(list.sort, self, *args, **kwargs)
         return
     items = list(reads.walk(self))
@@ -285,6 +305,11 @@ def _pickled(self: ListState, protocol: object) -> object:
 
 
 def _iadd(self: ListState, values: object) -> ListState:
+    if isinstance(values, ListState) and changes.takes_another(self, values):
+        # origin/v2's plain list of pieces takes in a tracked list by `+=` as a display of the
+        # pieces joined with that list's form; here the change is made in place, as Python's
+        # `+=` makes it, so an alias of the list sees it
+        changes.shown(self, "__iadd__")
     changes.extend(self, values, "__iadd__")
     return self
 
@@ -359,3 +384,6 @@ class ConcolicList(ListState):
 # and `__format__` it inherits, differ only in the name they call and record, so the derivation
 # writes them
 downgrade_the_rest(ConcolicList, list, kept=_KEPT, inherited=_INHERITED)
+
+# a split hands back its pieces in a tracked list (follow-the-length-of-a-split)
+str_splits.enter_list(ConcolicList)

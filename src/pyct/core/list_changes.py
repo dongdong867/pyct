@@ -28,7 +28,8 @@ from pyct.core.list_forms import (
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
-from pyct.core.spans import Span
+from pyct.core.spans import Span, exactly
+from pyct.core.str_splits import a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
 
 # one change, made the same way on the items and on the shadow
@@ -49,9 +50,10 @@ def position(key: object) -> Expression | None:
 
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
-    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys)."""
+    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
+    not made from a split's (follow-the-length-of-a-split)."""
     if type(key) is ConcolicInt:
-        return len(self.kinds) <= 1
+        return len(self.kinds) <= 1 and not built_from_a_split(self.expression)
     return plain_index(key) is not None
 
 
@@ -82,7 +84,7 @@ def made(
     answer = own(change, self)
     change(self.shadow)
     fields = self.__dict__
-    fields["expression"] = form
+    fields["expression"] = kept_form(form)
     fields["kinds"] = self.kinds | kinds
     self.resized(span)
     return answer
@@ -111,9 +113,12 @@ def unfollowed(self: ListState, name: str, change: Change) -> object:
     """A change pyct does not follow: Python makes it, and the list is plain from then on.
 
     A change that raises changes nothing, so it records nothing. The loss is named unless the
-    list was plain already.
+    list was plain already. A split's list leaves the split's machinery instead
+    (``ListState.leave_the_split``): it names no loss, and its pieces stay tracked.
     """
     answer = own(change, self)
+    if self.leave_the_split():
+        return answer
     if self.expression is not None:
         self.lose(name)
     return plain(answer)
@@ -125,8 +130,9 @@ def added(value: list[object], name: str) -> tuple[Expression, frozenset[str]] |
     None for a list that holds a value no expression holds. A tracked list whose form no longer
     holds is read as the plain list it is, named by ``name``.
     """
-    if isinstance(value, ListState) and value.holds(name):
+    if isinstance(value, ListState) and value.holds(name) and not a_split_s_list(value.expression):
         return value.expression, value.kinds
+    # a split's list is taken in as origin/v2 takes in its plain list of pieces: a display
     items = list.copy(value)
     form = displayed(items, name)
     return None if form is UNWRITTEN else (form, kinds_of(items))
@@ -163,6 +169,11 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
     Python reads a non-list iterable once, so it is read into a list here and that list is
     what both the items and the form take in.
     """
+    if isinstance(values, ListState) and takes_another(self, values):
+        # as origin/v2's plain list of pieces takes in a tracked list: by Python's own walk
+        self.leave_the_split()
+        list.extend(self, values)
+        return
     taken, other = taken_in(values, name)
     change: Change = lambda items: list.extend(items, taken)  # noqa: E731
     if other is None or not self.holds(name):
@@ -171,6 +182,25 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
     form, kinds = other
     span = spans.added(self.span, self.span_of(values if isinstance(values, list) else taken))
     made(self, change, joined(self.expression, form), kinds, span)
+
+
+def takes_another(self: ListState, values: ListState) -> bool:
+    """Whether a split's list takes in another tracked list that is not a split's list: on
+    origin/v2, a plain list of pieces taking in a tracked list."""
+    if not a_split_s_list(self.expression):
+        return False
+    return values.expression is not None and not built_from_a_split(values.expression)
+
+
+def shown(self: ListState, name: str) -> None:
+    """A split's list read from here on as origin/v2's plain list of pieces: a display of its
+    pieces, each piece's form, or Python's own list where a display is not written."""
+    form = displayed(list.copy(self), name)
+    if form is UNWRITTEN:
+        self.leave_the_split()
+        return
+    self.__dict__["expression"] = form
+    self.resized(exactly(list.__len__(self)))
 
 
 def insert(self: ListState, index: Any, value: object) -> None:
@@ -195,6 +225,9 @@ def pop(self: ListState, *args: Any) -> object:
     ``items[:i] + items[i:][1:]``.
     """
     key = args[0] if args else -1
+    if args and self.leave_the_split():
+        # a split's list popped at a position is Python's own from the pop on, as on origin/v2
+        return own(list.pop, self, *args)
     if len(args) > 1 or not follows(self, key) or not self.holds("pop"):
         return unfollowed(self, "pop", lambda items: list.pop(items, *args))
     if not _pops(self, key, bool(args)):
@@ -266,6 +299,10 @@ def assign(self: ListState, key: Any, value: object) -> None:
     becomes ``items[:i] + [x] + items[i:][1:]``; a slice becomes
     ``items[:a] + ys + items[a:][len(items[a:b]):]``.
     """
+    if self.leave_the_split():
+        # a split's list set at a position is Python's own from the set on, as on origin/v2
+        own(list.__setitem__, self, key, value)
+        return
     if isinstance(key, slice):
         _assign_slice(self, key, value)
         return
@@ -302,6 +339,10 @@ def delete(self: ListState, key: Any) -> None:
     ``items[:a] + items[a:][len(items[a:b]):]``.
     """
     change: Change = lambda items: list.__delitem__(items, key)  # noqa: E731
+    if self.leave_the_split():
+        # a split's list deleted from is Python's own from the delete on, as on origin/v2
+        own(change, self)
+        return
     bounds = slice_bounds(key) if isinstance(key, slice) else None
     followed = bounds is not None or (not isinstance(key, slice) and follows(self, key))
     if not followed or not self.holds("__delitem__"):

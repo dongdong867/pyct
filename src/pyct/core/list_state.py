@@ -16,6 +16,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
 from pyct.core.spans import UNKNOWN, Span, exactly, measured
+from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
@@ -167,6 +168,15 @@ class ListState(list):
         self.turn_plain()
         self.sink.append(Downgrade(name=name, site=caller_site()))
 
+    def leave_the_split(self) -> bool:
+        """Whether this is a split's list, which then leaves the split's machinery for Python's
+        own list, as origin/v2 hands it back: its pieces stay tracked, and the list records
+        nothing more."""
+        if not built_from_a_split(self.expression):
+            return False
+        self.__dict__["expression"] = None
+        return True
+
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the items the arguments put here.
 
@@ -181,7 +191,7 @@ class ListState(list):
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
         and the range that form holds. It carries this one's mark."""
-        made = type(self).made(items, expression, self.sink)
+        made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds

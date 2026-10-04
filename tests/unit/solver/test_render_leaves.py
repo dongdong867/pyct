@@ -6,9 +6,13 @@ import json
 import pytest
 
 from pyct.binding import bind
+from pyct.binding.bind import Seed
+from pyct.binding.model import apply
 from pyct.core.branch import Expression
-from pyct.solver.answer import SolverAnswerError
+from pyct.solver.answer import Sat, SolverAnswerError
+from pyct.solver.cvc5 import solve
 from pyct.solver.render import program
+from tests.unit.solver.agreement import needs_cvc5
 from tests.unit.solver.test_render import fork, render
 
 # a value inside an argument, as bind names it and as leaves keys it
@@ -104,3 +108,20 @@ def test_a_model_about_a_symbol_the_program_did_not_declare_is_unreadable() -> N
 
     with pytest.raises(SolverAnswerError, match="arg.y"):
         written.read({"arg.x": 3, "arg.y": 4})
+
+
+@needs_cvc5
+@pytest.mark.parametrize("value", ["ab", "x"])
+def test_a_string_spelled_for_its_letters_is_read_back(value: str) -> None:
+    path = (
+        fork(["!=", ["[]", "s", 0], "'x'"], taken=True),
+        fork(["==", ["[]", "s", 1], "'y'"], taken=True),
+    )
+    seed = Seed.of({"s": value})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # the forks name the letters, and only the assertion that spells the string names it
+    assert isinstance(answer, Sat), answer
+    s = apply(seed, answer.model).args["s"]
+    assert isinstance(s, str) and len(s) > 1 and s[0] != "x" and s[1] == "y", s

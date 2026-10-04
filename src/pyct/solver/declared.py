@@ -94,6 +94,8 @@ class Program:
     # had them, so unsat is only unknown; or a repeated list's length held
     narrowed: bool = False
     held: bool = False
+    # whether a piece read from a split's end holds the string to the count c*
+    fixed: bool = False
     bounded: bool = False
     dicts: DictTerms | None = None
     kept: bool = False

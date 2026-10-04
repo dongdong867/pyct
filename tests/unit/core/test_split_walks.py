@@ -1,0 +1,450 @@
+"""A split's list in core: the target's loop over it, a `map` of it and a search of it record no
+fork on how many pieces there are, as on origin/v2, while a join's walk does; the list stays
+tracked only while the solver writes it exactly, and is Python's own after any other change,
+as on origin/v2; and the strings the solver works out."""
+
+from typing import Any
+
+import pytest
+
+from pyct.core import substitutes
+from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.ints import ConcolicInt
+from pyct.core.list_changes import takes_another
+from pyct.core.str_splits import a_split_s_list, worked_out
+from pyct.core.strs import ConcolicStr
+from tests.unit.core.test_list_reads import tracked
+
+
+def _split(sink: list[SinkItem]) -> Any:
+    return ConcolicStr.made("a,b", expression="s", sink=sink).split(",")
+
+
+def _walks(sink: list[SinkItem]) -> list[Expression]:
+    return [item.expression for item in sink if isinstance(item, Branch)]
+
+
+@pytest.mark.parametrize(
+    "loop",
+    [
+        lambda parts: [part for part in parts],
+        lambda parts: list(enumerate(parts)),
+        lambda parts: list(reversed(parts)),
+        lambda parts: list(parts[1:]),
+        lambda parts: sorted(parts),
+    ],
+    ids=["a comprehension", "enumerate", "reversed", "a slice", "sorted"],
+)
+def test_the_target_s_loop_over_a_split_s_list_records_no_fork(loop: Any) -> None:
+    sink: list[SinkItem] = []
+    parts = ConcolicStr.made("a\nb\nc", expression="s", sink=sink).splitlines()
+
+    walked = loop(parts)
+
+    # each piece keeps its condition, and no "is there another piece" fork is recorded
+    # (split-a-target-s-own-walk-records-no-piece-fork); sorted's compares are Python's own
+    heads = [part[0] for part in _walks(sink) if isinstance(part, list)]
+    assert len([*walked]) in (2, 3) and ">" not in heads, sink
+
+
+@pytest.mark.parametrize(
+    "build",
+    [list, tuple, sorted, lambda parts: [*parts], lambda parts: list(map(str.upper, parts))],
+    ids=["list", "tuple", "sorted", "an unpacking", "a map"],
+)
+def test_a_builtin_that_walks_a_split_s_list_records_nothing_on_it(build: Any) -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    sink.clear()
+
+    built = build(parts)
+
+    # as origin/v2's plain list of pieces: no piece fork, and the size Python guesses for what
+    # it builds names no loss
+    assert len(built) == 2
+    assert [item for item in sink if isinstance(item, Downgrade)] == [], sink
+    assert all(isinstance(fork, list) and fork[0] != ">" for fork in _walks(sink)), sink
+
+
+def test_a_loop_after_a_join_of_the_list_records_no_fork() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    substitutes.join("-".join, parts)
+    sink.clear()
+
+    walked = [part for part in parts]
+
+    # the join's walk ends with the join: the target's own loop after it is Python's, which
+    # records nothing, not even a check the join's walk already decided
+    assert len(walked) == 2 and sink == [], sink
+
+
+def test_a_join_through_a_user_iterable_walks_the_split_as_python_does() -> None:
+    class Wrapped:
+        def __init__(self, items: Any) -> None:
+            self.items = items
+
+        def __iter__(self) -> Any:
+            return iter(self.items)
+
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    separator = ConcolicStr.made("-", expression="t", sink=sink)
+    sink.clear()
+
+    joined = separator.join(Wrapped(parts))  # pyrefly: ignore[bad-argument-type]
+
+    # only a join's own walk of the list reads its count; this walk is the user's `__iter__`
+    assert _walks(sink) == [], sink
+    assert isinstance(joined, str) and str.__str__(joined) == "a-b"
+
+
+def test_a_join_s_walk_over_a_split_s_list_records_its_forks() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+
+    "-".join(parts)  # pyrefly: ignore[bad-argument-type]
+    substitutes.join("-".join, parts)
+
+    # the join's encoding reads how many pieces it holds from its walk's forks
+    split = ["split", "s", "','"]
+    assert _walks(sink) == [[">", ["len", split], at] for at in range(3)], sink
+
+
+def test_a_loop_over_an_argument_s_list_records_its_forks() -> None:
+    items, sink = tracked(["a", "b"])
+
+    list(items)
+
+    assert _walks(sink) == [[">", ["len", "items"], at] for at in range(3)], sink
+
+
+SPLIT: Expression = ["split", "s", "','"]
+
+
+@pytest.mark.parametrize(
+    ("form", "marked"),
+    [
+        (SPLIT, True),
+        (["[:]", SPLIT, 1, None], True),
+        (["[:]", SPLIT, 1, None, None], True),
+        (["[:]", SPLIT, 1, None, 1], True),
+        (["[:]", SPLIT, None, None, -1], True),
+        (["[:]", SPLIT, None, None, 2], False),
+        (["[:]", SPLIT, None, None, "k"], False),
+        (["*", SPLIT, 2], False),
+        (["[:]", ["[:]", SPLIT, 1, None], 1, None], True),
+        (["[:]", ["[:]", SPLIT, 1, None], None, None, -1], True),
+        (["[:]", ["[:]", SPLIT, 1, None], -2, None], False),
+        (["[:]", SPLIT, "i", None], False),
+        (["[:]", ["+", SPLIT, ["[,]", "'z'"]], 1, None], False),
+        (["+", SPLIT, ["[,]", "'z'"]], True),
+        (["+", ["[,]", "'z'"], ["[:]", SPLIT, None, -1]], True),
+        (["+", SPLIT, "xs"], False),
+        (["+", "xs", SPLIT], False),
+        ("xs", False),
+    ],
+    ids=[
+        "its own",
+        "a slice",
+        "a slice with no step",
+        "a slice with a step of 1",
+        "a reversal",
+        "a slice with a step of 2",
+        "a slice with a tracked step",
+        "a repeat",
+        "a slice of a slice",
+        "a reversal of a slice",
+        "a slice of a slice from its end",
+        "a slice at a tracked bound",
+        "a slice of a join",
+        "appended to",
+        "joined on a display",
+        "joined",
+        "joined on",
+        "an argument",
+    ],
+)
+def test_a_split_s_list_is_one_whose_items_are_its_pieces_or_the_target_s(
+    form: Expression, marked: bool
+) -> None:
+    # a list joined with another list, an argument's say, keeps a list argument's order, and
+    # its inputs are let go as v2 lets them go
+    assert a_split_s_list(form) is marked
+
+
+def _changed(change: Any) -> tuple[Any, list[SinkItem]]:
+    """A split's list of four pieces, changed, and the sink, cleared of the split's forks."""
+    sink: list[SinkItem] = []
+    parts = ConcolicStr.made("a,b,c,d", expression="s", sink=sink).split(",")
+    change(parts)
+    sink.clear()
+    return parts, sink
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda parts: parts.pop(0),
+        lambda parts: parts.insert(0, "x"),
+        lambda parts: parts.remove("b"),
+        lambda parts: parts.__delitem__(1),
+        lambda parts: parts.__setitem__(1, "x"),
+        lambda parts: parts.sort(),
+        lambda parts: parts.__setitem__(slice(1, 2), ["x", "y"]),
+    ],
+    ids=["pop(0)", "insert", "remove", "del", "an item set", "sort", "a slice set"],
+)
+def test_a_split_s_list_changed_at_a_position_is_python_s_own(change: Any) -> None:
+    parts, sink = _changed(change)
+
+    # as origin/v2 hands it back: its length and its walk record nothing, and every piece
+    # left keeps its own condition
+    assert type(len(parts)) is int and [*parts] and sink == []
+    assert all(type(piece) is ConcolicStr for piece in parts if piece not in ("x", "y"))
+
+
+def _piece(index: int) -> Expression:
+    return ["[]", ["split", "s", "','"], index]
+
+
+@pytest.mark.parametrize(
+    ("change", "recorded"),
+    [
+        (lambda parts: parts.pop(0), []),
+        (lambda parts: parts.pop(-1), []),
+        (lambda parts: parts.insert(0, "x"), []),
+        (lambda parts: parts.remove("b"), [["==", _piece(0), "'b'"], ["==", _piece(1), "'b'"]]),
+        (lambda parts: parts.__delitem__(1), []),
+        (lambda parts: parts.__setitem__(1, "x"), []),
+        (lambda parts: parts.sort(), [["<", _piece(at + 1), _piece(at)] for at in range(3)]),
+        (lambda parts: parts.__setitem__(slice(1, 2), ["x", "y"]), []),
+        (lambda parts: parts.append(object()), []),
+    ],
+    ids=[
+        *("pop(0)", "pop(-1)", "insert", "remove", "del", "an item set", "sort", "a slice set"),
+        "an unwritten item appended",
+    ],
+)
+def test_a_change_at_a_position_records_what_python_s_own_list_records(
+    change: Any, recorded: list[Expression]
+) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    sink.clear()
+
+    change(parts)
+
+    # origin/v2's plain list of pieces records only its pieces' own compares: no fork on the
+    # list's length, and no loss named
+    assert [getattr(item, "expression", item) for item in sink] == recorded
+    assert parts.expression is None
+
+
+def _split_of_four(sink: list[SinkItem]) -> Any:
+    return ConcolicStr.made("a,b,c,d", expression="s", sink=sink).split(",")
+
+
+@pytest.mark.parametrize(
+    ("change", "form"),
+    [
+        (lambda parts: parts.pop(), ["[:]", ["split", "s", "','"], None, -1]),
+        (lambda parts: parts.append("z"), ["+", ["split", "s", "','"], ["[,]", "'z'"]]),
+    ],
+    ids=["pop()", "append"],
+)
+def test_a_split_s_list_changed_at_its_end_stays_tracked(change: Any, form: Expression) -> None:
+    parts, _ = _changed(change)
+
+    assert parts.expression == form
+
+
+def test_a_split_of_a_string_the_solver_cannot_work_out_is_python_s_own_list() -> None:
+    sink: list[SinkItem] = []
+    text = ConcolicStr.made("a,b", expression=["+", "s", ["str", "n"]], sink=sink)
+
+    parts = text.split(",")
+
+    # its pieces are tracked, as on origin/v2, and the list is Python's own
+    assert type(parts) is list and all(type(piece) is ConcolicStr for piece in parts)
+    assert sink == []
+
+
+@pytest.mark.parametrize(
+    ("form", "worked"),
+    [
+        ("s", True),
+        ("'a,b'", True),
+        (["[:]", "s", 1, None], True),
+        (["[]", ["split", "s", "';'"], 0], True),
+        (["+", "s", "',x'"], True),
+        (["*", "s", 2], True),
+        (["[]", ["strip", "s"], 0], True),
+        (["strip", "s"], True),
+        (["replace", "s", "'a'", "'b'"], True),
+        (["+", "s", ["str", "n"]], False),
+        (["[:]", "s", "i", None], False),
+        (["replace", "s", "t", "'b'"], False),
+        (["format", "s"], False),
+        (["[]", "xs", 0], False),
+        (["[]", ["[:]", "xs", 0, 1], 0], False),
+        (["[]", ["+", "xs", "ys"], 0], False),
+        (["[]", ["[:]", ["strip", "s"], 1, None], 0], True),
+        (["[]", ["+", "s", ["strip", "t"]], 0], True),
+        (["split", ["[]", "xs", 0], "','"], False),
+        ([], False),
+    ],
+)
+def test_the_solver_works_out_a_string_from_arguments_literals_and_plain_operations(
+    form: Expression, worked: bool
+) -> None:
+    assert worked_out(form) is worked
+
+
+@pytest.mark.parametrize(
+    ("join", "form"),
+    [
+        (
+            lambda parts, items: parts + items,
+            ["+", ["[,]", ["[]", SPLIT, 0], ["[]", SPLIT, 1]], "items"],
+        ),
+        (
+            lambda parts, items: items + parts,
+            ["+", "items", ["[,]", ["[]", SPLIT, 0], ["[]", SPLIT, 1]]],
+        ),
+        (lambda parts, items: parts + _split([]), None),
+    ],
+    ids=["the split first", "the other list first", "two splits"],
+)
+def test_a_split_joined_with_another_tracked_list_is_v2_s_join(join: Any, form: Expression) -> None:
+    sink: list[SinkItem] = []
+    items, _ = tracked(["x"])
+
+    joined = join(_split(sink), items)
+
+    # as origin/v2 joins its plain list of pieces: the other list joined with a display of the
+    # pieces, and two such lists a plain list; no walk fork
+    assert getattr(joined, "expression", None) == form
+    assert type(joined) is not list or form is None
+    assert _walks(sink) == [], sink
+
+
+def test_a_split_s_list_changed_where_pyct_does_not_follow_hands_back_its_piece() -> None:
+    parts, sink = _changed(lambda parts: None)
+
+    taken = parts.pop(ConcolicInt.made(1, expression="i", sink=sink))
+
+    # a tracked index into a split's list is not followed: Python pops, as on origin/v2, and
+    # the piece keeps its condition, with no loss named
+    assert type(taken) is ConcolicStr and taken.expression == ["[]", ["split", "s", "','"], 1]
+    assert parts.expression is None and sink == []
+
+
+def test_a_split_s_list_extended_by_a_tracked_list_walks_it_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    others, walked = tracked(["x"])
+    sink.clear()
+
+    parts.extend(others)
+
+    # origin/v2's plain list of pieces walks a tracked list it takes in, and is plain after
+    assert parts.expression is None and sink == []
+    assert _walks(walked) == [[">", ["len", "items"], 0], [">", ["len", "items"], 1]]
+    assert type(len(parts)) is int and parts[4] == "x"
+
+
+def test_a_tracked_list_added_to_a_split_s_list_joins_onto_its_pieces() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    alias, (others, _) = parts, tracked(["x"])
+
+    parts += others
+
+    # the form origin/v2 gives a plain list of pieces after `+=`, a display of the pieces joined
+    # with the other list, on the same list, so an alias sees the change as Python's does
+    pieces: Expression = ["[,]", *(_piece(at) for at in range(4))]
+    assert parts is alias and parts.expression == ["+", pieces, "items"]
+    assert list.__len__(alias) == 5 and sink == []
+    # the display holds its four pieces on every input, and the other list any number
+    assert parts.span == (4, None)
+
+
+@pytest.mark.parametrize(
+    ("search", "answer", "compared"),
+    [
+        (lambda parts: "c" in parts, True, ["'c'"] * 3),
+        (lambda parts: "z" in parts, False, ["'z'"] * 4),
+        (lambda parts: parts.index("b"), 1, ["'b'"] * 2),
+        (lambda parts: parts.count("a"), 1, ["'a'"] * 4),
+    ],
+    ids=["in, found", "in, not found", "index", "count"],
+)
+def test_a_search_of_a_split_s_list_compares_its_pieces_as_python_does(
+    search: Any, answer: object, compared: list[str]
+) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    sink.clear()
+
+    found = search(parts)
+
+    # as origin/v2 searches its plain list of pieces: each piece's compare, and no fork on how
+    # many pieces there are
+    assert found == answer
+    assert _walks(sink) == [["==", _piece(at), value] for at, value in enumerate(compared)], sink
+    assert parts.expression == SPLIT
+
+
+@pytest.mark.parametrize(
+    ("form", "taken"),
+    [
+        ("items", True),
+        (["[:]", "items", 1, None], True),
+        (None, False),
+        (["split", "t", "';'"], False),
+        (["[:]", ["split", "t", "';'"], 1, None], False),
+    ],
+    ids=["an argument", "a slice of one", "a plain list", "another split", "a slice of that"],
+)
+def test_a_split_s_list_takes_another_tracked_list_that_is_no_split_s(
+    form: Expression, taken: bool
+) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    others, _ = tracked(["x"])
+    others.__dict__["expression"] = form
+
+    assert takes_another(parts, others) is taken
+    # a list that is no split's takes nothing in as a split's list does
+    assert takes_another(others, parts) is False
+
+
+def test_a_split_s_list_holding_an_unwritten_item_takes_another_list_in_as_python_does() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    list.append(parts, object())
+    alias, (others, _) = parts, tracked(["x"])
+
+    parts += others
+
+    # no display holds the item: the list is Python's own, the change made in place
+    assert parts is alias and parts.expression is None and list.__len__(parts) == 6
+
+
+def test_a_split_s_list_compared_with_a_plain_list_counts_its_pieces() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+    sink.clear()
+
+    parts < ["a", "z"]  # noqa: B015
+
+    # a compare with a plain list reads the count against plain numbers, which the solver
+    # writes exactly (split-list-tracked-its-count-the-piece-there-or-the-input-s-own)
+    split = ["split", "s", "','"]
+    assert _walks(sink) == [
+        [">", ["len", split], 0],
+        ["==", _piece(0), "'a'"],
+        [">", ["len", split], 1],
+        ["==", _piece(1), "'z'"],
+    ], sink
