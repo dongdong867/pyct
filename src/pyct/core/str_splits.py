@@ -74,7 +74,7 @@ WORKED_METHODS = frozenset(
 )
 
 
-# the list a join is walking, itself, when the join reads it: the only walk of a split's list
+# the iterable a join is walking, itself, when the join reads it: the only walk of a split's list
 # that records the "is there another piece" forks, which the join's encoding reads
 # (`str_joins.joined`); every other walk, the target's own, one a user `__iter__` makes, or one
 # pyct makes for the target, a `map` say, is Python's, as on v2
