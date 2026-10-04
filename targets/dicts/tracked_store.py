@@ -196,3 +196,13 @@ def walked_then_read(n: str, d: dict):
     if n.startswith("b"):
         return 2
     return 0
+
+
+def copy_looked_up(n: str, m: str, d: dict):
+    c = d.copy()
+    d[n] = 0
+    for k in d:
+        pass
+    if m in c:
+        return 1
+    return 0

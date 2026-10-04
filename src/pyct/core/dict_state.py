@@ -96,7 +96,8 @@ class DictState(dict):
     unfollowed: set[object]
     # whether a walk of this dict, or of one made from the same argument, ran after a change
     # under a tracked key: one list shared by reference, so a copy's walk counts too. From
-    # then on the dict runs as v2 runs it (see ``after_walk``)
+    # then on a dict of them changed under a tracked key is not followed (see
+    # ``unfollowed_since_walk``)
     walked_after: list[bool]
     # whether the argument's annotation is `dict[int, X]`, to which the solver adds int keys,
     # named or made up: a key pyct does not follow that may equal an int turns such a dict
@@ -254,21 +255,19 @@ class DictState(dict):
         self.logged(key, (True, held), tracked)
         self.held_one()
 
-    def after_walk(self) -> bool:
-        """Whether a walk followed a change under a tracked key on this argument's dicts: then
-        every operation runs as v2 runs it, where that change is Python's own. A walk hands out
-        the tracked key's own key, and a key Python shares is the very object a literal is, so
-        no later lookup tells the two apart, and comparing them pins the tracked key. The dict
-        is marked when that starts (``changed_unforked``), as v2's change marked it."""
-        if not self.walked_after[0]:
-            return False
-        self.changed_unforked()
-        return True
+    def unfollowed_since_walk(self) -> bool:
+        """Whether this dict was changed under a tracked key and a walk of it, or of a dict made
+        from the same argument, ran after such a change: then its lookups, changes and later
+        walks are not followed (see ``dict_reads.present``). A walk hands out the tracked key's
+        own key, and a key Python shares is the very object a literal is, so no later lookup
+        tells the two apart, and comparing them pins the tracked key. A caller that acts on it
+        marks the dict (``changed_unforked``)."""
+        return self.walked_after[0] and self.tracked_changes > 0
 
     def walk_started(self) -> bool:
         """Note a walk of the dict, and answer whether it is the first since a change under a
         tracked key: that walk compares what it hands out as before (``handed_in_place``), and
-        from then on the dict runs as v2 runs it (see ``after_walk``), marked."""
+        the dict is marked; from then on it is not followed (``unfollowed_since_walk``)."""
         if not self.tracked_changes or self.walked_after[0]:
             return False
         self.walked_after[0] = True

@@ -54,7 +54,7 @@ def test_after_a_forkless_change_lookups_are_forks_and_counts_reach_only_the_flo
 
 
 # each change above under a tracked str, which a str-keyed dict follows, but `{n: 0} | c`, which
-# keeps v2's own answer since the solver may move n among the other dict's keys
+# stays Python's own since the solver may move n among the other dict's keys
 FOLLOWED_CHANGES = [change for change in UNFORKED_CHANGES if change != "reflected or"]
 
 

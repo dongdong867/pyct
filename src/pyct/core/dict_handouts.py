@@ -4,7 +4,7 @@ what a later lookup of that copy knows (containers-arrays-counted-keys-and-copie
 A copy no code can write proves its key was there when the walk handed it out. A change under a
 tracked key that may touch a held key makes the copies stale: their lookups ask again, given
 where the walk read the key. A key Python shares has no copy. Once a walk follows a change
-under a tracked key, the dict runs as v2 runs it (``DictState.after_walk``).
+under a tracked key, the dict is no longer followed (``DictState.unfollowed_since_walk``).
 """
 
 from __future__ import annotations

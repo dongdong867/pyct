@@ -105,8 +105,9 @@ def followed(self: DictState, key: object) -> bool:
     kind = ConcolicInt if self.int_keyed else ConcolicStr
     if type(key) is not kind or self.popped or settled_as(key) in self.unfollowed:
         return False
-    if self.after_walk():
-        # a walk followed a change under a tracked key: from then on the dict runs as v2's
+    if self.unfollowed_since_walk():
+        # a walk followed a change under a tracked key: from then on no change is followed,
+        # and the change marks the dict as any unfollowed change does
         return False
     return self.tracked_changes < MOST_TRACKED_CHANGES
 
@@ -306,7 +307,7 @@ def last_item(self: DictState) -> tuple[object, object]:
         self.sink.append(Fact(None, True, fork.site, True, pin, lost_as="popitem"))
     if not self.holds("popitem", key):
         return own(dict.popitem, self)
-    if not self.after_walk():
+    if not self.unfollowed_since_walk():
         handed_in_place(self, key, "popitem", pin)
     if self.tracked_changes:
         # which key is last may follow a change under a tracked key, which no fork here says

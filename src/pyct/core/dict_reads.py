@@ -123,8 +123,8 @@ def present(
     fact, since that change may have touched the key on another input: one recorded here is a
     fork, and a key the target changed or a walk handed out is answered without either. After
     a change under a tracked key the lookup first records whether its key is that one
-    (``after_changes``), until a walk follows such a change: from then on the lookup runs as
-    v2 runs it (``DictState.after_walk``).
+    (``after_changes``), until a walk follows such a change: from then on no key is compared
+    with a tracked change (``DictState.unfollowed_since_walk``).
 
     A key Python shares with the target's literals that a walk handed out keeps the place the
     walk read it, given by the lookup: a fact recorded before the fork, which holds on both its
@@ -139,8 +139,9 @@ def present(
     held = dict.__contains__(self, plain(key))
     if proven(self, key):
         return held
-    if self.after_walk():
-        return _as_on_v2(self, key, held, (name, raising))
+    if self.unfollowed_since_walk():
+        self.changed_unforked()
+        return _looked_up_unfollowed(self, key, held, (name, raising))
     written = written_key(key)
     if written is None or (is_tracked(key) and self.changed and not changing):
         return None
@@ -153,13 +154,16 @@ def present(
     return _in_the_argument(self, key, held, (name, raising, place))
 
 
-def _as_on_v2(self: DictState, key: object, held: bool, how: tuple[str, bool]) -> bool | None:
-    """A lookup after a walk that followed a change under a tracked key, as v2 runs it (see
-    ``DictState.after_walk``): None for a key of another kind and a tracked key, no fork for a
-    key the target changed or a walk handed out, a stale copy among them, and otherwise the
-    argument's fork on the marked dict, given where a walk read a key Python shares."""
+def _looked_up_unfollowed(
+    self: DictState, key: object, held: bool, how: tuple[str, bool]
+) -> bool | None:
+    """A lookup in a dict no longer followed (see ``DictState.unfollowed_since_walk``): no key
+    is compared with a tracked change. None for a key of another kind and a tracked key, which
+    the caller answers as Python does; no fork for a key the target changed or a walk handed
+    out, a stale copy among them; and otherwise the argument's fork on the marked dict, given
+    where a walk read a key Python shares."""
     name, raising = how
-    if written_key(key) is None or is_tracked(key):
+    if written_key(key) is None or (is_tracked(key) and self.changed):
         return None
     if plain(key) in self.changed or stale_copy(self, key):
         return held
@@ -372,7 +376,7 @@ def _walked(
         pin = None if key is MISSING else placed(self, key, end)
         if not passed(self, at, key, pin, name):
             return
-        if first or not self.after_walk():
+        if first or not self.unfollowed_since_walk():
             handed_in_place(self, key, name, pin)
         handout(self, key, pin)
         yield pick(self, key)

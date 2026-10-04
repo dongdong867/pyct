@@ -291,12 +291,13 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
     if not int_keyed:
         assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
     # under `dict[int, X]` an answer that adds key 0 walks it ahead of n's own, so the lookup's
-    # fork for it comes before the pass the answer aimed at: one answer leaves there, as on v2
+    # fork for it comes before the pass the answer aimed at: one answer leaves there, as
+    # before this story
 
 
 # a key Python shares on a dict changed under a tracked key runs as where that change is
-# Python's own, as on v2: a store through a walked shared key, a walk of a copy, and a literal
-# read after a walk (review of PR #131, round 3). Each covers the line v2 covers
+# Python's own, as before this story: a store through a walked shared key, a walk of a copy,
+# and a literal read after a walk (review of PR #131, round 3). Each covers the line it did
 @pytest.mark.parametrize(
     ("function", "seed", "line", "on_plan"),
     [
@@ -305,7 +306,7 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
         ("walked_then_read", {"n": "a", "d": {}}, "return 1", False),
     ],
 )
-def test_a_key_python_shares_runs_as_on_v2(
+def test_a_key_python_shares_after_a_walk_is_not_followed(
     function: str, seed: dict[str, object], line: str, on_plan: bool
 ) -> None:
     result = run_pyct(f"{MODULE}::{function}", json.dumps(seed), "--budget", "5")
@@ -315,3 +316,15 @@ def test_a_key_python_shares_runs_as_on_v2(
     assert line_of(function, line) in union_of(lines)[str(FILE)]
     if on_plan:
         assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
+
+
+# a copy made before the change is not the changed dict: a walk of the changed one leaves the
+# copy's lookups followed, so a tracked key's lookup in it is a fork (review of PR #131, round 4)
+def test_a_copy_made_before_the_change_keeps_its_tracked_lookup() -> None:
+    seed = '{"n": "pyct1", "m": "zz", "d": {}}'
+    result = run_pyct(f"{MODULE}::copy_looked_up", seed, "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    assert return_line("copy_looked_up", 1) in union_of(lines)[str(FILE)]
+    assert downgrade_names(lines[0]) == [], lines[0]

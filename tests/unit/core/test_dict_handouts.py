@@ -3,7 +3,7 @@ copy a change made stale, a key Python shares, and a popitem beside a tracked ch
 
 import json
 
-from pyct.core.branch import Expression, Fact
+from pyct.core.branch import Branch, Expression, Fact
 from pyct.core.strs import ConcolicStr
 from tests.unit.core.test_dicts import (
     decided,
@@ -86,7 +86,7 @@ def test_a_tracked_store_after_popitem_is_python_s() -> None:
 def test_a_stored_key_python_shares_leaves_its_tracked_key_free_where_a_walk_hands_it_out() -> None:
     # n's own key "a" has no copy, so a lookup of what the walk handed out is a lookup of "a":
     # comparing it with n would pin n to "a". The walk follows the store, so the dict runs as
-    # v2 runs it from then on
+    # no longer followed from then on
     config, sink = tracked({})
     name = ConcolicStr.made("a", "name", sink)
 
@@ -103,7 +103,7 @@ def test_a_stored_key_python_shares_leaves_its_tracked_key_free_where_a_walk_han
     assert config.unforked
 
 
-def test_a_lookup_after_a_walk_that_followed_a_tracked_change_runs_as_on_v2() -> None:
+def test_a_lookup_after_a_walk_that_followed_a_tracked_change_compares_nothing() -> None:
     config, sink = tracked({"b": 1})
     name = ConcolicStr.made("zz", "name", sink)
     config[name] = 0
@@ -133,13 +133,13 @@ def test_the_first_walk_after_a_tracked_change_compares_and_marks_the_dict() -> 
     list(config)
 
     # the first walk compares each key the store may be over, as before; from then on the
-    # dict runs as v2 runs it, marked, and a later walk compares nothing
+    # dict is marked and no longer followed, and a later walk compares nothing
     assert (["==", "name", "'b'"], True) in forks(sink)[:asked]
     assert not any(part(expression, 0) == "==" for expression, _ in forks(sink)[asked:])
     assert config.unforked
 
 
-def test_a_later_walk_runs_a_stale_copy_s_lookup_as_on_v2() -> None:
+def test_a_later_walk_answers_a_stale_copy_s_lookup_with_no_fork() -> None:
     config, sink = tracked({"xx": 1, "yy": 2, "zz": 3})
     name = ConcolicStr.made("zz", "name", sink)
     keys = list(config)
@@ -150,7 +150,7 @@ def test_a_later_walk_runs_a_stale_copy_s_lookup_as_on_v2() -> None:
     asked = len(forks(sink))
     assert [key in config for key in keys] == [True, True, False]
 
-    # the second walk follows the removal, so the dict runs as v2 runs it: a copy a walk
+    # the second walk follows the removal, so the dict is no longer followed: a copy a walk
     # handed out is answered with no fork, and no tracked change is followed after it
     assert forks(sink)[asked:] == []
     assert config.unforked
@@ -182,7 +182,44 @@ def test_a_change_under_a_key_python_looked_up_is_python_s() -> None:
     assert config.get(name, 0) == 0
     config.pop(name, None)
 
-    # so the removal under it records no fork naming name either, as on v2
+    # so the removal under it records no fork naming name either
     assert not any("name" in json.dumps(expression) for expression, _ in forks(sink))
     assert downgrades(sink) == ["get", "pop"]
     assert config.unforked
+
+
+def test_a_copy_never_changed_stays_followed_after_a_walk_of_the_changed_one() -> None:
+    config, sink = tracked({"cd": 1})
+    copied = config.copy()
+    name = ConcolicStr.made("zz", "name", sink)
+    other = ConcolicStr.made("ab", "other", sink)
+    config[name] = 0
+    list(config)
+
+    assert other not in copied
+
+    # the copy holds no tracked change, so its lookup is followed and it is not marked
+    assert forks(sink)[-1] == (["in", "other", "config"], False)
+    assert not copied.unforked
+    assert downgrades(sink) == []
+
+
+def test_a_shared_key_a_walk_handed_out_keeps_its_place_on_its_compare() -> None:
+    # "b" is a key Python shares, so its lookup is not proven by the walk: it asks whether name
+    # is "b", which holds only where the walk read "b", so the place is a fact before the fork
+    config, sink = tracked({"b": 1})
+    name = ConcolicStr.made("zz", "name", sink)
+    keys = list(config)
+
+    config[name] = 2
+    for key in keys:
+        assert config[key] >= 1
+
+    at = next(
+        at
+        for at, item in enumerate(sink)
+        if isinstance(item, Branch) and item.expression == ["==", "name", "'b'"]
+    )
+    before = sink[at - 1]
+    assert isinstance(before, Fact)
+    assert (before.expression, before.place) == (None, ["given", ["walked", "config", "'b'"]])
