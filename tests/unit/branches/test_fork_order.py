@@ -3,7 +3,8 @@
 The tree keeps cursors so a pick never rereads a fork it has ruled out, and
 decides a fork's tier once, when its path arrives. The reference here keeps
 nothing between picks, so the two agree only if the cursors skip nothing
-and the tiers are right (fork-order-shallowest-first-after-a-timeout).
+and the tiers are right (fork-order-shallowest-first-after-a-timeout,
+fork-order-shallowest-first-after-a-leave-without-gain).
 """
 
 import random
@@ -24,7 +25,7 @@ class Rescan:
     A fork is open while no pick aimed at it and no input took its other
     side after the same prefix. A fork whose other side no input took
     anywhere comes first, oldest path first and deepest fork first, or
-    shallowest first on a path a pick timed out on; then every other open
+    shallowest first on a path a pick turned or timed out on; then every other open
     fork, oldest path first and deepest fork first; each of those at a site
     no pick timed out at. Last come the open forks at such a site, oldest
     path first and deepest fork first.
@@ -62,6 +63,9 @@ class Rescan:
     def timed_out(self) -> None:
         if self.picked_site is not None:
             self.timed_out_at.add(self.picked_site)
+        self.turn()
+
+    def turn(self) -> None:
         if self.picked is not None:
             self.turned.add(self.picked)
 
@@ -130,6 +134,10 @@ def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
             path = _after(rng, picked)
             tree.add(path)
             reference.add(path)
+            if rng.random() < 0.2:
+                # the input left the plan and covered no new line
+                tree.turn()
+                reference.turn()
         elif rng.random() < 0.5:
             # the solver ran out of time on the plan
             tree.timed_out()
