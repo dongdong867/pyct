@@ -217,3 +217,16 @@ def copy_changed_after(n: str, m: str, d: dict):
     if c.get("bb") == 5:
         return 1
     return 0
+
+
+def merged_after_store(n: str, d: dict):
+    keys = list(d)
+    d[n] = 2
+    hits = sum(k in d for k in keys)
+    d = {n: 2} | d
+    if d == {"cd": 2}:
+        return -1
+    d["cd"] = 2
+    if ("bc", 0) in d.items():
+        return hits
+    return 0

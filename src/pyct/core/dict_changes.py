@@ -121,7 +121,8 @@ def _joined_key(self: DictState, made: DictState, key: object) -> None:
     if plain_key(looked):
         held = looked_up_to_change(self, looked, "__ror__")
     else:
-        held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, key)))
+        bare = plain(key)
+        held = bool(as_python(self, key, "__ror__", lambda: dict.__contains__(self, bare)))
         # ``made`` holds a key no fork settles: marked, as a change without a fork marks
         made.changed_unforked()
         made.held_one()
@@ -390,8 +391,14 @@ def merged(self: DictState, other: object, *, reflected: bool = False) -> object
 def _joined_after(self: DictState, other: dict[object, object]) -> object:
     """``other | config``: ``other``'s keys first, the dict's values winning, each of ``other``'s
     keys looked up in the dict so the size is known, until a key the dict cannot follow turns
-    it plain, and then the dict built from it too."""
-    made = self.derived({**other, **self.storage()})
+    it plain, and then the dict built from it too.
+
+    The dict built holds each key's plain value, as a store does: Python's own merge would
+    compare a tracked key of ``other`` with an equal key the dict holds, a key that tracked key
+    stored on this input, and that compare, recorded, would pin the tracked key to this
+    input's text."""
+    keys_as_held = {plain(key): held for key, held in dict.items(other)}
+    made = self.derived({**keys_as_held, **self.storage()})
     for key in other:
         if self.expression is None:
             # a key the dict could not follow turned it plain: it records nothing more

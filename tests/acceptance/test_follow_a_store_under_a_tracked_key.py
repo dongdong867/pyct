@@ -341,3 +341,19 @@ def test_a_copy_changed_after_the_walk_stays_followed() -> None:
     assert return_line("copy_changed_after", 1) in union_of(lines)[str(FILE)]
     assert [line["mismatch_at"] for line in lines] == [None] * len(lines)
     assert "__setitem__" not in downgrade_names(lines[0]), lines[0]
+
+
+# Python's own `{n: 2} | d` compares n with the key n's store put in d; recorded, that compare
+# pinned n to its seed's text, which the first made-up key then took, so the flip of a later
+# lookup was unsat though an input takes it (review of PR #131, round 5)
+def test_a_merge_compares_no_tracked_key_with_its_own_stored_key() -> None:
+    seed = '{"n": "pyct1", "d": {"bc": 2}}'
+    result = run_pyct(f"{MODULE}::merged_after_store", seed, "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    merge = line_of("merged_after_store", "{n: 2} | d")
+    assert [fork for fork in listed(lines[0]) if fork[0] == merge] == [], listed(lines[0])
+    # the flip of the seed's `'bc' in d`, an input without "bc", is found
+    held = [args_of(line)["d"] for line in solved(lines)]
+    assert any(isinstance(d, dict) and "bc" not in d for d in held), len(lines)
