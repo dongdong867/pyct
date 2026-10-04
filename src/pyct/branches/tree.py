@@ -35,9 +35,10 @@ class Tree:
     site, whatever came before it: a fork whose other side is in no input
     yet is a new side, and the pick tries those first (see `next`).
 
-    A pick whose ask ran to the solver's limit turns the rest of its path's
-    new sides shallowest first, and every other fork at its site waits until
-    each fork elsewhere was aimed at (see `timed_out`).
+    A pick whose ask ran to the solver's limit, or whose input left the plan
+    and covered no new line, turns the rest of its path's new sides
+    shallowest first (see `turn`); after a timeout, every other fork at its
+    site also waits until each fork elsewhere was aimed at (see `timed_out`).
 
     Each site gets a number the first time the tree meets it, and the tree
     keys a fork by that number: a ``Site`` hashes in Python, a number in C,
@@ -57,7 +58,7 @@ class Tree:
         # and the side; a plain tuple, so a fork adds no object of its own
         self._sides: set[tuple[int, bool, bool]] = set()
         # the forks that were new sides when their path arrived, oldest path first and deepest
-        # fork first, or shallowest first on a path a timeout turned (`timed_out`). A path's
+        # fork first, or shallowest first on a path a pick turned (`turn`). A path's
         # forks sit together, so after a pick the rest of its path leads the queue. A side taken
         # never becomes new again, so a fork leaves for good
         self._new: deque[Place] = deque()
@@ -66,7 +67,7 @@ class Tree:
         # path. A fork that closes never opens again, so every fork past this point is spent
         self._path = 0
         self._depth: int | None = None
-        # the path and the site number of the last pick, the paths whose new sides a timeout
+        # the path and the site number of the last pick, the paths whose new sides a pick
         # turned, and the sites' numbers a pick timed out at
         self._picked: int | None = None
         self._picked_number: int | None = None
@@ -121,7 +122,7 @@ class Tree:
         New side first, by decision fork-order-shallowest-first-after-a-timeout:
         an open fork whose other side no input took at its site comes first,
         oldest path first and deepest fork first, or shallowest first on a
-        path a pick timed out on (`timed_out`); otherwise the deepest open
+        path a pick turned (`turn`); otherwise the deepest open
         fork on the oldest path; and last, a fork at a site a pick timed out
         at, oldest path first and deepest fork first. A loop's test takes both
         sides on a path that runs it, so a loop that adds a pass on every
@@ -141,22 +142,34 @@ class Tree:
         return plan(forks[: depth + 1], path, facts)
 
     def timed_out(self) -> None:
-        """The last pick's ask ran to the solver's limit: its path's other new sides, still
-        waiting, go shallowest first, once per path, and every fork at its site on any path
-        waits until each fork elsewhere was aimed at.
+        """The last pick's ask ran to the solver's limit: its path turns (`turn`), and every
+        fork at its site on any path waits until each fork elsewhere was aimed at.
 
-        The ask for a fork holds the path up to it, so after one ran out of
-        time, the next deepest holds nearly the same and would likely run out
-        too, spending the budget on one input; the shallowest holds the
-        least. A fork at the same site asks the same condition of the same
-        kind of value, as `int(s)` after `s.isdigit()` does in each call of a
-        helper, which only a string of more digits than Python reads flips,
-        so it would likely run out as well. Decisions
-        fork-order-shallowest-first-after-a-timeout and
+        A fork at the same site asks the same condition of the same kind of
+        value, as `int(s)` after `s.isdigit()` does in each call of a helper,
+        which only a string of more digits than Python reads flips, so it
+        would likely run out of time as well. Decision
         fork-order-a-timed-out-site-waits-for-the-last-picks.
         """
         if self._picked_number is not None:
             self._timed_out.add(self._picked_number)
+        self.turn()
+
+    def turn(self) -> None:
+        """The last pick's path's other new sides, still waiting, go shallowest first, once per
+        path, whichever cause turns it first.
+
+        The run turns a path when the pick's ask ran to the solver's limit
+        (`timed_out`), or when its input left the plan and covered no line no
+        earlier input had. The ask for a fork holds the path up to it, so the
+        next deepest holds nearly the same and would likely run out of time
+        or leave the plan too, on what the solver does not model, such as a
+        cache's key compares; the shallowest holds the least. A pick from the
+        oldest-path order or the last picks has none of its path's new sides
+        waiting, so its turn moves nothing. Decisions
+        fork-order-shallowest-first-after-a-timeout and
+        fork-order-shallowest-first-after-a-leave-without-gain.
+        """
         path = self._picked
         if path is None or path in self._turned:
             return

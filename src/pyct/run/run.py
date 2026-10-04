@@ -279,9 +279,25 @@ def _loop(
             told.miss(attempt.miss)
         if attempt.ran is not None:
             records.append(attempt.ran.record)
-            covered.append(attempt.ran.record.covered_lines & told.scope.lines)
             inputs[len(records)] = attempt.ran.seed
-            _handled(attempt.ran.record, told, tree)
+            _took(attempt.ran.record, told, tree, covered)
+
+
+def _took(record: InputRecord, told: _Told, tree: Tree, covered: list[frozenset[int]]) -> None:
+    """Measure a solver's input, hand it out and add its path, then turn the path its pick
+    extended when the input left the plan and covered no line no earlier input had.
+
+    Such an input likely left on what the solver does not model, as a
+    cache that compares keys only on equal hashes, and the deeper forks of
+    that path sit on more of it, so the rest of the path's new sides go
+    shallowest first (`Tree.turn`). How the input ended does not matter.
+    An input that left and covered a new line turns nothing. Decision
+    fork-order-shallowest-first-after-a-leave-without-gain.
+    """
+    covered.append(record.covered_lines & told.scope.lines)
+    _handled(record, told, tree)
+    if record.mismatch_at is not None and no_gain(covered, 1):
+        tree.turn()
 
 
 def _handled(record: InputRecord, told: _Told, tree: Tree) -> None:
