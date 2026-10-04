@@ -54,9 +54,7 @@ class Branch:
 
     ``is_held`` is set on a fork an `is` records as it tests its operand, and says whether the
     `is` held on that pass; None on any other fork. see-why reads an `is` test's sides from it
-    (``results.senses``). ``split_walk`` marks a walk's ``len(<form>) > k`` fork over a split's
-    list, which the tree aims at after the path's other forks (see ``branches.tree``). Like
-    ``lost_as``, neither is part of the fork, and neither is printed.
+    (``results.senses``). Like ``lost_as``, it is not part of the fork, and it is not printed.
     """
 
     expression: Expression
@@ -65,7 +63,6 @@ class Branch:
     raising: bool = False
     lost_as: str = field(default="__bool__", compare=False)
     is_held: bool | None = field(default=None, compare=False)
-    split_walk: bool = field(default=False, compare=False)
 
     @property
     def where(self) -> ForkSite:

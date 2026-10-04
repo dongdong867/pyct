@@ -8,8 +8,6 @@ import signal
 import time
 from typing import NoReturn
 
-import pytest
-
 from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.run.journal import RECORDS, JournalWriter
 from pyct.run.journal_reader import read
@@ -100,44 +98,30 @@ def test_a_fact_crosses_the_journal_placed_after_the_forks_before_it() -> None:
     assert reading.facts[0].expression[1] is reading.branches[0].expression[1]  # type: ignore[index]
 
 
-@pytest.mark.parametrize(
-    "notes",
-    [b"1", b"null", b"true, false", b"1, true", b"true, true, true"],
-    ids=["a number", "a null alone", "an eighth not true", "a seventh not a bool", "nine"],
-)
-def test_a_fork_record_holds_six_items_and_its_notes_alone(notes: bytes) -> None:
+def test_a_fork_record_holds_six_items_and_a_bool_note_alone() -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    writer.fork(
-        Branch(expression="abcdefghijklmnopqrstuvwxyz", taken=True, site=Site("m.py", 2, 4))
-    )
-    written = b'"abcdefghijklmnopqrstuvwxyz", true, "m.py", 2, 4, false]'
+    writer.fork(Branch(expression="abcdef", taken=True, site=Site("m.py", 2, 4)))
+    written = b'"abcdef", true, "m.py", 2, 4, false]'
     at = buffer.index(written)
-    rewritten = b'"a", true, "m.py", 2, 4, false, ' + notes
-    buffer[at : at + len(written)] = rewritten.ljust(len(written) - 1) + b"]"
+    buffer[at : at + len(written)] = b'"abc", true, "m.py", 2, 4, false, 1]'
 
     reading = read(buffer)
 
     assert reading.branches == () and reading.problem is not None
 
 
-@pytest.mark.parametrize("held", [None, True, False], ids=["no is", "an is that held", "not"])
-def test_a_split_walk_s_fork_keeps_its_mark_beside_an_is_note(held: bool | None) -> None:
+def test_a_fork_record_with_more_than_its_note_is_unreadable() -> None:
     buffer = bytearray(1 << 16)
     writer = JournalWriter(buffer)
-    walk = Branch([">", ["len", ["splitlines", "s"]], 0], True, Site("m.py", 2, 4), split_walk=True)
-    walk = dataclasses.replace(walk, is_held=held)
-    writer.fork(walk)
-    writer.fork(Branch(expression="t", taken=False, site=Site("m.py", 3, 4), is_held=held))
+    writer.fork(Branch(expression="abcdefg", taken=True, site=Site("m.py", 2, 4), is_held=True))
+    written = b'"abcdefg", true, "m.py", 2, 4, false, true]'
+    at = buffer.index(written)
+    buffer[at : at + len(written)] = b'"a", true, "m.py", 2, 4, false, true, true]'
 
     reading = read(buffer)
 
-    # the walk's mark is an eighth item, the `is` note's seventh null when no `is` noted it
-    assert [(branch.split_walk, branch.is_held) for branch in reading.branches] == [
-        (True, held),
-        (False, held),
-    ]
-    assert reading.branches[0] == walk
+    assert reading.branches == () and reading.problem is not None
 
 
 def test_a_fact_with_more_than_a_place_beside_it_is_unreadable() -> None:

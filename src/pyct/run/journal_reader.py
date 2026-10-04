@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import json
 import struct
-from collections.abc import Buffer, Sequence
+from collections.abc import Buffer
 from dataclasses import dataclass, field
 
 from pyct.core.branch import Branch, Expression, Fact, Site
@@ -287,13 +287,11 @@ class _Facts:
                 int() as col,
                 bool() as raising,
                 *note,
-            ] if _fork_notes(note):
+            ] if len(note) <= 1 and all(type(each) is bool for each in note):
                 site = self._site(file, line, col)
                 held = note[0] if note else None
-                walk = len(note) == 2
-                expression = self._expression(expression)
-                return Branch(expression, taken, site, raising, is_held=held, split_walk=walk)
-        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its notes")
+                return Branch(self._expression(expression), taken, site, raising, is_held=held)
+        raise ValueError("a fork is [expression, taken, file, line, col, raising] and its note")
 
     def _fact(self, value: object) -> Fact:
         """A fact, placed after every fork record read before it."""
@@ -364,11 +362,3 @@ def _ending(value: object) -> Failure | None:
         case [str() as kind, str() as detail, str() | None as traceback]:
             return Failure(kind=FailureKind(kind), detail=detail, traceback=traceback)
     raise ValueError("an ending is null or [kind, detail, traceback]")
-
-
-def _fork_notes(note: Sequence[object]) -> bool:
-    """Whether a fork record's items past the sixth are its notes: whether an `is` held, a bool,
-    and then, for a walk's fork over a split's list, true, the `is` note null there if none."""
-    if len(note) == 2:
-        return (note[0] is None or type(note[0]) is bool) and note[1] is True
-    return len(note) <= 1 and all(type(each) is bool for each in note)

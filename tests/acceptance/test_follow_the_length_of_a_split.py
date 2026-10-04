@@ -369,15 +369,16 @@ def test_asks_the_input_s_count_beside_a_tracked_value() -> None:
     assert isinstance(solver, dict) and solver["unknown"] == solver["timeout"] == 0, solver
 
 
-# follow-the-length-of-a-split-walks-a-split-after-the-other-forks
-def test_walks_a_split_after_the_other_forks() -> None:
+# follow-the-length-of-a-split-walks-a-split-after-the-other-forks, as the user decided in
+# review round 9 (wording with PM): the target's loop over a split's list is Python's own walk
+def test_a_loop_over_a_split_records_no_piece_fork() -> None:
     result = run_pyct(f"{LENGTHS}::walked_after", '{"s": "a\\nb\\nc\\nd"}', *UNTIL_NO_GAIN)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     walk, test = line_of("for i, p in enumerate"), line_of('if i > 0 and p == "end":')
-    aims = [aimed_at(line) for line in solved(lines)]
-    assert walk in aims, aims
-    # the seed's three line forks, `p == "end"` at lines 1 to 3, are all aimed at first
-    assert aims[: aims.index(walk)].count(test) >= 3, aims
+    # no "is there another piece" fork at the loop, as on origin/v2: only the lines' own forks
+    assert [fork for fork in listed(lines[0]) if fork[0] == walk] == [], lines[0]
+    tests = [fork[1] for fork in listed(lines[0]) if fork[0] == test]
+    assert [part[0] for part in tests if isinstance(part, list)] == ["=="] * 3, lines[0]
     assert [line for line in solved(lines) if covers(line, test + 1)], lines

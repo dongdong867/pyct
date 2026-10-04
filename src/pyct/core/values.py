@@ -46,8 +46,6 @@ _BEFORE_A_RAISE = [False]
 # set while an `is` tests a tracked bool's truth, to the bool the `is` compares it with, so the
 # fork that test records notes whether the `is` held
 _AGAINST: list[bool | None] = [None]
-# set while a walk over a split's list records its fork, so the fork is marked as one
-_SPLIT_WALK = [False]
 
 
 def forked(
@@ -69,7 +67,7 @@ def forked(
     marked = raising or _BEFORE_A_RAISE[0]
     against = _AGAINST[0]
     held = None if against is None else taken is against
-    branch = Branch(expression, taken, caller_site(), marked, name, held, _SPLIT_WALK[0])
+    branch = Branch(expression, taken, caller_site(), marked, name, held)
     sink.append(branch)
     return taken
 
@@ -86,17 +84,6 @@ def tested_against(value: object, against: bool) -> bool:
         return bool(value)
     finally:
         _AGAINST[0] = None
-
-
-def walked_a_split(sink: BranchSink, expression: Expression, taken: bool, name: str) -> bool:
-    """Record a walk's fork over a split's list as ``forked`` records a fork, marked so the
-    tree aims at it after the path's other forks
-    (fork-order-a-split-s-walk-forks-after-the-path-s-other-forks)."""
-    try:
-        _SPLIT_WALK[0] = True
-        return forked(sink, expression, taken, name)
-    finally:
-        _SPLIT_WALK[0] = False
 
 
 def before_a_raise(test: Callable[[], object]) -> None:

@@ -172,6 +172,9 @@ def pop(self: ListState, *args: Any) -> object:
     ``items[:i] + items[i:][1:]``.
     """
     key = args[0] if args else -1
+    if args and self.leave_the_split():
+        # a split's list popped at a position is Python's own from the pop on, as on origin/v2
+        return own(list.pop, self, *args)
     if len(args) > 1 or not follows(self, key) or not self.holds("pop"):
         return unfollowed(self, "pop", lambda items: list.pop(items, *args))
     if not _pops(self, key, bool(args)):
@@ -241,6 +244,10 @@ def assign(self: ListState, key: Any, value: object) -> None:
     becomes ``items[:i] + [x] + items[i:][1:]``; a slice becomes
     ``items[:a] + ys + items[a:][len(items[a:b]):]``.
     """
+    if self.leave_the_split():
+        # a split's list set at a position is Python's own from the set on, as on origin/v2
+        own(list.__setitem__, self, key, value)
+        return
     if isinstance(key, slice):
         _assign_slice(self, key, value)
         return
@@ -273,6 +280,10 @@ def delete(self: ListState, key: Any) -> None:
     ``items[:a] + items[a:][len(items[a:b]):]``.
     """
     change: Change = lambda items: list.__delitem__(items, key)  # noqa: E731
+    if self.leave_the_split():
+        # a split's list deleted from is Python's own from the delete on, as on origin/v2
+        own(change, self)
+        return
     bounds = slice_bounds(key) if isinstance(key, slice) else None
     followed = bounds is not None or (not isinstance(key, slice) and follows(self, key))
     if not followed or not self.holds("__delitem__"):

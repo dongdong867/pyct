@@ -121,7 +121,11 @@ def _count(self: ListState, value: object) -> int:
 
 
 def _remove(self: ListState, value: object) -> None:
-    """``items.remove(x)``: the compares, then the change, or ValueError where Python raises."""
+    """``items.remove(x)``: the compares, then the change, or ValueError where Python raises.
+    A split's list is Python's own from the remove on (``ListState.leave_the_split``)."""
+    if self.leave_the_split():
+        own(list.remove, self, value)
+        return
     found = _found(self, value, "remove")
     if found is None or self.expression is None:
         own(list.remove, self, value)

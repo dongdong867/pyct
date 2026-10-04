@@ -22,12 +22,12 @@ from collections.abc import Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Expression
+from pyct.core.branch import PYCT_ROOT, Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.str_splits import a_split_s_list
 from pyct.core.strs import ConcolicStr
-from pyct.core.values import forked, walked_a_split
+from pyct.core.values import forked
 
 
 def plain_index(key: object) -> int | None:
@@ -132,12 +132,8 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
 
 
 def more(self: ListState, at: int, name: str) -> bool:
-    """The walk's fork for step ``at``: whether the list holds an item there. Over a split's
-    list (``str_splits.a_split_s_list``), the fork is marked (``values.walked_a_split``)."""
-    expression: Expression = [">", ["len", self.expression], at]
-    taken = at < self.length()
-    record = walked_a_split if a_split_s_list(self.expression) else forked
-    return record(self.sink, expression, taken, name)
+    """The walk's fork for step ``at``: whether the list holds an item there."""
+    return forked(self.sink, [">", ["len", self.expression], at], at < self.length(), name)
 
 
 def walk(self: ListState) -> Iterator[object]:
@@ -146,7 +142,12 @@ def walk(self: ListState) -> Iterator[object]:
     The form is read afresh at each step, so a change the target makes while it walks is in the
     next fork. A change made without the list's methods turns the walk plain there, as it turns
     every other operation plain.
+
+    The target's own loop over a split's list records no fork, as on origin/v2: a loop is
+    Python's own walk of the pieces (``_a_split_s_loop``).
     """
+    if _a_split_s_loop(self):
+        return list.__iter__(self)
     self.__dict__["walked_at"] = caller(2)
     return _walked(self)
 
@@ -168,9 +169,22 @@ def backward(self: ListState) -> Iterator[object]:
 
     The item j steps from the end is written ``items[-(j + 1)]``, so it follows the length. A
     change to the length while it walks, or one made without the list's methods, turns the
-    walk plain there; it then goes on as Python's own, from the position it had reached.
+    walk plain there; it then goes on as Python's own, from the position it had reached. The
+    target's own loop over a split's list records no fork (``_a_split_s_loop``).
     """
+    if _a_split_s_loop(self):
+        return list.__reversed__(self)
     return _backward(self, self.length())
+
+
+def _a_split_s_loop(self: ListState) -> bool:
+    """Whether the target's own code, not pyct's, walks a split's list: a loop, a
+    comprehension, an unpacking or a builtin the target calls on it. Such a walk records no
+    "is there another piece" fork, as on origin/v2, by the user's decision in review round 9;
+    a join's walk, which pyct makes, keeps its forks, which its encoding reads."""
+    if not a_split_s_list(self.expression):
+        return False
+    return not sys._getframe(2).f_code.co_filename.startswith(PYCT_ROOT)
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

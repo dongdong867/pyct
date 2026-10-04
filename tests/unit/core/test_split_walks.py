@@ -1,10 +1,12 @@
-"""A walk over a split's list marks its forks, which the tree aims at after the path's other
-forks (fork-order-a-split-s-walk-forks-after-the-path-s-other-forks)."""
+"""A split's list in core: the target's loop over it records no fork, as on origin/v2, while a
+join's walk does; the list stays tracked only while the solver writes it exactly, and is
+Python's own after any other change, as on origin/v2; and the strings the solver works out."""
 
 from typing import Any
 
 import pytest
 
+from pyct.core import substitutes
 from pyct.core.branch import Branch, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.str_splits import a_split_s_list, worked_out
@@ -16,25 +18,51 @@ def _split(sink: list[SinkItem]) -> Any:
     return ConcolicStr.made("a,b", expression="s", sink=sink).split(",")
 
 
+def _walks(sink: list[SinkItem]) -> list[Expression]:
+    return [item.expression for item in sink if isinstance(item, Branch)]
+
+
 @pytest.mark.parametrize(
-    ("made", "marked"),
+    "loop",
     [
-        (lambda sink: ConcolicStr.made("a\nb", expression="s", sink=sink).splitlines(), True),
-        (lambda sink: _split(sink)[1:], True),
-        (lambda sink: tracked(["a", "b"])[0], False),
+        lambda parts: [part for part in parts],
+        lambda parts: list(enumerate(parts)),
+        lambda parts: list(reversed(parts)),
+        lambda parts: list(parts[1:]),
+        lambda parts: sorted(parts),
     ],
-    ids=["a split's list", "a slice of one", "an argument's list"],
+    ids=["a comprehension", "enumerate", "reversed", "a slice", "sorted"],
 )
-def test_a_walk_over_a_split_s_list_marks_its_forks(made: Any, marked: bool) -> None:
+def test_the_target_s_loop_over_a_split_s_list_records_no_fork(loop: Any) -> None:
     sink: list[SinkItem] = []
-    items = made(sink)
-    sink = sink or items.sink
+    parts = ConcolicStr.made("a\nb\nc", expression="s", sink=sink).splitlines()
+
+    walked = loop(parts)
+
+    # each piece keeps its condition, and no "is there another piece" fork is recorded, by the
+    # user's decision in review round 9; sorted's compares of the pieces are Python's own
+    heads = [part[0] for part in _walks(sink) if isinstance(part, list)]
+    assert len([*walked]) in (2, 3) and ">" not in heads, sink
+
+
+def test_a_join_s_walk_over_a_split_s_list_records_its_forks() -> None:
+    sink: list[SinkItem] = []
+    parts = _split(sink)
+
+    "-".join(parts)  # pyrefly: ignore[bad-argument-type]
+    substitutes.join("-".join, parts)
+
+    # the join's encoding reads how many pieces it holds from its walk's forks
+    split = ["split", "s", "','"]
+    assert _walks(sink) == [[">", ["len", split], at] for at in range(3)], sink
+
+
+def test_a_loop_over_an_argument_s_list_records_its_forks() -> None:
+    items, sink = tracked(["a", "b"])
 
     list(items)
-    walks = [item for item in sink if isinstance(item, Branch) and item.lost_as == "__iter__"]
 
-    # a list argument's walk keeps the order it had
-    assert walks and all(branch.split_walk is marked for branch in walks), walks
+    assert _walks(sink) == [[">", ["len", "items"], at] for at in range(3)], sink
 
 
 SPLIT: Expression = ["split", "s", "','"]
@@ -161,15 +189,15 @@ def test_the_solver_works_out_a_string_from_arguments_literals_and_plain_operati
     assert worked_out(form) is worked
 
 
-def test_a_walk_over_a_split_joined_with_an_argument_s_list_marks_no_fork() -> None:
+def test_a_split_joined_with_an_argument_s_list_is_python_s_own() -> None:
     sink: list[SinkItem] = []
     items, _ = tracked(["x"])
     joined = _split(sink) + items
 
     list(joined)
 
-    # Python's own list, as origin/v2 hands it back: no walk fork, so none waits
-    assert not any(isinstance(item, Branch) and item.split_walk for item in sink), sink
+    # Python's own list, as origin/v2 hands it back: no walk fork
+    assert _walks(sink) == [], sink
 
 
 def test_a_split_s_list_changed_where_pyct_does_not_follow_hands_back_its_piece() -> None:
