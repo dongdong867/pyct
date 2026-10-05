@@ -422,6 +422,7 @@ def _joined_after(self: DictState, other: dict[object, object]) -> object:
     plain value, so Python's merge records no compare that would pin it (``as_its_store``)."""
     keys_as_held = {as_its_store(self, key): held for key, held in dict.items(other)}
     made = self.derived({**keys_as_held, **self.storage()})
+    made.__dict__["reordered"] = True
     for key in other:
         if self.expression is None:
             # a key the dict could not follow turned it plain: it records nothing more

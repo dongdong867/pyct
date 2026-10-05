@@ -48,7 +48,7 @@ _BOUND = "pyct.core.bound"
 def walk_keyed(self: DictState) -> bool:
     """Whether the walk starting now hands out walk keys: an unchanged small dict of plain str
     or int keys and int or str values, walked by the target's own `for`."""
-    if self.expression is None or self.log or self.unforked or self.popped:
+    if self.expression is None or self.log or self.unforked or self.popped or self.reordered:
         return False
     if self.size() > MOST_KEYS or not _typed_alike(self):
         return False
@@ -106,7 +106,7 @@ def of_the_argument(self: DictState, key: object) -> bool:
 def held(self: DictState, key: object, name: str, raising: bool) -> bool:
     """Whether a lookup of a walk key is the fact that the dict holds it: the dict is unchanged
     since the input, so it holds the key its walk read. Recorded where it is, and True."""
-    if self.log or self.unforked or not of_the_argument(self, key):
+    if self.log or self.unforked or self.reordered or not of_the_argument(self, key):
         return False
     if not dict.__contains__(self, plain(key)):
         return False

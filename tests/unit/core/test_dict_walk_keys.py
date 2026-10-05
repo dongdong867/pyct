@@ -183,3 +183,13 @@ def test_a_walk_key_is_an_int_under_int_keys() -> None:
     keys = in_the_target("keys = [k for k in d]", d=numbers)["keys"]
 
     assert type(keys[0]) is ConcolicInt and keys[0] == 7
+
+
+def test_a_dict_built_with_the_argument_s_keys_after_others_hands_out_today_s_keys() -> None:
+    # `{"b": 0} | config` holds the argument's keys in another order: its walk reads no key at
+    # the argument's pass
+    config, _ = tracked({"a": 1, "b": 2})
+
+    keys = in_the_target("keys = [k for k in {'b': 0} | config]", config=config)["keys"]
+
+    assert keys == ["b", "a"] and [type(key) for key in keys] == [str, str]

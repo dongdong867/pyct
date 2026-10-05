@@ -141,10 +141,20 @@ class Walks:
         return tuple(step for step in prefix if not _read_by_its_walk(step))
 
     def fixed(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:
-        """The path with each walk key written as the key the input holds at its pass."""
+        """The path with each walk key written as the key the input holds at its pass. A pass
+        whose key a step names keeps that key at its place whatever a fork reads there, a given
+        place: a fork that compares the key reads no value, and would read another key there."""
         if not self.walked:
             return prefix
-        return _written(prefix, self.written_key)
+        return _written(tuple(self._given(step) for step in prefix), self.written_key)
+
+    def _given(self, step: Branch | Fact) -> Branch | Fact:
+        """A walk's place at a pass whose key a step names, as a given place."""
+        place = step.place if isinstance(step, Fact) else None
+        if not (isinstance(place, list) and len(place) == 3 and place[0] == "walked"):
+            return step
+        walked = walk_key(place[2])
+        return replace(step, place=["given", place]) if walked in self.named else step
 
     def opened(
         self, prefix: tuple[Branch | Fact, ...]

@@ -63,7 +63,8 @@ def test_the_first_ask_writes_each_walk_key_as_the_input_s_key() -> None:
     ]
     # a part the path shares is written once, and still shared
     assert written[0].expression[1] is written[1].expression[1]  # type: ignore[index]
-    assert written[2].place == ["walked", "d", "'b'"]  # type: ignore[union-attr]
+    # a pass whose key a step names keeps it whatever a fork reads there
+    assert written[2].place == ["given", ["walked", "d", "'b'"]]  # type: ignore[union-attr]
 
 
 def test_a_path_with_no_walk_key_is_kept_as_it_is() -> None:
@@ -214,3 +215,21 @@ def test_an_unsat_with_chosen_keys_is_the_path_s() -> None:
     path = (fork([">", ["len", "d"], 0]), walked(0), fork(["!=", D, D]))
 
     assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unsat)
+
+
+@needs_cvc5
+def test_a_compared_walk_key_stays_in_its_place() -> None:
+    # the dict probe's `any(key == "b" for key in d)` then `"b" in d`: the compare reads no
+    # value, and an answer that drops "b" would walk another key at pass 2
+    seed = Seed.of({"d": {"c": 0, "a": 0, "b": 0}})
+    key: Expression = ["key", "d", 2]
+    path = (
+        fork([">", ["len", "d"], 2]),
+        walked(2),
+        fork(["==", key, "'b'"]),
+        fork(["in", "'b'", "d"], taken=False),
+    )
+
+    answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
+
+    assert isinstance(answer, Unsat | Unknown), answer
