@@ -2,10 +2,10 @@
 what plain `+`, `-` and `*` made of it, so a fork that compares it with a plain int narrows the
 list's length range (see ``core.spans``).
 
-Every input that records such a fork takes its side, so its count is among the lengths the fork
-leaves. The solver writes the compare as "is piece j there"
-(split-list-tracked-its-count-the-piece-there-or-the-input-s-own), so the forks the narrowed
-range decides are the ones it holds. Any other list's `len(x)` compares never narrow its range
+Every input that records such a fork takes its side, so that input's count is among the lengths
+the fork leaves. The solver writes the compare as "is piece j there"
+(split-list-tracked-its-count-the-piece-there-or-the-input-s-own), so the solver holds the forks
+whose sides decide the narrowed range. Any other list's `len(x)` compares never narrow its range
 (forks-a-length-range-per-value-decides-its-checks-and-len-s-compares), so only a split's list,
 or one the solver writes exactly from it, is linked.
 
@@ -55,12 +55,13 @@ class Count:
         return replace(self, offset=self.offset - number)
 
     def current(self) -> bool:
-        """Whether the list is still as it was when `len` read it."""
+        """Whether the list still has the form and the length it had when `len` read it."""
         listed = self.listed
         return listed.expression is self.form and listed.length() == self.length
 
     def span(self) -> Span | None:
-        """The int's range, read from the list's range now; None once the list changed."""
+        """The int's range, read from the list's range now; None once the list's form or length
+        differs from what `len` read."""
         if not self.current():
             return None
         return added(scaled(self.listed.span, self.scale), exactly(self.offset))
