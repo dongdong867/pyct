@@ -16,6 +16,7 @@ from contextvars import ContextVar
 from typing import Protocol, cast
 
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.spans import UNKNOWN, Span
 from pyct.core.str_cases import Reader, Tracked, piece
 from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import downgraded, own
@@ -233,9 +234,11 @@ _KEYWORDS: dict[str, tuple[tuple[str, object], ...]] = {
 
 
 class _Listed(Protocol):
-    """How a tracked list is made: its items, its form and its sink."""
+    """How a tracked list is made: its items, its form, its sink and its range."""
 
-    def made(self, items: list[object], expression: Expression, sink: BranchSink) -> object: ...
+    def made(
+        self, items: list[object], expression: Expression, sink: BranchSink, span: Span
+    ) -> object: ...
 
 
 # the tracked list a split hands back, entered by `pyct.core.lists` as it is imported, which
@@ -381,9 +384,21 @@ def split_up(name: str, reader: Reader) -> Callable[..., object]:
             # a string the solver cannot work out from the input's values has no count it can
             # ask at; its pieces come back in Python's own list, as on origin/v2
             return pieces
-        return _LISTED[0].made(pieces, whole, self.sink)
+        return _LISTED[0].made(pieces, whole, self.sink, pieces_range(name, forms))
 
     return compute
+
+
+def pieces_range(name: str, forms: list[Expression]) -> Span:
+    """How many pieces a split pyct encodes makes of any string: at least one by a separator,
+    none by whitespace or by line ends, and at most one more than a plain limit of 0 or more
+    (decision forks-a-length-range-per-value-decides-its-checks-and-len-s-compares)."""
+    if name == "splitlines":
+        return UNKNOWN
+    fewest = 0 if not forms or forms[0] is None else 1
+    limit = forms[1] if len(forms) > 1 else -1
+    assert type(limit) is int
+    return (fewest, None if limit < 0 else limit + 1)
 
 
 def _pieces(receiver: Tracked, whole: Expression, parts: Iterable[str]) -> Iterable[object]:

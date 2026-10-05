@@ -103,6 +103,9 @@ class ConcolicBool(int):
     # set on a compare whose answer pyct's own values decided, as a length range proves one
     # (see `core.spans`): testing it records a fact, not a fork
     decided: bool = False
+    # set on a compare of a split's count with a plain int that its list's range does not prove:
+    # testing it narrows the range to the side taken (see `core.counts`)
+    narrows: Callable[[bool], None] | None = None
 
     # a compare or an arithmetic operation reads the bool as the int 1 or 0, as a tracked int
     # teaches it, and meets a float as that int does (see `numbers.promoted`). int promises a
@@ -190,9 +193,12 @@ class ConcolicBool(int):
         return made
 
     def __bool__(self) -> bool:
+        taken = own(int.__bool__, self)
         if self.decided:
-            return held(self.sink, self.expression, own(int.__bool__, self))
-        return forked(self.sink, self.expression, own(int.__bool__, self))
+            return held(self.sink, self.expression, taken)
+        if self.narrows is not None:
+            self.narrows(taken)
+        return forked(self.sink, self.expression, taken)
 
     __repr__ = _written  # pyrefly: ignore[bad-override]
 
