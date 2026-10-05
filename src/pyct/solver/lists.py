@@ -295,7 +295,7 @@ class ListTerms(ListTyping, Slices):
             # a read of an item no term holds, a None or a list inside say, which a sort's
             # display writes: no fork reads it, so it has no term
             return ""
-        found = self._read(piece, self.position(rest[0], piece), item)
+        found = self._item_at(piece, rest[0], item)
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
@@ -311,6 +311,21 @@ class ListTerms(ListTyping, Slices):
             self._present(piece.length, rest[0])
         self.reads.append((operand, rest[0]))
         return found.value
+
+    def _item_at(self, piece: Piece, part: Expression, item: str) -> Read:
+        """The item of that kind a read at ``part`` gives. At a pinned position, one a tracked
+        operand handed out (``["pin", k, operand, value]``), it is the item at k while the pin's
+        condition holds and an item of its own, which no fork ties, where it does not, and it is
+        there only while the condition holds (keep-a-tracked-index-into-a-split-as-v2-does)."""
+        position = _unpinned(part)
+        found = self._read(piece, self.position(position, piece), item)
+        if position is part or found.value is None:
+            return found
+        pin = self.pinned(part)
+        free = f"pinned!{len(self.definitions)}"
+        self.definitions.append(f"(declare-const {free} {ITEM_SORTS[item]})")
+        guard = TRUE if found.guard == TRUE else f"(=> {pin} {found.guard})"
+        return Read(f"(ite {pin} {found.value} {free})", guard)
 
     def _read(self, piece: Piece, position: Lin, item: str) -> Read:
         """The item of that kind at ``position``. A read that runs past its steps names the list
@@ -494,3 +509,10 @@ class ListTerms(ListTyping, Slices):
         guards = [f"(assert {guard})" for guard in self.guards]
         strings = [longest_string(term) for term in self.strings]
         return lengths + self.capped + list(self.regime) + held + guards + strings
+
+
+def _unpinned(part: Expression) -> Expression:
+    """The plain position a pinned one (``["pin", k, operand, value]``) reads at, or the part."""
+    while isinstance(part, list) and part[:1] == ["pin"]:
+        part = part[1]
+    return part

@@ -338,7 +338,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     the table spells it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
     Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among them. A part cut
     from a long expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
-    ``null``. Each binds tighter than any operator, so none needs parentheses of its own.
+    ``null``. A pinned position reads ``1 if n == 1``. Each binds tighter than any operator, so
+    none needs parentheses of its own.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
@@ -348,6 +349,9 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         return _cut_part(expression[1])
     if head == "()":
         return f"({texts[0]},)" if len(texts) == 1 else f"({', '.join(texts)})"
+    if head == "pin":
+        # a position a tracked operand handed out, read only while the operand has its value
+        return f"{texts[0]} if {texts[1]} == {texts[2]}"
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)

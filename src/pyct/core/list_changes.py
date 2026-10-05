@@ -57,6 +57,19 @@ def follows(self: ListState, key: object) -> bool:
     return plain_index(key) is not None
 
 
+def held(operands: tuple[object, ...]) -> list[tuple[Expression, int]]:
+    """Each tracked int among the operands, a slice's bounds included, and the value it has."""
+    found: list[tuple[Expression, int]] = []
+    for operand in operands:
+        parts = (
+            (operand.start, operand.stop, operand.step)
+            if isinstance(operand, slice)
+            else (operand,)
+        )
+        found += [(part.expression, _number(part)) for part in parts if type(part) is ConcolicInt]
+    return found
+
+
 def in_range(self: ListState, key: object, name: str = "__getitem__") -> bool:
     """Record whether the list holds the index ``key``, as the index's own kind records it."""
     if type(key) is ConcolicInt:

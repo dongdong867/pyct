@@ -38,3 +38,13 @@ def searched_from(s, n):
     if "z" in parts[1:] and parts.index("z", n) == 2:
         return 1
     return 0
+
+
+def counted_after_an_index(s, n):
+    parts = s.split(",")
+    if 0 <= n < len(parts):
+        if parts[n] == "z":
+            return 1
+        if len(parts) == 1:
+            return "one piece"
+    return 0

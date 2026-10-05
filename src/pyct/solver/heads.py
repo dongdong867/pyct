@@ -83,6 +83,8 @@ RESULTS: Mapping[str, type | None] = {
     "ord": int,
     "chr": str,
     "[]": str,
+    # a position a tracked operand handed out, read only while the operand has its value
+    "pin": int,
     "[:]": str,
     "replace": str,
     "removeprefix": str,

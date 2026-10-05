@@ -618,6 +618,7 @@
     {"set": "v2", "target": "targets.strs.split_indexes::counted_back", "seed": {"s": "a,b", "n": 3}},
     {"set": "v2", "target": "targets.strs.split_indexes::cut_at_a_tracked_bound", "seed": {"s": "a,b,c", "n": 1}},
     {"set": "v2", "target": "targets.strs.split_indexes::searched_from", "seed": {"s": "a,b,c", "n": 1}},
+    {"set": "v2", "target": "targets.strs.split_indexes::counted_after_an_index", "seed": {"s": "a,b", "n": 1}},
     {"set": "v2", "target": "targets.strs.split_lengths::counted", "seed": {"s": "a,b"}},
     {"set": "v2", "target": "targets.strs.split_lengths::second_empty", "seed": {"s": "a|30|b"}},
     {"set": "v2", "target": "targets.strs.split_lengths::searched", "seed": {"s": "a"}},

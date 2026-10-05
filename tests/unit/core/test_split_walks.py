@@ -480,3 +480,41 @@ def test_list_s_own_answer_on_a_split_s_list_keeps_its_pieces(read: Any, answer:
     pieces = got if isinstance(got, list) else [got]
     assert all(type(piece) is ConcolicStr for piece in pieces if isinstance(piece, str))
     assert parts.expression == SPLIT
+
+
+@pytest.mark.parametrize(
+    ("read", "written"),
+    [
+        (lambda parts, n: [parts[n]], [["pin", 1, "n", 1]]),
+        (lambda parts, n: [parts[-n]], [["pin", 3, ["-", "n"], -1]]),
+        (lambda parts, n: parts[n:][:1], [["pin", 1, "n", 1]]),
+        (lambda parts, n: (parts * n)[:1], [["pin", 0, "n", 1]]),
+        (lambda parts, n: [parts[::2][0]], [0]),
+    ],
+    ids=["an index", "an index from the end", "a cut", "a repeat", "plain operands"],
+)
+def test_a_piece_handed_out_through_a_tracked_operand_is_pinned_to_its_value(
+    read: Any, written: list[Expression]
+) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
+
+    pieces = read(parts, n)
+
+    # the piece is read at its own position only while each tracked operand has its value
+    assert [piece.expression[2] for piece in pieces] == written
+
+
+def test_a_search_from_a_tracked_start_compares_pinned_pieces() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
+    sink.clear()
+
+    parts.index("c", n)
+
+    split = ["split", "s", "','"]
+    assert _walks(sink) == [["==", ["[]", split, ["pin", at, "n", 1]], "'c'"] for at in (1, 2)], (
+        sink
+    )

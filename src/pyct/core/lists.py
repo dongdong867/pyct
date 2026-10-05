@@ -47,9 +47,13 @@ _OPERATORS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "g
 def _python(self: ListState, name: str, *args: object) -> object:
     """list's own answer, plain: a downgrade named ``name`` while the list has a form. A split's
     list answers as origin/v2's plain list of pieces does: Python's own answer, each piece
-    kept, and no loss named (follow-the-length-of-a-split)."""
+    kept, and no loss named (follow-the-length-of-a-split). A piece handed out or compared
+    through a tracked operand is read only while the operand has its value
+    (``str_splits.pinned``)."""
     if str_splits.built_from_a_split(self.expression):
-        return own(getattr(list, name), self, *args)
+        held = changes.held(args)
+        items = [str_splits.pinned(item, held) for item in list.copy(self)] if held else self
+        return own(getattr(list, name), items, *args)
     if self.expression is not None:
         return plain_items(downgraded(list, name)(self, *args))
     return plain_items(own(getattr(list, name), self, *args))
@@ -63,6 +67,9 @@ def _slice(self: ListState, key: slice) -> object:
     step = None if key.step is None else changes.position(key.step)
     bounds = changes.slice_bounds(slice(key.start, key.stop))
     if bounds is None or step not in (None, 1, -1):
+        return _python(self, "__getitem__", key)
+    if str_splits.built_from_a_split(self.expression) and changes.held((key,)):
+        # a split's list cut at a tracked bound is cut as origin/v2 cuts its plain list
         return _python(self, "__getitem__", key)
     if bounds == (None, None) and step in (None, 1):
         return self.derived(self.storage(), list(self.shadow), self.expression, self.span)

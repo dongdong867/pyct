@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from contextvars import ContextVar
-from typing import Protocol
+from typing import Protocol, cast
 
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.str_cases import Reader, Tracked, piece
@@ -52,6 +52,29 @@ def splits_built_from(form: object) -> list[list[object]]:
         elif part[0] in _BUILT_FROM:
             stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
     return found
+
+
+def pinned(item: object, held: Sequence[tuple[Expression, int]]) -> object:
+    """A split's piece handed out through tracked operands, an index say, written
+    ``["[]", whole, ["pin", k, operand, value]]``: piece k, read only while each operand is the
+    value it had, so a fork on it holds only there (keep-a-tracked-index-into-a-split-as-v2-does).
+    Any other item, or one handed out through plain operands, is itself."""
+    form = getattr(item, "expression", None)
+    if not held or not _a_piece(form):
+        return item
+    assert isinstance(form, list) and isinstance(item, str)
+    at: Expression = form[2]
+    for operand, value in held:
+        at = ["pin", at, operand, value]
+    return piece(cast(Tracked, item), str.__str__(item), ["[]", form[1], at])
+
+
+def _a_piece(form: object) -> bool:
+    """Whether a form is a split's piece at a plain position, ``["[]", [split, ...], k]``."""
+    if not isinstance(form, list) or len(form) != 3 or form[0] != "[]" or type(form[2]) is not int:
+        return False
+    whole = form[1]
+    return isinstance(whole, list) and bool(whole) and whole[0] in LISTED_SPLITS
 
 
 def built_from_a_split(form: object) -> bool:

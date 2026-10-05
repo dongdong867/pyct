@@ -65,3 +65,20 @@ def _return_of(target: str) -> int:
     start = line_of(f"def {target}(", INDEXES_FILE)
     lines = Path(INDEXES_FILE).read_text().splitlines()
     return next(at for at in range(start, len(lines) + 1) if lines[at - 1] == "        return 1")
+
+
+# a fork on a piece a tracked index handed out holds only while the index has the value it
+# had: a later flip of the count moves the index, as plain Python would
+def test_flips_the_count_after_a_piece_read_at_a_tracked_index() -> None:
+    result = run_pyct(f"{INDEXES}::counted_after_an_index", '{"s": "a,b", "n": 1}', *UNTIL_NO_GAIN)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    one = line_of('return "one piece"', INDEXES_FILE)
+    reached = [args_of(line) for line in solved(lines) if covers(line, one, INDEXES_FILE)]
+    assert reached, lines
+    for args in reached:
+        s, n = args["s"], args["n"]
+        assert isinstance(s, str) and isinstance(n, int), args
+        parts = s.split(",")
+        assert len(parts) == 1 and 0 <= n < 1 and parts[n] != "z", args
