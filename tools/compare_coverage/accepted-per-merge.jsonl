@@ -93,7 +93,10 @@
 {"set": "v2", "target": "targets.dicts.walk_keys::counted", "seed": {"d": {"ab": 9}}, "status": "differs", "only_legacy": [], "only_v2": [96]}
 {"set": "v2", "target": "targets.dicts.walk_keys::first_of_two", "seed": {"d": {"ab": 9}}, "status": "differs", "only_legacy": [], "only_v2": [22, 23, 24, 25]}
 {"set": "v2", "target": "targets.dicts.walk_keys::grown_past_the_cap", "seed": {"d": {"1": 9}}, "status": "differs", "only_legacy": [], "only_v2": [127]}
+{"set": "v2", "target": "targets.dicts.walk_keys::keyed_set", "seed": {"d": {"a": 1}}, "status": "differs", "only_legacy": [], "only_v2": [175]}
+{"set": "v2", "target": "targets.dicts.walk_keys::keys_view", "seed": {"d": {"a": 1, "b": 2}}, "status": "differs", "only_legacy": [], "only_v2": [182]}
 {"set": "v2", "target": "targets.dicts.walk_keys::looked_up", "seed": {"n": 1, "d": {"1": 0}}, "status": "differs", "only_legacy": [], "only_v2": [111, 112]}
+{"set": "v2", "target": "targets.dicts.walk_keys::most", "seed": {"d": {"1": 0}}, "status": "differs", "only_legacy": [], "only_v2": [189]}
 {"set": "v2", "target": "targets.dicts.walk_keys::named", "seed": {"d": {"x": 9}}, "status": "differs", "only_legacy": [], "only_v2": [32]}
 {"set": "v2", "target": "targets.dicts.walk_keys::twice", "seed": {"d": {"ab": 9}}, "status": "differs", "only_legacy": [], "only_v2": [105]}
 {"set": "v2", "target": "targets.dicts.walk_shapes::listed", "seed": {"d": {"a": 0, "c": 0, "b": 0}}, "status": "differs", "only_legacy": [], "only_v2": [32, 34]}
