@@ -54,7 +54,7 @@ from pyct.core.dict_handouts import (
     walked_in_the_argument,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
-from pyct.core.escapes import lost
+from pyct.core.escapes import lost, pinned_in
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -360,10 +360,11 @@ def _walked_by_key(
     self: DictState, keys: Iterator[object], pick: Pick, name: str
 ) -> Iterator[object]:
     """Each key in Python's own order, handed out as its walk key, at the place the walk read it
-    whichever key the solver chooses there, while the dict is unchanged; from a change on, each
-    pass as any other walk's."""
+    whichever key the solver chooses there, while the dict is unchanged and no walk key of the
+    call escaped; from a change or an escape on, each pass as any other walk's, since past an
+    escape no ask on the path chooses a key (``escapes``)."""
     first, at = self.walk_started(), 0
-    while not self.log:
+    while not self.log and not pinned_in(self.sink):
         key = own(next, keys, MISSING)
         if not self.holds(name, *(() if key is MISSING else (key,))):
             yield from _plain_rest(self, keys, pick, key)

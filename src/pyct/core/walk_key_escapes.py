@@ -20,7 +20,7 @@ import types
 from collections.abc import Callable
 from typing import Any
 
-from pyct.core.escapes import WALK_KEY, bare_key, escaped, has_escaped, is_walk_key
+from pyct.core.escapes import bare_key, escaped, has_escaped, is_walk_key
 from pyct.core.values import own
 
 # the instruction a compare written in Python runs; Python's own code calls a compare from C
@@ -76,6 +76,3 @@ def plainly(name: str, value: object, other: object) -> object:
     escaped(value)
     escaped(other)
     return own(_OPERATORS[name], bare_key(value), bare_key(other))
-
-
-__all__ = ["WALK_KEY", "asked_by_code", "by_python", "hashed", "plainly"]

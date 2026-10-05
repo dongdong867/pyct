@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from pyct.core import escapes
 from pyct.core.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.results.record import DowngradeCount
 
@@ -102,8 +103,9 @@ class Tally:
 
     def go_live(self) -> None:
         """Make this the tally of the call running now, which a value from a call that is over
-        names its loss to."""
+        names its loss to. The walk keys an earlier call handed out are no keys of its path."""
         _LIVE[0] = self
+        escapes.forget()
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""

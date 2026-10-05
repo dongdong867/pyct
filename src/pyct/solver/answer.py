@@ -2,7 +2,7 @@
 
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from pyct.solver import floats, strings
 from pyct.solver.arrays import ArrayModelError, value_line
@@ -35,6 +35,9 @@ class Unsat:
 @dataclass(frozen=True)
 class Unknown:
     """The solver gave up on the prefix without deciding it."""
+
+    # whether pyct gave the ask up before cvc5 ran, as a step guard does: it cost no solver time
+    unasked: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True)

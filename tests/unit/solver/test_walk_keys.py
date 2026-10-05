@@ -175,6 +175,10 @@ def test_chosen_keys_given_up_go_on_without_places(monkeypatch: pytest.MonkeyPat
     answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
 
     assert isinstance(answer, Unknown) and time.monotonic() - started < 1.0
+    for _ in range(walk_keys.MOST_MISSES):
+        solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
+    # each give-up cost nothing, so the site still asks with chosen keys
+    assert not walk_keys.given_up(path)
 
 
 @needs_cvc5
@@ -334,13 +338,15 @@ def test_a_site_that_keeps_missing_is_asked_with_the_input_s_keys() -> None:
 
 @needs_cvc5
 @pytest.mark.parametrize(
-    ("answer", "gives_up"), [(Unknown(), False), (Unsat(), True), (Timeout(), True)]
+    ("answer", "gives_up"),
+    [(Unknown(unasked=True), False), (Unknown(), True), (Unsat(), True), (Timeout(), True)],
 )
 def test_an_ask_with_chosen_keys_the_step_guard_gave_up_counts_no_miss(
     monkeypatch: pytest.MonkeyPatch, answer: Answer, gives_up: bool
 ) -> None:
-    # the step guard gives an ask up as unknown before cvc5 runs, at no cost, so the site keeps
-    # asking with chosen keys, where a later path may choose fewer; an ask cvc5 ran counts
+    # the step guard gives an ask up before cvc5 runs, at no cost, so the site keeps asking
+    # with chosen keys, where a later path may choose fewer; an ask cvc5 ran counts, whatever
+    # it answered
     seed, path = int_only(1, 9)
     monkeypatch.setattr(cvc5, "_chosen", lambda *_: answer)
 

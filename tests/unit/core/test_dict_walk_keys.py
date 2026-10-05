@@ -6,8 +6,9 @@ from typing import Any
 
 import pytest
 
+from pyct.core import escapes
 from pyct.core.bound import BOUND
-from pyct.core.branch import Fact, SinkItem
+from pyct.core.branch import Downgrade, Fact, SinkItem, Site
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -25,6 +26,11 @@ def in_the_target(source: str, **names: object) -> dict[str, Any]:
     scope: dict[str, Any] = {"__builtins__": _TARGETS, **names}
     exec(compile(source, "target.py", "exec"), scope)  # noqa: S102
     return scope
+
+
+def pins(sink: list[SinkItem]) -> list[tuple[object, bool]]:
+    """Each fact that keeps a walk key at the input's key."""
+    return [fact for fact in decided(sink) if isinstance(fact[0], list) and fact[0][0] == "=="]
 
 
 def places(sink: list[SinkItem]) -> list[object]:
@@ -251,15 +257,16 @@ def test_a_compare_the_target_writes_on_a_walk_key_is_a_fork_beside_a_container(
     ids=["hashed", "sorted-by-max", "a-list-search"],
 )
 def test_a_walk_key_python_s_own_code_takes_escapes(source: str) -> None:
-    # a fact keeps it at the input's key, so no ask chooses it, and from then on it compares as
-    # its plain key, recording no fork
+    # the first escape's fact keeps its key at the input's key, so no ask chooses a key, and
+    # from then on each key it took compares as its plain key, recording no fork
     config, sink = tracked({"a": 1, "bb": 2})
 
-    in_the_target(
+    keys = in_the_target(
         f"keys = [k for k in config]\n{source}\nif keys[0] == 'zz':\n    pass", config=config
-    )
+    )["keys"]
 
-    assert (["==", ["key", "config", 0], "'a'"], True) in decided(sink)
+    assert len(pins(sink)) == 1
+    assert escapes.has_escaped(keys[0])
     assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []
 
 
@@ -280,9 +287,36 @@ def test_every_walk_key_escapes_at_a_downgrade() -> None:
     keys = in_the_target("keys = [k for k in config]", config=config)["keys"]
     pickle.dumps(config["a"])
 
-    pins = [fact for fact in decided(sink) if isinstance(fact[0], list) and fact[0][0] == "=="]
-    assert pins == [
-        (["==", ["key", "config", 0], "'a'"], True),
-        (["==", ["key", "config", 1], "'bb'"], True),
+    # past the first escape's fact no ask on the path chooses a key, so it is the only one
+    assert pins(sink) == [(["==", ["key", "config", 0], "'a'"], True)]
+    assert [escapes.has_escaped(key) for key in keys] == [True, True]
+
+
+def test_a_downgrade_visits_each_walk_key_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # an escape is for good, so a downgrade inside a walk costs no look at the keys before it
+    visited: list[object] = []
+    monkeypatch.setattr(escapes, "escaped", visited.append)
+    config, sink = tracked({"a": 1, "bb": 2})
+
+    keys = in_the_target("keys = [k for k in config]", config=config)["keys"]
+    escapes.lost(sink, Downgrade(name="gcd", site=Site("t.py", 1, 0)))
+    escapes.lost(sink, Downgrade(name="gcd", site=Site("t.py", 1, 0)))
+
+    assert visited == keys
+
+
+def test_a_walk_after_an_escape_hands_out_keys_as_before_walk_keys() -> None:
+    # past an escape no ask on the path chooses a key, so the passes after it cost what they
+    # did before walk keys
+    config, sink = tracked({"a": 1, "bb": 2})
+
+    keys = in_the_target(
+        "keys = []\nfor k in config:\n    keys.append(k)\n    hash(k)\nfor k in config:\n    pass",
+        config=config,
+    )["keys"]
+
+    assert [escapes.is_walk_key(key) for key in keys] == [True, False]
+    assert pins(sink) == [(["==", ["key", "config", 0], "'a'"], True)]
+    assert [place for place in places(sink) if "key" in str(place)] == [
+        ["walked", "config", ["key", "config", 0]]
     ]
-    assert len(keys) == 2
