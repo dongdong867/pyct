@@ -24,6 +24,7 @@ from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
+from pyct.core.counts import Count
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.spans import UNKNOWN, decided
@@ -95,14 +96,19 @@ def length(self: ListState) -> int:
 
     Python's `len` makes what `__len__` hands back a plain int, so a tracked list's `__len__`
     stays a downgrade; this is what pyct's own `len` asks for instead (`pyct.core.bound.len`).
-    The int carries the list's range as it is now (see ``ConcolicInt.span``). A list with no
+    The int carries the list's range as it is now (see ``ConcolicInt.span``), and a split's
+    list's carries the list itself, whose range a compare with a plain int narrows
+    (``core.counts``). A list with no
     form, or one whose form stopped describing it, gives its plain length. A length cannot
     fail, so it records no fork.
     """
     if not self.holds("__len__"):
         return self.length()
     measured = ConcolicInt.made(self.length(), expression=["len", self.expression], sink=self.sink)
-    measured.__dict__["span"] = self.span
+    fields = measured.__dict__
+    fields["span"] = self.span
+    if a_split_s_list(self.expression):
+        fields["count"] = Count(self, self.expression, self.length())
     return measured
 
 

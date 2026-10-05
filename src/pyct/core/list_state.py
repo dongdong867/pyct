@@ -114,8 +114,15 @@ class ListState(list):
     marked: bool
 
     @classmethod
-    def made(cls, items: list[object], expression: Expression | None, sink: BranchSink) -> Self:
-        """A tracked list of these items and this form, its shadow the items themselves."""
+    def made(
+        cls,
+        items: list[object],
+        expression: Expression | None,
+        sink: BranchSink,
+        span: Span = UNKNOWN,
+    ) -> Self:
+        """A tracked list of these items and this form, its shadow the items themselves, and
+        the range ``span`` its form holds on every input."""
         # list's own, since the class called with a value builds a plain list
         made = list.__new__(cls)
         list.extend(made, items)
@@ -125,7 +132,7 @@ class ListState(list):
         fields["expression"] = expression
         fields["kinds"] = kinds_of(items)
         fields["walked_at"] = None
-        fields["span"] = UNKNOWN
+        fields["span"] = span
         fields["marked"] = False
         return made
 
