@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any, Self
 
 from pyct.core import numbers, texts
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Expression
+from pyct.core.counts import Count
 from pyct.core.numbers import (
     INT_KEPT,
     answered_first,
@@ -65,6 +67,8 @@ def _carried(op: str, name: str, *, reflected: bool = False) -> Callable[..., An
         if span is not None and type(answer) is ConcolicInt and type(other) in _PLAIN:
             number = int.__int__(other)  # pyrefly: ignore[bad-argument-type]
             answer.__dict__["span"] = _through(op, span, number, reflected=reflected)
+            if self.count is not None and type(other) is int:
+                answer.__dict__["count"] = self.count.through(op, number, reflected=reflected)
         return answer
 
     return compute if reflected else asked_first(name, compute)
@@ -82,16 +86,21 @@ def _through(op: str, span: Span, number: int, *, reflected: bool) -> Span:
 def _proven(op: str, name: str) -> Callable[..., Any]:
     """A tracked int's compare by its dunder ``name``, asked of a number subclass on the right
     first, answering a bool that records a fact where it is tested when the int carries a
-    length's range that proves the answer against a plain int."""
+    length's range that proves the answer against a plain int. A split's count reads its list's
+    range as it is now, and a compare that range does not prove narrows it where it is tested
+    (``core.counts``)."""
     method = compare(op, *promoted(getattr(int, name)))
 
     def compute(self: ConcolicInt, other: object) -> Any:
         answer = method(self, other)
-        span = self.span
+        count = self.count
+        span = self.span if count is None else (count.span() or self.span)
         if span is not None and type(answer) is ConcolicBool and type(other) in _PLAIN:
             number = int.__int__(other)  # pyrefly: ignore[bad-argument-type]
             if proves(span, op, number) is int.__bool__(answer):
                 answer.__dict__["decided"] = True
+            elif count is not None and type(other) is int:
+                answer.__dict__["narrows"] = partial(count.narrow, op, number)
         return answer
 
     return asked_by_code(name, asked_first(name, compute))
@@ -114,6 +123,10 @@ class ConcolicInt(int):
     # keeps it; one that makes another int, `+`, `-` or `*` with any other operand among them,
     # makes one with none
     span: Span | None = None
+    # set on the int `len(parts)` returns for a split's list, and carried through `+`, `-` and
+    # `*` with a plain int: the link back to the list, whose range a compare with a plain int
+    # narrows (see `core.counts`)
+    count: Count | None = None
     # set on the int a tracked bool is (`bools._the_int`), whose expression is the bool's own
     # condition: what its text reads that condition as, the int it is
     as_int: Expression | None = None

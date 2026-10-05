@@ -69,16 +69,15 @@ SPLIT_FAMILY_FORKS: list[tuple[int, list[object]]] = [
     (2, ["==", ["[]", ["split", "s"], 0], "'GET'"]),
     (4, [">", ["len", ["split", "s", "','", 1]], 1]),
     (4, ["==", ["[]", ["split", "s", "','", 1], 1], "'b,c'"]),
-    (6, [">", ["len", ["rsplit", "s", "'/'", 1]], 0]),
     (6, ["==", ["[]", ["rsplit", "s", "'/'", 1], 0], "'x/y'"]),
     (8, ["==", ["[]", ["partition", "s", "'='"], 2], "'on'"]),
     (10, [">", ["len", ["splitlines", "s"]], 0]),
     (10, ["==", ["[]", ["splitlines", "s"], 0], "'top'"]),
 ]
-# the long-enough forks that hold wherever they are reached: an rsplit on a separator always has
-# a first piece, and a string with no line has no word either, so it raises on line 2 first
+# the long-enough fork that holds wherever it is reached: a string with no line has no word
+# either, so it raises on line 2 first. An rsplit on a separator always has a first piece, so
+# its long-enough check on line 6 is a fact (record-decided-checks-on-a-split-s-pieces)
 SPLIT_FAMILY_ALWAYS = [
-    (6, [">", ["len", ["rsplit", "s", "'/'", 1]], 0]),
     (10, [">", ["len", ["splitlines", "s"]], 0]),
 ]
 TRACKED_RSPLIT = "targets.strs.tracked_rsplit::cut"
@@ -206,8 +205,9 @@ def test_follows_split() -> None:
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
     expression = ["==", ["[]", ["split", "line", "' '"], 0], "'GET'"]
-    long_enough = [">", ["len", ["split", "line", "' '"]], 0]
-    assert [fork["expression"] for fork in forks_of(inputs[0])] == [long_enough, expression]
+    # a split by a separator has a first piece on every string, so its long-enough check is a
+    # fact (record-decided-checks-on-a-split-s-pieces)
+    assert [fork["expression"] for fork in forks_of(inputs[0])] == [expression]
     assert any(text(line, "line").startswith("GET") for line in inputs[1:]), inputs
     assert f"fork {REQUEST_LINE_FILE}:3:7  line.split(' ')[0] == 'GET'  not taken" in (
         result.stderr.splitlines()
@@ -273,8 +273,9 @@ def test_an_rsplit_with_a_large_limit_is_flipped_within_the_budget() -> None:
 
     assert result.returncode == 0, result.stderr
     # past the longest walk the piece is read as the split's, which renders and solves at once;
-    # the one miss is the first piece's long-enough fork, which an rsplit on a separator holds
-    assert misses_of(result.stdout) == [(2, "unsat")], result.stdout
+    # an rsplit on a separator holds a first piece, so its long-enough check is a fact and
+    # nothing is missed
+    assert misses_of(result.stdout) == [], result.stdout
     assert any(text(line, "s").rsplit(",", 2000)[0] == "a" for line in input_lines(result.stdout))
     assert elapsed < 3, elapsed
 

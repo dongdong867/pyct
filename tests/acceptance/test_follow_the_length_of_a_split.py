@@ -137,8 +137,9 @@ def test_joins_a_split_by_its_walk() -> None:
     lines = input_lines(result.stdout)
     at = line_of('"-".join(s.split(",")) == "a-b"', JOINS_FILE)
     compare = ["==", ["join", "'-'", SPLIT], "'a-b'"]
+    # a first piece is there on every string, so the walk's first check is a fact
+    # (record-decided-checks-on-a-split-s-pieces)
     assert [fork for fork in listed(lines[0]) if fork[0] == at] == [
-        (at, [">", ["len", SPLIT], 0], True),
         (at, [">", ["len", SPLIT], 1], True),
         (at, [">", ["len", SPLIT], 2], False),
         (at, compare, False),
@@ -168,10 +169,9 @@ def test_counts_from_the_end() -> None:
     lines = input_lines(result.stdout)
     at = line_of('if parts[-1] == "z":')
     compare = ["==", ["[]", SPLIT, -1], "'z'"]
-    assert [fork for fork in listed(lines[0]) if fork[0] == at] == [
-        (at, [">=", ["len", SPLIT], 1], True),
-        (at, compare, False),
-    ]
+    # a last piece is there on every string, so the long-enough check is a fact
+    # (record-decided-checks-on-a-split-s-pieces)
+    assert [fork for fork in listed(lines[0]) if fork[0] == at] == [(at, compare, False)]
     assert fork_line(result.stderr, LENGTHS_FILE, at, "s.split(',')[-1] == 'z'", False)
     assert agreeing(lines, compare, lambda s: s.split(",")[-1] == "z"), lines
 
@@ -192,10 +192,11 @@ def test_counts_every_split_form() -> None:
     ]
     for fork, agrees in forms:
         assert agreeing(lines, fork, agrees), (fork, lines)
+    # a split with a limit of 1 holds at most 2 pieces, so `> 2` is a fact and never missed
+    # (record-decided-checks-on-a-split-s-pieces)
     at = line_of('if len(s.split(",", 1)) > 2:')
-    assert any(
-        entry.startswith(f"missed {LENGTHS_FILE}:{at}:") and entry.endswith(" unsat")
-        for entry in result.stderr.splitlines()
+    assert not any(
+        entry.startswith(f"missed {LENGTHS_FILE}:{at}:") for entry in result.stderr.splitlines()
     ), result.stderr
     assert no_plan_left(lines), lines
 
@@ -304,9 +305,9 @@ def test_reads_plain_arithmetic_on_the_count() -> None:
     compares: list[tuple[object, Callable[[str], bool]]] = [
         ([">", ["-", ["len", SPLIT], 1], 3], lambda s: len(s.split(",")) - 1 > 3),
         (["==", ["*", ["len", SPLIT], 2], 8], lambda s: len(s.split(",")) * 2 == 8),
-        # Python asks the count's own `>` for `3 < len(parts)`
-        ([">", ["len", SPLIT], 3], lambda s: len(s.split(",")) > 3),
     ]
+    # `3 < len(parts)` is decided on every path by then: the earlier compares leave the count
+    # above 4, exactly 4, or below 4 (record-decided-checks-on-a-split-s-pieces)
     for compare, agrees in compares:
         assert agreeing(lines, compare, agrees), (compare, lines)
     first = [

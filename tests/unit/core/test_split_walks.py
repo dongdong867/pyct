@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from pyct.core import substitutes
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_changes import takes_another
 from pyct.core.str_splits import a_split_s_list, worked_out
@@ -22,6 +22,10 @@ def _split(sink: list[SinkItem]) -> Any:
 
 def _walks(sink: list[SinkItem]) -> list[Expression]:
     return [item.expression for item in sink if isinstance(item, Branch)]
+
+
+def _facts(sink: list[SinkItem]) -> list[Expression]:
+    return [item.expression for item in sink if isinstance(item, Fact)]
 
 
 @pytest.mark.parametrize(
@@ -106,9 +110,11 @@ def test_a_join_s_walk_over_a_split_s_list_records_its_forks() -> None:
     "-".join(parts)  # pyrefly: ignore[bad-argument-type]
     substitutes.join("-".join, parts)
 
-    # the join's encoding reads how many pieces it holds from its walk's forks
+    # the join's encoding reads how many pieces it holds from its walk's forks; a split by a
+    # separator holds a first piece on every string, so that check is a fact
     split = ["split", "s", "','"]
-    assert _walks(sink) == [[">", ["len", split], at] for at in range(3)], sink
+    assert _walks(sink) == [[">", ["len", split], at] for at in range(1, 3)], sink
+    assert _facts(sink) == [[">", ["len", split], 0]], sink
 
 
 def test_a_loop_over_an_argument_s_list_records_its_forks() -> None:
@@ -440,10 +446,11 @@ def test_a_split_s_list_compared_with_a_plain_list_counts_its_pieces() -> None:
     parts < ["a", "z"]  # noqa: B015
 
     # a compare with a plain list reads the count against plain numbers, which the solver
-    # writes exactly (split-list-tracked-its-count-the-piece-there-or-the-input-s-own)
+    # writes exactly (split-list-tracked-its-count-the-piece-there-or-the-input-s-own); a first
+    # piece is there on every string, so that check is a fact
     split = ["split", "s", "','"]
+    assert _facts(sink) == [[">", ["len", split], 0]], sink
     assert _walks(sink) == [
-        [">", ["len", split], 0],
         ["==", _piece(0), "'a'"],
         [">", ["len", split], 1],
         ["==", _piece(1), "'z'"],
