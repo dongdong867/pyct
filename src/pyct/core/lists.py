@@ -45,7 +45,24 @@ _OPERATORS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "g
 
 
 def _python(self: ListState, name: str, *args: object) -> object:
-    """list's own answer, plain: a downgrade named ``name`` while the list has a form."""
+    """list's own answer, plain: a downgrade named ``name`` while the list has a form. A split's
+    list answers as origin/v2's plain list of pieces does: Python's own answer, each piece
+    kept, and no loss named (follow-the-length-of-a-split). A piece handed out or compared
+    through a tracked operand is read only while the operand has its value
+    (``str_splits.pin_piece``)."""
+    if str_splits.built_from_a_split(self.expression):
+        held = changes.tracked_operands(args)
+        counted = str_splits.counted_positions(self.expression, held, name)
+        if held and name == "__getitem__" and not isinstance(args[0], slice):
+            # an item read from the end of the split's own list is read there, as Python reads
+            # it, whatever number of pieces the string has
+            back = changes.from_its_end(self, args[0])
+            item = own(list.__getitem__, self, *args)
+            return str_splits.pin_piece(item, held, at=back, counted=counted and back is None)
+        if not held:
+            return own(getattr(list, name), self, *args)
+        pinned = [str_splits.pin_piece(item, held, counted=counted) for item in list.copy(self)]
+        return own(getattr(list, name), pinned, *args)
     if self.expression is not None:
         return plain_items(downgraded(list, name)(self, *args))
     return plain_items(own(getattr(list, name), self, *args))
@@ -59,6 +76,9 @@ def _slice(self: ListState, key: slice) -> object:
     step = None if key.step is None else changes.position(key.step)
     bounds = changes.slice_bounds(slice(key.start, key.stop))
     if bounds is None or step not in (None, 1, -1):
+        return _python(self, "__getitem__", key)
+    if str_splits.built_from_a_split(self.expression) and changes.tracked_operands((key,)):
+        # a split's list cut at a tracked bound is cut as origin/v2 cuts its plain list
         return _python(self, "__getitem__", key)
     if bounds == (None, None) and step in (None, 1):
         return self.derived(self.storage(), list(self.shadow), self.expression, self.span)
@@ -83,7 +103,8 @@ def _item(self: ListState, key: object) -> object:
     """``items[i]``, handed out as indexed once the long-enough fork is recorded, or a slice.
 
     A key pyct does not follow, a slice step other than 1 or -1 or a tracked index into a list
-    whose items are not all one kind, is list's own answer and a `__getitem__` downgrade.
+    whose items are not all one kind or that is built from a split, is list's own answer
+    (``_python``): a `__getitem__` downgrade, or, on a split's list, the answer v2 gives.
     """
     if not self.holds("__getitem__"):
         return own(list.__getitem__, self, key)
@@ -218,8 +239,9 @@ def _python_joined(self: ListState, name: str, left: list[object], right: list[o
 def _repeated(self: ListState, count: object, name: str, *, reflected: bool = False) -> object:
     """``items * k`` or ``k * items`` with a plain int ``k``: a tracked list.
 
-    A tracked or other count Python takes is its own answer and a downgrade; any other value
-    is NotImplemented, as it is for list.
+    A tracked or other count Python takes is its own answer (``_python``): a downgrade, or,
+    on a split's list, the answer v2 gives. Any other value is NotImplemented, as it is for
+    list.
     """
     times = reads.plain_index(count)
     if times is None:

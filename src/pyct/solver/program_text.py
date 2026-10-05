@@ -50,7 +50,11 @@ def program_text(
     lines += dicts.declarations()
     bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
     asserted = terms.assertions() + dicts.assertions()
-    forks = [body.assertion(fork) for fork in prefix]
+    # the fork aimed at reads each pinned position where the run read it: a piece handed out
+    # by a tracked index flips at the index the run had, as origin/v2 reads it there, while a
+    # fork before it holds only while its index has that value
+    aimed = terms.aimed(prefix[-1].expression) if prefix else []
+    forks = [f"(assert {pin})" for pin in aimed] + [body.assertion(fork) for fork in prefix]
     written = [*body.definitions, *bounds, *asserted, *forks]
     counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
