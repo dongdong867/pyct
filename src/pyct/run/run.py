@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import os
 import platform
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -41,6 +42,10 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.locate import locate, version
 
 _NO_LIMITS = Limits()
+
+# set to "shallowest", the run picks each path's shallowest fork first instead of its deepest; a
+# hidden switch for measure-top-first-as-the-default-fork-order
+FORK_ORDER_VARIABLE = "PYCT_FORK_ORDER"
 
 
 def _platform() -> str:
@@ -265,7 +270,7 @@ def _loop(
     records: list[InputRecord] = []
     misses: list[Miss] = []
     covered = [seeded.covered_lines & told.scope.lines]
-    tree = Tree()
+    tree = Tree(shallowest=os.environ.get(FORK_ORDER_VARIABLE) == "shallowest")
     _handled(seeded, told, tree)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)

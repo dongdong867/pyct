@@ -28,10 +28,12 @@ class Rescan:
     shallowest first on a path a pick turned or timed out on; then every other open
     fork, oldest path first and deepest fork first; each of those at a site
     no pick timed out at. Last come the open forks at such a site, oldest
-    path first and deepest fork first.
+    path first and deepest fork first. Made ``shallowest``, every order goes
+    shallowest first and a turn changes nothing.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, shallowest: bool = False) -> None:
+        self.shallowest = shallowest
         self.paths: list[tuple[Branch, ...]] = []
         self.walked: set[tuple[Side, ...]] = set()
         self.aimed: set[tuple[tuple[Side, ...], Site]] = set()
@@ -52,7 +54,7 @@ class Rescan:
     def next(self) -> Plan | None:
         for tier in ("new side", "open", "last"):
             for path, forks in enumerate(self.paths):
-                turned = tier == "new side" and path in self.turned
+                turned = self.shallowest or (tier == "new side" and path in self.turned)
                 for at in range(len(forks)) if turned else reversed(range(len(forks))):
                     if self._open(forks, at) and self._in(tier, forks[at]):
                         self.aimed.add(self._key(forks, at))
@@ -115,10 +117,11 @@ def _picked_past(tree: Tree, last_oldest: int) -> tuple[Plan | None, int]:
     return picked, oldest
 
 
+@pytest.mark.parametrize("shallowest", [False, True])
 @pytest.mark.parametrize("seed", range(300))
-def test_the_tree_picks_what_a_full_rescan_picks(seed: int) -> None:
+def test_the_tree_picks_what_a_full_rescan_picks(seed: int, shallowest: bool) -> None:
     rng = random.Random(seed)
-    tree, reference = Tree(), Rescan()
+    tree, reference = Tree(shallowest=shallowest), Rescan(shallowest=shallowest)
     last_oldest = 0
     for _ in range(60):
         # a path from nowhere, an input that ran on a plan, or a plan the solver answered

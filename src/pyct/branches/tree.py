@@ -40,12 +40,17 @@ class Tree:
     shallowest first (see `turn`); after a timeout, every other fork at its
     site also waits until each fork elsewhere was aimed at (see `timed_out`).
 
+    A tree made ``shallowest`` picks shallowest first in every order, so a
+    turn has nothing left to turn; the measure of
+    measure-top-first-as-the-default-fork-order.
+
     Each site gets a number the first time the tree meets it, and the tree
     keys a fork by that number: a ``Site`` hashes in Python, a number in C,
     and a path of 100,000 forks hashes its sites half a million times.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, shallowest: bool = False) -> None:
+        self._step = 1 if shallowest else -1  # 1 shallowest first, -1 deepest first
         # each site met, by value, as its number; each number's site; and each number by the
         # identity of every Site object met, which a path's forks keep alive, so no id is reused
         self._number_by_value: dict[Site, int] = {}
@@ -63,8 +68,8 @@ class Tree:
         # never becomes new again, so a fork leaves for good
         self._new: deque[Place] = deque()
         # where the oldest-path pick starts looking: the oldest path that may still hold an open
-        # fork, and the deepest position on it that may, None before the pick first reaches the
-        # path. A fork that closes never opens again, so every fork past this point is spent
+        # fork, and the next position on it in `_step`'s order that may, None before the pick
+        # reaches the path. A closed fork never reopens, so every fork the pick passed is spent
         self._path = 0
         self._depth: int | None = None
         # the path and the site number of the last pick, the paths whose new sides a pick
@@ -73,8 +78,7 @@ class Tree:
         self._picked_number: int | None = None
         self._turned: set[int] = set()
         self._timed_out: set[int] = set()
-        # the open forks at a site a pick timed out at, in the order the oldest-path pick passed
-        # them, oldest path first and deepest fork first: the last picks (`_next_later`)
+        # the last picks (`_next_later`): open forks at a timed-out site, in the order passed
         self._later: deque[Place] = deque()
 
     def add(self, forks: tuple[Branch, ...], facts: tuple[Fact, ...] = ()) -> None:
@@ -96,7 +100,7 @@ class Tree:
         self._paths.append((forks, tuple(keys), facts))
         self._new.extend(
             (index, depth)
-            for depth in reversed(range(len(forks)))
+            for depth in range(len(forks))[:: self._step]
             if self._new_side(keys[depth], forks[depth])
         )
 
@@ -124,7 +128,8 @@ class Tree:
         oldest path first and deepest fork first, or shallowest first on a
         path a pick turned (`turn`); otherwise the deepest open
         fork on the oldest path; and last, a fork at a site a pick timed out
-        at, oldest path first and deepest fork first. A loop's test takes both
+        at, oldest path first and deepest fork first; shallowest first in each
+        on a tree made ``shallowest``. A loop's test takes both
         sides on a path that runs it, so a loop that adds a pass on every
         input cannot starve the forks around it, and the seed's last fork is
         the first pick unless its other side already ran (flip-one-fork). The
@@ -171,7 +176,7 @@ class Tree:
         fork-order-shallowest-first-after-a-leave-without-gain.
         """
         path = self._picked
-        if path is None or path in self._turned:
+        if path is None or path in self._turned or self._step == 1:
             return
         self._turned.add(path)
         waiting: list[Place] = []
@@ -197,10 +202,10 @@ class Tree:
         return None
 
     def _next_oldest(self) -> Place | None:
-        """The deepest open fork on the oldest path that holds one."""
+        """The first open fork in `_step`'s order on the oldest path that holds one."""
         found = self._seek()
         if found is not None:
-            self._depth = found[1] - 1
+            self._depth = found[1] + self._step
         return found
 
     def _next_later(self) -> Place | None:
@@ -213,32 +218,34 @@ class Tree:
         return None
 
     def _seek(self) -> Place | None:
-        """Move where the oldest-path pick starts looking to the deepest open fork on the oldest
-        path that holds one, and name it; None when no path holds one. An open fork at a site a
-        pick timed out at is passed on to the last picks."""
+        """Move where the oldest-path pick starts looking to the first open fork in `_step`'s
+        order on the oldest path that holds one, and name it; None when no path holds one. An
+        open fork at a site a pick timed out at is passed on to the last picks."""
         while self._path < len(self._paths):
-            depth = self._deepest_pickable()
-            if depth >= 0:
+            depth = self._first_pickable()
+            if depth is not None:
                 self._depth = depth
                 return self._path, depth
             self._path += 1
             self._depth = None
         return None
 
-    def _deepest_pickable(self) -> int:
-        """The deepest position from where the oldest-path pick starts looking that holds an open
-        fork at a site no pick timed out at, or -1; each open fork passed on the way waits for
-        the last picks."""
+    def _first_pickable(self) -> int | None:
+        """The first position in `_step`'s order, from where the oldest-path pick starts looking,
+        that holds an open fork at a site no pick timed out at, or None; each open fork passed
+        on the way waits for the last picks."""
         forks, keys, _ = self._paths[self._path]
-        depth = len(forks) - 1 if self._depth is None else self._depth
-        while depth >= 0:
+        depth = self._depth
+        if depth is None:
+            depth = 0 if self._step == 1 else len(forks) - 1
+        while 0 <= depth < len(forks):
             key = keys[depth]
             if self._open(key, forks[depth].taken):
                 if key[1] not in self._timed_out:
                     return depth
                 self._later.append((self._path, depth))
-            depth -= 1
-        return depth
+            depth += self._step
+        return None
 
     def _new_side(self, key: ForkKey, fork: Branch) -> bool:
         """Whether no input took the other side of this fork's site, whatever came before it.

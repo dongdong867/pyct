@@ -7,6 +7,8 @@ proves pyct found cvc5, flipped the fork, and printed the line.
 
 from pathlib import Path
 
+import pytest
+
 from tests.acceptance.harness import (
     CRASH_DETAIL,
     REPO_ROOT,
@@ -103,6 +105,18 @@ def test_flips_the_last_fork() -> None:
     ]
     assert solved["aim"] == {"file": NESTED_CHECKS_FILE, "line": 3, "col": 11, "position": 1}
     assert 10 <= argument(solved, "x") < 100
+
+
+# measure-top-first-as-the-default-fork-order
+def test_flips_the_first_fork_when_told_shallowest_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PYCT_FORK_ORDER", "shallowest")
+
+    result = run_pyct(NESTED_CHECKS, '{"x": 3}')
+
+    assert result.returncode == 0, result.stderr
+    solved = second_line(result.stdout)
+    assert solved["aim"] == {"file": NESTED_CHECKS_FILE, "line": 2, "col": 7, "position": 0}
+    assert argument(solved, "x") >= 100
 
 
 # flip-one-fork-keeps-untouched-arguments

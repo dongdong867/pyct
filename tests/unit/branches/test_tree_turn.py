@@ -103,3 +103,42 @@ def test_a_timeout_on_a_turned_path_still_sends_its_site_last() -> None:
 
     # the fork at line 9 at position 2 waits for the last picks, behind line 6
     assert positions(tree) == [3, 2]
+
+
+# measure-top-first-as-the-default-fork-order
+def test_a_shallowest_tree_picks_its_seed_s_first_fork_first() -> None:
+    tree = Tree(shallowest=True)
+    tree.add(tuple(fork(line) for line in (2, 3, 4, 5)))
+
+    assert positions(tree) == [0, 1, 2, 3]
+
+
+def test_a_default_tree_picks_its_seed_s_last_fork_first() -> None:
+    tree = Tree()
+    tree.add(tuple(fork(line) for line in (2, 3, 4, 5)))
+
+    assert positions(tree) == [3, 2, 1, 0]
+
+
+def test_a_turn_on_a_shallowest_tree_keeps_it_shallowest_first() -> None:
+    tree = Tree(shallowest=True)
+    tree.add(tuple(fork(line) for line in (2, 3, 4, 5)))
+    tree.next()
+
+    tree.turn()
+
+    assert positions(tree) == [1, 2, 3]
+
+
+def test_a_shallowest_tree_picks_an_old_side_s_shallowest_open_fork_first() -> None:
+    tree = Tree(shallowest=True)
+    tree.add(tuple(fork(line) for line in (2, 3, 4)))
+    # every side is old: the second path took the other side of each site
+    tree.add(tuple(fork(line, taken=False) for line in (2, 3, 4)))
+
+    assert [(p.path, p.aim.position) for p in iter(tree.next, None)] == [
+        (0, 1),
+        (0, 2),
+        (1, 1),
+        (1, 2),
+    ]
