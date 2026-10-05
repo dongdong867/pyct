@@ -39,6 +39,7 @@ from typing import Any, cast
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
@@ -188,7 +189,7 @@ def _tracked_call(
             return answer
     plain_args = [_plain(arg) for arg in args]
     answer = own(function, *plain_args, **{key: _plain(value) for key, value in kwargs.items()})
-    sink.append(Downgrade(name=function.__name__, site=caller_site()))
+    lost(sink, Downgrade(name=function.__name__, site=caller_site()))
     return answer
 
 

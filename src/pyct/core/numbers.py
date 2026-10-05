@@ -32,6 +32,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, cast
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.values import asked_of_the_right_first, before_a_raise, downgraded, own
 
 # what a tracked int, and a tracked bool with it, leaves to int on purpose. A bool is the int 1
@@ -218,7 +219,7 @@ def reflected_answer(
     """
     answer = own(operation, other, self, *modulus)
     if answer is not NotImplemented and type(answer) not in _CLASSES:
-        cast(Number, self).sink.append(Downgrade(name=name, site=caller_site()))
+        lost(cast(Number, self).sink, Downgrade(name=name, site=caller_site()))
     return answer
 
 

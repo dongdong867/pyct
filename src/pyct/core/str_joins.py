@@ -15,6 +15,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, cast
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.str_operands import literal, plain, within_cvc5
 from pyct.core.str_splits import JOIN_WALKS
 from pyct.core.values import BASES, downgraded, own
@@ -68,7 +69,7 @@ def joined(separator: str, iterable: object, tracked: type[ConcolicStr]) -> obje
     sink = _sink(separator, iterable if form is not None else None, items, tracked)
     texts = [plain(separator), *(plain(item) for item in items if isinstance(item, str))]
     if not all(within_cvc5(text) for text in texts):
-        sink.append(Downgrade(name="join", site=caller_site()))
+        lost(sink, Downgrade(name="join", site=caller_site()))
         return answer
     what = form if form is not None else ["[,]", *(_item(item, tracked) for item in items)]
     expression = ["join", _item(separator, tracked), what]

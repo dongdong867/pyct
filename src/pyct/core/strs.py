@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Self
 
-from pyct.core import numbers, str_joins, str_lengths, texts, values, walk_key_escapes
+from pyct.core import escapes, numbers, str_joins, str_lengths, texts, values, walk_key_escapes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
@@ -224,7 +224,7 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
     found = own(str.__contains__, text, sub)
     answer = found if head == "in" else not found
     if not _within_cvc5(text):
-        sub.sink.append(Downgrade(name="__contains__", site=caller_site()))
+        escapes.lost(sub.sink, Downgrade(name="__contains__", site=caller_site()))
         return answer
     expression = [head, sub.expression, _operand(text)]
     return ConcolicBool.made(answer, expression=expression, sink=sub.sink)

@@ -28,7 +28,7 @@ from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
 from pyct.solver.split_lists import UnknownCountError
-from pyct.solver.walk_keys import UnwrittenError, Walks
+from pyct.solver.walk_keys import UnwrittenError, Walks, missed
 
 logger = logging.getLogger(__name__)
 
@@ -141,13 +141,9 @@ def solve(
     unsat is the path's, and a model is an ``Unknown()``, since pyct cannot tell whether the
     answer it would write walks the dict as the path did (see ``_asked`` and ``dicts``).
 
-    A walk key, the key a small dict's own walk reads at a pass, is written as the key the input
-    holds there, so the first ask is the program a walk of plain keys gives. An unsat to it
-    asks once more with the key at each pass a fork names left to the solver (``_chosen``), in a
-    dict of the input of at most ``core.dict_walk_keys.MOST_KEYS`` keys, in at most
-    ``CHOSEN_SECONDS`` or half of what is left: a model is the answer, and anything else goes on
-    to the ask without places; past an escaped walk key no ask chooses, as before walk keys
-    (let-the-solver-choose-a-small-dict-s-walk-key, see ``_after_unsat``).
+    A walk key, the key a dict's own walk reads at a pass, is the input's key there on the first
+    ask; an unsat to it is asked with the keys the forks name chosen (``walk_keys``,
+    ``_chosen``, ``_after_unsat``; let-the-solver-choose-a-small-dict-s-walk-key).
 
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
@@ -168,6 +164,8 @@ def solve(
     except UnwrittenError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
+    if walks.settled(fixed) and not walks.choosing(prefix):
+        return Unknown()
     conditions, places = held(fixed)
     origin = replace(origin, places=places)
     answer, placed = _asked((conditions, leaves), origin, timeout)
@@ -184,14 +182,15 @@ def _after_unsat(
     timeout: float,
 ) -> Answer:
     """What a path the first ask found unsat is answered: asked with its walk keys chosen, then
-    without places, and where a walk key a fork names could move (``Walks.open``), without every
-    step that names one, unless the flipped fork does (see ``solve``)."""
+    without places, and where a fork names a walk key or an escape keeps one, without every step
+    that names one, an escape's fact among them; unless the flipped fork names one, which makes
+    the unsat an ``Unknown()`` (see ``solve``)."""
     prefix, leaves = path
-    if walks.chosen():
-        logger.debug("unsat with each walk key where the input had it: asking with them chosen")
+    if walks.choosing(prefix):
         chosen = _chosen(prefix, leaves, walks, origin)
         if isinstance(chosen, Sat):
             return chosen
+        missed(prefix)
     answer: Answer = Unsat()
     if placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")
@@ -199,10 +198,9 @@ def _after_unsat(
         answer, _ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
         if isinstance(answer, Sat):
             return Unknown()
-    if isinstance(answer, Unsat) and walks.aimed and (walks.open or walks.aimed & walks.pinned):
-        # the flipped fork names a walk key the solver could move, or one an escape held
+    if isinstance(answer, Unsat) and walks.aimed:
         return Unknown()
-    if isinstance(answer, Unsat) and walks.open:
+    if isinstance(answer, Unsat) and (walks.forked or walks.pinned):
         logger.debug("unsat with each walk key at the input's key: asking without them")
         unnamed = (held(walks.unnamed(prefix))[0], leaves)
         answer, _ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)

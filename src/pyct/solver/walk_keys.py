@@ -10,6 +10,14 @@ to the last one a fork or a fact names is held in its order (``Order``), so the 
 those keys first and Python's walk of it reads each one at its pass. A dict whose path keeps a
 place no walk key names, a walk from the last, popitem or a later walk's, is written with its
 input's keys in that ask too.
+
+The ask with chosen keys runs only after the first ask is unsat, in a dict of the input of at
+most ``core.dict_walk_keys.MOST_KEYS`` keys whose walk did not read every key, while no walk key
+on the path escaped (``core.escapes``), for at most ``cvc5.CHOSEN_SECONDS`` or half of what is
+left, and at a fork's site only until it missed ``MOST_MISSES`` times in the run. An unsat that
+rests on a walk key held at the input's key, a fork's or an escape's, is unknown; a flipped fork
+that names nothing but walk keys, where none is chosen, is unknown without an ask, since before
+walk keys no fork was recorded there.
 """
 
 from __future__ import annotations
@@ -22,7 +30,7 @@ from pyct.binding.bind import access_name
 from pyct.binding.shapes import DictShape
 from pyct.core.branch import Branch, Expression, Fact
 from pyct.core.dict_walk_keys import MOST_KEYS
-from pyct.core.walk_key_escapes import WALK_KEY
+from pyct.core.escapes import WALK_KEY
 from pyct.solver.dict_keys import key_term
 
 # a dict's name and a pass of its walk
@@ -137,19 +145,12 @@ class Walks:
         end = self.ended.get(name)
         return end is not None and all((name, at) in self.named for at in range(end))
 
-    @property
-    def open(self) -> bool:
-        """Whether a fork names a walk key and no walk key on the path escaped: every ask then
-        holds the walk keys a fork names, which the solver could move, so its unsat may not be
-        the path's. A path where one escaped is asked as before walk keys."""
-        return bool(self.forked) and not self.pinned
-
     def chosen(self) -> set[Pass]:
         """The passes the ask with chosen keys leaves to the solver: each a fork names, of a
         dict of the input of at most ``MOST_KEYS`` keys whose path keeps no other place and has
         no walk of it that read every key, while no walk key on the path escaped
-        (``core.walk_key_escapes``) or was changed under."""
-        if not self.open:
+        (``core.escapes``) or was changed under."""
+        if not self.forked or self.pinned:
             return set()
         small = {
             name
@@ -159,6 +160,18 @@ class Walks:
         return {
             walked for walked in self.forked if walked[0] not in self.closed and walked[0] in small
         }
+
+    def choosing(self, prefix: tuple[Branch | Fact, ...]) -> bool:
+        """Whether the path is asked with chosen keys: a pass is chosen, and the run did not
+        give up asking so at the flipped fork's site (``given_up``)."""
+        return bool(self.chosen()) and not given_up(prefix)
+
+    def settled(self, fixed: tuple[Branch | Fact, ...]) -> bool:
+        """Whether the flipped fork names a walk key and, with each walk key the input's key
+        (``fixed``), names nothing else: no input with those keys takes its other side, and
+        before walk keys no fork was recorded there."""
+        fork = next((step for step in reversed(fixed) if isinstance(step, Branch)), None)
+        return bool(self.aimed) and fork is not None and _constant(fork.expression)
 
     def unnamed(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:
         """The path without each step whose check names a walk key, and without places: what
@@ -240,6 +253,19 @@ def _read_by_its_walk(step: Branch | Fact) -> bool:
     return expression[0] == "in" and walked is not None and walked[0] == name
 
 
+def _constant(expression: Expression) -> bool:
+    """Whether a condition holds no leaf: each operand a literal, a str in its quotes or a
+    number, or a condition of them."""
+    stack: list[Expression] = [expression]
+    while stack:
+        part = stack.pop()
+        if isinstance(part, list):
+            stack.extend(part[1:])
+        elif isinstance(part, str) and not part.startswith(("'", '"')):
+            return False
+    return True
+
+
 def _pins(fact: Fact) -> bool:
     """Whether a fact keeps a walk key at the key the input holds there: `["==", key, k]`."""
     expression = fact.expression
@@ -304,3 +330,35 @@ def _rewritten(
             changed = any(new is not old for new, old in zip(parts, node, strict=True))
             memo[id(node)] = parts if changed else node
     return memo[id(root)]
+
+
+# how many asks with chosen keys may miss at one fork's site before the run asks there with the
+# input's keys only: each costs up to a second, and a site whose flip needs a key the solver
+# cannot list (`k.lower() == "admin"` says) misses on every path, so a run that kept asking
+# there made a tenth of the inputs v2 makes
+MOST_MISSES = 2
+
+# the misses at each fork's site in this run, by the site and whether the fork is a raise's
+_MISSES: dict[tuple[object, bool], int] = {}
+
+
+def forget() -> None:
+    """Start a run's count of misses afresh."""
+    _MISSES.clear()
+
+
+def given_up(prefix: tuple[Branch | Fact, ...]) -> bool:
+    """Whether the run stopped asking with chosen keys at the flipped fork's site."""
+    return _MISSES.get(_aimed_at(prefix), 0) >= MOST_MISSES
+
+
+def missed(prefix: tuple[Branch | Fact, ...]) -> None:
+    """Count an ask with chosen keys at the flipped fork's site that gave no answer."""
+    site = _aimed_at(prefix)
+    _MISSES[site] = _MISSES.get(site, 0) + 1
+
+
+def _aimed_at(prefix: tuple[Branch | Fact, ...]) -> tuple[object, bool]:
+    """The flipped fork's site: the path's last fork's."""
+    fork = next((step for step in reversed(prefix) if isinstance(step, Branch)), None)
+    return (None, False) if fork is None else (fork.site, fork.raising)

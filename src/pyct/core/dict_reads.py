@@ -54,6 +54,7 @@ from pyct.core.dict_handouts import (
     walked_in_the_argument,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
+from pyct.core.escapes import lost
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -85,7 +86,7 @@ def looked_up_unfollowed(self: DictState, key: object, name: str) -> None:
     if may_equal_added(self, key):
         self.lose(name)
     else:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
 
 
 def may_equal_added(self: DictState, key: object) -> bool:
@@ -236,7 +237,7 @@ def found(
         return dict.__contains__(self, bare)
     answer = present(self, looked, name, raising=raising, changing=changing)
     if answer is None:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
         if is_tracked(looked):
             # Python answered for this key's value with no fork, so a fork on the key after it
             # would move an answer the path already read (see ``dict_changes.followed``)

@@ -14,6 +14,7 @@ from typing import Any, Self
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.ints import ConcolicInt
 from pyct.core.spans import UNKNOWN, Span, exactly, measured
 from pyct.core.str_splits import built_from_a_split, kept_form
@@ -167,13 +168,13 @@ class ListState(list):
             return False
         if self.current(*positions):
             return True
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
         return False
 
     def lose(self, name: str) -> None:
         """The list turns plain, and the line names the operation that lost it."""
         self.turn_plain()
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
 
     def leave_the_split(self) -> bool:
         """Whether this is a split's list, which then leaves the split's machinery for Python's

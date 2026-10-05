@@ -17,6 +17,7 @@ from typing import Any
 from pyct.core import dict_reads as reads
 from pyct.core.branch import Downgrade, caller_site
 from pyct.core.dict_state import DictState
+from pyct.core.escapes import lost
 from pyct.core.list_compares import matches
 from pyct.core.list_state import plain
 from pyct.core.values import named_as, own
@@ -100,7 +101,7 @@ class _View:
         just started asks for; pyct's own `len` gives the dict's size term."""
         mapping = self._mapping
         if mapping.expression is not None and not reads.hinted(mapping):
-            mapping.sink.append(Downgrade(name="__len__", site=caller_site()))
+            lost(mapping.sink, Downgrade(name="__len__", site=caller_site()))
         return mapping.size()
 
     def __bool__(self) -> bool:
@@ -179,7 +180,7 @@ def _derived(name: str, python: Any) -> Any:
         if answer is NotImplemented:
             return answer
         if mapping.expression is not None:
-            mapping.sink.append(Downgrade(name=name, site=caller_site()))
+            lost(mapping.sink, Downgrade(name=name, site=caller_site()))
         return _plain(answer)
 
     downgrade.__name__ = name

@@ -48,6 +48,7 @@ from pyct.core.dict_reads import (
 )
 from pyct.core.dict_state import MISSING, DictState
 from pyct.core.dict_walk_keys import pinned
+from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
@@ -185,7 +186,7 @@ def as_python(
     held = own(dict.__contains__, self, bare)
     answer = own(change)
     if not named:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
     if bare not in self.changed:
         self.settled.setdefault(bare, held)
     if may_equal_added(self, key):

@@ -11,13 +11,21 @@ from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.shapes import DictAnswer, DictShape, rekeyed
 from pyct.core.branch import Branch, Expression, Fact, Site
-from pyct.solver import cvc5
+from pyct.solver import cvc5, walk_keys
 from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.walk_keys import Walks, leaf
 from tests.unit.solver.agreement import needs_cvc5
 
 SITE = Site("m.py", 2, 7)
+
+
+@pytest.fixture(autouse=True)
+def _a_run_of_its_own() -> None:
+    """Each test asks as a run of its own does: no site has missed yet."""
+    walk_keys.forget()
+
+
 D: Expression = ["key", "d", 0]
 
 
@@ -293,3 +301,32 @@ def test_an_unsat_on_an_escaped_walk_key_is_unknown() -> None:
     path = (fork([">", ["len", "d"], 0]), walked(0), fact(["==", D, "'a'"]), fork(["==", D, "'b'"]))
 
     assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unknown)
+
+
+@needs_cvc5
+def test_an_unsat_that_rests_on_an_escape_is_unknown() -> None:
+    # `seen.add(k)` then `"a" not in d`: the escape keeps the walk key at "a", and the dict
+    # holds the key its walk read, so with the escape the flip is unsat; {"b": 9} takes it
+    seed = Seed.of({"d": {"a": 9}})
+    path = (
+        fork([">", ["len", "d"], 0]),
+        walked(0),
+        fact(["==", D, "'a'"]),
+        fact(["in", D, "d"]),
+        fork([">", ["[]", "d", D], 5]),
+        fork(["in", "'a'", "d"], taken=False),
+    )
+
+    assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unknown)
+
+
+def test_a_site_that_keeps_missing_is_asked_with_the_input_s_keys() -> None:
+    path = (fork([">", ["[]", "d", D], 5]),)
+
+    for _ in range(walk_keys.MOST_MISSES):
+        assert not walk_keys.given_up(path)
+        walk_keys.missed(path)
+
+    assert walk_keys.given_up(path)
+    walk_keys.forget()
+    assert not walk_keys.given_up(path)

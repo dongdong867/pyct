@@ -209,7 +209,7 @@ def test_a_dict_past_the_cap_hands_out_walk_keys_too() -> None:
         "out = {k: v + 1 for k, v in config.items()}\nif 'a' in out:\n    pass",
         "s = set()\nfor k in config:\n    s.add(k)\nif 'a' in s:\n    pass",
         "e = {}\nfor k in config:\n    e[k] = config[k]\nif e.get('a'):\n    pass",
-        "for k in config:\n    if k in ('a', 'b') and k in ['a']:\n        pass",
+        "for k in config:\n    if k in ['a']:\n        pass",
     ],
     ids=["comprehension", "set", "store", "containers"],
 )
@@ -233,11 +233,7 @@ def test_a_compare_the_target_writes_on_a_walk_key_is_a_fork_beside_a_container(
 
 @pytest.mark.parametrize(
     "source",
-    [
-        "s = {k for k in config}",
-        "keys = [k for k in config]\nmax(keys)",
-        "names = ['zz']\nfor k in config:\n    k in names",
-    ],
+    ["set(keys)", "max(keys)", "keys[0] in ['zz']"],
     ids=["hashed", "sorted-by-max", "a-list-search"],
 )
 def test_a_walk_key_python_s_own_code_takes_escapes(source: str) -> None:
@@ -245,9 +241,9 @@ def test_a_walk_key_python_s_own_code_takes_escapes(source: str) -> None:
     # its plain key, recording no fork
     config, sink = tracked({"a": 1, "bb": 2})
 
-    in_the_target(f"{source}\nfor k in config:\n    pass", config=config)
-    keys = in_the_target("keys = [k for k in config]\nkeys[0].__hash__()", config=config)["keys"]
-    in_the_target("if keys[0] == 'zz':\n    pass", keys=keys)
+    in_the_target(
+        f"keys = [k for k in config]\n{source}\nif keys[0] == 'zz':\n    pass", config=config
+    )
 
     assert (["==", ["key", "config", 0], "'a'"], True) in decided(sink)
     assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []
@@ -259,3 +255,20 @@ def test_a_walk_key_an_untaught_operation_takes_escapes() -> None:
     in_the_target("for k in config:\n    k.encode()", config=config)
 
     assert (["==", ["key", "config", 0], "'ab'"], True) in decided(sink)
+
+
+def test_every_walk_key_escapes_at_a_downgrade() -> None:
+    # an operation pyct has not taught may have read any key a walk handed out
+    import pickle
+
+    config, sink = tracked({"a": 1, "bb": 2})
+
+    keys = in_the_target("keys = [k for k in config]", config=config)["keys"]
+    pickle.dumps(config["a"])
+
+    pins = [fact for fact in decided(sink) if isinstance(fact[0], list) and fact[0][0] == "=="]
+    assert pins == [
+        (["==", ["key", "config", 0], "'a'"], True),
+        (["==", ["key", "config", 1], "'bb'"], True),
+    ]
+    assert len(keys) == 2

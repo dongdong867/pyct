@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any, Protocol
 
 from pyct.core.branch import Branch, BranchSink, Downgrade, Expression, Fact, caller_site, lost_at
+from pyct.core.escapes import lost
 
 # the mark that says a raise came out of a call pyct made for the target. The call that made it
 # is the only code that knows, so it writes the mark there and blame reads it back
@@ -214,11 +215,7 @@ def downgraded(
         if result is NotImplemented:
             return result
         # the call's own caller is where the walk for the site starts
-        self.sink.append(lost_at(name, sys._getframe(1)))
-        # an operation pyct has not taught takes a walk key out of what it records exactly
-        from pyct.core.walk_key_escapes import escaped  # noqa: PLC0415  imports this module
-
-        escaped(self)
+        lost(self.sink, lost_at(name, sys._getframe(1)))
         return own(plain, self, base) if result is self else result
 
     return downgrade
@@ -254,7 +251,7 @@ def pickled(kind: type) -> tuple[Callable[..., Pickled], Callable[..., Pickled]]
 
 def _written(value: _Sinked, held: object, name: str) -> Pickled:
     """Record writing a pickle as a downgrade, and answer with its plain value and type."""
-    value.sink.append(Downgrade(name=name, site=caller_site()))
+    lost(value.sink, Downgrade(name=name, site=caller_site()))
     return type(held), (held,)
 
 

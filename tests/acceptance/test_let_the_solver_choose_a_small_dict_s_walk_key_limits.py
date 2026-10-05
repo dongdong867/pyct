@@ -140,6 +140,10 @@ def test_raises_as_python_on_a_walk_that_grows() -> None:
         ("keyed_set", '{"d": {"a": 1}}', 174),
         ("keys_view", '{"d": {"a": 1, "b": 2}}', 181),
         ("most", '{"d": {"1": 0}}', 188),
+        ("hashed_after", '{"d": {"a": 0, "b": 0}}', 197),
+        ("seen_first", '{"d": {"a": 9}}', 206),
+        ("pickled_key", '{"d": {"a": 0}}', 217),
+        ("hex_key", '{"d": {"a": 0}}', 228),
     ],
     ids=[
         "past-the-cap",
@@ -150,6 +154,10 @@ def test_raises_as_python_on_a_walk_that_grows() -> None:
         "a-set-of-dataclass-keys",
         "a-keys-view-compare",
         "max-of-the-keys",
+        "a-hash-after-a-compare",
+        "a-set-of-walk-keys",
+        "a-pickled-key",
+        "a-hex-int",
     ],
 )
 def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:

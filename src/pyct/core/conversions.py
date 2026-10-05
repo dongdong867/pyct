@@ -33,6 +33,7 @@ from typing import Any
 from pyct.core import floats, numbers
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
@@ -119,5 +120,5 @@ def int_in_another_form(value: ConcolicStr, /, *args: object, **kwargs: object) 
     call, so a call that raises records nothing.
     """
     answer = own(int, value, *args, **kwargs)
-    value.sink.append(Downgrade(name="int", site=caller_site()))
+    lost(value.sink, Downgrade(name="int", site=caller_site()))
     return answer

@@ -26,10 +26,10 @@ import types
 from pyct.core.branch import PYCT_DIR, Expression, Fact, caller_site
 from pyct.core.dict_compares import written_key
 from pyct.core.dict_state import DictState
+from pyct.core.escapes import WALK_KEY, handed_into
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
-from pyct.core.walk_key_escapes import WALK_KEY
 
 # the most keys a dict of the input holds for the solver to choose its walk's keys: each key it
 # chooses is looked up in every key the dict holds, and in 200 int keys one ask with 3 chosen
@@ -77,9 +77,13 @@ def handed(self: DictState, key: object, at: int) -> object:
     """The walk key for ``key`` at pass ``at``: a tracked copy of it that names the pass."""
     expression: Expression = [WALK_KEY, self.expression, at]
     if type(key) is str:
-        return ConcolicStr.made(key, expression, self.sink)
-    assert type(key) is int
-    return ConcolicInt.made(key, expression, self.sink)
+        made: ConcolicStr | ConcolicInt = ConcolicStr.made(key, expression, self.sink)
+    else:
+        assert type(key) is int
+        made = ConcolicInt.made(key, expression, self.sink)
+    # a downgrade recorded into the same sink escapes it (``escapes.lost``)
+    handed_into(self.sink, made)
+    return made
 
 
 def place(self: DictState, key: object) -> Expression:

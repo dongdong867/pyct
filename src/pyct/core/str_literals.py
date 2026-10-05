@@ -6,6 +6,7 @@ import types
 from typing import cast
 
 from pyct.core.branch import Downgrade, caller_site
+from pyct.core.escapes import lost
 from pyct.core.str_operands import literal
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import own
@@ -30,7 +31,7 @@ def on_text(method: types.BuiltinMethodType, /, *args: object, **kwargs: object)
     if form is None or kwargs:
         # through str, as the written call reaches it, so a refusal reads in its words
         answer = own(getattr(str, name), text, *args, **kwargs)
-        sink.append(Downgrade(name=name, site=caller_site()))
+        lost(sink, Downgrade(name=name, site=caller_site()))
         return answer
     receiver = ConcolicStr.made(text, expression=form, sink=sink)
     return getattr(ConcolicStr, name)(receiver, *args, **kwargs)

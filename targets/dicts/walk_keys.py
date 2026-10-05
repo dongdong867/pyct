@@ -187,3 +187,42 @@ def most(d: dict[int, int]):
     if keys and max(keys) > 100:
         return 1
     return 0
+
+
+def hashed_after(d: dict[str, int]):
+    for k in d:
+        if k == "y":
+            return 1
+        hash(k)
+    return 0
+
+
+def seen_first(d: dict[str, int]):
+    seen = set()
+    for k in d:
+        seen.add(k)
+        if d[k] > 5 and "a" not in d:
+            return 1
+    return 0
+
+
+def pickled_key(d: dict[str, int]):
+    import pickle
+
+    for k in d:
+        if pickle.loads(pickle.dumps(k)) == "x":
+            return 2
+        if k == "y":
+            return 1
+    return 0
+
+
+def hex_key(d: dict[str, int]):
+    for k in d:
+        try:
+            int(k, 16)
+        except ValueError:
+            pass
+        if k == "y":
+            return 1
+    return 0
