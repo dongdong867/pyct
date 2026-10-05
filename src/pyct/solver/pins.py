@@ -9,6 +9,8 @@ pins' conditions are held (``aimed``)."""
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from pyct.core.branch import Expression
 from pyct.solver.list_kinds import ITEM_SORTS
 from pyct.solver.list_slices import Slices
@@ -19,11 +21,13 @@ from pyct.solver.split_paths import Splits
 
 PIN = "pin"
 
+# a list's read of an item of a kind at a position (``ListTerms._read``)
+type _Reader = Callable[[Piece, Lin, str], Read]
+
 
 class PinnedReads(Slices):
     """A list's positions and slices (``Slices``), its reads at pinned positions, and each
-    pin's condition by its part, for ``ListTerms``, which reads an item at a position
-    (``_read``)."""
+    pin's condition by its part, for ``ListTerms``."""
 
     splits: Splits
 
@@ -53,11 +57,11 @@ class PinnedReads(Slices):
                 held += [listed.past(count - 1), f"(not {listed.past(count)})"]
         return [fact for fact in held if fact != TRUE]
 
-    def item_at(self, piece: Piece, part: Expression, item: str) -> Read:
+    def item_at(self, piece: Piece, part: Expression, item: str, read: _Reader) -> Read:
         """The item of that kind a read at ``part`` gives: at a pinned position, the item there
         while the pin's condition holds, and an item of its own where it does not."""
         position = unpinned(part)
-        found = self._read(piece, self.position(position, piece), item)
+        found = read(piece, self.position(position, piece), item)
         if position is part or found.value is None:
             return found
         pin = self.pins[id(part)]
@@ -78,9 +82,6 @@ class PinnedReads(Slices):
                     found[self.pins[id(part)]] = None
                 stack.extend(part[1:])
         return list(found)
-
-    def _read(self, piece: Piece, position: Lin, item: str) -> Read:
-        raise NotImplementedError
 
     def splits_counted(self, part: Expression) -> list[SplitList]:
         """The splits whose own count a part reads, ``len(parts)`` in ``n % len(parts)``."""

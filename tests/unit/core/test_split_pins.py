@@ -90,3 +90,15 @@ def test_a_search_from_a_tracked_start_compares_pinned_pieces() -> None:
     assert _walks(sink) == [["==", ["[]", split, ["pin", at, "n", 1]], "'c'"] for at in (1, 2)], (
         sink
     )
+
+
+def test_an_item_no_split_made_is_handed_out_as_it_is() -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    parts.append("x")
+    n = ConcolicInt.made(4, expression="n", sink=sink)
+
+    item = parts[n]
+
+    # only a split's piece has a position the solver reads; the literal is itself
+    assert item == "x" and type(item) is str

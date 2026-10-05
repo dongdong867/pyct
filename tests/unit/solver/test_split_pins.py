@@ -2,6 +2,8 @@
 piece k, read only while the operand has its value. A fork before the one aimed at holds only
 there, and the fork aimed at reads the piece where the run read it."""
 
+import pytest
+
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.core.branch import Expression
@@ -9,6 +11,7 @@ from pyct.solver.answer import Sat
 from pyct.solver.cvc5 import solve
 from pyct.solver.lists import Origin
 from pyct.solver.render import program
+from pyct.solver.split_lists import UnknownCountError
 from tests.unit.solver.agreement import needs_cvc5
 from tests.unit.solver.test_render import fork
 
@@ -117,3 +120,12 @@ def test_cvc5_reads_a_piece_from_the_end_where_python_reads_it() -> None:
     args = dict(apply(seed, answer.model).args)
     s, n = args["s"], args["n"]
     assert isinstance(s, str) and n == 1 and s.split(",")[-1] == "z", args
+
+
+def test_a_pin_on_the_count_of_a_string_with_no_input_value_is_a_miss() -> None:
+    operand: Expression = ["-", ["len", SPLIT], "n"]
+    path = (fork(["==", ["[]", SPLIT, ["pin", 1, operand, 1]], "'z'"], taken=True),)
+
+    # no c* holds the count, and a line reads it: never a guess
+    with pytest.raises(UnknownCountError):
+        program(path, LEAVES, Origin(values={"n": 1}))

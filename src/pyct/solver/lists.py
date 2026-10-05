@@ -297,7 +297,7 @@ class ListTerms(ListTyping, PinnedReads):
             # a read of an item no term holds, a None or a list inside say, which a sort's
             # display writes: no fork reads it, so it has no term
             return ""
-        found = self.item_at(piece, rest[0], item)
+        found = self.item_at(piece, rest[0], item, self._read)
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
