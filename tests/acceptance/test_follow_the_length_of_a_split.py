@@ -28,6 +28,7 @@ JOINS = "targets.strs.joins"
 JOINS_FILE = str(REPO_ROOT / "targets" / "strs" / "joins.py")
 KEYWORD = "targets.strs.split_keyword::split_on_comma"
 KEYWORD_FILE = str(REPO_ROOT / "targets" / "strs" / "split_keyword.py")
+THEN_INT_FILE = str(REPO_ROOT / "targets" / "strs" / "split_then_int.py")
 SPLIT = ["split", "s", "','"]
 
 
@@ -435,5 +436,29 @@ def test_leaves_a_split_of_an_unworked_string_to_python() -> None:
 
     covered = [
         line for line in solved(lines) if covers(line, piece + 1) and agrees(**args_of(line))
+    ]
+    assert covered, lines
+
+
+# a piece of a split's piece read as an int: the solver answers the int's sign within its limit
+def test_reaches_a_negative_int_read_from_a_piece_of_a_piece() -> None:
+    seed = '{"value": "bytes 0-499/1234"}'
+    result = run_pyct("targets.strs.split_then_int::content_range", seed)
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    negative = line_of('return "negative length"', THEN_INT_FILE)
+
+    def agrees(value: Any) -> bool:
+        units_and_range = value.strip().split(None, 1)
+        if len(units_and_range) != 2 or "/" not in units_and_range[1]:
+            return False
+        rng, length = units_and_range[1].split("/", 1)
+        return rng == "*" and length.strip().lstrip("-").isdigit() and int(length) < 0
+
+    covered = [
+        line
+        for line in solved(lines)
+        if covers(line, negative, THEN_INT_FILE) and agrees(**args_of(line))
     ]
     assert covered, lines
