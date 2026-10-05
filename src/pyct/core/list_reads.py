@@ -98,9 +98,8 @@ def length(self: ListState) -> int:
     stays a downgrade; this is what pyct's own `len` asks for instead (`pyct.core.bound.len`).
     The int carries the list's range as it is now (see ``ConcolicInt.span``), and a split's
     list's carries the list itself, whose range a compare with a plain int narrows
-    (``core.counts``). A list with no
-    form, or one whose form stopped describing it, gives its plain length. A length cannot
-    fail, so it records no fork.
+    (``core.counts``). A list with no form, or one whose form stopped describing it, gives its
+    plain length. A length cannot fail, so it records no fork.
     """
     if not self.holds("__len__"):
         return self.length()

@@ -2,15 +2,15 @@
 what plain `+`, `-` and `*` made of it, so a fork that compares it with a plain int narrows the
 list's length range (see ``core.spans``).
 
-#121 writes such a compare as "is piece j there", exact on every string
-(split-list-tracked-its-count-the-piece-there-or-the-input-s-own), so the lengths the fork
-leaves hold on every input that records it. Any other list's `len(x)` compares never narrow its
-range (forks-a-length-range-per-value-decides-its-checks-and-len-s-compares), so only a split's
-list, or one the solver writes exactly from it, is linked.
+Every input that records such a fork takes its side, so its count is among the lengths the fork
+leaves. The solver writes the compare as "is piece j there"
+(split-list-tracked-its-count-the-piece-there-or-the-input-s-own), so the forks the narrowed
+range decides are the ones it holds. Any other list's `len(x)` compares never narrow its range
+(forks-a-length-range-per-value-decides-its-checks-and-len-s-compares), so only a split's list,
+or one the solver writes exactly from it, is linked.
 
-The link holds only while the list is as it was when `len` read it: the same form and the same
-length. A change the target makes since, through the list's methods or not, leaves the count
-about a list that is gone, and it then narrows nothing.
+The link holds only while the list has the form and the length it had when `len` read it; once
+either changed, the count narrows nothing.
 """
 
 from __future__ import annotations
@@ -67,10 +67,11 @@ class Count:
 
     def narrow(self, op: str, number: int, taken: bool) -> None:
         """Narrow the list's range to the lengths that take ``taken`` on ``self op number``,
-        recorded as a fork. A list that changed, a count that no longer reads the length, or a
-        range that already answers the compare is left as it is."""
+        recorded as a fork. A list that changed since `len` read it, or a range that already
+        answers the compare, is left as it is."""
         span = self.span()
-        if span is None or self.scale == 0 or proves(span, op, number) is not None:
+        # a count scaled by 0 is a plain number, which every range proves, so it never gets here
+        if span is None or proves(span, op, number) is not None:
             return
         fewest, most = narrowed_span(span, op, number, taken)
         lengths = _lengths(fewest, most, self.scale, self.offset)

@@ -208,7 +208,11 @@ def test_keeps_a_tracked_count_compare_a_fork() -> None:
     counted = ranges_line("if len(parts) == n:", function)
     longer = ranges_line("if len(parts) > 2:", function)
     lines = input_lines(result.stdout)
+    # every input lists the compare at C as the base does, and some input takes each side
+    for line in lines:
+        assert at(line, counted) == [["==", COUNT, "n"]], line
     assert takes(lines[0], counted, ["==", COUNT, "n"], False)
+    assert any(takes(line, counted, ["==", COUNT, "n"], True) for line in lines), lines
     reached = [line for line in lines if longer in covered_in(line, str(RANGES_FILE))]
     assert reached, lines
     for line in reached:

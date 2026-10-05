@@ -119,6 +119,11 @@ NARROWING: list[tuple[str, Any, Any]] = [
     ("subtracted from", lambda n: 9 - n >= 5, (1, 4)),
     ("times minus one", lambda n: n * -1 > -5, (1, 4)),
     ("twice", lambda n: 2 * (n + 1) == 10, (4, 4)),
+    # bounds the scale does not divide: the lengths are rounded inward, never past them
+    ("doubled, at most nine", lambda n: n * 2 <= 9, (1, 4)),
+    ("doubled, at least five", lambda n: n * 2 >= 5, (3, None)),
+    ("times minus two, at least minus nine", lambda n: n * -2 >= -9, (1, 4)),
+    ("times minus two, at most minus five", lambda n: n * -2 <= -5, (3, None)),
 ]
 
 
@@ -196,6 +201,26 @@ def test_a_count_taken_before_a_change_narrows_nothing() -> None:
     parts.append("e")
     assert count == 4
     assert parts.span == (2, None)
+
+
+def test_a_count_taken_before_a_change_that_keeps_the_length_narrows_nothing() -> None:
+    parts = _tracked("a,b,c,d").split(",")
+    count = _count(parts)
+
+    parts.append("e")
+    parts.pop()
+    assert count == 4
+    assert parts.span == (1, None)
+
+
+def test_a_count_taken_before_a_change_python_made_on_its_own_narrows_nothing() -> None:
+    parts = _tracked("a,b,c,d").split(",")
+    count = _count(parts)
+
+    # list's own append, which the list's form does not see until it is next read
+    list.append(parts, "e")
+    assert count == 4
+    assert parts.span == (1, None)
 
 
 def test_a_count_of_a_list_made_from_a_split_narrows_that_list() -> None:
