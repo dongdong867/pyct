@@ -136,8 +136,21 @@ def test_raises_as_python_on_a_walk_that_grows() -> None:
         ("second_dict", '{"d": {"a": 9}, "e": {"x": 9}}', 138),
         ("copied_out", '{"d": {"a": 9}}', 145),
         ("lowered", '{"d": {"x": 9}}', 152),
+        ("in_names", '{"d": {"x": 1}, "names": ["a"]}', 159),
+        ("keyed_set", '{"d": {"a": 1}}', 174),
+        ("keys_view", '{"d": {"a": 1, "b": 2}}', 181),
+        ("most", '{"d": {"1": 0}}', 188),
     ],
-    ids=["past-the-cap", "a-second-dict", "a-plain-dict-of-walk-keys", "a-lowered-key"],
+    ids=[
+        "past-the-cap",
+        "a-second-dict",
+        "a-plain-dict-of-walk-keys",
+        "a-lowered-key",
+        "a-list-search",
+        "a-set-of-dataclass-keys",
+        "a-keys-view-compare",
+        "max-of-the-keys",
+    ],
 )
 def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
     result = run_pyct(f"{W}::{function}", seed, "--budget", "5")
@@ -150,6 +163,6 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
     assert isinstance(solver, dict), solver
     assert function == "grown_past_the_cap" or solver["unsat"] == 0, solver
     reached(lines)
-    if function in ("grown_past_the_cap", "copied_out"):
+    if function not in ("second_dict", "lowered"):
         # v2 covers these; the other two need a key no fork names, on v2 too
         assert line in covered(lines, WF)

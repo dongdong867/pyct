@@ -29,7 +29,7 @@ from pyct.core.dict_state import DictState
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
 from pyct.core.strs import ConcolicStr
-from pyct.core.walk_key_compares import WALK_KEY
+from pyct.core.walk_key_escapes import WALK_KEY
 
 # the most keys a dict of the input holds for the solver to choose its walk's keys: each key it
 # chooses is looked up in every key the dict holds, and in 200 int keys one ask with 3 chosen

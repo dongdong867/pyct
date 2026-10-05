@@ -7,7 +7,7 @@ from unittest.mock import ANY
 import pytest
 
 from pyct.core import numbers, str_cases, str_splits, str_walks, strs, texts, values
-from pyct.core import walk_key_compares as compares
+from pyct.core import walk_key_escapes as compares
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.strs import ConcolicStr

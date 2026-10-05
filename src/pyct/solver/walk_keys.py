@@ -22,7 +22,7 @@ from pyct.binding.bind import access_name
 from pyct.binding.shapes import DictShape
 from pyct.core.branch import Branch, Expression, Fact
 from pyct.core.dict_walk_keys import MOST_KEYS
-from pyct.core.walk_key_compares import WALK_KEY
+from pyct.core.walk_key_escapes import WALK_KEY
 from pyct.solver.dict_keys import key_term
 
 # a dict's name and a pass of its walk
@@ -69,6 +69,10 @@ class Walks:
         # a walk key a step names, a place among them
         self.closed: set[str] = set()
         self.walked: set[str] = set()
+        # the walk keys the flipped fork, the path's last, names; and each dict with the pass
+        # count a walk of it ended at, taken false
+        self.aimed: frozenset[Pass] = frozenset()
+        self.ended: dict[str, int] = {}
         for step in prefix:
             self._learn(step)
         self.walked |= {name for name, _ in self.named}
@@ -78,6 +82,8 @@ class Walks:
         self.named |= named
         if isinstance(step, Branch):
             self.forked |= named
+            self.aimed = named
+            self._end(step)
             return
         if _pins(step) and named:
             self.pinned |= named
@@ -114,15 +120,44 @@ class Walks:
                 below[id(node)] = frozenset().union(*parts) if parts else _NONE
         return below[id(root)]
 
+    def _end(self, fork: Branch) -> None:
+        """Note a walk's end, `len(A) > n` taken false."""
+        test = fork.expression
+        if fork.taken or not (isinstance(test, list) and len(test) == 3 and test[0] == ">"):
+            return
+        size, at = test[1], test[2]
+        if isinstance(size, list) and len(size) == 2 and size[0] == "len" and type(at) is int:
+            name = size[1] if isinstance(size[1], str) else access_name(size[1])
+            if name is not None:
+                self.ended[name] = at
+
+    def _touched_every_key(self, name: str) -> bool:
+        """Whether a walk of the dict on the path read every key it holds: it ended after n
+        passes, and a step names the walk key at each of them. Its keys stay the input's."""
+        end = self.ended.get(name)
+        return end is not None and all((name, at) in self.named for at in range(end))
+
+    @property
+    def open(self) -> bool:
+        """Whether a fork names a walk key and no walk key on the path escaped: every ask then
+        holds the walk keys a fork names, which the solver could move, so its unsat may not be
+        the path's. A path where one escaped is asked as before walk keys."""
+        return bool(self.forked) and not self.pinned
+
     def chosen(self) -> set[Pass]:
         """The passes the ask with chosen keys leaves to the solver: each a fork names, of a
-        dict of the input of at most ``MOST_KEYS`` keys whose path keeps no other place, that no
-        fact keeps at the input's key."""
-        small = {name for name, shape in self.dicts.items() if len(shape.keys) <= MOST_KEYS}
+        dict of the input of at most ``MOST_KEYS`` keys whose path keeps no other place and has
+        no walk of it that read every key, while no walk key on the path escaped
+        (``core.walk_key_escapes``) or was changed under."""
+        if not self.open:
+            return set()
+        small = {
+            name
+            for name, shape in self.dicts.items()
+            if len(shape.keys) <= MOST_KEYS and not self._touched_every_key(name)
+        }
         return {
-            walked
-            for walked in self.forked - self.pinned
-            if walked[0] not in self.closed and walked[0] in small
+            walked for walked in self.forked if walked[0] not in self.closed and walked[0] in small
         }
 
     def unnamed(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:

@@ -229,3 +229,25 @@ def test_a_compare_the_target_writes_on_a_walk_key_is_a_fork_beside_a_container(
     in_the_target("for k in config:\n    if k != 'zz':\n        pass", config=config)
 
     assert (["!=", ["key", "config", 0], "'zz'"], True) in forks(sink)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "s = {k for k in config}",
+        "keys = [k for k in config]\nmax(keys)",
+        "names = ['zz']\nfor k in config:\n    k in names",
+    ],
+    ids=["hashed", "sorted-by-max", "a-list-search"],
+)
+def test_a_walk_key_python_s_own_code_takes_escapes(source: str) -> None:
+    # a fact keeps it at the input's key, so no ask chooses it, and from then on it compares as
+    # its plain key, recording no fork
+    config, sink = tracked({"a": 1, "bb": 2})
+
+    in_the_target(f"{source}\nfor k in config:\n    pass", config=config)
+    keys = in_the_target("keys = [k for k in config]\nkeys[0].__hash__()", config=config)["keys"]
+    in_the_target("if keys[0] == 'zz':\n    pass", keys=keys)
+
+    assert (["==", ["key", "config", 0], "'a'"], True) in decided(sink)
+    assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []

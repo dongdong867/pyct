@@ -151,3 +151,39 @@ def lowered(d: dict[str, int]):
         if k.lower() == "admin":
             return 1
     return 0
+
+
+def in_names(d: dict[str, int], names: list[str]):
+    for k in d:
+        if k in names:
+            return 1
+    return 0
+
+
+from dataclasses import dataclass  # noqa: E402  here, so the lines above keep their numbers
+
+
+@dataclass(frozen=True)
+class Key:
+    name: str
+
+
+def keyed_set(d: dict[str, int]):
+    held = {Key(k) for k in d}
+    if Key("a") in held:
+        return 1
+    return 0
+
+
+def keys_view(d: dict[str, int]):
+    out = {k: v for k, v in d.items()}
+    if out.keys() == {"a", "b"}:
+        return 1
+    return 0
+
+
+def most(d: dict[int, int]):
+    keys = [k for k in d]
+    if keys and max(keys) > 100:
+        return 1
+    return 0

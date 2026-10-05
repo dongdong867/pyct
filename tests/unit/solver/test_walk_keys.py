@@ -264,3 +264,32 @@ def test_an_unsat_without_the_walk_key_steps_stays_unsat() -> None:
     answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
 
     assert isinstance(answer, Unsat), answer
+
+
+def test_a_path_where_a_walk_key_escaped_chooses_none() -> None:
+    shape = DictShape(keys=("a", "b"), kinds=("int", "int"))
+    key: Expression = ["key", "d", 1]
+    path = (fact(["==", key, "'b'"]), fork([">", ["[]", "d", D], 5]))
+
+    assert Walks(path, {"d": shape}).chosen() == set()
+
+
+def test_a_dict_whose_walk_read_every_key_chooses_none() -> None:
+    shape = DictShape(keys=("a",), kinds=("int",))
+    path = (
+        fork([">", ["len", "d"], 0]),
+        fork([">", ["[]", "d", D], 5], taken=False),
+        fork([">", ["len", "d"], 1], taken=False),
+        fork([">", "x", 0]),
+    )
+
+    assert Walks(path, {"d": shape}).chosen() == set()
+
+
+@needs_cvc5
+def test_an_unsat_on_an_escaped_walk_key_is_unknown() -> None:
+    # v2 recorded no fork there: an unsat holding the key the escape kept would claim too much
+    seed = Seed.of({"d": {"a": 1}})
+    path = (fork([">", ["len", "d"], 0]), walked(0), fact(["==", D, "'a'"]), fork(["==", D, "'b'"]))
+
+    assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unknown)

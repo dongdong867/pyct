@@ -31,7 +31,7 @@ from pyct.core.values import (
     refused_delete,
     refused_set,
 )
-from pyct.core.walk_key_compares import asked_by_code
+from pyct.core.walk_key_escapes import asked_by_code, hashed
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
 # arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
@@ -146,7 +146,7 @@ class ConcolicInt(int):
     __eq__ = _proven("==", "__eq__")
     __ne__ = _proven("!=", "__ne__")
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
-    __hash__ = int.__hash__
+    __hash__ = hashed(int.__hash__)
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
     # a pickle holds the plain value and loads as an int, and writing it is a downgrade
