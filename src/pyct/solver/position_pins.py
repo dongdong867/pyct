@@ -18,7 +18,7 @@ from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import TRUE, Lin, Piece, Read, both
 from pyct.solver.literals import leaf_term
 from pyct.solver.split_counts import measured
-from pyct.solver.split_lists import SplitList
+from pyct.solver.split_lists import SplitList, UnknownCountError
 from pyct.solver.split_paths import Splits
 
 PIN = "pin"
@@ -57,9 +57,11 @@ class PositionPins(Slices):
         where the position was read: not c*, which a flip on the count moves."""
         held: list[str] = []
         for listed in self.splits_counted(operand):
-            if listed.input_count is not None:
-                count = listed.input_count
-                held += [listed.past(count - 1), f"(not {listed.past(count)})"]
+            count = listed.input_count
+            if count is None:
+                # past the longest string worked out, say: a miss, never a guess
+                raise UnknownCountError(f"no input count for {listed.count}")
+            held += [listed.past(count - 1), f"(not {listed.past(count)})"]
         return [fact for fact in held if fact != TRUE]
 
     def item_at(self, piece: Piece, part: Expression, item: str, read: _Reader) -> Read:

@@ -215,3 +215,14 @@ def test_a_pin_on_a_cut_s_length_holds_the_string_to_its_pieces() -> None:
     # `len(parts[1:]) - n` is 0 only while the string has the two pieces it had
     held = next(line for line in text.splitlines() if line.startswith("(assert (and (and (= "))
     assert held.count("str.indexof") >= 2, text
+
+
+def test_a_count_pin_on_a_string_with_no_input_count_is_a_miss() -> None:
+    doubled: Expression = ["split", ["+", "s", "s"], "','"]
+    at: Expression = ["pin", ["pin", 1, "n", 1], ["len", doubled], None]
+    path = (fork(["==", ["[]", doubled, at], "'z'"], taken=True),)
+
+    # `s + s` past a million characters is not worked out, so no count the run had is known:
+    # never a guess
+    with pytest.raises(UnknownCountError):
+        program(path, LEAVES, Origin(values={"s": "a," * 300_001, "n": 1}))
