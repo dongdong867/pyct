@@ -150,7 +150,9 @@ class Walks:
 
     def _given(self, step: Branch | Fact) -> Branch | Fact:
         """A walk's place at a pass whose key a step names, as a given place."""
-        place = step.place if isinstance(step, Fact) else None
+        if not isinstance(step, Fact):
+            return step
+        place = step.place
         if not (isinstance(place, list) and len(place) == 3 and place[0] == "walked"):
             return step
         walked = walk_key(place[2])
