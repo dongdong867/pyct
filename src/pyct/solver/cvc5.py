@@ -9,6 +9,7 @@ from time import monotonic
 
 from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch, Expression, Fact
+from pyct.solver import dict_orders
 from pyct.solver.answer import (
     Answer,
     Error,
@@ -168,7 +169,7 @@ def solve(
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
     conditions, places = held(fixed)
-    origin = replace(origin, places=places, capped=frozenset(walks.walked))
+    origin = replace(origin, places=(*places, *map(dict_orders.capped, sorted(walks.walked))))
     answer, placed = _asked((conditions, leaves), origin, timeout)
     if not isinstance(answer, Unsat):
         return answer
@@ -215,11 +216,12 @@ def _chosen(
         return Timeout()
     opened, walk_leaves, walk_values, orders = walks.opened(prefix)
     conditions, places = held(opened)
+    capped = [dict_orders.capped(name) for name in sorted(walks.walked) if name not in orders]
+    ordered = [dict_orders.order(name, passes) for name, passes in orders.items()]
     chosen = replace(
         origin,
-        places=places,
+        places=(*places, *capped, *ordered),
         values={**origin.values, **walk_values},
-        walks=orders,
         until=monotonic() + limit,
         lookups=int(limit * LOOKUP_STEPS_PER_SECOND),
     )

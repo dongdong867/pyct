@@ -23,22 +23,58 @@ if TYPE_CHECKING:
 # the compares whose literal is a key a fork names
 _COMPARES = ("==", "!=")
 
+# the heads of the places that hold a dict to the size a walk handing out walk keys takes, and
+# its walk in its order
+CAPPED, ORDER = "capped", "order"
 
-def ordered(terms: DictTerms, walks: Mapping[str, tuple[tuple[str | None, object], ...]]) -> None:
-    """Note each dict's order: the dict is read by tracked keys, and holds each input key the
-    order keeps."""
-    for name, passes in walks.items():
-        found = terms.of(name)
+
+def capped(name: str) -> Expression:
+    """The place that holds a dict whose walk handed out walk keys to the size such a walk
+    takes."""
+    return [CAPPED, name]
+
+
+def order(name: str, passes: tuple[tuple[str | None, object], ...]) -> Expression:
+    """The place that holds a dict's walk in its order: each pass's chosen leaf, or None, and
+    the input's key there."""
+    written: list[Expression] = [ORDER, name]
+    for chosen, key in passes:
+        assert type(key) is str or type(key) is int
+        written.append([chosen, key])
+    return written
+
+
+def ordered(terms: DictTerms, places: tuple[Expression, ...]) -> tuple[Expression, ...]:
+    """Note each dict's cap and order, and hand back the other places. A dict with an order is
+    read by tracked keys, and holds each input key the order keeps."""
+    others: list[Expression] = []
+    for place in places:
+        if not (isinstance(place, list) and len(place) >= 2 and place[0] in (CAPPED, ORDER)):
+            others.append(place)
+            continue
+        found = terms.of(place[1])
         if found is None:
             continue
-        found.order = passes
-        found.tracked = True
-        for chosen, key in passes:
-            if chosen is not None:
-                terms.walk_leaves[chosen] = name
-            else:
-                found.named.setdefault(key, len(found.named))
-                found.held.setdefault(key)
+        found.capped = True
+        if place[0] == ORDER:
+            _order(terms, found, place[2:])
+    return tuple(others)
+
+
+def _order(terms: DictTerms, found: Tracked, passes: list[Expression]) -> None:
+    order: list[tuple[str | None, object]] = []
+    for written in passes:
+        assert isinstance(written, list) and len(written) == 2
+        chosen, key = written
+        assert chosen is None or isinstance(chosen, str)
+        order.append((chosen, key))
+        if chosen is not None:
+            terms.walk_leaves[chosen] = found.name
+        else:
+            found.named.setdefault(key, len(found.named))
+            found.held.setdefault(key)
+    found.order = tuple(order)
+    found.tracked = True
 
 
 def compared(terms: DictTerms, part: list[Expression]) -> None:

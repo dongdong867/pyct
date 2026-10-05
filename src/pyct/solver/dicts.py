@@ -80,6 +80,9 @@ class Tracked:
     # in the ask with chosen keys, each pass of its walk up to the last the path names: the
     # leaf of a chosen key, or None, and the input's key there (see ``dict_orders``)
     order: tuple[tuple[str | None, object], ...] = ()
+    # whether its walk handed out walk keys, so an ask that keeps places holds it to the size
+    # such a walk takes
+    capped: bool = False
 
     def constant(self, part: str) -> str:
         return f"|{self.symbol}.{part}|"
@@ -146,10 +149,8 @@ class DictTerms(Keyed):
         self.type_of: Callable[[Expression], type | None] = lambda part: None
         # whether the first ask holds each dict's other keys and makes none up
         self.keep = True
-        # whether the ask keeps what each walk read at its place, and whether it held any; and
-        # the dicts whose walk handed out walk keys, which such an ask holds to their size cap
+        # whether the ask keeps what each walk read at its place, and whether it held any
         self.pinned = True
-        self.capped: frozenset[str] = frozenset()
         self.placed = False
         self.extra: dict[str, str] = {}
         self.functions: dict[str, str] = {}
@@ -172,9 +173,7 @@ class DictTerms(Keyed):
         terms = cls(origin.dicts, origin.values, constants)
         terms.keep = origin.keep
         terms.pinned = origin.pinned
-        terms.capped = origin.capped
         terms.most_lookups = origin.lookups
-        dict_orders.ordered(terms, origin.walks)
         terms.learn(prefix, origin.places)
         return terms
 
@@ -192,7 +191,9 @@ class DictTerms(Keyed):
     def learn(self, prefix: tuple[Branch, ...], places: tuple[Expression, ...] = ()) -> None:
         """Note what the path asks of each dict, in the order it asks: each part once, first to
         last, on a stack of its own, however deep or shared the parts are; then each place the
-        path keeps, a lookup's given one as ``["given", place]``."""
+        path keeps, a lookup's given one as ``["given", place]``, a walk's order or cap as
+        ``dict_orders`` reads it, first."""
+        places = dict_orders.ordered(self, places)
         seen: set[int] = set()
         for fork in prefix:
             stack: list[Expression] = [fork.expression]
@@ -382,7 +383,7 @@ class DictTerms(Keyed):
             lines += [f"(assert {fact})" for fact in added]
             lines += [f"(assert (= {found.constant('made')} 0))"] if found.sized else []
         lines += self._popped_unread(found, added)
-        if found.name in self.capped and found.sized:
+        if found.capped and found.sized:
             # a larger dict's walk hands out plain keys, which no fork of this path names
             lines.append(f"(assert (<= {found.constant('len')} {MOST_KEYS}))")
         if lines:

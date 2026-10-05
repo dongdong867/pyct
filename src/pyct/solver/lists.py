@@ -96,7 +96,6 @@ class Origin:
     path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
     ``fixed_reads`` says whether a piece of a split read from its end, where no walk of the
     reversed string reads it, holds the string to the count c* (see ``split_lists``).
-    ``walks`` and ``capped`` are the walk keys an ask chooses, and their dicts (``walk_keys``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -114,8 +113,6 @@ class Origin:
     lookups: int | None = None
     places: tuple[Expression, ...] = ()
     fixed_reads: bool = True
-    walks: Mapping[str, tuple[tuple[str | None, object], ...]] = field(default_factory=dict)
-    capped: frozenset[str] = frozenset()
 
 
 class UnencodedError(ValueError):
