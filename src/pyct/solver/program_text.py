@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import Branch
 from pyct.solver.answer_size import longest_string
 from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import SORTS
@@ -25,7 +25,6 @@ class Body(Protocol):
     definitions: list[str]
     bounds: list[str]
     bounded: bool
-    pins: dict[int, str]
 
     def assertion(self, fork: Branch) -> str: ...
 
@@ -54,7 +53,7 @@ def program_text(
     # the fork aimed at reads each pinned position where the run read it: a piece handed out
     # by a tracked index flips at the index the run had, as origin/v2 reads it there, while a
     # fork before it holds only while its index has that value
-    aimed = _pins(prefix[-1].expression, body.pins) if prefix else []
+    aimed = terms.aimed(prefix[-1].expression) if prefix else []
     forks = [f"(assert {pin})" for pin in aimed] + [body.assertion(fork) for fork in prefix]
     written = [*body.definitions, *bounds, *asserted, *forks]
     counts = terms.splits.defined(written)
@@ -93,17 +92,3 @@ def _read(definitions: list[str], lines: list[str]) -> str:
                 seen.add(symbol)
                 pending += [defined[symbol], *held.get(symbol, [])]
     return "\n".join(reached)
-
-
-def _pins(expression: Expression, pins: dict[int, str]) -> list[str]:
-    """The condition of each pinned position an expression reads, once each."""
-    found: dict[str, None] = {}
-    stack, seen = [expression] if pins else [], set()
-    while stack:
-        part = stack.pop()
-        if isinstance(part, list) and id(part) not in seen:
-            seen.add(id(part))
-            if id(part) in pins:
-                found[pins[id(part)]] = None
-            stack.extend(part[1:])
-    return list(found)

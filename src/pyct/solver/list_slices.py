@@ -36,8 +36,6 @@ class Slices:
         self.named: Callable[[Expression], str] = str
         self.constant: Callable[[Expression], str | None] = lambda part: None
         self.definitions: list[str] = []
-        # the condition a pinned position is read under (``["pin", k, operand, value]``)
-        self.pinned: Callable[[Expression], str] = lambda part: "true"
         self.hold_fact: Callable[[str], None] = lambda fact: self.definitions.append(
             f"(assert {fact})"
         )

@@ -27,7 +27,6 @@ def test_every_head_render_writes_says_what_type_its_value_is() -> None:
 # a term each head builds, grouped by the type of its value in Python: `+` builds an int from
 # ints, a float from floats and a str from strs
 INT_TERMS: list[Expression] = [
-    ["pin", 1, "x", 1],
     ["+", "x", 1],
     ["-", "x", 1],
     ["*", "x", 2],

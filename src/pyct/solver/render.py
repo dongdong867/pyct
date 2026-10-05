@@ -166,9 +166,6 @@ class _Program:
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         lists.constant, lists.hold_fact = self._constant, self._hold_fact
-        # each pinned position's condition, by its part (``["pin", k, operand, value]``)
-        self.pins: dict[int, str] = {}
-        lists.pinned = lambda part: self.pins[id(part)]
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -359,8 +356,6 @@ class _Program:
         writes is declared (see `_declared`). A tracked list, a split's among them, has no term
         of its own: its reads and its length do.
         """
-        if node[0] == "pin":
-            return self._pinned(node)
         kind = self.types[id(node)]
         if kind is TrackedList:
             self.lists.build(node)
@@ -381,17 +376,6 @@ class _Program:
         name = f"e!{len(self.definitions)}"
         self.definitions.append(f"(define-fun {name} () {sort} {operation})")
         return name
-
-    def _pinned(self, node: Node) -> str:
-        """A position a tracked operand handed out, ``["pin", k, operand, value]``: k's term, and
-        the condition it is read under, the operand at its value and any pin inside held."""
-        _, at, operand, value = node
-        assert type(value) is int
-        held = f"(= {self.term(operand)} {leaf_term(value)})"
-        if isinstance(at, list):
-            held = f"(and {self.pins[id(at)]} {held})"
-        self.pins[id(node)] = held
-        return self.term(at)
 
     def _operation(self, node: Node) -> str:
         """An operation on its operands, as the form, the order or the operator that means it."""
