@@ -12,6 +12,7 @@ from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.strs import ConcolicStr
+from pyct.intercept.compiled import substituted_code
 from tests.unit.core.test_dicts import decided, downgrades, forks, tracked
 
 # builtins as pyct binds them in a module of the target's package
@@ -209,9 +210,8 @@ def test_a_dict_past_the_cap_hands_out_walk_keys_too() -> None:
         "out = {k: v + 1 for k, v in config.items()}\nif 'a' in out:\n    pass",
         "s = set()\nfor k in config:\n    s.add(k)\nif 'a' in s:\n    pass",
         "e = {}\nfor k in config:\n    e[k] = config[k]\nif e.get('a'):\n    pass",
-        "for k in config:\n    if k in ['a']:\n        pass",
     ],
-    ids=["comprehension", "set", "store", "containers"],
+    ids=["comprehension", "set", "store"],
 )
 def test_python_s_own_lookup_compares_a_walk_key_plainly(source: str) -> None:
     # a plain dict or set compares a stored walk key only where two hashes meet: a fork there
@@ -221,6 +221,20 @@ def test_python_s_own_lookup_compares_a_walk_key_plainly(source: str) -> None:
     in_the_target(source, config=config)
 
     assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []
+
+
+def test_a_list_search_the_target_writes_is_a_fork_on_a_walk_key() -> None:
+    # `in` on a list runs as the target's package loads it, through pyct's own search, which
+    # compares each element as a compare the target writes: a fork on the key, as on any
+    # tracked str, and no escape
+    config, sink = tracked({"a": 1, "bb": 2})
+    scope: dict[str, Any] = {"__builtins__": _TARGETS, "config": config}
+
+    exec(substituted_code(b"for k in config:\n    k in ['zz']", "target.py"), scope)  # noqa: S102
+
+    assert (["==", ["key", "config", 0], "'zz'"], False) in forks(sink)
+    assert (["==", ["key", "config", 1], "'zz'"], False) in forks(sink)
+    assert [fact for fact in decided(sink) if isinstance(fact[0], list)] == []
 
 
 def test_a_compare_the_target_writes_on_a_walk_key_is_a_fork_beside_a_container() -> None:

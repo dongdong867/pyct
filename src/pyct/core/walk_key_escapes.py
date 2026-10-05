@@ -2,13 +2,13 @@
 walk-key).
 
 A dict or a set the target builds from a walk's keys hashes each one, and compares one only where
-two hashes meet; a list search, a sort and `max` compare them in C. A fork recorded there would
-hold on some inputs and not on others, so each walk key such code takes escapes
+two hashes meet; a list search Python runs, a sort and `max` compare them in C. A fork recorded
+there would hold on some inputs and not on others, so each walk key such code takes escapes
 (``escapes.escaped``) and answers as its plain key, as a plain copy did, and a walk key that
 escaped compares as its plain key from then on. A compare the target writes runs Python's
 compare instruction and is a fork, as on any tracked str or int. Code that reads a str or an
-int in C without calling it, `json.dumps`, `re.match`, `repr` or `bytes`, is not seen here: a
-walk key such code reads does not escape.
+int in C without calling it, `json.dumps`, `re.match`, `repr`, `bytes` or an f-string's join,
+is not seen here: a walk key such code reads does not escape.
 """
 
 from __future__ import annotations
@@ -52,8 +52,8 @@ def asked_by_code(name: str, compute: Callable[..., Any]) -> Callable[..., Any]:
 
 
 def hashed(base: Callable[[Any], int]) -> Callable[[Any], int]:
-    """A tracked value's hash: a walk key hashed escapes, since only Python's own code, a dict
-    or a set the target builds, hashes it."""
+    """A tracked value's hash: a walk key hashed escapes, whoever hashes it, a dict or a set
+    the target builds, `hash(k)` or a cache, since a hash is not a fork pyct records."""
 
     def hash_of(value: object) -> int:
         escaped(value)

@@ -12,7 +12,7 @@ from pyct.binding.model import apply
 from pyct.binding.shapes import DictAnswer, DictShape, rekeyed
 from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.solver import cvc5, walk_keys
-from pyct.solver.answer import Sat, Unknown, Unsat
+from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.walk_keys import Walks, leaf
 from tests.unit.solver.agreement import needs_cvc5
@@ -330,3 +330,21 @@ def test_a_site_that_keeps_missing_is_asked_with_the_input_s_keys() -> None:
     assert walk_keys.given_up(path)
     walk_keys.forget()
     assert not walk_keys.given_up(path)
+
+
+@needs_cvc5
+@pytest.mark.parametrize(
+    ("answer", "gives_up"), [(Unknown(), False), (Unsat(), True), (Timeout(), True)]
+)
+def test_an_ask_with_chosen_keys_the_step_guard_gave_up_counts_no_miss(
+    monkeypatch: pytest.MonkeyPatch, answer: Answer, gives_up: bool
+) -> None:
+    # the step guard gives an ask up as unknown before cvc5 runs, at no cost, so the site keeps
+    # asking with chosen keys, where a later path may choose fewer; an ask cvc5 ran counts
+    seed, path = int_only(1, 9)
+    monkeypatch.setattr(cvc5, "_chosen", lambda *_: answer)
+
+    for _ in range(walk_keys.MOST_MISSES):
+        solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
+
+    assert walk_keys.given_up(path) is gives_up

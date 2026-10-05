@@ -1,5 +1,6 @@
-"""Where a walk key escapes: a fact that keeps it at the key the input holds there, so no ask
-past that point chooses it (let-the-solver-choose-a-small-dict-s-walk-key).
+"""Where a walk key escapes: a fact that keeps it at the key the input holds there, and no ask
+on a path where a walk key escaped chooses any key (let-the-solver-choose-a-small-dict-s-walk-
+key).
 
 A walk key escapes when Python's own code hashes or compares it (``walk_key_escapes``), and at
 every downgrade the input records (``lost``): an operation pyct has not taught may have read any

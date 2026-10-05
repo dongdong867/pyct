@@ -190,7 +190,8 @@ def _after_unsat(
         chosen = _chosen(prefix, leaves, walks, origin)
         if isinstance(chosen, Sat):
             return chosen
-        missed(prefix)
+        if not isinstance(chosen, Unknown):
+            missed(prefix)
     answer: Answer = Unsat()
     if placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")

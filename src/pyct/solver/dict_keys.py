@@ -127,13 +127,12 @@ class Keyed:
     stepped: set[tuple[str, str]]
     most_lookups: int | None
 
-    def _step(self, found: Tracked, keyed: tuple[type | None, str], *functions: str) -> None:
+    def _step(self, found: Tracked, typed: type | None, term: str, *functions: str) -> None:
         """Count the calls of a tracked key's read, each as many steps as the keys it may equal
         and one more, as cvc5 writes each call out; its lookup's call counts as ``call_steps``
         says. A call the program already makes, as a loop's lookup of one key on each pass,
         counts once: cvc5 shares the term. A program past its steps is given up before cvc5
-        grows it out of reach. ``keyed`` is the key's type and its term."""
-        typed, term = keyed
+        grows it out of reach."""
         fresh = {(function, term) for function in functions} - self.stepped
         self.stepped |= fresh
         keys = len(found.candidates(typed))
@@ -177,7 +176,7 @@ class Keyed:
         with its keys and its lookups, not with the one times the other.
         """
         name = found.constant(f"has.{_sort_word(typed)}")
-        self._step(found, (typed, term), name)
+        self._step(found, typed, term, name)
         if name not in self.functions:
             options = [self._equals(found, key) for key in found.candidates(typed)]
             if typed is found.shape.made_type and found.shape.makes_up:
@@ -200,7 +199,7 @@ class Keyed:
         word = f"{_sort_word(typed)}.{kind}"
         # a read calls two functions: whether the key's value is of the kind read, and the value
         fits, read = found.constant(f"fits.{word}"), found.constant(f"read.{word}")
-        self._step(found, (typed, term), fits, read)
+        self._step(found, typed, term, fits, read)
         if read not in self.functions:
             body = self._declared(found, f"made.{kind}", kind, (found.name, MADE))
             others: list[str] = []

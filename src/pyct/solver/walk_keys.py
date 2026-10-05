@@ -14,10 +14,11 @@ input's keys in that ask too.
 The ask with chosen keys runs only after the first ask is unsat, in a dict of the input of at
 most ``core.dict_walk_keys.MOST_KEYS`` keys whose walk did not read every key, while no walk key
 on the path escaped (``core.escapes``), for at most ``cvc5.CHOSEN_SECONDS`` or half of what is
-left, and at a fork's site only until it missed ``MOST_MISSES`` times in the run. An unsat that
-rests on a walk key held at the input's key, a fork's or an escape's, is unknown; a flipped fork
-that names nothing but walk keys, where none is chosen, is unknown without an ask, since before
-walk keys no fork was recorded there.
+left, and at a fork's site only until cvc5 answered no model there ``MOST_MISSES`` times in
+the run. Where a fork names a walk key or an escape keeps one, an unsat is the path's only when
+the path without every step that names a walk key is unsat too, and else unknown; an unsat to a
+flipped fork that names a walk key is unknown, and one that names nothing but walk keys, where
+none is chosen, is unknown without an ask, since before walk keys no fork was recorded there.
 """
 
 from __future__ import annotations
@@ -332,10 +333,11 @@ def _rewritten(
     return memo[id(root)]
 
 
-# how many asks with chosen keys may miss at one fork's site before the run asks there with the
-# input's keys only: each costs up to a second, and a site whose flip needs a key the solver
-# cannot list (`k.lower() == "admin"` says) misses on every path, so a run that kept asking
-# there made a tenth of the inputs v2 makes
+# how many asks with chosen keys cvc5 may answer with no model at one fork's site before the run
+# asks there with the input's keys only: each costs up to a second, and a site whose flip needs a
+# key the solver cannot list (`k.lower() == "admin"` says) misses on every path, so a run that
+# kept asking there made a tenth of the inputs v2 makes. An ask the step guard gave up before
+# cvc5 ran cost nothing and counts nothing: a later path at the site may choose fewer keys
 MOST_MISSES = 2
 
 # the misses at each fork's site in this run, by the site and whether the fork is a raise's
@@ -353,7 +355,8 @@ def given_up(prefix: tuple[Branch | Fact, ...]) -> bool:
 
 
 def missed(prefix: tuple[Branch | Fact, ...]) -> None:
-    """Count an ask with chosen keys at the flipped fork's site that gave no answer."""
+    """Count an ask with chosen keys at the flipped fork's site that cvc5 answered with no
+    model."""
     site = _aimed_at(prefix)
     _MISSES[site] = _MISSES.get(site, 0) + 1
 
