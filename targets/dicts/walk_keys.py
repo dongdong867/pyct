@@ -118,3 +118,36 @@ def grown(d: dict[str, int]):
         if d[k] > 5:
             d[k + "x"] = 0
     return 0
+
+
+def grown_past_the_cap(d: dict[int, int]):
+    for k in d:
+        if d[k] > 5:
+            if len(d) > 250:
+                return 1
+    return 0
+
+
+def second_dict(d: dict[str, int], e: dict[str, int]):
+    for k in d:
+        if d[k] > 5:
+            break
+    e["zz"] = 0
+    for j in e:
+        if e[j] > 5 and "x" not in e:
+            return 1
+    return 0
+
+
+def copied_out(d: dict[str, int]):
+    out = {k: v + 1 for k, v in d.items()}
+    if "a" in out:
+        return 1
+    return 0
+
+
+def lowered(d: dict[str, int]):
+    for k in d:
+        if k.lower() == "admin":
+            return 1
+    return 0

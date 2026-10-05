@@ -142,12 +142,13 @@ def solve(
     answer it would write walks the dict as the path did (see ``_asked`` and ``dicts``).
 
     A walk key, the key a small dict's own walk reads at a pass, is written as the key the input
-    holds there, and such a dict is held to the size its walk hands walk keys out at. An unsat
-    to that asks once more with the key at each pass a fork names left to the solver
-    (``_chosen``), in at most ``CHOSEN_SECONDS``: a model is the answer, and an unsat is the
-    path's where every walk key the path names was left open; anything else goes on to the ask
-    without places, where an unsat is an ``Unknown()`` when a fork names a walk key, since that
-    ask holds each one at the input's key (let-the-solver-choose-a-small-dict-s-walk-key).
+    holds there, so the first ask is the program a walk of plain keys gives. An unsat to it
+    asks once more with the key at each pass a fork names left to the solver (``_chosen``), in a
+    dict of the input of at most ``core.dict_walk_keys.MOST_KEYS`` keys, in at most
+    ``CHOSEN_SECONDS`` or half of what is left: a model is the answer, and anything else goes on
+    to the ask without places. That ask holds each walk key at the input's key, so where a fork
+    names one its unsat is an ``Unknown()``, as is the unsat of every ask before it, which held
+    places (let-the-solver-choose-a-small-dict-s-walk-key).
 
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
@@ -169,29 +170,29 @@ def solve(
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
     conditions, places = held(fixed)
-    origin = replace(origin, places=(*places, *map(dict_orders.capped, sorted(walks.walked))))
+    origin = replace(origin, places=places)
     answer, placed = _asked((conditions, leaves), origin, timeout)
     if not isinstance(answer, Unsat):
         return answer
-    return _after_unsat((prefix, leaves), walks, origin, (placed, timeout))
+    return _after_unsat((prefix, leaves), walks, origin, placed, timeout)
 
 
 def _after_unsat(
     path: tuple[tuple[Branch | Fact, ...], Mapping[str, type]],
     walks: Walks,
     origin: Origin,
-    how: tuple[bool, float],
+    placed: bool,
+    timeout: float,
 ) -> Answer:
     """What a path the first ask found unsat is answered (see ``solve``): asked with its walk
-    keys chosen, then without places when the first ask kept any (``how`` says whether it did,
-    and the solve's limit). An unsat to an ask that holds a walk key a fork names at the
-    input's key is an ``Unknown()``: the solver could not move that key."""
+    keys chosen, then without places when the first ask kept any. An unsat to an ask that holds
+    a walk key a fork names at the input's key is an ``Unknown()``: the solver could not move
+    that key."""
     prefix, leaves = path
-    placed, timeout = how
     if walks.chosen():
         logger.debug("unsat with each walk key where the input had it: asking with them chosen")
         chosen = _chosen(prefix, leaves, walks, origin)
-        if isinstance(chosen, Sat) or (isinstance(chosen, Unsat) and walks.exact()):
+        if isinstance(chosen, Sat):
             return chosen
     answer: Answer = Unsat()
     if placed:
@@ -207,20 +208,20 @@ def _chosen(
     prefix: tuple[Branch | Fact, ...], leaves: Mapping[str, type], walks: Walks, origin: Origin
 ) -> Answer:
     """The path asked with its chosen walk keys left to the solver (see ``walk_keys``), in at
-    most ``CHOSEN_SECONDS`` or what is left of the solve's limit, with the lookup steps that
-    time allows. Only a sat answer is the solve's; any other goes on to the ask without places,
-    as an unsat with the input's keys does."""
+    most ``CHOSEN_SECONDS`` or half of what is left of the solve's limit, so the ask without
+    places keeps the other half, with the lookup steps that time allows. Only a sat answer is
+    the solve's; any other goes on to the ask without places, as an unsat with the input's keys
+    does."""
     assert origin.until is not None
-    limit = min(CHOSEN_SECONDS, origin.until - monotonic())
+    limit = min(CHOSEN_SECONDS, (origin.until - monotonic()) / 2)
     if limit <= 0:
         return Timeout()
     opened, walk_leaves, walk_values, orders = walks.opened(prefix)
     conditions, places = held(opened)
-    capped = [dict_orders.capped(name) for name in sorted(walks.walked) if name not in orders]
     ordered = [dict_orders.order(name, passes) for name, passes in orders.items()]
     chosen = replace(
         origin,
-        places=(*places, *capped, *ordered),
+        places=(*places, *ordered),
         values={**origin.values, **walk_values},
         until=monotonic() + limit,
         lookups=int(limit * LOOKUP_STEPS_PER_SECOND),

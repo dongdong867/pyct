@@ -21,10 +21,9 @@ from dataclasses import replace
 from pyct.binding.bind import access_name
 from pyct.binding.shapes import DictShape
 from pyct.core.branch import Branch, Expression, Fact
+from pyct.core.dict_walk_keys import MOST_KEYS
+from pyct.core.walk_key_compares import WALK_KEY
 from pyct.solver.dict_keys import key_term
-
-# the head of a walk key's expression
-WALK_KEY = "key"
 
 # a dict's name and a pass of its walk
 type Pass = tuple[str, int]
@@ -117,23 +116,14 @@ class Walks:
 
     def chosen(self) -> set[Pass]:
         """The passes the ask with chosen keys leaves to the solver: each a fork names, of a
-        dict whose path keeps no other place, that no fact keeps at the input's key."""
+        dict of the input of at most ``MOST_KEYS`` keys whose path keeps no other place, that no
+        fact keeps at the input's key."""
+        small = {name for name, shape in self.dicts.items() if len(shape.keys) <= MOST_KEYS}
         return {
             walked
             for walked in self.forked - self.pinned
-            if walked[0] not in self.closed and walked[0] in self.dicts
+            if walked[0] not in self.closed and walked[0] in small
         }
-
-    def exact(self) -> bool:
-        """Whether the ask with chosen keys leaves every walk key the path names open: each pass
-        of each dict a fork names a walk key of, up to the last pass any step names, is chosen.
-        Then an unsat to it is the path's, as far as the keys it may choose go."""
-        chosen = self.chosen()
-        for name in {name for name, _ in self.forked}:
-            last = max(at for dict_name, at in self.named if dict_name == name)
-            if any((name, at) not in chosen for at in range(last + 1)):
-                return False
-        return True
 
     def unread(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:
         """The path without each fact that a walk key's dict holds it: the walk read the key, so

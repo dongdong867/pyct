@@ -8,7 +8,6 @@ import pytest
 
 from pyct.core.bound import BOUND
 from pyct.core.branch import Fact, SinkItem
-from pyct.core.dict_walk_keys import MOST_KEYS
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -125,13 +124,12 @@ def test_a_walk_outside_the_target_s_package_hands_out_today_s_keys() -> None:
 @pytest.mark.parametrize(
     "values",
     [
-        {f"k{at}": at for at in range(MOST_KEYS + 1)},
         {"a": 1.5},
         {"a": True},
         {"a": [1]},
         {"a": None},
     ],
-    ids=["past-the-cap", "a-float", "a-bool", "a-list", "none"],
+    ids=["a-float", "a-bool", "a-list", "none"],
 )
 def test_a_dict_the_solver_cannot_choose_in_hands_out_today_s_keys(values: dict[str, Any]) -> None:
     sink: list[SinkItem] = []
@@ -193,3 +191,41 @@ def test_a_dict_built_with_the_argument_s_keys_after_others_hands_out_today_s_ke
     keys = in_the_target("keys = [k for k in {'b': 0} | config]", config=config)["keys"]
 
     assert keys == ["b", "a"] and [type(key) for key in keys] == [str, str]
+
+
+def test_a_dict_past_the_cap_hands_out_walk_keys_too() -> None:
+    # an answer that grows a dict past the cap walks it as the path did; the solver chooses
+    # keys only in a small dict
+    config, _ = tracked({f"k{at}": at for at in range(250)})
+
+    keys = in_the_target("keys = [k for k in config]", config=config)["keys"]
+
+    assert keys[249].expression == ["key", "config", 249]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "out = {k: v + 1 for k, v in config.items()}\nif 'a' in out:\n    pass",
+        "s = set()\nfor k in config:\n    s.add(k)\nif 'a' in s:\n    pass",
+        "e = {}\nfor k in config:\n    e[k] = config[k]\nif e.get('a'):\n    pass",
+        "for k in config:\n    if k in ('a', 'b') and k in ['a']:\n        pass",
+    ],
+    ids=["comprehension", "set", "store", "containers"],
+)
+def test_python_s_own_lookup_compares_a_walk_key_plainly(source: str) -> None:
+    # a plain dict or set compares a stored walk key only where two hashes meet: a fork there
+    # would hold on some inputs only, so the compare is the plain key's, as before walk keys
+    config, sink = tracked({"a": 1, "bb": 2})
+
+    in_the_target(source, config=config)
+
+    assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []
+
+
+def test_a_compare_the_target_writes_on_a_walk_key_is_a_fork_beside_a_container() -> None:
+    config, sink = tracked({"a": 1})
+
+    in_the_target("for k in config:\n    if k != 'zz':\n        pass", config=config)
+
+    assert (["!=", ["key", "config", 0], "'zz'"], True) in forks(sink)

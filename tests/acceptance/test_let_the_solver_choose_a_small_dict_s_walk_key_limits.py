@@ -127,13 +127,26 @@ def test_raises_as_python_on_a_walk_that_grows() -> None:
     assert any(120 in covered_in(line, WF) for line in falls), result.stdout[-2000:]
 
 
-# let-the-solver-choose-a-small-dict-s-walk-key-chooses-at-200-keys, the line through the cap
-def test_an_answer_past_the_cap_is_unknown() -> None:
-    # the walk's end flipped past 200 keys needs a walk Python makes with plain keys, which no
-    # fork of the path names: kept to the cap it is unsat, and its answer without places unknown
-    result = run_pyct(f"{SETTLED}::int_only", ints(200, 0), "--budget", "10")
+# review of PR #138: an ask that holds places or chooses among listed keys only says nothing
+# exact, so a flip v2 answers stays answered, and an unsat that names a walk key is unknown
+@pytest.mark.parametrize(
+    ("function", "seed", "line"),
+    [
+        ("grown_past_the_cap", '{"d": {"1": 9}}', 127),
+        ("second_dict", '{"d": {"a": 9}, "e": {"x": 9}}', 138),
+        ("copied_out", '{"d": {"a": 9}}', 145),
+        ("lowered", '{"d": {"x": 9}}', 152),
+    ],
+    ids=["past-the-cap", "a-second-dict", "a-plain-dict-of-walk-keys", "a-lowered-key"],
+)
+def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
+    result = run_pyct(f"{W}::{function}", seed, "--budget", "5")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert all(len(line["args"]["d"]) <= 200 for line in lines)  # type: ignore[index]
+    solver = summary_line(result.stdout)["solver"]
+    assert isinstance(solver, dict) and solver["unsat"] == 0, solver
     reached(lines)
+    if function in ("grown_past_the_cap", "copied_out"):
+        # v2 covers these; the other two need a key no fork names, on v2 too
+        assert line in covered(lines, WF)

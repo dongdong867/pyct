@@ -23,15 +23,8 @@ if TYPE_CHECKING:
 # the compares whose literal is a key a fork names
 _COMPARES = ("==", "!=")
 
-# the heads of the places that hold a dict to the size a walk handing out walk keys takes, and
-# its walk in its order
-CAPPED, ORDER = "capped", "order"
-
-
-def capped(name: str) -> Expression:
-    """The place that holds a dict whose walk handed out walk keys to the size such a walk
-    takes."""
-    return [CAPPED, name]
+# the head of the place that holds a dict's walk in its order
+ORDER = "order"
 
 
 def order(name: str, passes: tuple[tuple[str | None, object], ...]) -> Expression:
@@ -45,18 +38,15 @@ def order(name: str, passes: tuple[tuple[str | None, object], ...]) -> Expressio
 
 
 def ordered(terms: DictTerms, places: tuple[Expression, ...]) -> tuple[Expression, ...]:
-    """Note each dict's cap and order, and hand back the other places. A dict with an order is
-    read by tracked keys, and holds each input key the order keeps."""
+    """Note each dict's order, and hand back the other places. A dict with an order is read by
+    tracked keys, and holds each input key the order keeps."""
     others: list[Expression] = []
     for place in places:
-        if not (isinstance(place, list) and len(place) >= 2 and place[0] in (CAPPED, ORDER)):
+        if not (isinstance(place, list) and len(place) >= 2 and place[0] == ORDER):
             others.append(place)
             continue
         found = terms.of(place[1])
-        if found is None:
-            continue
-        found.capped = True
-        if place[0] == ORDER:
+        if found is not None:
             _order(terms, found, place[2:])
     return tuple(others)
 

@@ -183,22 +183,19 @@ def test_chosen_keys_past_their_second_go_on_without_places(
 
 
 @needs_cvc5
-def test_past_the_cap_a_walk_s_end_is_unknown() -> None:
-    # a dict past the cap is walked with plain keys, which no fork of the path names
+def test_a_walked_dict_grows_past_the_cap() -> None:
+    # `if len(d) > 250` after a walk: the first ask holds no cap, as before walk keys
     seed = Seed.of({"d": {"a": 1}})
-    path = (fork([">", ["len", "d"], 0]), walked(0), fork([">", ["len", "d"], 200]))
-
-    answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
-
-    assert isinstance(answer, Unknown), answer
-
-
-@needs_cvc5
-def test_a_dict_whose_walk_handed_out_keys_answers_inside_the_cap() -> None:
-    seed = Seed.of({"d": {"a": 1}})
-    path = (fork([">", ["len", "d"], 0]), walked(0), fork([">", ["len", "d"], 199]))
+    path = (fork([">", ["len", "d"], 0]), walked(0), fork([">", ["len", "d"], 250]))
 
     assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Sat)
+
+
+def test_a_dict_past_the_cap_chooses_no_key() -> None:
+    shape = DictShape(keys=tuple(range(201)), kinds=("int",) * 201, int_keys=True)
+    path = (fork([">", ["[]", "d", D], 5]),)
+
+    assert Walks(path, {"d": shape}).chosen() == set()
 
 
 @needs_cvc5
@@ -210,9 +207,23 @@ def test_a_walk_key_that_names_no_input_key_is_unknown() -> None:
 
 
 @needs_cvc5
-def test_an_unsat_with_chosen_keys_is_the_path_s() -> None:
+@pytest.mark.parametrize(
+    "flipped",
+    [["!=", D, D], ["==", ["lower", D], "'admin'"], ["startswith", D, "'x'"]],
+    ids=["itself", "lowered", "a-prefix"],
+)
+def test_an_unsat_that_names_a_walk_key_is_unknown(flipped: Expression) -> None:
+    # every ask held places or chose among listed keys only, so an unsat is not the path's
     seed = Seed.of({"d": {"a": 1}})
-    path = (fork([">", ["len", "d"], 0]), walked(0), fork(["!=", D, D]))
+    path = (fork([">", ["len", "d"], 0]), walked(0), fork(flipped))
+
+    assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unknown)
+
+
+@needs_cvc5
+def test_an_unsat_no_walk_key_takes_part_in_stays_unsat() -> None:
+    seed = Seed.of({"d": {"a": 1}, "x": 0})
+    path = (fork([">", ["len", "d"], 0]), walked(0), fork(["!=", "x", "x"]))
 
     assert isinstance(solve(path, seed.leaves, 10.0, seed.containers(), seed.values), Unsat)
 

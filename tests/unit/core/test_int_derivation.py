@@ -2,7 +2,7 @@ import sys
 
 import pytest
 
-from pyct.core import ints, numbers, texts, values
+from pyct.core import ints, numbers, texts, values, walk_key_compares
 from pyct.core.ints import ConcolicInt
 from tests.unit.core.own_scan import without_the_helper, written_in
 
@@ -66,6 +66,7 @@ def test_every_operation_that_reaches_ints_own_goes_through_the_helper() -> None
     # covers all four. An operation hands the call to a closure it holds, so what a function
     # holds counts
     files = {ints.__file__, numbers.__file__, values.__file__, texts.__file__}
+    files |= {walk_key_compares.__file__}
 
     # the scan read the compares, the arithmetic and a derived downgrade, so an empty answer
     # is not an empty scan

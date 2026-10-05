@@ -30,7 +30,6 @@ from functools import cached_property
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
 from pyct.core.branch import Branch, Expression
-from pyct.core.dict_walk_keys import MOST_KEYS
 from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match
@@ -80,9 +79,6 @@ class Tracked:
     # in the ask with chosen keys, each pass of its walk up to the last the path names: the
     # leaf of a chosen key, or None, and the input's key there (see ``dict_orders``)
     order: tuple[tuple[str | None, object], ...] = ()
-    # whether its walk handed out walk keys, so an ask that keeps places holds it to the size
-    # such a walk takes
-    capped: bool = False
 
     def constant(self, part: str) -> str:
         return f"|{self.symbol}.{part}|"
@@ -366,9 +362,7 @@ class DictTerms(Keyed):
         From the first, the input's keys stay up to the last walked key whose value a fork
         reads, and past the target's own key they all stay and none is added. From the last, a
         key read stays and none is added after it. A given place holds as a read one does.
-        A dict whose walk handed out walk keys holds at most as many keys as such a walk takes
-        (``core.dict_walk_keys.MOST_KEYS``). These hold on the asks that keep what a walk read
-        (see ``pinned``) and on no other.
+        These hold on the asks that keep what a walk read (see ``pinned``) and on no other.
         """
         if not self.pinned:
             return []
@@ -383,9 +377,6 @@ class DictTerms(Keyed):
             lines += [f"(assert {fact})" for fact in added]
             lines += [f"(assert (= {found.constant('made')} 0))"] if found.sized else []
         lines += self._popped_unread(found, added)
-        if found.capped and found.sized:
-            # a larger dict's walk hands out plain keys, which no fork of this path names
-            lines.append(f"(assert (<= {found.constant('len')} {MOST_KEYS}))")
         if lines:
             self.placed = True
         return lines

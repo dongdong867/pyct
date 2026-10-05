@@ -29,6 +29,7 @@ from pyct.core.values import (
     refused_delete,
     refused_set,
 )
+from pyct.core.walk_key_compares import asked_by_code
 
 # the `ConcolicInt` body below is the taught set: the comparisons, the truth test, the
 # arithmetic, the division and the identities it writes stay symbolic, and a copy is the value
@@ -93,7 +94,7 @@ def _proven(op: str, name: str) -> Callable[..., Any]:
                 answer.__dict__["decided"] = True
         return answer
 
-    return asked_first(name, compute)
+    return asked_by_code(name, asked_first(name, compute))
 
 
 class ConcolicInt(int):

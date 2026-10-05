@@ -169,17 +169,14 @@ def test_chooses_at_200_keys() -> None:
 def test_keeps_today_s_keys_past_200() -> None:
     result = run_pyct(f"{SETTLED}::int_only", ints(201, 9), "--budget", "10")
 
+    # the walk still hands out walk keys, so an answer that grows a dict past 200 walks it as
+    # the path did; the solver chooses none of them past 200 (review of PR #138)
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    assert not any(walk_keyed(line) for line in lines)
-    # the base's seed line: each pass's lookup of the int key Python shares, then its value
-    walked = lines_expressions_and_sides(lines[0])
-    assert walked[:3] == [
-        (9, [">", ["len", "d"], 0], True),
-        (10, ["in", 1, "d"], True),
-        (10, [">", ["[]", "d", 1], 5], True),
-    ]
+    assert walk_keyed(lines[0])
+    assert all(first_key(line) == "1" for line in solved(lines)), lines
     assert 12 not in covered(lines, F)
+    reached(lines)
 
 
 @pytest.mark.parametrize(
