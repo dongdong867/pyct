@@ -165,7 +165,7 @@ class _Program:
         # define what they write once in the program's own definitions
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
-        lists.constant = self._constant
+        lists.constant, lists.hold_fact = self._constant, self._hold_fact
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -320,7 +320,7 @@ class _Program:
 
     def _with_fact(self, form: Callable[..., str], fact: Callable[..., str], *operands: str) -> str:
         """A form's term, and the fact about its value held once."""
-        self._hold(fact(*operands))
+        self._hold_fact(fact(*operands))
         return form(*operands)
 
     def _character(self, part: Expression) -> bool:
@@ -401,7 +401,7 @@ class _Program:
         if head in CHECKS:
             alone = self.checked.get(self._string(operands[0])) == {head}
             answer, fact = check(head, *rendered, alone=alone)
-            self._hold(fact)
+            self._hold_fact(fact)
             return answer
         if head in STRING_ORDERS and kind is str:
             return string_order(head, operands, rendered)
@@ -464,7 +464,7 @@ class _Program:
             raise ValueError(f"pyct cannot render piece {index} of a partition: core writes an int")
         operands = tuple(plain_operand(part) for part in split[2:])
         piece, there = SPLITS[str(split[0])](self.term(split), operands, index)
-        self._hold(there)
+        self._hold_fact(there)
         return piece
 
     def _string(self, part: Expression) -> Key | None:
@@ -484,7 +484,7 @@ class _Program:
         self.definitions += lines
         return read
 
-    def _hold(self, fact: str) -> None:
+    def _hold_fact(self, fact: str) -> None:
         """Assert, once, a fact every input on the path meets."""
         if fact != "true" and fact not in self.facts:
             self.facts.add(fact)
