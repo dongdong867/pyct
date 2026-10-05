@@ -29,7 +29,7 @@ from pyct.core.list_forms import (
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
 from pyct.core.list_state import ListState, kind_of, kinds_of, plain
 from pyct.core.spans import Span, exactly
-from pyct.core.str_splits import a_split_s_list, built_from_a_split, kept_form
+from pyct.core.str_splits import LISTED_SPLITS, a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
 
 # one change, made the same way on the items and on the shadow
@@ -68,6 +68,13 @@ def held(operands: tuple[object, ...]) -> list[tuple[Expression, int]]:
         )
         found += [(part.expression, _number(part)) for part in parts if type(part) is ConcolicInt]
     return found
+
+
+def from_its_end(self: ListState, key: object) -> int | None:
+    """A negative index into a split's own list, as Python counts it from the end, or None."""
+    index = _number(key)
+    head = self.expression[0] if isinstance(self.expression, list) and self.expression else None
+    return index if index < 0 and head in LISTED_SPLITS else None
 
 
 def in_range(self: ListState, key: object, name: str = "__getitem__") -> bool:

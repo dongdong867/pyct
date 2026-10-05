@@ -52,6 +52,11 @@ def _python(self: ListState, name: str, *args: object) -> object:
     (``str_splits.pinned``)."""
     if str_splits.built_from_a_split(self.expression):
         held = changes.held(args)
+        if held and name == "__getitem__" and not isinstance(args[0], slice):
+            # an item read from the end of the split's own list is read there, as Python reads
+            # it, whatever number of pieces the string has
+            back = changes.from_its_end(self, args[0])
+            return str_splits.pinned(own(list.__getitem__, self, *args), held, back)
         items = [str_splits.pinned(item, held) for item in list.copy(self)] if held else self
         return own(getattr(list, name), items, *args)
     if self.expression is not None:

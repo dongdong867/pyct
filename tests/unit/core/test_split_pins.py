@@ -57,7 +57,7 @@ def test_list_s_own_answer_on_a_split_s_list_keeps_its_pieces(read: Any, answer:
     ("read", "written"),
     [
         (lambda parts, n: [parts[n]], [["pin", 1, "n", 1]]),
-        (lambda parts, n: [parts[-n]], [["pin", 3, ["-", "n"], -1]]),
+        (lambda parts, n: [parts[-n]], [["pin", -1, ["-", "n"], -1]]),
         (lambda parts, n: parts[n:][:1], [["pin", 1, "n", 1]]),
         (lambda parts, n: (parts * n)[:1], [["pin", 0, "n", 1]]),
         (lambda parts, n: [parts[::2][0]], [0]),
@@ -73,7 +73,8 @@ def test_a_piece_handed_out_through_a_tracked_operand_is_pinned_to_its_value(
 
     pieces = read(parts, n)
 
-    # the piece is read at its own position only while each tracked operand has its value
+    # the piece is read at its own position, or from the end where Python read it from the end
+    # of the split's own list, only while each tracked operand has its value
     assert [piece.expression[2] for piece in pieces] == written
 
 

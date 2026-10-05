@@ -89,3 +89,31 @@ def test_cvc5_flips_a_piece_read_at_a_tracked_index_where_the_run_read_it() -> N
     args = dict(apply(seed, answer.model).args)
     s, n = args["s"], args["n"]
     assert isinstance(s, str) and n == 1 and s.split(",")[1] == "z", args
+
+
+def test_a_pin_on_an_operand_that_reads_the_count_holds_the_string_to_c_star_pieces() -> None:
+    operand: Expression = ["-", ["len", SPLIT], "n"]
+    path = (fork(["==", ["[]", SPLIT, ["pin", 1, operand, 1]], "'z'"], taken=True),)
+
+    text = program(path, LEAVES, ORIGIN).text
+
+    # `len(parts) - n` is 1 only while the string has the two pieces it had
+    held = next(line for line in text.splitlines() if line.startswith("(assert (and (= "))
+    assert held.count("str.indexof") >= 2, text
+
+
+@needs_cvc5
+def test_cvc5_reads_a_piece_from_the_end_where_python_reads_it() -> None:
+    path = (
+        fork([">", "n", 0], taken=True),
+        fork(["<=", "n", ["len", SPLIT]], taken=True),
+        fork(["==", ["[]", SPLIT, ["pin", -1, ["-", "n"], -1]], "'z'"], taken=True),
+    )
+    seed = Seed.of({"s": ",".join("a" * 9), "n": 1})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    assert isinstance(answer, Sat), answer
+    args = dict(apply(seed, answer.model).args)
+    s, n = args["s"], args["n"]
+    assert isinstance(s, str) and n == 1 and s.split(",")[-1] == "z", args

@@ -54,19 +54,20 @@ def splits_built_from(form: object) -> list[list[object]]:
     return found
 
 
-def pinned(item: object, held: Sequence[tuple[Expression, int]]) -> object:
+def pinned(item: object, held: Sequence[tuple[Expression, int]], at: int | None = None) -> object:
     """A split's piece handed out through tracked operands, an index say, written
-    ``["[]", whole, ["pin", k, operand, value]]``: piece k, read only while each operand is the
-    value it had, so a fork on it holds only there (keep-a-tracked-index-into-a-split-as-v2-does).
-    Any other item, or one handed out through plain operands, is itself."""
+    ``["[]", whole, ["pin", k, operand, value]]``: piece k, or the position ``at`` Python read
+    it at, from the end say, read only while each operand is the value it had, so a fork on it
+    holds only there (keep-a-tracked-index-into-a-split-as-v2-does). Any other item, or one
+    handed out through plain operands, is itself."""
     form = getattr(item, "expression", None)
     if not held or not _a_piece(form):
         return item
     assert isinstance(form, list) and isinstance(item, str)
-    at: Expression = form[2]
+    position: Expression = form[2] if at is None else at
     for operand, value in held:
-        at = ["pin", at, operand, value]
-    return piece(cast(Tracked, item), str.__str__(item), ["[]", form[1], at])
+        position = ["pin", position, operand, value]
+    return piece(cast(Tracked, item), str.__str__(item), ["[]", form[1], position])
 
 
 def _a_piece(form: object) -> bool:
