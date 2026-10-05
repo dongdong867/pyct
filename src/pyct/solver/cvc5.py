@@ -147,8 +147,9 @@ def solve(
     dict of the input of at most ``core.dict_walk_keys.MOST_KEYS`` keys, in at most
     ``CHOSEN_SECONDS`` or half of what is left: a model is the answer, and anything else goes on
     to the ask without places. That ask holds each walk key at the input's key, so where a fork
-    names one its unsat is an ``Unknown()``, as is the unsat of every ask before it, which held
-    places (let-the-solver-choose-a-small-dict-s-walk-key).
+    names one its unsat is asked once more without any step that names a walk key: only an
+    unsat there is the path's, and anything else an ``Unknown()``
+    (let-the-solver-choose-a-small-dict-s-walk-key).
 
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
@@ -201,7 +202,12 @@ def _after_unsat(
         answer, _ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
         if isinstance(answer, Sat):
             return Unknown()
-    return Unknown() if isinstance(answer, Unsat) and walks.forked else answer
+    if isinstance(answer, Unsat) and walks.forked:
+        logger.debug("unsat with each walk key at the input's key: asking without them")
+        unnamed = (held(walks.unnamed(prefix))[0], leaves)
+        answer, _ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)
+        return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
+    return answer
 
 
 def _chosen(

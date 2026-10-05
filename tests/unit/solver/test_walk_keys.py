@@ -244,3 +244,23 @@ def test_a_compared_walk_key_stays_in_its_place() -> None:
     answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
 
     assert isinstance(answer, Unsat | Unknown), answer
+
+
+@needs_cvc5
+def test_an_unsat_without_the_walk_key_steps_stays_unsat() -> None:
+    # the walk's value fork names a walk key; `len(d) > 1` in a `dict[int, X]` holding a str
+    # key, where no key is made up, is unsat on every walk, which the ask without the walk
+    # key's steps says
+    check = check_of(dict[int, int])
+    assert check is not None
+    seed = Seed.of({"d": {"a": 1}}, {"d": check})
+    path = (
+        fork([">", ["len", "d"], 0]),
+        walked(0),
+        fork([">", ["[]", "d", D], 10], taken=False),
+        fork([">", ["len", "d"], 1]),
+    )
+
+    answer = solve(path, seed.leaves, 10.0, seed.containers(), seed.values)
+
+    assert isinstance(answer, Unsat), answer

@@ -125,6 +125,12 @@ class Walks:
             if walked[0] not in self.closed and walked[0] in small
         }
 
+    def unnamed(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:
+        """The path without each step whose check names a walk key, and without places: what
+        holds on every walk, whichever keys it reads."""
+        kept = (step for step in prefix if not self._passes(step.expression))
+        return tuple(replace(step, place=None) if isinstance(step, Fact) else step for step in kept)
+
     def unread(self, prefix: tuple[Branch | Fact, ...]) -> tuple[Branch | Fact, ...]:
         """The path without each fact that a walk key's dict holds it: the walk read the key, so
         the fact is a place, which the ask without places leaves out."""
