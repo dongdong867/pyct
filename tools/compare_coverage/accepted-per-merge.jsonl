@@ -251,6 +251,7 @@
 {"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [3], "only_v2": [5, 7, 9, 11], "reason": "v2 misses line 3 only when its run ends on its budget: 3 of 29 saved per-merge gate runs on 2026-09-27 and 2026-09-28 had legacy alone on 3, each with v2 stopped on budget spent; the other 26 had v2 cover all 11 lines with no fork to flip"}}
 {"set": "v2", "target": "targets.strs.split_forms::read", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.strs.split_indexes::at_a_tracked_index", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [11]}
+{"set": "v2", "target": "targets.strs.split_indexes::counted_after_an_index", "seed": {"s": "a,b", "n": 1}, "status": "differs", "only_legacy": [], "only_v2": [47]}
 {"set": "v2", "target": "targets.strs.split_indexes::counted_back", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [25]}
 {"set": "v2", "target": "targets.strs.split_indexes::from_the_end", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [18]}
 {"set": "v2", "target": "targets.strs.split_lengths::arithmetic", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [82, 83, 85, 87]}
