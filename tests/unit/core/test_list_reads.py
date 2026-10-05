@@ -127,7 +127,7 @@ def test_a_tracked_index_into_items_of_two_kinds_is_a_downgrade() -> None:
 
 
 @pytest.mark.parametrize("changed", [False, True], ids=["the split's list", "a list made from it"])
-def test_a_tracked_index_into_a_split_s_list_is_a_downgrade(changed: bool) -> None:
+def test_a_tracked_index_into_a_split_s_list_is_python_s_own(changed: bool) -> None:
     sink: list[SinkItem] = []
     parts: Any = ConcolicStr.made("a,b", expression="s", sink=sink).split(",")
     if changed:
@@ -135,9 +135,11 @@ def test_a_tracked_index_into_a_split_s_list_is_a_downgrade(changed: bool) -> No
 
     item = parts[ConcolicInt.made(1, expression="i", sink=sink)]
 
-    # the solver reads a split's piece at a position the path writes, not at one it chooses
-    assert type(item) is str and item == "b"
-    assert downgrades(sink) == ["__getitem__"] and forks(sink) == []
+    # the solver reads a split's piece at a position the path writes, not at one it chooses:
+    # the list hands out the piece Python reads, its condition kept and no loss named, as
+    # origin/v2's plain list of pieces does (keep-a-tracked-index-into-a-split-as-v2-does)
+    assert downgrades(sink) == [] and forks(sink) == []
+    assert type(item) is ConcolicStr and str.__eq__(item, "b")
 
 
 def test_a_tracked_index_into_a_list_that_holds_a_piece_keeps_its_forks() -> None:

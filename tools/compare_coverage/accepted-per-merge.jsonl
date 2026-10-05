@@ -250,6 +250,10 @@
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [3], "only_v2": [5, 7, 9, 11], "reason": "v2 misses line 3 only when its run ends on its budget: 3 of 29 saved per-merge gate runs on 2026-09-27 and 2026-09-28 had legacy alone on 3, each with v2 stopped on budget spent; the other 26 had v2 cover all 11 lines with no fork to flip"}}
 {"set": "v2", "target": "targets.strs.split_forms::read", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.strs.split_indexes::at_a_tracked_index", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [11]}
+{"set": "v2", "target": "targets.strs.split_indexes::counted_after_an_index", "seed": {"s": "a,b", "n": 1}, "status": "differs", "only_legacy": [], "only_v2": [47]}
+{"set": "v2", "target": "targets.strs.split_indexes::counted_back", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [25]}
+{"set": "v2", "target": "targets.strs.split_indexes::from_the_end", "seed": {"s": "a,b", "n": 3}, "status": "differs", "only_legacy": [], "only_v2": [18]}
 {"set": "v2", "target": "targets.strs.split_lengths::arithmetic", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [82, 83, 85, 87]}
 {"set": "v2", "target": "targets.strs.split_lengths::beside_a_tracked_value", "seed": {"s": "a\nb\nc", "n": 5}, "status": "differs", "only_legacy": [], "only_v2": [103]}
 {"set": "v2", "target": "targets.strs.split_lengths::by_a_tracked_separator", "seed": {"s": "a,b", "t": ","}, "status": "differs", "only_legacy": [72], "only_v2": []}
@@ -265,7 +269,7 @@
 {"set": "v2", "target": "targets.strs.split_ranges::limited_from_the_right", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [33]}
 {"set": "v2", "target": "targets.strs.split_ranges::lines", "seed": {"s": "a b"}, "status": "differs", "only_legacy": [], "only_v2": [56]}
 {"set": "v2", "target": "targets.strs.split_ranges::words", "seed": {"s": "a b"}, "status": "differs", "only_legacy": [], "only_v2": [49]}
-{"set": "v2", "target": "targets.strs.split_then_int::content_range", "seed": {"value": "bytes 0-499/1234"}, "status": "differs", "only_legacy": [], "only_v2": [4, 7, 12, 14, 15, 16]}
+{"set": "v2", "target": "targets.strs.split_then_int::content_range", "seed": {"value": "bytes 0-499/1234"}, "status": "differs", "only_legacy": [], "only_v2": [4, 7, 12, 14, 16], "varies": {"only_legacy": [], "only_v2": [15]}}
 {"set": "v2", "target": "targets.strs.text_of_values::bool_text", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [24]}
 {"set": "v2", "target": "targets.strs.text_of_values::formatted_alone", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [30, 32, 34, 36]}
 {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [16]}

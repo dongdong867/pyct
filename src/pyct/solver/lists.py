@@ -30,7 +30,6 @@ from pyct.solver.list_kinds import (
     measured,
 )
 from pyct.solver.list_reader import Context, Memo, RenderTooLargeError, Shared, read
-from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import (
     FALSE,
     TRUE,
@@ -51,6 +50,7 @@ from pyct.solver.list_terms import (
     shape_guard,
     summed,
 )
+from pyct.solver.position_pins import PIN, PositionPins
 from pyct.solver.split_paths import Splits
 
 __all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
@@ -119,7 +119,7 @@ class UnencodedError(ValueError):
     """A read on the path that no term writes: its kind is one nothing on the path tells."""
 
 
-class ListTerms(ListTyping, Slices):
+class ListTerms(ListTyping, PositionPins):
     """The lists of one path: their kinds while render types the parts, their pieces while it
     writes them, and what they declare.
 
@@ -131,7 +131,7 @@ class ListTerms(ListTyping, Slices):
 
     def __init__(self, shapes: Mapping[str, ListShape], symbols: Mapping[str, str]) -> None:
         ListTyping.__init__(self, shapes)
-        Slices.__init__(self)
+        PositionPins.__init__(self)
         self.symbols = symbols
         self.pieces: dict[int, Piece] = {}
         self.leaves: dict[str, Stored] = {}
@@ -286,6 +286,8 @@ class ListTerms(ListTyping, Slices):
 
     def scalar(self, node: list[Expression], kind: type | None) -> str:
         """The term of a list's length, or of an item of ``kind`` read from one."""
+        if node[0] == PIN:
+            return self.pin(node)
         head, operand, *rest = node
         piece = self.piece(operand)
         if head == "len":
@@ -295,7 +297,7 @@ class ListTerms(ListTyping, Slices):
             # a read of an item no term holds, a None or a list inside say, which a sort's
             # display writes: no fork reads it, so it has no term
             return ""
-        found = self._read(piece, self.position(rest[0], piece), item)
+        found = self.item_at(piece, rest[0], item, self._read)
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:

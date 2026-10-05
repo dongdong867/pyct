@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Sequence
 from contextvars import ContextVar
-from typing import Protocol
+from typing import Protocol, cast
 
 from pyct.core.branch import BranchSink, Expression
 from pyct.core.spans import UNKNOWN, Span
@@ -53,6 +53,58 @@ def splits_built_from(form: object) -> list[list[object]]:
         elif part[0] in _BUILT_FROM:
             stack.extend(part[1:2] if part[0] == "[:]" else part[1:])
     return found
+
+
+# a tracked operand a piece is pinned to and the value it had, or a split's count, ``len(split)``,
+# with None, held at the number of pieces the run had
+type Pin = tuple[Expression, int | None]
+
+
+def pin_piece(item: object, held: Sequence[Pin], *, at: int | None = None, counted: bool) -> object:
+    """A split's piece handed out through tracked operands, an index say, written
+    ``["[]", whole, ["pin", k, operand, value]]``: piece k, or the position ``at`` Python read
+    it at, from the end say, read only while each operand is the value it had, so a fork on it
+    holds only there (keep-a-tracked-index-into-a-split-as-v2-does). Where the position also
+    hangs on the split's count, through a cut say (``counted``), the count is held too:
+    ``["pin", k, ["len", whole], None]``, the count the run had. Any other item, or one handed
+    out through plain operands, is itself."""
+    form = getattr(item, "expression", None)
+    if not held or not _a_piece(form):
+        return item
+    assert isinstance(form, list) and isinstance(item, str)
+    position: Expression = form[2] if at is None else at
+    count: list[Pin] = [(["len", form[1]], None)] if counted else []
+    for operand, value in [*held, *count]:
+        position = ["pin", position, operand, value]
+    return piece(cast(Tracked, item), str.__str__(item), ["[]", form[1], position])
+
+
+def counted_positions(form: Expression, held: Sequence[Pin], name: str) -> bool:
+    """Whether the position of an item a tracked operand hands out of a list of this form
+    hangs on the split's count: a negative operand, a repeat, or a list other than the split's
+    own or a cut of one from a plain start of zero or more, whose items keep their places."""
+    if name in ("__mul__", "__rmul__") or any(value is not None and value < 0 for _, value in held):
+        return True
+    return not _from_its_start(form)
+
+
+def _from_its_start(form: Expression) -> bool:
+    """Whether a list's item i is its split's piece at a place no count moves."""
+    while isinstance(form, list) and form[:1] == ["[:]"]:
+        start, stop, *step = form[2:]
+        plain = all(bound is None or (type(bound) is int and bound >= 0) for bound in (start, stop))
+        if not plain or step not in ([], [None], [1]):
+            return False
+        form = form[1]
+    return isinstance(form, list) and bool(form) and form[0] in LISTED_SPLITS
+
+
+def _a_piece(form: object) -> bool:
+    """Whether a form is a split's piece at a plain position, ``["[]", [split, ...], k]``."""
+    if not isinstance(form, list) or len(form) != 3 or form[0] != "[]" or type(form[2]) is not int:
+        return False
+    whole = form[1]
+    return isinstance(whole, list) and bool(whole) and whole[0] in LISTED_SPLITS
 
 
 def built_from_a_split(form: object) -> bool:
