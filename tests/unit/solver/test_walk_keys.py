@@ -339,7 +339,7 @@ def test_a_site_that_keeps_missing_is_asked_with_the_input_s_keys() -> None:
 @needs_cvc5
 @pytest.mark.parametrize(
     ("answer", "gives_up"),
-    [(Unknown(unasked=True), False), (Unknown(), True), (Unsat(), True), (Timeout(), True)],
+    [(Unknown(guarded=True), False), (Unknown(), True), (Unsat(), True), (Timeout(), True)],
 )
 def test_an_ask_with_chosen_keys_the_step_guard_gave_up_counts_no_miss(
     monkeypatch: pytest.MonkeyPatch, answer: Answer, gives_up: bool

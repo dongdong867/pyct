@@ -33,7 +33,7 @@ def handed_into(sink: BranchSink, key: object) -> None:
     _HANDED.setdefault(id(sink), (sink, []))[1].append(key)
 
 
-def pinned_in(sink: BranchSink) -> bool:
+def escaped_in(sink: BranchSink) -> bool:
     """Whether a walk key handed out into ``sink`` escaped: no ask on the path past that point
     chooses a key, so a walk from then on hands out keys as before walk keys."""
     return id(sink) in _PINNED

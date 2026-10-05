@@ -36,8 +36,9 @@ class Unsat:
 class Unknown:
     """The solver gave up on the prefix without deciding it."""
 
-    # whether pyct gave the ask up before cvc5 ran, as a step guard does: it cost no solver time
-    unasked: bool = field(default=False, compare=False)
+    # whether a step guard, of tracked-key lookups or of a program's size, gave the ask up
+    # before cvc5 ran: it cost no solver time
+    guarded: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True)

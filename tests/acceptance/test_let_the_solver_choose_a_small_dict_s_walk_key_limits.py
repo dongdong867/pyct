@@ -134,31 +134,10 @@ def test_raises_as_python_on_a_walk_that_grows() -> None:
     [
         ("grown_past_the_cap", '{"d": {"1": 9}}', 127),
         ("second_dict", '{"d": {"a": 9}, "e": {"x": 9}}', 138),
-        ("copied_out", '{"d": {"a": 9}}', 145),
         ("lowered", '{"d": {"x": 9}}', 152),
-        ("in_names", '{"d": {"x": 1}, "names": ["a"]}', 159),
-        ("keyed_set", '{"d": {"a": 1}}', 174),
         ("keys_view", '{"d": {"a": 1, "b": 2}}', 181),
-        ("most", '{"d": {"1": 0}}', 188),
-        ("hashed_after", '{"d": {"a": 0, "b": 0}}', 197),
-        ("seen_first", '{"d": {"a": 9}}', 206),
-        ("pickled_key", '{"d": {"a": 0}}', 217),
-        ("hex_key", '{"d": {"a": 0}}', 228),
     ],
-    ids=[
-        "past-the-cap",
-        "a-second-dict",
-        "a-plain-dict-of-walk-keys",
-        "a-lowered-key",
-        "a-list-search",
-        "a-set-of-dataclass-keys",
-        "a-keys-view-compare",
-        "max-of-the-keys",
-        "a-hash-after-a-compare",
-        "a-set-of-walk-keys",
-        "a-pickled-key",
-        "a-hex-int",
-    ],
+    ids=["past-the-cap", "a-second-dict", "a-lowered-key", "a-keys-view-compare"],
 )
 def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
     result = run_pyct(f"{W}::{function}", seed, "--budget", "5")
@@ -174,3 +153,39 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
     if function not in ("second_dict", "lowered"):
         # v2 covers these; the other two need a key no fork names, on v2 too
         assert line in covered(lines, WF)
+
+
+# let-the-solver-choose-a-small-dict-s-walk-key-keeps-v2-s-answers-past-an-escape
+@pytest.mark.parametrize(
+    ("function", "seed", "v2_covers"),
+    [
+        ("hashed_after", '{"d": {"a": 0, "b": 0}}', {193, 194, 196, 197}),
+        ("seen_first", '{"d": {"a": 9}}', {201, 202, 203, 204, 206}),
+        ("keyed_set", '{"d": {"a": 1}}', {172, 173, 174, 175}),
+        ("copied_out", '{"d": {"a": 9}}', {143, 144, 145, 146}),
+        ("in_names", '{"d": {"x": 1}, "names": ["a"]}', {157, 158, 159, 160}),
+        ("most", '{"d": {"1": 0}}', {186, 187, 188, 189}),
+        ("pickled_key", '{"d": {"a": 0}}', {210, 212, 213, 215, 217}),
+        ("hex_key", '{"d": {"a": 0}}', {221, 222, 223, 224, 225, 226, 228}),
+    ],
+    ids=[
+        "a-hash-after-a-compare",
+        "a-set-of-walk-keys",
+        "a-set-of-dataclass-keys",
+        "a-plain-dict-of-walk-keys",
+        "a-list-search",
+        "max-of-the-keys",
+        "a-pickled-key",
+        "a-hex-int",
+    ],
+)
+def test_keeps_v2_s_answers_past_an_escape(function: str, seed: str, v2_covers: set[int]) -> None:
+    # v2's lines for each target are the ones its run at the base covers from the same seed
+    result = run_pyct(f"{W}::{function}", seed, "--budget", "5")
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    solver = summary_line(result.stdout)["solver"]
+    assert isinstance(solver, dict) and solver["unsat"] == 0, solver
+    reached(lines)
+    assert v2_covers <= covered(lines, WF)

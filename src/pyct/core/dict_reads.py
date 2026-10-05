@@ -54,7 +54,7 @@ from pyct.core.dict_handouts import (
     walked_in_the_argument,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
-from pyct.core.escapes import lost, pinned_in
+from pyct.core.escapes import escaped_in, lost
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -364,7 +364,7 @@ def _walked_by_key(
     call escaped; from a change or an escape on, each pass as any other walk's, since past an
     escape no ask on the path chooses a key (``escapes``)."""
     first, at = self.walk_started(), 0
-    while not self.log and not pinned_in(self.sink):
+    while not self.log and not escaped_in(self.sink):
         key = own(next, keys, MISSING)
         if not self.holds(name, *(() if key is MISSING else (key,))):
             yield from _plain_rest(self, keys, pick, key)

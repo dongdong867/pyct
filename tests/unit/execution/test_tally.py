@@ -250,7 +250,9 @@ def test_a_call_that_goes_live_forgets_the_walk_keys_handed_out_before() -> None
     config, sink = tracked({"a": 1})
     in_the_target("for k in config:\n    pass", config=config)
 
-    Tally().go_live()
+    live = Tally()
+    live.go_live()
     escapes.lost(sink, Downgrade(name="gcd", site=Site("t.py", 1, 0)))
+    live.seal()
 
     assert [part for part, _ in decided(sink) if isinstance(part, list)] == []

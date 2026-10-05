@@ -190,7 +190,7 @@ def _after_unsat(
         chosen = _chosen(prefix, leaves, walks, origin)
         if isinstance(chosen, Sat):
             return chosen
-        if not (isinstance(chosen, Unknown) and chosen.unasked):
+        if not (isinstance(chosen, Unknown) and chosen.guarded):
             missed(prefix)
     answer: Answer = Unsat()
     if placed:
@@ -361,10 +361,10 @@ def _write(
         return Timeout()
     except LookupsTooManyError as error:
         logger.debug("giving up the program's tracked-key lookups: %s", error)
-        return Unknown(unasked=True)
+        return Unknown(guarded=True)
     except ProgramTooLargeError as error:
         logger.debug("giving up the unsettled program: %s", error)
-        return Unknown(unasked=True)
+        return Unknown(guarded=True)
     except UnknownCountError as error:
         logger.debug("giving up a program that reads a count with no c*: %s", error)
         return Unknown()
