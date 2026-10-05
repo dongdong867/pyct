@@ -87,7 +87,8 @@ def _item(self: ListState, key: object) -> object:
     """``items[i]``, handed out as indexed once the long-enough fork is recorded, or a slice.
 
     A key pyct does not follow, a slice step other than 1 or -1 or a tracked index into a list
-    whose items are not all one kind, is list's own answer and a `__getitem__` downgrade.
+    whose items are not all one kind or that is built from a split, is list's own answer
+    (``_python``): a `__getitem__` downgrade, or, on a split's list, the answer v2 gives.
     """
     if not self.holds("__getitem__"):
         return own(list.__getitem__, self, key)
@@ -222,8 +223,9 @@ def _python_joined(self: ListState, name: str, left: list[object], right: list[o
 def _repeated(self: ListState, count: object, name: str, *, reflected: bool = False) -> object:
     """``items * k`` or ``k * items`` with a plain int ``k``: a tracked list.
 
-    A tracked or other count Python takes is its own answer and a downgrade; any other value
-    is NotImplemented, as it is for list.
+    A tracked or other count Python takes is its own answer (``_python``): a downgrade, or,
+    on a split's list, the answer v2 gives. Any other value is NotImplemented, as it is for
+    list.
     """
     times = reads.plain_index(count)
     if times is None:

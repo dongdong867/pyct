@@ -455,13 +455,17 @@ def test_a_split_s_list_compared_with_a_plain_list_counts_its_pieces() -> None:
     [
         (lambda parts, n: parts[n], "b"),
         (lambda parts, n: parts[-n], "d"),
-        (lambda parts, n: parts[n:][0], "b"),
+        (lambda parts, n: parts[::2], ["a", "c"]),
         (lambda parts, n: parts * n, ["a", "b", "c", "d"]),
         (lambda parts, n: parts.index("c", n), 2),
+        (lambda parts, n: parts.index("c", 1), 2),
     ],
-    ids=["an index", "an index from the end", "a cut", "a repeat", "a search from"],
+    ids=[
+        *("an index", "an index from the end", "a step of 2", "a repeat"),
+        *("a search from a tracked start", "a search from a plain start"),
+    ],
 )
-def test_a_tracked_operand_into_a_split_s_list_is_python_s_own(read: Any, answer: object) -> None:
+def test_list_s_own_answer_on_a_split_s_list_keeps_its_pieces(read: Any, answer: object) -> None:
     sink: list[SinkItem] = []
     parts = _split_of_four(sink)
     n = ConcolicInt.made(1, expression="n", sink=sink)
