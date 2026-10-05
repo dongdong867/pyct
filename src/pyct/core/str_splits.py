@@ -54,7 +54,8 @@ def splits_built_from(form: object) -> list[list[object]]:
     return found
 
 
-# a tracked operand a piece is pinned to and the value it had; None holds a count at the run's
+# a tracked operand a piece is pinned to and the value it had, or a split's count, ``len(split)``,
+# with None, held at the number of pieces the run had
 type Pin = tuple[Expression, int | None]
 
 

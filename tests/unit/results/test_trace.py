@@ -166,6 +166,14 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "method-on-a-negative-number": (["find", -1, "'x'"], "(-1).find('x')"),
     "operator-the-table-does-not-rank": (["@", ["+", "x", 1], "y"], "(x + 1) @ y"),
     "list-display": (["[]", ["+", "items", ["[,]", "x", 7]], 2], "(items + [x, 7])[2]"),
+    "count-pin": (
+        [
+            "==",
+            ["[]", ["split", "s", "','"], ["pin", 3, ["len", ["split", "s", "','"]], None]],
+            "'z'",
+        ],
+        "s.split(',')[3] == 'z'",
+    ),
     "pinned-position": (
         ["==", ["[]", ["split", "s", "','"], ["pin", 1, "n", 1]], "'z'"],
         "s.split(',')[1 if n == 1] == 'z'",
