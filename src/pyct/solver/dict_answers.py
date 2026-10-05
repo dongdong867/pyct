@@ -13,6 +13,7 @@ from collections.abc import Mapping
 
 from pyct.binding.shapes import DictAnswer
 from pyct.solver.dict_keys import MADE, MISSING
+from pyct.solver.dict_orders import first_keys
 from pyct.solver.dicts import DictTerms, Tracked
 
 
@@ -39,7 +40,8 @@ def dict_answers(terms: DictTerms, model: Mapping[str, object]) -> dict[str, obj
             key: bool(model[found.constant(f"in.{j}").strip("|")]) for key, j in found.named.items()
         }
         kept, made = counts[found.name]
-        answers[found.name] = DictAnswer(present, kept, made, values[found.name])
+        first = first_keys(terms, found, model) if found.order else ()
+        answers[found.name] = DictAnswer(present, kept, made, values[found.name], first)
     return answers
 
 

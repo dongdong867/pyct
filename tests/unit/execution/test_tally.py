@@ -1,11 +1,14 @@
 import functools
 import sys
 
+from pyct.core import escapes
 from pyct.core.branch import Branch, Downgrade, Fact, Site
 from pyct.core.dicts import ConcolicDict
 from pyct.core.lists import ConcolicList
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
+from tests.unit.core.test_dict_walk_keys import in_the_target
+from tests.unit.core.test_dicts import decided, tracked
 from tests.unit.interrupted import Interrupt, at_every_line
 
 # the file the tally's own code comes from, as its frames name it
@@ -240,3 +243,16 @@ def test_a_list_kept_from_a_call_that_is_over_names_each_decided_check_in_the_li
         ("__iter__", 3),
         ("__bool__", 1),
     ]
+
+
+def test_a_call_that_goes_live_forgets_the_walk_keys_handed_out_before() -> None:
+    # a key an earlier call handed out is no key of this call's path, and is not kept alive
+    config, sink = tracked({"a": 1})
+    in_the_target("for k in config:\n    pass", config=config)
+
+    live = Tally()
+    live.go_live()
+    escapes.lost(sink, Downgrade(name="gcd", site=Site("t.py", 1, 0)))
+    live.seal()
+
+    assert [part for part, _ in decided(sink) if isinstance(part, list)] == []

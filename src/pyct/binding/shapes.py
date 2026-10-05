@@ -207,13 +207,17 @@ class DictAnswer:
     ``present`` says, for each key a fork on the path names, in the order the path first names
     it, whether the dict holds it. ``kept`` is how many of the input's other keys it keeps, from
     the first: a smaller dict loses them from its end. ``made`` is how many keys pyct makes up,
-    and ``values`` what the solver answered for a value under an added key.
+    and ``values`` what the solver answered for a value under an added key. ``first`` lists
+    the keys a walk reads first, in its order, where the solver chose them
+    (let-the-solver-choose-a-small-dict-s-walk-key).
     """
 
     present: Mapping[object, bool] = field(default_factory=dict)
     kept: int = 0
     made: int = 0
     values: Mapping[object, object] = field(default_factory=dict)
+    # the keys a walk reads first, in its order, where the solver chose a walk's keys
+    first: tuple[object, ...] = ()
 
 
 # a made-up key is this, then a count from 1
@@ -254,7 +258,8 @@ def rekeyed(
     The input's keys come first, in their order: one a fork names stays when the answer holds
     it, and the others stay as far as ``kept`` reaches. Then the added keys a fork names, in the
     order the path names them, and then the made-up keys. An added value holds what the solver
-    answered, or its kind's own zero, or starts empty.
+    answered, or its kind's own zero, or starts empty. The keys the answer lists ``first`` come
+    before all of them, in that order.
     """
     rebuilt: dict[object, object] = {}
     unnamed = 0
@@ -269,7 +274,10 @@ def rekeyed(
     added += shape.made_up_keys({*items, *answer.present}, answer.made)
     for key in added:
         rebuilt[key] = answer.values.get(key, _filled(shape.fill))
-    return rebuilt
+    if not answer.first:
+        return rebuilt
+    first = {key: rebuilt[key] for key in answer.first if key in rebuilt}
+    return {**first, **rebuilt}
 
 
 def _filled(kind: str) -> object:

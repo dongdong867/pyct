@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Self
 
-from pyct.core import numbers, str_joins, str_lengths, texts, values
+from pyct.core import escapes, numbers, str_joins, str_lengths, texts, values, walk_key_escapes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.ints import ConcolicInt
@@ -78,7 +78,7 @@ def _compare(op: str, name: str) -> Callable[[ConcolicStr, object], object]:
     def compute(self: ConcolicStr, other: object) -> object:
         return followed(self, other) if _within_cvc5(other) else downgrade(self, other)
 
-    return compute
+    return walk_key_escapes.asked_by_code(name, compute)
 
 
 def _needle(args: tuple[object, ...]) -> Expression | None:
@@ -224,7 +224,7 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
     found = own(str.__contains__, text, sub)
     answer = found if head == "in" else not found
     if not _within_cvc5(text):
-        sub.sink.append(Downgrade(name="__contains__", site=caller_site()))
+        escapes.lost(sub.sink, Downgrade(name="__contains__", site=caller_site()))
         return answer
     expression = [head, sub.expression, _operand(text)]
     return ConcolicBool.made(answer, expression=expression, sink=sub.sink)
@@ -390,7 +390,7 @@ class ConcolicStr(str):
     __eq__ = _compare("==", "__eq__")  # pyrefly: ignore[bad-override]
     __ne__ = _compare("!=", "__ne__")  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
-    __hash__ = str.__hash__
+    __hash__ = walk_key_escapes.hashed(str.__hash__)
     __copy__ = copy_as_itself
     __deepcopy__ = copy_as_itself
     # a pickle holds the plain value and loads as a str, and writing it is a downgrade

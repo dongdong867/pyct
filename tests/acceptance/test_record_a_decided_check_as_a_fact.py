@@ -219,22 +219,6 @@ def test_decides_by_a_key_the_path_found() -> None:
     assert isinstance(decided, int) and decided > 0, entry
 
 
-# record-a-decided-check-as-a-fact-keeps-a-shared-key-s-place
-def test_keeps_a_shared_key_s_place() -> None:
-    file = str(REPO_ROOT / "targets" / "dicts" / "settled.py")
-    result = run_pyct("targets.dicts.settled::int_only", '{"d": {"1": 9}}', "--budget", "5")
-
-    assert result.returncode == 0, result.stderr
-    assert 12 not in covered(result.stdout, file)
-    # the walk hands out the shared key 1, so `d[k]` on line 10 looks it up after a fact of the
-    # walk's place, and the flip of that lookup's fork is unknown, as at the base; `d[k] > 5`
-    # shares its site, and its flip on the seed's path is sat. Line 11 looks the settled key up
-    # again, a fact
-    trace = missed(result.stderr)
-    assert f"missed {file}:10:11 unknown" in trace, result.stderr
-    assert not [line for line in trace if line.startswith(f"missed {file}:11:")], result.stderr
-
-
 # record-a-decided-check-as-a-fact-counts-positions-over-forks
 def test_counts_positions_over_forks() -> None:
     result = run_pyct(f"{DECIDED}::store_walk", '{"d": {}}', "--budget", "5")

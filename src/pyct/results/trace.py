@@ -334,7 +334,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     A tuple reads ``('a', t)``, and one item ``('a',)``. An index reads
     ``s[i]`` and a slice ``s[i:j]`` or ``s[i:j:k]``, a missing bound left out,
     and a key as the expression stores it, a string key in its Python quotes,
-    ``config['port']``. A list display reads ``[x, 7]``. A function in `_FUNCTIONS` reads as
+    ``config['port']``. A walk key reads ``list(config)[0]``, the key a walk of the dict reads
+    at that pass. A list display reads ``[x, 7]``. A function in `_FUNCTIONS` reads as
     the table spells it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
     Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among them. A part cut
     from a long expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
@@ -353,6 +354,9 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
         # a position a tracked operand handed out, read only while the operand has its value;
         # a pin on the split's count, with no value, is left unwritten
         return texts[0] if expression[3] is None else f"{texts[0]} if {texts[1]} == {texts[2]}"
+    if head == "key" and len(texts) == 2:
+        # a walk key: the key a walk of the dict reads at that pass
+        return f"list({texts[0]})[{texts[1]}]"
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)

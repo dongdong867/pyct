@@ -33,6 +33,7 @@ import numbers
 from collections.abc import Callable, Iterator
 from typing import Any
 
+from pyct.core import dict_walk_keys as walk_keys
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, caller_site
 from pyct.core.dict_compares import (
@@ -53,6 +54,7 @@ from pyct.core.dict_handouts import (
     walked_in_the_argument,
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
+from pyct.core.escapes import escaped_in, lost
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -84,7 +86,7 @@ def looked_up_unfollowed(self: DictState, key: object, name: str) -> None:
     if may_equal_added(self, key):
         self.lose(name)
     else:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
 
 
 def may_equal_added(self: DictState, key: object) -> bool:
@@ -139,6 +141,8 @@ def present(
     key it finds with `==`, which on a tracked key records a fork no target wrote, so every
     lookup here reads the key's plain value.
     """
+    if walk_keys.held(self, key, name, raising):
+        return True
     held = dict.__contains__(self, plain(key))
     if proven(self, key):
         return held
@@ -233,7 +237,7 @@ def found(
         return dict.__contains__(self, bare)
     answer = present(self, looked, name, raising=raising, changing=changing)
     if answer is None:
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
         if is_tracked(looked):
             # Python answered for this key's value with no fork, so a fork on the key after it
             # would move an answer the path already read (see ``dict_changes.followed``)
@@ -335,17 +339,60 @@ def item_of(self: DictState, key: object) -> object:
 
 def walk(self: DictState, pick: Pick, name: str, *, depth: int = 3) -> Iterator[object]:
     """A walk over the dict from its first key: a fork or a fact per key, and a fork where it
-    ends (see ``passed``).
+    ends (see ``passed``). The target's own `for` over a small unchanged dict hands out walk
+    keys (see ``dict_walk_keys``) until the dict changes.
 
     ``depth`` is how many calls up the code that asked for the walk sits (see ``hinted``).
     """
     self.__dict__["walked_at"] = caller(depth)
-    return _walked(self, iter(dict.keys(self)), pick, (name, FIRST))
+    keys = iter(dict.keys(self))
+    if walk_keys.walk_keyed(self):
+        return _walked_by_key(self, keys, pick, name)
+    return _walked(self, keys, pick, (name, FIRST))
 
 
 def backward(self: DictState, pick: Pick, name: str) -> Iterator[object]:
     """A walk over the dict from its last key, recording as a walk from the first does."""
     return _walked(self, reversed(dict.keys(self)), pick, (name, LAST))
+
+
+def _walked_by_key(
+    self: DictState, keys: Iterator[object], pick: Pick, name: str
+) -> Iterator[object]:
+    """Each key in Python's own order, handed out as its walk key, at the place the walk read it
+    whichever key the solver chooses there, while the dict is unchanged and no walk key of the
+    call escaped; from a change or an escape on, each pass as any other walk's, since past an
+    escape no ask on the path chooses a key (``escapes``)."""
+    first, at = self.walk_started(), 0
+    while not self.log and not escaped_in(self.sink):
+        key = own(next, keys, MISSING)
+        if not self.holds(name, *(() if key is MISSING else (key,))):
+            yield from _plain_rest(self, keys, pick, key)
+            return
+        handed = None if key is MISSING else walk_keys.handed(self, key, at)
+        pin = None if handed is None else walk_keys.place(self, handed)
+        if not passed(self, at, key, pin, name):
+            return
+        yield _picked(pick, self, handed)
+        at += 1
+    yield from _walked(self, keys, pick, (name, FIRST), (at, first))
+
+
+def _picked(pick: Pick, self: DictState, handed: object) -> object:
+    """What a walk hands out for a walk key: the key, the value read under it, or both."""
+    if pick is key_of:
+        return handed
+    read = value(self, handed)
+    return read if pick is value_of else (handed, read)
+
+
+def _plain_rest(
+    self: DictState, keys: Iterator[object], pick: Pick, key: object
+) -> Iterator[object]:
+    """The rest of a walk once the dict is plain: its items as Python holds them."""
+    while key is not MISSING:
+        yield plain_pick(pick, self, key)
+        key = own(next, keys, MISSING)
 
 
 def placed(self: DictState, key: object, end: str) -> Expression:
@@ -369,14 +416,19 @@ def placed(self: DictState, key: object, end: str) -> Expression:
 
 
 def _walked(
-    self: DictState, keys: Iterator[object], pick: Pick, how: tuple[str, str]
+    self: DictState,
+    keys: Iterator[object],
+    pick: Pick,
+    how: tuple[str, str],
+    start: tuple[int, bool] | None = None,
 ) -> Iterator[object]:
     """Each key in Python's own order: Python's own iterator raises where the dict changes size
     while it walks. A change made without the dict's methods turns the walk plain there. Each
-    key is handed out as the walk's own copy of it (see ``handout``)."""
+    key is handed out as the walk's own copy of it (see ``handout``). ``start`` is the pass a
+    walk that handed out walk keys goes on from, and whether it was the first walk since a
+    change under a tracked key (see ``DictState.walk_started``)."""
     name, end = how
-    first = self.walk_started()
-    at = 0
+    at, first = (0, self.walk_started()) if start is None else start
     while True:
         key = own(next, keys, MISSING)
         if not self.holds(name, *(() if key is MISSING else (key,))):
@@ -389,9 +441,7 @@ def _walked(
         handout(self, key, pin)
         yield pick(self, key)
         at += 1
-    while key is not MISSING:
-        yield plain_pick(pick, self, key)
-        key = own(next, keys, MISSING)
+    yield from _plain_rest(self, keys, pick, key)
 
 
 def passed(self: DictState, at: int, key: object, pin: Expression, name: str) -> bool:

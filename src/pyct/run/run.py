@@ -36,6 +36,7 @@ from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target
+from pyct.solver import walk_keys
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.locate import locate, version
@@ -186,6 +187,7 @@ def run(
     reader sees it when its answer comes in, before the next input's trace.
     """
     scope = Scope.of_module(target.file)
+    walk_keys.forget()
     inputs = Inputs(target, isolation)
     # before the deadline starts: the probe is the run's setup, not its time
     cvc5 = version(locate())

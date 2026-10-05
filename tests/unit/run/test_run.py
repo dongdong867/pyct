@@ -11,7 +11,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Expression, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
@@ -19,6 +19,7 @@ from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, S
 from pyct.run.isolation import Isolation
 from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
+from pyct.solver import walk_keys
 from pyct.solver.answer import Answer, Timeout, Unknown
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -439,3 +440,15 @@ def test_a_cvc5_that_will_not_say_its_version_does_not_stop_the_run(
 
     assert result.environment.cvc5 is None
     assert result.stopped.kind is StopKind.NO_FORK
+
+
+def test_a_run_starts_its_count_of_chosen_key_misses_afresh() -> None:
+    # a site an earlier run in this process gave up asking with chosen keys is asked again
+    read: Expression = ["[]", "d", ["key", "d", 0]]
+    path = (Branch(expression=[">", read, 5], taken=True, site=Site("m.py", 2, 7)),)
+    for _ in range(walk_keys.MOST_MISSES):
+        walk_keys.missed(path)
+
+    run(load_target("targets.trace.uncalled_helper::classify"), {"x": 1})
+
+    assert not walk_keys.given_up(path)

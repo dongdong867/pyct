@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Self
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.list_state import plain
 from pyct.core.spans import UNKNOWN, Span, added, exactly
 
@@ -101,6 +102,9 @@ class DictState(dict):
     # whether popitem changed the dict: it removes whichever key is last on the input, so a
     # change under a tracked key after it is Python's own (see ``dict_changes.followed``)
     popped: bool
+    # whether the dict holds the argument's keys in another order than the argument, as
+    # `other | config` builds it: a walk of it reads no key at the argument's pass
+    reordered: bool
     # each tracked key a lookup answered as Python's own, with no fork, as ``settled`` knows it:
     # a change under it after that is Python's own too (see ``dict_changes.followed``)
     unfollowed: set[object]
@@ -153,6 +157,7 @@ class DictState(dict):
             tracked_since=None,
         )
         fields["int_keyed"] = int_keyed
+        fields["reordered"] = False
         return made
 
     def size(self) -> int:
@@ -216,13 +221,13 @@ class DictState(dict):
             return False
         if self.current(*keys):
             return True
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
         return False
 
     def lose(self, name: str) -> None:
         """The dict turns plain, and the line names the operation that lost it."""
         self.turn_plain()
-        self.sink.append(Downgrade(name=name, site=caller_site()))
+        lost(self.sink, Downgrade(name=name, site=caller_site()))
 
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the values the argument put here.
@@ -252,7 +257,7 @@ class DictState(dict):
         fields["tracked_at"] = list(self.tracked_at)
         fields["tracked_changes"] = self.tracked_changes
         fields["grown"] = self.grown
-        fields["popped"] = self.popped
+        fields.update(popped=self.popped, reordered=self.reordered)
         fields["unfollowed"] = set(self.unfollowed)
         fields["walk_clock"] = self.walk_clock
         fields["tracked_since"] = self.tracked_since

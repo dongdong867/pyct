@@ -42,6 +42,9 @@ def program_text(
     c*, the leaves held finite, each class of characters a line names, the definitions, what
     the lists, the dicts and the path assert, and what to ask for."""
     terms, dicts = body.lists, body.dicts
+    # a dict's assertions may define the functions its walk's chosen keys call, which it
+    # declares (see ``dict_orders``)
+    held = dicts.assertions()
     lines = ["(set-option :dump-unsat-cores true)"] if cores else []
     lines.append("(set-logic ALL)")
     lines += [f"(declare-const {constant} {sort})" for constant, sort in declared]
@@ -49,7 +52,7 @@ def program_text(
     lines += [f"(declare-const {name} {sort})" for name, sort in terms.declared.items()]
     lines += dicts.declarations()
     bounds = [f"(assert {bound})" for bound in body.bounds if body.bounded]
-    asserted = terms.assertions() + dicts.assertions()
+    asserted = terms.assertions() + held
     # the fork aimed at reads each pinned position where the run read it: a piece handed out
     # by a tracked index flips at the index the run had, as origin/v2 reads it there, while a
     # fork before it holds only while its index has that value

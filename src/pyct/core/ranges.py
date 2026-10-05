@@ -41,6 +41,7 @@ from typing import Any, Self, SupportsIndex, TypeGuard
 from pyct.core import numbers
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.escapes import lost
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller, hinted
 from pyct.core.values import (
@@ -127,7 +128,7 @@ class ConcolicRange:
         # Python's `len` makes the answer plain, so it is a downgrade, but for the size a walk
         # just started asks for, as `list(r)` asks it
         if not hinted(self):
-            self.sink.append(Downgrade(name="__len__", site=caller_site()))
+            lost(self.sink, Downgrade(name="__len__", site=caller_site()))
         # past the largest size Python raises OverflowError, the target's as in plain Python
         return own(len, self.held)
 
@@ -148,7 +149,7 @@ class ConcolicRange:
 
     def __reduce_ex__(self, protocol: SupportsIndex, /) -> str | tuple[Any, ...]:
         # a pickle holds Python's range, and writing it is a downgrade at every protocol
-        self.sink.append(Downgrade(name="__reduce_ex__", site=caller_site()))
+        lost(self.sink, Downgrade(name="__reduce_ex__", site=caller_site()))
         return own(self.held.__reduce_ex__, protocol)
 
     __copy__ = copy_as_itself
