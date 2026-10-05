@@ -1,5 +1,5 @@
 """Pinned positions: a split's piece a tracked operand handed out, an index say, is written
-``["[]", split, ["pin", k, operand, value]]`` (``core.str_splits.pinned``): piece k, read only
+``["[]", split, ["pin", k, operand, value]]`` (``core.str_splits.pin_piece``): piece k, read only
 while the operand has its value (keep-a-tracked-index-into-a-split-as-v2-does).
 
 A fork on such a piece holds only there: the read is the piece while the pin's condition
@@ -10,11 +10,12 @@ pins' conditions are held (``aimed``)."""
 from __future__ import annotations
 
 from collections.abc import Callable
+from functools import reduce
 
 from pyct.core.branch import Expression
 from pyct.solver.list_kinds import ITEM_SORTS
 from pyct.solver.list_slices import Slices
-from pyct.solver.list_terms import TRUE, Lin, Piece, Read
+from pyct.solver.list_terms import TRUE, Lin, Piece, Read, both
 from pyct.solver.literals import leaf_term
 from pyct.solver.split_lists import SplitList
 from pyct.solver.split_paths import Splits
@@ -25,7 +26,7 @@ PIN = "pin"
 type _Reader = Callable[[Piece, Lin, str], Read]
 
 
-class PinnedReads(Slices):
+class PositionPins(Slices):
     """A list's positions and slices (``Slices``), its reads at pinned positions, and each
     pin's condition by its part, for ``ListTerms``."""
 
@@ -33,7 +34,7 @@ class PinnedReads(Slices):
 
     def __init__(self) -> None:
         Slices.__init__(self)
-        self.pins: dict[int, str] = {}
+        self.position_pins: dict[int, str] = {}
 
     def pin(self, node: list[Expression]) -> str:
         """A pinned position's term, k's, noting its condition: the operand at its value, each
@@ -41,11 +42,13 @@ class PinnedReads(Slices):
         held. An operand that reads a count, ``len(parts) - n`` say, is that value only while
         the string has that many pieces."""
         _, at, operand, value = node
-        assert type(value) is int
-        held = [f"(= {self.named(operand)} {leaf_term(value)})", *self._counts_held(operand)]
+        assert value is None or type(value) is int
+        # a count pin, ``["len", split]`` with no value, holds the count the run had (c*)
+        held = [] if value is None else [f"(= {self.named(operand)} {leaf_term(value)})"]
+        held += self._counts_held(operand)
         if isinstance(at, list):
-            held.insert(0, self.pins[id(at)])
-        self.pins[id(node)] = held[0] if len(held) == 1 else f"(and {' '.join(held)})"
+            held.insert(0, self.position_pins[id(at)])
+        self.position_pins[id(node)] = reduce(both, held, TRUE)
         return self.named(at)
 
     def _counts_held(self, operand: Expression) -> list[str]:
@@ -64,8 +67,8 @@ class PinnedReads(Slices):
         found = read(piece, self.position(position, piece), item)
         if position is part or found.value is None:
             return found
-        pin = self.pins[id(part)]
-        free = f"pinned!{len(self.definitions)}"
+        pin = self.position_pins[id(part)]
+        free = f"elsewhere!{len(self.definitions)}"
         self.definitions.append(f"(declare-const {free} {ITEM_SORTS[item]})")
         guard = TRUE if found.guard == TRUE else f"(=> {pin} {found.guard})"
         return Read(f"(ite {pin} {found.value} {free})", guard)
@@ -73,13 +76,13 @@ class PinnedReads(Slices):
     def aimed(self, expression: Expression) -> list[str]:
         """The condition of each pinned position an expression reads, once each."""
         found: dict[str, None] = {}
-        stack, seen = [expression] if self.pins else [], set()
+        stack, seen = [expression] if self.position_pins else [], set()
         while stack:
             part = stack.pop()
             if isinstance(part, list) and id(part) not in seen:
                 seen.add(id(part))
-                if id(part) in self.pins:
-                    found[self.pins[id(part)]] = None
+                if id(part) in self.position_pins:
+                    found[self.position_pins[id(part)]] = None
                 stack.extend(part[1:])
         return list(found)
 

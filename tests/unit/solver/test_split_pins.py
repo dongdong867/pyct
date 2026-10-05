@@ -101,7 +101,7 @@ def test_a_pin_on_an_operand_that_reads_the_count_holds_the_string_to_c_star_pie
     text = program(path, LEAVES, ORIGIN).text
 
     # `len(parts) - n` is 1 only while the string has the two pieces it had
-    held = next(line for line in text.splitlines() if line.startswith("(assert (and (= "))
+    held = next(line for line in text.splitlines() if line.startswith("(assert (and (and (= "))
     assert held.count("str.indexof") >= 2, text
 
 
@@ -129,3 +129,34 @@ def test_a_pin_on_the_count_of_a_string_with_no_input_value_is_a_miss() -> None:
     # no c* holds the count, and a line reads it: never a guess
     with pytest.raises(UnknownCountError):
         program(path, LEAVES, Origin(values={"n": 1}))
+
+
+def test_the_aimed_fork_holds_each_pin_it_reads() -> None:
+    first: Expression = ["[]", SPLIT, ["pin", 0, "n", 0]]
+    second: Expression = ["[]", SPLIT, ["pin", 1, "m", 1]]
+    path = (fork(["==", first, second], taken=True),)
+
+    text = program(path, {**LEAVES, "m": int}, Origin(values={"s": "a,b", "n": 0, "m": 1})).text
+
+    assert "(assert (= |arg.n| 0))" in text and "(assert (= |arg.m| 1))" in text, text
+
+
+@needs_cvc5
+def test_cvc5_keeps_the_count_a_read_through_a_cut_hangs_on() -> None:
+    cut: Expression = ["[:]", SPLIT, 1, None]
+    at: Expression = ["pin", ["pin", 8, ["-", "n"], -1], ["len", SPLIT], None]
+    path = (
+        fork([">", "n", 0], taken=True),
+        fork(["<=", "n", ["len", cut]], taken=True),
+        fork(["==", ["[]", SPLIT, at], "'z'"], taken=True),
+    )
+    seed = Seed.of({"s": ",".join("a" * 9), "n": 1})
+
+    answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
+
+    # `p[1:][-n]` is piece 8 only while the string has its nine pieces
+    assert isinstance(answer, Sat), answer
+    args = dict(apply(seed, answer.model).args)
+    s, n = args["s"], args["n"]
+    assert isinstance(s, str) and n == 1 and s.split(",")[1:][-1] == "z", args
+    assert len(s.split(",")) == 9, args

@@ -50,7 +50,7 @@ from pyct.solver.list_terms import (
     shape_guard,
     summed,
 )
-from pyct.solver.pins import PIN, PinnedReads
+from pyct.solver.position_pins import PIN, PositionPins
 from pyct.solver.split_paths import Splits
 
 __all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
@@ -119,7 +119,7 @@ class UnencodedError(ValueError):
     """A read on the path that no term writes: its kind is one nothing on the path tells."""
 
 
-class ListTerms(ListTyping, PinnedReads):
+class ListTerms(ListTyping, PositionPins):
     """The lists of one path: their kinds while render types the parts, their pieces while it
     writes them, and what they declare.
 
@@ -131,7 +131,7 @@ class ListTerms(ListTyping, PinnedReads):
 
     def __init__(self, shapes: Mapping[str, ListShape], symbols: Mapping[str, str]) -> None:
         ListTyping.__init__(self, shapes)
-        PinnedReads.__init__(self)
+        PositionPins.__init__(self)
         self.symbols = symbols
         self.pieces: dict[int, Piece] = {}
         self.leaves: dict[str, Stored] = {}

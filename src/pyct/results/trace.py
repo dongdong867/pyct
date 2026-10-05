@@ -338,8 +338,8 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     the table spells it, ``abs(x)`` or ``math.floor(x)``, and any other name is a method as
     Python calls it, ``a.name(b)`` or ``a.name()``, ``x.is_integer()`` among them. A part cut
     from a long expression reads ``...(N nodes)``, and ``...(? nodes)`` when its count is
-    ``null``. A pinned position reads ``1 if n == 1``. Each binds tighter than any operator, so
-    none needs parentheses of its own.
+    ``null``. Each binds tighter than any operator, so none needs parentheses of its own. A
+    pinned position reads ``1 if n == 1``; it only ever sits inside the brackets of a read.
     """
     head = expression[0]
     texts = [text for text, _ in operands]
@@ -350,8 +350,9 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "()":
         return f"({texts[0]},)" if len(texts) == 1 else f"({', '.join(texts)})"
     if head == "pin":
-        # a position a tracked operand handed out, read only while the operand has its value
-        return f"{texts[0]} if {texts[1]} == {texts[2]}"
+        # a position a tracked operand handed out, read only while the operand has its value;
+        # a pin on the split's count, with no value, is left unwritten
+        return texts[0] if expression[3] is None else f"{texts[0]} if {texts[1]} == {texts[2]}"
     if head == "[]" or head == "[:]":
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)

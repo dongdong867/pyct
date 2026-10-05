@@ -49,16 +49,20 @@ def _python(self: ListState, name: str, *args: object) -> object:
     list answers as origin/v2's plain list of pieces does: Python's own answer, each piece
     kept, and no loss named (follow-the-length-of-a-split). A piece handed out or compared
     through a tracked operand is read only while the operand has its value
-    (``str_splits.pinned``)."""
+    (``str_splits.pin_piece``)."""
     if str_splits.built_from_a_split(self.expression):
-        held = changes.held(args)
+        held = changes.tracked_operands(args)
+        counted = str_splits.counted_positions(self.expression, held, name)
         if held and name == "__getitem__" and not isinstance(args[0], slice):
             # an item read from the end of the split's own list is read there, as Python reads
             # it, whatever number of pieces the string has
             back = changes.from_its_end(self, args[0])
-            return str_splits.pinned(own(list.__getitem__, self, *args), held, back)
-        items = [str_splits.pinned(item, held) for item in list.copy(self)] if held else self
-        return own(getattr(list, name), items, *args)
+            item = own(list.__getitem__, self, *args)
+            return str_splits.pin_piece(item, held, at=back, counted=counted and back is None)
+        if not held:
+            return own(getattr(list, name), self, *args)
+        pinned = [str_splits.pin_piece(item, held, counted=counted) for item in list.copy(self)]
+        return own(getattr(list, name), pinned, *args)
     if self.expression is not None:
         return plain_items(downgraded(list, name)(self, *args))
     return plain_items(own(getattr(list, name), self, *args))
@@ -73,7 +77,7 @@ def _slice(self: ListState, key: slice) -> object:
     bounds = changes.slice_bounds(slice(key.start, key.stop))
     if bounds is None or step not in (None, 1, -1):
         return _python(self, "__getitem__", key)
-    if str_splits.built_from_a_split(self.expression) and changes.held((key,)):
+    if str_splits.built_from_a_split(self.expression) and changes.tracked_operands((key,)):
         # a split's list cut at a tracked bound is cut as origin/v2 cuts its plain list
         return _python(self, "__getitem__", key)
     if bounds == (None, None) and step in (None, 1):

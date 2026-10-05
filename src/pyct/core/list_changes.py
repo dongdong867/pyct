@@ -57,7 +57,7 @@ def follows(self: ListState, key: object) -> bool:
     return plain_index(key) is not None
 
 
-def held(operands: tuple[object, ...]) -> list[tuple[Expression, int]]:
+def tracked_operands(operands: tuple[object, ...]) -> list[tuple[Expression, int]]:
     """Each tracked int among the operands, a slice's bounds included, and the value it has."""
     found: list[tuple[Expression, int]] = []
     for operand in operands:

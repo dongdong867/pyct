@@ -59,10 +59,22 @@ def test_list_s_own_answer_on_a_split_s_list_keeps_its_pieces(read: Any, answer:
         (lambda parts, n: [parts[n]], [["pin", 1, "n", 1]]),
         (lambda parts, n: [parts[-n]], [["pin", -1, ["-", "n"], -1]]),
         (lambda parts, n: parts[n:][:1], [["pin", 1, "n", 1]]),
-        (lambda parts, n: (parts * n)[:1], [["pin", 0, "n", 1]]),
+        (lambda parts, n: (parts * n)[:1], [["pin", ["pin", 0, "n", 1], ["len", SPLIT], None]]),
+        (
+            lambda parts, n: [parts[1:][-n]],
+            [["pin", ["pin", 3, ["-", "n"], -1], ["len", SPLIT], None]],
+        ),
+        (
+            lambda parts, n: parts[:-n][:1],
+            [["pin", ["pin", 0, ["-", "n"], -1], ["len", SPLIT], None]],
+        ),
+        (lambda parts, n: [parts[1:][n]], [["pin", 2, "n", 1]]),
         (lambda parts, n: [parts[::2][0]], [0]),
     ],
-    ids=["an index", "an index from the end", "a cut", "a repeat", "plain operands"],
+    ids=[
+        *("an index", "an index from the end", "a cut", "a repeat", "a cut's end"),
+        *("a cut at a negative bound", "a cut from its start", "plain operands"),
+    ],
 )
 def test_a_piece_handed_out_through_a_tracked_operand_is_pinned_to_its_value(
     read: Any, written: list[Expression]
