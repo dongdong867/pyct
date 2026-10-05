@@ -454,6 +454,7 @@ def test_leaves_the_solver_s_own_unsat(target: str, seed: str, base: list[str]) 
 
 
 # record-decided-checks-on-lists-strings-and-second-walks-decides-an-index-past-a-known-length
+@pytest.mark.serial
 def test_decides_an_index_past_a_known_length() -> None:
     result = run_pyct(f"{LISTS}::sorted_past", '{"xs": [2, 1]}', "--budget", "5")
 
