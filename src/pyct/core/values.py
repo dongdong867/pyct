@@ -215,6 +215,10 @@ def downgraded(
             return result
         # the call's own caller is where the walk for the site starts
         self.sink.append(lost_at(name, sys._getframe(1)))
+        # an operation pyct has not taught takes a walk key out of what it records exactly
+        from pyct.core.walk_key_escapes import escaped  # noqa: PLC0415  imports this module
+
+        escaped(self)
         return own(plain, self, base) if result is self else result
 
     return downgrade

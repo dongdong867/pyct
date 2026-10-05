@@ -251,3 +251,11 @@ def test_a_walk_key_python_s_own_code_takes_escapes(source: str) -> None:
 
     assert (["==", ["key", "config", 0], "'a'"], True) in decided(sink)
     assert [part for part, _ in forks(sink) if isinstance(part, list) and part[0] == "=="] == []
+
+
+def test_a_walk_key_an_untaught_operation_takes_escapes() -> None:
+    config, sink = tracked({"ab": 1})
+
+    in_the_target("for k in config:\n    k.encode()", config=config)
+
+    assert (["==", ["key", "config", 0], "'ab'"], True) in decided(sink)
