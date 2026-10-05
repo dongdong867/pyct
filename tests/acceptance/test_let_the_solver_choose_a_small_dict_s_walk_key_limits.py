@@ -145,7 +145,10 @@ def test_keeps_what_v2_answers(function: str, seed: str, line: int) -> None:
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     solver = summary_line(result.stdout)["solver"]
-    assert isinstance(solver, dict) and solver["unsat"] == 0, solver
+    # an unsat stays only where it holds without every step that names a walk key; past the
+    # cap, flips of `len(d) > 250` are unsat on v2 too
+    assert isinstance(solver, dict), solver
+    assert function == "grown_past_the_cap" or solver["unsat"] == 0, solver
     reached(lines)
     if function in ("grown_past_the_cap", "copied_out"):
         # v2 covers these; the other two need a key no fork names, on v2 too
