@@ -45,7 +45,11 @@ _OPERATORS = {"==": "eq", "!=": "ne", "<": "lt", "<=": "le", ">": "gt", ">=": "g
 
 
 def _python(self: ListState, name: str, *args: object) -> object:
-    """list's own answer, plain: a downgrade named ``name`` while the list has a form."""
+    """list's own answer, plain: a downgrade named ``name`` while the list has a form. A split's
+    list answers as origin/v2's plain list of pieces does: Python's own answer, each piece
+    kept, and no loss named (follow-the-length-of-a-split)."""
+    if str_splits.built_from_a_split(self.expression):
+        return own(getattr(list, name), self, *args)
     if self.expression is not None:
         return plain_items(downgraded(list, name)(self, *args))
     return plain_items(own(getattr(list, name), self, *args))

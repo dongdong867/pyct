@@ -448,3 +448,31 @@ def test_a_split_s_list_compared_with_a_plain_list_counts_its_pieces() -> None:
         [">", ["len", split], 1],
         ["==", _piece(1), "'z'"],
     ], sink
+
+
+@pytest.mark.parametrize(
+    ("read", "answer"),
+    [
+        (lambda parts, n: parts[n], "b"),
+        (lambda parts, n: parts[-n], "d"),
+        (lambda parts, n: parts[n:][0], "b"),
+        (lambda parts, n: parts * n, ["a", "b", "c", "d"]),
+        (lambda parts, n: parts.index("c", n), 2),
+    ],
+    ids=["an index", "an index from the end", "a cut", "a repeat", "a search from"],
+)
+def test_a_tracked_operand_into_a_split_s_list_is_python_s_own(read: Any, answer: object) -> None:
+    sink: list[SinkItem] = []
+    parts = _split_of_four(sink)
+    n = ConcolicInt.made(1, expression="n", sink=sink)
+    sink.clear()
+
+    got = read(parts, n)
+
+    # as origin/v2's plain list of pieces answers: each piece keeps its condition, and no loss
+    # is named
+    assert got == answer
+    assert [item for item in sink if isinstance(item, Downgrade)] == [], sink
+    pieces = got if isinstance(got, list) else [got]
+    assert all(type(piece) is ConcolicStr for piece in pieces if isinstance(piece, str))
+    assert parts.expression == SPLIT
