@@ -299,9 +299,11 @@ class ListTerms(ListTyping, Slices):
         if found.value is None:
             raise UnencodedError(f"pyct cannot render {head}: no {kind} item is read there")
         if found.guard != TRUE:
-            # a split's piece is held there where it is read, as before its list was tracked:
-            # cvc5 ran to its limit where a fact about what the piece becomes came first
-            (self.hold if piece.of_a_split else self.guards.append)(found.guard)
+            # a piece of a split, or of a list joined with or cut from one, is held there where
+            # it is read, as before the split's list was tracked. That only orders cvc5's search:
+            # it answers int(piece) then a flip at once where the int's fact came first and ran
+            # to the limit, and can be slower elsewhere, int(s.split()[2]) say
+            (self.hold_fact if piece.of_a_split else self.guards.append)(found.guard)
         if item == "str" and not isinstance(piece, Counted):
             # a split's piece is no longer than its string, which the answer holds already
             self.strings[found.value] = None
