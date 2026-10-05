@@ -30,6 +30,8 @@ from functools import cached_property
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
 from pyct.core.branch import Branch, Expression
+from pyct.core.dict_walk_keys import MOST_KEYS
+from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match
 from pyct.solver.lists import Origin, UnencodedError
@@ -75,6 +77,9 @@ class Tracked:
     popped: set[object] = field(default_factory=set)
     given: set[object] = field(default_factory=set)
     own: bool = False
+    # in the ask with chosen keys, each pass of its walk up to the last the path names: the
+    # leaf of a chosen key, or None, and the input's key there (see ``dict_orders``)
+    order: tuple[tuple[str | None, object], ...] = ()
 
     def constant(self, part: str) -> str:
         return f"|{self.symbol}.{part}|"
@@ -94,6 +99,11 @@ class Tracked:
         constant is named by it."""
         places = self.places
         return places[key] if key in places else len(places) + self.named[key]
+
+    @property
+    def key_type(self) -> type:
+        """The type of the dict's keys: its input's, or its made-up keys' when it holds none."""
+        return type(self.shape.keys[0]) if self.shape.keys else self.shape.made_type
 
     @property
     def unnamed(self) -> list[object]:
@@ -136,8 +146,10 @@ class DictTerms(Keyed):
         self.type_of: Callable[[Expression], type | None] = lambda part: None
         # whether the first ask holds each dict's other keys and makes none up
         self.keep = True
-        # whether the ask keeps what each walk read at its place, and whether it held any
+        # whether the ask keeps what each walk read at its place, and whether it held any; and
+        # the dicts whose walk handed out walk keys, which such an ask holds to their size cap
         self.pinned = True
+        self.capped: frozenset[str] = frozenset()
         self.placed = False
         self.extra: dict[str, str] = {}
         self.functions: dict[str, str] = {}
@@ -148,6 +160,8 @@ class DictTerms(Keyed):
         # each value constant a dict declared, and what the answer names it by: a leaf's name,
         # or the dict and the key it is the value under
         self.valued: dict[str, tuple[str, object]] = {}
+        # each chosen walk key's leaf, by the dict whose walk reads it (see ``dict_orders``)
+        self.walk_leaves: dict[str, str] = {}
 
     @classmethod
     def of_path(
@@ -158,7 +172,9 @@ class DictTerms(Keyed):
         terms = cls(origin.dicts, origin.values, constants)
         terms.keep = origin.keep
         terms.pinned = origin.pinned
+        terms.capped = origin.capped
         terms.most_lookups = origin.lookups
+        dict_orders.ordered(terms, origin.walks)
         terms.learn(prefix, origin.places)
         return terms
 
@@ -216,6 +232,8 @@ class DictTerms(Keyed):
 
     def _note(self, part: list[Expression]) -> None:
         head = part[0]
+        if self.walk_leaves:
+            dict_orders.compared(self, part)
         if head == "in" and len(part) == 3 and (found := self.of(part[2])) is not None:
             self._key(found, part[1], held=False)
         elif head == "len" and len(part) == 2 and (found := self.of(part[1])) is not None:
@@ -320,6 +338,7 @@ class DictTerms(Keyed):
             if found.sized:
                 lines += self._sized(found)
             lines += self._in_place(found)
+            lines += dict_orders.order_lines(self, found) if found.order else []
         strings = [longest_string(name) for name, sort in self.extra.items() if sort == "String"]
         return lines + strings + list(self.facts)
 
@@ -346,7 +365,9 @@ class DictTerms(Keyed):
         From the first, the input's keys stay up to the last walked key whose value a fork
         reads, and past the target's own key they all stay and none is added. From the last, a
         key read stays and none is added after it. A given place holds as a read one does.
-        These hold on the asks that keep what a walk read (see ``pinned``) and on no other.
+        A dict whose walk handed out walk keys holds at most as many keys as such a walk takes
+        (``core.dict_walk_keys.MOST_KEYS``). These hold on the asks that keep what a walk read
+        (see ``pinned``) and on no other.
         """
         if not self.pinned:
             return []
@@ -361,6 +382,9 @@ class DictTerms(Keyed):
             lines += [f"(assert {fact})" for fact in added]
             lines += [f"(assert (= {found.constant('made')} 0))"] if found.sized else []
         lines += self._popped_unread(found, added)
+        if found.name in self.capped and found.sized:
+            # a larger dict's walk hands out plain keys, which no fork of this path names
+            lines.append(f"(assert (<= {found.constant('len')} {MOST_KEYS}))")
         if lines:
             self.placed = True
         return lines

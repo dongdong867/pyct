@@ -27,6 +27,7 @@ from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
 from pyct.solver.split_lists import UnknownCountError
+from pyct.solver.walk_keys import UnwrittenError, Walks
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,11 @@ STEPS_PER_SECOND = 100
 # about 5.5 s, and 300 keys grow past 3.8 GB. So at the 10 s default 350,000 steps are asked,
 # 29 keys looked up and read in 3,000 keys, and more are given up at once
 LOOKUP_STEPS_PER_SECOND = 35_000
+
+# the most seconds the ask with chosen walk keys takes, or the solve's limit when that is shorter:
+# past it the ask is stopped, or given up at once where its lookup steps would run past it, and
+# the solve goes on to the ask without places (let-the-solver-choose-a-small-dict-s-walk-key)
+CHOSEN_SECONDS = 1.0
 
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
 # second of the solve's limit, so a path's outcome never turns on how long the first ask took.
@@ -134,6 +140,14 @@ def solve(
     unsat is the path's, and a model is an ``Unknown()``, since pyct cannot tell whether the
     answer it would write walks the dict as the path did (see ``_asked`` and ``dicts``).
 
+    A walk key, the key a small dict's own walk reads at a pass, is written as the key the input
+    holds there, and such a dict is held to the size its walk hands walk keys out at. An unsat
+    to that asks once more with the key at each pass a fork names left to the solver
+    (``_chosen``), in at most ``CHOSEN_SECONDS``: a model is the answer, and an unsat is the
+    path's where every walk key the path names was left open; anything else goes on to the ask
+    without places, where an unsat is an ``Unknown()`` when a fork names a walk key, since that
+    ask holds each one at the input's key (let-the-solver-choose-a-small-dict-s-walk-key).
+
     A prefix that names a float leaf is asked first with each such leaf held
     finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
 
@@ -146,14 +160,71 @@ def solve(
     solver's, and the fork is a miss rather than the run's end.
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
-    conditions, places = held(prefix)
-    origin = replace(_origin(shapes or {}, values or {}, timeout), places=places)
-    path = (conditions, leaves)
-    answer, placed = _asked(path, origin, timeout)
-    if isinstance(answer, Unsat) and placed:
+    origin = _origin(shapes or {}, values or {}, timeout)
+    try:
+        walks = Walks(prefix, origin.dicts)
+        fixed = walks.fixed(prefix)
+    except UnwrittenError as error:
+        logger.warning("pyct cannot write the path for cvc5: %s", error)
+        return Unknown()
+    conditions, places = held(fixed)
+    origin = replace(origin, places=places, capped=frozenset(walks.walked))
+    answer, placed = _asked((conditions, leaves), origin, timeout)
+    if not isinstance(answer, Unsat):
+        return answer
+    return _after_unsat((prefix, leaves), walks, origin, (placed, timeout))
+
+
+def _after_unsat(
+    path: tuple[tuple[Branch | Fact, ...], Mapping[str, type]],
+    walks: Walks,
+    origin: Origin,
+    how: tuple[bool, float],
+) -> Answer:
+    """What a path the first ask found unsat is answered (see ``solve``): asked with its walk
+    keys chosen, then without places when the first ask kept any (``how`` says whether it did,
+    and the solve's limit). An unsat to an ask that holds a walk key a fork names at the
+    input's key is an ``Unknown()``: the solver could not move that key."""
+    prefix, leaves = path
+    placed, timeout = how
+    if walks.chosen():
+        logger.debug("unsat with each walk key where the input had it: asking with them chosen")
+        chosen = _chosen(prefix, leaves, walks, origin)
+        if isinstance(chosen, Sat) or (isinstance(chosen, Unsat) and walks.exact()):
+            return chosen
+    answer: Answer = Unsat()
+    if placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")
-        answer, _ = _asked(path, replace(origin, keep=False, pinned=False), timeout)
-        return Unknown() if isinstance(answer, Sat) else answer
+        unplaced = (held(walks.fixed(walks.unread(prefix)))[0], leaves)
+        answer, _ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
+        if isinstance(answer, Sat):
+            return Unknown()
+    return Unknown() if isinstance(answer, Unsat) and walks.forked else answer
+
+
+def _chosen(
+    prefix: tuple[Branch | Fact, ...], leaves: Mapping[str, type], walks: Walks, origin: Origin
+) -> Answer:
+    """The path asked with its chosen walk keys left to the solver (see ``walk_keys``), in at
+    most ``CHOSEN_SECONDS`` or what is left of the solve's limit, with the lookup steps that
+    time allows. Only a sat answer is the solve's; any other goes on to the ask without places,
+    as an unsat with the input's keys does."""
+    assert origin.until is not None
+    limit = min(CHOSEN_SECONDS, origin.until - monotonic())
+    if limit <= 0:
+        return Timeout()
+    opened, walk_leaves, walk_values, orders = walks.opened(prefix)
+    conditions, places = held(opened)
+    chosen = replace(
+        origin,
+        places=places,
+        values={**origin.values, **walk_values},
+        walks=orders,
+        until=monotonic() + limit,
+        lookups=int(limit * LOOKUP_STEPS_PER_SECOND),
+    )
+    answer, _ = _asked((conditions, {**leaves, **walk_leaves}), chosen, limit)
+    logger.debug("with the walk keys chosen: %s", type(answer).__name__)
     return answer
 
 

@@ -17,8 +17,6 @@ from tests.acceptance.test_lists import args_of, downgrade_names, listed, number
 DICTS = REPO_ROOT / "targets" / "dicts"
 MADE_UP_INTS = "targets.dicts.made_up_ints"
 MADE_UP_INTS_FILE = str(DICTS / "made_up_ints.py")
-INT_ONLY = "targets.dicts.settled::int_only"
-SETTLED_FILE = str(DICTS / "settled.py")
 
 # the text JSON writes for an int, which `--args` reads back as the int under `dict[int, X]`
 INT_TEXT = re.compile(r"0|-?[1-9][0-9]*")
@@ -42,31 +40,12 @@ def test_makes_up_a_key_to_meet_a_count() -> None:
     ds = [int_keyed(line) for line in lines]
     one = [d for d in ds[1:] if list(d) == [0]]
     assert one and all(type(d[0]) is int for d in one), ds
-    fork = [">", ["[]", "d", 0], 10]
+    # the walk reads the made-up key's value under its walk key
+    # (let-the-solver-choose-a-small-dict-s-walk-key)
+    fork = [">", ["[]", "d", ["key", "d", 0]], 10]
     above = [line for line in solved(lines) if list(int_keyed(line)) == [0]]
     above = [line for line in above if number(int_keyed(line)[0]) > 10]
     assert above and any((4, fork, True) in listed(line) for line in above), ds
-
-
-# make-up-an-int-key-for-an-int-keyed-dict: `int_only` stays behind legacy at line 12, and the
-# cause is the walk's place, not a missing int key. Every path from `{"1": 9}` walks key 1 first,
-# and the only flip that drops it is the line-10 lookup Python shares with the walk's key 1,
-# recorded given its place. With the place it is unsat, and the answer found without it is an
-# `unknown` miss, never an answer that leaves the plan; try-an-answer-found-without-a-walk-s-
-# places tracks the gap
-def test_int_only_misses_line_12_through_the_walk_s_place() -> None:
-    result = run_pyct(INT_ONLY, '{"d": {"1": 9}}', "--plateau", "5")
-
-    assert result.returncode == 0, result.stderr
-    lines = input_lines(result.stdout)
-    assert 12 not in union_of(lines)[SETTLED_FILE], union_of(lines)
-    for line in lines:
-        # asserts that each key an answer holds, a made-up one included, is an int's JSON text
-        int_keyed(line)
-    assert [line["mismatch_at"] for line in solved(lines)] == [None] * len(solved(lines))
-    misses = summary_line(result.stdout)["misses"]
-    assert isinstance(misses, list)
-    assert (10, 11, "unknown") in {(m["line"], m["col"], m["why"]) for m in misses}, misses
 
 
 # make-up-an-int-key-for-an-int-keyed-dict-hands-the-keys-back-through-args

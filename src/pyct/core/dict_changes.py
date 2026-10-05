@@ -47,6 +47,7 @@ from pyct.core.dict_reads import (
     value,
 )
 from pyct.core.dict_state import MISSING, DictState
+from pyct.core.dict_walk_keys import pinned
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import plain
@@ -224,7 +225,9 @@ def unforked_lookup(self: DictState, key: object, follow: bool) -> bool:
 def store(self: DictState, key: object, stored: object, name: str, *, named: bool = False) -> None:
     """``config[key] = value``, and each store `setdefault`, `update` and `|` make. ``named``
     says the call's own lookup already named it (see ``as_python``). A key Python's lookup
-    makes the same as an int is looked up as that int, and stored as it is."""
+    makes the same as an int is looked up as that int, and stored as it is. A walk key is
+    stored as its plain key (see ``dict_walk_keys.pinned``)."""
+    key = pinned(self, key)
     if _stored_plainly(self, key, stored, name):
         return
     looked = int_key(key)
@@ -265,8 +268,10 @@ def removed(self: DictState, key: object, name: str, *default: object) -> object
 
     A key the dict does not hold raises KeyError where Python does, after its fork, or hands
     back the default. A tracked key of the dict's key kind is followed as a literal is; one of
-    another kind is looked up as any lookup is, and the removal itself is a downgrade.
+    another kind is looked up as any lookup is, and the removal itself is a downgrade. A walk
+    key is removed as its plain key (see ``dict_walk_keys.pinned``).
     """
+    key = pinned(self, key)
     if not holds_key(self, key, name):
         return own(dict.pop, self, key, *default)
     looked = int_key(key)
@@ -341,7 +346,9 @@ def last_item(self: DictState) -> tuple[object, object]:
 
 
 def defaulted(self: DictState, key: object, default: object = None) -> object:
-    """``config.setdefault(key, default)``: the value when the dict holds the key, else a store."""
+    """``config.setdefault(key, default)``: the value when the dict holds the key, else a store.
+    A walk key is looked up and stored as its plain key (see ``dict_walk_keys.pinned``)."""
+    key = pinned(self, key)
     if not holds_key(self, key, "setdefault"):
         return own(dict.setdefault, self, key, default)
     if written_key(int_key(key)) is None:
@@ -369,7 +376,8 @@ def update(self: DictState, name: str, *args: Any, **kwargs: Any) -> None:
     taken: dict[object, object] = {}
     own(dict.update, taken, *args, **kwargs)
     crowded = len(taken) > 1
-    for key, stored in dict.items(taken):
+    for each, stored in dict.items(taken):
+        key = pinned(self, each)
         # a tracked key among others is Python's own (see the module's docstring)
         if crowded and is_tracked(int_key(key)):
             if not _stored_plainly(self, key, stored, name):

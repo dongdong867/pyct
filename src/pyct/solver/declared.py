@@ -116,10 +116,12 @@ class Program:
             raise SolverAnswerError(
                 f"cvc5 answered about names the program did not declare: {named}"
             )
+        # a walk key the solver chose is read back as its dict's answer, not as a leaf
+        chosen = set() if self.dicts is None else set(self.dicts.walk_leaves)
         read: dict[str, object] = {
             self.names_by_symbol[symbol]: value
             for symbol, value in model.items()
-            if symbol in self.names_by_symbol
+            if symbol in self.names_by_symbol and self.names_by_symbol[symbol] not in chosen
         }
         answers: dict[str, ListAnswer] = {}
         if self.lists is not None:

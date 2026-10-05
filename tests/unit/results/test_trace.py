@@ -70,6 +70,12 @@ INFIX: dict[str, tuple[Expression, str]] = {
     "builtin": (["abs", "x"], "abs(x)"),
     "unary-minus": (["-", "x"], "-x"),
     "key": (["[]", "config", "'port'"], "config['port']"),
+    # a walk key, the key a walk of the dict reads at that pass
+    "walk-key": ([">", ["[]", "d", ["key", "d", 0]], 5], "d[list(d)[0]] > 5"),
+    "walk-key-of-a-dict-inside": (
+        ["==", ["key", ["[]", "cfg", "'sub'"], 2], "'a'"],
+        "list(cfg['sub'])[2] == 'a'",
+    ),
     # a call binds tighter than any operator, so it never gets parentheses of its own
     "builtin-under-a-unary-minus": (["<", ["-", ["abs", "x"]], -3], "-abs(x) < -3"),
     "builtin-as-the-base-of-a-power": ([">", ["**", ["abs", "x"], 2], 9], "abs(x) ** 2 > 9"),

@@ -141,7 +141,9 @@ def test_makes_up_keys_to_meet_a_count() -> None:
     configs = [dict_of(line, "config") for line in solved(lines)]
     made = [config for config in configs if list(config) == ["pyct1"]]
     assert made and all(type(config["pyct1"]) is int for config in made), configs
-    fork = [">", ["[]", "config", "'pyct1'"], 10]
+    # the walk reads the made-up key's value under its walk key
+    # (let-the-solver-choose-a-small-dict-s-walk-key)
+    fork = [">", ["[]", "config", ["key", "config", 0]], 10]
     above = [
         line
         for line in solved(lines)
@@ -404,21 +406,22 @@ def test_a_placed_walk_beside_a_bound_is_unknown_not_unsat() -> None:
     assert whys and "unsat" not in whys, misses
 
 
-SETTLED = "targets.dicts.settled"
-SETTLED_FILE = str(DICTS / "settled.py")
+WALK_KEYS = "targets.dicts.walk_keys"
+WALK_KEYS_FILE = str(DICTS / "walk_keys.py")
 
 
 # see-why: a lookup of a key the path already asked about is a decided check, so the condition
 # that reads it names that site and its decided count, not `no fork`, which blames the program
-# (record-a-decided-check-as-a-fact)
+# (record-a-decided-check-as-a-fact). A walk Python makes hands out today's keys, so the walk's
+# key "a" is looked up first in `d[k]` (let-the-solver-choose-a-small-dict-s-walk-key)
 @pytest.mark.parametrize(
-    ("function", "seed", "at", "missed"),
-    [("only_a", {"a": 9}, (3, 24), 4), ("int_only", {"1": 9}, (11, 15), 12)],
+    ("function", "at", "missed"),
+    [("sorted_walk", (56, 24), 57), ("listed_walk", (63, 24), 64)],
 )
 def test_names_the_decided_lookup_of_a_key_the_path_asked_about_before(
-    function: str, seed: dict[str, int], at: tuple[int, int], missed: int
+    function: str, at: tuple[int, int], missed: int
 ) -> None:
-    result = run_pyct(f"{SETTLED}::{function}", json.dumps({"d": seed}), "--plateau", "5")
+    result = run_pyct(f"{WALK_KEYS}::{function}", '{"d": {"a": 9}}', "--plateau", "5")
 
     assert result.returncode == 0, result.stderr
     causes = summary_line(result.stdout)["why_uncovered"]
@@ -426,5 +429,6 @@ def test_names_the_decided_lookup_of_a_key_the_path_asked_about_before(
     [cause] = [entry for entry in causes if missed in entry["lines"]]
     line, col = at
     assert cause["reason"] == "not taken", cause
-    assert cause["condition"] == {"file": SETTLED_FILE, "line": line, "col": col, "side": False}
+    condition = {"file": WALK_KEYS_FILE, "line": line, "col": col, "side": False}
+    assert cause["condition"] == condition
     assert cause["tries"]["unsat"] == 0 and cause["tries"]["decided"] > 0, cause

@@ -162,7 +162,9 @@ def test_loops_over_a_list_and_a_dict() -> None:
     passes = [(3, [">", ["len", "items"], j]) for j in range(4)]
     items = [(4, [">", ["[]", "items", j], 10]) for j in range(3)]
     keys = [(6, [">", ["len", "limits"], j]) for j in range(3)]
-    values = [(7, ["<", ["[]", "limits", "'a'"], 0]), (7, ["<", ["[]", "limits", "'b'"], 0])]
+    # each value under the key the dict's own walk reads at that pass
+    # (let-the-solver-choose-a-small-dict-s-walk-key)
+    values = [(7, ["<", ["[]", "limits", ["key", "limits", at]], 0]) for at in range(2)]
     forks = [(fork["line"], fork["expression"]) for fork in forks_of(lines[0])]
     assert [fork for fork in forks if fork[0] in (4, 7)] == items + values
     assert [fork for fork in forks if fork[0] == 3] == passes
