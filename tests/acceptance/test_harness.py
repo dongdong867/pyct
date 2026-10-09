@@ -8,6 +8,7 @@ import subprocess
 import pytest
 
 from tests.acceptance.harness import (
+    answered,
     argument,
     check_every_uncovered_line_explained_once,
     forks_of,
@@ -166,3 +167,15 @@ def test_took_finds_a_fork_by_its_line_expression_and_side() -> None:
     assert not took(lines, (5, "x", True))
     assert not took(lines, (4, "y", True))
     assert not took(lines[:1], (4, "x", True))
+
+
+def test_answered_leaves_out_only_a_last_input_the_deadline_cut() -> None:
+    cut: dict[str, object] = {
+        "failure": {"kind": "timeout", "detail": "deadline passed"},
+        "mismatch_at": 3,
+    }
+    ran: dict[str, object] = {"failure": None, "mismatch_at": None}
+
+    assert answered([ran, cut]) == [ran]
+    assert answered([cut, ran]) == [cut, ran]
+    assert answered([]) == []

@@ -163,6 +163,18 @@ def input_lines(stdout: str) -> list[dict[str, object]]:
     return lines[:-1]
 
 
+def answered(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The input lines without a last one the run's deadline cut short.
+
+    That input left its plan where the budget stopped it, not where an
+    answer took it, so a check that every answer stays on its plan leaves
+    it out. Only the last input can be cut so.
+    """
+    if lines and lines[-1]["failure"] == {"kind": "timeout", "detail": "deadline passed"}:
+        return lines[:-1]
+    return lines
+
+
 def summary_line(stdout: str) -> dict[str, object]:
     """The line that closes stdout. It carries ``stopped``; no input line does."""
     lines = stdout.splitlines()

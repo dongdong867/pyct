@@ -13,6 +13,7 @@ import pytest
 
 from tests.acceptance.harness import (
     REPO_ROOT,
+    answered,
     first_line,
     forks_of,
     input_lines,
@@ -244,8 +245,8 @@ def test_reads_a_row_it_tested() -> None:
 
 
 # record-decided-checks-on-lists-strings-and-second-walks-compares-a-measured-length
-# serial: a 5 s run whose last input the budget cuts short leaves the plan there, which a
-# parallel run's load makes happen
+# serial, and its last input left out of the plan check when the deadline cut it short: a parallel
+# run's load makes that happen more often
 @pytest.mark.serial
 @pytest.mark.parametrize(
     ("target", "seed", "tested"),
@@ -272,7 +273,8 @@ def test_compares_a_measured_length(target: str, seed: str, tested: str) -> None
         assert summary_line(result.stdout)["stopped"] == "no fork to flip"
         return
     assert {filled, empty} <= covered(result.stdout, file)
-    assert all(printed["mismatch_at"] is None for printed in solver_lines(result.stdout))
+    solved = [line for line in answered(input_lines(result.stdout)) if line["source"] == "solver"]
+    assert all(printed["mismatch_at"] is None for printed in solved)
 
 
 # record-decided-checks-on-lists-strings-and-second-walks-asks-a-walked-dict-s-length-with-no-unsat
