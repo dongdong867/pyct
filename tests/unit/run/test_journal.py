@@ -137,8 +137,9 @@ def test_a_full_journal_keeps_what_came_before_and_says_it_is_full() -> None:
     reading = read(buffer)
     assert reading.lines == frozenset({2})
     assert not reading.ended
-    assert reading.problem is not None
-    assert "full" in reading.problem
+    assert reading.problem is None
+    assert reading.bound is not None
+    assert "full" in reading.bound
 
 
 def test_a_fork_that_cannot_be_encoded_stops_the_journal() -> None:
@@ -372,8 +373,9 @@ def test_a_downgrade_that_does_not_fit_is_not_grown_later() -> None:
 
     reading = read(buffer)
     assert reading.downgrades == ()
-    assert reading.problem is not None
-    assert "full" in reading.problem
+    assert reading.problem is None
+    assert reading.bound is not None
+    assert "full" in reading.bound
 
 
 def test_a_part_that_does_not_fit_leaves_its_fork_out() -> None:
@@ -383,8 +385,9 @@ def test_a_part_that_does_not_fit_leaves_its_fork_out() -> None:
 
     reading = read(buffer)
     assert reading.branches == ()
-    assert reading.problem is not None
-    assert "full" in reading.problem
+    assert reading.problem is None
+    assert reading.bound is not None
+    assert "full" in reading.bound
 
 
 def test_the_first_reason_the_writer_stopped_is_the_one_kept() -> None:
@@ -396,8 +399,9 @@ def test_the_first_reason_the_writer_stopped_is_the_one_kept() -> None:
     writer.fork(Branch(expression=1.5, taken=True, site=SITE))  # type: ignore[arg-type]
 
     reading = read(buffer)
-    assert reading.problem is not None
-    assert "full" in reading.problem
+    assert reading.problem is None
+    assert reading.bound is not None
+    assert "full" in reading.bound
 
 
 def test_a_state_of_no_known_kind_is_unreadable() -> None:

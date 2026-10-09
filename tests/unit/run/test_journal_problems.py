@@ -1,6 +1,7 @@
 """A journal problem an input's process meets while pyct looks at its journal: the input's line
-says pyct failed, with the detail and the facts before the problem that one reading at the end
-gives. The input's process is a child this test forks, and it writes its journal by hand.
+says pyct failed, or for a full journal that the input outgrew it, with the detail and the facts
+before the problem that one reading at the end gives. The input's process is a child this test
+forks, and it writes its journal by hand.
 """
 
 import mmap
@@ -69,7 +70,7 @@ _BEFORE_LINES = frozenset({2})
 _BEFORE_DOWNGRADES = (DowngradeCount("__xor__", 3, SITE),)
 
 
-def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_facts_before() -> None:
+def test_a_full_journal_ends_its_input_as_its_own_with_the_facts_before() -> None:
     def fills(buffer: mmap.mmap, writer: JournalWriter) -> None:
         _facts_before(writer)
         for line in range(3, 10_000):
@@ -80,7 +81,7 @@ def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_facts_before() -> 
     size = RECORDS + 4096
     result = _input_writing(size, fills)
 
-    assert result.failure == Failure(FailureKind.PYCT_BUG, f"the journal is full at {size} bytes")
+    assert result.failure == Failure(FailureKind.TOO_LONG, f"the journal is full at {size} bytes")
     assert result.branches == (FORK,)
     assert result.downgrades == _BEFORE_DOWNGRADES
     assert result.lines > _BEFORE_LINES

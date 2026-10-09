@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import inspect
 import sys
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
 
@@ -15,7 +16,7 @@ from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch, Fact
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, close, deadline
-from pyct.execution.tally import Tally, Watch
+from pyct.execution.tally import Tally, Watch, too_long
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
@@ -100,7 +101,7 @@ def execute(
         lines=frozenset(tally.lines),
         branches=tuple(tally.branches),
         downgrades=tally.counted(),
-        failure=_failure(ctx.fn, ending),
+        failure=_ended(tally, _failure(ctx.fn, ending)),
         facts=tuple(tally.facts),
     )
 
@@ -130,12 +131,48 @@ def _call(
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
-        with block:
+        with block, _room_below(_depth(sys._getframe()) - 1):
             called = True
             ctx.fn(*positional, **keywords)
     except caught as error:
         return _Ending(error=error, called=called)
     return _Ending(error=None, called=called)
+
+
+@contextlib.contextmanager
+def _room_below(frames: int) -> Generator[None]:
+    """Raise the recursion limit by the ``frames`` pyct holds below the target while it runs.
+
+    Called from a module's top level, a target's first frame sits on one
+    frame; under pyct it sits on pyct's own, so the target may recurse as
+    deep as plain Python lets it. The limit comes back after the call,
+    unless the target set one of its own meanwhile, which stays.
+    """
+    before = sys.getrecursionlimit()
+    raised = before + frames
+    sys.setrecursionlimit(raised)
+    try:
+        yield
+    finally:
+        if sys.getrecursionlimit() == raised:
+            sys.setrecursionlimit(before)
+
+
+def _depth(frame: types.FrameType | None) -> int:
+    """How many frames the stack holds from ``frame`` down, ``frame`` included."""
+    depth = 0
+    while frame is not None:
+        depth += 1
+        frame = frame.f_back
+    return depth
+
+
+def _ended(tally: Tally, failure: Failure | None) -> Failure | None:
+    """How the call ended as its line says: ``too_long`` once it went past the forks a call
+    keeps, unless pyct failed, since a pyct bug must reach the exit code."""
+    if tally.past_bound and (failure is None or failure.kind is not FailureKind.PYCT_BUG):
+        return too_long()
+    return failure
 
 
 def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:

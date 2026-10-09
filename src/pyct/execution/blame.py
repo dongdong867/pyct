@@ -26,16 +26,28 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     through, since the compare the target wrote had none. A raise before the
     target was ``called`` is pyct's own setup. A pyct bug keeps the whole
     traceback, because the frames are what a person needs to fix pyct.
+
+    A RecursionError is about the whole stack, so it is pyct's only when
+    pyct's own frames hold at least half of the frames below the target: a
+    target's recursion hits the limit wherever the deepest frame happens to
+    be, often in the few frames pyct runs for a fork on top of it.
     """
-    if not raised_by_target(error) and any(
-        _is_pyct_frame(tb.tb_frame.f_code) for tb in _below_target(fn, error, called)
-    ):
+    below = _below_target(fn, error, called)
+    if not raised_by_target(error) and _pyct_s(error, below):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=one_line(error),
             traceback="".join(traceback.format_exception(error)),
         )
     return Failure(kind=FailureKind.TARGET_RAISED, detail=one_line(error))
+
+
+def _pyct_s(error: BaseException, below: tuple[types.TracebackType, ...]) -> bool:
+    """Whether the frames ``below`` the target make the raise pyct's own."""
+    pyct = sum(_is_pyct_frame(entry.tb_frame.f_code) for entry in below)
+    if isinstance(error, RecursionError):
+        return 2 * pyct >= len(below) > 0
+    return pyct > 0
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:

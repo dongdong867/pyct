@@ -7,6 +7,7 @@ def test_the_kinds_are_the_words_on_the_line() -> None:
         "target_raised",
         "system_exit",
         "crashed",
+        "too_long",
         "pyct_bug",
     ]
 

@@ -42,7 +42,8 @@ FACTS = Reading(
 NOT_ENDED = FACTS
 ENDED = dataclasses.replace(FACTS, ended=True, end=RAISED)
 RETURNED = dataclasses.replace(FACTS, ended=True, end=None)
-INCOMPLETE = dataclasses.replace(FACTS, problem="the journal is full")
+INCOMPLETE = dataclasses.replace(FACTS, problem="could not keep a fork the input took")
+BOUNDED = dataclasses.replace(FACTS, bound="the journal is full at 4096 bytes")
 NOT_STARTED = dataclasses.replace(FACTS, started=False)
 EXITED = Waited(signal=None, code=0)
 SEGFAULTED = Waited(signal=signal.SIGSEGV, code=None)
@@ -55,8 +56,20 @@ KILLED = Waited(signal=signal.SIGKILL, code=None, killed=True)
         pytest.param(
             INCOMPLETE,
             EXITED,
-            Failure(kind=FailureKind.PYCT_BUG, detail="the journal is full"),
+            Failure(kind=FailureKind.PYCT_BUG, detail="could not keep a fork the input took"),
             id="incomplete-facts-beat-everything",
+        ),
+        pytest.param(
+            BOUNDED,
+            KILLED,
+            Failure(kind=FailureKind.TOO_LONG, detail="the journal is full at 4096 bytes"),
+            id="the-input-s-bound-beats-a-kill",
+        ),
+        pytest.param(
+            dataclasses.replace(BOUNDED, problem="could not read the input's facts at byte 8"),
+            EXITED,
+            Failure(kind=FailureKind.PYCT_BUG, detail="could not read the input's facts at byte 8"),
+            id="a-problem-beats-the-bound",
         ),
         pytest.param(ENDED, KILLED, RAISED, id="the-calls-own-ending-beats-a-late-kill"),
         pytest.param(RETURNED, SEGFAULTED, None, id="a-call-that-returned-returned"),

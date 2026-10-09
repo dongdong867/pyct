@@ -294,15 +294,19 @@ def ending(reading: Reading, waited: Waited) -> ExecutionResult:
 def _failure(reading: Reading, waited: Waited) -> Failure | None:
     """How the input ended, by the first rule that holds.
 
-    Facts known to be incomplete are a pyct bug, since a pyct bug must reach
-    the exit code. A call that wrote its ending ended that way, as it would
-    have in pyct's own process, even when pyct's kill landed as the process
-    was exiting. Without one, the process was ended before its call was: by
+    Facts known to be incomplete through pyct's fault are a pyct bug, since
+    a pyct bug must reach the exit code. A journal that reached the bound on
+    what pyct keeps for one input ended the input there, as its own ending,
+    since its path outgrew the bound. A call that wrote its ending ended that
+    way, as it would have in pyct's own process, even when pyct's kill landed
+    as the process was exiting. Without one, the process was ended before its call was: by
     pyct at the deadline; before pyct's side of it came up, which is pyct's
     failure; or by a signal or an exit.
     """
     if reading.problem is not None:
         return Failure(kind=FailureKind.PYCT_BUG, detail=reading.problem)
+    if reading.bound is not None:
+        return Failure(kind=FailureKind.TOO_LONG, detail=reading.bound)
     if reading.ended:
         return reading.end
     if waited.killed:

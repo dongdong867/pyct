@@ -60,11 +60,14 @@ given before it was written, and a count grows in place only on the entry
 it was written for: whatever the writer's own notes lost, a later fact
 still reads back as written.
 
-A journal past ``CAPACITY``, or a fact the writer cannot encode, stops the
-writer: it notes why and writes nothing more. A record the reader cannot
-read stops the reading at its byte. Either way the facts before it stay,
-and the input's line says pyct failed, since its facts are known to be
-incomplete.
+A journal past ``CAPACITY`` is a bound on what pyct keeps for one input,
+as the tally's bound on forks is: the writer notes it and writes nothing
+more, while the input runs on until it ends or its deadline ends it. The
+bound is the input's own, since its path outgrew it, so its line ends
+``too_long``. A fact the writer cannot encode stops the writer too, and a
+record the reader cannot read stops the reading at its byte; either way the
+input's line says pyct failed, since its facts are known to be incomplete.
+In every case the facts before the stop stay.
 """
 
 from __future__ import annotations
