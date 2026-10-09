@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+import sys
+import sysconfig
 import traceback
 import types
 from collections.abc import Callable, Iterator
@@ -14,7 +17,16 @@ from pyct.results.failure import Failure, FailureKind
 # the most frames pyct's own code runs on top of the target's for one operation, a fork written to
 # the journal at the deepest, about a dozen, with room to spare. A longer run of pyct's frames
 # at the top of the stack is pyct recursing on its own
-OWN_DEPTH = 40
+MOST_OWN_FRAMES = 40
+
+# where the standard library's and installed packages' code lives: a frame from there is no
+# frame of the target's own, unless it lies in the target's own package
+_OUTSIDE = tuple(
+    os.path.join(path, "")
+    for path in {
+        sysconfig.get_paths()[name] for name in ("stdlib", "platstdlib", "purelib", "platlib")
+    }
+)
 
 
 def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> Failure:
@@ -35,12 +47,12 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     A RecursionError is about the whole stack, and a target's recursion hits
     the limit wherever its deepest frame happens to be, often in the few
     frames pyct runs for a fork on top of it. So it is pyct's only when the
-    run of pyct's frames at the top of the stack, where it was raised, is
-    longer than pyct's own code runs for one operation (``OWN_DEPTH``): pyct
-    recursing on its own.
+    run of pyct's frames at the top of the stack, where it was raised, holds
+    more than pyct's own code runs for one operation (``MOST_OWN_FRAMES``):
+    pyct recursing on its own.
     """
     below = _below_target(fn, error, called)
-    if not raised_by_target(error) and _raised_by_pyct(error, below):
+    if not raised_by_target(error) and _raised_by_pyct(error, below, _home(fn)):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=one_line(error),
@@ -49,27 +61,53 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     return Failure(kind=FailureKind.TARGET_RAISED, detail=one_line(error))
 
 
-def _raised_by_pyct(error: BaseException, below: tuple[types.TracebackType, ...]) -> bool:
+def _raised_by_pyct(
+    error: BaseException, below: tuple[types.TracebackType, ...], home: str | None
+) -> bool:
     """Whether the frames ``below`` the target make the raise pyct's own."""
     if isinstance(error, RecursionError):
-        return _top_run(below) > OWN_DEPTH
+        return _top_run(below, home) > MOST_OWN_FRAMES
     return any(_is_pyct_frame(entry.tb_frame.f_code) for entry in below)
 
 
-def _top_run(below: tuple[types.TracebackType, ...]) -> int:
-    """How many of pyct's frames run together at the top of the stack, where the raise happened.
+def _top_run(below: tuple[types.TracebackType, ...], home: str | None) -> int:
+    """How many of pyct's frames run at the top of the stack, where the raise happened.
 
-    Counted from the deepest frame up: first past the frames that are not
-    pyct's, such as `json`'s that pyct's journal calls, then over pyct's own
-    until a frame that is not pyct's again.
+    Counted from the deepest frame up to the first frame of the target's own
+    code. A frame from outside it, the standard library's or an installed
+    package's, such as `json`'s that pyct's journal calls or `copy`'s, is
+    passed over, so pyct recursing through one still counts.
     """
     run = 0
     for entry in reversed(below):
-        if _is_pyct_frame(entry.tb_frame.f_code):
+        code = entry.tb_frame.f_code
+        if _is_pyct_frame(code):
             run += 1
-        elif run:
+        elif not _outside(code.co_filename, home):
             break
     return run
+
+
+def _outside(file: str, home: str | None) -> bool:
+    """Whether code in ``file`` is from outside the target's own: the standard library's or an
+    installed package's, other than the target's own package at ``home``."""
+    if home is not None and file.startswith(home):
+        return False
+    return file.startswith(_OUTSIDE) or file.startswith("<frozen ")
+
+
+def _home(fn: Callable[..., object]) -> str | None:
+    """The directory of the target's top package, or its module's file when it has none."""
+    module = sys.modules.get(getattr(fn, "__module__", None) or "")
+    if module is None:
+        return None
+    top = sys.modules.get(module.__name__.partition(".")[0], module)
+    file = getattr(top, "__file__", None)
+    if not isinstance(file, str):
+        return None
+    if os.path.basename(file) == "__init__.py":
+        return os.path.join(os.path.dirname(file), "")
+    return file
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:

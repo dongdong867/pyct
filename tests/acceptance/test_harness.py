@@ -169,13 +169,29 @@ def test_took_finds_a_fork_by_its_line_expression_and_side() -> None:
     assert not took(lines[:1], (4, "x", True))
 
 
-def test_answered_leaves_out_only_a_last_input_the_deadline_cut() -> None:
-    cut: dict[str, object] = {
-        "failure": {"kind": "timeout", "detail": "deadline passed"},
-        "mismatch_at": 3,
-    }
-    ran: dict[str, object] = {"failure": None, "mismatch_at": None}
+def _line(failure: object, mismatch_at: int | None, forks: int) -> dict[str, object]:
+    return {"failure": failure, "mismatch_at": mismatch_at, "forks": [{}] * forks}
 
-    assert answered([ran, cut]) == [ran]
-    assert answered([cut, ran]) == [cut, ran]
+
+_CUT = {"kind": "timeout", "detail": "deadline passed"}
+
+
+def test_answered_leaves_out_a_last_input_the_deadline_cut_where_it_stopped() -> None:
+    ran = _line(None, None, 2)
+
+    assert answered([ran, _line(_CUT, 3, 3)]) == [ran]
+    assert answered([ran, _line(_CUT, None, 3)]) == [ran]
     assert answered([]) == []
+
+
+def test_answered_keeps_every_other_line() -> None:
+    ran = _line(None, None, 2)
+    # left its plan before the deadline cut it, at a fork it took
+    departed = _line(_CUT, 1, 3)
+    too_long = _line({"kind": "too_long", "detail": "the journal is full at 9 bytes"}, 3, 3)
+    other_timeout = _line({"kind": "timeout", "detail": "something else"}, 3, 3)
+
+    assert answered([_line(_CUT, 3, 3), ran]) == [_line(_CUT, 3, 3), ran]
+    assert answered([ran, departed]) == [ran, departed]
+    assert answered([ran, too_long]) == [ran, too_long]
+    assert answered([ran, other_timeout]) == [ran, other_timeout]

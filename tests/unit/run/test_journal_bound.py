@@ -2,7 +2,7 @@
 line ends `too_long` with the facts before it, while a fact pyct cannot encode stays pyct's.
 """
 
-from pyct.core.branch import Branch, Site
+from pyct.core.branch import Branch, Fact, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import END_ROOM, RECORDS, JournalWriter
 from pyct.run.journal_reader import read
@@ -72,3 +72,47 @@ def test_an_ending_too_long_for_the_room_left_is_kept_without_its_traceback() ->
     writer.end(Failure(FailureKind.PYCT_BUG, "RuntimeError: boom", "x" * (2 * END_ROOM)))
 
     assert read(buffer).end == Failure(FailureKind.PYCT_BUG, "RuntimeError: boom")
+
+
+def test_a_pyct_bug_whose_detail_overflows_the_room_still_lands_cut() -> None:
+    buffer = bytearray(RECORDS + 4 * END_ROOM)
+    writer = JournalWriter(buffer)
+    for line in range(1_000_000):
+        writer.line(line)
+    detail = "RuntimeError: " + "x" * 70_000
+
+    writer.end(Failure(FailureKind.PYCT_BUG, detail, "Traceback ..."))
+
+    end = read(buffer).end
+    assert end is not None
+    assert end.kind is FailureKind.PYCT_BUG
+    assert detail.startswith(end.detail)
+    assert end.detail.startswith("RuntimeError: ")
+
+
+def test_a_bound_then_a_full_journal_keeps_the_bound_s_note_and_takes_the_ending() -> None:
+    buffer = bytearray(RECORDS + 4 * END_ROOM)
+    writer = JournalWriter(buffer)
+    note = "the input took more than 2 forks, the most pyct keeps for one input"
+
+    writer.bound(note)
+    for line in range(1_000_000):
+        writer.line(line)
+    writer.end(None)
+
+    reading = read(buffer)
+    assert reading.bound == note
+    assert reading.problem is None
+    assert reading.ended
+
+
+def test_an_unencodable_fact_after_the_bound_is_still_a_problem() -> None:
+    buffer = bytearray(RECORDS + 4096)
+    writer = JournalWriter(buffer)
+
+    writer.bound("the input took more than 2 forks, the most pyct keeps for one input")
+    writer.fact(Fact(expression=["==", "x", object()], taken=True, site=SITE))  # type: ignore[list-item]
+
+    assert read(buffer).problem == (
+        "could not keep a fact the input's path holds: a leaf of type object"
+    )

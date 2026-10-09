@@ -191,13 +191,20 @@ class JournalWriter:
 
     def end(self, failure: Failure | None) -> None:
         """Write how the call ended, into ``END_ROOM`` when the journal is full. The reader
-        takes it as the input's own ending. One whose traceback does not fit goes without it."""
+        takes it as the input's own ending.
+
+        One that does not fit goes without its traceback, then with its detail
+        cut by half until it fits, so its kind always lands: a pyct bug must
+        reach the exit code.
+        """
         if failure is None:
             self._json(END, None)
             return
         kind, detail = failure.kind.value, failure.detail
-        if not self._json(END, [kind, detail, failure.traceback]) and failure.traceback:
-            self._json(END, [kind, detail, None])
+        if self._json(END, [kind, detail, failure.traceback]):
+            return
+        while not self._json(END, [kind, detail, None]) and detail:
+            detail = detail[: len(detail) // 2]
 
     def detach(self) -> None:
         """Write nothing more. A process the input's process forks calls this in its child."""
@@ -263,10 +270,10 @@ class JournalWriter:
 
     def _stop(self, state: int, note: str) -> None:
         """Note why nothing more is written, and write nothing more. A bound noted before stays
-        the note."""
+        the note of a full journal, while a fact the writer cannot encode replaces it."""
         if not self._open:
             return
-        if self._words[STATE] & 0xFFFF != BOUNDED:
+        if state != FULL or self._words[STATE] & 0xFFFF != BOUNDED:
             self._note(state, note)
         self._open = False
         self._full = state == FULL
