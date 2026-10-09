@@ -2,7 +2,7 @@
 raised. Frames from outside the target's own code, the standard library's, do not end the run;
 a frame of the target's does. More than ``MOST_OWN_FRAMES`` of pyct's in the run is pyct's own."""
 
-import sysconfig
+import os
 from collections.abc import Callable
 
 from pyct.core.branch import PYCT_DIR
@@ -11,7 +11,7 @@ from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 
 # a file under the standard library's directory, as a frame of `copy`'s or `json`'s names one
-_STDLIB_FILE = f"{sysconfig.get_paths()['stdlib']}/pyct_test_stdlib.py"
+_STDLIB_FILE = os.path.join(os.path.dirname(os.__file__), "pyct_test_stdlib.py")
 
 
 def _compiled(source: str, file: str) -> dict[str, object]:

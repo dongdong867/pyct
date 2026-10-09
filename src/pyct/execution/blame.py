@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 import sys
-import sysconfig
 import traceback
 import types
 from collections.abc import Callable, Iterator
@@ -20,12 +19,18 @@ from pyct.results.failure import Failure, FailureKind
 MOST_OWN_FRAMES = 40
 
 # where the standard library's and installed packages' code lives: a frame from there is no
-# frame of the target's own, unless it lies in the target's own package
+# frame of the target's own, unless it lies in the target's own package. Read off `os`'s file
+# and the path rather than `sysconfig`, which a target may ship a module of its own as
 _OUTSIDE = tuple(
     os.path.join(path, "")
-    for path in {
-        sysconfig.get_paths()[name] for name in ("stdlib", "platstdlib", "purelib", "platlib")
-    }
+    for path in (
+        os.path.dirname(os.__file__),
+        *(
+            entry
+            for entry in sys.path
+            if os.path.basename(entry) in ("site-packages", "dist-packages")
+        ),
+    )
 )
 
 
