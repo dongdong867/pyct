@@ -37,6 +37,7 @@ def test_a_tally_keeps_the_forks_up_to_its_bound_and_then_only_lines_and_downgra
     assert heard.told == [
         ("fork", _fork(0)),
         ("fork", _fork(1)),
+        ("bound", "the input took more than 2 forks, the most pyct keeps for one input"),
         ("line", 9),
         ("downgrade", "__xor__", 1),
     ]

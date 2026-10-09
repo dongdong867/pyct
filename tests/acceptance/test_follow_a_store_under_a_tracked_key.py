@@ -205,6 +205,9 @@ def test_walks_the_stored_key() -> None:
 # a store under a tracked key between a walk and the lookups of the keys it handed out, one
 # after a popitem, and a removal between them with a second walk: no answer leaves the plan
 # (review of PR #131)
+# serial: a 5 s run whose last input the budget cuts short leaves the plan there, which a
+# parallel run's load makes happen
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed"),
     [
@@ -273,6 +276,9 @@ def test_raises_a_missing_key_as_python_does(function: str) -> None:
 
 # a walk hands out the key a store under a tracked key put there, one Python shares; its lookup
 # leaves the tracked key free, so a later fork on it is flipped (review of PR #131, round 2)
+# serial: a 5 s run whose last input the budget cuts short leaves the plan there, which a
+# parallel run's load makes happen
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed", "line", "int_keyed"),
     [
@@ -298,6 +304,9 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
 # a key Python shares on a dict changed under a tracked key runs as where that change is
 # Python's own, as before this story: a store through a walked shared key, a walk of a copy,
 # and a literal read after a walk (review of PR #131, round 3). Each covers the line it did
+# serial: a 5 s run whose last input the budget cuts short leaves the plan there, which a
+# parallel run's load makes happen
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed", "line", "on_plan"),
     [

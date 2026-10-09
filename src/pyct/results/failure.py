@@ -9,8 +9,9 @@ class FailureKind(StrEnum):
 
     ``crashed`` is a signal ending the input's process, which only a process
     of the input's own survives. ``too_long`` is an input whose path outgrew
-    what pyct keeps for one input, which only a process of the input's own
-    bounds; like ``timeout``, it is the input's own ending, never pyct's.
+    what pyct keeps for one input: more forks than a call keeps, wherever it
+    runs, or a full journal in a process of its own. Like ``timeout``, it is
+    the input's own ending, never pyct's.
     """
 
     TIMEOUT = "timeout"

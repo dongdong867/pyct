@@ -35,6 +35,9 @@ class Heard:
     def downgrade(self, name: str, site: Site, count: int) -> None:
         self.told.append(("downgrade", name, count))
 
+    def bound(self, note: str) -> None:
+        self.told.append(("bound", note))
+
 
 def test_a_tally_keeps_the_forks_in_call_order() -> None:
     other = Branch(expression=[">", "y", 0], taken=False, site=SITE)

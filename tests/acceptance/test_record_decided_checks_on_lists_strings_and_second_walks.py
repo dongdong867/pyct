@@ -244,6 +244,9 @@ def test_reads_a_row_it_tested() -> None:
 
 
 # record-decided-checks-on-lists-strings-and-second-walks-compares-a-measured-length
+# serial: a 5 s run whose last input the budget cuts short leaves the plan there, which a
+# parallel run's load makes happen
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("target", "seed", "tested"),
     [

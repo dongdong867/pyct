@@ -102,3 +102,39 @@ def test_a_limit_the_target_sets_stays_the_target_s() -> None:
         assert sys.getrecursionlimit() == before + 777
     finally:
         sys.setrecursionlimit(before)
+
+
+def test_a_runaway_in_pyct_s_frames_on_top_of_a_deep_target_is_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    broken = _in_pyct("def broken():\n    return broken()\n", "broken")
+
+    def runaway_on_top(x: int) -> bool:
+        def down(depth: int) -> bool:
+            if depth == 0:
+                return bool(x < 10)
+            return down(depth - 1)
+
+        # the target's own frames take most of the stack, and pyct runs away in what is left
+        return down(sys.getrecursionlimit() - 150)
+
+    monkeypatch.setattr(values, "caller_site", broken)
+
+    result = execute(ExecutionContext(fn=runaway_on_top, file=__file__), {"x": 1})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG
+    assert result.failure.detail.startswith("RecursionError")
+
+
+def test_a_target_that_recurses_through_a_pyct_frame_at_every_level_is_the_target_s() -> None:
+    through = _in_pyct("def through(f, n):\n    return f(n)\n", "through")
+
+    def again(n: int) -> object:
+        return through(again, n + 1)
+
+    result = execute(ExecutionContext(fn=again, file=__file__), {"n": 0})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.TARGET_RAISED, result.failure.traceback
+    assert result.failure.detail == _plain_recursion_error()

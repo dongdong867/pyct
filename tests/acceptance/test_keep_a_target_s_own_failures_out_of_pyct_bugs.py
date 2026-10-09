@@ -90,6 +90,22 @@ def test_an_endless_input_ends_as_its_own_and_the_run_stops_normally(
     assert result.stopped == Stop(StopKind.BUDGET)
 
 
+# keep-a-target-s-own-failures-out-of-pyct-bugs-ends-an-endless-input-as-its-own
+def test_an_input_past_its_bound_that_outlasts_the_deadline_still_ends_as_its_own(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(tally, "MOST_FORKS", 1_000)
+    target = load_target("targets.isolate.endless::outlast")
+
+    # it catches the deadline's raise, so pyct kills its process and it writes no ending
+    result = run(target, {"n": 1}, limits=Limits(budget=Budget(2)), isolation=Isolation.FORK)
+
+    (seed,) = result.records
+    assert seed.failure is not None
+    assert seed.failure.kind is FailureKind.TOO_LONG, seed.failure
+    assert len(seed.forks) == 1_000
+
+
 @pytest.mark.serial
 # keep-a-target-s-own-failures-out-of-pyct-bugs-bounds-one-input-s-record
 def test_an_endless_seed_lists_the_bound_s_forks_and_exits_zero_within_the_margin(
@@ -104,7 +120,14 @@ def test_an_endless_seed_lists_the_bound_s_forks_and_exits_zero_within_the_margi
         "kind": "too_long",
         "detail": "the input took more than 200000 forks, the most pyct keeps for one input",
     }
-    assert len(forks_of(seed)) == 200_000
+    # the forks up to the bound, in the order the call took them: `m > 3`, `n == 7`, then the
+    # loop's test on every pass
+    forks = [(fork["line"], fork["expression"], fork["taken"]) for fork in forks_of(seed)]
+    assert forks[:2] == [(2, [">", "m", 3], False), (4, ["==", "n", 7], True)]
+    # past the line's 100,000 nodes a fork's expression prints cut, as its three nodes
+    passes = {json.dumps([6, [">", "n", 0], True]), json.dumps([6, ["...", 3], True])}
+    assert all(json.dumps(list(fork)) in passes for fork in forks[2:])
+    assert len(forks) == 200_000
     # the README's isolation rule: a second past the deadline for 100,000 forks on a line, and
     # half a second for each further 100,000
     assert run_.wall < budget + 1.5, run_.wall

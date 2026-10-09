@@ -11,6 +11,11 @@ from pyct.core.substitutes import PASSING
 from pyct.core.values import raised_by_target
 from pyct.results.failure import Failure, FailureKind
 
+# the most frames pyct's own code runs on top of the target's for one operation, a fork written to
+# the journal at the deepest, about a dozen, with room to spare. A longer run of pyct's frames
+# at the top of the stack is pyct recursing on its own
+OWN_DEPTH = 40
+
 
 def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> Failure:
     """Say whose the raise was.
@@ -27,13 +32,15 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     target was ``called`` is pyct's own setup. A pyct bug keeps the whole
     traceback, because the frames are what a person needs to fix pyct.
 
-    A RecursionError is about the whole stack, so it is pyct's only when
-    pyct's own frames hold at least half of the frames below the target: a
-    target's recursion hits the limit wherever the deepest frame happens to
-    be, often in the few frames pyct runs for a fork on top of it.
+    A RecursionError is about the whole stack, and a target's recursion hits
+    the limit wherever its deepest frame happens to be, often in the few
+    frames pyct runs for a fork on top of it. So it is pyct's only when the
+    run of pyct's frames at the top of the stack, where it was raised, is
+    longer than pyct's own code runs for one operation (``OWN_DEPTH``): pyct
+    recursing on its own.
     """
     below = _below_target(fn, error, called)
-    if not raised_by_target(error) and _pyct_s(error, below):
+    if not raised_by_target(error) and _raised_by_pyct(error, below):
         return Failure(
             kind=FailureKind.PYCT_BUG,
             detail=one_line(error),
@@ -42,12 +49,27 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
     return Failure(kind=FailureKind.TARGET_RAISED, detail=one_line(error))
 
 
-def _pyct_s(error: BaseException, below: tuple[types.TracebackType, ...]) -> bool:
+def _raised_by_pyct(error: BaseException, below: tuple[types.TracebackType, ...]) -> bool:
     """Whether the frames ``below`` the target make the raise pyct's own."""
-    pyct = sum(_is_pyct_frame(entry.tb_frame.f_code) for entry in below)
     if isinstance(error, RecursionError):
-        return 2 * pyct >= len(below) > 0
-    return pyct > 0
+        return _top_run(below) > OWN_DEPTH
+    return any(_is_pyct_frame(entry.tb_frame.f_code) for entry in below)
+
+
+def _top_run(below: tuple[types.TracebackType, ...]) -> int:
+    """How many of pyct's frames run together at the top of the stack, where the raise happened.
+
+    Counted from the deepest frame up: first past the frames that are not
+    pyct's, such as `json`'s that pyct's journal calls, then over pyct's own
+    until a frame that is not pyct's again.
+    """
+    run = 0
+    for entry in reversed(below):
+        if _is_pyct_frame(entry.tb_frame.f_code):
+            run += 1
+        elif run:
+            break
+    return run
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:

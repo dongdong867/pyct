@@ -41,7 +41,8 @@ class Watch(Protocol):
     first time the call reaches it. A downgrade comes with its site and its
     count so far: a count of 1 starts an entry, and a higher count means the
     last entry grew by one. The tally decides what an entry is; a watch only
-    mirrors it.
+    mirrors it. ``bound`` comes once, when the call goes past the forks it
+    keeps, with the words its line ends on.
     """
 
     def fork(self, branch: Branch) -> None: ...
@@ -51,6 +52,8 @@ class Watch(Protocol):
     def line(self, number: int) -> None: ...
 
     def downgrade(self, name: str, site: Site, count: int) -> None: ...
+
+    def bound(self, note: str) -> None: ...
 
 
 class Tally:
@@ -65,8 +68,9 @@ class Tally:
     nothing.
 
     Once the call has taken ``MOST_FORKS`` forks it is ``past_bound``: it
-    keeps no fork or fact after them, and tells the watch of none, while the
-    lines and downgrades the call reaches are still kept.
+    tells the watch so once, and keeps no fork or fact after them nor tells
+    the watch of one, while the lines and downgrades the call reaches are
+    still kept.
     """
 
     def __init__(self, watch: Watch | None = None) -> None:
@@ -102,6 +106,8 @@ class Tally:
         if isinstance(item, Branch):
             if len(self.branches) == MOST_FORKS:
                 self.past_bound = True
+                if self.watch is not None:
+                    self.watch.bound(too_long().detail)
                 return
             self.branches.append(item)
             if self.watch is not None:

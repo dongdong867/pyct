@@ -24,6 +24,9 @@ class Heard:
     def downgrade(self, name: str, site: Site, count: int) -> None:
         self.told.append(("downgrade", name, site.line, count))
 
+    def bound(self, note: str) -> None:
+        self.told.append(("bound", note))
+
 
 # compiled under a name of its own, so only its lines are traced, not the watch's
 FORKS_THEN_RAISES = """\

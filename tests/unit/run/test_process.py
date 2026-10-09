@@ -66,6 +66,20 @@ KILLED = Waited(signal=signal.SIGKILL, code=None, killed=True)
             id="the-input-s-bound-beats-a-kill",
         ),
         pytest.param(
+            dataclasses.replace(
+                BOUNDED, ended=True, end=Failure(kind=FailureKind.PYCT_BUG, detail="boom")
+            ),
+            EXITED,
+            Failure(kind=FailureKind.PYCT_BUG, detail="boom"),
+            id="a-pyct-bug-ending-beats-the-bound",
+        ),
+        pytest.param(
+            dataclasses.replace(BOUNDED, ended=True, end=RAISED),
+            EXITED,
+            Failure(kind=FailureKind.TOO_LONG, detail="the journal is full at 4096 bytes"),
+            id="the-bound-beats-the-target-s-own-ending",
+        ),
+        pytest.param(
             dataclasses.replace(BOUNDED, problem="could not read the input's facts at byte 8"),
             EXITED,
             Failure(kind=FailureKind.PYCT_BUG, detail="could not read the input's facts at byte 8"),

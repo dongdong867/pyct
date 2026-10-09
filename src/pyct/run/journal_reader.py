@@ -31,6 +31,7 @@ from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import (
+    BOUNDED,
     CARRY_ON,
     COMMITTED,
     COUNTED,
@@ -162,7 +163,8 @@ def _unreadable(at: int) -> str:
 
 @dataclass(frozen=True)
 class _Stop:
-    """Why the writer stopped: at the input's bound, or on a fact it could not encode."""
+    """Why the writer stopped: at the input's bound, or on a fact it could not encode. A call
+    that went past the forks it keeps notes its bound while the writer goes on."""
 
     bound: str | None = None
     problem: str | None = None
@@ -174,10 +176,10 @@ def _noted(view: memoryview) -> _Stop:
     state, length = word & 0xFFFF, word >> 16
     if state == OPEN:
         return _Stop()
-    if state not in (FULL, UNENCODABLE):
+    if state not in (FULL, UNENCODABLE, BOUNDED):
         raise _UnreadableError(STATE * WORD.size)
     note = bytes(view[NOTE_AT : NOTE_AT + min(length, NOTE_SIZE)]).decode("utf-8", "replace")
-    return _Stop(bound=note) if state == FULL else _Stop(problem=note)
+    return _Stop(problem=note) if state == UNENCODABLE else _Stop(bound=note)
 
 
 def _committed(view: memoryview) -> int:

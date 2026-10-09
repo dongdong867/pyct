@@ -126,8 +126,9 @@ def test_bytes_past_the_committed_mark_are_not_read() -> None:
     assert reading.problem is None
 
 
-def test_a_full_journal_keeps_what_came_before_and_says_it_is_full() -> None:
-    buffer = journal(RECORDS + LINE_RECORD)
+def test_a_full_journal_keeps_what_came_before_says_it_is_full_and_takes_the_ending() -> None:
+    # two records' bytes: a quarter of them is the ending's room, so one line fits before it
+    buffer = journal(RECORDS + 2 * LINE_RECORD)
     writer = JournalWriter(buffer)
 
     writer.line(2)
@@ -136,7 +137,7 @@ def test_a_full_journal_keeps_what_came_before_and_says_it_is_full() -> None:
 
     reading = read(buffer)
     assert reading.lines == frozenset({2})
-    assert not reading.ended
+    assert reading.ended
     assert reading.problem is None
     assert reading.bound is not None
     assert "full" in reading.bound

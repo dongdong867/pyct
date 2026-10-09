@@ -3,7 +3,8 @@ line ends `too_long` with the facts before it, while a fact pyct cannot encode s
 """
 
 from pyct.core.branch import Branch, Site
-from pyct.run.journal import RECORDS, JournalWriter
+from pyct.results.failure import Failure, FailureKind
+from pyct.run.journal import END_ROOM, RECORDS, JournalWriter
 from pyct.run.journal_reader import read
 
 SITE = Site(file="t.py", line=3, col=7)
@@ -31,3 +32,43 @@ def test_an_unencodable_fact_stays_a_problem_and_sets_no_bound() -> None:
     reading = read(buffer)
     assert reading.bound is None
     assert reading.problem == "could not keep a fork the input took: a leaf of type object"
+
+
+def test_a_bound_the_call_passed_is_noted_while_the_writer_goes_on() -> None:
+    buffer = bytearray(RECORDS + 4096)
+    writer = JournalWriter(buffer)
+
+    writer.line(2)
+    writer.bound("the input took more than 2 forks, the most pyct keeps for one input")
+    writer.line(5)
+
+    reading = read(buffer)
+    assert reading.bound == "the input took more than 2 forks, the most pyct keeps for one input"
+    assert reading.problem is None
+    assert reading.lines == frozenset({2, 5})
+
+
+def test_a_full_journal_still_takes_the_call_s_ending() -> None:
+    buffer = bytearray(RECORDS + 4 * END_ROOM)
+    writer = JournalWriter(buffer)
+    for line in range(1_000_000):
+        writer.line(line)
+    bug = Failure(FailureKind.PYCT_BUG, "RuntimeError: boom", "Traceback ...\nRuntimeError: boom\n")
+
+    writer.end(bug)
+
+    reading = read(buffer)
+    assert reading.bound is not None
+    assert reading.ended
+    assert reading.end == bug
+
+
+def test_an_ending_too_long_for_the_room_left_is_kept_without_its_traceback() -> None:
+    buffer = bytearray(RECORDS + 4 * END_ROOM)
+    writer = JournalWriter(buffer)
+    for line in range(1_000_000):
+        writer.line(line)
+
+    writer.end(Failure(FailureKind.PYCT_BUG, "RuntimeError: boom", "x" * (2 * END_ROOM)))
+
+    assert read(buffer).end == Failure(FailureKind.PYCT_BUG, "RuntimeError: boom")

@@ -131,7 +131,8 @@ def _call(
     called = False
     caught = BaseException if ctx.alone else (DeadlineError, SystemExit, Exception)
     try:
-        with block, _room_below(_depth(sys._getframe()) - 1):
+        # the limit goes back after the block, where no alarm of the call's can land
+        with _room_below(_depth(sys._getframe()) - 1), block:
             called = True
             ctx.fn(*positional, **keywords)
     except caught as error:
