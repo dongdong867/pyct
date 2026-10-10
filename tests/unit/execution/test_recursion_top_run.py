@@ -2,10 +2,17 @@
 raised. Frames from outside the target's own code, the standard library's, do not end the run;
 a frame of the target's does. More than ``MOST_OWN_FRAMES`` of pyct's in the run is pyct's own."""
 
+import importlib
 import os
+import sys
+import types
 from collections.abc import Callable
+from pathlib import Path
+
+import pytest
 
 from pyct.core.branch import PYCT_DIR
+from pyct.execution import blame
 from pyct.execution.blame import MOST_OWN_FRAMES
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
@@ -127,3 +134,80 @@ def test_a_target_s_recursion_through_the_standard_library_stays_the_target_s() 
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.TARGET_RAISED, result.failure.traceback
+
+
+# a target's own recursion through a frame of pyct's on every level, from a package installed
+# where libraries are; the test sets THROUGH to that frame's function
+_INSTALLED_DEEP = """
+THROUGH = None
+
+def deep(n):
+    if n <= 0:
+        return 0
+    return 1 + THROUGH(deep, n - 1)
+"""
+
+
+def _installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, *, namespace: bool
+) -> Callable[..., object]:
+    """``deep`` from a scratch package ``name`` under a folder blame reads as installed code."""
+    root = tmp_path / "site-packages"
+    package = root / name
+    package.mkdir(parents=True)
+    if not namespace:
+        (package / "__init__.py").write_text("")
+    (package / "walk.py").write_text(_INSTALLED_DEEP)
+    monkeypatch.setattr(blame, "_OUTSIDE", (*blame._OUTSIDE, os.path.join(str(root), "")))
+    monkeypatch.syspath_prepend(str(root))
+    module = importlib.import_module(f"{name}.walk")
+    monkeypatch.setitem(sys.modules, name, sys.modules[name])
+    monkeypatch.setitem(sys.modules, f"{name}.walk", module)
+    through = _compiled("def through(f, n):\n    return f(n)\n", f"{PYCT_DIR}/through.py")
+    setattr(module, "THROUGH", through["through"])  # noqa: B010 - set on a module made at run time
+    return _named(vars(module), "deep")
+
+
+@pytest.mark.parametrize("namespace", [False, True], ids=["package", "namespace-package"])
+def test_an_installed_target_s_own_recursion_stays_the_target_s(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, namespace: bool
+) -> None:
+    name = f"pyct_installed_{'ns' if namespace else 'pkg'}"
+    deep = _installed(tmp_path, monkeypatch, name, namespace=namespace)
+
+    result = execute(ExecutionContext(fn=deep, file=str(tmp_path)), {"n": 100_000})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.TARGET_RAISED, result.failure.traceback
+
+
+# pyct's own runaway through code a dataclass generates for a class of pyct's
+_GENERATED = """
+from dataclasses import dataclass
+
+@dataclass
+class Loop:
+    rest: object = None
+
+def run_away():
+    first, second = Loop(), Loop()
+    first.rest, second.rest = first, second
+    return first == second
+"""
+
+
+def test_a_runaway_of_pyct_s_through_generated_code_is_a_pyct_bug(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = types.ModuleType("pyct.generated_for_a_test")
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    exec(compile(_GENERATED, f"{PYCT_DIR}/generated_for_a_test.py", "exec"), vars(module))
+    run_away = _named(vars(module), "run_away")
+
+    def target(x: int) -> object:
+        return run_away()
+
+    result = execute(ExecutionContext(fn=target, file=__file__), {"x": 1})
+
+    assert result.failure is not None
+    assert result.failure.kind is FailureKind.PYCT_BUG, result.failure

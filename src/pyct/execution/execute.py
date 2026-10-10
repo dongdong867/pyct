@@ -145,11 +145,10 @@ def _room_below(frames: int) -> Generator[None]:
     """Raise the recursion limit by the ``frames`` pyct holds below the target while it runs.
 
     Called from a module's top level, a target's first frame sits on one
-    frame; under pyct it sits on pyct's own, so a target recursing through
-    its own calls may go as deep as plain Python lets it. A recursion that
-    passes through pyct's frames at every level, as through a substituted
-    `in`, still goes less deep (known-limits C5). The limit comes back after
-    the call, unless the target set one of its own meanwhile, which stays.
+    frame; under pyct it sits on pyct's own. The limit grows by those frames
+    alone, so the target's own frames get the room plain Python gives them
+    below its first frame. The limit comes back after the call, unless the
+    target set one of its own meanwhile, which stays.
     """
     before = sys.getrecursionlimit()
     raised = before + frames

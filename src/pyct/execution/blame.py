@@ -7,6 +7,7 @@ import sys
 import traceback
 import types
 from collections.abc import Callable, Iterator
+from dataclasses import dataclass
 
 from pyct.core.branch import PYCT_DIR
 from pyct.core.substitutes import PASSING
@@ -67,7 +68,7 @@ def blame(fn: Callable[..., object], error: BaseException, *, called: bool) -> F
 
 
 def _raised_by_pyct(
-    error: BaseException, below: tuple[types.TracebackType, ...], home: str | None
+    error: BaseException, below: tuple[types.TracebackType, ...], home: _Home
 ) -> bool:
     """Whether the frames ``below`` the target make the raise pyct's own."""
     if isinstance(error, RecursionError):
@@ -75,44 +76,68 @@ def _raised_by_pyct(
     return any(_is_pyct_frame(entry.tb_frame.f_code) for entry in below)
 
 
-def _top_run(below: tuple[types.TracebackType, ...], home: str | None) -> int:
+@dataclass(frozen=True)
+class _Home:
+    """Where the target's own code lives: its top package's folders, or its module's file, and
+    the top package's name, which code Python generates for it carries."""
+
+    paths: tuple[str, ...]
+    package: str
+
+
+def _top_run(below: tuple[types.TracebackType, ...], home: _Home) -> int:
     """How many of pyct's frames run at the top of the stack, where the raise happened.
 
-    Counted from the deepest frame up to the first frame of the target's own
-    code. A frame from outside it, the standard library's or an installed
-    package's, such as `json`'s that pyct's journal calls or `copy`'s, is
-    passed over, so pyct recursing through one still counts.
+    Counted from the deepest frame up, to the first frame that is neither
+    pyct's nor passed over. Passed over: a file under the standard library's
+    or the installed packages' folders (``_OUTSIDE``) that is not the
+    target's own, such as `json`'s that pyct's journal calls or `copy`'s, and
+    code Python generated, such as a dataclass's `__eq__`, for a module other
+    than pyct's or the target's. Generated code for pyct's own module counts
+    as pyct's frame, and for the target's package it ends the run.
     """
     run = 0
     for entry in reversed(below):
-        code = entry.tb_frame.f_code
-        if _is_pyct_frame(code):
+        frame = entry.tb_frame
+        if _is_pyct_frame(frame.f_code) or _generated_for(frame, "pyct"):
             run += 1
-        elif not _outside(code.co_filename, home):
+        elif not _passed_over(frame, home):
             break
     return run
 
 
-def _outside(file: str, home: str | None) -> bool:
-    """Whether code in ``file`` is from outside the target's own: the standard library's or an
-    installed package's, other than the target's own package at ``home``."""
-    if home is not None and file.startswith(home):
+def _passed_over(frame: types.FrameType, home: _Home) -> bool:
+    """Whether a frame that is not pyct's is passed over in the run: library code, as
+    ``_top_run`` says, never the target's own."""
+    file = frame.f_code.co_filename
+    if file.startswith("<"):
+        return not _generated_for(frame, home.package)
+    return not file.startswith(home.paths) and file.startswith(_OUTSIDE)
+
+
+def _generated_for(frame: types.FrameType, package: str) -> bool:
+    """Whether the frame runs code Python generated for a module of ``package``."""
+    if not frame.f_code.co_filename.startswith("<"):
         return False
-    return file.startswith(_OUTSIDE) or file.startswith("<frozen ")
+    name = frame.f_globals.get("__name__")
+    return isinstance(name, str) and bool(package) and name.partition(".")[0] == package
 
 
-def _home(fn: Callable[..., object]) -> str | None:
-    """The directory of the target's top package, or its module's file when it has none."""
-    module = sys.modules.get(getattr(fn, "__module__", None) or "")
-    if module is None:
-        return None
-    top = sys.modules.get(module.__name__.partition(".")[0], module)
+def _home(fn: Callable[..., object]) -> _Home:
+    """Where the target's own code lives, as far as its module says.
+
+    A package's folders come from its ``__path__``, which a namespace
+    package spreads over several; a module with no package is its own file.
+    """
+    name = getattr(fn, "__module__", None) or ""
+    module = sys.modules.get(name)
+    package = name.partition(".")[0]
+    top = sys.modules.get(package, module)
+    folders = getattr(top, "__path__", None)
+    if folders is not None:
+        return _Home(tuple(os.path.join(str(folder), "") for folder in folders), package)
     file = getattr(top, "__file__", None)
-    if not isinstance(file, str):
-        return None
-    if os.path.basename(file) == "__init__.py":
-        return os.path.join(os.path.dirname(file), "")
-    return file
+    return _Home((file,) if isinstance(file, str) else (), package)
 
 
 def _is_pyct_frame(code: types.CodeType) -> bool:

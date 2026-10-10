@@ -194,8 +194,10 @@ class JournalWriter:
         takes it as the input's own ending.
 
         One that does not fit goes without its traceback, then with its detail
-        cut by half until it fits, so its kind always lands: a pyct bug must
-        reach the exit code.
+        cut by half until it fits, so an open or full journal takes its kind: a
+        pyct bug must reach the exit code. A detached writer, or one stopped on
+        a fact it could not encode, writes no ending; the reader's problem
+        makes the latter a pyct bug.
         """
         if failure is None:
             self._json(END, None)
