@@ -14,14 +14,12 @@ from pyct.binding.annotations import Check
 from pyct.binding.bind import bind
 from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch, Fact
+from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.deadline import DeadlineError, close, deadline
 from pyct.execution.tally import Tally, Watch, too_long
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
-
-# 3 and 4 are unassigned; 0, 1, 2, 5 belong to a debugger, coverage, a profiler, the optimizer
-_TOOL_IDS = (3, 4, 0, 1, 2, 5)
 
 
 @dataclass(frozen=True)
@@ -197,7 +195,8 @@ class _LineTracer:
     ``sys.monitoring`` rather than ``sys.settrace``: the callback returns
     DISABLE for every code object outside the file, so frames in the
     stdlib and in pyct itself cost nothing after their first line. It
-    needs a tool id nobody else holds, taken at start and freed at stop.
+    needs a tool id nobody else holds, taken at start and freed at stop
+    (``line_events``).
     """
 
     def __init__(self, file: str, tally: Tally) -> None:
@@ -207,19 +206,12 @@ class _LineTracer:
         self.tool_id: int | None = None
 
     def start(self) -> None:
-        monitoring = sys.monitoring
-        self.tool_id = unused_tool_id()
-        monitoring.use_tool_id(self.tool_id, "pyct")
-        monitoring.register_callback(self.tool_id, monitoring.events.LINE, self._on_line)
-        monitoring.set_events(self.tool_id, monitoring.events.LINE)
+        self.tool_id = line_events.listen(self._on_line)
 
     def stop(self) -> None:
         if self.tool_id is None:
             return
-        monitoring = sys.monitoring
-        monitoring.set_events(self.tool_id, 0)
-        monitoring.register_callback(self.tool_id, monitoring.events.LINE, None)
-        monitoring.free_tool_id(self.tool_id)
+        line_events.stop(self.tool_id)
         self.tool_id = None
 
     def _on_line(self, code: types.CodeType, line: int) -> object:
@@ -229,11 +221,3 @@ class _LineTracer:
         if line not in self.seen:
             self.tally.line(line)
         return None
-
-
-def unused_tool_id() -> int:
-    """A ``sys.monitoring`` tool id no one holds, the unassigned ones first."""
-    for tool_id in _TOOL_IDS:
-        if sys.monitoring.get_tool(tool_id) is None:
-            return tool_id
-    raise RuntimeError("every sys.monitoring tool id is taken")

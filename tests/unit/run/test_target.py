@@ -29,19 +29,19 @@ def test_load_target_keeps_the_lines_its_import_of_the_module_ran() -> None:
     target = load_target("targets.trace.uncalled_helper::classify")
 
     # the docstring and both defs; no function's body
-    assert target.imported == frozenset({1, 4, 10})
+    assert target.import_lines == frozenset({1, 4, 10})
 
 
 def test_load_target_keeps_no_import_lines_when_told_not_to() -> None:
     target = load_target("targets.trace.uncalled_helper::classify", keep_import_lines=False)
 
-    assert target.imported == frozenset()
+    assert target.import_lines == frozenset()
 
 
 def test_load_target_keeps_no_line_of_a_module_already_imported() -> None:
     load_target("targets.trace.uncalled_helper::classify")
 
-    assert load_target("targets.trace.uncalled_helper::classify").imported == frozenset()
+    assert load_target("targets.trace.uncalled_helper::classify").import_lines == frozenset()
 
 
 def test_load_target_names_a_module_that_does_not_import() -> None:

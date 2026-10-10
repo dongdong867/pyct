@@ -231,7 +231,7 @@ def test_run_counts_every_input_in_the_coverage() -> None:
     assert seed.covered_lines == frozenset({2, 3})
     assert solved.covered_lines == frozenset({2, 4, 5, 6})
     inputs = seed.covered_lines | solved.covered_lines
-    assert result.coverage.covered == {OTHER_SIDE_LONGER: inputs | target.imported}
+    assert result.coverage.covered == {OTHER_SIDE_LONGER: inputs | target.import_lines}
     assert result.coverage.total == {OTHER_SIDE_LONGER: 6}
 
 
@@ -259,7 +259,7 @@ def test_run_counts_the_lines_the_import_ran_in_the_run_s_coverage_alone() -> No
 
     result = run(target, {"x": 3}, tell=Tell(report=remember))
 
-    assert target.imported == frozenset({1})
+    assert target.import_lines == frozenset({1})
     assert result.coverage.covered == {ONE_CHECK: frozenset({1, 2, 3, 4})}
     # each input's coverage, and its record, keep the lines that input ran
     assert [coverage.covered for coverage in reported] == [
@@ -271,7 +271,7 @@ def test_run_counts_the_lines_the_import_ran_in_the_run_s_coverage_alone() -> No
 def test_run_reads_the_plateau_off_the_lines_inputs_ran() -> None:
     target = load_target("targets.flip.nested_checks::bucket")
     # the import running every line takes nothing new from any input
-    every_line = dataclasses.replace(target, imported=frozenset(range(1, 7)))
+    every_line = dataclasses.replace(target, import_lines=frozenset(range(1, 7)))
 
     result = run(every_line, {"x": 3}, limits=Limits(plateau=Plateau(inputs=1)))
 

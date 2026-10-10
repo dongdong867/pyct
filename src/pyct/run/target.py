@@ -34,7 +34,7 @@ class TargetError(Exception):
 class Target:
     """A loaded target: its spec, the callable, the file it lives in, and its signature.
 
-    ``imported`` is the lines of the file that ran while ``load_target``
+    ``import_lines`` is the lines of the file that ran while ``load_target``
     imported the module, which count for the run as covered.
     """
 
@@ -42,7 +42,7 @@ class Target:
     fn: Callable[..., object]
     file: str
     signature: inspect.Signature
-    imported: frozenset[int] = frozenset()
+    import_lines: frozenset[int] = frozenset()
 
 
 def load_target(
@@ -74,7 +74,7 @@ def load_target(
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
-    return Target(spec=spec, fn=fn, file=file, signature=signature, imported=frozenset(ran))
+    return Target(spec=spec, fn=fn, file=file, signature=signature, import_lines=frozenset(ran))
 
 
 def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:

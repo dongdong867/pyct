@@ -187,7 +187,7 @@ def run(
     reader sees it when its answer comes in, before the next input's trace.
 
     The run's coverage adds the lines the target's import ran
-    (``Target.imported``) to the inputs'; the plateau reads the inputs'
+    (``Target.import_lines``) to the inputs'; the plateau reads the inputs'
     alone.
     """
     scope = Scope.of_module(target.file)
@@ -203,7 +203,7 @@ def run(
         entry=target.spec,
         records=looped.records,
         # the import's lines count once, for the run, and in no input's coverage
-        coverage=Coverage.of(scope, covered | target.imported),
+        coverage=Coverage.of(scope, covered | target.import_lines),
         stopped=looped.stop,
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,

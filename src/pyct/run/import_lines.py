@@ -13,7 +13,7 @@ import sys
 import types
 from collections.abc import Generator
 
-from pyct.execution.execute import unused_tool_id
+from pyct.execution.line_events import line_events
 
 
 class _Collector:
@@ -22,7 +22,10 @@ class _Collector:
     The file is the module's ``__file__`` once ``sys.modules`` holds it, the
     first one read kept from then on. Every other file's code location, and
     each one that runs before the module is made, answers DISABLE, so it
-    costs one call however often it runs.
+    costs one call however often it runs. No line of the target's file is
+    among them: its code first runs once the import has made the module, so
+    the file is known by then, and a DISABLE, which outlives the tool id
+    (``line_events``), never hides a target line from an input's tracer.
     """
 
     def __init__(self, module_name: str) -> None:
@@ -48,14 +51,5 @@ def import_lines(module_name: str) -> Generator[set[int]]:
     is given back however the block ends.
     """
     collector = _Collector(module_name)
-    monitoring = sys.monitoring
-    tool_id = unused_tool_id()
-    monitoring.use_tool_id(tool_id, "pyct")
-    try:
-        monitoring.register_callback(tool_id, monitoring.events.LINE, collector.on_line)
-        monitoring.set_events(tool_id, monitoring.events.LINE)
+    with line_events(collector.on_line):
         yield collector.lines
-    finally:
-        monitoring.set_events(tool_id, 0)
-        monitoring.register_callback(tool_id, monitoring.events.LINE, None)
-        monitoring.free_tool_id(tool_id)
