@@ -82,7 +82,7 @@ def _raised_by_pyct(
 @dataclass(frozen=True)
 class _Home:
     """Where the target's own code lives: its top package's folders, or its module's file, and
-    the top package's name, which code Python generates for it carries."""
+    the top package's name, which a frame's globals' ``__name__`` is matched against."""
 
     paths: tuple[str, ...]
     package: str
@@ -95,10 +95,10 @@ def _top_run(below: tuple[types.TracebackType, ...], home: _Home) -> int:
     pyct's nor passed over. Passed over: a file under the standard library's
     or the installed packages' folders (``_OUTSIDE``) that is not the
     target's own, such as `json`'s that pyct's journal calls or `copy`'s, and
-    code with no file, its name in angle brackets, whose globals' ``__name__``
-    is not in pyct's package or the target's. Code with no file whose globals
-    name a module of pyct's counts as pyct's frame, and one of the target's
-    package ends the run.
+    a frame whose ``co_filename`` starts with ``<`` and whose frame globals'
+    ``__name__`` is in neither pyct's top package nor the target's. Such a
+    frame whose globals' ``__name__`` is in pyct's top package counts as
+    pyct's, and one in the target's top package ends the run.
     """
     run = 0
     for entry in reversed(below):
@@ -120,8 +120,8 @@ def _passed_over(frame: types.FrameType, home: _Home) -> bool:
 
 
 def _fileless_in(frame: types.FrameType, package: str) -> bool:
-    """Whether the frame runs code with no file, its name in angle brackets, whose globals'
-    ``__name__`` names a module of ``package``."""
+    """Whether the frame's ``co_filename`` starts with ``<`` and its frame globals' ``__name__``
+    is ``package`` or a module under it."""
     if not frame.f_code.co_filename.startswith("<"):
         return False
     name = frame.f_globals.get("__name__")
