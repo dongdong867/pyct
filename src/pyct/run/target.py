@@ -13,6 +13,7 @@ from types import ModuleType
 
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
+from pyct.run.import_lines import import_lines
 from pyct.run.import_watch import ImportWatch
 from pyct.run.own_imports import keep_own_imports
 
@@ -31,36 +32,49 @@ class TargetError(Exception):
 
 @dataclass(frozen=True)
 class Target:
-    """A loaded target: its spec, the callable, the file it lives in, and its signature."""
+    """A loaded target: its spec, the callable, the file it lives in, and its signature.
+
+    ``imported`` is the lines of the file that ran while ``load_target``
+    imported the module, which count for the run as covered.
+    """
 
     spec: str
     fn: Callable[..., object]
     file: str
     signature: inspect.Signature
+    imported: frozenset[int] = frozenset()
 
 
-def load_target(spec: str, watch: ImportWatch | None = None) -> Target:
+def load_target(
+    spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
+) -> Target:
     """Import ``module`` from the current directory and take ``function`` from it.
 
     The working directory goes first on the import path, so a module under
     it resolves with no ``PYTHONPATH`` set. From then on, a module pyct
     imports for itself is looked for in the standard library first
     (``own_imports``). While the module imports, ``watch`` names it for
-    the process that watches this one, when one does.
+    the process that watches this one, when one does. With
+    ``keep_import_lines``, the lines of the module that run as it imports
+    are kept on the target; an input's fresh interpreter, whose import is not
+    the run's, keeps none.
     """
     module_name, function_name = spec.split("::", 1)
     cwd = os.getcwd()
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
     keep_own_imports(module_name.partition(".")[0])
-    module = _imported(module_name, watch)
+    keeping = import_lines(module_name) if keep_import_lines else contextlib.nullcontext(set())
+    with keeping as ran:
+        module = _imported(module_name, watch)
     fn = getattr(module, function_name, None)
     if not callable(fn):
         raise TargetError(f"{module_name} has no function {function_name}")
     file = getattr(module, "__file__", None)
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
-    return Target(spec=spec, fn=fn, file=file, signature=_signature(spec, fn))
+    signature = _signature(spec, fn)
+    return Target(spec=spec, fn=fn, file=file, signature=signature, imported=frozenset(ran))
 
 
 def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:

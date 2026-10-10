@@ -206,11 +206,13 @@ class RunResult:
     def why_uncovered(self) -> tuple[WhyEntry, ...]:
         """Why each uncovered line was not run, one entry per cause, file by file.
 
-        Worked out the first time it is read, from the module's code and the
-        run's inputs, so a caller that never reads it never pays for it. A
-        run with a deadline works causes out until at most half a second past
-        it, so it still ends within one second of it; the lines left then are
-        not worked out.
+        The lines are the run's uncovered ones, which the import did not run
+        either, and each cause is read off what the inputs alone ran. Worked
+        out the first time it is read, from the module's code and the run's
+        inputs, so a caller that never reads it never pays for it. A run with
+        a deadline works causes out until at most half a second past it, so
+        it still ends within one second of it; the lines left then are not
+        worked out.
         """
         # the analysis sees its stop at most one stretch late, so it stops that much early
         grace = ANALYSIS_GRACE - LONGEST_STRETCH
@@ -228,11 +230,13 @@ class RunResult:
                     for record in self.records
                 ]
                 run = Run(walked, tries, stop_at=stop_at)
-        covered = self.coverage.covered
+        # what the inputs ran, without the import's lines: a function only the import called is
+        # one no input entered, and its lines the import skipped are not called
+        ran = frozenset[int]().union(*(record.covered_lines for record in self.records))
         return tuple(
             entry
             for file, lines in self.coverage.uncovered.items()
-            for entry in explain(file, lines, covered.get(file, frozenset()), run)
+            for entry in explain(file, lines, ran & self.coverage.lines[file], run)
         )
 
 

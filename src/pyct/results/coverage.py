@@ -12,7 +12,8 @@ def executable_lines(file: str) -> frozenset[int]:
 
     Read from the compiled module's line tables, so ``def`` lines and
     module-level statements count too, though they run at import, not
-    under a seed. Line 0 marks compiler-made instructions and is dropped.
+    under a seed; a run counts those its import ran as covered. Line 0
+    marks compiler-made instructions and is dropped.
     """
     code = compiled(file)
     lines = {line for code_object in _walk(code) for _, _, line in code_object.co_lines() if line}
@@ -84,7 +85,7 @@ class Coverage:
 
     @property
     def uncovered(self) -> Mapping[str, frozenset[int]]:
-        """The lines no input ran, keyed like ``total``. A fully covered file keeps an empty set."""
+        """The lines not covered, keyed like ``total``. A fully covered file keeps an empty set."""
         return {
             file: lines - self.covered.get(file, frozenset()) for file, lines in self.lines.items()
         }

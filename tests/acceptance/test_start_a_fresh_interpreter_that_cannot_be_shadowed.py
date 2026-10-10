@@ -55,7 +55,8 @@ def test_runs_a_sweep_entry_as_installed(tmp_path: Path) -> None:
     run = row["run"]
     assert run["stopped"] == "no fork to flip", row
     key = str((folder / "plain.py").resolve())
-    assert (len(run["covered"][key]), run["total"][key]) == (3, 4), row
+    # every line: the inputs ran three and the import ran the `def`
+    assert (len(run["covered"][key]), run["total"][key]) == (4, 4), row
     assert "SHADOW" not in result.stderr
 
 

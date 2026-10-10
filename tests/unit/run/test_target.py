@@ -25,6 +25,25 @@ def test_load_target_imports_from_the_current_directory() -> None:
     assert target.fn(x=1) == "small"
 
 
+def test_load_target_keeps_the_lines_its_import_of_the_module_ran() -> None:
+    target = load_target("targets.trace.uncalled_helper::classify")
+
+    # the docstring and both defs; no function's body
+    assert target.imported == frozenset({1, 4, 10})
+
+
+def test_load_target_keeps_no_import_lines_when_told_not_to() -> None:
+    target = load_target("targets.trace.uncalled_helper::classify", keep_import_lines=False)
+
+    assert target.imported == frozenset()
+
+
+def test_load_target_keeps_no_line_of_a_module_already_imported() -> None:
+    load_target("targets.trace.uncalled_helper::classify")
+
+    assert load_target("targets.trace.uncalled_helper::classify").imported == frozenset()
+
+
 def test_load_target_names_a_module_that_does_not_import() -> None:
     with pytest.raises(TargetError, match="targets.trace.broken_import"):
         load_target("targets.trace.broken_import::anything")
