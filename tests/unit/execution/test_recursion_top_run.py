@@ -161,8 +161,6 @@ def _installed(
     monkeypatch.setattr(blame, "_OUTSIDE", (*blame._OUTSIDE, os.path.join(str(root), "")))
     monkeypatch.syspath_prepend(str(root))
     module = importlib.import_module(f"{name}.walk")
-    monkeypatch.setitem(sys.modules, name, sys.modules[name])
-    monkeypatch.setitem(sys.modules, f"{name}.walk", module)
     through = _compiled("def through(f, n):\n    return f(n)\n", f"{PYCT_DIR}/through.py")
     setattr(module, "THROUGH", through["through"])  # noqa: B010 - set on a module made at run time
     return _named(vars(module), "deep")
@@ -173,9 +171,13 @@ def test_an_installed_target_s_own_recursion_stays_the_target_s(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, namespace: bool
 ) -> None:
     name = f"pyct_installed_{'ns' if namespace else 'pkg'}"
-    deep = _installed(tmp_path, monkeypatch, name, namespace=namespace)
-
-    result = execute(ExecutionContext(fn=deep, file=str(tmp_path)), {"n": 100_000})
+    try:
+        deep = _installed(tmp_path, monkeypatch, name, namespace=namespace)
+        result = execute(ExecutionContext(fn=deep, file=str(tmp_path)), {"n": 100_000})
+    finally:
+        # the scratch package and its module go, so no later test imports them
+        for imported in (name, f"{name}.walk"):
+            sys.modules.pop(imported, None)
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.TARGET_RAISED, result.failure.traceback
@@ -211,3 +213,21 @@ def test_a_runaway_of_pyct_s_through_generated_code_is_a_pyct_bug(
 
     assert result.failure is not None
     assert result.failure.kind is FailureKind.PYCT_BUG, result.failure
+
+
+def _without_a_file(module_name: str) -> Callable[..., object]:
+    """A raiser whose code has no file, as code Python generates has, run in globals that name
+    ``module_name``."""
+    namespace: dict[str, object] = {"__name__": module_name}
+    exec(compile("def top():\n    raise RecursionError('x')\n", "<string>", "exec"), namespace)
+    return _named(namespace, "top")
+
+
+def test_code_without_a_file_in_a_library_s_globals_is_passed_over() -> None:
+    assert _kind_with(MOST_OWN_FRAMES + 1, _without_a_file("json")) is FailureKind.PYCT_BUG
+
+
+def test_code_without_a_file_in_the_target_s_globals_ends_the_run() -> None:
+    top = _without_a_file(__name__)
+
+    assert _kind_with(MOST_OWN_FRAMES + 1, top) is FailureKind.TARGET_RAISED

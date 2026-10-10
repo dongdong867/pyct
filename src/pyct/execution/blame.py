@@ -19,6 +19,9 @@ from pyct.results.failure import Failure, FailureKind
 # at the top of the stack is pyct recursing on its own
 MOST_OWN_FRAMES = 40
 
+# pyct's own top package, by which code with no file is told to be pyct's
+_PYCT = __name__.partition(".")[0]
+
 # where the standard library's and installed packages' code lives: a frame from there is no
 # frame of the target's own, unless it lies in the target's own package. Read off `os`'s file
 # and the path rather than `sysconfig`, which a target may ship a module of its own as
@@ -92,14 +95,15 @@ def _top_run(below: tuple[types.TracebackType, ...], home: _Home) -> int:
     pyct's nor passed over. Passed over: a file under the standard library's
     or the installed packages' folders (``_OUTSIDE``) that is not the
     target's own, such as `json`'s that pyct's journal calls or `copy`'s, and
-    code Python generated, such as a dataclass's `__eq__`, for a module other
-    than pyct's or the target's. Generated code for pyct's own module counts
-    as pyct's frame, and for the target's package it ends the run.
+    code with no file, its name in angle brackets, whose globals' ``__name__``
+    is not in pyct's package or the target's. Code with no file whose globals
+    name a module of pyct's counts as pyct's frame, and one of the target's
+    package ends the run.
     """
     run = 0
     for entry in reversed(below):
         frame = entry.tb_frame
-        if _is_pyct_frame(frame.f_code) or _generated_for(frame, "pyct"):
+        if _is_pyct_frame(frame.f_code) or _fileless_in(frame, _PYCT):
             run += 1
         elif not _passed_over(frame, home):
             break
@@ -111,12 +115,13 @@ def _passed_over(frame: types.FrameType, home: _Home) -> bool:
     ``_top_run`` says, never the target's own."""
     file = frame.f_code.co_filename
     if file.startswith("<"):
-        return not _generated_for(frame, home.package)
+        return not _fileless_in(frame, home.package)
     return not file.startswith(home.paths) and file.startswith(_OUTSIDE)
 
 
-def _generated_for(frame: types.FrameType, package: str) -> bool:
-    """Whether the frame runs code Python generated for a module of ``package``."""
+def _fileless_in(frame: types.FrameType, package: str) -> bool:
+    """Whether the frame runs code with no file, its name in angle brackets, whose globals'
+    ``__name__`` names a module of ``package``."""
     if not frame.f_code.co_filename.startswith("<"):
         return False
     name = frame.f_globals.get("__name__")
