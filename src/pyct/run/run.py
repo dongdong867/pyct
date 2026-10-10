@@ -185,6 +185,10 @@ def run(
     an input that hangs never hides the lines of the ones before it. Each
     fork the solver could not flip goes to ``tell.missed`` the same way, so a
     reader sees it when its answer comes in, before the next input's trace.
+
+    The run's coverage adds the lines the target's import ran
+    (``Target.imported``) to the inputs'; the plateau reads the inputs'
+    alone.
     """
     scope = Scope.of_module(target.file)
     walk_keys.forget()
@@ -198,7 +202,8 @@ def run(
     return RunResult(
         entry=target.spec,
         records=looped.records,
-        coverage=Coverage.of(scope, covered),
+        # the import's lines count once, for the run, and in no input's coverage
+        coverage=Coverage.of(scope, covered | target.imported),
         stopped=looped.stop,
         environment=_environment(cvc5, inputs.isolated),
         misses=looped.misses,

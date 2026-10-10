@@ -19,6 +19,7 @@ from tests.acceptance.harness import (
 )
 
 ONE_CHECK = "targets.flip.one_check::classify"
+ONE_CHECK_FILE = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = "targets.flip.nested_checks::bucket"
 NESTED_CHECKS_FILE = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 NO_CHECK = "targets.flip.no_check::echo"
@@ -36,7 +37,7 @@ UNTAUGHT_GUARD_FILE = str(REPO_ROOT / "targets" / "flip" / "untaught_guard.py")
 # ``return "never"``, behind the ``x >> 1`` guard pyct has not taught: the flip aims at
 # the ``x < 10`` below it, lands inside the guard instead, and the line is never run
 NEVER = 8
-# every line of ``bucket`` but its ``def``, which runs at import rather than under an input
+# every line of ``bucket`` but its ``def``, which the import runs rather than an input
 BUCKET_LINES = [2, 3, 4, 5, 6]
 # no solver call ended any way at all
 ZERO_ANSWERS = {"sat": 0, "unsat": 0, "unknown": 0, "timeout": 0}
@@ -52,8 +53,8 @@ def test_covers_every_branch() -> None:
     assert len(inputs) == 3, result.stdout
     assert union_of(inputs) == {NESTED_CHECKS_FILE: BUCKET_LINES}
     summary = summary_line(result.stdout)
-    # nothing is left over but the ``def`` line no input can run
-    assert numbers_of(summary, "uncovered") == {NESTED_CHECKS_FILE: [1]}
+    # nothing is left over: the import ran the ``def`` line no input can run
+    assert numbers_of(summary, "uncovered") == {NESTED_CHECKS_FILE: []}
     assert summary["stopped"] == "no fork to flip"
 
 
@@ -95,8 +96,9 @@ def test_prints_the_summary_line() -> None:
     assert all("stopped" not in line for line in inputs), result.stdout
     assert len(inputs) == 2, result.stdout
     assert summary["inputs"] == len(inputs)
-    # the run's coverage is every input's added up, and the module is the same size throughout
-    assert summary["covered"] == union_of(inputs)
+    # the run's coverage is every input's added up with the ``def`` line the import ran, and the
+    # module is the same size throughout
+    assert summary["covered"] == {ONE_CHECK_FILE: [1, *union_of(inputs)[ONE_CHECK_FILE]]}
     assert all(line["total"] == summary["total"] for line in inputs), result.stdout
     environment = summary["environment"]
     assert isinstance(environment, dict), summary

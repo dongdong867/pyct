@@ -208,7 +208,7 @@ class _LineTracer:
 
     def start(self) -> None:
         monitoring = sys.monitoring
-        self.tool_id = _free_tool_id()
+        self.tool_id = unused_tool_id()
         monitoring.use_tool_id(self.tool_id, "pyct")
         monitoring.register_callback(self.tool_id, monitoring.events.LINE, self._on_line)
         monitoring.set_events(self.tool_id, monitoring.events.LINE)
@@ -231,7 +231,8 @@ class _LineTracer:
         return None
 
 
-def _free_tool_id() -> int:
+def unused_tool_id() -> int:
+    """A ``sys.monitoring`` tool id no one holds, the unassigned ones first."""
     for tool_id in _TOOL_IDS:
         if sys.monitoring.get_tool(tool_id) is None:
             return tool_id

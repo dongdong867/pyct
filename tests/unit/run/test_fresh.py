@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -13,10 +14,18 @@ from pyct.execution.execute import ExecutionContext, execute
 from pyct.intercept.hook import Interception, intercepting
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import fresh
-from pyct.run.fresh import _journal, _request, fresh_for, in_a_fresh_interpreter, main
+from pyct.run.fresh import (
+    _journal,
+    _request,
+    _requested,
+    fresh_for,
+    in_a_fresh_interpreter,
+    main,
+)
+from pyct.run.journal import JournalWriter
 from pyct.run.journal_reader import read
 from pyct.run.process import KILL_GRACE, InputStartError
-from pyct.run.target import load_target
+from pyct.run.target import Target, load_target
 
 ONE_CHECK = "targets.flip.one_check::classify"
 IDENTITY = "targets.intercept.identity::check"
@@ -131,6 +140,25 @@ def test_the_new_interpreter_s_side_runs_the_input_it_is_handed() -> None:
     assert reading.ended
     assert reading.end is None
     assert [branch.taken for branch in reading.branches] == [True]
+
+
+def test_the_new_interpreter_s_side_keeps_no_import_lines(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Its import is not the run's: the lines it ran count in pyct's process alone."""
+    target = load_target(ONE_CHECK)
+    told: list[bool] = []
+
+    def load(spec: str, *, keep_import_lines: bool = True) -> Target:
+        told.append(keep_import_lines)
+        return target
+
+    monkeypatch.setattr(fresh, "load_target", load)
+    monkeypatch.setattr(sys, "path", list(sys.path))
+
+    with _request(target.spec, target.file, {"x": 3}, None) as request:
+        # a copy of the descriptor, which the call closes as it reads; no watch hears the call
+        _requested(os.dup(request), cast(JournalWriter, None))
+
+    assert told == [False]
 
 
 def test_a_journal_file_that_cannot_be_sized_is_an_input_that_could_not_start(

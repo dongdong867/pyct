@@ -1,3 +1,4 @@
+import dataclasses
 import functools
 import platform
 import time
@@ -45,8 +46,9 @@ def test_run_records_the_seed_and_measures_it_against_the_module() -> None:
     assert result.entry == "targets.trace.uncalled_helper::classify"
     assert result.records[0].args == {"x": 1}
     assert result.records[0].covered_lines == frozenset({5, 6})
-    # the run's coverage is every input's, the other side of the fork included
-    assert result.coverage.covered == {FIXTURE: frozenset({5, 6, 7})}
+    # the run's coverage is every input's, the other side of the fork included, and the
+    # docstring and the defs the import ran
+    assert result.coverage.covered == {FIXTURE: frozenset({1, 4, 5, 6, 7, 10})}
     assert result.coverage.total == {FIXTURE: 7}
 
 
@@ -228,7 +230,8 @@ def test_run_counts_every_input_in_the_coverage() -> None:
     seed, solved = result.records
     assert seed.covered_lines == frozenset({2, 3})
     assert solved.covered_lines == frozenset({2, 4, 5, 6})
-    assert result.coverage.covered == {OTHER_SIDE_LONGER: seed.covered_lines | solved.covered_lines}
+    inputs = seed.covered_lines | solved.covered_lines
+    assert result.coverage.covered == {OTHER_SIDE_LONGER: inputs | target.imported}
     assert result.coverage.total == {OTHER_SIDE_LONGER: 6}
 
 
@@ -245,6 +248,35 @@ def test_run_reports_each_input_as_it_finishes() -> None:
     # the seed's coverage is the seed's own lines, not what the run has covered so far
     assert reported[0][1].covered == {ONE_CHECK: frozenset({2, 3})}
     assert reported[0][1].total == {ONE_CHECK: 4}
+
+
+def test_run_counts_the_lines_the_import_ran_in_the_run_s_coverage_alone() -> None:
+    target = load_target("targets.flip.one_check::classify")
+    reported: list[Coverage] = []
+
+    def remember(_: InputRecord, coverage: Coverage) -> None:
+        reported.append(coverage)
+
+    result = run(target, {"x": 3}, tell=Tell(report=remember))
+
+    assert target.imported == frozenset({1})
+    assert result.coverage.covered == {ONE_CHECK: frozenset({1, 2, 3, 4})}
+    # each input's coverage, and its record, keep the lines that input ran
+    assert [coverage.covered for coverage in reported] == [
+        {ONE_CHECK: record.covered_lines} for record in result.records
+    ]
+    assert all(1 not in record.covered_lines for record in result.records)
+
+
+def test_run_reads_the_plateau_off_the_lines_inputs_ran() -> None:
+    target = load_target("targets.flip.nested_checks::bucket")
+    # the import running every line takes nothing new from any input
+    every_line = dataclasses.replace(target, imported=frozenset(range(1, 7)))
+
+    result = run(every_line, {"x": 3}, limits=Limits(plateau=Plateau(inputs=1)))
+
+    assert len(result.records) == 3
+    assert result.stopped == Stop(kind=StopKind.NO_FORK)
 
 
 def test_run_hands_out_a_miss_before_the_input_solved_next() -> None:
@@ -299,7 +331,8 @@ def test_run_keeps_picking_until_the_tree_is_empty() -> None:
         Source.SOLVER,
         Source.SOLVER,
     ]
-    assert result.coverage.covered == {NESTED_CHECKS: frozenset({2, 3, 4, 5, 6})}
+    # every line, the `def` the import ran included
+    assert result.coverage.covered == {NESTED_CHECKS: frozenset({1, 2, 3, 4, 5, 6})}
     assert result.stopped.kind is StopKind.NO_FORK
 
 

@@ -46,7 +46,8 @@ def test_a_seed_that_cannot_start_stops_the_run_with_no_input(
     assert result.stopped.kind is StopKind.COULD_NOT_START
     assert result.stopped.detail is not None
     assert REFUSED in result.stopped.detail
-    assert result.coverage.covered == {target.file: frozenset()}
+    # no input ran, so the run covers the `def` line its import ran and nothing more
+    assert result.coverage.covered == {target.file: frozenset({1})}
 
 
 def test_an_input_that_cannot_start_stops_the_loop() -> None:

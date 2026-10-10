@@ -64,8 +64,8 @@ def test_flips_every_comparison() -> None:
     # to flip, and the input that flips it runs the line under that check
     assert union_of(inputs) == {SIX_CHECKS_FILE: COUNT_LINES}
     summary = summary_line(result.stdout)
-    # nothing is left over but the ``def`` line no input can run
-    assert numbers_of(summary, "uncovered") == {SIX_CHECKS_FILE: [1]}
+    # nothing is left over: the import ran the ``def`` line no input can run
+    assert numbers_of(summary, "uncovered") == {SIX_CHECKS_FILE: []}
     assert summary["stopped"] == "no fork to flip"
 
 
