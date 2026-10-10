@@ -163,6 +163,27 @@ def input_lines(stdout: str) -> list[dict[str, object]]:
     return lines[:-1]
 
 
+def answered(lines: list[dict[str, object]]) -> list[dict[str, object]]:
+    """The input lines without a last one the run's deadline cut short where it stopped.
+
+    Such an input ends ``timeout``, ``deadline passed``, and either followed
+    its plan or left it only past its last fork, where the deadline stopped
+    it (``mismatch_at`` is its fork count): it left no plan an answer gave
+    it. A check that every answer stays on its plan leaves it out. One that
+    left its plan at a fork it took stays, and so does every other line.
+    """
+    if not lines:
+        return lines
+    last = lines[-1]
+    forks = last.get("forks")
+    stopped = last["mismatch_at"] is None or (
+        isinstance(forks, list) and last["mismatch_at"] == len(forks)
+    )
+    if last["failure"] == {"kind": "timeout", "detail": "deadline passed"} and stopped:
+        return lines[:-1]
+    return lines
+
+
 def summary_line(stdout: str) -> dict[str, object]:
     """The line that closes stdout. It carries ``stopped``; no input line does."""
     lines = stdout.splitlines()

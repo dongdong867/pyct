@@ -12,10 +12,26 @@ from typing import Protocol
 
 from pyct.core import escapes
 from pyct.core.branch import Branch, Downgrade, Fact, SinkItem, Site
+from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
 # the tally of the call running now in this process, if one is
 _LIVE: list[Tally | None] = [None]
+
+# the most forks one call's path keeps. Past it the call's line ends `too_long`, as its own: a
+# line lists its forks whole, and the README's isolation rule ends a run within 1.5 s of its
+# deadline for a line of 200,000 forks
+MOST_FORKS = 200_000
+
+
+def too_long() -> Failure:
+    """The ending of a call whose path went past ``MOST_FORKS``, however the target ended it.
+
+    Its line lists only the forks before the bound, so what came after, its
+    own ending included, is not the path the line shows.
+    """
+    detail = f"the input took more than {MOST_FORKS} forks, the most pyct keeps for one input"
+    return Failure(kind=FailureKind.TOO_LONG, detail=detail)
 
 
 class Watch(Protocol):
@@ -25,7 +41,8 @@ class Watch(Protocol):
     first time the call reaches it. A downgrade comes with its site and its
     count so far: a count of 1 starts an entry, and a higher count means the
     last entry grew by one. The tally decides what an entry is; a watch only
-    mirrors it.
+    mirrors it. ``bound`` comes once, when the call goes past the forks it
+    keeps, with the words its line ends on.
     """
 
     def fork(self, branch: Branch) -> None: ...
@@ -35,6 +52,8 @@ class Watch(Protocol):
     def line(self, number: int) -> None: ...
 
     def downgrade(self, name: str, site: Site, count: int) -> None: ...
+
+    def bound(self, note: str) -> None: ...
 
 
 class Tally:
@@ -47,6 +66,11 @@ class Tally:
     lists them. After the call it is sealed: pyct's own text calls on a tracked
     value, such as writing the failure, are not the target's and record
     nothing.
+
+    Once the call has taken ``MOST_FORKS`` forks it is ``past_bound``: it
+    tells the watch so once, and keeps no fork or fact after them nor tells
+    the watch of one, while the lines and downgrades the call reaches are
+    still kept.
     """
 
     def __init__(self, watch: Watch | None = None) -> None:
@@ -56,6 +80,7 @@ class Tally:
         self.facts: list[Fact] = []
         self.watch = watch
         self.sealed = False
+        self.past_bound = False
         # each entry one object, so the deadline landing between two steps can lose a call,
         # never pair a name with another entry's count
         self._entries: list[_Entry] = []
@@ -76,7 +101,14 @@ class Tally:
                 name = item.name if isinstance(item, Downgrade) else item.lost_as
                 live.append(Downgrade(name=name, site=item.site))
             return
+        if self.past_bound and not isinstance(item, Downgrade):
+            return
         if isinstance(item, Branch):
+            if len(self.branches) == MOST_FORKS:
+                self.past_bound = True
+                if self.watch is not None:
+                    self.watch.bound(too_long().detail)
+                return
             self.branches.append(item)
             if self.watch is not None:
                 self.watch.fork(item)

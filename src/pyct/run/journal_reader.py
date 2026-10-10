@@ -31,6 +31,7 @@ from pyct.core.branch import Branch, Expression, Fact, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import (
+    BOUNDED,
     CARRY_ON,
     COMMITTED,
     COUNTED,
@@ -80,8 +81,10 @@ class Reading:
 
     ``started`` says pyct's side of the input's process came up. ``ended``
     says the call finished and wrote ``end``, which is its failure or None.
-    ``problem`` says the facts are known to be incomplete: the writer
-    stopped, or a record could not be read.
+    ``problem`` says the facts are known to be incomplete through pyct's
+    fault: the writer met a fact it could not encode, or a record could not
+    be read. ``bound`` says the writer stopped at the bound on what pyct
+    keeps for one input, which is the input's own ending.
     """
 
     lines: frozenset[int]
@@ -92,6 +95,7 @@ class Reading:
     end: Failure | None = None
     problem: str | None = None
     facts: tuple[Fact, ...] = ()
+    bound: str | None = None
 
 
 def read(buffer: Journal) -> Reading:
@@ -137,34 +141,45 @@ class JournalReader:
         A state or a committed mark it cannot read keeps no fact, as a
         record it cannot read keeps those before it.
         """
-        problem = None
+        stopped = _Stop()
         with memoryview(self._buffer) as view:
             try:
-                problem = _noted(view)
+                stopped = _noted(view)
                 end = _committed(view)
             except _UnreadableError as error:
-                return _Facts().reading(problem or _unreadable(error.at))
+                return _Facts().reading(stopped.problem or _unreadable(error.at), stopped.bound)
+            problem = stopped.problem
             try:
                 self._at = self._facts.take_all(view, self._at, end)
             except _UnreadableError as error:
                 problem = problem or _unreadable(error.at)
             self._facts.recount(view)
-        return self._facts.reading(problem)
+        return self._facts.reading(problem, stopped.bound)
 
 
 def _unreadable(at: int) -> str:
     return f"could not read the input's facts at byte {at}"
 
 
-def _noted(view: memoryview) -> str | None:
-    """Why the writer stopped, or None while it was still writing."""
+@dataclass(frozen=True)
+class _Stop:
+    """Why the writer stopped: at the input's bound, or on a fact it could not encode. A call
+    that went past the forks it keeps notes its bound while the writer goes on."""
+
+    bound: str | None = None
+    problem: str | None = None
+
+
+def _noted(view: memoryview) -> _Stop:
+    """Why the writer stopped, or a stop with neither reason while it was still writing."""
     (word,) = WORD.unpack_from(view, STATE * WORD.size)
     state, length = word & 0xFFFF, word >> 16
     if state == OPEN:
-        return None
-    if state not in (FULL, UNENCODABLE):
+        return _Stop()
+    if state not in (FULL, UNENCODABLE, BOUNDED):
         raise _UnreadableError(STATE * WORD.size)
-    return bytes(view[NOTE_AT : NOTE_AT + min(length, NOTE_SIZE)]).decode("utf-8", "replace")
+    note = bytes(view[NOTE_AT : NOTE_AT + min(length, NOTE_SIZE)]).decode("utf-8", "replace")
+    return _Stop(problem=note) if state == UNENCODABLE else _Stop(bound=note)
 
 
 def _committed(view: memoryview) -> int:
@@ -328,7 +343,7 @@ class _Facts:
                 return self.parts[number]
         raise ValueError("an expression holds leaves and parts already read")
 
-    def reading(self, problem: str | None) -> Reading:
+    def reading(self, problem: str | None, bound: str | None = None) -> Reading:
         return Reading(
             lines=frozenset(self.lines),
             branches=tuple(self.branches),
@@ -338,6 +353,7 @@ class _Facts:
             ended=self.ended,
             end=self.end,
             problem=problem,
+            bound=bound,
         )
 
 

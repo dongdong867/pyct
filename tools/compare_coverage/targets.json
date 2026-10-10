@@ -404,6 +404,8 @@
     {"set": "v2", "module": "targets.isolate.c_work", "left_out": "spends seconds in one C call by design, for the deadline tests"},
     {"set": "v2", "module": "targets.isolate.closure", "left_out": "a factory: the target is the closure it returns, which no module attribute names"},
     {"set": "v2", "target": "targets.isolate.counter::count", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.isolate.deep::deep", "seed": {"n": 3}},
+    {"set": "v2", "module": "targets.isolate.endless", "left_out": "one input never ends by design, forking on every pass, so a side runs its whole budget"},
     {"set": "v2", "target": "targets.isolate.exits::leave", "seed": {"x": 0}},
     {"set": "v2", "module": "targets.isolate.hangs_with_finally", "left_out": "never returns by design, so the budget ends it"},
     {"set": "v2", "module": "targets.isolate.holds_a_ctrl_c", "left_out": "never returns by design, holding a KeyboardInterrupt, so the budget ends it"},

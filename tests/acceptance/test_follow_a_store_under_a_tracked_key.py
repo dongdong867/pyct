@@ -14,7 +14,7 @@ import re
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, union_of
+from tests.acceptance.harness import REPO_ROOT, answered, input_lines, run_pyct, union_of
 from tests.acceptance.test_lists import (
     args_of,
     downgrade_names,
@@ -205,6 +205,10 @@ def test_walks_the_stored_key() -> None:
 # a store under a tracked key between a walk and the lookups of the keys it handed out, one
 # after a popitem, and a removal between them with a second walk: no answer leaves the plan
 # (review of PR #131)
+#
+# Serial, and the plan check leaves out a last input the deadline cut short where it stopped:
+# a parallel run's load makes such a cut more likely.
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed"),
     [
@@ -219,7 +223,7 @@ def test_a_store_between_a_walk_or_popitem_and_a_lookup_keeps_every_answer_on_th
     result = run_pyct(f"{MODULE}::{function}", json.dumps(seed), "--budget", "5")
 
     assert result.returncode == 0, result.stderr
-    check_every_line_reaches_its_aim(function, input_lines(result.stdout))
+    check_every_line_reaches_its_aim(function, answered(input_lines(result.stdout)))
     check_forks_read_as_python(result.stderr)
 
 
@@ -273,6 +277,10 @@ def test_raises_a_missing_key_as_python_does(function: str) -> None:
 
 # a walk hands out the key a store under a tracked key put there, one Python shares; its lookup
 # leaves the tracked key free, so a later fork on it is flipped (review of PR #131, round 2)
+#
+# Serial, and the plan check leaves out a last input the deadline cut short where it stopped:
+# a parallel run's load makes such a cut more likely.
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed", "line", "int_keyed"),
     [
@@ -289,7 +297,7 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
     lines = input_lines(result.stdout)
     assert line_of(function, line) in union_of(lines)[str(FILE)]
     if not int_keyed:
-        assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
+        assert [entry["mismatch_at"] for entry in answered(lines)] == [None] * len(answered(lines))
     # under `dict[int, X]` an answer that adds key 0 walks it ahead of n's own, so the lookup's
     # fork for it comes before the pass the answer aimed at: one answer leaves there, as
     # before this story
@@ -297,7 +305,11 @@ def test_a_walked_key_python_shares_leaves_its_tracked_key_free(
 
 # a key Python shares on a dict changed under a tracked key runs as where that change is
 # Python's own, as before this story: a store through a walked shared key, a walk of a copy,
-# and a literal read after a walk (review of PR #131, round 3). Each covers the line it did
+# and a literal read after a walk (review of PR #131, round 3). Each covers the line it did.
+#
+# Serial, and the plan check leaves out a last input the deadline cut short where it stopped:
+# a parallel run's load makes such a cut more likely.
+@pytest.mark.serial
 @pytest.mark.parametrize(
     ("function", "seed", "line", "on_plan"),
     [
@@ -315,7 +327,7 @@ def test_a_key_python_shares_after_a_walk_is_not_followed(
     lines = input_lines(result.stdout)
     assert line_of(function, line) in union_of(lines)[str(FILE)]
     if on_plan:
-        assert [entry["mismatch_at"] for entry in lines] == [None] * len(lines)
+        assert [entry["mismatch_at"] for entry in answered(lines)] == [None] * len(answered(lines))
 
 
 # a copy made before the change is not the changed dict: a walk of the changed one leaves the

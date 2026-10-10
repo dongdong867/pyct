@@ -11,8 +11,9 @@ pyct's to read.
 
 The layout. A header of two words, each a native u64 since both
 processes run on one machine: the committed mark, where the complete
-records end, and the state, open, full, or unencodable, with its note's
-length above bit 16; then a 1 KiB note saying why the writer stopped.
+records end, and the state, open, full, unencodable, or bounded, with its
+note's length above bit 16; then a 1 KiB note saying why the writer
+stopped, or for bounded, that the call went past the forks it keeps.
 Then records, each an 8-byte little-endian head (u32 payload length, u8
 kind) and its payload, padded to 8 bytes:
 
@@ -60,11 +61,18 @@ given before it was written, and a count grows in place only on the entry
 it was written for: whatever the writer's own notes lost, a later fact
 still reads back as written.
 
-A journal past ``CAPACITY``, or a fact the writer cannot encode, stops the
-writer: it notes why and writes nothing more. A record the reader cannot
-read stops the reading at its byte. Either way the facts before it stay,
-and the input's line says pyct failed, since its facts are known to be
-incomplete.
+A journal past ``CAPACITY`` is a bound on what pyct keeps for one input,
+as the tally's bound on forks is: the writer notes it and writes nothing
+more, while the input runs on until it ends or its deadline ends it. The
+tally's bound is noted too (``bound``), while the writer goes on with the
+lines and downgrades. Either bound is the input's own, since its path
+outgrew it, so its line ends ``too_long``. The last ``END_ROOM`` bytes are
+the call's ending's alone, so a call that filled its journal still writes
+how it ended, and a pyct bug after the bound still reaches the exit code.
+A fact the writer cannot encode stops the writer too, and a record the
+reader cannot read stops the reading at its byte; either way the input's
+line says pyct failed, since its facts are known to be incomplete. In every
+case the facts before the stop stay.
 """
 
 from __future__ import annotations
@@ -96,7 +104,11 @@ NUMBER = struct.Struct("<q")
 COUNTED = struct.Struct("=Qqq")
 
 LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT = 1, 2, 3, 4, 5, 6, 7, 8
-OPEN, FULL, UNENCODABLE = 0, 1, 2
+OPEN, FULL, UNENCODABLE, BOUNDED = 0, 1, 2, 3
+
+# the bytes at a journal's end that only the call's ending may take, a long traceback's included;
+# a small journal keeps a quarter of its records' bytes instead
+END_ROOM = 64 * 1024
 
 
 class _UnencodableError(Exception):
@@ -115,6 +127,9 @@ class JournalWriter:
         self._words = memoryview(buffer)[: len(buffer) // WORD.size * WORD.size].cast("Q")
         self._at = RECORDS
         self._open = True
+        self._detached = False
+        self._full = False
+        self._room = min(END_ROOM, (len(buffer) - RECORDS) // 4)
         # where the last downgrade entry's count sits, and the name and site it counts
         self._count_at: int | None = None
         self._counting: tuple[str, Site] | None = None
@@ -169,16 +184,34 @@ class JournalWriter:
             self._count_at = at + HEAD.size
             self._counting = (name, site)
 
+    def bound(self, note: str) -> None:
+        """Note that the call went past the forks it keeps, and go on with what it still keeps."""
+        if self._open:
+            self._note(BOUNDED, note)
+
     def end(self, failure: Failure | None) -> None:
-        """Write how the call ended. The reader takes it as the input's own ending."""
+        """Write how the call ended, into ``END_ROOM`` when the journal is full. The reader
+        takes it as the input's own ending.
+
+        One that does not fit goes without its traceback, then with its detail
+        cut by half until it fits, so an open or full journal takes its kind: a
+        pyct bug must reach the exit code. A detached writer, or one stopped on
+        a fact it could not encode, writes no ending; the reader's problem
+        makes the latter a pyct bug.
+        """
         if failure is None:
             self._json(END, None)
             return
-        self._json(END, [failure.kind.value, failure.detail, failure.traceback])
+        kind, detail = failure.kind.value, failure.detail
+        if self._json(END, [kind, detail, failure.traceback]):
+            return
+        while not self._json(END, [kind, detail, None]) and detail:
+            detail = detail[: len(detail) // 2]
 
     def detach(self) -> None:
         """Write nothing more. A process the input's process forks calls this in its child."""
         self._open = False
+        self._detached = True
 
     def _written(self, expression: Expression) -> object:
         """The expression as a fork holds it: a leaf, or ``[n]`` once its parts are written.
@@ -219,12 +252,16 @@ class JournalWriter:
         return self._record(kind, json.dumps(value).encode())
 
     def _record(self, kind: int, payload: bytes) -> bool:
-        """Write one record and commit it. False when the writer is stopped or it does not fit."""
-        if not self._open:
+        """Write one record and commit it. False when the writer is stopped or it does not fit.
+
+        Only the ending may still be written once the journal is full, and only
+        it may take the last ``END_ROOM`` bytes.
+        """
+        if self._detached or (not self._open and not (kind == END and self._full)):
             return False
         at = self._at
         after = at + HEAD.size + padded(len(payload))
-        if after > len(self._buffer):
+        if after > len(self._buffer) - (0 if kind == END else self._room):
             self._stop(FULL, f"the journal is full at {len(self._buffer)} bytes")
             return False
         HEAD.pack_into(self._buffer, at, len(payload), kind)
@@ -234,13 +271,19 @@ class JournalWriter:
         return True
 
     def _stop(self, state: int, note: str) -> None:
-        """Note why nothing more is written, and write nothing more."""
+        """Note why nothing more is written, and write nothing more. A bound noted before stays
+        the note of a full journal, while a fact the writer cannot encode replaces it."""
         if not self._open:
             return
+        if state != FULL or self._words[STATE] & 0xFFFF != BOUNDED:
+            self._note(state, note)
+        self._open = False
+        self._full = state == FULL
+
+    def _note(self, state: int, note: str) -> None:
         noted = note.encode("utf-8", "replace")[:NOTE_SIZE]
         self._buffer[NOTE_AT : NOTE_AT + len(noted)] = noted
         self._words[STATE] = state | len(noted) << 16
-        self._open = False
 
 
 def _leaf(value: object) -> object:

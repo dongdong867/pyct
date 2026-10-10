@@ -188,8 +188,9 @@ def test_a_repeated_downgrade_that_raises_prints_what_it_printed(tmp_path: Path)
     assert _printed(result.stdout, result.stderr, tmp_path) == _PRINTED["downgrades"]
 
 
-# read-an-input-s-journal-within-its-second-keeps-a-journal-problem
-def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_forks_before(
+# read-an-input-s-journal-within-its-second-keeps-a-journal-problem, its full journal amended by
+# keep-a-target-s-own-failures-out-of-pyct-bugs-full-journal-is-the-input-s
+def test_a_full_journal_ends_its_input_as_its_own_with_the_forks_before(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # a journal of 2 MiB, which the countdown fills after thousands of passes, while pyct looks
@@ -202,7 +203,7 @@ def test_a_full_journal_ends_its_input_as_a_pyct_bug_with_the_forks_before(
 
     seed = result.records[0]
     assert seed.failure == Failure(
-        FailureKind.PYCT_BUG, f"the journal is full at {_SMALL_JOURNAL} bytes"
+        FailureKind.TOO_LONG, f"the journal is full at {_SMALL_JOURNAL} bytes"
     )
     assert 1_000 < len(seed.forks) < 100_000, len(seed.forks)
     assert _counts_down(seed.forks)
