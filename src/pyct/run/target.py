@@ -35,7 +35,9 @@ class Target:
     """A loaded target: its spec, the callable, the file it lives in, and its signature.
 
     ``import_lines`` is the lines of the file that ran while ``load_target``
-    imported the module, which count for the run as covered.
+    imported the module, which count for the run as covered. A module Python
+    had already imported, by a ``run()`` caller or by pyct itself, such as
+    ``json``, runs no line again, so it has none.
     """
 
     spec: str
