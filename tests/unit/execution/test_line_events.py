@@ -3,7 +3,6 @@ import types
 
 import pytest
 
-from pyct.execution import line_events
 from pyct.execution.line_events import listen, listening, unused_tool_id
 
 
@@ -61,7 +60,7 @@ def test_listening_gives_its_tool_back_when_the_block_raises() -> None:
 def test_listen_gives_its_tool_back_when_its_callback_cannot_be_registered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monitoring = line_events.sys.monitoring
+    monitoring = sys.monitoring
     register = monitoring.register_callback
     before = held_tools()
 
