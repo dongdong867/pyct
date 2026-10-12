@@ -13,7 +13,7 @@ import sys
 import types
 from collections.abc import Generator
 
-from pyct.execution.line_events import line_events
+from pyct.execution.line_events import listening
 
 
 class _Collector:
@@ -25,7 +25,7 @@ class _Collector:
     costs one call however often it runs. No line of the target's file is
     among them: its code first runs once the import has made the module, so
     the file is known by then, and a DISABLE, which outlives the tool id
-    (``line_events``), never hides a target line from an input's tracer.
+    (``execution.line_events``), never hides a target line from an input's tracer.
     """
 
     def __init__(self, module_name: str) -> None:
@@ -51,5 +51,5 @@ def import_lines(module_name: str) -> Generator[set[int]]:
     is given back however the block ends.
     """
     collector = _Collector(module_name)
-    with line_events(collector.on_line):
+    with listening(collector.on_line):
         yield collector.lines

@@ -196,7 +196,7 @@ class _LineTracer:
     DISABLE for every code object outside the file, so frames in the
     stdlib and in pyct itself cost nothing after their first line. It
     needs a tool id nobody else holds, taken at start and freed at stop
-    (``line_events``).
+    (``execution.line_events``).
     """
 
     def __init__(self, file: str, tally: Tally) -> None:

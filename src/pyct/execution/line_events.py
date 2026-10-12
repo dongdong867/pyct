@@ -55,7 +55,7 @@ def stop(tool_id: int) -> None:
 
 
 @contextlib.contextmanager
-def line_events(on_line: OnLine) -> Generator[None]:
+def listening(on_line: OnLine) -> Generator[None]:
     """Every LINE event inside the block goes to ``on_line``; the tool id goes back however the
     block ends."""
     tool_id = listen(on_line)
