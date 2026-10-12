@@ -104,7 +104,7 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
         sys.path[:] = pickle.load(handed)
         spec, file, args, until, interception = pickle.load(handed)
     with _intercepting(interception):
-        target = load_target(spec)
+        target = load_target(spec, keep_import_lines=False)
         positional = positional_only(target.signature)
         checks = checked_annotations(target.signature, target.fn)
         ctx = ExecutionContext(target.fn, file, alone=True, positional=positional, checks=checks)

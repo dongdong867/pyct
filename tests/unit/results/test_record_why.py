@@ -190,3 +190,35 @@ def test_tries_the_stop_cuts_short_leave_every_line_not_worked_out(
     assert result.why_uncovered == (
         WhyEntry(file=str(file), lines=(1, 4), reason=Reason.NOT_WORKED_OUT),
     )
+
+
+CALLED_AT_IMPORT = """\
+def helper(flag):
+    if flag:
+        return 1
+    return 0
+READY = helper(False)
+def f(x):
+    return x
+"""
+
+
+def test_a_function_only_the_import_called_is_one_no_input_called(tmp_path: Path) -> None:
+    file = tmp_path / "m.py"
+    file.write_text(CALLED_AT_IMPORT)
+    seed = InputRecord(args={"x": 0}, forks=(), covered_lines=frozenset({7}))
+    # the run's coverage holds the lines the import ran, helper's among them
+    result = RunResult(
+        entry="m::f",
+        records=(seed,),
+        coverage=Coverage(
+            covered={str(file): frozenset({1, 2, 4, 5, 6, 7})},
+            lines={str(file): frozenset(range(1, 8))},
+        ),
+        stopped=Stop(kind=StopKind.NO_FORK),
+        environment=ENVIRONMENT,
+    )
+
+    assert result.why_uncovered == (
+        WhyEntry(file=str(file), lines=(3,), reason=Reason.NOT_CALLED, function="helper"),
+    )

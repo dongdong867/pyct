@@ -26,7 +26,6 @@ def spec(module: str, function: str) -> tuple[str, str]:
 UNTAKEN, UNTAKEN_FILE = spec("untaken", "same")
 NOT_TRIED, NOT_TRIED_FILE = spec("not_tried", "two")
 UNCALLED, UNCALLED_FILE = spec("uncalled", "f")
-AT_IMPORT, AT_IMPORT_FILE = spec("at_import", "f")
 LOST, LOST_FILE = spec("lost", "lose")
 LEFT, LEFT_FILE = spec("left", "left")
 PLAIN, PLAIN_FILE = spec("plain", "big")
@@ -109,16 +108,6 @@ def test_names_a_function_no_input_called() -> None:
     } in why_uncovered(result.stdout)
 
 
-# see-why-a-line-was-missed-names-lines-that-run-at-import
-def test_names_lines_that_run_at_import() -> None:
-    result = run_pyct(AT_IMPORT, '{"x": 0}')
-
-    assert result.returncode == 0, result.stderr
-    assert why_uncovered(result.stdout) == [
-        {"file": AT_IMPORT_FILE, "lines": [1, 3, 7], "reason": "import"}
-    ]
-
-
 # see-why-a-line-was-missed-names-where-a-condition-was-lost
 def test_names_where_a_condition_was_lost() -> None:
     result = run_pyct(LOST, '{"x": 3}')
@@ -138,8 +127,8 @@ def test_prints_why_on_stderr() -> None:
     assert result.returncode == 0, result.stderr
     trace = result.stderr.splitlines()
     why = f"why 4 in {UNTAKEN_FILE}: {UNTAKEN_FILE}:3:7 never true: 1 unsat"
-    # the def line runs at import, so the uncovered line names it beside line 4
-    uncovered = trace.index(f"uncovered 1, 4 in {UNTAKEN_FILE}")
+    # the import ran the def line, so line 4 alone is uncovered
+    uncovered = trace.index(f"uncovered 4 in {UNTAKEN_FILE}")
     assert uncovered < trace.index(why) < trace.index("stopped: no fork to flip")
 
 

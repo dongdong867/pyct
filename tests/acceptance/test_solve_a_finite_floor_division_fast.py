@@ -106,13 +106,13 @@ def test_flips_the_finite_fork_within_a_second() -> None:
         _, stdout, stderr = timed_run("--solver-timeout", "1")
         flipped_to_a_raise(stdout, stderr)
         assert EVERY_FORK_SAT in stderr.splitlines(), stderr
-        assert covered(stdout) == [2, 3, 4], stdout
+        assert covered(stdout) == [1, 2, 3, 4], stdout
 
     runs = [timed_run() for _ in range(3)]
 
     for _, stdout, stderr in runs:
         assert EVERY_FORK_SAT in stderr.splitlines(), stderr
-        assert covered(stdout) == [2, 3, 4], stdout
+        assert covered(stdout) == [1, 2, 3, 4], stdout
     assert statistics.median(took for took, _, _ in runs) < 2.0
 
 
@@ -123,7 +123,9 @@ def test_covers_the_line_at_the_gate_limits() -> None:
     result = run_pyct(FLOAT_POSITION, SEED, *gate)
 
     assert result.returncode == 0, result.stderr
-    assert f"uncovered 1 in {FLOAT_POSITION_FILE}" in result.stderr.splitlines(), result.stderr
+    # the import ran line 1, the `def`, so no line of the file is left uncovered
+    uncovered = [line for line in result.stderr.splitlines() if line.startswith("uncovered ")]
+    assert not [line for line in uncovered if line.endswith(f" in {FLOAT_POSITION_FILE}")]
     assert "stopped: no fork to flip" in result.stderr.splitlines(), result.stderr
 
 

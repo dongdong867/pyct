@@ -1,7 +1,8 @@
 """Why each uncovered line was not run: one cause a line, each cause pointing at one party.
 
-A line the import runs is the import's; a line in a function no input
-entered names the function; otherwise the line's way, from ``way``, is
+A module-level or class-level line the import did not run is the
+import's; a line in a function no input entered names the function, even
+one the import called; otherwise the line's way, from ``way``, is
 walked in the order the function tests it, and the first place no input
 got past names the cause (``README.md › Rules › the summary line``).
 """

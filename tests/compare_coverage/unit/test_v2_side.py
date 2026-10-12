@@ -58,8 +58,9 @@ def test_the_side_runs_pyct_run_and_reads_its_summary_line() -> None:
     report = side.run(request(Limits(budget=10.0)))
 
     assert report.seconds is not None and report.seconds > 0
+    # the summary's covered, the `def` line the import ran included
     assert replace(report, seconds=None) == SideReport(
-        file=ONE_CHECK, covered=frozenset({2, 3, 4}), stopped="no fork to flip", inputs=2
+        file=ONE_CHECK, covered=frozenset({1, 2, 3, 4}), stopped="no fork to flip", inputs=2
     )
 
 

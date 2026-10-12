@@ -7,7 +7,10 @@ fails no test and a run that is always late still does.
 
 The lines a run prints are held against digests of what ``v2`` printed at b85bbc4a, which
 62e9e5cd, the commit this change started from, prints too, with the paths and the environment
-that differ between checkouts and machines taken out.
+that differ between checkouts and machines taken out. count-the-lines-the-import-ran-as-covered
+changed only the summary's coverage: the ``def`` line the import ran is covered, so stdout's
+summary line and stderr's run-level ``covered``, ``uncovered`` and ``why`` lines differ from
+81fa09c9's, and nothing else does.
 """
 
 import hashlib
@@ -56,23 +59,24 @@ def f(x: int) -> int:
     raise ValueError(f"stopped after {c} and {d}")
 """
 
-# what each run printed at b85bbc4a and at 62e9e5cd alike: stdout's digest, then stderr's
+# what each run printed, as at b85bbc4a but for the summary's coverage: stdout's digest, then
+# stderr's
 _PRINTED = {
     "300": (
-        "25b38bfb4ed33d76e9bbaf130671d1101abcc0b6ca578790337e87c54ad408da",
-        "559fe1518c9f46ce3d589fc82a48409d2c637c337511d86a52b0d3f3576d0669",
+        "3ec08a31fffbb651368870133494ead3787a8bac6913e043bcc75f9d59f51588",
+        "2e3385b53cdd576f97aac52990be7de04fa7bcf18ac2c88ebecedcc09faaa271",
     ),
     "2000": (
-        "4c6327a2137d353bb212004689e6827d2a4db5eced3839566a9d2ad9404b6280",
-        "4dea5348df62f6b41fe224d251ae9555cfe30f049d0351a6c8d3f06aa69a0456",
+        "2876242e0ee627c6ca24ff145fc53559e8d3bfeb0477c50524cfafa69a2be1a8",
+        "647b1b6324ab3afcc32982d4875d2a361672b7a15469a769dd98d58cdb9aa558",
     ),
     "100000": (
-        "058bb1f279351b931ac5313537306a8f62bc0866041c6721a2357d938917787a",
-        "44b5be1336fdbe05052b8d3c06264074fe13914d0e2f45f139fb16144fe5f352",
+        "5f085a55ca946b5f34a5c93a20cff5f30ee172804c60dea6d7e67b3ac8ee72b6",
+        "5de5969262049b5ed880f407182f8e530c74253a3c61b31852bb53c7aaa30698",
     ),
     "downgrades": (
-        "becff47e5cae3b959bc6bf7c7fdea3a7ce45be6e02526cc5dc5d5fa2d0327e2f",
-        "7d5ccb5a680da358334c9f851ccd98c8e73f01cd70d3c7eda4ef9cd400d6881e",
+        "52aa432f0ae362440eaba0f920df68d90d847117aca6ddb54a7a6c8c79ff2942",
+        "71cd1fe1ba6a022c50d9ba05b40b6c52e97d756008213882d2460b20a93cc74c",
     ),
 }
 

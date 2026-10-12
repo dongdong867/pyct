@@ -94,7 +94,7 @@ def _solver(counts: SolverCounts) -> str:
 
 
 def _uncovered(file: str, lines: frozenset[int]) -> str:
-    """The lines of one file no input ran, ascending. A file with none gets no line at all."""
+    """The lines of one file left uncovered, ascending. A file with none gets no line at all."""
     numbers = ", ".join(str(line) for line in sorted(lines))
     return f"uncovered {numbers} in {file}"
 
