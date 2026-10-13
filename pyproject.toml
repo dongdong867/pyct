@@ -3,6 +3,8 @@ name = "pyct"
 version = "0.3.0"
 description = "Concolic testing for Python"
 requires-python = ">=3.12"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 authors = [
   { name = "dongdong867", email = "dongdong0867@gmail.com" },
 ]
@@ -39,7 +41,7 @@ compare-coverage = [
 default-groups = ["dev", "compare-coverage"]
 
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [tool.pyrefly]
