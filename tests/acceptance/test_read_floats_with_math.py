@@ -101,7 +101,7 @@ def test_downgrades_an_untaught_math_function() -> None:
 
 # follow-builtins-and-conversions-finds-the-negative-square-root
 def test_finds_the_negative_square_root() -> None:
-    result = run_pyct(SQUARE_ROOT, '{"x": 4.0}')
+    result = run_pyct(SQUARE_ROOT, '{"x": 4.0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = input_lines(result.stdout)[:2]

@@ -151,7 +151,9 @@ def test_joins_a_split_by_its_walk() -> None:
 
 # follow-the-length-of-a-split-joins-another-number-of-pieces
 def test_joins_another_number_of_pieces() -> None:
-    result = run_pyct(f"{JOINS}::of_three_split_pieces", '{"s": "x,y"}', *UNTIL_NO_GAIN)
+    result = run_pyct(
+        f"{JOINS}::of_three_split_pieces", '{"s": "x,y"}', *UNTIL_NO_GAIN, "--goal", "bugs"
+    )
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)

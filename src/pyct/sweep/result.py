@@ -10,12 +10,14 @@ from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 
+from pyct.config.goal import Goal
 from pyct.sweep.rows import Row, Status, count
 
 
 @dataclass(frozen=True)
 class SweepLimits:
-    """The limits each entry's ``pyct run`` gets, the bound on the whole sweep, and the grace.
+    """The limits and the goal each entry's ``pyct run`` gets, the bound on the whole sweep, and
+    the grace.
 
     The defaults are the compare tool's, so a sweep row and a compare row of
     one entry run under the same limits. ``total_budget`` None is no bound on
@@ -29,6 +31,7 @@ class SweepLimits:
     budget: float = 30.0
     plateau: int = 5
     solver_timeout: float = 10.0
+    goal: Goal = Goal.COVERAGE
     total_budget: float | None = None
     grace: float = 60.0
 

@@ -303,7 +303,7 @@ def raised(line: dict[str, object]) -> str:
 
 # intercept-builtin-functions-finds-the-string-int-refuses
 def test_finds_the_string_int_refuses() -> None:
-    result = run_pyct(f"{RAISES}::int_of", '{"s": "12"}')
+    result = run_pyct(f"{RAISES}::int_of", '{"s": "12"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]
@@ -317,7 +317,7 @@ def test_finds_the_string_int_refuses() -> None:
 
 # intercept-builtin-functions-finds-the-float-int-cannot-convert
 def test_finds_the_float_int_cannot_convert() -> None:
-    result = run_pyct(f"{RAISES}::int_of_float", '{"x": 2.5}')
+    result = run_pyct(f"{RAISES}::int_of_float", '{"x": 2.5}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]
@@ -330,7 +330,7 @@ def test_finds_the_float_int_cannot_convert() -> None:
 
 # intercept-builtin-functions-finds-the-string-float-refuses
 def test_finds_the_string_float_refuses() -> None:
-    result = run_pyct(f"{RAISES}::float_of", '{"s": "1.5"}')
+    result = run_pyct(f"{RAISES}::float_of", '{"s": "1.5"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]

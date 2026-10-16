@@ -85,6 +85,8 @@ def test_each_run_gets_the_limits_given() -> None:
         "3",
         "--solver-timeout",
         "2.0",
+        "--goal",
+        "coverage",
     ]
     assert result.limits == limits
 

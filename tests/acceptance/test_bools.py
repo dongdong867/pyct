@@ -83,7 +83,7 @@ def test_follows_and_and_or() -> None:
 
 # follow-booleans-and-chained-compares-follows-a-chained-compare
 def test_follows_a_chained_compare() -> None:
-    result = run_pyct(CHAINED, '{"x": -1}')
+    result = run_pyct(CHAINED, '{"x": -1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -182,7 +182,7 @@ def test_meets_a_bool_literal() -> None:
 
 # follow-booleans-and-chained-compares-follows-membership-in-a-tuple-or-list
 def test_follows_membership_in_a_tuple_or_list() -> None:
-    result = run_pyct(MEMBERSHIP, '{"x": 0, "y": 0}')
+    result = run_pyct(MEMBERSHIP, '{"x": 0, "y": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -201,7 +201,7 @@ def test_follows_membership_in_a_tuple_or_list() -> None:
 
 # follow-booleans-and-chained-compares-records-a-truth-test-where-a-builtin-runs
 def test_records_a_truth_test_where_a_builtin_runs() -> None:
-    result = run_pyct(BUILTIN_TRUTH, '{"x": 0, "z": 0}')
+    result = run_pyct(BUILTIN_TRUTH, '{"x": 0, "z": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -251,7 +251,7 @@ def test_downgrades_an_untaught_bool_operation() -> None:
 
 # follow-booleans-and-chained-compares-finds-the-failing-assert
 def test_finds_the_failing_assert() -> None:
-    result = run_pyct(FAILING_ASSERT, '{"x": 5}')
+    result = run_pyct(FAILING_ASSERT, '{"x": 5}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = input_lines(result.stdout)[:2]
@@ -269,7 +269,7 @@ def test_finds_the_failing_assert() -> None:
 
 # follow-booleans-and-chained-compares-finds-the-false-divisor
 def test_finds_the_false_divisor() -> None:
-    result = run_pyct(FALSE_DIVISOR, '{"x": 1}')
+    result = run_pyct(FALSE_DIVISOR, '{"x": 1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = input_lines(result.stdout)[:2]

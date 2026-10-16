@@ -52,7 +52,7 @@ def test_records_is_true_and_in_on_each_release() -> None:
 
 # substitute-on-every-supported-python-follows-a-conversion-on-each-release
 def test_follows_a_conversion_on_each_release() -> None:
-    result = run_pyct(f"{RELEASES}::g", '{"s": "7"}')
+    result = run_pyct(f"{RELEASES}::g", '{"s": "7"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -131,7 +131,7 @@ def test_names_the_checked_releases_elsewhere() -> None:
 
 # substitute-on-every-supported-python-leaves-a-conversion-raise-to-the-target
 def test_leaves_a_conversion_raise_to_the_target() -> None:
-    result = run_pyct(f"{RELEASES}::g", '{"s": "7"}')
+    result = run_pyct(f"{RELEASES}::g", '{"s": "7"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     refused = [

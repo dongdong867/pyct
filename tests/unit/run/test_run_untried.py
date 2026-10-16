@@ -17,6 +17,7 @@ from pyct.run.run import Bounds, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver.answer import Error
 from tests.unit.deadline_fires import DEADLINE_FIRES
+from tests.unit.run.test_run import no_input_yet
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TWO_OTHER_SIDES = str(REPO_ROOT / "targets" / "flip" / "two_other_sides_empty.py")
@@ -67,7 +68,7 @@ def test_an_input_that_cannot_start_leaves_its_fork_untried() -> None:
     def refused(args: object, until: float | None) -> object:
         raise InputStartError("could not start a child process")
 
-    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), ())  # pyrefly: ignore[bad-argument-type]
+    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), no_input_yet())  # pyrefly: ignore[bad-argument-type]
 
     assert attempt.stop is not None
     assert attempt.unrun == ForkSite(Site(file=ONE_CHECK, line=2, col=7))

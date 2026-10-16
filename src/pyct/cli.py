@@ -1,10 +1,10 @@
 """The pyct command line.
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS] [--in-process]``
+[--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
-[--total-budget SECONDS]``
+[--total-budget SECONDS] [--goal coverage|bugs]``
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import argparse
 import functools
 import inspect
 import json
-import math
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -23,10 +22,14 @@ from pyct.binding.annotations import contradictions
 from pyct.binding.bind import access_name, leaves
 from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
-from pyct.config.budget import Budget
+from pyct.config.command_line import (
+    UsageError,
+    parse_budget,
+    parse_goal,
+    parse_plateau,
+    parse_solver_timeout,
+)
 from pyct.config.limits import Limits
-from pyct.config.plateau import Plateau
-from pyct.config.solver_timeout import SolverTimeout
 from pyct.execution.deadline import own_the_alarm
 from pyct.intercept.cache import CACHE_HELP
 from pyct.results.coverage import Coverage
@@ -48,11 +51,11 @@ from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS] [--in-process]"
+    " [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
 )
 SWEEP_USAGE = (
     "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
-    " [--total-budget SECONDS]"
+    " [--total-budget SECONDS] [--goal coverage|bugs]"
 )
 # what pyct sweep --help says above the flags, kept as written
 SWEEP_WARNING = """\
@@ -69,15 +72,12 @@ request it sends.
 LINE_NESTING = 8
 
 
-class UsageError(Exception):
-    """The command line is wrong. Exit 2."""
-
-
 @dataclass(frozen=True)
 class RunCommand:
     """What the command line asked for: the target spec, the seed, the three limits, and where.
 
     ``in_process`` runs every input in pyct's own process rather than one of its own.
+    ``goal_text`` is the goal as written, None for the default.
     """
 
     spec: str
@@ -86,6 +86,7 @@ class RunCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     in_process: bool = False
+    goal_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class SweepCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     total_budget_text: str | None = None
+    goal_text: str | None = None
 
 
 def entry() -> int:
@@ -133,8 +135,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, import and signature, seed present, seed fits, seed
-    types, cvc5.
+    solver timeout, goal, import and signature, seed present, seed fits,
+    seed types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
@@ -179,6 +181,7 @@ def _checked(
         budget=parse_budget(command.budget_text),
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
+        goal=parse_goal(command.goal_text),
     )
     target = load_target(command.spec, watch)
     if seed is None:
@@ -216,6 +219,7 @@ def _sweep_limits(command: SweepCommand) -> SweepLimits:
             if solver_timeout is None
             else parse_solver_timeout(solver_timeout).seconds
         ),
+        goal=parse_goal(command.goal_text),
         total_budget=total,
     )
 
@@ -286,6 +290,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
+    run_parser.add_argument("--goal", metavar="coverage|bugs")
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
         return _sweep_command(namespace)
@@ -299,6 +304,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
         in_process=namespace.in_process,
+        goal_text=namespace.goal,
     )
 
 
@@ -322,6 +328,7 @@ def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     parser.add_argument(
         "--total-budget", metavar="SECONDS", help="the whole sweep's bound; none by default"
     )
+    parser.add_argument("--goal", metavar="coverage|bugs", help="each entry's goal; coverage")
 
 
 def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
@@ -332,6 +339,7 @@ def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
         total_budget_text=namespace.total_budget,
+        goal_text=namespace.goal,
     )
 
 
@@ -398,61 +406,6 @@ def _depth(value: object) -> int:
             deepest = max(deepest, level)
             pending.extend((child, level + 1) for child in item)
     return deepest
-
-
-def parse_budget(budget_text: str | None, flag: str = "budget") -> Budget:
-    """The budget is a positive number of seconds. No flag is no deadline.
-
-    ``flag`` names it in a refusal, so a sweep's total budget is refused in the budget's words.
-    """
-    if budget_text is None:
-        return Budget()
-    return Budget(seconds=_positive_seconds(budget_text, flag))
-
-
-def parse_plateau(plateau_text: str | None) -> Plateau:
-    """The plateau is a whole number of inputs above zero. No flag is no plateau stop.
-
-    ``int()`` decides what a whole number is: digits with an optional sign.
-    ``1.0`` and ``1e2`` are refused like ``2.5``, so the flag never needs a
-    float parse.
-    """
-    if plateau_text is None:
-        return Plateau()
-    refusal = f"plateau must be a whole number above zero, got {plateau_text!r}"
-    try:
-        inputs = int(plateau_text)
-    except ValueError as error:
-        raise UsageError(refusal) from error
-    if inputs <= 0:
-        raise UsageError(refusal)
-    return Plateau(inputs=inputs)
-
-
-def parse_solver_timeout(solver_timeout_text: str | None) -> SolverTimeout:
-    """The seconds each solve may take, a positive number. No flag is the default limit.
-
-    Checked as the budget is, finite and above zero, so no value turns the
-    limit off.
-    """
-    if solver_timeout_text is None:
-        return SolverTimeout()
-    return SolverTimeout(seconds=_positive_seconds(solver_timeout_text, "solver timeout"))
-
-
-def _positive_seconds(text: str, flag: str) -> float:
-    """``text`` as a finite number of seconds above zero. ``flag`` names it in a refusal.
-
-    The budget and the solver timeout share this one rule. ``inf`` passes
-    ``> 0``, so ``isfinite`` is what refuses it along with ``nan``.
-    """
-    try:
-        seconds = float(text)
-    except ValueError as error:
-        raise UsageError(f"{flag} must be a number of seconds, got {text!r}") from error
-    if not (math.isfinite(seconds) and seconds > 0):
-        raise UsageError(f"{flag} must be a finite number of seconds above zero, got {text!r}")
-    return seconds
 
 
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:

@@ -62,7 +62,7 @@ def answered_every_fork(stdout: str) -> bool:
 
 # follow-strings-follows-index-and-slice
 def test_follows_index_and_slice() -> None:
-    result = run_pyct(INDEX_AND_SLICE, '{"s": "mnop"}')
+    result = run_pyct(INDEX_AND_SLICE, '{"s": "mnop"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)

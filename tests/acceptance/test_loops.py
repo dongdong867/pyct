@@ -52,7 +52,7 @@ def covers(line: dict[str, object], file: str, number: int) -> bool:
 
 # follow-loops-and-ranges-follows-a-while-loop
 def test_follows_a_while_loop() -> None:
-    result = run_pyct(COUNTDOWN, '{"x": 2}', "--budget", "5")
+    result = run_pyct(COUNTDOWN, '{"x": 2}', "--budget", "5", "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -73,7 +73,7 @@ def test_follows_a_while_loop() -> None:
 
 # follow-loops-and-ranges-walks-a-string
 def test_walks_a_string() -> None:
-    result = run_pyct(FIND_X, '{"s": "ab"}', "--budget", "5")
+    result = run_pyct(FIND_X, '{"s": "ab"}', "--budget", "5", "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -99,7 +99,7 @@ def test_walks_a_string() -> None:
 
 # follow-loops-and-ranges-walks-a-string
 def test_walks_a_string_of_forty_letters() -> None:
-    result = run_pyct(FIND_X, '{"s": "' + "a" * 40 + '"}', "--budget", "10")
+    result = run_pyct(FIND_X, '{"s": "' + "a" * 40 + '"}', "--budget", "10", "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -213,7 +213,7 @@ def test_walks_the_empty_string() -> None:
 
 # follow-loops-and-ranges-follows-a-loop-of-thousands-of-passes
 def test_follows_a_loop_of_thousands_of_passes() -> None:
-    result = run_pyct(COUNTDOWN, '{"x": 2000}', "--budget", "20")
+    result = run_pyct(COUNTDOWN, '{"x": 2000}', "--budget", "20", "--goal", "bugs")
 
     # each pass nests the value one level deeper, twice past Python's recursion limit, and
     # the line, the fork line, the journal and the solver each walk it
@@ -229,8 +229,8 @@ def test_follows_a_loop_of_thousands_of_passes() -> None:
 
 # follow-loops-and-ranges-ends-a-loop-the-solver-can-always-lengthen
 def test_ends_a_loop_the_solver_can_always_lengthen() -> None:
-    plateau = run_pyct(COUNTDOWN, '{"x": 2}', "--plateau", "5")
-    budget = run_pyct(COUNTDOWN, '{"x": 2}', "--budget", "3")
+    plateau = run_pyct(COUNTDOWN, '{"x": 2}', "--plateau", "5", "--goal", "bugs")
+    budget = run_pyct(COUNTDOWN, '{"x": 2}', "--budget", "3", "--goal", "bugs")
 
     assert plateau.returncode == 0, plateau.stderr
     assert summary_line(plateau.stdout)["stopped"] == "no gain in 5 inputs"

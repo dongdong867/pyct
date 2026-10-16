@@ -1,5 +1,7 @@
 """execute tells a watch each fact of the call as it happens, before the call ends."""
 
+from collections.abc import Mapping
+
 from pyct.core.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
@@ -11,6 +13,7 @@ class Heard:
 
     def __init__(self) -> None:
         self.told: list[tuple[object, ...]] = []
+        self.reached: list[tuple[object, ...]] = []
 
     def fork(self, branch: Branch) -> None:
         self.told.append(("fork", branch.expression, branch.taken))
@@ -26,6 +29,13 @@ class Heard:
 
     def bound(self, note: str) -> None:
         self.told.append(("bound", note))
+
+    # kept apart from the rest: what the call reached beyond its lines is test_execute_reach's
+    def entered(self, lines: frozenset[int], branches: Mapping[int, frozenset[int]]) -> None:
+        self.reached.append(("entered", lines, branches))
+
+    def went(self, line: int, to: int) -> None:
+        self.reached.append(("went", line, to))
 
 
 # compiled under a name of its own, so only its lines are traced, not the watch's

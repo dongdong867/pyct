@@ -216,7 +216,7 @@ def test_follows_split() -> None:
 
 # follow-strings-follows-the-split-family
 def test_follows_the_split_family() -> None:
-    result = run_pyct(SPLIT_FAMILY, '{"s": "a,b"}')
+    result = run_pyct(SPLIT_FAMILY, '{"s": "a,b"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -283,7 +283,7 @@ def test_an_rsplit_with_a_large_limit_is_flipped_within_the_budget() -> None:
 # beside follow-strings-follows-the-split-family: a None separator and a flag cross from the
 # forked child that ran the input
 def test_a_null_separator_and_a_kept_line_end_cross_from_the_child() -> None:
-    result = run_pyct(SPLIT_FORMS, '{"s": "x y"}')
+    result = run_pyct(SPLIT_FORMS, '{"s": "x y"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     environment = summary_line(result.stdout)["environment"]

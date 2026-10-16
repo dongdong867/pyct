@@ -16,8 +16,10 @@ from pyct.binding.call import call_arguments
 from pyct.core.branch import Branch, Fact
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
+from pyct.execution.branch_ways import CodeWays
 from pyct.execution.deadline import DeadlineError, close, deadline
 from pyct.execution.tally import Tally, Watch, too_long
+from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
@@ -50,7 +52,8 @@ class ExecutionResult:
     """What one call did: the lines it reached, the forks it took, and how it ended.
 
     On a failure the lines, forks and facts are those reached before it. ``facts`` are what its
-    path holds beside the forks, each placed after the forks recorded before it.
+    path holds beside the forks, each placed after the forks recorded before it. ``reach`` is
+    the functions of the file it entered and the ways their branches went.
     """
 
     lines: frozenset[int]
@@ -58,6 +61,7 @@ class ExecutionResult:
     downgrades: tuple[DowngradeCount, ...] = ()
     failure: Failure | None = None
     facts: tuple[Fact, ...] = ()
+    reach: Reach = field(default_factory=Reach)
 
 
 def execute(
@@ -101,6 +105,7 @@ def execute(
         downgrades=tally.counted(),
         failure=_ended(tally, _failure(ctx.fn, ending)),
         facts=tuple(tally.facts),
+        reach=tally.reach(),
     )
 
 
@@ -190,13 +195,17 @@ def _failure(fn: Callable[..., object], ending: _Ending) -> Failure | None:
 
 
 class _LineTracer:
-    """Collect LINE events for one file through ``sys.monitoring``.
+    """Collect LINE and BRANCH events for one file through ``sys.monitoring``.
 
     ``sys.monitoring`` rather than ``sys.settrace``: the callback returns
     DISABLE for every code object outside the file, so frames in the
     stdlib and in pyct itself cost nothing after their first line. It
     needs a tool id nobody else holds, taken at start and freed at stop
     (``execution.line_events``).
+
+    A code object of the file is entered when one of its lines is first
+    seen, or when its first branch event comes: its bytecode is read then,
+    once (``CodeWays``), and each branch event in it is read through that.
     """
 
     def __init__(self, file: str, tally: Tally) -> None:
@@ -204,9 +213,14 @@ class _LineTracer:
         self.tally = tally
         self.seen = tally.lines
         self.tool_id: int | None = None
+        # each code object entered, by id, kept beside its ways so the id stays its own
+        self.entered: dict[int, tuple[types.CodeType, CodeWays]] = {}
+        # each branch event already read, by its code's id, test and target: a loop's test
+        # reports the same few on every pass, and one seen before costs one lookup
+        self.read: set[tuple[int, int, int]] = set()
 
     def start(self) -> None:
-        self.tool_id = line_events.listen(self._on_line)
+        self.tool_id = line_events.listen(self._on_line, self._on_branch)
 
     def stop(self) -> None:
         if self.tool_id is None:
@@ -219,5 +233,28 @@ class _LineTracer:
             return sys.monitoring.DISABLE
         # a line seen before costs one set lookup, as it did before the tally
         if line not in self.seen:
+            self._ways(code)
             self.tally.line(line)
         return None
+
+    def _on_branch(self, code: types.CodeType, test: int, target: int) -> object:
+        key = (id(code), test, target)
+        if key in self.read:
+            return None
+        if code.co_filename != self.file:
+            return sys.monitoring.DISABLE
+        self.read.add(key)
+        went = self._ways(code).way(test, target)
+        if went is not None:
+            self.tally.went(*went)
+        return None
+
+    def _ways(self, code: types.CodeType) -> CodeWays:
+        """The code object's ways, read and handed to the tally the first time it is met."""
+        known = self.entered.get(id(code))
+        if known is not None:
+            return known[1]
+        ways = CodeWays(code)
+        self.entered[id(code)] = (code, ways)
+        self.tally.enter(ways.lines, ways.branches)
+        return ways

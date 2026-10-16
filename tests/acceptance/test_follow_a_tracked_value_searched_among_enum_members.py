@@ -61,7 +61,7 @@ def no_downgrade(stdout: str) -> bool:
     [("colors", COLORS, COLORS_TRUE), ("modes", MODES, MODES_TRUE)],
 )
 def test_follows_a_str_among_str_members(function: str, at: int, true_line: int) -> None:
-    result = run_pyct(f"{STRS}::{function}", '{"s": "x"}')
+    result = run_pyct(f"{STRS}::{function}", '{"s": "x"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -79,7 +79,7 @@ def test_follows_a_str_among_str_members(function: str, at: int, true_line: int)
 
 # follow-a-tracked-value-searched-among-enum-members-follows-a-float-among-float-members
 def test_follows_a_float_among_float_members() -> None:
-    result = run_pyct(f"{FLOATS}::ratios", '{"f": 3.0}')
+    result = run_pyct(f"{FLOATS}::ratios", '{"f": 3.0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -96,7 +96,7 @@ def test_follows_a_float_among_float_members() -> None:
 
 # follow-a-tracked-value-searched-among-enum-members-follows-not-in-a-deque
 def test_follows_not_in_a_deque() -> None:
-    result = run_pyct(f"{DEQUES}::not_queued", '{"x": 1}')
+    result = run_pyct(f"{DEQUES}::not_queued", '{"x": 1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -117,7 +117,7 @@ def test_follows_not_in_a_deque() -> None:
     [("floats", FLOATS_IN, FLOATS_TRUE), ("ratios", FLOAT_MEMBERS_IN, FLOAT_MEMBERS_TRUE)],
 )
 def test_follows_an_int_among_floats(function: str, at: int, true_line: int) -> None:
-    result = run_pyct(f"{AMONG_FLOATS}::{function}", '{"x": 7}')
+    result = run_pyct(f"{AMONG_FLOATS}::{function}", '{"x": 7}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -134,7 +134,7 @@ def test_follows_an_int_among_floats(function: str, at: int, true_line: int) -> 
 
 # follow-a-tracked-value-searched-among-enum-members-follows-a-str-subclass-in-a-name
 def test_follows_a_str_subclass_in_a_name() -> None:
-    result = run_pyct(f"{STRS}::not_tagged", '{"s": "a"}')
+    result = run_pyct(f"{STRS}::not_tagged", '{"s": "a"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)

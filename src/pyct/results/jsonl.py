@@ -51,6 +51,7 @@ def render_summary(result: RunResult) -> str:
     """
     payload = {
         "stopped": result.stopped.reason,
+        "goal": result.goal.value,
         "inputs": result.inputs,
         "solver": _counts(result.solver),
         "misses": [_miss(miss) for miss in result.misses],

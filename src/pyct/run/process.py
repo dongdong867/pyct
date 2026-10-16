@@ -288,6 +288,7 @@ def ending(reading: Reading, waited: Waited) -> ExecutionResult:
         downgrades=reading.downgrades,
         facts=reading.facts,
         failure=_failure(reading, waited),
+        reach=reading.reach,
     )
 
 

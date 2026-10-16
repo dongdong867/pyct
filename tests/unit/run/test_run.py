@@ -14,7 +14,7 @@ from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.branch import Branch, Expression, Site
 from pyct.execution.execute import ExecutionContext, execute
-from pyct.results.coverage import Coverage
+from pyct.results.coverage import Coverage, Progress, Scope
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
@@ -29,6 +29,11 @@ ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 OTHER_SIDE_LONGER = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
 IMPLIED_CHECK = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+
+
+def no_input_yet() -> Progress:
+    """A run's progress before any input, which no stop reads as full; a fresh one per call."""
+    return Progress(Scope(file="", lines=frozenset()), frozenset())
 
 
 def argument(record: InputRecord, name: str) -> int:
@@ -110,7 +115,9 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
-    attempt = _attempt(call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), ())
+    attempt = _attempt(
+        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), no_input_yet()
+    )
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)

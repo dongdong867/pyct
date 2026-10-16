@@ -452,7 +452,7 @@ COUNTED = [f"bool_int_text.py:{line}:7" for line in (13, 11, 9) * 2]
 )
 def test_leaves_the_solver_s_own_unsat(target: str, seed: str, base: list[str]) -> None:
     # the million-item answer takes several seconds on an idle machine
-    result = run_pyct(target, seed, timeout=120)
+    result = run_pyct(target, seed, "--goal", "bugs", timeout=120)
 
     assert result.returncode == 0, result.stderr
     found = [line.rsplit("/", 1)[-1].removesuffix(" unsat") for line in unsat(result.stderr)]

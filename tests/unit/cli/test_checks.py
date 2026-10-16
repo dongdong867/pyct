@@ -6,13 +6,9 @@ from pyct.cli import (
     UsageError,
     check_seed_fits,
     check_spec,
-    parse_budget,
     parse_command,
-    parse_plateau,
     parse_seed,
 )
-from pyct.config.budget import Budget
-from pyct.config.plateau import Plateau
 from tests.nesting import nested_text, seed_limits
 
 
@@ -97,36 +93,6 @@ def test_check_seed_fits_ignores_the_value_type() -> None:
 def test_parse_command_refuses_the_seed_twice() -> None:
     with pytest.raises(UsageError, match="once"):
         parse_command(["run", "m::f", "{}", "--args", "{}"])
-
-
-def test_parse_budget_returns_the_seconds() -> None:
-    assert parse_budget("1.5") == Budget(seconds=1.5)
-
-
-def test_parse_budget_without_the_flag_is_no_deadline() -> None:
-    assert parse_budget(None) == Budget()
-
-
-@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400"])
-def test_parse_budget_refuses_anything_but_a_positive_number(text: str) -> None:
-    with pytest.raises(UsageError, match="budget"):
-        parse_budget(text)
-
-
-def test_parse_plateau_returns_the_inputs() -> None:
-    assert parse_plateau("3") == Plateau(inputs=3)
-    # int() reads an optional sign, so a signed whole number is a whole number
-    assert parse_plateau("+3") == Plateau(inputs=3)
-
-
-def test_parse_plateau_without_the_flag_is_no_plateau_stop() -> None:
-    assert parse_plateau(None) == Plateau()
-
-
-@pytest.mark.parametrize("text", ["0", "-1", "2.5", "1.0", "1e2", "abc", "", "3 inputs"])
-def test_parse_plateau_refuses_anything_but_a_whole_number_above_zero(text: str) -> None:
-    with pytest.raises(UsageError, match="plateau must be a whole number above zero"):
-        parse_plateau(text)
 
 
 def test_parse_seed_takes_a_seed_nested_thousands_deep() -> None:
