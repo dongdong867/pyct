@@ -11,9 +11,10 @@ a way that stays on its line counts none.
 A comprehension laid out over lines has the compiler place code on the
 element's line: the jump back to the loop, and from Python 3.13 the
 filter's conditional jump itself. So a conditional jump that starts its
-line's instructions, right after the code that computed its operand on
-another line, belongs to that line; a way follows a jump placed after another instruction of a line
-before it takes that line; and ``NOT_TAKEN``, which only marks a way for
+line's instructions belongs to the line of the instruction before it,
+unless that instruction is a jump, a raise, a return or another test; a
+way follows a jump placed after another instruction of a line before it
+takes that line; and ``NOT_TAKEN``, which only marks a way for
 ``sys.monitoring``, names no line.
 
 The tests are the instructions a ``sys.monitoring`` BRANCH event reports
@@ -83,8 +84,10 @@ class CodeWays:
         """Each line whose tests lead to two or more other lines, with those lines."""
         ways: dict[int, set[int]] = {}
         for instruction in instructions:
+            if not _is_test(instruction):
+                continue
             line = self._test_line(instruction.offset)
-            if line is None or not _is_test(instruction):
+            if line is None:
                 continue
             targets = (self._next.get(instruction.offset), instruction.argval)
             leads = {self._leads_to(line, target) for target in targets}
@@ -119,8 +122,9 @@ class CodeWays:
 
     def _test_line(self, offset: int) -> int | None:
         """The line a test at ``offset`` belongs to: its own, or, for a conditional jump that
-        starts its line's instructions, the line of the code before it that computed its
-        operand. A loop's ``FOR_ITER`` keeps its own."""
+        starts its line's instructions, the line of the instruction before it, when that
+        instruction is not a jump, a raise, a return or another test. A loop's ``FOR_ITER``
+        keeps its own."""
         line = self._line_of(offset)
         before = self._before.get(offset)
         if self._at[offset].opname == "FOR_ITER" or before is None:
