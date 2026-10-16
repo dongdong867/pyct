@@ -98,10 +98,15 @@ def answered(stdout: str | None, answer: Answer) -> str:
     of it in parentheses where that differs: ``unknown (timeout)`` at cvc5's limit, ``sat
     (unknown)`` for a model pyct cannot read. ``no answer`` when cvc5 printed none, or pyct
     stopped it (``stdout`` None)."""
-    words: dict[type, str] = {Sat: "sat", Unsat: "unsat", Unknown: "unknown", Timeout: "timeout"}
-    read = words.get(type(answer), "error")
-    lines = (stdout or "").split()
-    heard = lines[0] if lines and lines[0] in ("sat", "unsat", "unknown") else "no answer"
+    readings: dict[type, str] = {
+        Sat: "sat",
+        Unsat: "unsat",
+        Unknown: "unknown",
+        Timeout: "timeout",
+    }
+    read = readings.get(type(answer), "error")
+    words = (stdout or "").split()
+    heard = words[0] if words and words[0] in ("sat", "unsat", "unknown") else "no answer"
     return heard if heard == read else f"{heard} ({read})"
 
 
