@@ -272,19 +272,32 @@ def test_runs_every_seed_it_writes() -> None:
 
 # sweep-a-package-passes-its-limits
 @pytest.mark.timeout(120)
+# match-pyct-v1-on-the-measured-functions-stop-goal-reaches-sweep-entries
 def test_passes_its_limits() -> None:
     spin = f"{FIXTURES}.spin"
     plain = sweep(spin, timeout=55)
-    given = sweep(spin, "--budget", "20", "--plateau", "3", "--solver-timeout", "1", timeout=55)
+    flags = ("--budget", "20", "--plateau", "3", "--solver-timeout", "1", "--goal", "bugs")
+    given = sweep(spin, *flags, timeout=55)
 
     assert plain.returncode == 0, plain.stderr
     assert given.returncode == 0, given.stderr
     expected = {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0, "total_budget": None}
-    assert summary(plain.stdout)["limits"] == expected
-    assert row_named(plain.stdout, spin, "spin")["run"]["stopped"] == "no gain in 5 inputs"
+    assert summary(plain.stdout)["limits"] == {**expected, "goal": "coverage"}
+    full = "every line and branch covered"
+    assert row_named(plain.stdout, spin, "spin")["run"]["stopped"] == full
     expected = {"budget": 20.0, "plateau": 3, "solver_timeout": 1.0, "total_budget": None}
-    assert summary(given.stdout)["limits"] == expected
+    assert summary(given.stdout)["limits"] == {**expected, "goal": "bugs"}
     assert row_named(given.stdout, spin, "spin")["run"]["stopped"] == "no gain in 3 inputs"
+
+
+# match-pyct-v1-on-the-measured-functions-stop-refuses-an-unknown-goal
+def test_refuses_an_unknown_goal() -> None:
+    result = sweep(f"{FIXTURES}.spin", "--goal", "speed")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "speed" in result.stderr
+    assert "coverage" in result.stderr and "bugs" in result.stderr
 
 
 # sweep-a-package-spends-the-total-budget

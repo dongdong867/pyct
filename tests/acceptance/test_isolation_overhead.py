@@ -24,8 +24,8 @@ def fastest(*argv: str) -> tuple[float, int]:
     inputs = 0
     for _ in range(RUNS):
         started = time.monotonic()
-        # every input past full coverage still counts: the measure needs its 50
-        result = run_pyct(MANY_INPUTS, SEED, "--past-full-coverage", *argv)
+        # a run for bugs goes past full coverage: the measure needs its 50 inputs
+        result = run_pyct(MANY_INPUTS, SEED, "--goal", "bugs", *argv)
         took.append(time.monotonic() - started)
         assert result.returncode == 0, result.stderr
         counted = summary_line(result.stdout)["inputs"]

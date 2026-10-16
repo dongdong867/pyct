@@ -1,8 +1,9 @@
 """Acceptance tests for part C of the match-pyct-v1-on-the-measured-functions story.
 
-The run stops on ``every line and branch covered``, and ``--past-full-coverage`` turns that stop
-off. Each test spawns ``python -P -m pyct`` through the harness and reads the input lines, the
-summary line and stderr as a person or a tool reads them after a run.
+The run stops on ``every line and branch covered`` under its default goal, ``--goal coverage``,
+and goes past it under ``--goal bugs``. Each test spawns ``python -P -m pyct`` through the
+harness and reads the input lines, the summary line and stderr as a person or a tool reads them
+after a run.
 """
 
 from tests.acceptance.harness import REPO_ROOT, input_lines, numbers_of, run_pyct, summary_line
@@ -53,6 +54,7 @@ def test_stops_when_every_line_and_branch_is_covered() -> None:
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
     assert summary["stopped"] == FULL
+    assert summary["goal"] == "coverage"
     assert stopped_on(result.stderr) == FULL
     inputs = input_lines(result.stdout)
     medium = [i for i, line in enumerate(inputs) if MEDIUM in covered_by(line, COUNT_Z_FILE)]
@@ -142,12 +144,14 @@ def test_says_budget_spent_when_the_budget_ends_on_the_last_input() -> None:
     assert summary_line(result.stdout)["stopped"] == "budget spent"
 
 
-# match-pyct-v1-on-the-measured-functions-stop-can-be-turned-off
-def test_goes_on_past_full_coverage_with_the_flag() -> None:
-    result = run_pyct(COUNT_Z, '{"s": ""}', "--budget", "5", "--past-full-coverage")
+# match-pyct-v1-on-the-measured-functions-stop-goal-bugs-goes-past-full-coverage
+def test_goes_on_past_full_coverage_for_bugs() -> None:
+    result = run_pyct(COUNT_Z, '{"s": ""}', "--budget", "5", "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
-    assert summary_line(result.stdout)["stopped"] == "budget spent"
+    summary = summary_line(result.stdout)
+    assert summary["stopped"] == "budget spent"
+    assert summary["goal"] == "bugs"
     inputs = input_lines(result.stdout)
     medium = [i for i, line in enumerate(inputs) if MEDIUM in covered_by(line, COUNT_Z_FILE)]
     assert medium, [line["args"] for line in inputs]
@@ -170,3 +174,13 @@ def test_counts_the_lines_of_an_input_that_raised() -> None:
     summary = summary_line(result.stdout)
     assert summary["stopped"] == FULL
     assert numbers_of(summary, "uncovered") == {RAISES_LAST_FILE: []}
+
+
+# match-pyct-v1-on-the-measured-functions-stop-refuses-an-unknown-goal
+def test_refuses_an_unknown_goal() -> None:
+    result = run_pyct(FLIP, '{"x": 0}', "--goal", "speed")
+
+    assert result.returncode == 2
+    assert result.stdout == ""
+    assert "speed" in result.stderr
+    assert "coverage" in result.stderr and "bugs" in result.stderr

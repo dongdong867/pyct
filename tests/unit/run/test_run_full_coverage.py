@@ -2,6 +2,7 @@
 
 import pytest
 
+from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.results.coverage import Reach
@@ -28,8 +29,8 @@ def test_run_stops_once_every_line_and_branch_is_covered(isolation: Isolation) -
     assert result.coverage.uncovered == {load_target(RAISES_LAST).file: frozenset()}
 
 
-def test_run_goes_past_full_coverage_when_its_limits_say_so() -> None:
-    limits = Limits(past_full_coverage=True)
+def test_run_goes_past_full_coverage_for_bugs() -> None:
+    limits = Limits(goal=Goal.BUGS)
 
     result = run(load_target(RAISES_LAST), {"s": ""}, limits=limits)
 
@@ -48,7 +49,7 @@ def test_the_stop_on_full_coverage_comes_before_the_plateau() -> None:
     past = run(
         load_target(COUNT_X),
         {"s": "xx"},
-        limits=Limits(plateau=Plateau(inputs=1), past_full_coverage=True),
+        limits=Limits(plateau=Plateau(inputs=1), goal=Goal.BUGS),
     )
     assert past.stopped == Stop(StopKind.NO_GAIN, plateau=1)
 

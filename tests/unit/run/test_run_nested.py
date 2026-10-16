@@ -8,6 +8,7 @@ import pytest
 
 from pyct.binding import walk
 from pyct.config.budget import Budget
+from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.results.record import Source, StopKind
 from pyct.run import run as run_module
@@ -28,8 +29,8 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
     xs.append(xs)
     target = load_target("targets.nested.holds_itself::check")
 
-    # past full coverage, so the run asks for every fork: the list too short to read at 1 too
-    limits = Limits(past_full_coverage=True)
+    # for bugs, past full coverage, so the run asks for every fork: the too short list too
+    limits = Limits(goal=Goal.BUGS)
     result = run(target, {"xs": xs}, limits=limits, isolation=isolation)
 
     # the one input that fails is the one too short to read at 1

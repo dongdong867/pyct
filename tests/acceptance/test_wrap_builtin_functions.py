@@ -222,7 +222,7 @@ def test_leaves_a_raise_in_the_targets_own_code_to_the_target() -> None:
 
 # intercept-builtin-functions-finds-the-string-ord-refuses
 def test_finds_the_string_ord_refuses() -> None:
-    result = run_pyct(f"{CODES}::code_of", '{"c": "a"}', "--past-full-coverage")
+    result = run_pyct(f"{CODES}::code_of", '{"c": "a"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     first, second = input_lines(result.stdout)[:2]
@@ -236,7 +236,7 @@ def test_finds_the_string_ord_refuses() -> None:
 
 # intercept-builtin-functions-finds-the-code-chr-refuses
 def test_finds_the_code_chr_refuses() -> None:
-    result = run_pyct(f"{CODES}::character_of", '{"n": 65}', "--past-full-coverage")
+    result = run_pyct(f"{CODES}::character_of", '{"n": 65}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)

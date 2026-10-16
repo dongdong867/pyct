@@ -6,6 +6,7 @@ import pytest
 
 from pyct import cli
 from pyct.cli import main
+from pyct.config.goal import Goal
 from pyct.sweep.result import SweepLimits, SweepResult, SweepStop
 from pyct.sweep.sweep import Mode, SweepTell
 from tests.acceptance.harness import (
@@ -214,8 +215,10 @@ def test_a_sweep_passes_on_the_limits_it_was_given_and_whether_to_list(
     seen = sweeps_seen(monkeypatch)
     argv = ["--budget", "20", "--plateau", "3", "--solver-timeout", "1", "--total-budget", "9"]
 
-    assert main(["sweep", "p", "--list", *argv]) == 0
-    limits = SweepLimits(budget=20.0, plateau=3, solver_timeout=1.0, total_budget=9.0)
+    assert main(["sweep", "p", "--list", *argv, "--goal", "bugs"]) == 0
+    limits = SweepLimits(
+        budget=20.0, plateau=3, solver_timeout=1.0, goal=Goal.BUGS, total_budget=9.0
+    )
     assert seen == [{"package": "p", "limits": limits, "mode": Mode.LIST}]
 
 

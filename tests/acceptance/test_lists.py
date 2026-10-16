@@ -47,8 +47,8 @@ RAISES = "targets.lists.raises"
 
 # a walk over a list has no limit on its passes (follow-loops-and-ranges), so a run over a target
 # that walks one ends when inputs stop covering new lines rather than when no fork is left, and
-# goes on past full coverage until then
-UNTIL_NO_GAIN = ("--plateau", "10", "--past-full-coverage")
+# goes on past full coverage, for bugs, until then
+UNTIL_NO_GAIN = ("--plateau", "10", "--goal", "bugs")
 
 # the changes that walk the list: a search compares item after item, and a sort takes each
 WALKING = ("removed", "sorted_in_place")
@@ -235,7 +235,7 @@ def test_adds_and_drops_loop_passes() -> None:
 
 # follow-lists-and-dicts-as-they-change-follows-a-tracked-index
 def test_follows_a_tracked_index() -> None:
-    result = run_pyct(TRACKED_INDEX, '{"items": [1, 2], "i": 0}', "--past-full-coverage")
+    result = run_pyct(TRACKED_INDEX, '{"items": [1, 2], "i": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -304,7 +304,7 @@ def test_follows_an_append() -> None:
 # follow-lists-and-dicts-as-they-change-follows-every-list-change
 @pytest.mark.parametrize("name", CHANGED)
 def test_follows_every_list_change(name: str) -> None:
-    flags = UNTIL_NO_GAIN if name in WALKING else ("--past-full-coverage",)
+    flags = UNTIL_NO_GAIN if name in WALKING else ("--goal", "bugs")
     result = run_pyct(f"{CHANGES}::{name}", '{"items": [1, 2, 3, 4, 5, 6]}', *flags)
 
     assert result.returncode == 0, result.stderr
@@ -482,7 +482,7 @@ def test_notices_a_change_outside_the_methods() -> None:
 
 # follow-lists-and-dicts-as-they-change-reports-a-pop-or-remove-that-raises
 def test_reports_a_pop_or_remove_that_raises() -> None:
-    popped = run_pyct(f"{RAISES}::pop_one", '{"items": []}', "--past-full-coverage")
+    popped = run_pyct(f"{RAISES}::pop_one", '{"items": []}', "--goal", "bugs")
     removed = run_pyct(f"{RAISES}::remove_seven", '{"items": [1]}', *UNTIL_NO_GAIN)
 
     assert popped.returncode == 0, popped.stderr

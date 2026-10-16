@@ -118,7 +118,7 @@ def test_follows_membership_in_a_set_or_dict() -> None:
 
 # follow-booleans-and-chained-compares-follows-in-and-is-inside-a-chain
 def test_follows_in_and_is_inside_a_chain() -> None:
-    result = run_pyct(CHAIN_LINKS, '{"x": 0, "flag": false}', "--past-full-coverage")
+    result = run_pyct(CHAIN_LINKS, '{"x": 0, "flag": false}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -184,7 +184,7 @@ def test_reads_a_bool_from_the_seed() -> None:
 
 # follow-booleans-and-chained-compares-finds-the-false-bool-divisor
 def test_finds_the_false_bool_divisor() -> None:
-    result = run_pyct(FALSE_BOOL_DIVISOR, '{"flag": true}', "--past-full-coverage")
+    result = run_pyct(FALSE_BOOL_DIVISOR, '{"flag": true}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = input_lines(result.stdout)[:2]

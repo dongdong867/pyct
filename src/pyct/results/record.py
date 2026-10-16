@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 
+from pyct.config.goal import Goal
 from pyct.core.branch import Branch, Fact, ForkSite, Site
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
@@ -176,6 +177,7 @@ class RunResult:
     ``untried`` counts the forks the run never tried at each site: still open
     when it stopped, or picked and then left by the stop.
     ``deadline`` is the monotonic instant the run's budget ends, None with no budget.
+    ``goal`` is what the run was for.
     """
 
     entry: str
@@ -186,6 +188,7 @@ class RunResult:
     misses: tuple[Miss, ...] = ()
     untried: Mapping[ForkSite, int] = field(default_factory=dict)
     deadline: float | None = None
+    goal: Goal = Goal.COVERAGE
 
     @property
     def inputs(self) -> int:

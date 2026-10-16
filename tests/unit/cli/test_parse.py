@@ -9,8 +9,10 @@ from pyct.cli import (
     UsageError,
     parse_budget,
     parse_command,
+    parse_goal,
     parse_solver_timeout,
 )
+from pyct.config.goal import Goal
 from pyct.config.solver_timeout import SolverTimeout
 
 
@@ -66,9 +68,20 @@ def test_the_solver_timeout_may_be_absent() -> None:
     assert run_command(["run", "m::f"]).solver_timeout_text is None
 
 
-def test_past_full_coverage_is_read_from_its_flag() -> None:
-    assert run_command(["run", "m::f", "--past-full-coverage"]).past_full_coverage
-    assert not run_command(["run", "m::f"]).past_full_coverage
+def test_the_goal_is_read_from_its_flag() -> None:
+    assert run_command(["run", "m::f", "--goal", "bugs"]).goal_text == "bugs"
+    assert run_command(["run", "m::f"]).goal_text is None
+
+
+def test_parse_goal_reads_each_goal_and_defaults_to_coverage() -> None:
+    assert parse_goal("bugs") is Goal.BUGS
+    assert parse_goal("coverage") is Goal.COVERAGE
+    assert parse_goal(None) is Goal.COVERAGE
+
+
+def test_parse_goal_refuses_any_other_value() -> None:
+    with pytest.raises(UsageError, match="goal must be coverage or bugs, got 'speed'"):
+        parse_goal("speed")
 
 
 def test_parse_solver_timeout_returns_the_seconds() -> None:
@@ -126,12 +139,13 @@ def test_sweep_reads_the_package_the_list_flag_and_the_limits() -> None:
     )
     assert parse_command(["sweep", "shop"]) == SweepCommand(package="shop", list_only=False)
     argv = ["--budget", "1", "--plateau", "2", "--solver-timeout", "3", "--total-budget", "4"]
-    assert parse_command(["sweep", "shop", *argv]) == SweepCommand(
+    assert parse_command(["sweep", "shop", *argv, "--goal", "bugs"]) == SweepCommand(
         package="shop",
         budget_text="1",
         plateau_text="2",
         solver_timeout_text="3",
         total_budget_text="4",
+        goal_text="bugs",
     )
 
 

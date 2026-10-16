@@ -106,7 +106,7 @@ def test_takes_the_branch_python_takes_on_is_true() -> None:
 
 # intercept-builtin-functions-follows-membership-in-a-literal-set
 def test_follows_membership_in_a_literal_set() -> None:
-    result = run_pyct(LITERAL_SET, '{"x": 0, "s": ""}', "--past-full-coverage")
+    result = run_pyct(LITERAL_SET, '{"x": 0, "s": ""}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)

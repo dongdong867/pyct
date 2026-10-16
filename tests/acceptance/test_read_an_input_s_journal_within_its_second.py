@@ -145,7 +145,10 @@ def test_an_in_process_run_ends_within_the_same_bound(tmp_path: Path) -> None:
 
 
 def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str, str]:
-    """The digests of what a run printed, its paths and its environment taken out."""
+    """The digests of what a run printed, its paths, its environment and its goal taken out.
+
+    The goal came after the digests were pinned, and other tests read it.
+    """
 
     def normalized(text: str) -> str:
         for root in roots:
@@ -154,6 +157,7 @@ def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str,
 
     summary = json.loads(result_stdout.splitlines()[-1])
     stdout = result_stdout.replace(json.dumps(summary["environment"]), "<environment>")
+    stdout = stdout.replace(f'"goal": {json.dumps(summary["goal"])}, ', "")
     return _digest(normalized(stdout)), _digest(normalized(result_stderr))
 
 
@@ -174,7 +178,8 @@ def test_a_countdown_prints_what_it_printed(seed: int) -> None:
         "1",
         "--solver-timeout",
         "120",
-        "--past-full-coverage",
+        "--goal",
+        "bugs",
         unset=COVERAGE_STARTUP,
         timeout=170,
     )

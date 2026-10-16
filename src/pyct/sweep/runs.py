@@ -50,8 +50,8 @@ PYCT: tuple[str, ...] = (sys.executable, "-P", "-c", _BOOT)
 
 
 def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, ...] = PYCT) -> Row:
-    """Run a listed entry with its seed, a budget of ``budget`` seconds, and ``limits``' plateau
-    and solver timeout.
+    """Run a listed entry with its seed, a budget of ``budget`` seconds, and ``limits``' plateau,
+    solver timeout and goal.
 
     The row is ``ran`` when its run exits 0 and prints its summary line, and
     ``failed`` otherwise, keeping the summary line when there was one. A run
@@ -61,7 +61,7 @@ def run_entry(row: Row, limits: SweepLimits, *, budget: float, pyct: tuple[str, 
     here = os.getcwd()
     argv = [*pyct, here, "run", f"{row.module}::{row.name}", "--args", json.dumps(row.seed)]
     argv += ["--budget", repr(budget), "--plateau", str(limits.plateau)]
-    argv += ["--solver-timeout", repr(limits.solver_timeout)]
+    argv += ["--solver-timeout", repr(limits.solver_timeout), "--goal", limits.goal.value]
     with tempfile.TemporaryDirectory(prefix="pyct-sweep-") as directory:
         limit = budget + limits.grace
         env = {**os.environ, CACHE_VARIABLE: str(cache_folder())}

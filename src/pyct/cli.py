@@ -1,10 +1,10 @@
 """The pyct command line.
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS] [--in-process] [--past-full-coverage]``
+[--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
-[--total-budget SECONDS]``
+[--total-budget SECONDS] [--goal coverage|bugs]``
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import (
     UsageError,
     parse_budget,
+    parse_goal,
     parse_plateau,
     parse_solver_timeout,
 )
@@ -50,11 +51,11 @@ from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS] [--in-process] [--past-full-coverage]"
+    " [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
 )
 SWEEP_USAGE = (
     "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
-    " [--total-budget SECONDS]"
+    " [--total-budget SECONDS] [--goal coverage|bugs]"
 )
 # what pyct sweep --help says above the flags, kept as written
 SWEEP_WARNING = """\
@@ -76,7 +77,7 @@ class RunCommand:
     """What the command line asked for: the target spec, the seed, the three limits, and where.
 
     ``in_process`` runs every input in pyct's own process rather than one of its own.
-    ``past_full_coverage`` goes on once every line and branch is covered.
+    ``goal_text`` is the goal as written, None for the default.
     """
 
     spec: str
@@ -85,7 +86,7 @@ class RunCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     in_process: bool = False
-    past_full_coverage: bool = False
+    goal_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +100,7 @@ class SweepCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     total_budget_text: str | None = None
+    goal_text: str | None = None
 
 
 def entry() -> int:
@@ -133,8 +135,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, import and signature, seed present, seed fits, seed
-    types, cvc5.
+    solver timeout, goal, import and signature, seed present, seed fits,
+    seed types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
@@ -179,7 +181,7 @@ def _checked(
         budget=parse_budget(command.budget_text),
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
-        past_full_coverage=command.past_full_coverage,
+        goal=parse_goal(command.goal_text),
     )
     target = load_target(command.spec, watch)
     if seed is None:
@@ -217,6 +219,7 @@ def _sweep_limits(command: SweepCommand) -> SweepLimits:
             if solver_timeout is None
             else parse_solver_timeout(solver_timeout).seconds
         ),
+        goal=parse_goal(command.goal_text),
         total_budget=total,
     )
 
@@ -287,7 +290,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
-    run_parser.add_argument("--past-full-coverage", action="store_true")
+    run_parser.add_argument("--goal", metavar="coverage|bugs")
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
         return _sweep_command(namespace)
@@ -301,7 +304,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
         in_process=namespace.in_process,
-        past_full_coverage=namespace.past_full_coverage,
+        goal_text=namespace.goal,
     )
 
 
@@ -325,6 +328,7 @@ def _sweep_parser(commands: argparse._SubParsersAction[_Parser]) -> None:
     parser.add_argument(
         "--total-budget", metavar="SECONDS", help="the whole sweep's bound; none by default"
     )
+    parser.add_argument("--goal", metavar="coverage|bugs", help="each entry's goal; coverage")
 
 
 def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
@@ -335,6 +339,7 @@ def _sweep_command(namespace: argparse.Namespace) -> SweepCommand:
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
         total_budget_text=namespace.total_budget,
+        goal_text=namespace.goal,
     )
 
 

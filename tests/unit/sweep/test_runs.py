@@ -36,6 +36,8 @@ def test_a_run_that_prints_its_summary_and_exits_zero_ran_with_it() -> None:
         "5",
         "--solver-timeout",
         "10.0",
+        "--goal",
+        "coverage",
     ]
 
 

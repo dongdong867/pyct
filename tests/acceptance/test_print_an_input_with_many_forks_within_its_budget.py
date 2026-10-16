@@ -38,10 +38,10 @@ def _measured(tmp_path: Path, seed: int, budget: str) -> Measured:
 def _within(tmp_path: Path, seed: int, budget: str, wall: float) -> Measured:
     """The first of up to three runs whose wall time is under ``wall``, or the last run.
 
-    Each goes past full coverage, so the budget ends it, and the inputs it ran count what the
-    budget held.
+    Each runs for bugs, past full coverage, so the budget ends it, and the inputs it ran count
+    what the budget held.
     """
-    argv = [*_countdown(seed, budget), "--past-full-coverage"]
+    argv = [*_countdown(seed, budget), "--goal", "bugs"]
     return within(tmp_path, argv, lambda run: run.wall < wall)
 
 

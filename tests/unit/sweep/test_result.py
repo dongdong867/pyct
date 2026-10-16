@@ -1,6 +1,7 @@
 import json
 import platform
 
+from pyct.config.goal import Goal
 from pyct.sweep.result import SweepLimits, SweepResult, SweepStop, closing, summary_line
 from pyct.sweep.rows import Row, Status
 
@@ -27,7 +28,13 @@ def test_the_summary_counts_each_status_and_says_what_was_listed() -> None:
         "listed": 1,
         "covered": {},
         "total": {},
-        "limits": {"budget": 30.0, "plateau": 5, "solver_timeout": 10.0, "total_budget": None},
+        "limits": {
+            "budget": 30.0,
+            "plateau": 5,
+            "solver_timeout": 10.0,
+            "goal": "coverage",
+            "total_budget": None,
+        },
         "environment": {
             "python": platform.python_version(),
             "cvc5": None,
@@ -37,7 +44,9 @@ def test_the_summary_counts_each_status_and_says_what_was_listed() -> None:
 
 
 def test_the_summary_of_a_run_sorts_its_files_and_lines_and_names_its_limits_and_cvc5() -> None:
-    limits = SweepLimits(budget=20.0, plateau=3, solver_timeout=1.0, total_budget=9.0, grace=5.0)
+    limits = SweepLimits(
+        budget=20.0, plateau=3, solver_timeout=1.0, goal=Goal.BUGS, total_budget=9.0, grace=5.0
+    )
     covered = {"b.py": frozenset({3, 1}), "a.py": frozenset({2})}
     result = SweepResult(
         "p", (RAN,), SweepStop.DONE, limits, covered, {"b.py": 4, "a.py": 2}, "1.3.4"
@@ -47,7 +56,13 @@ def test_the_summary_of_a_run_sorts_its_files_and_lines_and_names_its_limits_and
     assert summary["stopped"] == "done"
     assert list(summary["covered"].items()) == [("a.py", [2]), ("b.py", [1, 3])]
     assert list(summary["total"].items()) == [("a.py", 2), ("b.py", 4)]
-    expected = {"budget": 20.0, "plateau": 3, "solver_timeout": 1.0, "total_budget": 9.0}
+    expected = {
+        "budget": 20.0,
+        "plateau": 3,
+        "solver_timeout": 1.0,
+        "goal": "bugs",
+        "total_budget": 9.0,
+    }
     assert summary["limits"] == expected
     assert summary["environment"]["cvc5"] == "1.3.4"
 

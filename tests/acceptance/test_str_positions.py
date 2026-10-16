@@ -170,7 +170,7 @@ def test_follows_a_reversed_string() -> None:
 
 # follow-positions-into-a-string-counts-a-negative-position-from-the-end
 def test_counts_a_negative_position_from_the_end() -> None:
-    result = run_pyct(NEGATIVE_POSITION, '{"s": "abc", "n": -1}', "--past-full-coverage")
+    result = run_pyct(NEGATIVE_POSITION, '{"s": "abc", "n": -1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     assert len(forks_of(first_line(result.stdout))) == 4
@@ -250,7 +250,7 @@ def test_a_position_int_makes_of_a_float_is_a_tracked_int() -> None:
 
 
 def test_the_code_of_a_tracked_index_needs_no_length_fork() -> None:
-    result = run_pyct(CODE_AT_POSITION, '{"s": "abc", "n": 0}', "--past-full-coverage")
+    result = run_pyct(CODE_AT_POSITION, '{"s": "abc", "n": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -300,7 +300,7 @@ def test_reports_a_tracked_index_before_the_start() -> None:
 
 # follow-positions-into-a-string-reports-a-search-from-a-position-that-finds-nothing
 def test_reports_a_search_from_a_position_that_finds_nothing() -> None:
-    result = run_pyct(INDEX_FROM_POSITION, '{"s": "axb", "n": 0}', "--past-full-coverage")
+    result = run_pyct(INDEX_FROM_POSITION, '{"s": "axb", "n": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]

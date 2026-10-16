@@ -91,7 +91,7 @@ def test_flips_a_string_equality() -> None:
 
 # follow-strings-follows-every-string-compare
 def test_follows_every_string_compare() -> None:
-    result = run_pyct(SIX_COMPARES, '{"s": "a"}', "--past-full-coverage")
+    result = run_pyct(SIX_COMPARES, '{"s": "a"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -261,7 +261,7 @@ def test_keeps_text_conversion_of_a_tracked_string() -> None:
 
 # follow-strings-finds-the-missing-substring
 def test_finds_the_missing_substring() -> None:
-    result = run_pyct(MISSING_SUBSTRING, '{"s": "axb"}', "--past-full-coverage")
+    result = run_pyct(MISSING_SUBSTRING, '{"s": "axb"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)

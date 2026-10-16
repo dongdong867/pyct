@@ -45,7 +45,7 @@ def placed(line: dict[str, object], number: int) -> list[tuple[object, object]]:
 
 # follow-an-int-subclass-on-the-left-follows-membership-among-enum-members
 def test_follows_membership_among_enum_members() -> None:
-    result = run_pyct(f"{SEARCHED}::members", '{"x": 7}', "--past-full-coverage")
+    result = run_pyct(f"{SEARCHED}::members", '{"x": 7}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -62,7 +62,7 @@ def test_follows_membership_among_enum_members() -> None:
 
 # follow-an-int-subclass-on-the-left-follows-not-in-a-list-held-in-a-name
 def test_follows_not_in_a_list_held_in_a_name() -> None:
-    result = run_pyct(f"{SEARCHED}::not_known", '{"x": 1}', "--past-full-coverage")
+    result = run_pyct(f"{SEARCHED}::not_known", '{"x": 1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
@@ -80,7 +80,7 @@ def test_follows_not_in_a_list_held_in_a_name() -> None:
 
 # follow-an-int-subclass-on-the-left-follows-a-bool-in-a-tuple
 def test_follows_a_bool_in_a_tuple() -> None:
-    result = run_pyct(f"{SEARCHED}::bools", '{"x": 1}', "--past-full-coverage")
+    result = run_pyct(f"{SEARCHED}::bools", '{"x": 1}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)

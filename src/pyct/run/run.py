@@ -16,6 +16,7 @@ from pyct.branches.compare import compare
 from pyct.branches.plan import Plan
 from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
+from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
 from pyct.core.branch import ForkSite
@@ -112,15 +113,15 @@ class Bounds:
 
     The budget becomes an instant here, because the clock starts when the call
     does, not when the person typed the seconds. The solver timeout stays
-    seconds, because each solve starts its own clock. ``past_full_coverage``
-    keeps the loop going once every line and branch is covered. All in one
-    value, so the loop and each pass keep to five parameters.
+    seconds, because each solve starts its own clock. ``goal`` says whether
+    the loop stops once every line and branch is covered. All in one value,
+    so the loop and each pass keep to five parameters.
     """
 
     until: float | None = None
     plateau: int | None = None
     solver_timeout: float = DEFAULT_SECONDS
-    past_full_coverage: bool = False
+    goal: Goal = Goal.COVERAGE
 
     @classmethod
     def of(cls, limits: Limits) -> Bounds:
@@ -128,7 +129,7 @@ class Bounds:
             until=_deadline_for(limits.budget),
             plateau=limits.plateau.inputs,
             solver_timeout=limits.solver_timeout.seconds,
-            past_full_coverage=limits.past_full_coverage,
+            goal=limits.goal,
         )
 
 
@@ -215,6 +216,7 @@ def run(
         misses=looped.misses,
         untried=looped.untried,
         deadline=bounds.until,
+        goal=limits.goal,
     )
 
 
@@ -375,9 +377,9 @@ def _attempt(
 
 
 def _covered_or_plateau(bounds: Bounds, progress: Progress) -> Stop | None:
-    """The stop once a fork is picked: every line and branch covered, unless the bounds go past
-    it, then the plateau. None when neither holds."""
-    if not bounds.past_full_coverage and progress.full():
+    """The stop once a fork is picked: every line and branch covered, for the coverage goal, then
+    the plateau. None when neither holds."""
+    if bounds.goal is Goal.COVERAGE and progress.full():
         return Stop(StopKind.FULL)
     if bounds.plateau is not None and no_gain(progress.covered, bounds.plateau):
         return Stop(StopKind.NO_GAIN, plateau=bounds.plateau)

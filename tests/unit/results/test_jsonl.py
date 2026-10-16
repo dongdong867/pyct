@@ -1,5 +1,6 @@
 import json
 
+from pyct.config.goal import Goal
 from pyct.core.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
@@ -200,6 +201,7 @@ def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
     assert "\n" not in line
     assert list(json.loads(line)) == [
         "stopped",
+        "goal",
         "inputs",
         "solver",
         "misses",
@@ -216,6 +218,14 @@ def test_render_summary_says_why_the_run_stopped_and_how_many_inputs_ran() -> No
 
     assert payload["stopped"] == "budget spent"
     assert payload["inputs"] == 2
+
+
+def test_render_summary_says_the_run_s_goal() -> None:
+    covered = Coverage(covered={}, lines={})
+    result = RunResult("m::f", (), covered, Stop(StopKind.BUDGET), ENVIRONMENT, goal=Goal.BUGS)
+
+    assert summarized()["goal"] == "coverage"
+    assert json.loads(render_summary(result))["goal"] == "bugs"
 
 
 def test_render_summary_reads_the_plateau_into_why_the_run_stopped() -> None:

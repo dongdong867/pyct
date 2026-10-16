@@ -100,7 +100,7 @@ def test_flips_a_float_compare() -> None:
 
 # follow-floats-follows-every-float-compare
 def test_follows_every_float_compare() -> None:
-    result = run_pyct(SIX_COMPARES, '{"x": 0.0}', "--past-full-coverage")
+    result = run_pyct(SIX_COMPARES, '{"x": 0.0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -212,7 +212,7 @@ def test_answers_a_finite_float_first(target: str, seed: str) -> None:
 
 # follow-floats-answers-a-finite-float-first
 def test_answers_a_finite_float_beside_one_only_nan_serves() -> None:
-    result = run_pyct(NAN_BESIDE_FINITE, '{"x": 1.0, "y": 1.0}', "--past-full-coverage")
+    result = run_pyct(NAN_BESIDE_FINITE, '{"x": 1.0, "y": 1.0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -298,7 +298,7 @@ def test_treats_a_mixed_equality_as_plain() -> None:
 
 # follow-floats-finds-the-division-by-zero
 def test_finds_the_division_by_zero() -> None:
-    result = run_pyct(DIVIDE, '{"x": 7.0, "y": 2.0}', "--past-full-coverage")
+    result = run_pyct(DIVIDE, '{"x": 7.0, "y": 2.0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)

@@ -107,7 +107,8 @@ def test_a_turned_path_stays_shallowest_first_after_more_leaves() -> None:
     result = run_pyct(
         f"{PAST_A_CACHE}::numbers",
         '{"a": 0, "b": 0, "c": 0, "d": 0, "e": 0}',
-        "--past-full-coverage",
+        "--goal",
+        "bugs",
     )
 
     assert result.returncode == 0, result.stderr
@@ -121,7 +122,7 @@ def test_a_turned_path_stays_shallowest_first_after_more_leaves() -> None:
 def test_a_turn_leaves_the_leaving_input_s_own_path_deepest_first() -> None:
     seed = '{"m": 2, "a": 0, "b": 0, "x": 0, "y": 0}'
 
-    result = run_pyct(f"{PAST_A_CACHE}::tail", seed, "--past-full-coverage")
+    result = run_pyct(f"{PAST_A_CACHE}::tail", seed, "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     first = solver_lines(result.stdout)[0]

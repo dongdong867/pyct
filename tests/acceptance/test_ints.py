@@ -56,7 +56,7 @@ COUNTED_UP = "targets.ints.counted_up::count_up"
 
 # follow-integers-flips-every-comparison
 def test_flips_every_comparison() -> None:
-    result = run_pyct(SIX_CHECKS, '{"x": 0}', "--past-full-coverage")
+    result = run_pyct(SIX_CHECKS, '{"x": 0}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -306,14 +306,14 @@ def assert_the_zero_fork_was_flipped(result: CompletedProcess[str], file: str) -
 
 # follow-integers-finds-the-division-by-zero
 def test_finds_the_division_by_zero() -> None:
-    result = run_pyct(FLOOR_DIVISION, '{"x": 7, "y": 2}', "--past-full-coverage")
+    result = run_pyct(FLOOR_DIVISION, '{"x": 7, "y": 2}', "--goal", "bugs")
 
     assert_the_zero_fork_was_flipped(result, FLOOR_DIVISION_FILE)
 
 
 # follow-integers-finds-the-division-by-zero-on-the-reflected-side
 def test_finds_the_division_by_zero_on_the_reflected_side() -> None:
-    result = run_pyct(REFLECTED_DIVISION, '{"y": 2}', "--past-full-coverage")
+    result = run_pyct(REFLECTED_DIVISION, '{"y": 2}', "--goal", "bugs")
 
     # `7 // y` runs int's reflected divide on y, and the fork is the same divisor's
     assert_the_zero_fork_was_flipped(result, REFLECTED_DIVISION_FILE)

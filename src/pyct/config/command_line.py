@@ -4,6 +4,7 @@ command line that is wrong."""
 import math
 
 from pyct.config.budget import Budget
+from pyct.config.goal import Goal
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 
@@ -50,6 +51,16 @@ def parse_solver_timeout(solver_timeout_text: str | None) -> SolverTimeout:
     if solver_timeout_text is None:
         return SolverTimeout()
     return SolverTimeout(seconds=_positive_seconds(solver_timeout_text, "solver timeout"))
+
+
+def parse_goal(goal_text: str | None) -> Goal:
+    """The goal is one of the words ``Goal`` takes. No flag is the coverage goal."""
+    if goal_text is None:
+        return Goal.COVERAGE
+    if goal_text not in tuple(Goal):
+        goals = " or ".join(goal.value for goal in Goal)
+        raise UsageError(f"goal must be {goals}, got {goal_text!r}")
+    return Goal(goal_text)
 
 
 def _positive_seconds(text: str, flag: str) -> float:

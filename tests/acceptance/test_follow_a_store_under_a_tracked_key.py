@@ -182,7 +182,7 @@ def walked_line(text: str) -> int:
 def test_walks_the_stored_key() -> None:
     target = f"targets.dicts.decided::{WALKED}"
     result = run_pyct(
-        target, '{"n": "pyct1", "d": {}}', *BUDGET, "--past-full-coverage", timeout=PATIENCE
+        target, '{"n": "pyct1", "d": {}}', *BUDGET, "--goal", "bugs", timeout=PATIENCE
     )
 
     assert result.returncode == 0, result.stderr

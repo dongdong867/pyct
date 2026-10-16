@@ -47,7 +47,7 @@ def test_a_timeout_sends_the_other_forks_at_its_site_last() -> None:
     seed = '{"a": "1", "b": "2", "c": "3"}'
 
     result = run_pyct(
-        DIGIT_FIELDS, seed, "--budget", "10", "--solver-timeout", "1", "--past-full-coverage"
+        DIGIT_FIELDS, seed, "--budget", "10", "--solver-timeout", "1", "--goal", "bugs"
     )
 
     assert result.returncode == 0, result.stderr

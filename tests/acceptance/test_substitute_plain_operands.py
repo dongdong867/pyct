@@ -99,7 +99,7 @@ def test_leaves_a_plain_string_call_alone() -> None:
 
 # intercept-builtin-functions-finds-the-substring-a-plain-string-lacks
 def test_finds_the_substring_a_plain_string_lacks() -> None:
-    result = run_pyct(f"{PLAIN_TEXT}::index", '{"s": "b"}', "--past-full-coverage")
+    result = run_pyct(f"{PLAIN_TEXT}::index", '{"s": "b"}', "--goal", "bugs")
 
     assert result.returncode == 0, result.stderr
     seed, second = input_lines(result.stdout)[:2]
