@@ -193,7 +193,7 @@ def _checked(
         goal=parse_goal(command.goal_text),
     )
     folder = dump_folder(command.dump_text)
-    asked = None if folder is None else functools.partial(_dumped, folder)
+    asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
@@ -203,14 +203,33 @@ def _checked(
     return target, seed, limits, Tell(report=_report, missed=_missed, asked=asked)
 
 
-def _dumped(folder: Path, ask: Ask) -> None:
-    """Write an ask's programs into the dump folder, each headed by its aim and its input."""
-    site = ask.aim.site
-    about = (
-        f"aim {site.file}:{site.line}:{site.col} at position {ask.aim.position},"
-        f" on the path of stdout line {ask.path + 1}"
-    )
-    write(folder, ask.number, about, ask.programs)
+class _Dump:
+    """Writes each ask's programs into the dump folder, each headed by its aim and its input.
+
+    A write that fails, a folder made unwritable or a full disk, is said once on stderr and
+    ends the dump; the run goes on."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.writing = True
+
+    def ask(self, ask: Ask) -> None:
+        if not self.writing:
+            return
+        site = ask.aim.site
+        about = (
+            f"aim {site.file}:{site.line}:{site.col} at position {ask.aim.position},"
+            f" on the path of stdout line {ask.path + 1}"
+        )
+        try:
+            write(self.folder, ask.number, about, ask.programs)
+        except OSError as error:
+            self.writing = False
+            print(
+                f"cannot write {error.filename}: {error.strerror}; writing no more asks",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def _sweep(command: SweepCommand) -> int:

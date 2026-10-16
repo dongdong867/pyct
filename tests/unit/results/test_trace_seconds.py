@@ -31,7 +31,10 @@ def test_render_trace_says_how_long_a_solver_input_s_ask_took_after_its_aim() ->
 
 def test_render_trace_names_the_lines_an_input_covered_first_after_its_covered_line() -> None:
     first = InputRecord(
-        args={"x": 1}, forks=(), covered_lines=frozenset({5, 6}), first_covered=frozenset({6, 5})
+        args={"x": 1},
+        forks=(),
+        covered_lines=frozenset({5, 6}),
+        first_covered={"m.py": frozenset({6, 5}), "n.py": frozenset()},
     )
     none = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset({5}))
 

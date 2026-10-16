@@ -39,5 +39,5 @@ def test_each_record_names_the_lines_it_covered_first() -> None:
     seed, solved = result.records
     # line 1, the def, is the import's
     assert target.import_lines >= {1}
-    assert seed.first_covered == {2, 6}
-    assert solved.first_covered == {3, 5}
+    assert seed.first_covered == {target.file: {2, 6}}
+    assert solved.first_covered == {target.file: {3, 5}}

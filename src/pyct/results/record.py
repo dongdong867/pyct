@@ -67,8 +67,8 @@ class InputRecord:
     ``solver_seconds`` is how long the ask that gave a solver's input took,
     from the start of writing it to its answer; a seed's is ``None``. It is a
     measurement, which no two runs share, so two records compare without it.
-    ``first_covered`` is the lines of the run's file this input covered
-    that no earlier input and not the import did.
+    ``first_covered`` is the lines this input covered that no earlier input
+    and not the import did, keyed by file as coverage is.
     """
 
     args: Mapping[str, object]
@@ -82,7 +82,7 @@ class InputRecord:
     facts: tuple[Fact, ...] = ()
     reach: Reach = field(default_factory=Reach)
     solver_seconds: float | None = field(default=None, compare=False)
-    first_covered: frozenset[int] = frozenset()
+    first_covered: Mapping[str, frozenset[int]] = field(default_factory=dict)
 
 
 class StopKind(StrEnum):

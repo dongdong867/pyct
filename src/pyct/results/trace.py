@@ -36,7 +36,7 @@ def render_trace(
     lines += _forks(record.forks, shown.expressions)
     lines += _cut_forks(len(record.forks), shown.cut_from)
     lines += _coverage(coverage)
-    lines += _first_covered(record.first_covered, coverage)
+    lines += _first_covered(record.first_covered)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
@@ -115,10 +115,11 @@ def _uncovered(file: str, lines: frozenset[int]) -> str:
     return f"uncovered {_numbers(lines)} in {file}"
 
 
-def _first_covered(lines: frozenset[int], coverage: Coverage) -> list[str]:
-    """The lines the input covered first, ascending, in each file its coverage is measured in.
-    An input that covered none first gets no line."""
-    return [f"first covered {_numbers(lines)} in {file}" for file in coverage.covered if lines]
+def _first_covered(by_file: Mapping[str, frozenset[int]]) -> list[str]:
+    """The lines the input covered first, ascending, one line per file that has any."""
+    return [
+        f"first covered {_numbers(lines)} in {file}" for file, lines in by_file.items() if lines
+    ]
 
 
 def _numbers(lines: frozenset[int]) -> str:

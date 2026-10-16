@@ -20,6 +20,8 @@ NESTED_FILE = str(REPO_ROOT / "targets" / "asks" / "sat_then_unsat.py")
 # line 2 `if x != x:`, which a finite x never takes: the first program, holding x finite, is
 # unsat, and a later one of the same ask answers NaN
 ODD = "targets.asks.not_a_number::odd"
+# line 3 `if t <= s:` under `s < t`, which cvc5 answers unknown at a 1 s limit
+ORDER = "targets.flip.order::order"
 SECONDS = re.compile(r"\d+\.\d{3}")
 
 
@@ -93,13 +95,35 @@ def test_dump_writes_each_ask_cvc5_can_run(tmp_path: Path) -> None:
     nested_run("--dump-formulas", str(directory))
 
     assert dumped(directory) == ["ask-1.smt2", "ask-2.smt2"]
-    for name, aim, answer in (("ask-1.smt2", 2, "sat"), ("ask-2.smt2", 3, "unsat")):
-        text = (directory / name).read_text()
-        head = text.splitlines()[:2]
-        assert head[0].startswith(f"; aim {NESTED_FILE}:{aim}:"), head
-        assert "on the path of stdout line" in head[0], head
+    # the seed's fork on line 2, then the fork under it, second on the solver input's path
+    asks = (
+        ("ask-1.smt2", "2:7 at position 0, on the path of stdout line 1", "sat"),
+        ("ask-2.smt2", "3:11 at position 1, on the path of stdout line 2", "unsat"),
+    )
+    for name, aim, answer in asks:
+        head = (directory / name).read_text().splitlines()[:2]
+        assert head[0] == f"; aim {NESTED_FILE}:{aim}", head
         assert re.fullmatch(rf"; cvc5 answered {answer} in \d+\.\d{{3}} s", head[1]), head
         assert answered_by_cvc5(directory / name) == answer
+
+
+# match-pyct-v1-on-the-measured-functions-dump-writes-each-ask
+def test_dump_names_cvc5_s_own_word_and_pyct_s_reading_when_they_differ(tmp_path: Path) -> None:
+    directory = tmp_path / "D"
+
+    result = run_pyct(
+        ORDER, '{"s": "a", "t": "b"}', "--solver-timeout", "1", "--dump-formulas", str(directory)
+    )
+
+    assert result.returncode == 0, result.stderr
+    timed_out = [
+        name
+        for name in dumped(directory)
+        if "; cvc5 answered unknown (timeout) in " in (directory / name).read_text()
+    ]
+    # cvc5 answers unknown at its limit, which pyct reads as a timeout
+    assert timed_out, dumped(directory)
+    assert answered_by_cvc5(directory / timed_out[0]) == "unknown"
 
 
 # match-pyct-v1-on-the-measured-functions-dump-numbers-each-program-of-an-ask

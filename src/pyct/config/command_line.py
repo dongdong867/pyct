@@ -69,11 +69,12 @@ def dump_folder(folder_text: str | None) -> Path | None:
     """The folder ``--dump-formulas`` names, made when it is missing. No flag is no folder.
 
     A path that is no directory, a directory that holds files, and one pyct
-    cannot make or write to are refused, naming the path and why.
+    cannot make or write to are refused, naming the path and why. The folder
+    is absolute, so a target that changes the working directory moves no write.
     """
     if folder_text is None:
         return None
-    folder = Path(folder_text)
+    folder = Path(folder_text).absolute()
     if folder.exists() and not folder.is_dir():
         raise UsageError(f"dump-formulas {folder} is not a directory")
     try:

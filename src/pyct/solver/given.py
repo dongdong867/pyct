@@ -38,8 +38,7 @@ _TAKING: list[list[Given]] = []
 @dataclass(frozen=True)
 class Given:
     """One program pyct gave cvc5: its text, the options it ran under as SMT-LIB commands, what
-    cvc5 answered (``sat``, ``unsat``, ``unknown``, ``timeout`` or ``error``) and the seconds it
-    took."""
+    cvc5 answered as ``answered`` words it, and the seconds it took."""
 
     text: str
     options: tuple[str, ...]
@@ -94,10 +93,16 @@ def options(timeout: float) -> tuple[str, ...]:
     )
 
 
-def said(answer: Answer) -> str:
-    """The answer in cvc5's word, or ``timeout`` and ``error`` for the two pyct names."""
+def answered(stdout: str | None, answer: Answer) -> str:
+    """What cvc5 answered in its own word, ``sat``, ``unsat`` or ``unknown``, and pyct's reading
+    of it in parentheses where that differs: ``unknown (timeout)`` at cvc5's limit, ``sat
+    (unknown)`` for a model pyct cannot read. ``no answer`` when cvc5 printed none, or pyct
+    stopped it (``stdout`` None)."""
     words: dict[type, str] = {Sat: "sat", Unsat: "unsat", Unknown: "unknown", Timeout: "timeout"}
-    return words.get(type(answer), "error")
+    read = words.get(type(answer), "error")
+    lines = (stdout or "").split()
+    heard = lines[0] if lines and lines[0] in ("sat", "unsat", "unknown") else "no answer"
+    return heard if heard == read else f"{heard} ({read})"
 
 
 def _milliseconds(timeout: float) -> int:

@@ -7,7 +7,7 @@ from pathlib import Path
 from pyct.core.branch import Branch, Site
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
-from pyct.solver.given import Given, said, taking, took, write
+from pyct.solver.given import Given, answered, taking, took, write
 
 SITE = Site(file="t.py", line=2, col=7)
 
@@ -41,14 +41,15 @@ def test_solve_keeps_each_program_it_gives_cvc5() -> None:
     assert any(option.startswith("(set-option :tlimit-per ") for option in program.options)
 
 
-def test_said_names_each_answer() -> None:
-    assert [said(a) for a in (Sat({}), Unsat(), Unknown(), Timeout(), Error("x"))] == [
-        "sat",
-        "unsat",
-        "unknown",
-        "timeout",
-        "error",
-    ]
+def test_answered_is_cvc5_s_own_word_with_pyct_s_reading_when_it_differs() -> None:
+    assert answered("sat\n(\n)\n", Sat({})) == "sat"
+    assert answered("unsat\n", Unsat()) == "unsat"
+    assert answered("unknown\n(:reason-unknown incomplete)\n", Unknown()) == "unknown"
+    assert answered("unknown\n(:reason-unknown timeout)\n", Timeout()) == "unknown (timeout)"
+    # a sat whose model pyct cannot read
+    assert answered("sat\n(bad\n", Unknown()) == "sat (unknown)"
+    assert answered("", Error("crashed")) == "no answer (error)"
+    assert answered(None, Timeout()) == "no answer (timeout)"
 
 
 def test_write_numbers_an_ask_s_programs_and_cvc5_runs_each(tmp_path: Path) -> None:

@@ -138,3 +138,9 @@ def test_dump_folder_refuses_a_folder_it_cannot_make_or_write(tmp_path: Path) ->
             dump_folder(str(tmp_path / "locked"))
     finally:
         (tmp_path / "locked").chmod(0o700)
+
+
+def test_dump_folder_is_absolute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert dump_folder("D") == tmp_path / "D"

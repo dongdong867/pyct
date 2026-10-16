@@ -21,7 +21,7 @@ from pyct.solver.answer import (
 )
 from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.floats import FINITE
-from pyct.solver.given import Given, argv, options, said, took
+from pyct.solver.given import Given, answered, argv, options, took
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
 from pyct.solver.render import Program, float_leaves, program
@@ -421,10 +421,11 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
-        took(Given(text, options(timeout), "timeout", perf_counter() - started))
+        took(Given(text, options(timeout), answered(None, Timeout()), perf_counter() - started))
         return Timeout(), frozenset()
     answer = _read(finished.stdout, finished.stderr, written)
-    took(Given(text, options(timeout), said(answer), perf_counter() - started))
+    heard = answered(finished.stdout, answer)
+    took(Given(text, options(timeout), heard, perf_counter() - started))
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
