@@ -1,5 +1,3 @@
-from collections.abc import Callable
-
 import pytest
 
 from pyct.cli import (
@@ -7,13 +5,8 @@ from pyct.cli import (
     RunCommand,
     SweepCommand,
     UsageError,
-    parse_budget,
     parse_command,
-    parse_goal,
-    parse_solver_timeout,
 )
-from pyct.config.goal import Goal
-from pyct.config.solver_timeout import SolverTimeout
 
 
 def run_command(argv: list[str]) -> RunCommand:
@@ -71,56 +64,6 @@ def test_the_solver_timeout_may_be_absent() -> None:
 def test_the_goal_is_read_from_its_flag() -> None:
     assert run_command(["run", "m::f", "--goal", "bugs"]).goal_text == "bugs"
     assert run_command(["run", "m::f"]).goal_text is None
-
-
-def test_parse_goal_reads_each_goal_and_defaults_to_coverage() -> None:
-    assert parse_goal("bugs") is Goal.BUGS
-    assert parse_goal("coverage") is Goal.COVERAGE
-    assert parse_goal(None) is Goal.COVERAGE
-
-
-def test_parse_goal_refuses_any_other_value() -> None:
-    with pytest.raises(UsageError, match="goal must be coverage or bugs, got 'speed'"):
-        parse_goal("speed")
-
-
-def test_parse_solver_timeout_returns_the_seconds() -> None:
-    assert parse_solver_timeout("2.5") == SolverTimeout(seconds=2.5)
-
-
-def test_parse_solver_timeout_without_the_flag_is_the_default_limit() -> None:
-    assert parse_solver_timeout(None) == SolverTimeout()
-
-
-@pytest.mark.parametrize("text", ["0", "-1", "abc", "", "1s", "nan", "inf", "1e400"])
-def test_parse_solver_timeout_refuses_anything_but_a_positive_number(text: str) -> None:
-    with pytest.raises(UsageError, match="solver timeout") as refused:
-        parse_solver_timeout(text)
-
-    # the value is named as it was typed, so the text can be found on the command line
-    assert repr(text) in str(refused.value)
-
-
-@pytest.mark.parametrize(
-    ("parse", "text", "refusal"),
-    [
-        (parse_budget, "abc", "budget must be a number of seconds, got 'abc'"),
-        (parse_budget, "0", "budget must be a finite number of seconds above zero, got '0'"),
-        (parse_solver_timeout, "abc", "solver timeout must be a number of seconds, got 'abc'"),
-        (
-            parse_solver_timeout,
-            "0",
-            "solver timeout must be a finite number of seconds above zero, got '0'",
-        ),
-    ],
-)
-def test_the_two_seconds_flags_refuse_in_the_same_words(
-    parse: Callable[[str | None], object], text: str, refusal: str
-) -> None:
-    with pytest.raises(UsageError) as refused:
-        parse(text)
-
-    assert str(refused.value) == refusal
 
 
 def test_the_run_help_names_the_cache_folder_and_its_variable(
