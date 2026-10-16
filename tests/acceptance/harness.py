@@ -10,6 +10,7 @@ directory rather than from an inherited path.
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -63,6 +64,37 @@ def run_pyct(
     # a line no cause explains is put down as ended before with no input that ended
     assert "no cause explains line" not in result.stderr, result.stderr
     return result
+
+
+# how a `missed` line ends: the seconds its ask took, which no two runs share
+_MISSED_SECONDS = re.compile(r" after \d+\.\d{3} s$")
+
+
+def stderr_lines(stderr: str) -> list[str]:
+    """stderr's lines, each `missed` line without the seconds its ask took."""
+    return [
+        _MISSED_SECONDS.sub("", line) if line.startswith("missed ") else line
+        for line in stderr.splitlines()
+    ]
+
+
+def missed_lines(stderr: str) -> list[str]:
+    """stderr's `missed` lines, in order, each without the seconds its ask took."""
+    return [line for line in stderr_lines(stderr) if line.startswith("missed ")]
+
+
+def without_seconds(line: dict[str, object]) -> dict[str, object]:
+    """A printed line without the solver's seconds, its own and each miss's, which no two runs
+    share."""
+    kept = {key: value for key, value in line.items() if key != "solver_seconds"}
+    misses = kept.get("misses")
+    if isinstance(misses, list):
+        kept["misses"] = [without_seconds(miss) for miss in misses]
+    return kept
+
+
+# a seconds key as a printed line writes it, a number or null, or the summary's sums
+SECONDS_KEY = re.compile(r'(, "solver_seconds": (null|[\d.e+-]+))|("solver_seconds": \{[^}]*\}, )')
 
 
 def check_every_uncovered_line_explained_once(stdout: str) -> None:

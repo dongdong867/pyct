@@ -61,6 +61,11 @@ def test_the_solver_timeout_may_be_absent() -> None:
     assert run_command(["run", "m::f"]).solver_timeout_text is None
 
 
+def test_the_dump_folder_is_read_from_its_flag() -> None:
+    assert run_command(["run", "m::f", "--dump-formulas", "D"]).dump_text == "D"
+    assert run_command(["run", "m::f"]).dump_text is None
+
+
 def test_the_goal_is_read_from_its_flag() -> None:
     assert run_command(["run", "m::f", "--goal", "bugs"]).goal_text == "bugs"
     assert run_command(["run", "m::f"]).goal_text is None

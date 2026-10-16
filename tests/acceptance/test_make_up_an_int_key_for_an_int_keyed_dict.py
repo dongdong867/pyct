@@ -10,7 +10,14 @@ import re
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line, union_of
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    input_lines,
+    missed_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 from tests.acceptance.test_dicts import UNTIL_NO_GAIN, dict_of
 from tests.acceptance.test_lists import args_of, downgrade_names, listed, number, solved
 
@@ -108,7 +115,7 @@ def test_keeps_str_keys_elsewhere() -> None:
     # (record-decided-checks-on-lists-strings-and-second-walks), never flipped
     assert [(m["line"], m["why"]) for m in misses if m["line"] == 3] == [(3, "unsat")], misses
     missed = [
-        e for e in str_keyed.stderr.splitlines() if e.startswith(f"missed {MADE_UP_INTS_FILE}:3:")
+        e for e in missed_lines(str_keyed.stderr) if e.startswith(f"missed {MADE_UP_INTS_FILE}:3:")
     ]
     assert len(missed) == 1 and all(entry.endswith(" unsat") for entry in missed), missed
 

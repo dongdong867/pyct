@@ -23,6 +23,7 @@ from pyct.run.run import run
 from pyct.run.target import load_target
 from tests.acceptance.harness import (
     REPO_ROOT,
+    SECONDS_KEY,
     check_every_uncovered_line_explained_once,
     let_pyct_run_in_process,
     run_pyct,
@@ -84,8 +85,9 @@ RECORD_PRINTED = os.environ.get("PYCT_RECORD_PRINTED") == "1"
 
 
 def printed(result: subprocess.CompletedProcess[str]) -> dict[str, list[str]]:
-    """A run's input lines and stderr fork lines, the repository's folder written <root>."""
-    inputs = result.stdout.splitlines()[:-1]
+    """A run's input lines, without the seconds of their asks, and stderr fork lines, the
+    repository's folder written <root>."""
+    inputs = [SECONDS_KEY.sub("", line) for line in result.stdout.splitlines()[:-1]]
     forks = [line for line in result.stderr.splitlines() if line.startswith("fork ")]
     root = str(REPO_ROOT)
     return {

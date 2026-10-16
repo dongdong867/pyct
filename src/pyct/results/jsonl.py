@@ -15,6 +15,7 @@ from pyct.results.record import (
     Miss,
     RunResult,
     SolverCounts,
+    SolverSeconds,
 )
 from pyct.results.why_render import why_json
 
@@ -35,6 +36,7 @@ def render(record: InputRecord, coverage: Coverage, printed: PrintedForks | None
         "source": record.source.value,
         "aim": _aim(record.aim),
         "mismatch_at": record.mismatch_at,
+        "solver_seconds": _seconds(record.solver_seconds),
     }
     # as json.dumps writes the whole line, with the forks written here, each site's text once
     forks = _forks(record.forks, expressions)
@@ -54,6 +56,7 @@ def render_summary(result: RunResult) -> str:
         "goal": result.goal.value,
         "inputs": result.inputs,
         "solver": _counts(result.solver),
+        "solver_seconds": _totals(result.solver_seconds),
         "misses": [_miss(miss) for miss in result.misses],
         "covered": _numbers(result.coverage.covered),
         "total": dict(result.coverage.total),
@@ -79,6 +82,21 @@ def _counts(counts: SolverCounts) -> dict[str, int]:
     }
 
 
+def _totals(seconds: SolverSeconds) -> dict[str, float]:
+    """How long the asks took, one sum per kind of answer."""
+    return {
+        "sat": round(seconds.sat, 3),
+        "unsat": round(seconds.unsat, 3),
+        "unknown": round(seconds.unknown, 3),
+        "timeout": round(seconds.timeout, 3),
+    }
+
+
+def _seconds(seconds: float | None) -> float | None:
+    """Seconds to the millisecond, as every line writes them; ``None`` stays."""
+    return None if seconds is None else round(seconds, 3)
+
+
 def _environment(environment: Environment) -> dict[str, object]:
     """What the run ran in. ``cvc5`` is null when the probe gave nothing readable."""
     return {
@@ -96,6 +114,7 @@ def _miss(miss: Miss) -> dict[str, object]:
         "line": miss.site.line,
         "col": miss.site.col,
         "why": miss.why.value,
+        "solver_seconds": _seconds(miss.solver_seconds),
     }
 
 

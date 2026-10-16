@@ -17,6 +17,7 @@ from pyct.results.record import (
     Miss,
     RunResult,
     SolverCounts,
+    SolverSeconds,
     Stop,
 )
 from pyct.results.why_render import why_line
@@ -35,6 +36,7 @@ def render_trace(
     lines += _forks(record.forks, shown.expressions)
     lines += _cut_forks(len(record.forks), shown.cut_from)
     lines += _coverage(coverage)
+    lines += _first_covered(record.first_covered, coverage)
     lines += _ended(record.failure)
     lost = ", ".join(_downgrade(entry) for entry in record.downgrades)
     lines.append(f"downgrades {lost or 'none'}")
@@ -47,7 +49,9 @@ def render_miss(miss: Miss) -> str:
     Its own line rather than part of the summary, so a caller can print it
     the moment the answer comes in, before the next input's trace.
     """
-    return _written([f"missed {_site(miss.site)} {miss.why.value}"])
+    return _written(
+        [f"missed {_site(miss.site)} {miss.why.value} after {_seconds(miss.solver_seconds)} s"]
+    )
 
 
 def render_stop(result: RunResult) -> str:
@@ -71,7 +75,7 @@ def _written(lines: list[str]) -> str:
 def _summary(result: RunResult) -> list[str]:
     """What the whole run covered, what the solver answered, and what it left behind."""
     coverage = result.coverage
-    lines = [*_coverage(coverage), _solver(result.solver)]
+    lines = [*_coverage(coverage), _solver(result.solver), _solver_seconds(result.solver_seconds)]
     lines += [_uncovered(file, left) for file, left in coverage.uncovered.items() if left]
     lines += [why_line(entry) for entry in result.why_uncovered]
     return lines
@@ -93,10 +97,33 @@ def _solver(counts: SolverCounts) -> str:
     )
 
 
+def _solver_seconds(seconds: SolverSeconds) -> str:
+    """How long the solver's asks took over the run, summed by what each answered."""
+    return (
+        f"solver seconds: {_seconds(seconds.sat)} sat, {_seconds(seconds.unsat)} unsat, "
+        f"{_seconds(seconds.unknown)} unknown, {_seconds(seconds.timeout)} timeout"
+    )
+
+
+def _seconds(seconds: float) -> str:
+    """Seconds to the millisecond, as every line writes them."""
+    return f"{seconds:.3f}"
+
+
 def _uncovered(file: str, lines: frozenset[int]) -> str:
     """The lines of one file left uncovered, ascending. A file with none gets no line at all."""
-    numbers = ", ".join(str(line) for line in sorted(lines))
-    return f"uncovered {numbers} in {file}"
+    return f"uncovered {_numbers(lines)} in {file}"
+
+
+def _first_covered(lines: frozenset[int], coverage: Coverage) -> list[str]:
+    """The lines the input covered first, ascending, in each file its coverage is measured in.
+    An input that covered none first gets no line."""
+    return [f"first covered {_numbers(lines)} in {file}" for file in coverage.covered if lines]
+
+
+def _numbers(lines: frozenset[int]) -> str:
+    """Line numbers, ascending, as the trace writes them."""
+    return ", ".join(str(line) for line in sorted(lines))
 
 
 def _indented(detail: str | None) -> list[str]:
@@ -115,6 +142,8 @@ def _head(record: InputRecord) -> list[str]:
     if record.aim is None:
         return lines
     lines.append(_aim(record.aim))
+    if record.solver_seconds is not None:
+        lines.append(f"asked in {_seconds(record.solver_seconds)} s")
     at = record.mismatch_at
     lines.append("reached" if at is None else _left_the_plan(record.forks, at))
     return lines

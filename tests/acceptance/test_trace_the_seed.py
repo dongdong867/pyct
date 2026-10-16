@@ -312,12 +312,14 @@ def test_writes_a_readable_trace_to_stderr() -> None:
     result = run_pyct(CALLS_HELPER, '{"x": 50}')
 
     assert result.returncode == 0, result.stderr
-    # one fact per line: the seed, each fork in order, the coverage, how it ended, what was lost
-    assert result.stderr.splitlines()[:6] == [
+    # one fact per line: the seed, each fork in order, the coverage and the lines it covered
+    # first, how it ended, what was lost
+    assert result.stderr.splitlines()[:7] == [
         'seed {"x": 50}',
         f"fork {HELPER_CHECK_FILE}:2:7  x < 5  not taken",
         f"fork {CALLS_HELPER_FILE}:7:7  x < 100  taken",
         f"covered 3 of 7 lines in {CALLS_HELPER_FILE}",
+        f"first covered 5, 7, 8 in {CALLS_HELPER_FILE}",
         "ended returned",
         "downgrades none",
     ]

@@ -13,7 +13,7 @@ import pytest
 from targets.floats import searched_members as float_members
 from targets.ints import searched_deques, searched_floats
 from targets.strs import searched_members as str_members
-from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, run_pyct
+from tests.acceptance.harness import REPO_ROOT, first_line, input_lines, missed_lines, run_pyct
 from tests.acceptance.test_bool_parameters import covered
 from tests.acceptance.test_bools import failure_of
 from tests.acceptance.test_follow_an_int_subclass_on_the_left import placed
@@ -125,7 +125,7 @@ def test_follows_an_int_among_floats(function: str, at: int, true_line: int) -> 
     assert placed(seed, at) == [(["==", "x", 0.5], False), (["==", "x", 2.0], False)]
     assert true_line + 1 in covered(seed, AMONG_FLOATS_FILE)
     # no int equals 0.5, so the first fork cannot flip
-    assert f"missed {AMONG_FLOATS_FILE}:{at}:7 unsat" in result.stderr.splitlines(), result.stderr
+    assert f"missed {AMONG_FLOATS_FILE}:{at}:7 unsat" in missed_lines(result.stderr), result.stderr
     assert any(
         given(line, "x") == 2 and true_line in covered(line, AMONG_FLOATS_FILE)
         for line in solver_lines(result.stdout)

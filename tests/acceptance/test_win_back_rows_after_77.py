@@ -9,7 +9,7 @@ so each call's fork ran to the solver's limit before any other.
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, stderr_lines, summary_line
 
 DIGIT_CHECKSUM = "targets.strs.digit_checksum::checksum"
 DIGIT_CHECKSUM_FILE = str(REPO_ROOT / "targets" / "strs" / "digit_checksum.py")
@@ -53,7 +53,7 @@ def test_a_timeout_sends_the_other_forks_at_its_site_last() -> None:
     assert result.returncode == 0, result.stderr
     events = [
         line
-        for line in result.stderr.splitlines()
+        for line in stderr_lines(result.stderr)
         if line.startswith("aim ") or line.startswith("missed ")
     ]
     timeouts = [at for at, line in enumerate(events) if line == f"missed {READ_AS_INT} timeout"]

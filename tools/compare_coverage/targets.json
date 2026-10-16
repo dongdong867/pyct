@@ -22,6 +22,8 @@
     {"set": "v2", "target": "targets.annotations.stored_as_text::echo_text", "seed": {"s": "a"}},
     {"set": "v2", "target": "targets.annotations.unchecked::echo_unchecked", "seed": {"p": ["a", "b"], "q": {"1": 2}, "r": ["x"]}},
     {"set": "v2", "target": "targets.annotations.unresolved::echo_text", "seed": {"s": 5}},
+    {"set": "v2", "target": "targets.asks.not_a_number::odd", "seed": {"x": 0.0}},
+    {"set": "v2", "target": "targets.asks.sat_then_unsat::nested", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.bools.and_or::both", "seed": {"x": 0, "y": 0}},
     {"set": "v2", "target": "targets.bools.before_none::check", "seed": {"flag": true, "other": false}},
     {"set": "v2", "target": "targets.bools.bool_literal::shift", "seed": {"x": 0}},

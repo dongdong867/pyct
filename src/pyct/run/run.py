@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import itertools
 import platform
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import assert_never
 
@@ -37,9 +38,11 @@ from pyct.run.collector import collector_paused
 from pyct.run.isolation import Call, Inputs, Isolation
 from pyct.run.process import InputStartError
 from pyct.run.target import Target
+from pyct.run.tell import Ask, Tell, Told
 from pyct.solver import walk_keys
-from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
+from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
+from pyct.solver.given import taking
 from pyct.solver.locate import locate, version
 
 _NO_LIMITS = Limits()
@@ -62,49 +65,7 @@ def _platform() -> str:
 
 _PLATFORM = _platform()
 
-# what a caller does with an input the moment it is finished
-type Report = Callable[[InputRecord, Coverage], None]
-
-# what a caller does with a fork the solver could not flip, the moment the answer comes in
-type Missed = Callable[[Miss], None]
-
-
-@dataclass(frozen=True)
-class Tell:
-    """What a caller does with each fact of the run the moment it happens.
-
-    ``report`` takes each finished input with the lines that input alone
-    covered; ``missed`` takes each fork the solver gave no input for. One
-    object rather than a keyword per kind of fact, so ``run()`` and the loop
-    keep to five parameters: a later kind of fact widens this instead of
-    their signatures. A Tell with nothing set hands nothing out.
-    """
-
-    report: Report | None = None
-    missed: Missed | None = None
-
-
 _TELL_NOTHING = Tell()
-
-
-@dataclass(frozen=True)
-class _Told:
-    """The caller's Tell, with the scope each reported input's coverage is measured in, and the
-    lines the target's import ran, which the stop on full coverage counts as covered."""
-
-    scope: Scope
-    tell: Tell
-    imported: frozenset[int] = frozenset()
-
-    def record(self, record: InputRecord) -> None:
-        """Hand out a finished input, with the lines that one input covered."""
-        if self.tell.report is not None:
-            self.tell.report(record, Coverage.of(self.scope, record.covered_lines))
-
-    def miss(self, miss: Miss) -> None:
-        """Hand out a fork the solver gave no input for."""
-        if self.tell.missed is not None:
-            self.tell.missed(miss)
 
 
 @dataclass(frozen=True)
@@ -148,12 +109,14 @@ class Attempt:
 
     ``unrun`` is the site of a fork the pass picked and then stopped before it
     ran an input for: the pick spends the fork, so only the pass knows it.
+    ``asked`` is the pass's ask of the solver, numbered by the loop.
     """
 
     stop: Stop | None = None
     ran: Ran | None = None
     miss: Miss | None = None
     unrun: ForkSite | None = None
+    asked: Ask | None = None
 
     @property
     def record(self) -> InputRecord | None:
@@ -203,7 +166,7 @@ def run(
     cvc5 = version(locate())
     bounds = Bounds.of(limits)
     copied = Seed.of(seed, checked_annotations(target.signature, target.fn))
-    told = _Told(scope=scope, tell=tell, imported=target.import_lines)
+    told = Told(scope=scope, tell=tell, imported=target.import_lines)
     looped = _inputs(inputs, copied, bounds, told)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
@@ -220,7 +183,7 @@ def run(
     )
 
 
-def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
+def _inputs(call: Call, copied: Seed, bounds: Bounds, told: Told) -> Loop:
     """The seed and every input after it, what the solver missed, and why they stopped.
 
     A seed whose process cannot start stops the run before any input.
@@ -234,8 +197,7 @@ def _inputs(call: Call, copied: Seed, bounds: Bounds, told: _Told) -> Loop:
         seeded = _record_of(copied.args, call(copied.args, bounds.until))
     except InputStartError as error:
         return Loop((), (), _could_not_start(error))
-    looped = _loop(call, copied, seeded, bounds, told)
-    return dataclasses.replace(looped, records=(seeded, *looped.records))
+    return _loop(call, copied, seeded, bounds, told)
 
 
 def _could_not_start(error: InputStartError) -> Stop:
@@ -263,7 +225,7 @@ def _loop(
     seed: Seed,
     seeded: InputRecord,
     bounds: Bounds,
-    told: _Told,
+    told: Told,
 ) -> Loop:
     """Pick a fork, run what the solver answers for it, until a pass says to stop.
 
@@ -275,31 +237,33 @@ def _loop(
     ``progress`` holds the lines of each input that ran, in run order, the
     seed's first, and what each reached; a miss ran no input and adds none.
     It applies the scope, because a record carries the tracer's raw lines.
+    Each ask is handed out, numbered, the moment its answer is in.
     """
-    records: list[InputRecord] = []
     misses: list[Miss] = []
     progress = Progress(told.scope, told.imported)
-    progress.add(seeded.covered_lines, seeded.reach)
     tree = Tree()
-    _handled(seeded, told, tree)
+    records = [_measured(seeded, progress)]
+    _handled(records[0], told, tree)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
     # input whose path it extends, not from the seed (see ``Plan.path``)
     inputs = {0: seed}
+    numbers = itertools.count(1)
     while True:
         _let_go(inputs, tree.oldest)
         attempt = _attempt(call, inputs, tree, bounds, progress)
+        if attempt.asked is not None:
+            told.ask(dataclasses.replace(attempt.asked, number=next(numbers)))
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
         if attempt.miss is not None:
             misses.append(attempt.miss)
             told.miss(attempt.miss)
         if attempt.ran is not None:
-            records.append(attempt.ran.record)
             inputs[len(records)] = attempt.ran.seed
-            _took(attempt.ran.record, told, tree, progress)
+            records.append(_took(attempt.ran.record, told, tree, progress))
 
 
-def _took(record: InputRecord, told: _Told, tree: Tree, progress: Progress) -> None:
+def _took(record: InputRecord, told: Told, tree: Tree, progress: Progress) -> InputRecord:
     """Measure a solver's input, hand it out and add its path, then turn the path its pick
     extended when the input left the plan and covered no line no earlier input had.
 
@@ -310,13 +274,20 @@ def _took(record: InputRecord, told: _Told, tree: Tree, progress: Progress) -> N
     An input that left and covered a new line turns nothing. Decision
     fork-order-shallowest-first-after-a-leave-without-gain.
     """
-    progress.add(record.covered_lines, record.reach)
+    record = _measured(record, progress)
     _handled(record, told, tree)
     if record.mismatch_at is not None and no_gain(progress.covered, 1):
         tree.turn()
+    return record
 
 
-def _handled(record: InputRecord, told: _Told, tree: Tree) -> None:
+def _measured(record: InputRecord, progress: Progress) -> InputRecord:
+    """The record, with the lines it covered first, once the run's progress has added it."""
+    first = progress.add(record.covered_lines, record.reach)
+    return dataclasses.replace(record, first_covered=first)
+
+
+def _handled(record: InputRecord, told: Told, tree: Tree) -> None:
     """Hand out a finished input, then add its path to the tree, with the collector paused."""
     with collector_paused():
         told.record(record)
@@ -360,20 +331,31 @@ def _attempt(
     if stop is not None:
         return Attempt(stop=stop, unrun=unrun)
     origin = inputs[wanted.path]
-    limit = _solve_limit(bounds, left)
-    answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
+    answer, seconds, asked = _solved(wanted, origin, _solve_limit(bounds, left))
     if isinstance(answer, Timeout):
         tree.timed_out()
     if isinstance(answer, Error):
-        return Attempt(stop=Stop(StopKind.SOLVER_FAILED, answer.detail), unrun=unrun)
+        stop = Stop(StopKind.SOLVER_FAILED, answer.detail)
+        return Attempt(stop=stop, unrun=unrun, asked=asked)
     if not isinstance(answer, Sat):
-        return Attempt(miss=Miss(wanted.aim.site, _why(answer), wanted.aim.raising))
+        miss = Miss(wanted.aim.site, _why(answer), wanted.aim.raising, seconds)
+        return Attempt(miss=miss, asked=asked)
     solved = apply(origin, answer.model)
     try:
-        record = _record_of(solved.args, call(solved.args, bounds.until), wanted)
+        record = _record_of(solved.args, call(solved.args, bounds.until), wanted, seconds)
     except InputStartError as error:
-        return Attempt(stop=_could_not_start(error), unrun=unrun)
-    return Attempt(ran=Ran(record, solved))
+        return Attempt(stop=_could_not_start(error), unrun=unrun, asked=asked)
+    return Attempt(ran=Ran(record, solved), asked=asked)
+
+
+def _solved(wanted: Plan, origin: Seed, limit: float) -> tuple[Answer, float, Ask]:
+    """The solver's answer for the fork aimed at, the seconds from the start of writing the ask
+    to its answer, and the ask with each program pyct gave cvc5 for it."""
+    started = time.monotonic()
+    with taking() as programs:
+        answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
+    asked = Ask(0, wanted.aim, wanted.path, tuple(programs))
+    return answer, time.monotonic() - started, asked
 
 
 def _covered_or_plateau(bounds: Bounds, progress: Progress) -> Stop | None:
@@ -424,8 +406,10 @@ def _record_of(
     args: Mapping[str, object],
     executed: ExecutionResult,
     wanted: Plan | None = None,
+    seconds: float | None = None,
 ) -> InputRecord:
-    """What one input did. A plan makes it the solver's, aimed and read against that plan.
+    """What one input did. A plan makes it the solver's, aimed and read against that plan, and
+    ``seconds`` is how long the ask for it took.
 
     The lines are the tracer's, unmeasured: Coverage.of is where the scope is applied.
     """
@@ -440,6 +424,7 @@ def _record_of(
         aim=None if wanted is None else wanted.aim,
         mismatch_at=None if wanted is None else compare(wanted.prefix, executed.branches),
         reach=executed.reach,
+        solver_seconds=seconds,
     )
 
 

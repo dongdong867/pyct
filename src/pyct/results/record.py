@@ -63,6 +63,12 @@ class InputRecord:
     so both stay ``None``. ``facts`` are what its path held beside the forks,
     and ``reach`` the functions it entered and the ways their branches went,
     neither of which a line prints.
+
+    ``solver_seconds`` is how long the ask that gave a solver's input took,
+    from the start of writing it to its answer; a seed's is ``None``. It is a
+    measurement, which no two runs share, so two records compare without it.
+    ``first_covered`` is the lines of the run's file this input covered
+    that no earlier input and not the import did.
     """
 
     args: Mapping[str, object]
@@ -75,6 +81,8 @@ class InputRecord:
     mismatch_at: int | None = None
     facts: tuple[Fact, ...] = ()
     reach: Reach = field(default_factory=Reach)
+    solver_seconds: float | None = field(default=None, compare=False)
+    first_covered: frozenset[int] = frozenset()
 
 
 class StopKind(StrEnum):
@@ -135,11 +143,14 @@ class Miss:
     """A fork the run asked for and got no input to: where it is, and what the solver said.
 
     ``raising`` says the fork is an operation's before a raise (``Branch.raising``).
+    ``solver_seconds`` is how long the ask took, from the start of writing it to its answer,
+    a measurement two misses compare without.
     """
 
     site: Site
     why: MissWhy
     raising: bool = False
+    solver_seconds: float = field(default=0.0, compare=False)
 
 
 @dataclass(frozen=True)
@@ -166,6 +177,16 @@ class SolverCounts:
     unsat: int
     unknown: int
     timeout: int
+
+
+@dataclass(frozen=True)
+class SolverSeconds:
+    """How many seconds the solver's asks took, summed by what each answered."""
+
+    sat: float
+    unsat: float
+    unknown: float
+    timeout: float
 
 
 @dataclass(frozen=True)
@@ -208,6 +229,21 @@ class RunResult:
             unsat=whys.count(MissWhy.UNSAT),
             unknown=whys.count(MissWhy.UNKNOWN),
             timeout=whys.count(MissWhy.TIMEOUT),
+        )
+
+    @property
+    def solver_seconds(self) -> SolverSeconds:
+        """The seconds of the asks, summed by answer: a solver input's ask was sat, and every
+        other ask is a miss."""
+        given = [record.solver_seconds for record in self.records]
+        by_why = {why: 0.0 for why in MissWhy}
+        for miss in self.misses:
+            by_why[miss.why] += miss.solver_seconds
+        return SolverSeconds(
+            sat=sum(seconds for seconds in given if seconds is not None),
+            unsat=by_why[MissWhy.UNSAT],
+            unknown=by_why[MissWhy.UNKNOWN],
+            timeout=by_why[MissWhy.TIMEOUT],
         )
 
     @functools.cached_property

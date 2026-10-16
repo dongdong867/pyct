@@ -411,7 +411,7 @@ def test_limits_an_answer_to_a_million_items() -> None:
     longest = [items_of(line) for line in solved(input_lines(at_limit.stdout))]
     assert any(len(items) == 1_000_000 and items[-1] == 1 for items in longest)
     assert past_limit.returncode == 0, past_limit.stderr
-    assert f"missed {MILLION_FILE}:8:7 unsat" in past_limit.stderr.splitlines()
+    assert f"missed {MILLION_FILE}:8:7 unsat after " in past_limit.stderr
 
 
 # record-decided-checks-on-lists-strings-and-second-walks-follows-len-of-a-changed-list: `len`

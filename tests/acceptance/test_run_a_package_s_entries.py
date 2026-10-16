@@ -22,6 +22,7 @@ from tests.acceptance.harness import (
     run_pyct,
     summary_line,
     version_then_crashing_cvc5,
+    without_seconds,
 )
 from tests.acceptance.sweeping import (
     FIXTURES,
@@ -100,7 +101,7 @@ def test_runs_each_public_function() -> None:
         assert row["status"] == "ran", row
         spec = f"{row['module']}::{row['name']}"
         alone = run_pyct(spec, "--args", json.dumps(row["seed"]), *DEFAULT_LIMITS)
-        assert row["run"] == summary_line(alone.stdout), alone.stderr
+        assert without_seconds(row["run"]) == without_seconds(summary_line(alone.stdout))
     parse = row_named(result.stdout, f"{shop}._parse", "parse_price")
     assert list(parse["run"]["total"]) == [str(fixture_file(f"{shop}._parse"))]
     counts = summary(result.stdout)

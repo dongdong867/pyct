@@ -16,6 +16,7 @@ from tests.acceptance.harness import (
     one_line,
     run_pyct,
     second_line,
+    stderr_lines,
     two_lines,
 )
 
@@ -141,7 +142,8 @@ def test_writes_the_aim_to_stderr() -> None:
     at = solver[0]
     # where the second input was sent, and whether it arrived
     assert lines[at + 1] == f"aim {ONE_CHECK_FILE}:2:7 at position 0"
-    assert lines[at + 2] == "reached"
+    assert lines[at + 2].startswith("asked in ")
+    assert lines[at + 3] == "reached"
     assert f"fork {ONE_CHECK_FILE}:2:7  x < 10  not taken" in lines[at:]
 
 
@@ -179,13 +181,13 @@ def test_reports_unsat() -> None:
     seed = first_line(result.stdout)
     assert seed["source"] == "seed"
     # the inner check cannot go the other way while the outer one holds
-    lines = result.stderr.splitlines()
+    lines = stderr_lines(result.stderr)
     missed = f"missed {IMPLIED_CHECK_FILE}:3:11 unsat"
     assert missed in lines, result.stderr
     # an answer that gave no input is not why the run ended; it ran out of forks
     assert lines[-1] == "stopped: no fork to flip"
     # the miss prints the moment the solver answers, so it lands before the next input's trace
-    solved = [at for at, line in enumerate(lines) if line.startswith("solver ")]
+    solved = [at for at, line in enumerate(lines) if line.startswith("solver {")]
     assert solved, result.stderr
     assert lines.index(missed) < solved[0], result.stderr
 

@@ -16,6 +16,7 @@ from tests.acceptance.harness import (
     forks_of,
     hanging_cvc5,
     input_lines,
+    missed_lines,
     run_pyct,
     summary_line,
 )
@@ -246,7 +247,7 @@ def test_reports_a_slow_encoding_as_a_miss(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert (2, "timeout") in misses_of(result.stdout), result.stdout
-    assert f"missed {SHOUTED_PAIR_FILE}:2:7 timeout" in result.stderr.splitlines()
+    assert f"missed {SHOUTED_PAIR_FILE}:2:7 timeout" in missed_lines(result.stderr)
     # the seed alone ran: no answer came back to run
     assert len(input_lines(result.stdout)) == 1, result.stdout
     assert summary_line(result.stdout)["stopped"] == "budget spent"
