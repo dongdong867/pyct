@@ -60,8 +60,10 @@ def test_each_record_carries_what_its_input_reached(isolation: Isolation) -> Non
     seed, raised = result.records
     assert seed.reach.went == {(2, 5)}
     assert seed.reach.branches == {2: {3, 5}}
-    assert {2, 3, 4, 5} <= seed.reach.lines
-    assert raised.reach == Reach(seed.reach.lines, seed.reach.branches, frozenset({(2, 3)}))
+    assert {2, 3, 4, 5} <= seed.reach.function_lines
+    assert raised.reach == Reach(
+        seed.reach.function_lines, seed.reach.branches, frozenset({(2, 3)})
+    )
 
 
 def test_the_words_of_the_stop() -> None:

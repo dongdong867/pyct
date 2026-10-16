@@ -7,15 +7,13 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.branches.tree import Tree
-from pyct.results.coverage import Coverage, Progress, Scope
+from pyct.results.coverage import Coverage
 from pyct.results.record import InputRecord, Stop, StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError
 from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
-
-# a progress no input has added to yet, which no stop reads as full
-NO_INPUT_YET = Progress(Scope(file="", lines=frozenset()), frozenset())
+from tests.unit.run.test_run import no_input_yet
 
 REFUSED = "[Errno 35] Resource temporarily unavailable"
 
@@ -62,7 +60,7 @@ def test_an_input_that_cannot_start_stops_the_loop() -> None:
     def refused(args: object, until: float | None) -> object:
         raise InputStartError(f"could not start a child process: {REFUSED}")
 
-    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), NO_INPUT_YET)  # pyrefly: ignore[bad-argument-type]
+    attempt = _attempt(refused, {0: Seed.of(seed)}, tree, Bounds(), no_input_yet())  # pyrefly: ignore[bad-argument-type]
 
     assert attempt.record is None
     assert attempt.stop == Stop(

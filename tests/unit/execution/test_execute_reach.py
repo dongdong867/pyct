@@ -69,8 +69,8 @@ def test_execute_keeps_the_functions_the_call_entered_and_the_ways_it_went() -> 
     result = execute(ExecutionContext(fn=loaded("target"), file="<reach>"), {"x": 3})
 
     reach = result.reach
-    assert {2, 3, 4, 8, 9, 10} <= reach.lines
-    assert reach.lines.isdisjoint({14, 15, 16})
+    assert {2, 3, 4, 8, 9, 10} <= reach.function_lines
+    assert reach.function_lines.isdisjoint({14, 15, 16})
     assert reach.branches == {2: {3, 4}, 8: {9, 10}}
     assert reach.went == {(8, 9), (2, 4)}
 
@@ -79,8 +79,8 @@ def test_execute_keeps_no_function_the_call_did_not_enter() -> None:
     result = execute(ExecutionContext(fn=loaded("target"), file="<reach>"), {"x": 11})
 
     reach = result.reach
-    assert {8, 9, 10} <= reach.lines
-    assert reach.lines.isdisjoint({2, 3, 4})
+    assert {8, 9, 10} <= reach.function_lines
+    assert reach.function_lines.isdisjoint({2, 3, 4})
     assert reach.branches == {8: {9, 10}}
     assert reach.went == {(8, 10)}
 

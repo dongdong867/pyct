@@ -22,7 +22,7 @@ def test_each_function_entered_and_each_way_reads_back_as_written() -> None:
     reading = read(buffer)
     assert reading.lines == {2}
     assert reading.reach == Reach(
-        lines=frozenset({1, 2, 3, 4, 7, 8}),
+        function_lines=frozenset({1, 2, 3, 4, 7, 8}),
         branches={2: frozenset({3, 4})},
         went=frozenset({(2, 4), (2, 3)}),
     )
@@ -42,7 +42,7 @@ def test_an_input_s_result_carries_what_its_journal_reached() -> None:
 
     result = ending(read(buffer), Waited.of(0))
 
-    assert result.reach == Reach(lines=frozenset({1, 2}), went=frozenset({(1, 2)}))
+    assert result.reach == Reach(function_lines=frozenset({1, 2}), went=frozenset({(1, 2)}))
 
 
 def test_a_reach_record_of_the_wrong_shape_stops_the_reading() -> None:

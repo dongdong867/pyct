@@ -209,8 +209,8 @@ class _Facts:
     lines: set[int] = field(default_factory=set)
     branches: list[Branch] = field(default_factory=list)
     # the lines of the functions the call entered, their branches, and the ways those went
-    entered: set[int] = field(default_factory=set)
-    ways: dict[int, frozenset[int]] = field(default_factory=dict)
+    entered_lines: set[int] = field(default_factory=set)
+    entered_branches: dict[int, frozenset[int]] = field(default_factory=dict)
     went: set[tuple[int, int]] = field(default_factory=set)
     # the facts the path holds, each placed after the fork records read before it
     facts: list[Fact] = field(default_factory=list)
@@ -274,9 +274,9 @@ class _Facts:
         if kind == WENT:
             self.went.add(WAY.unpack(payload))
             return
-        lines, ways = _function(_decoded(payload))
-        self.entered.update(lines)
-        self.ways.update(ways)
+        lines, branches = _function(_decoded(payload))
+        self.entered_lines.update(lines)
+        self.entered_branches.update(branches)
 
     def _written(self, kind: int, value: object) -> None:
         """Add a record written as JSON: a part, a fork or a fact."""
@@ -375,7 +375,9 @@ class _Facts:
             end=self.end,
             problem=problem,
             bound=bound,
-            reach=Reach(frozenset(self.entered), dict(self.ways), frozenset(self.went)),
+            reach=Reach(
+                frozenset(self.entered_lines), dict(self.entered_branches), frozenset(self.went)
+            ),
         )
 
 

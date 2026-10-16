@@ -23,15 +23,17 @@ from pyct.run.target import load_target
 from pyct.solver import walk_keys
 from pyct.solver.answer import Answer, Timeout, Unknown
 
-# a progress no input has added to yet, which no stop reads as full
-NO_INPUT_YET = Progress(Scope(file="", lines=frozenset()), frozenset())
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
 ONE_CHECK = str(REPO_ROOT / "targets" / "flip" / "one_check.py")
 NESTED_CHECKS = str(REPO_ROOT / "targets" / "flip" / "nested_checks.py")
 OTHER_SIDE_LONGER = str(REPO_ROOT / "targets" / "flip" / "other_side_longer.py")
 IMPLIED_CHECK = str(REPO_ROOT / "targets" / "flip" / "implied_check.py")
+
+
+def no_input_yet() -> Progress:
+    """A run's progress before any input, which no stop reads as full; a fresh one per call."""
+    return Progress(Scope(file="", lines=frozenset()), frozenset())
 
 
 def argument(record: InputRecord, name: str) -> int:
@@ -114,7 +116,7 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
     attempt = _attempt(
-        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), NO_INPUT_YET
+        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), no_input_yet()
     )
 
     assert attempt.record is None

@@ -95,13 +95,14 @@ class Coverage:
 class Reach:
     """What one input reached in the target's file beyond its lines.
 
-    ``lines`` is every line of the functions the input entered, and
-    ``branches`` maps each branch line of them to the lines its ways lead to
+    ``function_lines`` is every line of the functions the input entered,
+    whether or not the input ran it, and ``branches`` maps each branch line
+    of them to the lines its ways lead to
     (``execution.branch_ways``). ``went`` holds each way the input went, as
     its branch line and the line it led to.
     """
 
-    lines: frozenset[int] = frozenset()
+    function_lines: frozenset[int] = frozenset()
     branches: Mapping[int, frozenset[int]] = field(default_factory=dict)
     went: frozenset[tuple[int, int]] = frozenset()
 
@@ -127,7 +128,7 @@ class Progress:
         scoped = lines & self.scope.lines
         self.covered.append(scoped)
         self._lines |= scoped
-        self._entered |= reach.lines & self.scope.lines
+        self._entered |= reach.function_lines & self.scope.lines
         for line, ways in reach.branches.items():
             self._branches.setdefault(line, set()).update(ways)
         for line, way in reach.went:

@@ -283,7 +283,7 @@ def test_a_tally_keeps_the_functions_entered_and_each_way_once() -> None:
         ("entered", frozenset({5, 6}), {}),
     ]
     reach = tally.reach()
-    assert reach.lines == {1, 2, 3, 5, 6}
+    assert reach.function_lines == {1, 2, 3, 5, 6}
     assert reach.branches == {2: {1, 3}}
     assert reach.went == {(2, 3)}
 

@@ -86,7 +86,7 @@ class Tally:
         self.lines: set[int] = set()
         self.branches: list[Branch] = []
         self._entered: set[int] = set()
-        self._ways: dict[int, frozenset[int]] = {}
+        self._branches: dict[int, frozenset[int]] = {}
         self._went: set[tuple[int, int]] = set()
         # each fact as the path came to hold it, placed after the forks recorded before it
         self.facts: list[Fact] = []
@@ -149,7 +149,7 @@ class Tally:
         """Keep a function of the file the call entered: its lines, and its branches with the
         lines their ways lead to."""
         self._entered |= lines
-        self._ways.update(branches)
+        self._branches.update(branches)
         if self.watch is not None:
             self.watch.entered(lines, branches)
 
@@ -165,8 +165,8 @@ class Tally:
     def reach(self) -> Reach:
         """What the call reached beyond its lines, so far."""
         return Reach(
-            lines=frozenset(self._entered),
-            branches=dict(self._ways),
+            function_lines=frozenset(self._entered),
+            branches=dict(self._branches),
             went=frozenset(self._went),
         )
 
