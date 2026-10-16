@@ -22,6 +22,9 @@ COUNT_Z, COUNT_Z_FILE = spec("count_z", "test")
 MEDIUM = 8
 # line 4 `if c == "x":` and line 6 `if n > 1:`, each of which a seed of "xx" takes one way only
 COUNT_X, COUNT_X_FILE = spec("count_x", "count")
+# a list comprehension over lines 2 to 6, whose filter on line 5 leads to the element on line 3
+# and back to the loop on line 4
+COMPREHENSION, COMPREHENSION_FILE = spec("comprehension", "pick")
 # `target` forks on its own line 8, then calls `helper`, whose line 3 only "deep" runs; nothing
 # calls `other`, lines 13 to 15
 HELPER, HELPER_FILE = spec("helper", "target")
@@ -71,6 +74,18 @@ def test_waits_for_each_branch_to_go_each_way() -> None:
     assert summary_line(result.stdout)["stopped"] == FULL
     both = [i for i, line in enumerate(inputs) if _both_ifs_went_both_ways(inputs[: i + 1])]
     assert both[0] == len(inputs) - 1, [line["args"] for line in inputs]
+
+
+# match-pyct-v1-on-the-measured-functions-stop-waits-for-each-branch
+def test_waits_for_a_comprehension_s_filter_laid_out_over_lines() -> None:
+    result = run_pyct(COMPREHENSION, '{"s": "ab"}', "--budget", "30", timeout=60)
+
+    assert result.returncode == 0, result.stderr
+    inputs = input_lines(result.stdout)
+    # the seed's filter never held, so the run goes on to an input with a `q`, and stops there
+    found = [i for i, line in enumerate(inputs) if "q" in _text(line)]
+    assert found[:1] == [len(inputs) - 1], [line["args"] for line in inputs]
+    assert summary_line(result.stdout)["stopped"] == FULL
 
 
 def _both_ifs_went_both_ways(inputs: list[dict[str, object]]) -> bool:

@@ -39,6 +39,28 @@ def f(a, b, s):
 """
 
 
+LAID_OUT = """\
+def f(s):
+    out = [
+        c.upper()
+        for c in s
+        if c == "q"
+    ]
+    total = sum(
+        1
+        for c in s
+        if c == "r"
+    )
+    match s:
+        case "a":
+            return 1
+        case "b" | "c":
+            return 2
+        case _:
+            return out, total
+"""
+
+
 def function_code(source: str) -> types.CodeType:
     """The code of ``f`` in the source."""
     module = compile(source, "<ways>", "exec")
@@ -112,3 +134,29 @@ def test_way_is_none_to_a_target_no_instruction_starts_at() -> None:
     test = next(i for i in dis.get_instructions(code) if i.opname.startswith("POP_JUMP_IF"))
 
     assert CodeWays(code).way(test.offset, 1_000_000) is None
+
+
+def test_a_comprehension_s_filter_over_lines_leads_to_its_element_and_its_loop() -> None:
+    ways = CodeWays(function_code(LAID_OUT))
+
+    # the way the filter does not take jumps back to the loop's test through a jump the
+    # compiler put on the element's line
+    assert ways.branches[5] == {3, 4}
+
+
+def test_a_generator_expression_s_filter_over_lines_leads_to_its_element_and_its_loop() -> None:
+    module = compile(LAID_OUT, "<ways>", "exec")
+    f = next(c for c in module.co_consts if isinstance(c, types.CodeType))
+    inner = [c for c in f.co_consts if isinstance(c, types.CodeType)]
+    # from Python 3.12 a list comprehension runs in f's own code, a generator expression in
+    # its own
+    (genexpr,) = inner
+
+    assert CodeWays(genexpr).branches[10] == {8, 9}
+
+
+def test_each_case_of_a_match_leads_to_its_body_and_the_next_case() -> None:
+    ways = CodeWays(function_code(LAID_OUT))
+
+    assert ways.branches[13] == {14, 15}
+    assert ways.branches[15] == {16, 17}
