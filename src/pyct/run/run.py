@@ -5,7 +5,7 @@ from __future__ import annotations
 import dataclasses
 import platform
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import assert_never
 
@@ -20,7 +20,7 @@ from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
 from pyct.core.branch import ForkSite
 from pyct.execution.execute import ExecutionResult
-from pyct.results.coverage import Coverage, Scope, no_gain
+from pyct.results.coverage import Coverage, Progress, Scope, no_gain
 from pyct.results.record import (
     Environment,
     InputRecord,
@@ -88,10 +88,12 @@ _TELL_NOTHING = Tell()
 
 @dataclass(frozen=True)
 class _Told:
-    """The caller's Tell, with the scope each reported input's coverage is measured in."""
+    """The caller's Tell, with the scope each reported input's coverage is measured in, and the
+    lines the target's import ran, which the stop on full coverage counts as covered."""
 
     scope: Scope
     tell: Tell
+    imported: frozenset[int] = frozenset()
 
     def record(self, record: InputRecord) -> None:
         """Hand out a finished input, with the lines that one input covered."""
@@ -110,13 +112,15 @@ class Bounds:
 
     The budget becomes an instant here, because the clock starts when the call
     does, not when the person typed the seconds. The solver timeout stays
-    seconds, because each solve starts its own clock. All in one value, so the
-    loop and each pass keep to five parameters.
+    seconds, because each solve starts its own clock. ``past_full_coverage``
+    keeps the loop going once every line and branch is covered. All in one
+    value, so the loop and each pass keep to five parameters.
     """
 
     until: float | None = None
     plateau: int | None = None
     solver_timeout: float = DEFAULT_SECONDS
+    past_full_coverage: bool = False
 
     @classmethod
     def of(cls, limits: Limits) -> Bounds:
@@ -124,6 +128,7 @@ class Bounds:
             until=_deadline_for(limits.budget),
             plateau=limits.plateau.inputs,
             solver_timeout=limits.solver_timeout.seconds,
+            past_full_coverage=limits.past_full_coverage,
         )
 
 
@@ -197,7 +202,8 @@ def run(
     cvc5 = version(locate())
     bounds = Bounds.of(limits)
     copied = Seed.of(seed, checked_annotations(target.signature, target.fn))
-    looped = _inputs(inputs, copied, bounds, _Told(scope=scope, tell=tell))
+    told = _Told(scope=scope, tell=tell, imported=target.import_lines)
+    looped = _inputs(inputs, copied, bounds, told)
     covered = frozenset[int]().union(*(record.covered_lines for record in looped.records))
     return RunResult(
         entry=target.spec,
@@ -264,14 +270,14 @@ def _loop(
     kept, handed out before the next pick, and the loop goes on: the fork is
     spent either way.
 
-    ``covered`` is the lines of each input that ran, in run order, the seed's
-    first; a miss ran no input and adds none. The scope is applied here,
-    to the seed, and in ``_took``, to each solver input, because a record
-    carries the tracer's raw lines.
+    ``progress`` holds the lines of each input that ran, in run order, the
+    seed's first, and what each reached; a miss ran no input and adds none.
+    It applies the scope, because a record carries the tracer's raw lines.
     """
     records: list[InputRecord] = []
     misses: list[Miss] = []
-    covered = [seeded.covered_lines & told.scope.lines]
+    progress = Progress(told.scope, told.imported)
+    progress.add(seeded.covered_lines, seeded.reach)
     tree = Tree()
     _handled(seeded, told, tree)
     # each input as the walk copied it, by its path's number: a solver answer starts from the
@@ -279,7 +285,7 @@ def _loop(
     inputs = {0: seed}
     while True:
         _let_go(inputs, tree.oldest)
-        attempt = _attempt(call, inputs, tree, bounds, covered)
+        attempt = _attempt(call, inputs, tree, bounds, progress)
         if attempt.stop is not None:
             return Loop(tuple(records), tuple(misses), attempt.stop, _untried(tree, attempt))
         if attempt.miss is not None:
@@ -288,10 +294,10 @@ def _loop(
         if attempt.ran is not None:
             records.append(attempt.ran.record)
             inputs[len(records)] = attempt.ran.seed
-            _took(attempt.ran.record, told, tree, covered)
+            _took(attempt.ran.record, told, tree, progress)
 
 
-def _took(record: InputRecord, told: _Told, tree: Tree, covered: list[frozenset[int]]) -> None:
+def _took(record: InputRecord, told: _Told, tree: Tree, progress: Progress) -> None:
     """Measure a solver's input, hand it out and add its path, then turn the path its pick
     extended when the input left the plan and covered no line no earlier input had.
 
@@ -302,9 +308,9 @@ def _took(record: InputRecord, told: _Told, tree: Tree, covered: list[frozenset[
     An input that left and covered a new line turns nothing. Decision
     fork-order-shallowest-first-after-a-leave-without-gain.
     """
-    covered.append(record.covered_lines & told.scope.lines)
+    progress.add(record.covered_lines, record.reach)
     _handled(record, told, tree)
-    if record.mismatch_at is not None and no_gain(covered, 1):
+    if record.mismatch_at is not None and no_gain(progress.covered, 1):
         tree.turn()
 
 
@@ -320,17 +326,19 @@ def _attempt(
     inputs: Mapping[int, Seed],
     tree: Tree,
     bounds: Bounds,
-    covered: Sequence[frozenset[int]],
+    progress: Progress,
 ) -> Attempt:
-    """One pass of the loop: the clock, a fork to aim at, the plateau, the solver, the input.
+    """One pass of the loop: the clock, a fork to aim at, the coverage, the plateau, the solver,
+    the input.
 
-    The three reasons come in the README's order. The budget first, because a
+    The four reasons come in the README's order. The budget first, because a
     run that spent it has paths cut short, so ``no fork to flip`` would claim
     more than the run knows; the clock alone decides it, because the alarm
     fires only at the deadline, so an input's timeout failure would say the
     same thing twice, and a target that swallows the alarm leaves no failure
-    for a second rule to read. Then the tree, then the plateau, so a run that
-    emptied the tree says so even when the plateau also holds.
+    for a second rule to read. Then the tree, so a run that emptied the tree
+    says so even when another reason also holds, then every line and branch
+    covered, then the plateau (``_covered_or_plateau``).
 
     Each solve gets the solver timeout, or what is left of the budget when
     that is less, so the budget still bounds the solver. A solver that
@@ -346,8 +354,9 @@ def _attempt(
     if wanted is None:
         return Attempt(stop=Stop(StopKind.NO_FORK))
     unrun = ForkSite(wanted.aim.site, wanted.aim.raising)
-    if bounds.plateau is not None and no_gain(covered, bounds.plateau):
-        return Attempt(stop=Stop(StopKind.NO_GAIN, plateau=bounds.plateau), unrun=unrun)
+    stop = _covered_or_plateau(bounds, progress)
+    if stop is not None:
+        return Attempt(stop=stop, unrun=unrun)
     origin = inputs[wanted.path]
     limit = _solve_limit(bounds, left)
     answer = solve(wanted.asked, origin.leaves, limit, origin.containers(), origin.values)
@@ -363,6 +372,16 @@ def _attempt(
     except InputStartError as error:
         return Attempt(stop=_could_not_start(error), unrun=unrun)
     return Attempt(ran=Ran(record, solved))
+
+
+def _covered_or_plateau(bounds: Bounds, progress: Progress) -> Stop | None:
+    """The stop once a fork is picked: every line and branch covered, unless the bounds go past
+    it, then the plateau. None when neither holds."""
+    if not bounds.past_full_coverage and progress.full():
+        return Stop(StopKind.FULL)
+    if bounds.plateau is not None and no_gain(progress.covered, bounds.plateau):
+        return Stop(StopKind.NO_GAIN, plateau=bounds.plateau)
+    return None
 
 
 def _untried(tree: Tree, attempt: Attempt) -> dict[ForkSite, int]:
@@ -418,6 +437,7 @@ def _record_of(
         source=Source.SEED if wanted is None else Source.SOLVER,
         aim=None if wanted is None else wanted.aim,
         mismatch_at=None if wanted is None else compare(wanted.prefix, executed.branches),
+        reach=executed.reach,
     )
 
 

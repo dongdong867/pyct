@@ -8,10 +8,12 @@ the watch already holds survives the process.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Protocol
 
 from pyct.core import escapes
 from pyct.core.branch import Branch, Downgrade, Fact, SinkItem, Site
+from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 
@@ -38,7 +40,9 @@ class Watch(Protocol):
     """Who hears each fact of one call, the moment the call makes it.
 
     A fork as it is taken, a fact as the path comes to hold it, and a line the
-    first time the call reaches it. A downgrade comes with its site and its
+    first time the call reaches it. A function of the file as the call first
+    enters it, with its lines and branches, and a way a branch went the first
+    time it goes that way. A downgrade comes with its site and its
     count so far: a count of 1 starts an entry, and a higher count means the
     last entry grew by one. The tally decides what an entry is; a watch only
     mirrors it. ``bound`` comes once, when the call goes past the forks it
@@ -51,13 +55,18 @@ class Watch(Protocol):
 
     def line(self, number: int) -> None: ...
 
+    def entered(self, lines: frozenset[int], branches: Mapping[int, frozenset[int]]) -> None: ...
+
+    def went(self, line: int, to: int) -> None: ...
+
     def downgrade(self, name: str, site: Site, count: int) -> None: ...
 
     def bound(self, note: str) -> None: ...
 
 
 class Tally:
-    """What one call did so far: its lines, its forks, its facts and its downgrades, in call order.
+    """What one call did so far: its lines, its forks, its facts and its downgrades, in call order,
+    and the functions it entered and the ways their branches went.
 
     It is the call's sink, so core pushes forks and downgrades into it, and
     the line tracer feeds it lines. Consecutive downgrades of one name at one
@@ -76,6 +85,9 @@ class Tally:
     def __init__(self, watch: Watch | None = None) -> None:
         self.lines: set[int] = set()
         self.branches: list[Branch] = []
+        self._entered: set[int] = set()
+        self._ways: dict[int, frozenset[int]] = {}
+        self._went: set[tuple[int, int]] = set()
         # each fact as the path came to hold it, placed after the forks recorded before it
         self.facts: list[Fact] = []
         self.watch = watch
@@ -132,6 +144,31 @@ class Tally:
         self.lines.add(number)
         if self.watch is not None:
             self.watch.line(number)
+
+    def enter(self, lines: frozenset[int], branches: Mapping[int, frozenset[int]]) -> None:
+        """Keep a function of the file the call entered: its lines, and its branches with the
+        lines their ways lead to."""
+        self._entered |= lines
+        self._ways.update(branches)
+        if self.watch is not None:
+            self.watch.entered(lines, branches)
+
+    def went(self, line: int, to: int) -> None:
+        """Keep a way a branch went: its line, and the line it led to. Only its first time
+        reaches the watch."""
+        if (line, to) in self._went:
+            return
+        self._went.add((line, to))
+        if self.watch is not None:
+            self.watch.went(line, to)
+
+    def reach(self) -> Reach:
+        """What the call reached beyond its lines, so far."""
+        return Reach(
+            lines=frozenset(self._entered),
+            branches=dict(self._ways),
+            went=frozenset(self._went),
+        )
 
     def go_live(self) -> None:
         """Make this the tally of the call running now, which a value from a call that is over

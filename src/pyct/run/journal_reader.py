@@ -28,6 +28,7 @@ from collections.abc import Buffer
 from dataclasses import dataclass, field
 
 from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import (
@@ -37,6 +38,7 @@ from pyct.run.journal import (
     COUNTED,
     DOWNGRADE,
     END,
+    ENTERED,
     FACT,
     FORK,
     FULL,
@@ -51,6 +53,8 @@ from pyct.run.journal import (
     START,
     STATE,
     UNENCODABLE,
+    WAY,
+    WENT,
     WORD,
     Journal,
     padded,
@@ -84,7 +88,8 @@ class Reading:
     ``problem`` says the facts are known to be incomplete through pyct's
     fault: the writer met a fact it could not encode, or a record could not
     be read. ``bound`` says the writer stopped at the bound on what pyct
-    keeps for one input, which is the input's own ending.
+    keeps for one input, which is the input's own ending. ``reach`` is the
+    functions the call entered and the ways their branches went.
     """
 
     lines: frozenset[int]
@@ -96,6 +101,7 @@ class Reading:
     problem: str | None = None
     facts: tuple[Fact, ...] = ()
     bound: str | None = None
+    reach: Reach = field(default_factory=Reach)
 
 
 def read(buffer: Journal) -> Reading:
@@ -202,6 +208,10 @@ class _Facts:
 
     lines: set[int] = field(default_factory=set)
     branches: list[Branch] = field(default_factory=list)
+    # the lines of the functions the call entered, their branches, and the ways those went
+    entered: set[int] = field(default_factory=set)
+    ways: dict[int, frozenset[int]] = field(default_factory=dict)
+    went: set[tuple[int, int]] = field(default_factory=set)
     # the facts the path holds, each placed after the fork records read before it
     facts: list[Fact] = field(default_factory=list)
     downgrades: list[DowngradeCount] = field(default_factory=list)
@@ -244,6 +254,8 @@ class _Facts:
             self._written(kind, _decoded(payload))
         elif kind == LINE:
             self.lines.add(NUMBER.unpack(payload)[0])
+        elif kind in (ENTERED, WENT):
+            self._reached(kind, payload)
         elif kind in (DOWNGRADE, CARRY_ON):
             # the entry before stopped growing when the writer began this one
             self.recount(payload.obj)
@@ -256,6 +268,15 @@ class _Facts:
             self.ended, self.end = True, ending
         else:
             raise ValueError(f"no record of kind {kind}")
+
+    def _reached(self, kind: int, payload: memoryview) -> None:
+        """Add a function the call entered, or a way a branch went."""
+        if kind == WENT:
+            self.went.add(WAY.unpack(payload))
+            return
+        lines, ways = _function(_decoded(payload))
+        self.entered.update(lines)
+        self.ways.update(ways)
 
     def _written(self, kind: int, value: object) -> None:
         """Add a record written as JSON: a part, a fork or a fact."""
@@ -354,12 +375,37 @@ class _Facts:
             end=self.end,
             problem=problem,
             bound=bound,
+            reach=Reach(frozenset(self.entered), dict(self.ways), frozenset(self.went)),
         )
 
 
 def _decoded(payload: memoryview) -> object:
     """A record's JSON, which the writer wrote as ASCII, read as ``json.loads`` reads its bytes."""
     return _DECODER.decode(str(payload, "utf-8", "surrogatepass"))
+
+
+def _function(value: object) -> tuple[list[int], dict[int, frozenset[int]]]:
+    """A function the call entered, as written: its lines, and each branch line with the lines
+    its ways lead to."""
+    match value:
+        case [list() as lines, list() as branches]:
+            return [_number(line) for line in lines], dict(_branch(item) for item in branches)
+    raise ValueError("an entered function is [lines, branches]")
+
+
+def _branch(value: object) -> tuple[int, frozenset[int]]:
+    """A branch as written: its line, and the lines its ways lead to."""
+    match value:
+        case [line, list() as leads] if leads:
+            return _number(line), frozenset(_number(lead) for lead in leads)
+    raise ValueError("a branch is [line, ways]")
+
+
+def _number(value: object) -> int:
+    """A line number as written. A bool is no line."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ValueError("a line is a whole number")
 
 
 def _numbered(value: object) -> tuple[int, list[object]]:

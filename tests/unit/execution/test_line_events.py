@@ -76,3 +76,25 @@ def test_listen_gives_its_tool_back_when_its_callback_cannot_be_registered(
             listen(lambda _code, _line: None)
 
     assert held_tools() == before
+
+
+def test_listening_hands_each_branch_to_its_callback() -> None:
+    went: list[tuple[int, int]] = []
+
+    def on_branch(code: types.CodeType, test: int, target: int) -> object:
+        if code.co_filename == __file__:
+            went.append((test, target))
+        return None
+
+    before = held_tools()
+    with listening(lambda _code, _line: None, on_branch):
+        for _ in range(2):
+            pass
+    after = list(went)
+    for _ in range(2):
+        pass
+
+    # the loop's test went into its body twice and past it once
+    assert len(after) == 3
+    assert went == after
+    assert held_tools() == before

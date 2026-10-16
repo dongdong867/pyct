@@ -1,7 +1,7 @@
 """The pyct command line.
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS] [--in-process]``
+[--solver-timeout SECONDS] [--in-process] [--past-full-coverage]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS]``
@@ -48,7 +48,7 @@ from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS] [--in-process]"
+    " [--solver-timeout SECONDS] [--in-process] [--past-full-coverage]"
 )
 SWEEP_USAGE = (
     "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
@@ -78,6 +78,7 @@ class RunCommand:
     """What the command line asked for: the target spec, the seed, the three limits, and where.
 
     ``in_process`` runs every input in pyct's own process rather than one of its own.
+    ``past_full_coverage`` goes on once every line and branch is covered.
     """
 
     spec: str
@@ -86,6 +87,7 @@ class RunCommand:
     plateau_text: str | None = None
     solver_timeout_text: str | None = None
     in_process: bool = False
+    past_full_coverage: bool = False
 
 
 @dataclass(frozen=True)
@@ -179,6 +181,7 @@ def _checked(
         budget=parse_budget(command.budget_text),
         plateau=parse_plateau(command.plateau_text),
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
+        past_full_coverage=command.past_full_coverage,
     )
     target = load_target(command.spec, watch)
     if seed is None:
@@ -286,6 +289,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     run_parser.add_argument("--plateau", metavar="N")
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
+    run_parser.add_argument("--past-full-coverage", action="store_true")
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
         return _sweep_command(namespace)
@@ -299,6 +303,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         plateau_text=namespace.plateau,
         solver_timeout_text=namespace.solver_timeout,
         in_process=namespace.in_process,
+        past_full_coverage=namespace.past_full_coverage,
     )
 
 

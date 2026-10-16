@@ -1,10 +1,10 @@
-"""Which lines a module has, and which of them a run covered."""
+"""Which lines a module has, which of them a run covered, and whether its branches went each way."""
 
 from __future__ import annotations
 
 import types
 from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 def executable_lines(file: str) -> frozenset[int]:
@@ -89,3 +89,58 @@ class Coverage:
         return {
             file: lines - self.covered.get(file, frozenset()) for file, lines in self.lines.items()
         }
+
+
+@dataclass(frozen=True)
+class Reach:
+    """What one input reached in the target's file beyond its lines.
+
+    ``lines`` is every line of the functions the input entered, and
+    ``branches`` maps each branch line of them to the lines its ways lead to
+    (``execution.branch_ways``). ``went`` holds each way the input went, as
+    its branch line and the line it led to.
+    """
+
+    lines: frozenset[int] = frozenset()
+    branches: Mapping[int, frozenset[int]] = field(default_factory=dict)
+    went: frozenset[tuple[int, int]] = frozenset()
+
+
+class Progress:
+    """The lines each input covered, in run order, and what the inputs reached, for the stops.
+
+    ``covered`` is one set per input that ran, within the scope, as
+    ``no_gain`` reads it. ``full`` reads the rest.
+    """
+
+    def __init__(self, scope: Scope, imported: frozenset[int]) -> None:
+        self.scope = scope
+        self.covered: list[frozenset[int]] = []
+        self._imported = imported
+        self._lines: set[int] = set()
+        self._entered: set[int] = set()
+        self._branches: dict[int, set[int]] = {}
+        self._went: dict[int, set[int]] = {}
+
+    def add(self, lines: frozenset[int], reach: Reach) -> None:
+        """Add the next input: the lines it covered and what it reached."""
+        scoped = lines & self.scope.lines
+        self.covered.append(scoped)
+        self._lines |= scoped
+        self._entered |= reach.lines & self.scope.lines
+        for line, ways in reach.branches.items():
+            self._branches.setdefault(line, set()).update(ways)
+        for line, way in reach.went:
+            self._went.setdefault(line, set()).add(way)
+
+    def full(self) -> bool:
+        """Whether every line and branch is covered: every line of the functions the inputs
+        entered is covered, the lines the import ran included, and every branch of them an
+        input reached went each of its ways. False while no input entered a function."""
+        if not self._entered or not self._entered <= self._lines | self._imported:
+            return False
+        return all(
+            ways <= self._went.get(line, set())
+            for line, ways in self._branches.items()
+            if line in self._lines
+        )

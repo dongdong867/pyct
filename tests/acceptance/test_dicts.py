@@ -116,7 +116,9 @@ def test_adds_and_removes_a_named_key() -> None:
 @pytest.mark.parametrize("name", CHANGED)
 def test_follows_every_dict_change(name: str) -> None:
     flags = UNTIL_NO_GAIN if name in WALKING else ()
-    result = run_pyct(f"{CHANGES}::{name}", '{"config": {"a": 1, "b": 2}}', *flags)
+    result = run_pyct(
+        f"{CHANGES}::{name}", '{"config": {"a": 1, "b": 2}}', *flags, "--past-full-coverage"
+    )
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -180,7 +182,9 @@ def test_compares_dicts_as_python_does() -> None:
 
 # follow-lists-and-dicts-as-they-change-follows-dicts-inside-lists
 def test_follows_dicts_inside_lists() -> None:
-    result = run_pyct(INSIDE_LISTS, '{"orders": [{"coupon": "x"}]}', *UNTIL_NO_GAIN)
+    result = run_pyct(
+        INSIDE_LISTS, '{"orders": [{"coupon": "x"}]}', *UNTIL_NO_GAIN, "--past-full-coverage"
+    )
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -199,7 +203,7 @@ def test_follows_dicts_inside_lists() -> None:
 # follow-lists-and-dicts-as-they-change-counts-a-dict-s-own-changes: the walk's first pass, which
 # the stored key always reaches, is a fact, not a fork
 def test_counts_a_dict_s_own_changes() -> None:
-    result = run_pyct(OWN_CHANGES, '{"config": {"a": 0}}', *UNTIL_NO_GAIN)
+    result = run_pyct(OWN_CHANGES, '{"config": {"a": 0}}', *UNTIL_NO_GAIN, "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
@@ -337,7 +341,9 @@ def test_a_lookup_after_a_walk_records_its_fork(name: str, key: str, line: int) 
 # follow-dicts-as-they-change: one more pass of a walk from the end needs a key ahead of the
 # input's own, which no answer writes: the fork is an `unknown` miss, never an `unsat` one
 def test_a_walk_from_the_end_reports_a_pass_it_cannot_write_as_unknown() -> None:
-    result = run_pyct(WALK_BACK, '{"config": {"a": 0, "b": 0}}', *UNTIL_NO_GAIN)
+    result = run_pyct(
+        WALK_BACK, '{"config": {"a": 0, "b": 0}}', *UNTIL_NO_GAIN, "--past-full-coverage"
+    )
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)

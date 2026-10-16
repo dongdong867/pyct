@@ -14,7 +14,7 @@ from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
 from pyct.core.branch import Branch, Expression, Site
 from pyct.execution.execute import ExecutionContext, execute
-from pyct.results.coverage import Coverage
+from pyct.results.coverage import Coverage, Progress, Scope
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
 from pyct.run.isolation import Isolation
@@ -22,6 +22,9 @@ from pyct.run.run import Bounds, Tell, _attempt, run
 from pyct.run.target import load_target
 from pyct.solver import walk_keys
 from pyct.solver.answer import Answer, Timeout, Unknown
+
+# a progress no input has added to yet, which no stop reads as full
+NO_INPUT_YET = Progress(Scope(file="", lines=frozenset()), frozenset())
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURE = str(REPO_ROOT / "targets" / "trace" / "uncalled_helper.py")
@@ -110,7 +113,9 @@ def test_a_deadline_that_has_passed_leaves_the_solver_unasked(
     monkeypatch.setenv("PATH", str(tmp_path))
     call = functools.partial(execute, ExecutionContext(fn=target.fn, file=target.file))
 
-    attempt = _attempt(call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), ())
+    attempt = _attempt(
+        call, {0: Seed.of(seed)}, tree, Bounds(until=time.monotonic() - 1), NO_INPUT_YET
+    )
 
     assert attempt.record is None
     assert attempt.stop == Stop(kind=StopKind.BUDGET)

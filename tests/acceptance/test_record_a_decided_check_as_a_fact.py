@@ -247,7 +247,7 @@ OWN_UNSAT = [
 def test_leaves_the_solver_s_own_unsat(
     target: str, seed: str, sites: list[str], why: tuple[int, int] | None
 ) -> None:
-    result = run_pyct(target, seed, "--budget", "10")
+    result = run_pyct(target, seed, "--budget", "10", "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     module = target.split("::")[0]

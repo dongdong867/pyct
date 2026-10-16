@@ -21,6 +21,11 @@ kind) and its payload, padded to 8 bytes:
   before the call begins. A journal without one belongs to a process that
   died before pyct's own code there ran.
 - line: an i64, the first time the call reaches that line.
+- entered: a function of the file the call entered, as JSON ``[lines,
+  branches]``: its lines, and each branch as ``[line, ways]``, the lines its
+  ways lead to.
+- went: two i64, a branch's line and the line it led to, the first time the
+  call goes that way.
 - part: one list of an expression, as JSON ``[n, head, ...]``: its number,
   then its items. A leaf is a JSON scalar and a list inside it is ``[n]``,
   the part numbered n. An expression is a graph in which one list can sit
@@ -80,6 +85,7 @@ from __future__ import annotations
 import json
 import mmap
 import struct
+from collections.abc import Mapping
 from typing import TypeGuard
 
 from pyct.core.branch import Branch, Expression, Fact, Site
@@ -100,10 +106,12 @@ RECORDS = NOTE_AT + NOTE_SIZE
 
 HEAD = struct.Struct("<IB3x")
 NUMBER = struct.Struct("<q")
+# a way a branch went: its line, and the line it led to
+WAY = struct.Struct("<qq")
 # a downgrade's count, then its site's line and column
 COUNTED = struct.Struct("=Qqq")
 
-LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT = 1, 2, 3, 4, 5, 6, 7, 8
+LINE, PART, FORK, DOWNGRADE, END, START, CARRY_ON, FACT, ENTERED, WENT = range(1, 11)
 OPEN, FULL, UNENCODABLE, BOUNDED = 0, 1, 2, 3
 
 # the bytes at a journal's end that only the call's ending may take, a long traceback's included;
@@ -169,6 +177,16 @@ class JournalWriter:
     def line(self, number: int) -> None:
         """Write a line the call reached for the first time."""
         self._record(LINE, NUMBER.pack(number))
+
+    def entered(self, lines: frozenset[int], branches: Mapping[int, frozenset[int]]) -> None:
+        """Write a function of the file the call entered: its lines, and its branches with the
+        lines their ways lead to."""
+        ways = [[line, sorted(leads)] for line, leads in sorted(branches.items())]
+        self._json(ENTERED, [sorted(lines), ways])
+
+    def went(self, line: int, to: int) -> None:
+        """Write a way a branch went, the first time the call goes it."""
+        self._record(WENT, WAY.pack(line, to))
 
     def downgrade(self, name: str, site: Site, count: int) -> None:
         """Grow the last entry in place when it counts ``name`` at ``site``, or write a new one."""

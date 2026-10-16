@@ -1,5 +1,6 @@
 import functools
 import sys
+from collections.abc import Mapping
 
 from pyct.core import escapes
 from pyct.core.branch import Branch, Downgrade, Fact, Site
@@ -37,6 +38,12 @@ class Heard:
 
     def bound(self, note: str) -> None:
         self.told.append(("bound", note))
+
+    def entered(self, lines: frozenset[int], branches: Mapping[int, frozenset[int]]) -> None:
+        self.told.append(("entered", lines, branches))
+
+    def went(self, line: int, to: int) -> None:
+        self.told.append(("went", line, to))
 
 
 def test_a_tally_keeps_the_forks_in_call_order() -> None:
@@ -259,3 +266,32 @@ def test_a_call_that_goes_live_forgets_the_walk_keys_handed_out_before() -> None
     live.seal()
 
     assert [part for part, _ in decided(sink) if isinstance(part, list)] == []
+
+
+def test_a_tally_keeps_the_functions_entered_and_each_way_once() -> None:
+    heard = Heard()
+    tally = Tally(heard)
+
+    tally.enter(frozenset({1, 2, 3}), {2: frozenset({3, 1})})
+    tally.went(2, 3)
+    tally.went(2, 3)
+    tally.enter(frozenset({5, 6}), {})
+
+    assert heard.told == [
+        ("entered", frozenset({1, 2, 3}), {2: frozenset({3, 1})}),
+        ("went", 2, 3),
+        ("entered", frozenset({5, 6}), {}),
+    ]
+    reach = tally.reach()
+    assert reach.lines == {1, 2, 3, 5, 6}
+    assert reach.branches == {2: {1, 3}}
+    assert reach.went == {(2, 3)}
+
+
+def test_a_tally_with_no_watch_keeps_what_the_call_reached() -> None:
+    tally = Tally()
+
+    tally.enter(frozenset({1, 2}), {})
+    tally.went(1, 2)
+
+    assert tally.reach().went == {(1, 2)}

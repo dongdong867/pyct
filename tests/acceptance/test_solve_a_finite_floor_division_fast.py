@@ -103,12 +103,12 @@ def flipped_to_a_raise(stdout: str, stderr: str) -> None:
 # solve-a-finite-floor-division-fast-flips-the-finite-fork-within-a-second
 def test_flips_the_finite_fork_within_a_second() -> None:
     for _ in range(3):
-        _, stdout, stderr = timed_run("--solver-timeout", "1")
+        _, stdout, stderr = timed_run("--solver-timeout", "1", "--past-full-coverage")
         flipped_to_a_raise(stdout, stderr)
         assert EVERY_FORK_SAT in stderr.splitlines(), stderr
         assert covered(stdout) == [1, 2, 3, 4], stdout
 
-    runs = [timed_run() for _ in range(3)]
+    runs = [timed_run("--past-full-coverage") for _ in range(3)]
 
     for _, stdout, stderr in runs:
         assert EVERY_FORK_SAT in stderr.splitlines(), stderr
@@ -120,7 +120,7 @@ def test_flips_the_finite_fork_within_a_second() -> None:
 def test_covers_the_line_at_the_gate_limits() -> None:
     gate = ("--budget", "5", "--plateau", "5", "--solver-timeout", "10")
 
-    result = run_pyct(FLOAT_POSITION, SEED, *gate)
+    result = run_pyct(FLOAT_POSITION, SEED, *gate, "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     # the import ran line 1, the `def`, so no line of the file is left uncovered

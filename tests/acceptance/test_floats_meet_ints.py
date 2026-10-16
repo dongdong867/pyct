@@ -77,7 +77,7 @@ def test_follows_int_true_division() -> None:
 
 # follow-floats-follows-int-true-division
 def test_follows_int_true_division_by_a_bool() -> None:
-    result = run_pyct(DIVIDE_BY_BOOLS, '{"n": 1, "m": 5}')
+    result = run_pyct(DIVIDE_BY_BOOLS, '{"n": 1, "m": 5}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -202,7 +202,7 @@ def test_reports_a_slow_encoding_as_a_miss() -> None:
 
 # follow-floats-finds-the-division-by-zero-between-ints
 def test_finds_the_division_by_zero_between_ints() -> None:
-    result = run_pyct(DIVIDE_INTS, '{"n": 7, "m": 2}')
+    result = run_pyct(DIVIDE_INTS, '{"n": 7, "m": 2}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)
@@ -215,7 +215,7 @@ def test_finds_the_division_by_zero_between_ints() -> None:
 
 # follow-floats-finds-the-zero-float-divisor-under-an-int
 def test_finds_the_zero_float_divisor_under_an_int() -> None:
-    result = run_pyct(DIVIDE_ONE, '{"x": 2.0}')
+    result = run_pyct(DIVIDE_ONE, '{"x": 2.0}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)
@@ -230,7 +230,7 @@ def test_finds_the_zero_float_divisor_under_an_int() -> None:
 
 # follow-floats-finds-the-zero-divisor-of-a-floor-division
 def test_finds_the_zero_divisor_of_a_floor_division() -> None:
-    result = run_pyct(FLOOR_DIVIDE, '{"x": 7.0, "y": 2.0}')
+    result = run_pyct(FLOOR_DIVIDE, '{"x": 7.0, "y": 2.0}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -246,7 +246,7 @@ def test_finds_the_zero_divisor_of_a_floor_division() -> None:
 
 # follow-floats-finds-the-value-that-cannot-round
 def test_finds_the_value_that_cannot_round() -> None:
-    result = run_pyct(CANNOT_ROUND, '{"x": 2.5}')
+    result = run_pyct(CANNOT_ROUND, '{"x": 2.5}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     seed, solved = two_lines(result.stdout)

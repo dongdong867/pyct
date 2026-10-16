@@ -28,7 +28,9 @@ def test_run_walks_a_list_that_holds_itself_once(isolation: Isolation) -> None:
     xs.append(xs)
     target = load_target("targets.nested.holds_itself::check")
 
-    result = run(target, {"xs": xs}, isolation=isolation)
+    # past full coverage, so the run asks for every fork: the list too short to read at 1 too
+    limits = Limits(past_full_coverage=True)
+    result = run(target, {"xs": xs}, limits=limits, isolation=isolation)
 
     # the one input that fails is the one too short to read at 1
     failures = [record.failure for record in result.records if record.failure is not None]

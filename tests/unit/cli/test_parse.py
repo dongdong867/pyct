@@ -66,6 +66,11 @@ def test_the_solver_timeout_may_be_absent() -> None:
     assert run_command(["run", "m::f"]).solver_timeout_text is None
 
 
+def test_past_full_coverage_is_read_from_its_flag() -> None:
+    assert run_command(["run", "m::f", "--past-full-coverage"]).past_full_coverage
+    assert not run_command(["run", "m::f"]).past_full_coverage
+
+
 def test_parse_solver_timeout_returns_the_seconds() -> None:
     assert parse_solver_timeout("2.5") == SolverTimeout(seconds=2.5)
 

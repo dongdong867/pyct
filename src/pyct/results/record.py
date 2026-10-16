@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.core.branch import Branch, Fact, ForkSite, Site
-from pyct.results.coverage import Coverage
+from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace
 from pyct.results.why import Run, Tries, Walked, WhyEntry, explain
@@ -60,7 +60,8 @@ class InputRecord:
     ``aim`` is the fork the solver was asked for, and ``mismatch_at`` the
     first position where the run left that plan. A seed is aimed at nothing,
     so both stay ``None``. ``facts`` are what its path held beside the forks,
-    which no line prints.
+    and ``reach`` the functions it entered and the ways their branches went,
+    neither of which a line prints.
     """
 
     args: Mapping[str, object]
@@ -72,6 +73,7 @@ class InputRecord:
     aim: Aim | None = None
     mismatch_at: int | None = None
     facts: tuple[Fact, ...] = ()
+    reach: Reach = field(default_factory=Reach)
 
 
 class StopKind(StrEnum):
@@ -82,6 +84,9 @@ class StopKind(StrEnum):
     # both its sides ran
     NO_FORK = "no fork to flip"
     BUDGET = "budget spent"
+    # every line of the functions the inputs entered is covered, and each branch of them an
+    # input reached went each of its ways
+    FULL = "every line and branch covered"
     NO_GAIN = "no gain"
     SOLVER_FAILED = "solver failed"
     # pyct could not start a process for an input; the detail is the system's reason

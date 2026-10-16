@@ -153,7 +153,7 @@ def test_loops_over_a_list_and_a_dict() -> None:
     # a walk over a list has no limit on its passes, so the run ends when inputs stop covering
     # new lines
     seed = '{"items": [0, 20, 5], "limits": {"a": 1, "b": 2}}'
-    result = run_pyct(LOOPS, seed, "--plateau", "10")
+    result = run_pyct(LOOPS, seed, "--plateau", "10", "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)

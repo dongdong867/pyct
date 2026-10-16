@@ -174,6 +174,7 @@ def test_a_countdown_prints_what_it_printed(seed: int) -> None:
         "1",
         "--solver-timeout",
         "120",
+        "--past-full-coverage",
         unset=COVERAGE_STARTUP,
         timeout=170,
     )

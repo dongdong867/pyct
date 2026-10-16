@@ -150,7 +150,7 @@ def test_tests_membership_in_a_range_with_one_fork() -> None:
 
 # follow-loops-and-ranges-follows-a-tracked-step
 def test_follows_a_tracked_step() -> None:
-    result = run_pyct(target("tracked_step", "every"), '{"k": 3}')
+    result = run_pyct(target("tracked_step", "every"), '{"k": 3}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
@@ -202,7 +202,7 @@ def test_leaves_an_unrewritten_range_plain() -> None:
 
 # follow-loops-and-ranges-finds-the-zero-step
 def test_finds_the_zero_step() -> None:
-    result = run_pyct(target("zero_step", "f"), '{"k": 2}')
+    result = run_pyct(target("zero_step", "f"), '{"k": 2}', "--past-full-coverage")
 
     assert result.returncode == 0, result.stderr
     inputs = input_lines(result.stdout)
