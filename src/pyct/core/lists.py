@@ -148,7 +148,8 @@ def _index(self: ListState, value: object, *bounds: object) -> object:
 def _python_s_search(self: ListState) -> bool:
     """Whether a search of the list is Python's own: a split's list is searched as origin/v2
     searches its plain list of pieces, each piece's compare recorded and no fork on how many
-    pieces there are, as the target's own loop (split-a-target-s-own-walk-records-no-piece-fork)."""
+    pieces there are, as the target's own loop
+    (split-a-target-s-own-walk-records-no-piece-fork-a-fixed-count-unpack-forks-on-the-count)."""
     return str_splits.a_split_s_list(self.expression)
 
 

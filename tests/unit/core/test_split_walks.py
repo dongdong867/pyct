@@ -46,7 +46,8 @@ def test_the_target_s_loop_over_a_split_s_list_records_no_fork(loop: Any) -> Non
     walked = loop(parts)
 
     # each piece keeps its condition, and no "is there another piece" fork is recorded
-    # (split-a-target-s-own-walk-records-no-piece-fork); sorted's compares are Python's own
+    # (split-a-target-s-own-walk-records-no-piece-fork-a-fixed-count-unpack-forks-on-the-count);
+    # sorted's compares are Python's own
     heads = [part[0] for part in _walks(sink) if isinstance(part, list)]
     assert len([*walked]) in (2, 3) and ">" not in heads, sink
 

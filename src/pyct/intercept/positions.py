@@ -170,6 +170,24 @@ def method_call(call: ast.Call) -> bool:
     return isinstance(call.func, ast.Attribute) and not unpacked and count < _STACK_GUIDELINE
 
 
+def after_the_value[Placed: ast.expr](node: Placed, value: ast.expr) -> Placed:
+    """The node, a call that takes the value, placed where CPython runs the value's last
+    instruction, so it adds no line step after it: the value's own position, or the attribute's
+    name where the value ends on an attribute on a later line than it starts.
+
+    CPython loads an attribute, and calls a method, on the line the
+    attribute's name is on, as ``(x\n.w)`` loads `w` on its own line.
+    """
+    ast.copy_location(node, value)
+    attribute = value.func if isinstance(value, ast.Call) and method_call(value) else value
+    if not isinstance(attribute, ast.Attribute):
+        return node
+    line, end = attribute.end_lineno, attribute.end_col_offset
+    if line is not None and end is not None and line != value.lineno:
+        node.lineno, node.col_offset = line, end - len(attribute.attr)
+    return node
+
+
 def _first_entry(display: ast.Dict) -> ast.expr | None:
     """A dict display's first key, or its first value when CPython loads its keys as one constant.
 
