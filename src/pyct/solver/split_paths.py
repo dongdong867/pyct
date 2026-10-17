@@ -9,7 +9,14 @@ from collections.abc import Callable, Mapping
 from pyct.core.branch import Branch, Expression
 from pyct.solver.list_terms import Lin, Read, both, compare, negated
 from pyct.solver.literals import plain_operand
-from pyct.solver.split_counts import FARTHEST, condition, input_value, windowed, windows_past
+from pyct.solver.split_counts import (
+    FARTHEST,
+    condition,
+    input_value,
+    pieces_read,
+    windowed,
+    windows_past,
+)
 from pyct.solver.split_lists import SplitList, SplitRead, UnknownCountError
 
 # how each order on two ints reads as a compare of the lower with the higher: whether the
@@ -44,6 +51,9 @@ class Splits:
         # what each fork on a split's own count, through plain arithmetic with plain ints,
         # says the count is, by the split's part
         self.conditions: dict[int, list[Callable[[int], bool]]] = {}
+        # the farthest piece from the start a fork of the path reads of each split's own list,
+        # by the split's part
+        self.walked: dict[int, int] = {}
         # each slice's length that is its split's count less a plain start, wherever the slice
         # holds an item, by name: the split's count and the start
         self.tails: dict[str, tuple[str, int]] = {}
@@ -54,12 +64,15 @@ class Splits:
 
     def learn(self, prefix: tuple[Branch, ...]) -> None:
         """What each fork that compares a split's count, through plain arithmetic, with a plain
-        int says of the count, the side it took included."""
+        int says of the count, the side it took included, and the farthest piece from the start
+        the path reads of each split."""
         for fork in prefix:
             found = condition(fork)
             if found is not None:
                 split, holds = found
                 self.conditions.setdefault(id(split), []).append(holds)
+        for split, farthest in pieces_read(fork.expression for fork in prefix).items():
+            self.walked[split] = max(farthest, self.walked.get(split, -1))
 
     def made(self, node: list[Expression], term: str) -> SplitList:
         """A split's list, its string's term ``term``, with how many pieces Python makes of the
@@ -76,6 +89,7 @@ class Splits:
             input_count=held,
             read_count=self._read_count(node, held),
             fixed=self.fixed_reads,
+            walked=self.walked.get(id(node), -1),
         )
         self.lists[listed.count] = listed
         self.parts[id(node)] = listed.count

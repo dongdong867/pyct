@@ -22,15 +22,27 @@ def _split(text: str, sink: list[SinkItem]) -> Any:
 @pytest.mark.parametrize(
     ("text", "unpack", "number", "expected"),
     [
-        ("a,b", substitutes.unpack, 2, ["==", ["len", SPLIT], 2]),
-        ("a", substitutes.unpack, 2, ["==", ["len", SPLIT], 2]),
-        ("a,b,c", substitutes.unpack, 2, ["==", ["len", SPLIT], 2]),
-        ("a", substitutes.unpack_starred, 2, [">=", ["len", SPLIT], 2]),
-        ("a,b,c", substitutes.unpack_starred, 2, [">=", ["len", SPLIT], 2]),
+        ("a,b", substitutes.unpack, 2, [(["==", ["len", SPLIT], 2], True)]),
+        ("a", substitutes.unpack, 2, [(["==", ["len", SPLIT], 2], False)]),
+        ("a,b,c", substitutes.unpack, 2, [(["==", ["len", SPLIT], 2], False)]),
+        ("a", substitutes.unpack_starred, 2, [([">=", ["len", SPLIT], 2], False)]),
+        # where the places other than the star are there, whether the starred list is empty
+        (
+            "a,b",
+            substitutes.unpack_starred,
+            2,
+            [([">=", ["len", SPLIT], 2], True), ([">", ["len", SPLIT], 2], False)],
+        ),
+        (
+            "a,b,c",
+            substitutes.unpack_starred,
+            2,
+            [([">=", ["len", SPLIT], 2], True), ([">", ["len", SPLIT], 2], True)],
+        ),
     ],
 )
 def test_a_split_s_list_records_its_count_before_it_unpacks(
-    text: str, unpack: Any, number: int, expected: list[object]
+    text: str, unpack: Any, number: int, expected: list[tuple[list[object], bool]]
 ) -> None:
     sink: list[SinkItem] = []
     parts = _split(text, sink)
@@ -41,12 +53,11 @@ def test_a_split_s_list_records_its_count_before_it_unpacks(
     # plain Python's list; read by identity, since a compare of the pieces would record forks
     assert type(handed) is list
     assert all(mine is theirs for mine, theirs in zip(handed, list.copy(parts), strict=True))
-    (fork,) = sink
-    count = len(text.split(","))
-    taken = count == number if unpack is substitutes.unpack else count >= number
-    assert isinstance(fork, Branch) and fork.expression == expected and fork.taken is taken
-    # the check is the unpack's, made before Python may raise
-    assert fork.raising
+    forks = [fork for fork in sink if isinstance(fork, Branch)]
+    assert forks == sink
+    assert [(fork.expression, fork.taken) for fork in forks] == expected
+    # each check is the unpack's own, as a check made before Python may raise
+    assert all(fork.raising for fork in forks)
 
 
 def test_a_count_the_path_decided_is_a_fact() -> None:
@@ -65,7 +76,8 @@ def test_a_star_with_no_other_place_holds_on_every_split() -> None:
 
     substitutes.unpack_starred(parts, 0)
 
-    assert [type(item) for item in sink] == [Fact], sink
+    # a split on a separator holds a first piece, so the starred list is never empty either
+    assert [type(item) for item in sink] == [Fact, Fact], sink
 
 
 @pytest.mark.parametrize(

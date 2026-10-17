@@ -41,3 +41,10 @@ def five(n: int):
 def one_item(n: int):
     a, b = [1]
     return n
+
+
+def date_and_time(s: str):
+    date, *time = s.split("/", 1)
+    if time:
+        return 1
+    return 0

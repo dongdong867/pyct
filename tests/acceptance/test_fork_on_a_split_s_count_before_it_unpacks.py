@@ -114,6 +114,20 @@ def test_with_a_star() -> None:
     assert any(covers(line, returned) for line in solved(lines)), lines
 
 
+# match-pyct-v1-on-the-measured-functions-unpack-with-a-star (amended 2026-10-18)
+def test_with_a_star_forks_on_whether_the_starred_list_is_empty() -> None:
+    result = run_pyct(f"{UNPACKS}::date_and_time", '{"s": "M3"}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    at = line_of('date, *time = s.split("/", 1)')
+    # a split on a separator holds a first piece, so `len >= 1` is a fact the line does not list
+    assert listed(lines[0]) == [(at, count(">", ["split", "s", "'/'", 1], 1), False)]
+    assert fork_line(result.stderr, UNPACKS_FILE, at, "len(s.split('/', 1)) > 1", False)
+    returned = line_of("return 1", after="def date_and_time")
+    assert any(covers(line, returned) for line in solved(lines)), lines
+
+
 # a list display as the target counts as a tuple does
 def test_a_list_target_counts_too() -> None:
     result = run_pyct(f"{UNPACKS}::into_a_list", '{"s": "p"}')

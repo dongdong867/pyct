@@ -696,6 +696,7 @@
     {"set": "v2", "target": "targets.strs.split_unpacks::starred", "seed": {"s": "p"}},
     {"set": "v2", "target": "targets.strs.split_unpacks::decided", "seed": {"s": "p,q"}},
     {"set": "v2", "target": "targets.strs.split_unpacks::into_a_list", "seed": {"s": "p"}},
+    {"set": "v2", "target": "targets.strs.split_unpacks::date_and_time", "seed": {"s": "M3"}},
     {"set": "v2", "target": "targets.strs.text_conversion::show", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.text_of_values::int_text", "seed": {"n": 0}},
     {"set": "v2", "target": "targets.strs.text_of_values::kept_text", "seed": {"s": "x"}},

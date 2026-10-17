@@ -427,7 +427,8 @@ def unpack(value: object, count: int, /) -> object:
 
 def unpack_starred(value: object, fewest: int, /) -> object:
     """What an unpack with a star and ``fewest`` other places hands to Python, as `unpack`
-    hands it, a split's list recording ``len >= fewest``."""
+    hands it, a split's list recording ``len >= fewest`` and, where that holds, whether the
+    starred name's list holds anything, ``len > fewest``."""
     if type(value) is ConcolicList:
         return list_reads.unpacking(value, ">=", fewest)
     return value
