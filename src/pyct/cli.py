@@ -1,7 +1,7 @@
 """The pyct command line.
 
 ``pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]
-[--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]``
+[--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs] [--dump-formulas DIR]``
 
 ``pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]
 [--total-budget SECONDS] [--goal coverage|bugs]``
@@ -16,6 +16,7 @@ import json
 import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import NoReturn
 
 from pyct.binding.annotations import contradictions
@@ -24,6 +25,7 @@ from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import (
     UsageError,
+    dump_folder,
     parse_budget,
     parse_goal,
     parse_plateau,
@@ -41,8 +43,10 @@ from pyct.results.trace import render_miss, render_stop, render_trace
 from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
-from pyct.run.run import Tell, run
+from pyct.run.run import run
 from pyct.run.target import Target, TargetError, interception, load_target
+from pyct.run.tell import Ask, Tell
+from pyct.solver.given import write
 from pyct.solver.locate import SolverMissingError, locate
 from pyct.sweep.listing import PackageImportError
 from pyct.sweep.result import SweepLimits, closing, summary_line
@@ -51,7 +55,7 @@ from pyct.sweep.sweep import Mode, SweepTell, sweep
 
 USAGE = (
     "pyct run MODULE::FUNCTION [JSON] [--args JSON] [--budget SECONDS] [--plateau N]"
-    " [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs]"
+    " [--solver-timeout SECONDS] [--in-process] [--goal coverage|bugs] [--dump-formulas DIR]"
 )
 SWEEP_USAGE = (
     "pyct sweep PACKAGE [--list] [--budget SECONDS] [--plateau N] [--solver-timeout SECONDS]"
@@ -77,7 +81,8 @@ class RunCommand:
     """What the command line asked for: the target spec, the seed, the three limits, and where.
 
     ``in_process`` runs every input in pyct's own process rather than one of its own.
-    ``goal_text`` is the goal as written, None for the default.
+    ``goal_text`` is the goal as written, None for the default, and ``dump_text`` the folder
+    each program pyct gives cvc5 goes to, None for none.
     """
 
     spec: str
@@ -87,6 +92,7 @@ class RunCommand:
     solver_timeout_text: str | None = None
     in_process: bool = False
     goal_text: str | None = None
+    dump_text: str | None = None
 
 
 @dataclass(frozen=True)
@@ -135,8 +141,8 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     in this process and in every input's (``pyct.intercept``).
 
     Checks run in this order: target form, seed shape, budget, plateau,
-    solver timeout, goal, import and signature, seed present, seed fits,
-    seed types, cvc5.
+    solver timeout, goal, dump folder, import and signature, seed present,
+    seed fits, seed types, cvc5.
     Everything the command line got wrong is reported first, because a wrong
     command line is wrong whatever the machine has installed; cvc5 is the
     last check before the run for the same reason, as it is the only one
@@ -152,13 +158,13 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
         if isinstance(command, SweepCommand):
             return _sweep(command)
         with interception(command.spec):
-            target, seed, limits = _checked(command, watch)
+            target, seed, limits, tell = _checked(command, watch)
             result = run(
                 target,
                 seed,
                 limits=limits,
                 isolation=Isolation.IN_PROCESS if command.in_process else Isolation.AUTO,
-                tell=Tell(report=_report, missed=_missed),
+                tell=tell,
             )
     except UsageError as error:
         print(error, file=sys.stderr)
@@ -173,8 +179,11 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
 
 def _checked(
     command: RunCommand, watch: ImportWatch | None
-) -> tuple[Target, Mapping[str, object], Limits]:
-    """Every check before the run, in the order ``main`` gives. Each raises what main reports."""
+) -> tuple[Target, Mapping[str, object], Limits, Tell]:
+    """Every check before the run, in the order ``main`` gives. Each raises what main reports.
+
+    The Tell prints each input and miss, and writes each ask's programs to the dump folder when
+    the command line names one."""
     check_spec(command.spec)
     seed = None if command.seed_text is None else parse_seed(command.seed_text)
     limits = Limits(
@@ -183,13 +192,44 @@ def _checked(
         solver_timeout=parse_solver_timeout(command.solver_timeout_text),
         goal=parse_goal(command.goal_text),
     )
+    folder = dump_folder(command.dump_text)
+    asked = None if folder is None else _Dump(folder).ask
     target = load_target(command.spec, watch)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
     check_seed_fits(target.signature, seed)
     check_seed_types(target, seed)
     locate()
-    return target, seed, limits
+    return target, seed, limits, Tell(report=_report, missed=_missed, asked=asked)
+
+
+class _Dump:
+    """Writes each ask's programs into the dump folder, each headed by its aim and its input.
+
+    A write that fails, a folder made unwritable or a full disk, is said once on stderr and
+    ends the dump; the run goes on."""
+
+    def __init__(self, folder: Path) -> None:
+        self.folder = folder
+        self.writing = True
+
+    def ask(self, ask: Ask) -> None:
+        if not self.writing:
+            return
+        site = ask.aim.site
+        about = (
+            f"aim {site.file}:{site.line}:{site.col} at position {ask.aim.position},"
+            f" on the path of stdout line {ask.path + 1}"
+        )
+        try:
+            write(self.folder, ask.number, about, ask.programs)
+        except OSError as error:
+            self.writing = False
+            print(
+                f"cannot write {error.filename}: {error.strerror}; writing no more asks",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def _sweep(command: SweepCommand) -> int:
@@ -291,6 +331,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
     run_parser.add_argument("--solver-timeout", metavar="SECONDS")
     run_parser.add_argument("--in-process", action="store_true")
     run_parser.add_argument("--goal", metavar="coverage|bugs")
+    run_parser.add_argument("--dump-formulas", dest="dump", metavar="DIR")
     namespace = parser.parse_args(argv)
     if namespace.command == "sweep":
         return _sweep_command(namespace)
@@ -305,6 +346,7 @@ def parse_command(argv: Sequence[str]) -> RunCommand | SweepCommand:
         solver_timeout_text=namespace.solver_timeout,
         in_process=namespace.in_process,
         goal_text=namespace.goal,
+        dump_text=namespace.dump,
     )
 
 

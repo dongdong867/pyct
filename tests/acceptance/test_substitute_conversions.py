@@ -13,6 +13,7 @@ from tests.acceptance.harness import (
     first_line,
     forks_of,
     input_lines,
+    missed_lines,
     run_pyct,
 )
 from tests.acceptance.test_bools import at, expressions, failure_of, sides
@@ -254,7 +255,7 @@ def test_reports_a_slow_conversion_as_a_miss() -> None:
 
     assert result.returncode == 0, result.stderr
     site = f"missed {CONVERSIONS_FILE}:66:7 "
-    missed = [line.removeprefix(site) for line in result.stderr.splitlines() if site in line]
+    missed = [line.removeprefix(site) for line in missed_lines(result.stderr) if site in line]
     assert missed, result.stderr
     assert all(why in ("timeout", "unknown") for why in missed)
     above = [">", ["float", "s"], 2.5]

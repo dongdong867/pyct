@@ -14,6 +14,7 @@ from tests.acceptance.harness import (
     forks_of,
     input_lines,
     lines_expressions_and_sides,
+    missed_lines,
     run_pyct,
     summary_line,
 )
@@ -31,7 +32,7 @@ STORED_A = ["in", "'a'", "d"]
 
 def missed(stderr: str) -> list[str]:
     """The stderr lines that name a fork the solver gave no input for."""
-    return [line for line in stderr.splitlines() if line.startswith("missed ")]
+    return missed_lines(stderr)
 
 
 def solver_lines(stdout: str) -> list[dict[str, object]]:

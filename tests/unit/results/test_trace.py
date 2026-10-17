@@ -378,7 +378,7 @@ def test_render_miss_names_the_fork_and_what_the_solver_said() -> None:
     text = render_miss(miss)
 
     # one fact on one line, ended the way every other line of the trace ends
-    assert text == "missed m.py:5:7 unsat\n"
+    assert text == "missed m.py:5:7 unsat after 0.000 s\n"
 
 
 def stopped_with(stop: Stop, *misses: Miss) -> RunResult:
@@ -403,6 +403,7 @@ def test_render_stop_sums_the_run_and_ends_on_why_it_stopped() -> None:
     assert lines == [
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 0 unsat, 0 unknown, 0 timeout",
+        "solver seconds: 0.000 sat, 0.000 unsat, 0.000 unknown, 0.000 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
         "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",
@@ -443,6 +444,7 @@ def test_render_stop_leaves_the_missed_lines_to_the_run() -> None:
     assert lines == [
         "covered 2 of 7 lines in m.py",
         "solver: 0 sat, 1 unsat, 0 unknown, 0 timeout",
+        "solver seconds: 0.000 sat, 0.000 unsat, 0.000 unknown, 0.000 timeout",
         "uncovered 1, 2, 3, 4, 7 in m.py",
         "why 1, 2, 3, 4, 7 in m.py: import",
         "stopped: no fork to flip",

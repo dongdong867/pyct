@@ -10,7 +10,14 @@ import json
 import pytest
 
 from targets.dicts import walk_keys
-from tests.acceptance.harness import first_line, forks_of, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    first_line,
+    forks_of,
+    input_lines,
+    missed_lines,
+    run_pyct,
+    summary_line,
+)
 from tests.acceptance.test_let_the_solver_choose_a_small_dict_s_walk_key import (
     SETTLED,
     WF,
@@ -45,7 +52,7 @@ def test_gives_up_a_large_int_key_lookup_at_once() -> None:
     result = run_pyct(target, looked_up_seed(3000), "--budget", "60", "--solver-timeout", "10")
 
     assert result.returncode == 0, result.stderr
-    assert f"missed {WF}:{LOOKED_UP_READ}:11 unknown" in result.stderr.splitlines()
+    assert f"missed {WF}:{LOOKED_UP_READ}:11 unknown" in missed_lines(result.stderr)
     solver = summary_line(result.stdout)["solver"]
     assert isinstance(solver, dict) and solver["timeout"] == 0, solver
 
@@ -88,7 +95,7 @@ def test_falls_back_when_chosen_keys_are_given_up() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert f"missed {F}:11:15 unknown" in result.stderr.splitlines()
+    assert f"missed {F}:11:15 unknown" in missed_lines(result.stderr)
     assert (11, 15, "timeout") not in misses_of(result.stdout)
     reached(input_lines(result.stdout))
 
@@ -101,7 +108,7 @@ def test_falls_back_past_one_second() -> None:
     result = run_pyct(f"{SETTLED}::int_only", led_by_zeros(5), "--budget", "30", timeout=60)
 
     assert result.returncode == 0, result.stderr
-    assert f"missed {F}:11:15 unknown" in result.stderr.splitlines()
+    assert f"missed {F}:11:15 unknown" in missed_lines(result.stderr)
     assert (11, 15, "timeout") not in misses_of(result.stdout)
     lines = input_lines(result.stdout)
     assert 12 in covered(lines, F)

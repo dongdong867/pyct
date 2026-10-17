@@ -1,11 +1,10 @@
 """Ask cvc5 whether a path can be taken, and for an input that takes it."""
 
 import logging
-import math
 import subprocess
 from collections.abc import Mapping
 from dataclasses import replace
-from time import monotonic
+from time import monotonic, perf_counter
 
 from pyct.binding.shapes import DictShape, ListShape
 from pyct.core.branch import Branch, Expression, Fact
@@ -20,27 +19,16 @@ from pyct.solver.answer import (
     Unsat,
     model_from,
 )
-from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.floats import FINITE
+from pyct.solver.given import Given, answered, argv, options, took
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
-from pyct.solver.locate import locate
 from pyct.solver.render import Program, float_leaves, program
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
 
 logger = logging.getLogger(__name__)
-
-# read one SMT-LIB program from stdin, print a model with the answer, say nothing else, and
-# write each string in the model in full, up to the longest an answer holds
-ARGUMENTS = (
-    "--produce-models",
-    "--lang",
-    "smt",
-    "--quiet",
-    f"--strings-model-max-len={MOST_ITEMS}",
-)
 
 # asked after the program's last command, so the last line cvc5 prints is why it answered
 # unknown, or an error after any other answer
@@ -418,11 +406,13 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     held any.
     """
     text = written.text + WHY
-    argv = _argv(timeout)
-    logger.debug("asking cvc5 %s about:\n%s", argv, text)
+    command = argv(timeout)
+    logger.debug("asking cvc5 %s about:\n%s", command, text)
+    # its own clock, apart from the one the limit is read on
+    started = perf_counter()
     try:
         finished = subprocess.run(
-            argv,
+            command,
             input=text,
             capture_output=True,
             text=True,
@@ -431,8 +421,11 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         )
     except subprocess.TimeoutExpired:
         logger.warning("pyct stopped cvc5, which ran past its time limit")
+        took(Given(text, options(timeout), answered(None, Timeout()), perf_counter() - started))
         return Timeout(), frozenset()
     answer = _read(finished.stdout, finished.stderr, written)
+    heard = answered(finished.stdout, answer)
+    took(Given(text, options(timeout), heard, perf_counter() - started))
     if isinstance(answer, Error):
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
@@ -466,18 +459,6 @@ def _core(stdout: str, written: Program) -> frozenset[str]:
     words = stdout.replace("(", " ").replace(")", " ").split()
     symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
     return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
-
-
-def _argv(timeout: float) -> list[str]:
-    """The command. cvc5 counts its limit in milliseconds, and rounds up is the honest way.
-
-    The limit is on the check, ``--tlimit-per``, where cvc5 answers
-    ``unknown`` and exits. ``--tlimit`` would end the whole process with
-    ``abort()``, which the system records as a crash. Rounding up also keeps
-    any limit above zero at 1 or more, since cvc5 reads ``--tlimit-per=0``
-    as no limit.
-    """
-    return [str(locate()), *ARGUMENTS, f"--tlimit-per={math.ceil(timeout * 1000)}"]
 
 
 def _answer(stdout: str, stderr: str) -> Answer:

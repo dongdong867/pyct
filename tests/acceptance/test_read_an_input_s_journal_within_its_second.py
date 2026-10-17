@@ -29,7 +29,15 @@ from pyct.run import isolation
 from pyct.run.isolation import Isolation
 from pyct.run.run import run
 from pyct.run.target import load_target
-from tests.acceptance.harness import COVERAGE_STARTUP, REPO_ROOT, forks_of, input_lines, run_pyct
+from tests.acceptance.harness import (
+    COVERAGE_STARTUP,
+    REPO_ROOT,
+    SECONDS_KEY,
+    forks_of,
+    input_lines,
+    run_pyct,
+    stderr_lines,
+)
 from tests.acceptance.timed import Measured, within
 
 COUNTDOWN = "targets.loops.countdown::count_down"
@@ -145,9 +153,11 @@ def test_an_in_process_run_ends_within_the_same_bound(tmp_path: Path) -> None:
 
 
 def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str, str]:
-    """The digests of what a run printed, its paths, its environment and its goal taken out.
+    """The digests of what a run printed, its paths, its environment and its goal taken out,
+    and the seconds of its asks and the lines each input covered first.
 
-    The goal came after the digests were pinned, and other tests read it.
+    The goal, the seconds and the first covered lines came after the digests were pinned, and
+    other tests read them; the seconds differ from run to run.
     """
 
     def normalized(text: str) -> str:
@@ -158,6 +168,13 @@ def _printed(result_stdout: str, result_stderr: str, *roots: Path) -> tuple[str,
     summary = json.loads(result_stdout.splitlines()[-1])
     stdout = result_stdout.replace(json.dumps(summary["environment"]), "<environment>")
     stdout = stdout.replace(f'"goal": {json.dumps(summary["goal"])}, ', "")
+    stdout = SECONDS_KEY.sub("", stdout)
+    kept = [
+        line
+        for line in stderr_lines(result_stderr)
+        if not line.startswith(("asked in ", "solver seconds: ", "first covered "))
+    ]
+    result_stderr = "".join(f"{line}\n" for line in kept)
     return _digest(normalized(stdout)), _digest(normalized(result_stderr))
 
 

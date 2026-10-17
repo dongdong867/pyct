@@ -68,7 +68,7 @@ def blocks(stderr: str) -> list[list[tuple[str, str]]]:
     text and the side."""
     found: list[list[tuple[str, str]]] = []
     for row in stderr.splitlines():
-        if row.startswith(("seed ", "solver ")):
+        if row.startswith(("seed {", "solver {")):
             found.append([])
         elif row.startswith("fork ") and found:
             _, text, side = row.removeprefix("fork ").split("  ")

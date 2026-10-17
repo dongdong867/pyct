@@ -2,6 +2,8 @@
 command line that is wrong."""
 
 import math
+import os
+from pathlib import Path
 
 from pyct.config.budget import Budget
 from pyct.config.goal import Goal
@@ -61,6 +63,30 @@ def parse_goal(goal_text: str | None) -> Goal:
         goals = " or ".join(goal.value for goal in Goal)
         raise UsageError(f"goal must be {goals}, got {goal_text!r}")
     return Goal(goal_text)
+
+
+def dump_folder(folder_text: str | None) -> Path | None:
+    """The folder ``--dump-formulas`` names, made when it is missing. No flag is no folder.
+
+    A path that is no directory, a directory that holds files, and one pyct
+    cannot make or write to are refused, naming the path and why. The folder
+    is absolute, so a target that changes the working directory moves no write.
+    """
+    if folder_text is None:
+        return None
+    folder = Path(folder_text).absolute()
+    if folder.exists() and not folder.is_dir():
+        raise UsageError(f"dump-formulas {folder} is not a directory")
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        held = any(folder.iterdir())
+    except OSError as error:
+        raise UsageError(f"cannot make or read dump-formulas {folder}: {error.strerror}") from error
+    if held:
+        raise UsageError(f"dump-formulas {folder} already holds files")
+    if not os.access(folder, os.W_OK | os.X_OK):
+        raise UsageError(f"cannot write to dump-formulas {folder}")
+    return folder
 
 
 def _positive_seconds(text: str, flag: str) -> float:

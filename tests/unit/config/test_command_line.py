@@ -1,12 +1,14 @@
 """The command line's limits and goal, read from their text, and each one's refusal."""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
 from pyct.config.budget import Budget
 from pyct.config.command_line import (
     UsageError,
+    dump_folder,
     parse_budget,
     parse_goal,
     parse_plateau,
@@ -95,3 +97,50 @@ def test_the_two_seconds_flags_refuse_in_the_same_words(
         parse(text)
 
     assert str(refused.value) == refusal
+
+
+def test_dump_folder_is_none_without_the_flag() -> None:
+    assert dump_folder(None) is None
+
+
+def test_dump_folder_makes_a_missing_folder(tmp_path: Path) -> None:
+    folder = tmp_path / "a" / "b"
+
+    assert dump_folder(str(folder)) == folder
+    assert folder.is_dir()
+    assert dump_folder(str(tmp_path / "a" / "b")) == folder
+
+
+@pytest.mark.parametrize("held", [False, True])
+def test_dump_folder_refuses_a_file_or_a_folder_that_holds_files(
+    tmp_path: Path, held: bool
+) -> None:
+    (tmp_path / "f").write_text("")
+    path = tmp_path if held else tmp_path / "f"
+    reason = "already holds files" if held else "is not a directory"
+
+    with pytest.raises(UsageError, match=reason) as refused:
+        dump_folder(str(path))
+
+    assert str(path) in str(refused.value)
+
+
+def test_dump_folder_refuses_a_folder_it_cannot_make_or_write(tmp_path: Path) -> None:
+    tmp_path.chmod(0o500)
+    try:
+        with pytest.raises(UsageError, match="cannot make or read"):
+            dump_folder(str(tmp_path / "new"))
+    finally:
+        tmp_path.chmod(0o700)
+    (tmp_path / "locked").mkdir(mode=0o500)
+    try:
+        with pytest.raises(UsageError, match="cannot write to"):
+            dump_folder(str(tmp_path / "locked"))
+    finally:
+        (tmp_path / "locked").chmod(0o700)
+
+
+def test_dump_folder_is_absolute(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    assert dump_folder("D") == tmp_path / "D"

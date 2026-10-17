@@ -11,7 +11,7 @@ import os
 import shutil
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, run_pyct, summary_line
+from tests.acceptance.harness import REPO_ROOT, missed_lines, run_pyct, summary_line
 
 ORDER = "targets.flip.order::order"
 ORDER_FILE = str(REPO_ROOT / "targets" / "flip" / "order.py")
@@ -102,7 +102,7 @@ def test_ends_a_solve_without_a_signal(tmp_path: Path) -> None:
     result = run_pyct(ORDER, SEED, "--solver-timeout", "1", path=path)
 
     assert result.returncode == 0, result.stderr
-    assert f"missed {ORDER_FILE}:{INNER}:{INNER_COL} timeout" in result.stderr.splitlines()
+    assert f"missed {ORDER_FILE}:{INNER}:{INNER_COL} timeout" in missed_lines(result.stderr)
     solver = summary_line(result.stdout)["solver"]
     assert isinstance(solver, dict), result.stdout
     assert (solver["timeout"], solver["unknown"]) == (1, 0), solver

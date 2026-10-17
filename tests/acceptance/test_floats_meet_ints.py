@@ -12,6 +12,7 @@ from tests.acceptance.harness import (
     first_line,
     forks_of,
     input_lines,
+    missed_lines,
     run_pyct,
     summary_line,
     two_lines,
@@ -57,7 +58,7 @@ def sides_by_line(lines: list[dict[str, object]], head: str) -> dict[object, set
 
 def misses(stderr: str) -> list[str]:
     """The stderr lines that report a fork the solver could not flip."""
-    return [line for line in stderr.splitlines() if line.startswith("missed ")]
+    return missed_lines(stderr)
 
 
 # follow-floats-follows-int-true-division

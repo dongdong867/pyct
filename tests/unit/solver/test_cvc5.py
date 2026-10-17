@@ -9,6 +9,7 @@ import pytest
 
 from pyct.core.branch import Branch, Expression, Site
 from pyct.solver import cvc5 as cvc5_module
+from pyct.solver import given
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import GRACE_SECONDS, solve
 
@@ -165,7 +166,7 @@ def test_a_timeout_is_passed_to_the_solver_in_milliseconds(
 
 def test_a_limit_under_a_millisecond_reaches_the_solver_as_one() -> None:
     # a nearly spent budget leaves a limit like this; cvc5 reads --tlimit-per=0 as no limit
-    assert "--tlimit-per=1" in cvc5_module._argv(0.0001)
+    assert "--tlimit-per=1" in given.argv(0.0001)
 
 
 def slow_program(monkeypatch: pytest.MonkeyPatch, seconds: float) -> None:

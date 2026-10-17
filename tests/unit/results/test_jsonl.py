@@ -43,6 +43,7 @@ def test_render_is_one_json_line_with_sorted_lines() -> None:
         "source": "seed",
         "aim": None,
         "mismatch_at": None,
+        "solver_seconds": None,
     }
 
 
@@ -71,6 +72,7 @@ def test_render_puts_the_forks_between_the_args_and_the_coverage() -> None:
         "source",
         "aim",
         "mismatch_at",
+        "solver_seconds",
     ]
 
 
@@ -204,6 +206,7 @@ def test_render_summary_is_one_json_line_with_its_keys_in_order() -> None:
         "goal",
         "inputs",
         "solver",
+        "solver_seconds",
         "misses",
         "covered",
         "total",
@@ -241,14 +244,30 @@ def test_render_summary_counts_the_solver_answers_by_kind() -> None:
 
 
 def test_render_summary_writes_each_miss_as_its_site_and_the_answer() -> None:
-    timed_out = Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT)
+    timed_out = Miss(site=Site(file="m.py", line=9, col=3), why=MissWhy.TIMEOUT, solver_seconds=2)
 
     payload = summarized(SEED, misses=(MISS, timed_out))
 
     assert payload["misses"] == [
-        {"file": "m.py", "line": 5, "col": 7, "why": "unsat"},
-        {"file": "m.py", "line": 9, "col": 3, "why": "timeout"},
+        {"file": "m.py", "line": 5, "col": 7, "why": "unsat", "solver_seconds": 0.0},
+        {"file": "m.py", "line": 9, "col": 3, "why": "timeout", "solver_seconds": 2.0},
     ]
+
+
+def test_render_writes_the_seconds_of_an_ask_to_the_millisecond() -> None:
+    record = InputRecord(args={"x": 1}, forks=(), covered_lines=frozenset(), solver_seconds=0.12345)
+
+    assert json.loads(render(record, COVERAGE))["solver_seconds"] == 0.123
+
+
+def test_render_summary_sums_the_seconds_of_the_asks_by_answer() -> None:
+    solved = InputRecord(args={"x": 2}, forks=(), covered_lines=frozenset(), solver_seconds=0.0004)
+    unsat = Miss(site=Site(file="m.py", line=5, col=7), why=MissWhy.UNSAT, solver_seconds=0.25)
+    again = Miss(site=Site(file="m.py", line=6, col=7), why=MissWhy.UNSAT, solver_seconds=0.5)
+
+    payload = summarized(SEED, solved, misses=(unsat, again))
+
+    assert payload["solver_seconds"] == {"sat": 0.0, "unsat": 0.75, "unknown": 0.0, "timeout": 0.0}
 
 
 def test_render_summary_writes_the_coverage_the_way_an_input_line_does() -> None:

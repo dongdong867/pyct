@@ -8,7 +8,15 @@ pyct cannot read and hands every later one to the real cvc5.
 import shutil
 from pathlib import Path
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    input_lines,
+    missed_lines,
+    run_pyct,
+    stderr_lines,
+    summary_line,
+    without_seconds,
+)
 
 LONG_ANSWER_FILE = str(REPO_ROOT / "targets" / "strs" / "long_answer.py")
 TAIL_IS_Z = "targets.strs.long_answer::tail_is_z"
@@ -89,9 +97,9 @@ def test_caps_a_string_answer() -> None:
     forks = seed["forks"]
     assert isinstance(forks, list), seed
     assert [fork["expression"] for fork in forks] == [[">", ["len", "s"], 1_000_000]], seed
-    assert f"missed {LONG_ANSWER_FILE}:{line}:{col} unsat" in result.stderr.splitlines()
+    assert f"missed {LONG_ANSWER_FILE}:{line}:{col} unsat" in missed_lines(result.stderr)
     summary = summary_line(result.stdout)
-    assert summary["misses"] == [
+    assert without_seconds(summary)["misses"] == [
         {"file": LONG_ANSWER_FILE, "line": line, "col": col, "why": "unsat"}
     ], summary
     assert solver_lines(result.stdout) == []
@@ -108,7 +116,7 @@ def test_never_ends_the_run(tmp_path: Path) -> None:
     misses = summary["misses"]
     assert isinstance(misses, list) and len(misses) == 1, summary
     assert misses[0]["why"] == "unknown", summary
-    trace = result.stderr.splitlines()
+    trace = stderr_lines(result.stderr)
     missed = f"missed {LONG_ANSWER_FILE}:{misses[0]['line']}:{misses[0]['col']} unknown"
     assert missed in trace, result.stderr
     # the reason names the line cvc5 wrote, and comes before the miss it explains

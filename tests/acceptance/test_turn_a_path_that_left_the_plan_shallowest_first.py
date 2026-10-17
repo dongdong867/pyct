@@ -25,6 +25,8 @@ TRACE_KINDS = {
     "seed",
     "solver",
     "aim",
+    "asked",
+    "first",
     "reached",
     "left",
     "fork",

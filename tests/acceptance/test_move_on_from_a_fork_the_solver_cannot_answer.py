@@ -16,6 +16,7 @@ from tests.acceptance.harness import (
     input_lines,
     run_pyct,
     summary_line,
+    without_seconds,
 )
 
 ORDER = "targets.flip.order::order"
@@ -63,10 +64,11 @@ def covered_of(line: dict[str, object]) -> list[int]:
 def assert_it_went_on(result: subprocess.CompletedProcess[str]) -> None:
     """The miss on stderr, then a solver input that took ``s < t`` false and ran ``not below``."""
     trace = result.stderr.splitlines()
-    assert INNER_MISSED in trace, result.stderr
+    missed = [at for at, line in enumerate(trace) if line.startswith(f"{INNER_MISSED} after ")]
+    assert missed, result.stderr
     heads = [at for at, line in enumerate(trace) if line.startswith("solver {")]
     # the miss prints the moment its answer comes in, so an input after it is a later one
-    assert heads and heads[0] > trace.index(INNER_MISSED), result.stderr
+    assert heads and heads[0] > missed[0], result.stderr
     went_on = [
         line
         for line in input_lines(result.stdout)
@@ -87,7 +89,7 @@ def test_goes_on_after_a_timeout() -> None:
     solver = summary["solver"]
     assert isinstance(solver, dict), summary
     assert solver["timeout"] == 1, summary
-    assert summary["misses"] == [
+    assert without_seconds(summary)["misses"] == [
         {"file": ORDER_FILE, "line": INNER, "col": INNER_COL, "why": "timeout"}
     ], summary
     assert summary["stopped"] == "no fork to flip", summary

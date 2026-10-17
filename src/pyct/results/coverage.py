@@ -123,9 +123,11 @@ class Progress:
         self._branches: dict[int, set[int]] = {}
         self._went: dict[int, set[int]] = {}
 
-    def add(self, lines: frozenset[int], reach: Reach) -> None:
-        """Add the next input: the lines it covered and what it reached."""
+    def add(self, lines: frozenset[int], reach: Reach) -> Mapping[str, frozenset[int]]:
+        """Add the next input: the lines it covered and what it reached. The lines it covered
+        that no earlier input and not the import did come back, keyed by the scope's file."""
         scoped = lines & self.scope.lines
+        first = scoped - self._lines - self._imported
         self.covered.append(scoped)
         self._lines |= scoped
         self._entered |= reach.function_lines & self.scope.lines
@@ -133,6 +135,7 @@ class Progress:
             self._branches.setdefault(line, set()).update(ways)
         for line, way in reach.went:
             self._went.setdefault(line, set()).add(way)
+        return {self.scope.file: first}
 
     def full(self) -> bool:
         """Whether every line and branch is covered: every line of the functions the inputs

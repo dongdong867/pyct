@@ -15,7 +15,7 @@ import math
 import statistics
 import time
 
-from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct, summary_line
+from tests.acceptance.harness import REPO_ROOT, input_lines, missed_lines, run_pyct, summary_line
 
 FLOAT_POSITION = "targets.strs.float_position::cut"
 FLOAT_POSITION_FILE = str(REPO_ROOT / "targets" / "strs" / "float_position.py")
@@ -183,6 +183,6 @@ def test_stays_inside_the_solver_limit() -> None:
     _, stdout, stderr = timed_run("--solver-timeout", "0.01")
 
     site = f"{FLOAT_POSITION_FILE}:{FINITE_FORK[0]}:{FINITE_FORK[1]}"
-    assert f"missed {site} timeout" in stderr.splitlines(), stderr
+    assert f"missed {site} timeout" in missed_lines(stderr), stderr
     assert aimed_at(stdout, FINITE_FORK) == [], stdout
     assert "stopped: no fork to flip" in stderr.splitlines(), stderr

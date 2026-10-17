@@ -49,7 +49,7 @@ def test_covers_the_def_line() -> None:
     assert summary["total"] == {AT_IMPORT_FILE: 4}
     assert numbers_of(summary, "uncovered") == {AT_IMPORT_FILE: []}
     assert summary["why_uncovered"] == []
-    after_trace = result.stderr.splitlines()[-3:]
+    after_trace = result.stderr.splitlines()[-4:]
     assert after_trace[0] == f"covered 4 of 4 lines in {AT_IMPORT_FILE}", result.stderr
     assert not any(line.startswith("uncovered ") for line in after_trace), result.stderr
 

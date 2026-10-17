@@ -37,6 +37,7 @@ def _dumped(record: InputRecord, coverage: Coverage, printed: PrintedForks) -> s
         "source": record.source.value,
         "aim": None if aim is None else {**_at(aim.site), "position": aim.position},
         "mismatch_at": record.mismatch_at,
+        "solver_seconds": record.solver_seconds,
     }
     return json.dumps(payload)
 
