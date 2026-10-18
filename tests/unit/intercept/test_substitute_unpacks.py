@@ -68,6 +68,7 @@ def test_an_unpack_hands_its_value_and_count_over(source: str, expected: str) ->
         "a, b = (*x, y)",
         # a chained assignment, a name target, and two stars are not an unpack of one count
         "a, b = c = parts",
+        "*a, *b = parts",
         "a = parts",
         "a[0] = parts",
         # a loop, a comprehension, a with and an annotated or augmented assignment keep theirs

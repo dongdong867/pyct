@@ -8,6 +8,7 @@ import pytest
 from pyct.core import substitutes
 from pyct.core.branch import Branch, Fact, SinkItem
 from pyct.core.strs import ConcolicStr
+from tests.unit.core.test_dicts import tracked as tracked_dict
 from tests.unit.core.test_list_reads import tracked
 
 SPLIT = ["split", "s", "','"]
@@ -98,13 +99,46 @@ def test_any_other_value_comes_back_as_it_was(value: object) -> None:
     assert substitutes.unpack_starred(value, 1) is value
 
 
-def test_an_argument_s_list_records_nothing_more() -> None:
-    items, sink = tracked([1, 2])
+@pytest.mark.parametrize(
+    ("values", "walked"),
+    [([1, 2], [True, True, False]), ([1, 2, 3], [True, True, True]), ([1], [True, False])],
+    ids=["as many", "one more", "one fewer"],
+)
+def test_an_argument_s_list_is_walked_as_python_unpacks_it(
+    values: list[int], walked: list[bool]
+) -> None:
+    items, sink = tracked(values)
 
-    assert substitutes.unpack(items, 2) is items
+    handed = substitutes.unpack(items, 2)
 
-    # its own walk, as Python unpacks it, records its forks as before
+    # the walk Python's unpack makes, at most one item past the places, and no count compare
+    checks = [[">", ["len", "items"], at] for at in range(len(walked))]
+    assert [(fork.expression, fork.taken) for fork in sink if isinstance(fork, Branch)] == [
+        *zip(checks, walked, strict=True)
+    ]
+    # Python gets a plain list as long as the argument, which it counts in its own error
+    assert type(handed) is list and len(handed) == len(values)
+    # the items the walk hands out, each named by its place
+    assert all(
+        getattr(item, "expression", None) == ["[]", "items", at] for at, item in enumerate(handed)
+    )
+
+
+def test_a_starred_unpack_of_an_argument_s_list_is_python_s() -> None:
+    items, sink = tracked([1, 2, 3])
+
+    assert substitutes.unpack_starred(items, 1) is items
     assert sink == []
+
+
+def test_an_argument_s_dict_is_walked_as_python_unpacks_it() -> None:
+    config, sink = tracked_dict({"a": 1, "b": 2, "c": 3})
+
+    handed = substitutes.unpack(config, 2)
+
+    assert type(handed) is list and handed == ["a", "b", "c"]
+    expressions = [fork.expression for fork in sink if isinstance(fork, Branch)]
+    assert expressions == [[">", ["len", "config"], at] for at in range(3)]
 
 
 def test_a_split_s_list_changed_without_its_methods_records_nothing() -> None:

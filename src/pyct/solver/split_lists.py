@@ -93,8 +93,8 @@ class SplitList:
     def past(self, number: int) -> str:
         """That it holds more pieces than ``number``: piece ``number`` is there, on any string.
 
-        Where the path reads piece ``number`` or one past it from the start, it is there as
-        the walk that reads it writes it: the same terms the read asserts, where a membership
+        Where the path reads piece ``number`` or any piece after it from the start, it is there
+        as the walk that reads it writes it: the same terms the read asserts, where a membership
         beside them left cvc5 past its limit on an int conversion of a later piece. Otherwise,
         on whitespace, the string has that many words and one more, which one membership says.
         An rsplit past the walk has the split's pieces up to its limit.

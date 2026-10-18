@@ -169,6 +169,28 @@ def test_raises_python_s_error(function: str, seed: str, call: Callable[[], obje
     assert failure_detail(first) == expected
 
 
+# a tracked list or dict with one item too many raises the error plain Python gives its plain
+# list or dict, which from 3.14 counts the items, and records the forks its walk records
+@pytest.mark.parametrize(
+    ("function", "seed", "checked"),
+    [
+        ("tracked_list", {"xs": [1, 2, 3]}, "xs"),
+        ("tracked_dict", {"d": {"x": 1, "y": 2, "z": 3}}, "d"),
+    ],
+)
+def test_a_tracked_container_raises_plain_python_s_error(
+    function: str, seed: dict[str, object], checked: str
+) -> None:
+    result = run_pyct(f"{OTHERS}::{function}", json.dumps(seed))
+
+    assert result.returncode == 0, result.stderr
+    first = input_lines(result.stdout)[0]
+    target = getattr(other_unpacks, function)
+    assert failure_detail(first) == raised_by_python(partial(target, **seed))
+    at = line_of("a, b = ", OTHERS_FILE, after=f"def {function}(")
+    assert listed(first) == [(at, [">", ["len", checked], k], True) for k in range(3)]
+
+
 # each target's seed, and the forks of each line its run records, in order, as origin/v2 records
 # them at 024580ff (the forks are those of 8e317e87: parts C and D changed no fork)
 OTHER_FORKS: dict[str, tuple[dict[str, object], list[list[tuple[object, object, object]]]]] = {

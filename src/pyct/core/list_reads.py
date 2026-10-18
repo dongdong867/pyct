@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import sys
 import types
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
@@ -218,10 +218,12 @@ def unpacking(self: ListState, op: str, number: int) -> object:
     Python's unpack of a split's list is the target's own walk, which records no piece fork
     (``_a_split_s_loop``), so it is handed its items as a plain list: the same items, and the
     error plain Python gives for that list, since from 3.14 Python counts the items of a plain
-    list in its message and not those of a subclass. Any other list is handed back itself.
+    list in its message and not those of a subclass. Any other list is walked here for an
+    unpack with no star (``walked_for``), and handed back itself for one with a star, whose
+    error Python words the same for a plain list and a subclass.
     """
     if not a_split_s_list(self.expression):
-        return self
+        return walked_for(self, number, list.copy(self)) if op == "==" else self
     length = self.length()
     if length == len(self.shadow):
         taken = length == number if op == "==" else length >= number
@@ -229,6 +231,19 @@ def unpacking(self: ListState, op: str, number: int) -> object:
         if op == ">=" and taken:
             self.measure(">", number, length > number, "__iter__", raising=True)
     return self.storage()
+
+
+def walked_for(value: Iterable[object], number: int, held: list[object]) -> list[object]:
+    """What Python is handed to unpack ``value`` into ``number`` places with no star: the items
+    Python's own unpack would walk, at most ``number + 1``, walked here as it walks them, so
+    the value records the same forks, then the items of ``held``, its plain items, past them,
+    all in a plain list. From 3.14 Python counts a plain list's or dict's items in its "too
+    many values" error and not a subclass's, so the error is plain Python's on every release.
+    Only the forks' column moves, to the value's, where the unpack's call is, on every input
+    alike."""
+    walked = iter(value)
+    taken = [item for _, item in zip(range(number + 1), walked, strict=False)]
+    return taken + held[len(taken) :]
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

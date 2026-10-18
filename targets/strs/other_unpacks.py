@@ -64,3 +64,10 @@ def split_in_a_loop(s: str):
         if a == b:
             found += 1
     return found
+
+
+def tracked_dict(d: dict[str, int]):
+    a, b = d
+    if a == "k":
+        return 1
+    return 0
