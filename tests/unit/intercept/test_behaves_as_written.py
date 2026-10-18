@@ -191,6 +191,13 @@ PROGRAMS: dict[str, str] = {
     "literal % number": "answer = '%d%%' % note('b', b)",
     "literal % key": "answer = '%(x)s' % note('b', b)",
     "literal % tuple": "answer = '<%s>%d' % (note('a', a),\n    note('b', b))",
+    # CPython compiles a str literal's `%s` alone with a tuple display as an f-string, which
+    # hands back an exact str where a `__str__` gives a subclass
+    "literal % display of a str subclass": (
+        "class Text(str):\n    pass\n"
+        "class Named:\n    def __str__(self):\n        return Text('n')\n"
+        "held = '%s' % (Named(),)\nanswer = (held, type(held).__name__, note('b', b))"
+    ),
     "name %= tuple": "answer = note('a', a)\nanswer %= (note('b', b),)",
     "%= in class body": (
         "class Held(metaclass=Logging):\n    held = note('a', a)\n    held %= (note('b', b), 2)\n"

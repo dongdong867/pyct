@@ -1,11 +1,12 @@
 """`%` formatting with a plain str format and a tracked operand: `"<b>%s</b>" % (s,)`.
 
 Python copies each operand's text into a new plain str, so the condition
-is lost there. `pyct.intercept` hands the operation to `mod` or `imod`
-where the target writes ``<format> % (<tuple display>)``,
-``<str literal> % <operand>`` or ``<name> %= (<tuple display>)``, and a
-tracked str on the right of a plain format reaches `formatted` through its
-own `__rmod__`, which Python asks first.
+is lost there. `pyct.intercept` hands ``<str literal> % <operand>`` to
+`mod`, and ``<format> % (<tuple display>)`` and
+``<name> %= (<tuple display>)`` to the call `formatter` or
+`in_place_formatter` hands back for the left side; a tracked str on the
+right of a plain format reaches `formatted` through its own `__rmod__`,
+which Python asks first.
 
 A format that is exactly a str, given a tracked value, is formatted piece
 by piece by Python's own `%`, one conversion at a time, each on the plain
@@ -27,7 +28,7 @@ from __future__ import annotations
 import functools
 import operator
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any, NamedTuple, cast
 
 from pyct.core import numbers
@@ -232,25 +233,41 @@ def _text_literal(text: str) -> str | None:
     return str.__repr__(text) if within_cvc5(text) else None
 
 
-def mod(left: object, right: object, /) -> object:
-    """``left % right`` where the target writes a `%` pyct substitutes.
+def mod(fmt: str, right: object, display: bool = False, /) -> object:  # noqa: FBT001, FBT002
+    """``fmt % right`` where the target writes a str literal's `%`, or one a `formatter` hands
+    back runs.
 
-    A format that is exactly a str, beside a tracked value, is formatted
-    here; any other pair is Python's own `%`, the target's own `__mod__`,
-    an int's remainder and bytes formatting among them, with its errors.
+    A right side holding a tracked value is formatted here; any other is
+    Python's own `%`, with its errors. ``display`` says the target wrote a
+    tuple display on the right of a str literal, which CPython compiles as
+    the f-string it means where the format is one it can: an f-string hands
+    back an exact str where `%` hands back the str subclass a `__str__` gave
+    as the whole text, so such a text is formatted as the f-string formats
+    it, through its own `__format__` with no spec.
     """
-    if type(left) is str and holds_tracked(right):
-        return formatted(left, right)
-    return left % right  # pyrefly: ignore[unsupported-operation]
+    if holds_tracked(right):
+        return formatted(fmt, right)
+    answer = fmt % right
+    if display and type(answer) is not str and type(answer) not in BASES:
+        return format(answer, "")
+    return answer
 
 
-def imod(left: object, right: object, /) -> object:
-    """``left %= right`` where the target writes ``<name> %= (<tuple display>)``, as `mod`
-    answers, but Python's own `%=` for any other pair, which asks `__imod__` first."""
-    if type(left) is str and holds_tracked(right):
-        return formatted(left, right)
-    left %= right  # pyrefly: ignore[unsupported-operation]
-    return left
+def formatter(left: object, /) -> Callable[[object], object]:
+    """What ``left % (<tuple display>)`` calls with its right side, ``left`` not a literal.
+
+    A format that is exactly a str gets `mod`. Any other left side gets
+    Python's own `%` bound to it, which runs in C: the target's own
+    `__mod__` runs with no frame of pyct's above it, and recurses as deep
+    as written.
+    """
+    return functools.partial(mod if type(left) is str else operator.mod, left)
+
+
+def in_place_formatter(left: object, /) -> Callable[[object], object]:
+    """What ``<name> %= (<tuple display>)`` calls with its right side, as `formatter` answers,
+    but Python's own `%=` for any left side but a str, which has no `__imod__` of its own."""
+    return functools.partial(mod if type(left) is str else operator.imod, left)
 
 
 # str's own reflected `%`, which answers NotImplemented to anything but a str
@@ -265,5 +282,5 @@ def reflected(self: str, other: object) -> object:
     return _RMOD_DOWNGRADE(self, other)
 
 
-# the routers blame reads through: a raise under one is Python's own `%` or the target's
-PASSING = frozenset({mod.__code__, imod.__code__})
+# the router blame reads through: a raise under it is Python's own `%` or the target's
+PASSING = frozenset({mod.__code__})

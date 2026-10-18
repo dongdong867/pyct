@@ -240,14 +240,17 @@ def written_code(source: str | bytes, name: str) -> types.CodeType:
     """The source compiled as written, but for a `%` whose format is a str literal.
 
     CPython compiles ``"<%s>" % (a,)``, a format of `%s`, `%r` and `%a` alone
-    with a tuple display, as the f-string it means, and gives the literal
-    pieces no position of their own, so the first takes the line before it:
-    the `def` line, where the `%` starts a function, which a run covers when
-    the module is imported. pyct's call for that `%` is the `%` as written
-    (`pyct.intercept.percents`), so the check compiles it as CPython compiles
-    any other `%`: the format, written as an f-string of itself alone, is
-    still the one constant at its own position, and CPython no longer reads
-    it as a format.
+    with a tuple display, as the f-string it means, which builds no tuple,
+    and gives the literal pieces no position of their own, so the first takes
+    the line before it: the `def` line, where the `%` starts a function,
+    which a run covers when the module is imported. pyct's call for that `%`
+    is the `%` as written (`pyct.intercept.percents`), so the check compiles
+    it as CPython compiles any other `%`: the format, written as an f-string
+    of itself alone, is still the one constant at its own position, and
+    CPython no longer reads it as a format. Against the f-string itself, the
+    substituted `%` runs the same lines in another order where its parts
+    span lines: the format's line first, and the tuple's first line again
+    after its items, each a line the same pass already ran.
     """
     tree = ast.parse(source)
     for node in ast.walk(tree):

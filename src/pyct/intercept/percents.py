@@ -10,15 +10,24 @@ being what CPython folds to a str; and an augmented assignment written
 ``<name> %= (<tuple display>)``. A right side CPython folds to a constant
 holds nothing tracked and stays as written, and so does any other `%`.
 
-``a % b`` becomes ``__pyct_mod__(a, b)``, and ``x %= (a, b)`` becomes
-``x = __pyct_imod__(x, (a, b))``, each operand the operation's own node,
-moved into the call, so each is evaluated once and in Python's order
-(`pyct.core.str_formats`). The call takes the operation's position, where
-CPython puts its own instruction, and the name sits where the left
-operand's first instruction does (`positions.Parts.named`), so it adds no
-line. Substituted, a format with a tuple display is no longer one CPython
-compiles as an f-string, which it does for one of `%s`, `%r` and `%a`
-alone.
+A str literal's ``'f' % b`` becomes ``__pyct_mod__('f', b)``, with a third
+operand, True, where ``b`` is a tuple display (`pyct.core.str_formats.mod`).
+Any other format's ``a % (x, y)`` becomes ``__pyct_formatter__(a)((x, y))``,
+and ``n %= (x, y)`` becomes ``n = __pyct_in_place_formatter__(n)((x, y))``:
+pyct is handed the left side first and hands back what the right side is
+given to, Python's own `%` or `%=` for a left side that is not a str, so a
+class's own `__mod__` or `__imod__` runs with no frame of pyct's above it.
+Each operand is the operation's own node, moved into a call, so each is
+evaluated once and in Python's order.
+
+The outer call takes the operation's position, where CPython puts its own
+instruction, and the name, and the call that asks for the left side, sit
+where the left operand's first instruction does (`positions.Parts.named`).
+So against the `%` as CPython compiles it in general, the call adds no line
+of its own. CPython compiles a str literal's format of `%s`, `%r` and `%a`
+alone with a tuple display as the f-string it means, which builds no tuple:
+against that code, a tuple display spread over lines runs its first line
+once more, after its items, where the substituted code builds the tuple.
 """
 
 from __future__ import annotations
@@ -28,8 +37,9 @@ import ast
 from pyct.intercept.positions import Parts
 
 _MOD = "__pyct_mod__"
-_IMOD = "__pyct_imod__"
-BOUND: dict[str, str] = {_MOD: "mod", _IMOD: "imod"}
+_FORMATTER = "__pyct_formatter__"
+_IN_PLACE = "__pyct_in_place_formatter__"
+BOUND: dict[str, str] = {_MOD: "mod", _FORMATTER: "formatter", _IN_PLACE: "in_place_formatter"}
 
 
 def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
@@ -42,23 +52,35 @@ def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
     left, right = node.left, node.right
     if parts.folded(right) is not None:
         return None
-    if not isinstance(right, ast.Tuple) and not _text(left, parts):
+    if _text(left, parts):
+        call = ast.Call(func=parts.named(_MOD, left), args=[left, right], keywords=[])
+        if isinstance(right, ast.Tuple):
+            call.args.append(ast.copy_location(ast.Constant(value=True), node))
+        return ast.copy_location(call, node)
+    if not isinstance(right, ast.Tuple):
         return None
-    call = ast.Call(func=parts.named(_MOD, left), args=[left, right], keywords=[])
-    return ast.copy_location(call, node)
+    return _curried(_FORMATTER, left, right, node, parts)
 
 
 def _augmented(node: ast.AugAssign, parts: Parts) -> ast.Assign | None:
-    """``x = __pyct_imod__(x, (a, b))`` for ``x %= (a, b)``, or None for any other."""
+    """``x = __pyct_in_place_formatter__(x)((a, b))`` for ``x %= (a, b)``, or None for any
+    other."""
     target, right = node.target, node.value
     if not isinstance(node.op, ast.Mod) or not isinstance(target, ast.Name):
         return None
     if not isinstance(right, ast.Tuple) or parts.folded(right) is not None:
         return None
     read = ast.copy_location(ast.Name(id=target.id, ctx=ast.Load()), target)
-    call = ast.Call(func=parts.named(_IMOD, target), args=[read, right], keywords=[])
-    assignment = ast.Assign(targets=[target], value=ast.copy_location(call, node))
+    assignment = ast.Assign(targets=[target], value=_curried(_IN_PLACE, read, right, node, parts))
     return ast.copy_location(assignment, node)
+
+
+def _curried(name: str, left: ast.expr, right: ast.expr, at: ast.AST, parts: Parts) -> ast.Call:
+    """``name(left)(right)``: the call asking for the left side where the left side's first
+    instruction is, and the call of what it hands back at the operation's position."""
+    called = parts.named(name, left)
+    asked = ast.copy_location(ast.Call(func=called, args=[left], keywords=[]), called)
+    return ast.copy_location(ast.Call(func=asked, args=[right], keywords=[]), at)
 
 
 def _text(node: ast.expr, parts: Parts) -> bool:

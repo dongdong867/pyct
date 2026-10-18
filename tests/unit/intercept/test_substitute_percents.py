@@ -32,16 +32,16 @@ def substituted(source: str) -> str:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("t = '<%s>' % (a,)", "t = __pyct_mod__('<%s>', (a,))"),
-        ("t = fmt % (a, b)", "t = __pyct_mod__(fmt, (a, b))"),
-        ("t = self.f() % (a, *b)", "t = __pyct_mod__(self.f(), (a, *b))"),
+        ("t = '<%s>' % (a,)", "t = __pyct_mod__('<%s>', (a,), True)"),
+        ("t = fmt % (a, b)", "t = __pyct_formatter__(fmt)((a, b))"),
+        ("t = self.f() % (a, *b)", "t = __pyct_formatter__(self.f())((a, *b))"),
         ("t = '%d items' % n", "t = __pyct_mod__('%d items', n)"),
         ("t = 'a' 'b%s' % d", "t = __pyct_mod__('ab%s', d)"),
         ("t = ('<' + '%s>') % s", "t = __pyct_mod__('<' + '%s>', s)"),
         ("t = '%(k)s' % {'k': s}", "t = __pyct_mod__('%(k)s', {'k': s})"),
-        ("x %= (a, b)", "x = __pyct_imod__(x, (a, b))"),
+        ("x %= (a, b)", "x = __pyct_in_place_formatter__(x)((a, b))"),
         # an operand is substituted inside the call as anywhere else
-        ("t = '%s' % (a in b,)", "t = __pyct_mod__('%s', (__pyct_in__(a, b),))"),
+        ("t = '%s' % (a in b,)", "t = __pyct_mod__('%s', (__pyct_in__(a, b),), True)"),
     ],
 )
 def test_a_format_hands_its_operands_over(source: str, expected: str) -> None:
@@ -69,6 +69,7 @@ def test_a_format_hands_its_operands_over(source: str, expected: str) -> None:
 )
 def test_any_other_percent_stays_as_written(source: str) -> None:
     assert "mod__" not in substituted(source)
+    assert "formatter__" not in substituted(source)
 
 
 def test_the_call_takes_the_operation_s_position_and_its_name_the_format_s_first() -> None:
@@ -76,9 +77,11 @@ def test_the_call_takes_the_operation_s_position_and_its_name_the_format_s_first
     (assignment,) = [node for node in ast.walk(tree) if isinstance(node, ast.Assign)]
     call = assignment.value
 
-    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Name)
+    assert isinstance(call, ast.Call) and isinstance(call.func, ast.Call)
     assert (call.lineno, call.col_offset, call.end_lineno) == (1, 5, 2)
-    assert (call.func.lineno, call.func.col_offset) == (1, 5)
+    asked = call.func
+    assert isinstance(asked.func, ast.Name) and asked.func.id == "__pyct_formatter__"
+    assert (asked.lineno, asked.col_offset) == (asked.func.lineno, asked.func.col_offset) == (1, 5)
 
 
 def test_an_augmented_format_assigns_the_call_at_the_statement_s_position() -> None:
@@ -90,7 +93,8 @@ def test_an_augmented_format_assigns_the_call_at_the_statement_s_position() -> N
     assert isinstance(target, ast.Name) and isinstance(target.ctx, ast.Store)
     call = assignment.value
     assert (call.lineno, call.col_offset, call.end_lineno) == (1, 0, 2)
-    read = call.args[0]
+    assert isinstance(call.func, ast.Call)
+    read = call.func.args[0]
     assert isinstance(read, ast.Name) and isinstance(read.ctx, ast.Load)
     assert (read.lineno, read.col_offset) == (target.lineno, target.col_offset)
 
@@ -102,15 +106,15 @@ def test_the_module_binds_the_names_and_a_class_declares_them_global() -> None:
     assert isinstance(binding, ast.ImportFrom)
     assert [(alias.name, alias.asname) for alias in binding.names] == [
         ("mod", "__pyct_mod__"),
-        ("imod", "__pyct_imod__"),
+        ("in_place_formatter", "__pyct_in_place_formatter__"),
     ]
     assert isinstance(owner, ast.ClassDef) and isinstance(owner.body[0], ast.Global)
-    assert owner.body[0].names == ["__pyct_mod__", "__pyct_imod__"]
+    assert owner.body[0].names == ["__pyct_mod__", "__pyct_in_place_formatter__"]
 
 
 @pytest.mark.parametrize("shape", SPREAD_OUT)
 def test_a_format_spread_over_lines_lines_up(shape: str) -> None:
     source = "def f():\n    " + shape.replace("\n", "\n    ") + "\n"
 
-    assert "mod__" in ast.unparse(substitute(ast.parse(source))), shape
+    assert "__pyct_" in ast.unparse(substitute(ast.parse(source))), shape
     assert lined_up(source, "<f>")

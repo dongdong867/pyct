@@ -353,3 +353,18 @@ def test_a_literal_s_format_is_compared_with_the_percent_cpython_compiles_otherw
     assert (None, 1) in layout(compile(source, "<f>", "exec"))[function][2]
     assert (None, 1) not in layout(written_code(source, "<f>"))[function][2]
     assert lined_up(source, "<f>")
+
+
+def test_a_spread_out_literal_s_format_runs_the_f_string_s_lines_in_another_order() -> None:
+    source = (
+        "def f(m, a):\n    x = 1\n    t = ('<%s|%s>'\n        % (m,\n           a))\n    return t\n"
+    )
+    function = 1
+    as_written = layout(compile(source, "<f>", "exec"))[function]
+    reference = layout(written_code(source, "<f>"))[function]
+
+    # the same lines, but CPython's f-string skips the format's line and builds no tuple
+    assert as_written[1] == reference[1]
+    assert as_written[2] == {(None, 2), (2, 4), (4, 5), (5, 3), (3, 6)}
+    assert reference[2] == {(None, 2), (2, 3), (3, 4), (4, 5), (5, 4), (4, 3), (3, 6)}
+    assert lined_up(source, "<f>")

@@ -56,8 +56,9 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.ranges import ConcolicRange
 from pyct.core.str_formats import PASSING as FORMATS_PASSING
-from pyct.core.str_formats import imod as imod  # substituted modules import it from here
-from pyct.core.str_formats import mod as mod  # substituted modules import it from here
+from pyct.core.str_formats import formatter as formatter  # substituted modules import these
+from pyct.core.str_formats import in_place_formatter as in_place_formatter
+from pyct.core.str_formats import mod as mod
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import tested_against
 

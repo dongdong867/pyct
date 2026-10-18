@@ -14,7 +14,15 @@ from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
-from pyct.core.str_formats import Spec, formatted, holds_tracked, imod, mod, tokens
+from pyct.core.str_formats import (
+    Spec,
+    formatted,
+    formatter,
+    holds_tracked,
+    in_place_formatter,
+    mod,
+    tokens,
+)
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
 
@@ -254,8 +262,19 @@ PYTHON_S: dict[str, tuple[object, Callable[[dict[str, Any]], object]]] = {
 }
 
 
+def _formatted_by(left: object, right: object) -> object:
+    return formatter(left)(right)
+
+
+def _formatted_in_place(left: object, right: object) -> object:
+    return in_place_formatter(left)(right)
+
+
+ROUTERS = [(_formatted_by, operator.mod), (_formatted_in_place, operator.imod)]
+
+
 @pytest.mark.parametrize(("left", "right"), PYTHON_S.values(), ids=list(PYTHON_S))
-@pytest.mark.parametrize(("router", "python"), [(mod, operator.mod), (imod, operator.imod)])
+@pytest.mark.parametrize(("router", "python"), ROUTERS)
 def test_the_routers_hand_any_other_pair_to_python(
     left: object,
     right: Callable[[dict[str, Any]], object],
@@ -273,7 +292,7 @@ def test_the_routers_hand_any_other_pair_to_python(
     assert answer(router, right(_tracked(sink))) == answer(python, right(_tracked([])))
 
 
-@pytest.mark.parametrize("router", [mod, imod])
+@pytest.mark.parametrize("router", [_formatted_by, _formatted_in_place])
 def test_a_tracked_format_is_its_own_mod_downgrade(
     router: Callable[[object, object], object],
 ) -> None:
@@ -290,9 +309,27 @@ def test_the_routers_format_a_plain_format_beside_a_tracked_value() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr.made("ab", expression="s", sink=sink)
 
-    for router in (mod, imod):
+    for router in (mod, _formatted_by, _formatted_in_place):
         answer = router("<%s>", (s,))
         assert answer.expression == ["%", "'<%s>'", ["()", "s"]]  # pyrefly: ignore
+
+
+class _Text(str):
+    """A str of the target's own, which a `__str__` may hand back."""
+
+
+class _Texted:
+    def __str__(self) -> str:
+        return _Text("named")
+
+
+def test_a_literal_s_format_of_a_display_hands_back_the_exact_str_an_f_string_gives() -> None:
+    named = _Texted()
+
+    assert type("%s" % named) is _Text  # noqa: UP031
+    assert type(mod("%s", named)) is _Text
+    displayed = mod("%s", (named,), True)  # noqa: FBT003
+    assert (displayed, type(displayed)) == ("named", str)
 
 
 @pytest.mark.parametrize(
