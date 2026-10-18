@@ -2,11 +2,11 @@
 
 Python copies each operand's text into a new plain str, so the condition
 is lost there. `pyct.intercept` hands ``<str literal> % <operand>`` to
-`mod`, and ``<format> % (<tuple display>)`` and
-``<name> %= (<tuple display>)`` to the call `formatter` or
-`in_place_formatter` hands back for the left side; a tracked str on the
-right of a plain format reaches `formatted` through its own `__rmod__`,
-which Python asks first.
+`mod`, or to `fstring_mod` where CPython compiles it as an f-string, and
+``<format> % (<tuple display>)`` and ``<name> %= (<tuple display>)`` to
+the call `formatter` or `in_place_formatter` hands back for the left side;
+a tracked str on the right of a plain format reaches `formatted` through
+its own `__rmod__`, which Python asks first.
 
 A format that is exactly a str, given a tracked value, is formatted piece
 by piece by Python's own `%`, one conversion at a time, each on the plain
@@ -25,6 +25,7 @@ a downgrade named `__mod__`.
 
 from __future__ import annotations
 
+import ast
 import functools
 import operator
 import re
@@ -233,24 +234,47 @@ def _text_literal(text: str) -> str | None:
     return str.__repr__(text) if within_cvc5(text) else None
 
 
-def mod(fmt: str, right: object, display: bool = False, /) -> object:  # noqa: FBT001, FBT002
+def mod(fmt: str, right: object, /) -> object:
     """``fmt % right`` where the target writes a str literal's `%`, or one a `formatter` hands
     back runs.
 
     A right side holding a tracked value is formatted here; any other is
-    Python's own `%`, with its errors. ``display`` says the target wrote a
-    tuple display on the right of a str literal, which CPython compiles as
-    the f-string it means where the format is one it can: an f-string hands
-    back an exact str where `%` hands back the str subclass a `__str__` gave
-    as the whole text, so such a text is formatted as the f-string formats
-    it, through its own `__format__` with no spec.
+    Python's own `%`, with its errors.
     """
     if holds_tracked(right):
         return formatted(fmt, right)
-    answer = fmt % right
-    if display and type(answer) is not str and type(answer) not in BASES:
-        return format(answer, "")
-    return answer
+    return fmt % right
+
+
+def fstring_mod(fmt: str, right: tuple[object, ...], /) -> object:
+    """``fmt % (<tuple display>)`` where the target writes a str literal's `%` that CPython
+    compiles as the f-string it means, as `pyct.intercept.percents` checks in the compiled code.
+
+    A right side holding a tracked value is formatted as `mod` formats it;
+    any other runs that f-string, compiled from the same shape, so its text,
+    its type and the `__format__` spec it hands each operand are CPython's.
+    """
+    if holds_tracked(right):
+        return formatted(fmt, right)
+    return _as_compiled(fmt, len(right))(*right)
+
+
+@functools.lru_cache(maxsize=256)
+def _as_compiled(fmt: str, count: int) -> Callable[..., object]:
+    """``lambda _0, ..., _n: fmt % (_0, ..., _n)``, which CPython compiles as the target's own
+    `%` of that format and a tuple display of as many operands."""
+    names = [f"_{at}" for at in range(count)]
+    held = ast.Tuple(elts=[ast.Name(id=name, ctx=ast.Load()) for name in names], ctx=ast.Load())
+    body = ast.BinOp(left=ast.Constant(value=fmt), op=ast.Mod(), right=held)
+    arguments = ast.arguments(
+        posonlyargs=[ast.arg(arg=name) for name in names],
+        args=[],
+        kwonlyargs=[],
+        kw_defaults=[],
+        defaults=[],
+    )
+    tree = ast.fix_missing_locations(ast.Expression(body=ast.Lambda(args=arguments, body=body)))
+    return eval(compile(tree, "<pyct format>", "eval"))  # noqa: S307 - a tree built here
 
 
 def formatter(left: object, /) -> Callable[[object], object]:
@@ -258,8 +282,7 @@ def formatter(left: object, /) -> Callable[[object], object]:
 
     A format that is exactly a str gets `mod`. Any other left side gets
     Python's own `%` bound to it, which runs in C: the target's own
-    `__mod__` runs with no frame of pyct's above it, and recurses as deep
-    as written.
+    `__mod__` runs with no frame of pyct's above it.
     """
     return functools.partial(mod if type(left) is str else operator.mod, left)
 
@@ -283,4 +306,4 @@ def reflected(self: str, other: object) -> object:
 
 
 # the router blame reads through: a raise under it is Python's own `%` or the target's
-PASSING = frozenset({mod.__code__})
+PASSING = frozenset({mod.__code__, fstring_mod.__code__})

@@ -18,6 +18,7 @@ from pyct.core.str_formats import (
     Spec,
     formatted,
     formatter,
+    fstring_mod,
     holds_tracked,
     in_place_formatter,
     mod,
@@ -309,27 +310,34 @@ def test_the_routers_format_a_plain_format_beside_a_tracked_value() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr.made("ab", expression="s", sink=sink)
 
-    for router in (mod, _formatted_by, _formatted_in_place):
+    for router in (mod, fstring_mod, _formatted_by, _formatted_in_place):
         answer = router("<%s>", (s,))
         assert answer.expression == ["%", "'<%s>'", ["()", "s"]]  # pyrefly: ignore
 
 
 class _Text(str):
-    """A str of the target's own, which a `__str__` may hand back."""
+    """A str of the target's own, which a `__str__` may hand back, and which writes the spec
+    its `__format__` is handed."""
+
+    def __format__(self, spec: str) -> str:
+        return _Text(f"<{spec}>")
 
 
 class _Texted:
     def __str__(self) -> str:
-        return _Text("named")
+        return _Text("named-text")
 
 
-def test_a_literal_s_format_of_a_display_hands_back_the_exact_str_an_f_string_gives() -> None:
-    named = _Texted()
+@pytest.mark.parametrize("fmt", ["%s", "%5s", "%.9s", "%r|%-12s"])
+def test_an_f_string_s_format_runs_as_cpython_s_f_string(fmt: str) -> None:
+    operands = (_Texted(),) * fmt.count("%")
+    expected = eval(
+        f"lambda *_: {fmt!r} % ({', '.join(f'_[{at}]' for at in range(len(operands)))},)"
+    )  # noqa: S307
 
-    assert type("%s" % named) is _Text  # noqa: UP031
-    assert type(mod("%s", named)) is _Text
-    displayed = mod("%s", (named,), True)  # noqa: FBT003
-    assert (displayed, type(displayed)) == ("named", str)
+    answer = fstring_mod(fmt, operands)
+
+    assert (answer, type(answer)) == (expected(*operands), type(expected(*operands)))
 
 
 @pytest.mark.parametrize(

@@ -191,13 +191,25 @@ PROGRAMS: dict[str, str] = {
     "literal % number": "answer = '%d%%' % note('b', b)",
     "literal % key": "answer = '%(x)s' % note('b', b)",
     "literal % tuple": "answer = '<%s>%d' % (note('a', a),\n    note('b', b))",
-    # CPython compiles a str literal's `%s` alone with a tuple display as an f-string, which
-    # hands back an exact str where a `__str__` gives a subclass
-    "literal % display of a str subclass": (
-        "class Text(str):\n    pass\n"
-        "class Named:\n    def __str__(self):\n        return Text('n')\n"
-        "held = '%s' % (Named(),)\nanswer = (held, type(held).__name__, note('b', b))"
-    ),
+    # CPython compiles some str literals' `%` with a tuple display as an f-string, which hands
+    # back an exact str where a `__str__` gives a subclass, and hands the subclass's
+    # `__format__` the spec as written; the others are Python's own `%`
+    **{
+        f"literal {fmt} % display of a str subclass": (
+            "class Text(str):\n"
+            "    def __format__(self, spec):\n        return Text(f'<{spec}>')\n"
+            "class Named:\n    def __str__(self):\n        return Text('named-text')\n"
+            f"xs = [Named()]\nheld = '{fmt}' % {operands}\n"
+            "answer = (held, type(held).__name__, note('b', b))"
+        )
+        for fmt, operands in (
+            ("%s", "(Named(),)"),
+            ("%5s", "(Named(),)"),
+            ("%.9s", "(Named(),)"),
+            ("%*s", "(0, Named())"),
+            ("%s", "(*xs,)"),
+        )
+    },
     "name %= tuple": "answer = note('a', a)\nanswer %= (note('b', b),)",
     "%= in class body": (
         "class Held(metaclass=Logging):\n    held = note('a', a)\n    held %= (note('b', b), 2)\n"

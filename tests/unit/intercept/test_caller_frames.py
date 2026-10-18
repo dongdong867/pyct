@@ -128,7 +128,7 @@ def test_a_class_s_own_format_beside_a_tuple_display_sees_its_caller(tmp_path: P
         assert [(warning.filename, warning.lineno) for warning in caught] == [(path, line_of(line))]
 
 
-def test_a_class_s_own_format_recurses_as_deep_as_written(tmp_path: Path) -> None:
+def test_a_class_s_own_format_recurses_past_half_the_recursion_limit(tmp_path: Path) -> None:
     namespace, path = loaded(tmp_path)
     depth = sys.getrecursionlimit() * 7 // 10
 

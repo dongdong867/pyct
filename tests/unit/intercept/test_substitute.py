@@ -298,6 +298,7 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_identity__": "Identity",
         "__pyct_handed__": "handed",
         "__pyct_mod__": "mod",
+        "__pyct_fstring_mod__": "fstring_mod",
         "__pyct_formatter__": "formatter",
         "__pyct_in_place_formatter__": "in_place_formatter",
         "__pyct_call__": "call",

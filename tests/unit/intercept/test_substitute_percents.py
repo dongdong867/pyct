@@ -32,7 +32,13 @@ def substituted(source: str) -> str:
 @pytest.mark.parametrize(
     ("source", "expected"),
     [
-        ("t = '<%s>' % (a,)", "t = __pyct_mod__('<%s>', (a,), True)"),
+        ("t = '<%s>' % (a,)", "t = __pyct_fstring_mod__('<%s>', (a,))"),
+        # CPython compiles a str literal's `%` with a tuple display as an f-string only where its
+        # compiled code shows it does
+        ("t = '%5s|%r' % (a, b)", "t = __pyct_fstring_mod__('%5s|%r', (a, b))"),
+        ("t = '%d' % (n,)", "t = __pyct_mod__('%d', (n,))"),
+        ("t = '%*s' % (w, a)", "t = __pyct_mod__('%*s', (w, a))"),
+        ("t = '%s' % (*xs,)", "t = __pyct_mod__('%s', (*xs,))"),
         ("t = fmt % (a, b)", "t = __pyct_formatter__(fmt)((a, b))"),
         ("t = self.f() % (a, *b)", "t = __pyct_formatter__(self.f())((a, *b))"),
         ("t = '%d items' % n", "t = __pyct_mod__('%d items', n)"),
@@ -41,7 +47,7 @@ def substituted(source: str) -> str:
         ("t = '%(k)s' % {'k': s}", "t = __pyct_mod__('%(k)s', {'k': s})"),
         ("x %= (a, b)", "x = __pyct_in_place_formatter__(x)((a, b))"),
         # an operand is substituted inside the call as anywhere else
-        ("t = '%s' % (a in b,)", "t = __pyct_mod__('%s', (__pyct_in__(a, b),), True)"),
+        ("t = '%s' % (a in b,)", "t = __pyct_fstring_mod__('%s', (__pyct_in__(a, b),))"),
     ],
 )
 def test_a_format_hands_its_operands_over(source: str, expected: str) -> None:
