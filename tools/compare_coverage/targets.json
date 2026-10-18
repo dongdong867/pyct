@@ -640,6 +640,7 @@
     {"set": "v2", "target": "targets.strs.percent_formats::plain_int_format", "seed": {"n": 1}},
     {"set": "v2", "target": "targets.strs.percent_formats::not_a_number", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.percent_formats::too_few", "seed": {"s": "x"}},
+    {"set": "v2", "module": "targets.strs.percent_repr", "left_out": "legacy writes %r as str(), so its run of quoted reaches line 12, return 0, which plain Python never reaches; listing it would record a line only legacy covers"},
     {"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}},
     {"set": "v2", "target": "targets.strs.prefixes::route", "seed": {"s": "x", "t": "q"}},
     {"set": "v2", "target": "targets.strs.printed_methods::check", "seed": {"s": "b", "n": 0}},

@@ -52,13 +52,6 @@ def in_hex(n: int):
     return 0
 
 
-def quoted(s: str):
-    text = "%r" % (s,)
-    if text == "'a'":
-        return 1
-    return 0
-
-
 def keyed(s: str):
     text = "%(k)s" % {"k": s}
     if text == "a":

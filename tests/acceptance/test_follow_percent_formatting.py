@@ -28,9 +28,9 @@ FORMATS = "targets.strs.percent_formats"
 FORMATS_FILE = str(REPO_ROOT / "targets" / "strs" / "percent_formats.py")
 
 
-def line_of(text: str, function: str) -> int:
+def line_of(text: str, function: str, file: str = FORMATS_FILE) -> int:
     """The line of the fixture that holds ``text`` inside ``function``."""
-    return line_in(text, FORMATS_FILE, after=f"def {function}(")
+    return line_in(text, file, after=f"def {function}(")
 
 
 def run_covers(stdout: str, number: int) -> bool:
@@ -39,10 +39,10 @@ def run_covers(stdout: str, number: int) -> bool:
     return number in covered.get(FORMATS_FILE, [])
 
 
-def covered_by(line: dict[str, object], number: int) -> bool:
+def covered_by(line: dict[str, object], number: int, file: str = FORMATS_FILE) -> bool:
     covered = line["covered"]
     assert isinstance(covered, dict), line
-    return number in covered.get(FORMATS_FILE, [])
+    return number in covered.get(file, [])
 
 
 def downgrades_at(line: dict[str, object]) -> list[tuple[object, object]]:
@@ -118,25 +118,28 @@ def test_follows_a_tracked_str_on_the_right() -> None:
 
 # match-pyct-v1-on-the-measured-functions-percent-downgrades-other-conversions
 @pytest.mark.parametrize(
-    ("function", "seed", "written"),
+    ("target", "seed", "written"),
     [
-        ("padded", '{"s": "a"}', '"%5s" % (s,)'),
-        ("in_hex", '{"n": 255}', '"%x" % (n,)'),
-        ("quoted", '{"s": "a"}', '"%r" % (s,)'),
-        ("keyed", '{"s": "a"}', '"%(k)s" % {"k": s}'),
-        ("tracked_format", '{"s": "%d"}', "s % (1,)"),
+        ("percent_formats::padded", '{"s": "a"}', '"%5s" % (s,)'),
+        ("percent_formats::in_hex", '{"n": 255}', '"%x" % (n,)'),
+        # a module of its own, which the compare tool leaves out
+        ("percent_repr::quoted", '{"s": "a"}', '"%r" % (s,)'),
+        ("percent_formats::keyed", '{"s": "a"}', '"%(k)s" % {"k": s}'),
+        ("percent_formats::tracked_format", '{"s": "%d"}', "s % (1,)"),
     ],
 )
-def test_downgrades_other_conversions(function: str, seed: str, written: str) -> None:
-    result = run_pyct(f"{FORMATS}::{function}", seed)
+def test_downgrades_other_conversions(target: str, seed: str, written: str) -> None:
+    module, function = target.split("::")
+    file = str(REPO_ROOT / "targets" / "strs" / f"{module}.py")
+    result = run_pyct(f"targets.strs.{target}", seed)
 
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
-    at = line_of(written, function)
+    at = line_of(written, function, file)
     # Python's text, plain: the seed's compare records no fork and takes Python's side
     assert listed(lines[0]) == []
     assert downgrades_at(lines[0]) == [("__mod__", at)]
-    assert covered_by(lines[0], line_of("return 1", function)), lines[0]
+    assert covered_by(lines[0], line_of("return 1", function, file), file), lines[0]
 
 
 # match-pyct-v1-on-the-measured-functions-percent-leaves-plain-values-as-python
