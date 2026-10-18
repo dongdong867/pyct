@@ -204,3 +204,36 @@ def test_a_read_through_a_slice_whose_split_lost_its_input_count_is_a_miss() -> 
         splits.read(lost, start, "str")
     with pytest.raises(UnknownCountError):
         lost.held_at(0)
+
+
+def test_a_split_knows_the_farthest_piece_from_the_start_its_path_reads() -> None:
+    splits = Splits()
+    splits.given = lambda part: TWELVE if part == "s" else None
+    other: list[Expression] = ["split", "t", "','"]
+    splits.learn(
+        (
+            fork(["==", LENGTH, 2], taken=True),
+            fork(["==", ["[]", PARTS, 1], "'x'"], taken=False),
+            fork(["in", "'/'", ["[]", PARTS, 3]], taken=True),
+            # a read from the end, and a piece of another split, say nothing of this one's walk
+            fork(["==", ["[]", PARTS, -1], "'y'"], taken=True),
+            fork(["==", ["[]", other, 5], "'z'"], taken=True),
+        )
+    )
+
+    assert splits.made(PARTS, "s").walked == 3
+    assert splits.made(other, "t").walked == 5
+    assert splits.made(["split", "u", "','"], "u").walked == -1
+
+
+def test_a_form_shared_many_times_over_is_read_once_per_part() -> None:
+    shared: list[Expression] = ["[]", PARTS, 2]
+    for _ in range(200):
+        shared = ["+", shared, shared]
+    splits = Splits()
+    splits.given = lambda part: TWELVE if part == "s" else None
+
+    # 2 ** 200 paths through the form, and 201 parts
+    splits.learn((fork(["==", shared, "'x'"], taken=True),))
+
+    assert splits.made(PARTS, "s").walked == 2

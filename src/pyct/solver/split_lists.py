@@ -66,7 +66,8 @@ class SplitList:
     ``input_count`` is how many pieces Python makes of the input's own string, where it is
     known; ``read_count`` is c*, that count moved as little as the path's compares with plain
     ints need. With ``fixed`` false, a piece from the end that no walk of the reversed string
-    reads is read where the input's own count puts it, with no count held.
+    reads is read where the input's own count puts it, with no count held. ``walked`` is the
+    farthest piece from the start the path reads, by the walk ``at`` writes, -1 for none.
     """
 
     term: str
@@ -76,6 +77,7 @@ class SplitList:
     input_count: int | None = None
     read_count: int | None = None
     fixed: bool = True
+    walked: int = -1
 
     def limit(self) -> int:
         """The limit a split or an rsplit was called with, -1 for none."""
@@ -91,14 +93,19 @@ class SplitList:
     def past(self, number: int) -> str:
         """That it holds more pieces than ``number``: piece ``number`` is there, on any string.
 
-        On whitespace, the string has that many words and one more, which one membership
-        says. An rsplit past the walk has the split's pieces up to its limit.
+        Where the path reads piece ``number`` or any piece after it from the start, it is there
+        as the walk that reads it writes it: the same terms the read asserts, where a membership
+        beside them left cvc5 past its limit on an int conversion of a later piece. Otherwise,
+        on whitespace, the string has that many words and one more, which one membership says.
+        An rsplit past the walk has the split's pieces up to its limit.
         """
         if number < 0:
             return TRUE
         limit = self.limit()
         if 0 <= limit < number:
             return FALSE
+        if number <= self.walked:
+            return self._there(number)
         if self.head == "splitlines" or self._walked():
             # lines, and an rsplit walked to its limit (at most 17 pieces), count by their walk
             return SPLITS[self.head](self.term, self.operands, number)[1]

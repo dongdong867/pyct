@@ -8,9 +8,10 @@ tracked value keeps its condition through `is True`, `in`, a call written
 tracked str, an operator with a float or bool literal on the left, each
 also where the code writes a name bound only to such a literal
 (`pyct.intercept.constants`), the value a `return` in a `__bool__` method
-gives back, which CPython takes only as an exact bool, and the three
-builtins. It is mechanical and
-fixed, one to one, and not a rewrite; the LLM source rewrite of the next
+gives back, which CPython takes only as an exact bool, the value an
+assignment unpacks into a fixed count, whose count Python reads without
+asking it, and the three builtins. It is mechanical and fixed, one to one,
+and not a rewrite; the LLM source rewrite of the next
 paper is `pyct.rewrite`, which may hand its source to the same loader.
 
 Substituted code calls pyct through dunder names it binds in the module,

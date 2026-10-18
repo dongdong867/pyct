@@ -1,6 +1,6 @@
 """What intercepted code calls: `is`, `in`, conversions, a str literal's method, an operator
 with a float or bool literal on the left, or a name bound only to one, the value a `__bool__`
-method returns, and `len`, `ord`, `chr`.
+method returns, the value of an unpack into a fixed count, and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes an operation the target writes with a call of
 one of these functions, through a name it binds in the module, such as
@@ -43,14 +43,16 @@ from collections import deque
 from collections.abc import Callable, Iterator
 from typing import Any, cast
 
-from pyct.core import bound, ranges, str_joins, str_literals, strs
+from pyct.core import bound, list_reads, ranges, str_joins, str_literals, strs
 from pyct.core.bases import TRACKED_CLASSES
 from pyct.core.bools import ConcolicBool
+from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.handed import PASSING as HANDED_PASSING
 from pyct.core.handed import handed as handed  # substituted modules import it from here
 from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ints import ConcolicInt
+from pyct.core.lists import ConcolicList
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import tested_against
@@ -406,6 +408,39 @@ def truth(value: object, /) -> object:
     """
     if type(value) is ConcolicBool:
         return bool(value)
+    return value
+
+
+# the tracked values an unpack with no star walks before Python does: one set, so a plain value
+# costs one lookup
+_WALKED_FOR_AN_UNPACK = frozenset({ConcolicList, ConcolicDict})
+
+
+def unpack(value: object, count: int, /) -> object:
+    """What an unpack into ``count`` places hands to Python: the value as it was handed over.
+
+    Python's own unpack reads how many items a value holds without asking
+    it, so a split's list records here the compare of its count with
+    ``count`` first, and hands Python its items (`list_reads.unpacking`),
+    which Python then unpacks, raising its own error for another count. Any
+    other tracked list, and a tracked dict, is walked here as Python walks
+    it and handed over as a plain list, so Python's error is plain Python's
+    (`list_reads.walked_for`). Any other value, plain or tracked, is handed
+    back itself and unpacks as before. Only the value's type is read.
+    """
+    if type(value) not in _WALKED_FOR_AN_UNPACK:
+        return value
+    if type(value) is ConcolicList:
+        return list_reads.unpacking(value, "==", count)
+    return list_reads.walked_for(value, count, list(dict.keys(value)))  # pyrefly: ignore[bad-argument-type]
+
+
+def unpack_starred(value: object, fewest: int, /) -> object:
+    """What an unpack with a star and ``fewest`` other places hands to Python, as `unpack`
+    hands it, a split's list recording ``len >= fewest`` and, where that holds, whether the
+    starred name's list holds anything, ``len > fewest``."""
+    if type(value) is ConcolicList:
+        return list_reads.unpacking(value, ">=", fewest)
     return value
 
 

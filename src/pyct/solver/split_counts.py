@@ -11,7 +11,7 @@ counts take its side; c* is the one nearest the input's own that every such fork
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from pyct.core.branch import Branch, Expression
 from pyct.core.str_splits import LISTED_SPLITS, WORKED_METHODS, a_split_s_list
@@ -65,6 +65,31 @@ def condition(fork: Branch) -> tuple[list[Expression], Callable[[int], bool]] | 
     if type(right) is int:
         return split, lambda at: test(value(at), number) is fork.taken
     return split, lambda at: test(number, value(at)) is fork.taken
+
+
+def pieces_read(expressions: Iterable[Expression]) -> dict[int, int]:
+    """The farthest piece from the start the expressions read of each split's own list, by
+    the split's part: ``["[]", <split>, k]`` with a plain ``k`` of 0 or more, at any depth.
+
+    Each part Python shares is read once, across the expressions too, so a form a loop doubles
+    on every pass, or a path whose every fork extends the last one's, costs its distinct
+    parts, not the parts the lines would write out."""
+    farthest: dict[int, int] = {}
+    seen: set[int] = set()
+    pending = list(expressions)
+    while pending:
+        part = pending.pop()
+        if not isinstance(part, list) or not part or id(part) in seen:
+            continue
+        seen.add(id(part))
+        pending.extend(part[1:])
+        if part[0] != "[]" or len(part) != 3:
+            continue
+        split, index = part[1], part[2]
+        listed = isinstance(split, list) and split[:1] and split[0] in LISTED_SPLITS
+        if listed and type(index) is int and index >= 0:
+            farthest[id(split)] = max(index, farthest.get(id(split), -1))
+    return farthest
 
 
 def counting(part: Expression, depth: int = SUM_DEPTH) -> Counting | None:

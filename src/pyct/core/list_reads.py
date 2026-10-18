@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import sys
 import types
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
@@ -200,9 +200,50 @@ def _a_split_s_loop(self: ListState) -> bool:
     itself (``str_splits.JOIN_WALKS``): a loop, a comprehension, an unpacking, a builtin the
     target calls on it, ``map`` included, or a user ``__iter__`` a join reads. It records no
     "is there another piece" fork, as on origin/v2, by the user's decision
-    (split-a-target-s-own-walk-records-no-piece-fork); a join's walk of the list keeps its
-    forks, which its encoding reads."""
+    (split-a-target-s-own-walk-records-no-piece-fork-a-fixed-count-unpack-forks-on-the-count);
+    a join's walk of the list keeps its forks, which its encoding reads. An unpack into a fixed
+    count records its count before it walks (``unpacking``)."""
     return a_split_s_list(self.expression) and JOIN_WALKS.get() is not self
+
+
+def unpacking(self: ListState, op: str, number: int) -> object:
+    """Record the count an unpack into a fixed number of places compares, before Python unpacks
+    the list: `[op, ["len", items], number]`, ``op`` being ``==``, or ``>=`` with a star, and
+    with a star, where that holds, `[">", ["len", items], number]`, whether the starred name's
+    list holds anything, which Python builds plain. Answer what Python unpacks.
+
+    Only a split's list records them, as `len(parts) == 2` written in the code would: a fact
+    where its range decides it, else a fork that narrows the range, each marked as the unpack's
+    own check. A list whose form no longer matches records nothing, and names no loss.
+    Python's unpack of a split's list is the target's own walk, which records no piece fork
+    (``_a_split_s_loop``), so it is handed its items as a plain list: the same items, and the
+    error plain Python gives for that list, since from 3.14 Python counts the items of a plain
+    list in its message and not those of a subclass. Any other list is walked here for an
+    unpack with no star (``walked_for``), and handed back itself for one with a star, whose
+    error Python words the same for a plain list and a subclass.
+    """
+    if not a_split_s_list(self.expression):
+        return walked_for(self, number, list.copy(self)) if op == "==" else self
+    length = self.length()
+    if length == len(self.shadow):
+        taken = length == number if op == "==" else length >= number
+        self.measure(op, number, taken, "__iter__", raising=True)
+        if op == ">=" and taken:
+            self.measure(">", number, length > number, "__iter__", raising=True)
+    return self.storage()
+
+
+def walked_for(value: Iterable[object], number: int, held: list[object]) -> list[object]:
+    """What Python is handed to unpack ``value`` into ``number`` places with no star: the items
+    Python's own unpack would walk, at most ``number + 1``, walked here as it walks them, so
+    the value records the same forks, then the items of ``held``, its plain items, past them,
+    all in a plain list. From 3.14 Python counts a plain list's or dict's items in its "too
+    many values" error and not a subclass's, so the error is plain Python's on every release.
+    Only the forks' column moves, to the value's, where the unpack's call is, on every input
+    alike."""
+    walked = iter(value)
+    taken = [item for _, item in zip(range(number + 1), walked, strict=False)]
+    return taken + held[len(taken) :]
 
 
 def _backward(self: ListState, size: int) -> Iterator[object]:

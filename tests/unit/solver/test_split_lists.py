@@ -2,6 +2,7 @@
 and its count where a term reads it, with cvc5 held against Python on each."""
 
 import random
+from dataclasses import replace
 
 import pytest
 
@@ -332,3 +333,48 @@ def test_a_piece_is_held_there_before_the_facts_about_what_it_becomes() -> None:
 
     fact = next(at for at, line in enumerate(text) if line.startswith("(assert (let ((d!"))
     assert text.index(f"(assert {there})") < fact, "\n".join(text)
+
+
+@needs_cvc5
+def test_cvc5_counts_the_pieces_beside_a_walk_the_path_reads_as_python_does() -> None:
+    rng = random.Random(6)
+    asks: list[tuple[str, str, str]] = []
+    expected: list[object] = []
+    for _ in range(300):
+        value = "".join(rng.choices(LETTERS, k=rng.randint(0, 7)))
+        head, operands = _form(rng)
+        listed = replace(_listed(head, operands), walked=rng.randint(0, 4))
+        count = len(_pieces(value, head, operands))
+        for number in range(-1, 6):
+            asks.append((value, "Bool", listed.past(number)))
+            expected.append(count > number)
+
+    assert asked(_program(asks)) == expected
+
+
+@pytest.mark.parametrize(
+    ("operands", "walked", "number"),
+    [((None, 1), 1, 1), ((None,), 4, 3), ((None,), 4, 4), ((",",), 20, 18)],
+    ids=["words to a limit", "words before the read", "words at the read", "many separators"],
+)
+def test_a_count_up_to_a_piece_the_path_reads_is_written_by_that_piece_s_walk(
+    operands: tuple[object, ...], walked: int, number: int
+) -> None:
+    listed = replace(_listed("split", operands), walked=walked)
+
+    # the same terms the read of piece `number` asserts, not one membership beside them
+    assert listed.past(number) == listed.at(number).guard
+    assert "str.in_re" not in listed.past(number)
+
+
+@pytest.mark.parametrize(
+    ("operands", "walked", "number"),
+    [((None,), -1, 1), ((None,), 1, 2), ((",",), 3, 18)],
+    ids=["no piece read", "past the farthest read", "many separators past the read"],
+)
+def test_a_count_past_the_pieces_the_path_reads_is_one_membership(
+    operands: tuple[object, ...], walked: int, number: int
+) -> None:
+    listed = replace(_listed("split", operands), walked=walked)
+
+    assert "str.in_re" in listed.past(number)
