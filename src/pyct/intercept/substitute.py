@@ -51,12 +51,12 @@ as the display holds them, when there are at most `SEARCHED_MOST`: a larger
 display is searched as any large set is.
 
 The operators a plain number on the left may hand to a tracked value are
-`operators`', the calls of a conversion or of a method str has are
-`calls`', the `return` of a `__bool__` method is `bool_returns`', which
-the walk hands each class it meets, and an unpack into a fixed count is
-`unpacks`', which the walk hands each assignment it meets before it goes
-inside. Each rule takes the node the walk meets, and a node no rule takes
-stays as written.
+`operators`', a `%` or `%=` that formats is `percents`', the calls of a
+conversion or of a method str has are `calls`', the `return` of a
+`__bool__` method is `bool_returns`', which the walk hands each class it
+meets, and an unpack into a fixed count is `unpacks`', which the walk hands
+each assignment it meets before it goes inside. Each rule takes the node
+the walk meets, and a node no rule takes stays as written.
 
 Annotations are left alone: under ``from __future__ import annotations``
 Python keeps one as its text, which the seed checks read.
@@ -67,7 +67,7 @@ from __future__ import annotations
 import ast
 
 from pyct.core.hashed import SEARCHED_MOST
-from pyct.intercept import bool_returns, calls, operators, unpacks
+from pyct.intercept import bool_returns, calls, operators, percents, unpacks
 from pyct.intercept.positions import Parts, constants, statement_start
 
 # the name each operator calls
@@ -89,6 +89,7 @@ BOUND: dict[str, str] = {
     _SEARCHED: "Searched",
     _IDENTITY: "Identity",
     **operators.BOUND,
+    **percents.BOUND,
     **calls.BOUND,
     **bool_returns.BOUND,
     **unpacks.BOUND,
@@ -167,7 +168,10 @@ def _visited(node: object, pending: list[ast.AST], parts: Parts) -> object:
     if not isinstance(node, ast.AST):
         return node
     replacement = (
-        _compared(node, parts) or operators.replaced(node, parts) or calls.replaced(node, parts)
+        _compared(node, parts)
+        or percents.replaced(node, parts)
+        or operators.replaced(node, parts)
+        or calls.replaced(node, parts)
     )
     replacement = replacement or node
     pending.append(replacement)

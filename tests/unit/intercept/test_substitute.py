@@ -297,6 +297,8 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_searched__": "Searched",
         "__pyct_identity__": "Identity",
         "__pyct_handed__": "handed",
+        "__pyct_mod__": "mod",
+        "__pyct_imod__": "imod",
         "__pyct_call__": "call",
         "__pyct_method__": "method",
         "__pyct_join__": "join",

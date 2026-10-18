@@ -42,7 +42,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 from pyct.core import bound, math_calls, type_calls
-from pyct.intercept import calls, compiled, constants, operators, positions, substitute, unpacks
+from pyct.intercept import (
+    calls,
+    compiled,
+    constants,
+    operators,
+    percents,
+    positions,
+    substitute,
+    unpacks,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +129,7 @@ def _version() -> str:
     digest = hashlib.sha256()
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)
-    rules += (unpacks.__file__,)
+    rules += (unpacks.__file__, percents.__file__)
     for file in (*rules, compiled.__file__, __file__):
         digest.update(Path(str(file)).read_bytes())
     return digest.hexdigest()[:16]

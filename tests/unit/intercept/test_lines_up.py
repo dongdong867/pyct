@@ -30,6 +30,7 @@ from tests.unit.intercept.lines_up import (
     line_starts,
     lined_up,
     negations,
+    written_code,
 )
 
 STDLIB = Path(sysconfig.get_paths()["stdlib"])
@@ -72,7 +73,7 @@ def compared(path: Path) -> tuple[bool, bool] | None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         try:
-            written = compile(source, str(path), "exec", dont_inherit=True)
+            written = written_code(source, str(path))
         except SyntaxError:
             return None
         substituted = substituted_code(source, str(path))
@@ -342,3 +343,13 @@ def test_a_negated_test_read_on_its_outcome_still_differs_when_the_outcome_flips
     tree = substitute(ast.parse(negated))
     plain = compile(negated.replace("not x", "    x"), "<f>", "exec")
     assert layout(plain) != layout(compile(tree, "<f>", "exec"), negations(tree))
+
+
+def test_a_literal_s_format_is_compared_with_the_percent_cpython_compiles_otherwise() -> None:
+    source = "def f(a):\n    return '<%s>' % (a,)\n"
+    function = 1
+
+    # CPython's f-string for that `%` starts with a piece placed on the def line
+    assert (None, 1) in layout(compile(source, "<f>", "exec"))[function][2]
+    assert (None, 1) not in layout(written_code(source, "<f>"))[function][2]
+    assert lined_up(source, "<f>")

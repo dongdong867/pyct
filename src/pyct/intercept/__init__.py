@@ -10,9 +10,11 @@ also where the code writes a name bound only to such a literal
 (`pyct.intercept.constants`), the value a `return` in a `__bool__` method
 gives back, which CPython takes only as an exact bool, the value an
 assignment unpacks into a fixed count, whose count Python reads without
-asking it, and the three builtins. It is mechanical and fixed, one to one,
-and not a rewrite; the LLM source rewrite of the next
-paper is `pyct.rewrite`, which may hand its source to the same loader.
+asking it, a `%` that formats with a str literal or a tuple display, whose
+operands' text Python copies into a plain str, and the three builtins. It
+is mechanical and fixed, one to one, and not a rewrite; the LLM source
+rewrite of the next paper is `pyct.rewrite`, which may hand its source to
+the same loader.
 
 Substituted code calls pyct through dunder names it binds in the module,
 one per function of `pyct.core.substitutes`, such as ``__pyct_in__``,

@@ -184,6 +184,18 @@ PROGRAMS: dict[str, str] = {
     "text name rebound through globals": (
         "TEXT = 'xyz'\nglobals()['TEXT'] = note('a', a)\nanswer = TEXT.find(note('b', b))"
     ),
+    # a `%` with a tuple display, a str literal's `%`, and a name's `%=` with a tuple display
+    "format % tuple": "answer = note('a', a) % (note('b', b), 1)",
+    "literal % operand": "answer = '%s' % note('b', b)",
+    "literal % two": "answer = '<%s|%r>' % note('b', b)",
+    "literal % number": "answer = '%d%%' % note('b', b)",
+    "literal % key": "answer = '%(x)s' % note('b', b)",
+    "literal % tuple": "answer = '<%s>%d' % (note('a', a),\n    note('b', b))",
+    "name %= tuple": "answer = note('a', a)\nanswer %= (note('b', b),)",
+    "%= in class body": (
+        "class Held(metaclass=Logging):\n    held = note('a', a)\n    held %= (note('b', b), 2)\n"
+        "answer = Held.held"
+    ),
     # the value a `return` in a `__bool__` method hands over, each value `and` picks too
     "bool method return": (
         "class Held(metaclass=Logging):\n    def __bool__(self):\n        return note('a', a)\n"
@@ -262,6 +274,26 @@ class Logged:
         self.log.append(("__format__", spec))
         return "logged"
 
+    def __mod__(self, other: object) -> object:
+        self.log.append(("__mod__", type(other).__name__))
+        return NotImplemented
+
+    def __rmod__(self, other: object) -> object:
+        self.log.append(("__rmod__", type(other).__name__))
+        return "modded"
+
+    def __imod__(self, other: object) -> object:
+        self.log.append(("__imod__", type(other).__name__))
+        return "imodded"
+
+    def __str__(self) -> str:
+        self.log.append("__str__")
+        return "logged"
+
+    def __repr__(self) -> str:
+        self.log.append("__repr__")
+        return "Logged()"
+
 
 class Asked(dict[str, object]):
     """A class namespace that logs each name it is asked for and does not hold."""
@@ -330,6 +362,18 @@ class Raising:
 
     def __format__(self, spec: str) -> str:
         raise ValueError("__format__ raised")
+
+    def __mod__(self, other: object) -> object:
+        raise ValueError("__mod__ raised")
+
+    def __rmod__(self, other: object) -> object:
+        raise ValueError("__rmod__ raised")
+
+    def __str__(self) -> str:
+        raise ValueError("__str__ raised")
+
+    def __repr__(self) -> str:
+        raise ValueError("__repr__ raised")
 
 
 # the plain operands: a value of each built-in type, a container of each kind, and a value that
