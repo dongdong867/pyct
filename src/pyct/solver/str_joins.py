@@ -1,4 +1,5 @@
-"""A join of strings written as the concatenation it is.
+"""A join of strings written as the concatenation it is, and a `%` on a format as its pieces
+joined (`str_formats`).
 
 Core writes a join as ``["join", sep, what]``: ``what`` is a list display of the items it read,
 or a tracked list's form, whose walk the join made first. That walk's last fork,
@@ -13,19 +14,20 @@ from dataclasses import replace
 
 from pyct.core.branch import Branch, Expression, IsLeaf
 from pyct.solver.dag import Node, distinct
+from pyct.solver.str_formats import concatenated, is_format
 
 # a list a walk measured: its name, or its form's identity
 type _Walked = str | int
 
 
 def expanded(prefix: tuple[Branch, ...], is_leaf: IsLeaf) -> tuple[Branch, ...]:
-    """The path with every join written as the concatenation it is.
+    """The path with every join, and every `%` on a format, written as the concatenation it is.
 
     Each distinct part is rewritten once, so a part held in many places is
     still one part, and a path with no join is handed back as it is.
     """
     order, _ = distinct(prefix, is_leaf)
-    if not any(node[0] == "join" for node in order):
+    if not any(node[0] == "join" or is_format(node) for node in order):
         return prefix
     rewriting = _Rewriting(_walk_ends(prefix))
     for node in order:
@@ -62,6 +64,8 @@ class _Rewriting:
         parts = [self._now(part) for part in operands]
         if head == "join":
             self.written[id(node)] = self._concatenated(node, parts)
+        elif is_format(node):
+            self.written[id(node)] = concatenated(*parts)
         elif any(part is not operand for part, operand in zip(parts, operands, strict=True)):
             self.written[id(node)] = [head, *parts]
 

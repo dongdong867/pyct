@@ -1,10 +1,11 @@
 """Target code that reads its caller finds the target's own line under substitution.
 
 A warning with a stack level and ``sys._getframe`` read the frame that called the code; a
-substituted call of the target's own function, and an operator a float literal's left side
-runs, leave no frame of pyct's there.
+substituted call of the target's own function, an operator a float literal's left side runs,
+and a class's own `%` or `%=` beside a tuple display, leave no frame of pyct's there.
 """
 
+import sys
 import warnings
 from pathlib import Path
 
@@ -29,8 +30,33 @@ class Chained:
         return sys._getframe(1).f_lineno
 
 
+class Formats:
+    def __init__(self, depth=0):
+        self.depth = depth
+
+    def __mod__(self, other):
+        if self.depth:
+            return Formats(self.depth - 1) % (other,)
+        warnings.warn("formatted", UserWarning, stacklevel=2)
+        return sys._getframe(1).f_code.co_filename, sys._getframe(1).f_lineno
+
+
 def converted():
     return int(1)
+
+
+def formatted(one=1):
+    return Formats() % (one, 2)
+
+
+def formatted_in_place(one=1):
+    held = Formats()
+    held %= (one, 2)
+    return held
+
+
+def recursed(depth, one=1):
+    return Formats(depth) % (one,)
 
 
 def added():
@@ -85,3 +111,29 @@ def test_a_method_named_as_str_s_on_the_target_s_object_sees_its_caller(tmp_path
     line = line_of('    return Chained().split(",")')
     assert answer == line
     assert [(warning.filename, warning.lineno) for warning in caught] == [(path, line)]
+
+
+def test_a_class_s_own_format_beside_a_tuple_display_sees_its_caller(tmp_path: Path) -> None:
+    namespace, path = loaded(tmp_path)
+
+    for function, line in (
+        ("formatted", "    return Formats() % (one, 2)"),
+        ("formatted_in_place", "    held %= (one, 2)"),
+    ):
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            answer = namespace[function]()  # pyrefly: ignore[not-callable]
+
+        assert answer == (path, line_of(line))
+        assert [(warning.filename, warning.lineno) for warning in caught] == [(path, line_of(line))]
+
+
+def test_a_class_s_own_format_recurses_past_half_the_recursion_limit(tmp_path: Path) -> None:
+    namespace, path = loaded(tmp_path)
+    depth = sys.getrecursionlimit() * 7 // 10
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        answer = namespace["recursed"](depth)  # pyrefly: ignore[not-callable]
+
+    assert answer[0] == path  # pyrefly: ignore[bad-index]

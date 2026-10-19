@@ -1,6 +1,7 @@
 """What intercepted code calls: `is`, `in`, conversions, a str literal's method, an operator
 with a float or bool literal on the left, or a name bound only to one, the value a `__bool__`
-method returns, the value of an unpack into a fixed count, and `len`, `ord`, `chr`.
+method returns, the value of an unpack into a fixed count, a `%` that formats
+(`pyct.core.str_formats`), and `len`, `ord`, `chr`.
 
 `pyct.intercept` substitutes an operation the target writes with a call of
 one of these functions, through a name it binds in the module, such as
@@ -54,6 +55,11 @@ from pyct.core.hashed import Tracked, hashed, looked_up, tracked
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.ranges import ConcolicRange
+from pyct.core.str_formats import PASSING as FORMATS_PASSING
+from pyct.core.str_formats import formatter as formatter  # substituted modules import these
+from pyct.core.str_formats import fstring_mod as fstring_mod
+from pyct.core.str_formats import in_place_formatter as in_place_formatter
+from pyct.core.str_formats import mod as mod
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import tested_against
 
@@ -471,5 +477,6 @@ PASSING: frozenset[types.CodeType] = (
         )
     )
     | HANDED_PASSING
+    | FORMATS_PASSING
     | bound.PASSING
 )

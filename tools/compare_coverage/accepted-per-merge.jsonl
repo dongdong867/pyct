@@ -249,6 +249,11 @@
 {"set": "v2", "target": "targets.strs.one_replacement::swap", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.padded::pad", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [5], "varies": {"only_legacy": [], "only_v2": [4, 6]}}
 {"set": "v2", "target": "targets.strs.past_ascii_upper::shout", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.strs.percent_formats::count", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [16]}
+{"set": "v2", "target": "targets.strs.percent_formats::greet", "seed": {"name": "x", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [24]}
+{"set": "v2", "target": "targets.strs.percent_formats::kept", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [30]}
+{"set": "v2", "target": "targets.strs.percent_formats::on_the_right", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [37]}
+{"set": "v2", "target": "targets.strs.percent_formats::page", "seed": {"title": "x", "body": "y"}, "status": "differs", "only_legacy": [], "only_v2": [10]}
 {"set": "v2", "target": "targets.strs.pieces::combine", "seed": {"s": "q", "t": "r"}, "status": "differs", "only_legacy": [], "only_v2": [7, 9]}
 {"set": "v2", "target": "targets.strs.prefixes::route", "seed": {"s": "x", "t": "q"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.printed_methods::check", "seed": {"s": "b", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}

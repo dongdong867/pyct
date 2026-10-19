@@ -228,6 +228,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     # `str` of an int or a bool; a bool keeps its own sort here, as it does under `&`
     ("str", int): numerals.text_of_int,
     ("str", bool): numerals.text_of_bool,
+    # the text of a str, which a format's `%s` of a tracked str writes, is the str itself
+    ("str", str): lambda term: term,
     **{(head, str): form for head, form in CASES.items()},
 }
 

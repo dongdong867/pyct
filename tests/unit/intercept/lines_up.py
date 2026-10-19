@@ -236,8 +236,39 @@ def layout(code: types.CodeType, negated_at: frozenset[Span] = frozenset()) -> l
     ]
 
 
+def written_code(source: str | bytes, name: str) -> types.CodeType:
+    """The source compiled as written, but for a `%` whose format is a str literal.
+
+    CPython compiles some of these as the f-string they mean, as
+    ``"<%s>" % (a,)``: on 3.12 to 3.14, a format whose conversions are `%s`,
+    `%r` and `%a` with no ``*``, beside a tuple display with no star. That
+    f-string builds no tuple, and gives the literal pieces no position of
+    their own, so the first takes the line before it: the `def` line,
+    where the `%` starts a function, which a run covers at import. pyct's call for that `%`
+    is the `%` as written (`pyct.intercept.percents`), so the check compiles
+    it as CPython compiles any other `%`: the format, written as an f-string
+    of itself alone, is still the one constant at its own position, and
+    CPython no longer reads it as a format. Against the f-string itself, the
+    substituted `%` runs the same lines in another order where its parts
+    span lines: the format's line first, and the tuple's first line again
+    after its items, each a line the same pass already ran.
+    """
+    tree = ast.parse(source)
+    for node in ast.walk(tree):
+        if _a_literal_s_format(node):
+            node.left = ast.copy_location(ast.JoinedStr(values=[node.left]), node.left)
+    return compile(tree, name, "exec", dont_inherit=True)
+
+
+def _a_literal_s_format(node: ast.AST) -> TypeGuard[ast.BinOp]:
+    """Whether the node is a `%` whose left side is a str literal."""
+    if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Mod):
+        return False
+    return isinstance(node.left, ast.Constant) and type(node.left.value) is str
+
+
 def lined_up(source: str, name: str) -> bool:
     """Whether the source compiled as written and as pyct substitutes it lines up."""
-    written = compile(source, name, "exec")
+    written = written_code(source, name)
     tree = substitute(ast.parse(source))
     return layout(written) == layout(compile(tree, name, "exec"), negations(tree))

@@ -263,6 +263,8 @@ def test_an_element_that_cannot_stand_alone_is_no_constant() -> None:
 def test_a_deeply_nested_expression_needs_no_deep_stack() -> None:
     # a chain of 5,000 `+` over as many lines, which the walk and the search for the first
     # instruction each go down one step at a time
+    # (a chain of 5,000 `%` formats does not load on 3.12 and 3.13, where each link becomes two
+    # calls; 4,000 do, and 3.14 loads 5,000: known-limits S6)
     chain = " +\n".join(["a"] * 5000)
     call = statements(f"({chain}) in b")[0].value  # pyrefly: ignore[missing-attribute]
 
@@ -297,6 +299,10 @@ def test_the_bound_names_are_dunders_that_name_the_core_functions() -> None:
         "__pyct_searched__": "Searched",
         "__pyct_identity__": "Identity",
         "__pyct_handed__": "handed",
+        "__pyct_mod__": "mod",
+        "__pyct_fstring_mod__": "fstring_mod",
+        "__pyct_formatter__": "formatter",
+        "__pyct_in_place_formatter__": "in_place_formatter",
         "__pyct_call__": "call",
         "__pyct_method__": "method",
         "__pyct_join__": "join",

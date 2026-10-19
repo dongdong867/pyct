@@ -12,6 +12,7 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.numbers import compare
 from pyct.core.spans import UNKNOWN, Span, added, exactly
 from pyct.core.str_cases import changed, characters, check, width, width_and_fill
+from pyct.core.str_formats import reflected
 from pyct.core.str_lengths import spanned
 from pyct.core.str_operands import literal, position, within_cvc5
 from pyct.core.str_positions import long_enough, placed, search_positions, slice_bounds
@@ -26,17 +27,16 @@ from pyct.core.str_walks import walk
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches, the
-# pieces, the character checks, the case changes, strips and paddings, the splits it writes, the
-# walk and the join stay symbolic, and a copy is the value itself. The tuple here names what is
-# left to str on purpose, and the derivation at the bottom of the file downgrades every other
-# method str defines, plain methods and operators alike. str defines `__str__` and `__format__`
-# itself, so nothing inherited needs naming.
+# pieces, the character checks, the case changes, strips and paddings, the splits, the walk, the
+# join and a plain format's `%` stay symbolic, and a copy is the value itself. The tuple names
+# what is left to str on purpose; the derivation at the bottom of the file downgrades every
+# other method str defines, plain methods and operators alike. str defines `__str__` and
+# `__format__` itself, so nothing inherited needs naming.
 
 # not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
 # once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
-# debugger read cost nothing. str takes `__getattribute__` from object today; it is kept all
-# the same, because the downgrade wrapper reads `self.sink` through it, and a wrapped one would
-# recurse on the first attribute read
+# debugger read cost nothing. str takes `__getattribute__` from object; it is kept all the same,
+# as the downgrade wrapper reads `self.sink` through it and a wrapped one would recurse
 _KEPT = ("__hash__", "__repr__", "__getnewargs__", "__new__", "__getattribute__", "__sizeof__")
 
 
@@ -379,10 +379,9 @@ class ConcolicStr(str):
     # the fewest and the most characters it holds on every input on the path (`str_lengths`)
     span: Span = UNKNOWN
 
-    # Python swaps the operands of a reflected compare itself, so `"b" < s` runs
-    # `s.__gt__("b")` and prints [">", "s", "'b'"]; nothing here has to reflect anything.
-    # str promises a bool from each, and a ConcolicBool is an int that is not a bool,
-    # because bool cannot be subclassed; the override breaks that promise on purpose.
+    # Python swaps the operands of a reflected compare itself, so `"b" < s` runs `s.__gt__("b")`
+    # and prints [">", "s", "'b'"]. str promises a bool from each, and a ConcolicBool is an int
+    # that is not a bool, because bool cannot be subclassed; the override breaks that promise.
     __lt__ = _compare("<", "__lt__")  # pyrefly: ignore[bad-override]
     __le__ = _compare("<=", "__le__")  # pyrefly: ignore[bad-override]
     __gt__ = _compare(">", "__gt__")  # pyrefly: ignore[bad-override]
@@ -412,10 +411,12 @@ class ConcolicStr(str):
 
     # a piece of a tracked str is a tracked str, so a compare or a search on it is a fork on s.
     # An index records whether s is long enough before it may raise. A piece hands a form it
-    # does not encode to str, so its signature is not str's; the override breaks str's on purpose
+    # does not encode to str, so its signature is not str's; the override breaks str's on purpose.
+    # A plain format's `%` asks a tracked str on its right first (see `str_formats`)
     __getitem__ = _item  # pyrefly: ignore[bad-override]
     __add__ = _appended  # pyrefly: ignore[bad-override]
     __radd__ = _prepended
+    __rmod__ = reflected  # pyrefly: ignore[bad-override]
     replace = changed("replace", _replacement)  # pyrefly: ignore[bad-override]
     removeprefix = changed("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
     removesuffix = changed("removesuffix", _one_str)  # pyrefly: ignore[bad-override]
@@ -449,8 +450,7 @@ class ConcolicStr(str):
     ljust = changed("ljust", width_and_fill)  # pyrefly: ignore[bad-override]
     rjust = changed("rjust", width_and_fill)  # pyrefly: ignore[bad-override]
 
-    # a split hands back str's own list or tuple, each piece a tracked str carrying its
-    # position in it (see `str_splits`)
+    # a split hands back str's own list or tuple, each piece tracked at its place (`str_splits`)
     split = split_up("split", separator_and_limit)  # pyrefly: ignore[bad-override]
     rsplit = split_up("rsplit", from_the_right)  # pyrefly: ignore[bad-override]
     partition = split_up("partition", one_separator)  # pyrefly: ignore[bad-override]

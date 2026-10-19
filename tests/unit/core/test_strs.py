@@ -300,17 +300,6 @@ TEXT_ALONE: dict[str, Callable[[str], object]] = {
 }
 
 
-def test_a_percent_s_of_a_tracked_str_is_its_rmod_downgrade() -> None:
-    sink: list[SinkItem] = []
-    s = ConcolicStr.made("abc", expression="s", sink=sink)
-
-    # Python asks a str subclass on the right for its `__rmod__` first, and that one is untaught
-    text = "%s" % s  # noqa: UP031
-
-    assert (text, type(text)) == ("abc", str)
-    assert sink == [Downgrade(name="__rmod__", site=ANY)]
-
-
 @pytest.mark.parametrize("call", TEXT_ALONE.values(), ids=list(TEXT_ALONE))
 def test_a_str_alone_turned_into_text_is_the_value_itself(call: Callable[[str], object]) -> None:
     sink: list[SinkItem] = []
@@ -458,6 +447,7 @@ def test_the_derivation_downgrades_every_str_method_but_the_taught_and_the_kept(
     searches = {"__contains__", "startswith", "endswith", "count"}
     positions = {"find", "index", "rfind", "rindex"}
     pieces = {"__getitem__", "__add__", "join", "replace", "removeprefix", "removesuffix"}
+    pieces |= {"__rmod__"}
     checks = {"isdigit", "isdecimal", "isnumeric", "isalpha", "isalnum", "isspace", "isupper"}
     checks |= {"islower", "isascii", "isprintable", "istitle", "isidentifier"}
     cases = {"upper", "lower", "capitalize", "title", "swapcase", "casefold"}

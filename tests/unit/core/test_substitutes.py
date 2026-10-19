@@ -424,6 +424,8 @@ _ROUTERS |= {"_joined"}
 _ROUTERS |= {"_walked"}
 _ROUTERS |= {"handed", "answer", "len", "ord", "chr", "_routed", "int_", "float_", "bool_"}
 _ROUTERS |= {"map_", "range_", "type_", "itself", "truth", "_tracked_in"}
+# the `%` and `%=` a format substitutes
+_ROUTERS |= {"mod", "fstring_mod"}
 
 
 def test_the_passing_frames_are_the_routers() -> None:
