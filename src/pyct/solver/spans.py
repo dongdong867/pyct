@@ -1,6 +1,8 @@
-"""Membership in a range and the equality of two ranges in SMT-LIB, each as one term.
+"""Membership in a range, its length and the equality of two ranges in SMT-LIB, each as one
+term.
 
-Python answers either without walking a range. An item is in it when it
+Python answers each without walking a range. Its length is the steps from the start
+that stay short of the stop, none for an empty range. An item is in it when it
 lies from the start toward the stop, on the side the step's sign says, and
 the step divides its distance from the start. Two ranges are equal when they
 have the same length and, past an empty one, the same first element and,
@@ -32,7 +34,7 @@ def without(item: str, bounds: tuple[str, ...]) -> str:
     return f"(not {within(item, bounds)})"
 
 
-def _length(bounds: tuple[str, ...]) -> str:
+def length(bounds: tuple[str, ...]) -> str:
     """``len(range(*bounds))``: the steps from the start that stay short of the stop."""
     start, stop, step = bounds[0], bounds[1], _step(bounds)
     upward = f"(ite (< {start} {stop}) (div (+ (- {stop} {start}) (- {step} 1)) {step}) 0)"
@@ -44,11 +46,11 @@ def _length(bounds: tuple[str, ...]) -> str:
 
 def equal(left: tuple[str, ...], right: tuple[str, ...]) -> str:
     """``range(*left) == range(*right)``, as Python compares two ranges."""
-    length = _length(left)
+    size = length(left)
     same_first = (
-        f"(and (= {left[0]} {right[0]}) (or (= {length} 1) (= {_step(left)} {_step(right)})))"
+        f"(and (= {left[0]} {right[0]}) (or (= {size} 1) (= {_step(left)} {_step(right)})))"
     )
-    return f"(and (= {length} {_length(right)}) (or (= {length} 0) {same_first}))"
+    return f"(and (= {size} {length(right)}) (or (= {size} 0) {same_first}))"
 
 
 def unequal(left: tuple[str, ...], right: tuple[str, ...]) -> str:

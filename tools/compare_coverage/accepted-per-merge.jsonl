@@ -168,6 +168,10 @@
 {"set": "v2", "target": "targets.ints.each_copy::count", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [13, 15, 17, 19, 21, 23]}
 {"set": "v2", "target": "targets.ints.negative_floor::band", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ints.negative_modulo::band", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.ints.operator_index::checked", "seed": {"year": 0}, "status": "differs", "only_legacy": [], "only_v2": [21]}
+{"set": "v2", "target": "targets.ints.operator_index::kept", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [13]}
+{"set": "v2", "target": "targets.ints.operator_index::of_a_bool", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [32]}
+{"set": "v2", "target": "targets.ints.operator_index::through_an_alias", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [26]}
 {"set": "v2", "target": "targets.ints.own_subclass::level", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [93]}
 {"set": "v2", "target": "targets.ints.own_subclass::marked", "seed": {"x": -5}, "status": "differs", "only_legacy": [], "only_v2": [81]}
 {"set": "v2", "target": "targets.ints.own_subclass::named", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [75]}
@@ -218,6 +222,10 @@
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [5], "only_v2": [9]}
 {"set": "v2", "target": "targets.ranges.bool_item::check", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ranges.compared::same", "seed": {"n": 2, "m": 2}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.ranges.lengths::counted", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
+{"set": "v2", "target": "targets.ranges.lengths::emptied", "seed": {"a": 0}, "status": "differs", "only_legacy": [], "only_v2": [18]}
+{"set": "v2", "target": "targets.ranges.lengths::stepped_down", "seed": {"a": 0, "b": 0}, "status": "differs", "only_legacy": [], "only_v2": [12]}
+{"set": "v2", "target": "targets.ranges.lengths::tracked_step", "seed": {"k": 1}, "status": "differs", "only_legacy": [], "only_v2": [24]}
 {"set": "v2", "target": "targets.ranges.membership::check", "seed": {"port": 0, "x": 1}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.ranges.sampled::pick", "seed": {"n": 3}, "status": "differs", "only_legacy": [], "only_v2": [6, 8]}
 {"set": "v2", "target": "targets.ranges.untaught::use", "seed": {"n": 2}, "status": "differs", "only_legacy": [], "only_v2": [5, 6, 7, 8, 9]}
@@ -225,6 +233,8 @@
 {"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3, 5, 7, 9, 11, 13, 15, 17, 19, 21, 23, 25, 27]}
 {"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [14, 18, 20, 23, 24, 25]}
 {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.strs.count_beside_split::address", "seed": {"email": ""}, "status": "differs", "only_legacy": [], "only_v2": [9]}
+{"set": "v2", "target": "targets.strs.count_beside_split::fields", "seed": {"line": ""}, "status": "differs", "only_legacy": [], "only_v2": [16, 17, 19]}
 {"set": "v2", "target": "targets.strs.deep_copy::check", "seed": {"name": "x"}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.strs.empty_needle::past", "seed": {"s": "abc", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.strs.index_out_of_range::pick", "seed": {"s": "ab", "n": 5}, "status": "differs", "only_legacy": [], "only_v2": [3, 4]}
@@ -258,6 +268,7 @@
 {"set": "v2", "target": "targets.strs.prefixes::route", "seed": {"s": "x", "t": "q"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.printed_methods::check", "seed": {"s": "b", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.strs.rebuilt::rebuild", "seed": {"s": "aaaaaaaaaaaaaaaaaa"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
+{"set": "v2", "target": "targets.strs.repeat_past_the_bound::past_the_bound", "seed": {"s": ""}, "status": "differs", "only_legacy": [6], "only_v2": []}
 {"set": "v2", "target": "targets.strs.reversed_between::back", "seed": {"s": "abcd", "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.reversed_text::mirror", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.search::kind", "seed": {"s": "a=#", "t": "!"}, "status": "differs", "only_legacy": [], "only_v2": [11, 13, 17, 19]}

@@ -30,9 +30,9 @@ an ``import math`` or ``import math as m``, and the names it binds to a
 function of `math` pyct routes alone, every binding a ``from math import f``
 or ``from math import f as g``; ``from math import *`` binds each of those
 functions under its own name. It finds the names bound to `builtins` and to
-its `len`, `ord` and `chr` the same way. A star import from any module but
-the one a name's imports read from, `builtins` for a `math` name and `math`
-for a `builtins` one included, makes that name not count. A call of
+its `len`, `ord` and `chr`, and to `operator` and its `index`, the same way.
+A star import from any module but the one a name's imports read from, one of
+the other routed modules included, makes that name not count. A call of
 ``m.f(...)`` or ``g(...)`` asks for its callee first, and the callee is
 still read when the code runs.
 """
@@ -46,7 +46,11 @@ from pyct.core.bound import BOUND
 from pyct.core.math_calls import NAMES as MATH_NAMES
 
 # each module whose functions pyct routes when a call names them through it, with those functions
-ROUTED: dict[str, frozenset[str]] = {"math": MATH_NAMES, "builtins": frozenset(BOUND)}
+ROUTED: dict[str, frozenset[str]] = {
+    "math": MATH_NAMES,
+    "builtins": frozenset(BOUND),
+    "operator": frozenset({"index"}),
+}
 
 # what an import of a routed module binds a name to: the module, or one of its routed functions
 _MODULE, _FUNCTION = "module", "function"

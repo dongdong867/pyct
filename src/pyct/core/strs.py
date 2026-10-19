@@ -16,6 +16,7 @@ from pyct.core.str_formats import reflected
 from pyct.core.str_lengths import spanned
 from pyct.core.str_operands import literal, position, within_cvc5
 from pyct.core.str_positions import long_enough, placed, search_positions, slice_bounds
+from pyct.core.str_repeats import times, times_on_the_right
 from pyct.core.str_splits import (
     from_the_right,
     line_ends,
@@ -27,16 +28,15 @@ from pyct.core.str_walks import walk
 from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, forked, own, pickled
 
 # the `ConcolicStr` body below is the taught set: the compares, the truth test, the searches, the
-# pieces, the character checks, the case changes, strips and paddings, the splits, the walk, the
-# join and a plain format's `%` stay symbolic, and a copy is the value itself. The tuple names
-# what is left to str on purpose; the derivation at the bottom of the file downgrades every
-# other method str defines, plain methods and operators alike. str defines `__str__` and
-# `__format__` itself, so nothing inherited needs naming.
+# pieces, a repeat, the character checks, case changes, strips and paddings, the splits, the walk,
+# the join and a plain format's `%` stay symbolic, and a copy is the value itself. The tuple names
+# what is left to str on purpose; the derivation at the bottom downgrades every other method str
+# defines, methods and operators alike. str defines `__str__` and `__format__` itself.
 
 # not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
-# once `__reduce_ex__` is taught, and the rest of the object plumbing, so a dict key and a
-# debugger read cost nothing. str takes `__getattribute__` from object; it is kept all the same,
-# as the downgrade wrapper reads `self.sink` through it and a wrapped one would recurse
+# once `__reduce_ex__` is taught, and the object plumbing, so a dict key and a debugger read cost
+# nothing. `__getattribute__`, object's, is kept: the downgrade wrapper reads `self.sink` with it,
+# and a wrapped one would recurse
 _KEPT = ("__hash__", "__repr__", "__getnewargs__", "__new__", "__getattribute__", "__sizeof__")
 
 
@@ -171,6 +171,8 @@ def _found(self: ConcolicStr, name: str, forms: list[Expression], args: tuple[ob
 
 
 _CONTAINS_DOWNGRADE = downgraded(str, "__contains__")
+_GETITEM_DOWNGRADE = downgraded(str, "__getitem__")
+_ADD_DOWNGRADE = downgraded(str, "__add__")
 
 
 def _contains(self: ConcolicStr, sub: object) -> object:
@@ -228,9 +230,6 @@ def _searched_in(head: str, sub: ConcolicStr, text: str) -> object:
         return answer
     expression = [head, sub.expression, _operand(text)]
     return ConcolicBool.made(answer, expression=expression, sink=sub.sink)
-
-
-_GETITEM_DOWNGRADE = downgraded(str, "__getitem__")
 
 
 def _item(self: ConcolicStr, key: object) -> object:
@@ -301,9 +300,6 @@ def _reflected(self: ConcolicStr, other: object) -> object:
     """
     radd = None if isinstance(other, ConcolicStr) else getattr(type(other), "__radd__", None)
     return NotImplemented if radd is None else own(radd, other, self)
-
-
-_ADD_DOWNGRADE = downgraded(str, "__add__")
 
 
 def _appended(self: ConcolicStr, other: object) -> object:
@@ -412,11 +408,14 @@ class ConcolicStr(str):
     # a piece of a tracked str is a tracked str, so a compare or a search on it is a fork on s.
     # An index records whether s is long enough before it may raise. A piece hands a form it
     # does not encode to str, so its signature is not str's; the override breaks str's on purpose.
-    # A plain format's `%` asks a tracked str on its right first (see `str_formats`)
+    # A plain format's `%` asks a tracked str on its right first (see `str_formats`), and a repeat
+    # by a plain count is a tracked str too (see `str_repeats`)
     __getitem__ = _item  # pyrefly: ignore[bad-override]
     __add__ = _appended  # pyrefly: ignore[bad-override]
     __radd__ = _prepended
     __rmod__ = reflected  # pyrefly: ignore[bad-override]
+    __mul__ = times  # pyrefly: ignore[bad-override]
+    __rmul__ = times_on_the_right  # pyrefly: ignore[bad-override]
     replace = changed("replace", _replacement)  # pyrefly: ignore[bad-override]
     removeprefix = changed("removeprefix", _one_str)  # pyrefly: ignore[bad-override]
     removesuffix = changed("removesuffix", _one_str)  # pyrefly: ignore[bad-override]

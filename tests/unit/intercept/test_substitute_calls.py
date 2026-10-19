@@ -313,3 +313,35 @@ def test_a_call_of_len_ord_or_chr_through_the_builtins_module_is_substituted(
 )
 def test_any_other_call_through_a_builtins_name_is_left_as_written(source: str) -> None:
     assert substituted(source) == ast.unparse(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("import operator\noperator.index(n)", "import operator\n__pyct_call__(operator.index)(n)"),
+        ("import operator as op\nop.index(n)", "import operator as op\n__pyct_call__(op.index)(n)"),
+        (
+            "from operator import index as _index\n_index(n)",
+            "from operator import index as _index\n__pyct_call__(_index)(n)",
+        ),
+        ("from operator import *\nindex(n)", "from operator import *\n__pyct_call__(index)(n)"),
+    ],
+)
+def test_a_call_of_operator_index_is_substituted(source: str, expected: str) -> None:
+    assert substituted(source) == expected
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # another function of operator, which pyct does not route
+        "import operator\noperator.add(a, b)",
+        "from operator import add\nadd(a, b)",
+        # a name bound another way too, and the C module beneath operator
+        "from operator import index\nindex = int\nindex(n)",
+        "from _operator import index\nindex(n)",
+        "import operator\noperator.index(*args)",
+    ],
+)
+def test_any_other_call_through_an_operator_name_is_left_as_written(source: str) -> None:
+    assert substituted(source) == ast.unparse(ast.parse(source))

@@ -6,8 +6,10 @@ operation SMT-LIB has no operator for by the form in `FORMS`, a piece by
 `POSITIONED`, and an order on strings by `STRING_ORDERS`.
 """
 
-from collections.abc import Callable, Mapping
+from collections import ChainMap
+from collections.abc import Callable, Iterable, Mapping
 
+from pyct.core.branch import Expression
 from pyct.solver import floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
@@ -18,14 +20,15 @@ from pyct.solver.positions import (
     first_index,
     last_index,
     occurrences,
+    occurrences_as_written,
     replaced,
     sliced,
     starts_with,
 )
 from pyct.solver.recased import TO_DECLARE
-from pyct.solver.spans import equal, unequal, within, without
+from pyct.solver.spans import equal, length, unequal, within, without
 from pyct.solver.splits import SPLITS
-from pyct.solver.strings import contains, not_contains, without_prefix, without_suffix
+from pyct.solver.strings import contains, not_contains, repeated, without_prefix, without_suffix
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
 # name for the IEEE double, `(_ FloatingPoint 11 53)`
@@ -194,6 +197,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     # two ranges, each arriving as its arguments' terms
     ("==", range): equal,
     ("!=", range): unequal,
+    # the length of a range, its arguments arriving as their terms
+    ("len", range): length,
     ("startswith", str): starts_with,
     ("endswith", str): ends_with,
     ("find", str): first_index,
@@ -204,6 +209,8 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("index", str): first_index,
     ("rindex", str): last_index,
     ("replace", str): replaced,
+    # a str repeated a plain number of times, the count on either side
+    ("*", str): repeated,
     ("removeprefix", str): without_prefix,
     ("removesuffix", str): without_suffix,
     ("!=", float): floats.unequal,
@@ -232,6 +239,22 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("str", str): lambda term: term,
     **{(head, str): form for head, form in CASES.items()},
 }
+
+# the forms a path that splits a string writes in place of `FORMS`' own: a count over the
+# string as it stands, as the split's pieces read it, where cvc5 ran the reversed count beside
+# them to its time limit
+# (decision string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split)
+BESIDE_A_SPLIT: Mapping[tuple[str, type], Callable[..., str]] = {
+    ("count", str): occurrences_as_written,
+}
+
+
+def forms(order: Iterable[list[Expression]]) -> Mapping[tuple[str, type], Callable[..., str]]:
+    """The forms a path's parts are written with: `FORMS`, and `BESIDE_A_SPLIT` over them where
+    a part splits a string."""
+    split = any(isinstance(node[0], str) and node[0] in SPLITS for node in order)
+    return ChainMap(BESIDE_A_SPLIT, FORMS) if split else FORMS  # pyrefly: ignore[bad-argument-type]
+
 
 # the forms of a head on one character of a string, `s[i]`, keyed by the head on str, which
 # render writes in place of `FORMS`' own for such an operand
