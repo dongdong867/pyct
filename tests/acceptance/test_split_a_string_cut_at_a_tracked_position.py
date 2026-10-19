@@ -184,6 +184,20 @@ def test_rsplits_whitespace_as_python(s: str, n: int) -> None:
     each_ends_as_python(lines, split_steps.by_whitespace_from_the_right)
 
 
+# split-a-string-cut-at-a-tracked-position-rsplits-as-python: three words from the right are
+# asked within the solver's limit (review of PR #148: the walk back reversed each prefix apart
+# and ran to the limit)
+def test_rsplits_three_words_within_the_limit() -> None:
+    result = run_pyct(f"{STEPS}::three_words_from_the_right", '{"s": "a", "i": 0}')
+
+    assert result.returncode == 0, result.stderr
+    lines = input_lines(result.stdout)
+    returned = line_of("return 1", after="def three_words_from_the_right")
+    assert any(covers(line, returned) for line in solved(lines)), lines
+    solver = summary_line(result.stdout)["solver"]
+    assert isinstance(solver, dict) and solver["timeout"] == 0, solver
+
+
 # split-a-string-cut-at-a-tracked-position-forks-whatever-the-list-meets
 def test_forks_whatever_the_list_meets() -> None:
     result = run_pyct(f"{STEPS}::counted_by_a_loop", '{"version": "a", "i": 0}')

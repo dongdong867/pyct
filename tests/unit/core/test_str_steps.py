@@ -9,11 +9,14 @@ from typing import Any
 
 import pytest
 
+from pyct.binding.bind import bind
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.str_steps import last_word, next_word, word_end, word_start
 from pyct.core.strs import ConcolicStr
+from pyct.intercept.compiled import substituted_code
+from pyct.intercept.wrap import bound_builtins
 
 # what each head a step's fork, a piece or a receiver holds means in Python
 _HEADS: Mapping[str, Callable[..., object]] = {
@@ -70,7 +73,9 @@ def _tracked(args: Mapping[str, object], sink: list[SinkItem]) -> dict[str, Any]
     """Each argument tracked by its name: a str, an int or a bool."""
     made: dict[str, Any] = {}
     for name, value in args.items():
-        if isinstance(value, bool):
+        if isinstance(value, list):
+            made[name] = value
+        elif isinstance(value, bool):
             made[name] = ConcolicBool.made(value, expression=name, sink=sink)
         elif isinstance(value, int):
             made[name] = ConcolicInt.made(value, expression=name, sink=sink)
@@ -89,6 +94,7 @@ _RECEIVERS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "an int's text": lambda a: str(a["n"]),
     "a join with an int's text": lambda a: a["s"] + str(a["n"]),
     "a piece at a tracked index": lambda a: a["s"].split(";")[a["i"] % 2 - 1],
+    "a list argument's item": lambda a: ConcolicStr.made(a["xs"][0], ["[]", "xs", 0], a["s"].sink),
     "a plain string": lambda a: a["s"],
 }
 
@@ -107,14 +113,23 @@ _SPLITS: dict[str, Callable[[Any, dict[str, Any]], Any]] = {
 }
 
 
+def outcome(call: Callable[..., Any], /, *args: object, **kwargs: object) -> tuple[object, ...]:
+    """What a call answers, or the type and message of any error it raises."""
+    try:
+        return ("returned", call(*args, **kwargs))
+    except Exception as error:  # noqa: BLE001 - any raise is the answer
+        return ("raised", type(error).__name__, str(error))
+
+
 def _seed(rng: random.Random) -> dict[str, object]:
     return {
         "s": "".join(rng.choices(_LETTERS, k=rng.randint(0, 9))),
         "i": rng.randint(-3, 4),
         "n": rng.choice([0, 5, 100, 1010, -20, 30303]),
-        "d": rng.choice([",", ";", "a", "aa", " ", "\u3000"]),
+        "d": rng.choice([",", ";", "a", "aa", " ", "\u3000", ""]),
         "k": rng.randint(-2, 3),
         "b": rng.choice([True, False]),
+        "xs": ["".join(rng.choices(_LETTERS, k=rng.randint(0, 6)))],
     }
 
 
@@ -129,15 +144,21 @@ def test_each_step_takes_python_s_side(receiver: str, split: str) -> None:
         made = _RECEIVERS[receiver](tracked)
         if not isinstance(made, ConcolicStr):
             continue
-        plain = _SPLITS[split](str.__str__(made), args)
+        plain = outcome(_SPLITS[split], str.__str__(made), args)
 
-        pieces = _SPLITS[split](made, tracked)
+        pieces = outcome(_SPLITS[split], made, tracked)
 
+        if pieces[0] == "raised":
+            # an empty separator: Python's own error, after the forks before it
+            assert pieces == plain, (args, pieces, plain)
+            agrees(sink, [], args)
+            continue
+        pieces = pieces[1]
         if type(pieces) is not list:
             # a split of the string itself by plain operands is the one formula of origin/v2
             assert receiver == "a plain string" and "tracked" not in split, split
             continue
-        assert [str.__str__(part) for part in pieces] == plain, (args, pieces, plain)
+        assert ("returned", [str.__str__(part) for part in pieces]) == plain, (args, plain)
         agrees(sink, pieces, args)
         # one fork a piece, and a few more: the limit's, the separator's and the last search
         assert len(forks(sink)) <= 2 * len(pieces) + 4, forks(sink)
@@ -217,6 +238,8 @@ def test_an_empty_tracked_separator_forks_then_raises_python_s_error() -> None:
 
     assert str(raised.value) == str(python.value)
     assert [(fork.expression, fork.taken) for fork in forks(sink)] == [(["!=", "d", "''"], False)]
+    # taken before Python's own raise, as a division's zero fork is
+    assert forks(sink)[0].raising
 
 
 @pytest.mark.parametrize("limit", ["1", 1.5, None, [1]])
@@ -284,3 +307,50 @@ def test_a_word_s_edges_read_python_s_whitespace(
     edge: Callable[[str, int], int], text: str, at: int, expected: int
 ) -> None:
     assert edge(text, at) == expected
+
+
+# programs over the forms the steps build, each compiled as pyct's import hook compiles the
+# target's package, so the calls run through the substitutions a target meets
+_PROGRAMS = [
+    's[i:].split(",")',
+    "xs[0].rsplit(d, n)",
+    'str(n).split("0", i)',
+    "(s + str(n)).rsplit()",
+    "s[i:].split(d)",
+    's.split(";")[i % 2].split()',
+]
+_PROGRAM = """def f(s, xs, d, n, i):
+    parts = {split}
+    if len(parts) == 2 and parts[0] == "a":
+        pass
+    first, *rest = parts
+    return [str.__str__(part) for part in parts]
+"""
+
+
+def _hook_seed(rng: random.Random) -> dict[str, object]:
+    return {
+        "s": "".join(rng.choices(_LETTERS, k=rng.randint(0, 7))),
+        "xs": ["".join(rng.choices(_LETTERS, k=rng.randint(0, 6)))],
+        "d": rng.choice([",", "a", " ", ""]),
+        "n": rng.choice([-1, 0, 1, 100, 2002]),
+        "i": rng.randint(0, 3),
+    }
+
+
+@pytest.mark.parametrize("split", _PROGRAMS)
+def test_a_split_through_the_hook_takes_python_s_side(split: str) -> None:
+    source = _PROGRAM.format(split=split)
+    hooked: dict[str, Any] = {"__builtins__": bound_builtins()}
+    exec(substituted_code(source.encode(), "target.py"), hooked)  # noqa: S102 - the program above
+    plain: dict[str, Any] = {}
+    exec(compile(source, "plain.py", "exec"), plain)  # noqa: S102 - the same program
+    rng = random.Random(split)
+    for _ in range(8):
+        args = _hook_seed(rng)
+        sink: list[SinkItem] = []
+
+        answer = outcome(hooked["f"], **bind(args, sink))
+
+        assert answer == outcome(plain["f"], **args), (split, args)
+        agrees(sink, [], args)

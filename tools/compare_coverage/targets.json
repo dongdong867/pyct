@@ -748,6 +748,7 @@
     {"set": "v2", "target": "targets.strs.split_steps::limit_of_text", "seed": {"s": "a,b", "t": "1"}},
     {"set": "v2", "target": "targets.strs.split_steps::limit_of_a_float", "seed": {"s": "a,b", "i": 0}},
     {"set": "v2", "target": "targets.strs.split_steps::one_formula", "seed": {"s": "xa,b"}},
+    {"set": "v2", "target": "targets.strs.split_steps::three_words_from_the_right", "seed": {"s": "a", "i": 0}},
     {"set": "v2", "target": "targets.strs.split_then_int::content_range", "seed": {"value": "bytes 0-499/1234"}},
     {"set": "v2", "target": "targets.strs.split_unpacks::parse", "seed": {"line": "port"}},
     {"set": "v2", "target": "targets.strs.split_unpacks::two", "seed": {"s": "p,q,r"}},

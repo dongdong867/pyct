@@ -4,9 +4,12 @@
 ``[name, s, *operands]``, the operands by position: a keyword goes to its place, so
 ``s.split(maxsplit=1)`` is ``["split", s, None, 1]``. Its length is followed as any tracked
 list's, and every piece is a tracked str carrying ``["[]", [name, s, *operands], k]``, k its
-position in what Python built. ``partition`` hands back str's own tuple of such pieces. A call
-in a form pyct does not encode is str's own answer and a downgrade named by the method
-(``README.md › Rules › downgrades``).
+position in what Python built, where the solver works the string out from the input's values
+and the operands are plain. ``split`` and ``rsplit`` of any other string, or by a tracked
+separator or limit, hand back Python's own list built by steps (`str_steps`). ``partition``
+hands back str's own tuple of such pieces, and ``splitlines`` of a string the solver cannot
+work out Python's own list of them. A call in a form pyct does not encode is str's own answer
+and a downgrade named by the method (``README.md › Rules › downgrades``).
 """
 
 from __future__ import annotations

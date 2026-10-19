@@ -103,3 +103,10 @@ def one_formula(s: str):
     if len(s.rsplit(",", 2)) == 3:
         return 3
     return 0
+
+
+def three_words_from_the_right(s: str, i: int):
+    parts = s[i:].rsplit()
+    if len(parts) == 3:
+        return 1
+    return 0

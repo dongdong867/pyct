@@ -29,7 +29,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt
 from pyct.core.str_cases import Tracked, piece
-from pyct.core.str_operands import literal, plain
+from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import forked, own
 
 # the splits built by steps; partition and splitlines stay as they are
@@ -69,8 +69,8 @@ class _Steps:
     # whether the limit counts the cuts: a plain one of 0 or more, or a tracked one not negative
     counted: bool = True
 
-    def fork(self, expression: Expression, taken: bool) -> bool:
-        return forked(self.receiver.sink, expression, taken, self.name)
+    def fork(self, expression: Expression, taken: bool, *, raising: bool = False) -> bool:
+        return forked(self.receiver.sink, expression, taken, self.name, raising=raising)
 
     def add(self, value: str, form: Expression) -> None:
         self.pieces.append(piece(self.receiver, value, form))
@@ -95,8 +95,8 @@ def _limit(args: tuple[object, ...]) -> _Limit | None:
         return _Limit(int.__index__(value), ["int", value.expression])
     if isinstance(value, ConcolicInt):
         return _Limit(int.__index__(value), value.expression, signed=value.as_int is None)
-    plain_int = isinstance(value, int) and type(value) in (int, bool)
-    return _Limit(int.__index__(value)) if plain_int else None
+    at = position(value)
+    return None if at is None else _Limit(at)
 
 
 def _separator(receiver: Tracked, args: tuple[object, ...]) -> _Separator | None:
@@ -138,7 +138,8 @@ def stepped(name: str, receiver: Tracked, args: tuple[object, ...]) -> list[obje
     elif limit.signed:
         steps.counted = not steps.fork(["<", limit.form, 0], limit.value < 0)
     if separator.tracked:
-        steps.fork(["!=", separator.form, "''"], separator.text != "")
+        # the fork before Python's own ValueError for an empty separator
+        steps.fork(["!=", separator.form, "''"], separator.text != "", raising=True)
     parts = own(getattr(str, name), steps.text, *texts)
     _WALKS[name, separator.text is None](steps)
     assert [plain(part) for part in steps.pieces] == parts, (steps.pieces, parts)

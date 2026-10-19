@@ -12,8 +12,9 @@ out one word at a time (``core/str_steps.py``), each step a position:
 
 Whitespace is every character Python's ``isspace`` takes (`splits.WORD_SPACE`),
 so each is exact on every character cvc5 holds. Each is cvc5's
-``str.indexof_re`` over one class of characters, read over the reversed part
-before j for the last ones, with a blank part written as a membership. A
+``str.indexof_re`` over one class of characters; the last ones search the
+string reversed whole, from the place that stands for j. A missing next word,
+and a missing last word from the end, is written as the rest being blank. A
 position arrives as a plain int of 0 or more or as an Int term; core writes no
 other.
 """
@@ -21,9 +22,8 @@ other.
 from pyct.solver.splits import NOT_SPACE, SPACE_CLASS
 from pyct.solver.strings import length
 
-# the names a form binds: what a search found, and the part before a position it searched
+# the name a form binds: what a search found
 _FOUND = "w!found"
-_PART = "w!part"
 
 
 def _at(position: int | str | None) -> str:
@@ -55,29 +55,35 @@ def word_end(term: str, at: int | str | None) -> str:
     return f"(let (({_FOUND} {found})) (ite (= {_FOUND} (- 1)) {length(term)} {_FOUND}))"
 
 
-def _back(regex: str) -> str:
-    """How far back from the end of the part the last character of a class in it is: where the
-    first one starts in the part reversed, or -1."""
-    return f"(str.indexof_re (str.rev {_PART}) {regex} 0)"
+def _back(term: str, end: int | str | None, regex: str) -> str:
+    """Where the first character of a class is in the reversed string from the place that
+    stands for ``end``, or -1: the last one before ``end`` in the string, counted from its end.
+    The string is reversed whole, the same term at every step, so cvc5 reads one reversal."""
+    start = "0" if end is None else f"(- {length(term)} {_at(end)})"
+    return f"(str.indexof_re (str.rev {term}) {regex} {start})"
 
 
 def last_word(term: str, end: int | str | None = None) -> str:
     """``s.lastword(j)``: where the last character before j that is not whitespace is, or -1.
 
-    The -1 is written as the part being blank, as `next_word` writes it; a part that is not
-    blank holds such a character, so the search back finds one.
+    From the end of the string, the first step, the -1 is the string being blank, as
+    `next_word` writes it: an unsat flip there, a blank string that holds a mark, ran to the
+    limit by the search's own -1 and answered in 0.01 s so. Before a word, each later step, it
+    is the search's own -1, over the one reversal: a blank part beside each prefix reversed
+    apart ran three words from the right to the limit, where this answered in 0.4 s.
     """
-    stop = length(term) if end is None else _at(end)
-    body = f"(ite {_blank(_PART)} (- 1) (- (- {stop} 1) {_back(NOT_SPACE)}))"
-    return f"(let (({_PART} (str.substr {term} 0 {stop}))) {body})"
+    found = _back(term, end, NOT_SPACE)
+    if end is None:
+        return f"(ite {_blank(term)} (- 1) (- (- {length(term)} 1) {found}))"
+    at = f"(- (- {length(term)} 1) {_FOUND})"
+    return f"(let (({_FOUND} {found})) (ite (= {_FOUND} (- 1)) (- 1) {at}))"
 
 
 def word_start(term: str, end: int | str | None) -> str:
     """``s.wordstart(j)``: one past the last whitespace before j, or 0."""
-    stop = _at(end)
-    found = f"(ite (= {_FOUND} (- 1)) 0 (- {stop} {_FOUND}))"
-    back = f"(let (({_FOUND} {_back(SPACE_CLASS)})) {found})"
-    return f"(let (({_PART} (str.substr {term} 0 {stop}))) {back})"
+    found = _back(term, end, SPACE_CLASS)
+    at = f"(- {length(term)} {_FOUND})"
+    return f"(let (({_FOUND} {found})) (ite (= {_FOUND} (- 1)) 0 {at}))"
 
 
 # each edge by its head, as `heads.FORMS` reads them on a str
