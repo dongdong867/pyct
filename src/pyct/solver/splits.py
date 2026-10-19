@@ -45,11 +45,12 @@ WORD_SPACE: Ranges = (
 )
 
 # the two classes a split on whitespace reads, each a regular expression named once in the
-# program that reads it, so a walk of many words holds each name rather than its long union
-_SPACE, _NOT_SPACE = "re!space", "re!other"
+# program that reads it, so a walk of many words holds each name rather than its long union; a
+# split built by steps reads them too (`words`)
+SPACE_CLASS, NOT_SPACE = "re!space", "re!other"
 _NAMED: Mapping[str, str] = {
-    _SPACE: one_of(WORD_SPACE),
-    _NOT_SPACE: one_of(outside(WORD_SPACE)),
+    SPACE_CLASS: one_of(WORD_SPACE),
+    NOT_SPACE: one_of(outside(WORD_SPACE)),
 }
 
 
@@ -132,8 +133,8 @@ def _words(term: str, count: int) -> list[tuple[str, str]]:
     bounds: list[tuple[str, str]] = []
     for at in range(count):
         after = "0" if at == 0 else f"b!{at - 1}"
-        bounds.append((f"a!{at}", f"(str.indexof_re {term} {_NOT_SPACE} {after})"))
-        space = f"(str.indexof_re {term} {_SPACE} a!{at})"
+        bounds.append((f"a!{at}", f"(str.indexof_re {term} {NOT_SPACE} {after})"))
+        space = f"(str.indexof_re {term} {SPACE_CLASS} a!{at})"
         bounds.append((f"b!{at}", f"(ite (= {space} (- 1)) {length(term)} {space})"))
     return bounds
 
@@ -166,7 +167,7 @@ def words_count(term: str) -> str:
     """How many words the string has, as one term: a word starts where a character that is
     not whitespace follows whitespace, or the start, and each such pair is removed once."""
     spaced = f'(str.++ " " {term})'
-    starts = f'(str.replace_re_all {spaced} (re.++ {_SPACE} {_NOT_SPACE}) "")'
+    starts = f'(str.replace_re_all {spaced} (re.++ {SPACE_CLASS} {NOT_SPACE}) "")'
     return f"(div (- (str.len {spaced}) (str.len {starts})) 2)"
 
 
@@ -175,9 +176,9 @@ def words_past(term: str, index: int) -> str:
     characters that are not whitespace each followed by whitespace, then one more such
     character. One membership, which cvc5 settled at once where the walk of the words ran past
     its limit at five."""
-    word = f"(re.++ (re.+ {_NOT_SPACE}) (re.+ {_SPACE}))"
+    word = f"(re.++ (re.+ {NOT_SPACE}) (re.+ {SPACE_CLASS}))"
     before = f"((_ re.loop {index} {index}) {word})" if index else ""
-    return f"(str.in_re {term} (re.++ (re.* {_SPACE}) {before} {_NOT_SPACE} re.all))"
+    return f"(str.in_re {term} (re.++ (re.* {SPACE_CLASS}) {before} {NOT_SPACE} re.all))"
 
 
 def split_piece(term: str, operands: tuple[object, ...], index: int) -> Piece:

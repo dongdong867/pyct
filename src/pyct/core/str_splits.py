@@ -19,6 +19,7 @@ from pyct.core.branch import BranchSink, Expression
 from pyct.core.spans import UNKNOWN, Span
 from pyct.core.str_cases import Reader, Tracked, piece
 from pyct.core.str_operands import literal, plain, position
+from pyct.core.str_steps import STEPPED, needs_steps, stepped
 from pyct.core.values import downgraded, own
 
 # the largest rsplit limit the solver walks one separator or word at a time. On cvc5 1.3.4 a
@@ -372,18 +373,21 @@ def split_up(name: str, reader: Reader) -> Callable[..., object]:
 
     def compute(self: Tracked, /, *args: object, **kwargs: object) -> object:
         taken = _by_position(name, args, kwargs)
+        known = worked_out(self.expression)
+        if taken is not None and name in STEPPED and needs_steps(self, taken, known):
+            # a string the solver cannot work out, or a tracked separator or limit: Python's
+            # own list, built by steps that fork as Python's loop does (`str_steps`)
+            return stepped(name, self, taken)
         forms = None if taken is None else reader(self, taken)
         if taken is None or forms is None:
             return downgrade(self, *args, **kwargs)
         parts = own(operation, self, *taken)
         whole: Expression = [name, self.expression, *forms]
         pieces = list(_pieces(self, whole, parts))
-        if isinstance(parts, tuple):
-            return tuple(pieces)
-        if not worked_out(self.expression):
-            # a string the solver cannot work out from the input's values has no count it can
-            # ask at; its pieces come back in Python's own list, as on origin/v2
-            return pieces
+        if isinstance(parts, tuple) or not known:
+            # partition's tuple, and splitlines of a string the solver cannot work out from the
+            # input's values, which has no count it can ask at: Python's own, as on origin/v2
+            return tuple(pieces) if isinstance(parts, tuple) else pieces
         return _LISTED[0].made(pieces, whole, self.sink, pieces_range(name, forms))
 
     return compute

@@ -7,7 +7,7 @@ from unittest.mock import ANY
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
 from pyct.core.str_operands import plain
@@ -156,8 +156,6 @@ NOT_ENCODED: dict[str, tuple[Callable[[str], object], str]] = {
         lambda s: s.ljust(ConcolicInt.made(9, expression="n", sink=[])),
         "ljust",
     ),
-    "s.split(tracked)": (lambda s: s.split(_tracked(",")), "split"),
-    "s.split(sep=tracked)": (lambda s: s.split(sep=_tracked(",")), "split"),
     "s.split(past cvc5)": (lambda s: s.split(PAST_CVC5), "split"),
     "s.rsplit('aa')": (lambda s: s.rsplit("aa"), "rsplit"),
     "s.rsplit('aba', -1)": (lambda s: s.rsplit("aba", -1), "rsplit"),
@@ -231,7 +229,25 @@ def test_the_plain_text_of_anything_but_a_str_is_an_error() -> None:
         plain(1)
 
 
-def test_an_rsplit_on_a_tracked_separator_records_its_downgrade_and_nothing_else() -> None:
+@pytest.mark.parametrize("keyword", [False, True])
+def test_a_split_on_a_tracked_separator_is_built_by_steps(keyword: bool) -> None:
+    sink: list[SinkItem] = []
+    s = ConcolicStr.made("xabyab", expression="s", sink=sink)
+    t = ConcolicStr.made("aba", expression="t", sink=sink)
+
+    parts = s.split(sep=t) if keyword else s.split(t)
+
+    # Python's own list, each piece a tracked slice, and no downgrade
+    # (split-a-string-cut-at-a-tracked-position)
+    assert type(parts) is list and [str.__str__(part) for part in parts] == ["xabyab"]
+    assert [(item.expression, item.taken) for item in sink if isinstance(item, Branch)] == [
+        (["!=", "t", "''"], True),
+        (["!=", ["find", "s", "t"], -1], False),
+    ]
+    assert not any(isinstance(item, Downgrade) for item in sink)
+
+
+def test_an_rsplit_on_a_tracked_separator_is_built_by_steps() -> None:
     sink: list[SinkItem] = []
     s = ConcolicStr.made("xabyab", expression="s", sink=sink)
     t = ConcolicStr.made("aba", expression="t", sink=sink)
@@ -240,5 +256,9 @@ def test_an_rsplit_on_a_tracked_separator_records_its_downgrade_and_nothing_else
         s.rsplit(t, limit)
     s.rsplit(t)
 
-    # whether the separator overlaps itself is pyct's question, asked of no tracked value
-    assert sink == [Downgrade(name="rsplit", site=ANY)] * 3
+    # each call records whether the separator is empty and its first search, and names no loss
+    assert not any(isinstance(item, Downgrade) for item in sink)
+    assert [item.expression for item in sink if isinstance(item, Branch)] == [
+        ["!=", "t", "''"],
+        ["!=", ["rfind", "s", "t"], -1],
+    ] * 3
