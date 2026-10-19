@@ -253,13 +253,16 @@ def fstring_mod(fmt: str, right: tuple[object, ...], /) -> object:
     A right side holding a tracked value is formatted as `mod` formats it;
     any other runs that f-string, compiled from the same shape, so its text,
     its type and the `__format__` spec it hands each operand are CPython's.
+    The operands' own `__str__`, `__repr__` and `__format__` run under two
+    frames of pyct's, this one and the f-string's.
     """
     if holds_tracked(right):
         return formatted(fmt, right)
     return _as_compiled(fmt, len(right))(*right)
 
 
-@functools.lru_cache(maxsize=256)
+# unbounded: only a str literal's format reaches it, so the target's source bounds it
+@functools.cache
 def _as_compiled(fmt: str, count: int) -> Callable[..., object]:
     """``lambda _0, ..., _n: fmt % (_0, ..., _n)``, which CPython compiles as the target's own
     `%` of that format and a tuple display of as many operands."""

@@ -20,8 +20,11 @@ becomes ``__pyct_formatter__(a)((x, y))``, and ``n %= (x, y)`` becomes
 side first and hands back what the right side is given to, Python's own
 `%` or `%=` for a left side that is not a str, so a class's own `__mod__`
 or `__imod__` runs with no frame of pyct's above it. Each operand is the
-operation's own node, moved into a call, so each is evaluated once and in
-Python's order.
+operation's own node, moved into a call, so each is evaluated once, left
+to right. A `%` CPython compiles as an f-string formats each operand
+before it evaluates the next; the substituted call evaluates every operand
+first and then formats them, so in ``'%s%s' % (a, f())`` the target's
+``f()`` runs before ``a.__str__``, where Python runs it after.
 
 The outer call takes the operation's position, where CPython puts its own
 instruction, and the name, and the call that asks for the left side, sit
@@ -38,6 +41,7 @@ items.
 from __future__ import annotations
 
 import ast
+import copy
 import dis
 
 from pyct.intercept.positions import Parts
@@ -64,9 +68,8 @@ def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
     left, right = node.left, node.right
     if parts.folded(right) is not None:
         return None
-    fmt = _text(left, parts)
-    if fmt is not None:
-        router = _FSTRING if isinstance(right, ast.Tuple) and _an_fstring(fmt, right) else _MOD
+    if _text(left, parts):
+        router = _FSTRING if isinstance(right, ast.Tuple) and _an_fstring(left, right) else _MOD
         call = ast.Call(func=parts.named(router, left), args=[left, right], keywords=[])
         return ast.copy_location(call, node)
     if not isinstance(right, ast.Tuple):
@@ -95,15 +98,17 @@ def _curried(name: str, left: ast.expr, right: ast.expr, at: ast.AST, parts: Par
     return ast.copy_location(ast.Call(func=asked, args=[right], keywords=[]), at)
 
 
-def _text(node: ast.expr, parts: Parts) -> str | None:
-    """The str the node is, where CPython folds it to a constant, else None."""
+def _text(node: ast.expr, parts: Parts) -> bool:
+    """Whether the node is a str CPython folds to a constant."""
     folded = parts.folded(node)
-    return folded[0] if folded is not None and type(folded[0]) is str else None
+    return folded is not None and type(folded[0]) is str
 
 
-def _an_fstring(fmt: str, display: ast.Tuple) -> bool:
-    """Whether CPython compiles ``fmt % (<this display>)`` as an f-string: whether the same `%`,
-    each operand a name, compiles to no `%` of its own on this Python."""
+def _an_fstring(written: ast.expr, display: ast.Tuple) -> bool:
+    """Whether CPython compiles ``<written> % (<this display>)`` as an f-string: whether the same
+    `%`, its format as written and each operand a name, compiles to no `%` of its own on this
+    Python. A format written as an operation on literals, ``'%' + 's'``, is one CPython may
+    fold too late to read as a format."""
     names: list[ast.expr] = [
         ast.Starred(value=ast.Name(id="_", ctx=ast.Load()), ctx=ast.Load())
         if isinstance(element, ast.Starred)
@@ -111,6 +116,7 @@ def _an_fstring(fmt: str, display: ast.Tuple) -> bool:
         for element in display.elts
     ]
     held = ast.Tuple(elts=names, ctx=ast.Load())
-    tree = ast.Expression(body=ast.BinOp(left=ast.Constant(value=fmt), op=ast.Mod(), right=held))
+    fmt = copy.deepcopy(written)
+    tree = ast.Expression(body=ast.BinOp(left=fmt, op=ast.Mod(), right=held))
     code = compile(ast.fix_missing_locations(tree), "<format>", "eval", dont_inherit=True)
     return not any(step.opname == "BINARY_OP" for step in dis.get_instructions(code))

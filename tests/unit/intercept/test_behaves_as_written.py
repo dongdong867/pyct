@@ -195,19 +195,23 @@ PROGRAMS: dict[str, str] = {
     # back an exact str where a `__str__` gives a subclass, and hands the subclass's
     # `__format__` the spec as written; the others are Python's own `%`
     **{
-        f"literal {fmt} % display of a str subclass": (
+        f"{fmt} % {operands} of a str subclass": (
             "class Text(str):\n"
             "    def __format__(self, spec):\n        return Text(f'<{spec}>')\n"
             "class Named:\n    def __str__(self):\n        return Text('named-text')\n"
-            f"xs = [Named()]\nheld = '{fmt}' % {operands}\n"
+            f"xs = [Named()]\nheld = {fmt} % {operands}\n"
             "answer = (held, type(held).__name__, note('b', b))"
         )
         for fmt, operands in (
-            ("%s", "(Named(),)"),
-            ("%5s", "(Named(),)"),
-            ("%.9s", "(Named(),)"),
-            ("%*s", "(0, Named())"),
-            ("%s", "(*xs,)"),
+            ("'%s'", "(Named(),)"),
+            ("'%5s'", "(Named(),)"),
+            ("'%.9s'", "(Named(),)"),
+            ("'%*s'", "(0, Named())"),
+            ("'%s'", "(*xs,)"),
+            # a format written as an operation on literals, which CPython may fold too late to
+            # compile as an f-string
+            ("('%' + 's')", "(Named(),)"),
+            ("('<%s>' + ' tail')", "(Named(),)"),
         )
     },
     "name %= tuple": "answer = note('a', a)\nanswer %= (note('b', b),)",

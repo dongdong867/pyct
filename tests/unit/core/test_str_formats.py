@@ -328,6 +328,14 @@ class _Texted:
         return _Text("named-text")
 
 
+def test_a_literal_s_format_not_compiled_as_an_f_string_hands_back_python_s_own_text() -> None:
+    named = _Texted()
+
+    # Python's `%` hands back the str subclass `__str__` gave as the whole text, and so does pyct's
+    assert type("%s" % named) is _Text  # noqa: UP031
+    assert type(mod("%s", named)) is _Text
+
+
 @pytest.mark.parametrize("fmt", ["%s", "%5s", "%.9s", "%r|%-12s"])
 def test_an_f_string_s_format_runs_as_cpython_s_f_string(fmt: str) -> None:
     operands = (_Texted(),) * fmt.count("%")

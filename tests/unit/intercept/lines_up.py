@@ -239,11 +239,12 @@ def layout(code: types.CodeType, negated_at: frozenset[Span] = frozenset()) -> l
 def written_code(source: str | bytes, name: str) -> types.CodeType:
     """The source compiled as written, but for a `%` whose format is a str literal.
 
-    CPython compiles ``"<%s>" % (a,)``, a format of `%s`, `%r` and `%a` alone
-    with a tuple display, as the f-string it means, which builds no tuple,
-    and gives the literal pieces no position of their own, so the first takes
-    the line before it: the `def` line, where the `%` starts a function,
-    which a run covers when the module is imported. pyct's call for that `%`
+    CPython compiles some of these as the f-string they mean, as
+    ``"<%s>" % (a,)``: on 3.12 to 3.14, a format whose conversions are `%s`,
+    `%r` and `%a` with no ``*``, beside a tuple display with no star. That
+    f-string builds no tuple, and gives the literal pieces no position of
+    their own, so the first takes the line before it: the `def` line,
+    where the `%` starts a function, which a run covers at import. pyct's call for that `%`
     is the `%` as written (`pyct.intercept.percents`), so the check compiles
     it as CPython compiles any other `%`: the format, written as an f-string
     of itself alone, is still the one constant at its own position, and
