@@ -263,6 +263,8 @@ def test_an_element_that_cannot_stand_alone_is_no_constant() -> None:
 def test_a_deeply_nested_expression_needs_no_deep_stack() -> None:
     # a chain of 5,000 `+` over as many lines, which the walk and the search for the first
     # instruction each go down one step at a time
+    # (a chain of 5,000 `%` formats does not load on 3.12 and 3.13, where each link becomes two
+    # calls; 4,000 do, and 3.14 loads 5,000: known-limits S6)
     chain = " +\n".join(["a"] * 5000)
     call = statements(f"({chain}) in b")[0].value  # pyrefly: ignore[missing-attribute]
 
