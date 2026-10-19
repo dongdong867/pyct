@@ -58,6 +58,7 @@ def word_end(term: str, at: int | str | None) -> str:
 def _back(term: str, end: int | str | None, regex: str) -> str:
     """Where the first character of a class is in the reversed string from the place that
     stands for ``end``, or -1: the last one before ``end`` in the string, counted from its end.
+    An ``end`` past the length starts the search before the reversed string, which finds -1.
     The string is reversed whole, the same term at every step, so cvc5 reads one reversal."""
     start = "0" if end is None else f"(- {length(term)} {_at(end)})"
     return f"(str.indexof_re (str.rev {term}) {regex} {start})"
@@ -66,11 +67,11 @@ def _back(term: str, end: int | str | None, regex: str) -> str:
 def last_word(term: str, end: int | str | None = None) -> str:
     """``s.lastword(j)``: where the last character before j that is not whitespace is, or -1.
 
-    From the end of the string, the first step, the -1 is the string being blank, as
-    `next_word` writes it: an unsat flip there, a blank string that holds a mark, ran to the
-    limit by the search's own -1 and answered in 0.01 s so. Before a word, each later step, it
-    is the search's own -1, over the one reversal: a blank part beside each prefix reversed
-    apart ran three words from the right to the limit, where this answered in 0.4 s.
+    With no j, the first step, -1 is written as the string being blank, as `next_word` writes
+    it. That form answered a blank string holding a mark as unsat in 0.01 s, where the
+    search's own -1 ran to the limit. With a j, each later step, -1 is the search's own -1 over
+    the one reversal. That form answered three words from the right in 0.4 s, where a blank
+    part beside each prefix reversed apart ran to the limit.
     """
     found = _back(term, end, NOT_SPACE)
     if end is None:

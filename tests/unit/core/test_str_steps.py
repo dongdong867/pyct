@@ -317,7 +317,7 @@ _PROGRAMS = [
     'str(n).split("0", i)',
     "(s + str(n)).rsplit()",
     "s[i:].split(d)",
-    's.split(";")[i % 2].split()',
+    's.split(";")[i % 2 - 1].split()',
 ]
 _PROGRAM = """def f(s, xs, d, n, i):
     parts = {split}
