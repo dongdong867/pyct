@@ -1,8 +1,10 @@
 """What the target's package calls in place of Python's `len`, `ord`, `chr`, `int`, `float`,
-`bool`, `map`, `range` and `type`: pyct's own routers, one table for all of them
-(`_FOLLOWED`). `CALLED` also holds the router of each `math` function (`pyct.core.math_calls`),
-of each range and dict view method called through the type (`pyct.core.type_calls`), and pyct's
-`len`, `ord` and `chr` for a call through a name bound to `builtins` or to one of them.
+`bool`, `map`, `range`, `type` and `operator.index`: pyct's own routers, one table for all of
+them (`_FOLLOWED`). `CALLED` also holds the router of each `math` function
+(`pyct.core.math_calls`), of each range and dict view method called through the type
+(`pyct.core.type_calls`), pyct's `len`, `ord` and `chr` for a call through a name bound to
+`builtins` or to one of them, and pyct's `index` for a call through a name bound to `operator`
+or to its `index`.
 
 `pyct.intercept` binds `len`, `ord` and `chr` in the builtins of each module
 of the target's package (`BOUND`), and hands a call written `int(...)`,
@@ -12,8 +14,10 @@ Python makes the answers of the builtins plain, or calls no method of the
 value at all, and `type` reads pyct's class; here a tracked value that core
 follows through one of them gets core's answer, and every other call,
 keywords and any count of arguments included, is Python's own. `map` with a
-conversion first maps pyct's router for it, and `range` with a tracked int
-among its arguments is a tracked range.
+conversion first maps pyct's router for it, `range` with a tracked int
+among its arguments is a tracked range, and `len` of a tracked range is its
+tracked count. `operator.index` copies an int subclass into a plain int
+without asking it, so its router hands a tracked int back as it is.
 
 Each bound function carries the name, text and signature of Python's own,
 and lives in this module under that name, so pickle saves and loads it by
@@ -30,6 +34,7 @@ of core's own frames sits below.
 from __future__ import annotations
 
 import inspect
+import operator
 import types
 from collections.abc import Callable, Mapping
 from typing import Any
@@ -50,6 +55,7 @@ from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
+from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import BASES_BY_ID
 
@@ -58,6 +64,7 @@ from pyct.core.values import BASES_BY_ID
 # `pyct.intercept.wrap`), not what a bound function a module already holds calls, as with the
 # builtin plain Python found
 _LEN, _ORD, _CHR = len, ord, chr
+_INDEX = operator.index
 
 # a view's size and truth are its dict's
 _VIEWED: Callable[[Any], object] = lambda view: dict_reads.length(view._mapping)  # noqa: E731
@@ -76,9 +83,13 @@ _FOLLOWED: Mapping[Callable[..., object], Mapping[type, Callable[..., object]]] 
         ConcolicKeys: _VIEWED,
         ConcolicValues: _VIEWED,
         ConcolicItems: _VIEWED,
+        ConcolicRange: ranges.length,
     },
     _ORD: {ConcolicStr: codes.code},
     _CHR: {ConcolicInt: codes.character},
+    # `operator.index` hands back an exact int without asking an int subclass: a tracked int is
+    # itself, and a tracked bool the int it is, as `int` writes it
+    _INDEX: {ConcolicInt: conversions.itself, ConcolicBool: conversions.int_of_bool},
     int: {
         ConcolicInt: conversions.itself,
         ConcolicBool: conversions.int_of_bool,
@@ -131,6 +142,12 @@ def ord(*args: object, **kwargs: object) -> object:
 def chr(*args: object, **kwargs: object) -> object:
     # a tracked int's character is a tracked string, `["chr", n]`
     return _routed(_CHR, args, kwargs)
+
+
+def index(*args: object, **kwargs: object) -> object:
+    # a tracked int is itself and a tracked bool `["int", b]`, as `int` follows them. Its
+    # docstring is Python's own (see `_dressed`)
+    return _routed(_INDEX, args, kwargs)
 
 
 # how each conversion follows each tracked type, read straight from `_FOLLOWED` so a
@@ -230,6 +247,7 @@ CALLED: Mapping[int, Callable[..., object]] = {
     id(_LEN): len,
     id(_ORD): ord,
     id(_CHR): chr,
+    id(_INDEX): index,
     id(map): map_,
     id(range): range_,
     id(type): type_,
@@ -255,7 +273,7 @@ BOUND: Mapping[str, tuple[Callable[..., object], Callable[..., object]]] = {
     "ord": (_ORD, ord),
     "chr": (_CHR, chr),
 }
-for _python, _bound in BOUND.values():
+for _python, _bound in (*BOUND.values(), (_INDEX, index)):
     _dressed(_bound, _python)
 
 # the frames blame reads through: a raise under one of them, from Python's own `len`, `ord`,
@@ -268,6 +286,7 @@ PASSING: frozenset[types.CodeType] = (
             len,
             ord,
             chr,
+            index,
             _routed,
             int_,
             float_,

@@ -1,6 +1,6 @@
 """The calls pyct substitutes where the target writes them: conversions, `range`, `type`,
-`math` functions, `len`, `ord` and `chr` through `builtins`, a str's methods, and a range or dict
-view method called through the type.
+`math` functions, `len`, `ord` and `chr` through `builtins`, `operator.index`, a str's methods,
+and a range or dict view method called through the type.
 
 - A call written `int(...)`, `float(...)`, `bool(...)` or `range(...)`,
   bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
@@ -11,7 +11,9 @@ view method called through the type.
   math import sqrt as root` (`pyct.intercept.constants`), and a call of
   `len`, `ord` or `chr` through a name bound the same way to `builtins` or
   to that function, `builtins.len(...)` or `size(...)` after `from builtins
-  import len as size`, becomes
+  import len as size`, and a call of `index` through a name bound the same
+  way to `operator` or to its `index`, `operator.index(...)` or `_index(...)`
+  after `from operator import index as _index`, becomes
   ``__pyct_call__(int)(...)``: the callee is handed to pyct, which hands
   back pyct's router when it is Python's own function and the callee itself
   otherwise, and that is called with the arguments as written. So a name

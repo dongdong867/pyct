@@ -25,6 +25,7 @@ string-positions-adjusted-in-the-term.
 """
 
 from collections.abc import Callable
+from functools import partial
 
 from pyct.solver import strings
 from pyct.solver.strings import length
@@ -169,8 +170,17 @@ def last_index(term: str, sub: str, start: Position = None, end: Position = None
 
 
 def occurrences(term: str, sub: str, start: Position = None, end: Position = None) -> str:
-    """``s.count(sub, start, end)``: how many times sub occurs in the part."""
+    """``s.count(sub, start, end)``: how many times sub occurs in the part, counted over the
+    reversed part."""
     return _in_part(term, start, end, lambda part: strings.occurrences(part, sub), "0")
+
+
+def occurrences_as_written(
+    term: str, sub: str, start: Position = None, end: Position = None
+) -> str:
+    """``s.count(sub, start, end)`` counted over the part as it stands, as a split reads it."""
+    count = partial(strings.occurrences, sub=sub, as_written=True)
+    return _in_part(term, start, end, count, "0")
 
 
 def starts_with(term: str, prefix: Needle, start: Position = None, end: Position = None) -> str:

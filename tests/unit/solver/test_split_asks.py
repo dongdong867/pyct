@@ -330,3 +330,46 @@ def test_the_first_of_many_lines_past_a_tracked_count_is_flipped(count: int) -> 
     args = apply(seed, answer.model).args
     lines, n = str(args["s"]).splitlines(), args["n"]
     assert isinstance(n, int) and lines[0] == "end" and len(lines) > n, args
+
+
+def test_a_count_on_a_path_that_splits_a_string_reads_the_string_as_written() -> None:
+    parts: Expression = ["split", "s", "'@'"]
+    path = (
+        fork(["!=", ["count", "s", "'@'"], 1], taken=False),
+        fork(["==", ["len", parts], 2], taken=True),
+        fork([">", ["len", ["[]", parts, 1]], 255], taken=True),
+    )
+
+    text = program(path, {"s": str}, Origin(values={"s": "a@b"})).text
+
+    assert '(str.replace_all |arg.s| "@" "")' in text
+    assert "str.rev" not in text
+
+
+def test_a_count_on_a_path_with_no_split_reads_the_reversed_string() -> None:
+    path = (fork(["==", ["count", "s", "'ab'"], 1], taken=True),)
+
+    text = program(path, {"s": str}).text
+
+    assert '(str.replace_all (str.rev |arg.s|) "ba" "")' in text
+
+
+@needs_cvc5
+def test_a_count_beside_a_split_s_pieces_is_answered_at_once() -> None:
+    # the ask TheAlgorithms' is_valid_email_address made: one `@`, two pieces, the second long.
+    # Over the reversed string cvc5 ran it to its time limit
+    parts: Expression = ["split", "s", "'@'"]
+    path = (
+        fork(["!=", ["count", "s", "'@'"], 1], taken=False),
+        fork(["==", ["len", parts], 2], taken=True),
+        fork([">", ["len", ["[]", parts, 0]], 64], taken=False),
+        fork([">", ["len", ["[]", parts, 1]], 255], taken=True),
+    )
+    start = time.monotonic()
+
+    answer = solve(path, {"s": str}, 10.0, values={"s": "a@b"})
+
+    assert isinstance(answer, Sat), answer
+    s = answer.model["s"]
+    assert isinstance(s, str) and s.count("@") == 1 and len(s.split("@")[1]) > 255
+    assert time.monotonic() - start < 5

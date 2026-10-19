@@ -178,8 +178,9 @@ def test_downgrades_an_untaught_range_operation() -> None:
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
     at = "targets/ranges/untaught.py"
+    # `len(r)` is followed where pyct binds `len` (close-four-small-v1-gaps), so the line's
+    # first downgrade is the index's
     assert seed["downgrades"] == [
-        downgrade("__len__", 1, f"{at}:3:4"),
         downgrade("__getitem__", 1, f"{at}:4:4"),
         downgrade("__reversed__", 1, f"{at}:5:4"),
     ]

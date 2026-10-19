@@ -183,3 +183,43 @@ def test_an_inequality_of_two_ranges_is_the_other_side() -> None:
     model = _model((_fork(["!=", ["range", 0, "a"], ["range", 0, 3]], taken=False),), {"a": int})
 
     assert range(model["a"]) == range(3)
+
+
+# ranges of each shape for a length: tracked bounds, a step above 1, negative steps, empty spans
+LENGTHS: list[tuple[Expression, ...]] = [
+    ("a", "b"),
+    ("a", "b", 3),
+    ("a", "b", -1),
+    ("a", "b", -3),
+    (0, "b", 2),
+    ("a", 10, -4),
+]
+
+
+@needs_cvc5
+@pytest.mark.parametrize(("bounds", "count"), list(itertools.product(LENGTHS, [0, 1, 4])))
+def test_a_range_s_length_agrees_with_python(bounds: tuple[Expression, ...], count: int) -> None:
+    leaves = {name: int for name in bounds if isinstance(name, str)}
+    path = (_fork(["==", ["len", ["range", *bounds]], count]),)
+
+    model = _model(path, leaves)
+
+    values = [model[bound] if isinstance(bound, str) else int(str(bound)) for bound in bounds]
+    assert len(range(*values)) == count
+
+
+@needs_cvc5
+def test_a_range_s_length_from_a_tracked_step() -> None:
+    step = [_fork(["!=", "k", 0]), _fork([">", "k", 0])]
+    path = (*step, _fork(["==", ["len", ["range", 0, 20, "k"]], 3]))
+
+    model = _model(path, {"k": int})
+
+    assert len(range(0, 20, model["k"])) == 3
+
+
+@needs_cvc5
+def test_no_range_is_shorter_than_empty() -> None:
+    path = (_fork(["<", ["len", ["range", "a", "b", -2]], 0]),)
+
+    assert isinstance(solve(path, {"a": int, "b": int}, 10.0), Unsat)

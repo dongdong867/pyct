@@ -16,6 +16,9 @@ and the arguments' forms for its forks (``README.md › Rules › forks``):
   side picks the compare the passes use.
 - ``x in r`` is one fork, ``["in", x, ["range", start, stop]]``, with the step
   when the target passed one, whichever side is tracked.
+- ``len(r)`` where pyct binds `len` is Python's count, a tracked int carrying
+  ``["len", ["range", start, stop]]``, the range written as an `in` fork
+  writes it; `r.__len__()` stays a downgrade, but for the size a walk asks.
 
 - ``r == other`` with another range, tracked or plain, is its answer with
   one condition, ``["==", ["range", ...], ["range", ...]]``, untested, and
@@ -252,6 +255,17 @@ def _walked(r: ConcolicRange) -> Iterator[object]:
         yield value if _plain(element) else numbers.tracked(value, element, r.sink)
         at += 1
     _passed(r, _element(r, at), False)
+
+
+def length(r: ConcolicRange) -> object:
+    """``len(r)`` where pyct binds `len`: Python's count, a tracked int carrying
+    ``["len", <the range>]``, the range as an `in` fork writes it.
+
+    The solver counts the steps from the start that stay short of the stop,
+    none for an empty range, on the side the step's sign says. Past the
+    largest size Python raises OverflowError, the target's as in plain Python.
+    """
+    return numbers.tracked(own(len, r.held), ["len", _spelled(r)], r.sink)
 
 
 def _spelled(r: ConcolicRange) -> Expression:

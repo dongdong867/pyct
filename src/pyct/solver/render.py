@@ -13,7 +13,6 @@ from pyct.solver.dicts import DictTerms, TrackedDict
 from pyct.solver.heads import (
     BOUNDED,
     FACTS,
-    FORMS,
     INDEXED,
     MEMBERSHIPS,
     ON_A_CHARACTER,
@@ -25,6 +24,7 @@ from pyct.solver.heads import (
     SORTS,
     STRING_ORDERS,
     WORKS_ON,
+    forms,
     operator,
 )
 from pyct.solver.joined import joined
@@ -167,10 +167,11 @@ class _Program:
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         lists.constant, lists.hold_fact = self._constant, self._hold_fact
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
+        # the forms the parts are written with, a count's by whether the path splits a string
+        self.forms = forms(order)
         for node in order:
             self.types[id(node)] = self._result(node)
-        # the strings read at fixed positions, each written once as its first letters (see
-        # `letters`), and the letters' names once written
+        # the strings read at fixed positions, each written once as its first letters (`letters`)
         self.spellings = Spellings(order, prefix, self._string)
         # the checks each string is read by: a string one check reads is asked as a membership
         self.checked = checks_by_string(order, self._string)
@@ -182,8 +183,7 @@ class _Program:
         for its operands."""
         for node in order:
             if (kind := self.types[id(node)]) in (tuple, range):
-                # no term of its own: a search reads a tuple's items, a membership or an equality
-                # a range's Ints
+                # no term of its own: a search reads a tuple's items, a range's Ints the rest
                 item_term = self.term if kind is tuple else partial(self._operand, kind=int)
                 self.tuples[id(node)] = tuple(item_term(item) for item in node[1:])
                 continue
@@ -265,11 +265,11 @@ class _Program:
         first that says decides it, but for two numbers: a float makes the
         operation a float's, as Python converts an int that meets one. A bool
         gives way to any other type, as Python's bool meets an int as the int
-        1 or 0.
+        1 or 0. A str with an int is a str's operation, as `3 * s` repeats s.
         """
         kinds = [kind for part in operands if (kind := self.type_of(part))]
-        if float in kinds:
-            return float
+        if float in kinds or str in kinds:
+            return float if float in kinds else str
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
@@ -279,7 +279,7 @@ class _Program:
         kind = WORKS_ON.get(head) or self._operands_type(operands)
         if kind is range and head in MEMBERSHIPS:
             return int
-        own = (head, bool) in OPERATORS or (head, bool) in FORMS
+        own = (head, bool) in OPERATORS or (head, bool) in self.forms
         return int if kind is bool and not own else kind
 
     def _read_by_forms(self, order: list[Node]) -> set[int]:
@@ -314,7 +314,7 @@ class _Program:
             return partial(self._bounded, bounded)
         if kind is str and head in ON_A_CHARACTER and self._character(operands[0]):
             return ON_A_CHARACTER[head]
-        form = None if kind is None else FORMS.get((head, kind))
+        form = None if kind is None else self.forms.get((head, kind))
         fact = None if kind is None else FACTS.get((head, kind))
         return form if form is None or fact is None else partial(self._with_fact, form, fact)
 

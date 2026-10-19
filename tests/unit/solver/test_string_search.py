@@ -4,6 +4,8 @@ import operator
 import random
 from collections.abc import Callable
 
+import pytest
+
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
@@ -210,3 +212,30 @@ def test_cvc5_agrees_with_python_on_every_search_path_it_answers() -> None:
         if disagrees(path, answer, PYTHON_HEADS, _letters(path), 4)
     ]
     assert wrong == []
+
+
+def test_a_count_as_written_reads_a_literal_substring_as_written() -> None:
+    counted = '(div (- (str.len s) (str.len (str.replace_all s "ab" ""))) 2)'
+
+    assert occurrences("s", '"ab"', as_written=True) == (
+        '(ite (= "ab" "") (+ (str.len s) 1)'
+        f' (ite (str.contains s "ab") (ite (< {counted} 1) 1 {counted}) 0))'
+    )
+
+
+@needs_cvc5
+def test_cvc5_agrees_with_python_on_every_count_as_written(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # the count a path that splits a string writes: the same cases, the count over s as it stands
+    as_written = (
+        lambda s, sub: occurrences(s, sub, as_written=True),
+        str.count,
+        "Int",
+    )
+    monkeypatch.setitem(PYTHON_SEARCHES, "count", as_written)
+    cases = [case for case in _search_cases(400) if case[1] == "count"]
+
+    answers = asked(_program(cases))
+
+    assert answers == [value.count(sub) for value, _, sub, _ in cases]

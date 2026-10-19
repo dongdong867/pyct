@@ -123,9 +123,9 @@ def _entries(root: Path) -> str | None:
 
 @functools.cache
 def _version() -> str:
-    """A digest of the code that decides what an entry holds: the transform, the `math` and
-    `builtins` names and the range and view method names it takes, its compile, and this
-    module's format."""
+    """A digest of the code that decides what an entry holds: the transform, the `math`,
+    `builtins` and `operator` names and the range and view method names it takes, its compile,
+    and this module's format."""
     digest = hashlib.sha256()
     rules = (substitute.__file__, operators.__file__, calls.__file__, constants.__file__)
     rules += (positions.__file__, bound.__file__, math_calls.__file__, type_calls.__file__)

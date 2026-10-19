@@ -20,12 +20,13 @@ A search is written as the SMT-LIB term that gives Python's answer, empty
 substring included. Each takes its operands already written, in the order
 the expression holds them: the string and then the substring, but for
 ``in``, whose needle comes first. SMT-LIB has no last index and no count,
-so ``rfind`` and ``count`` read the reversed strings, and each term also
-states a bound Python's answer always meets, which cvc5 does not work out
-from the rest; decision string-search-clamped-over-the-reversed-string.
+so ``rfind`` reads the reversed strings, and ``count`` does too but on a
+path that splits a string; each term also states a bound Python's answer
+always meets, which cvc5 does not work out from the rest; decision
+string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split.
 
 A piece is written as the SMT-LIB term for the str Python builds: an index
-or a slice, a replace, and a removed prefix or suffix. A position arrives
+or a slice, a replace, a repeat, and a removed prefix or suffix. A position arrives
 as the int it is, or None for a slice's missing bound, and the clamping
 Python does is written inside the term.
 
@@ -165,18 +166,24 @@ def last_index(term: str, sub: str) -> str:
     return f"(ite (str.contains {term} {sub}) (ite (< {back} {first}) {first} {back}) (- 1))"
 
 
-def occurrences(term: str, sub: str) -> str:
+def occurrences(term: str, sub: str, *, as_written: bool = False) -> str:
     """``s.count(sub)``: how many times sub occurs in s without overlapping.
 
-    Every sub removed, what went divided by sub's length is the count. The
-    removal runs on the reversed strings, as `last_index` reads them: a
-    greedy count from either end finds as many, and cvc5 ran paths mixing a
-    count on the plain strings with a last index to its time limit. The
-    count is held at one or more where sub is in s and is 0 where it is not,
-    which cvc5 does not work out from the removal. The empty substring
-    occurs ``len(s) + 1`` times, as Python counts it.
+    Every sub removed, what went divided by sub's length is the count. A
+    greedy count from either end finds as many, so the removal may run on
+    the strings as written or reversed, and either is exact. By default it
+    runs on the reversed strings, as `last_index` reads them: cvc5 ran
+    paths mixing a count on the plain strings with a last index to its time
+    limit. ``as_written`` runs it on the strings as they stand, as a split's
+    pieces read them: beside those cvc5 ran the reversed count to its time
+    limit (decision
+    string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split).
+    The count is held at one or more where sub is in s and is 0 where it is not, which
+    cvc5 does not work out from the removal. The empty substring occurs
+    ``len(s) + 1`` times, as Python counts it.
     """
-    removed = f'(str.replace_all {_reversed(term)} {_reversed(sub)} "")'
+    text, needle = (term, sub) if as_written else (_reversed(term), _reversed(sub))
+    removed = f'(str.replace_all {text} {needle} "")'
     counted = f"(div (- {length(term)} (str.len {removed})) {length(sub)})"
     return (
         f'(ite (= {sub} "") (+ {length(term)} 1)'
@@ -225,6 +232,18 @@ def replaced(term: str, old: str, new: str) -> str:
     least one character, the one form core hands on.
     """
     return f"(str.replace_all {term} {old} {new})"
+
+
+def repeated(left: str, right: str) -> str:
+    """``s * k`` or ``k * s``: k copies of s joined, k a plain count of one or more.
+
+    Core writes a repeat only for such a count, which arrives as its
+    numeral, and hands back the empty string itself for a count of zero or
+    less, so one operand is the count and the other the string.
+    """
+    term, count = (right, left) if left.isdigit() else (left, right)
+    times = int(count)
+    return term if times == 1 else f"(str.++ {' '.join([term] * times)})"
 
 
 def without_prefix(term: str, prefix: str) -> str:

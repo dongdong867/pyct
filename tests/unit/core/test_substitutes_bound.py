@@ -2,13 +2,16 @@
 
 import builtins
 import inspect
+import operator
 import pickle
 from collections.abc import Callable
 
 import pytest
 
 from pyct.core import bound as bound_module
-from pyct.core.bound import BOUND
+from pyct.core import ranges
+from pyct.core.bools import ConcolicBool
+from pyct.core.bound import BOUND, CALLED
 from pyct.core.branch import Branch, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -228,3 +231,60 @@ def test_the_type_router_runs_no_code_of_the_class() -> None:
 
 def test_a_call_written_type_reaches_the_router() -> None:
     assert bound_module.CALLED[id(type)] is bound_module.type_
+
+
+index_ = CALLED[id(operator.index)]
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        ((5,), {}),
+        ((True,), {}),
+        ((2**70,), {}),
+        (("5",), {}),
+        ((5.0,), {}),
+        ((), {}),
+        ((1, 2), {}),
+        ((), {"a": 1}),
+        ((ConcolicStr.made("5", expression="s", sink=[]),), {}),
+        ((ConcolicFloat.made(0.5, expression="f", sink=[]),), {}),
+    ],
+)
+def test_the_index_router_is_python_s_own_on_every_other_call(call: Call) -> None:
+    assert outcome(index_, call) == outcome(operator.index, call)
+
+
+def test_the_index_router_keeps_a_tracked_int_and_reads_a_tracked_bool_as_int_does() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+
+    kept = index_(n)
+    one = index_(ConcolicBool.made(True, expression=[">", "n", 3], sink=sink))
+
+    assert kept is n
+    assert type(one) is ConcolicInt
+    assert (int.__int__(one), one.expression) == (1, ["int", [">", "n", 3]])
+    assert sink == []
+
+
+def test_the_index_router_looks_and_pickles_like_python_s_own() -> None:
+    assert (index_.__name__, index_.__module__) == ("index", "pyct.core.bound")
+    assert index_.__doc__ == operator.index.__doc__
+    assert inspect.signature(index_) == inspect.signature(operator.index)
+    assert pickle.loads(pickle.dumps(index_)) is index_
+
+
+def test_a_bound_len_on_a_tracked_range_is_its_tracked_count() -> None:
+    sink: list[SinkItem] = []
+    n = ConcolicInt.made(7, expression="n", sink=sink)
+
+    sizes = [len_(ranges.ranged(n)), len_(ranges.ranged(n, 0, -3)), len_(ranges.ranged(9, n))]
+
+    assert all(isinstance(size, ConcolicInt) for size in sizes)
+    assert [(int.__int__(size), size.expression) for size in sizes] == [  # pyrefly: ignore
+        (7, ["len", ["range", 0, "n"]]),
+        (3, ["len", ["range", "n", 0, -3]]),
+        (0, ["len", ["range", 9, "n"]]),
+    ]
+    assert sink == []
