@@ -3,6 +3,7 @@ empty string, and past the bound or by any other count str's own answer and a do
 
 import operator
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
@@ -81,14 +82,21 @@ def test_past_the_bound_or_a_tracked_count_is_str_s_answer_and_a_downgrade(
 
 
 @pytest.mark.parametrize("count", [2.0, "2", None, 2**64])
-def test_a_count_python_refuses_raises_python_s_error_as_the_target_s(count: object) -> None:
+@pytest.mark.parametrize("on_the_left", [False, True])
+def test_a_count_python_refuses_raises_python_s_error_as_the_target_s(
+    count: Any, on_the_left: bool
+) -> None:
     sink: list[SinkItem] = []
 
+    def times(s: Any) -> object:
+        # either side of `*`, as the target writes it
+        return operator.mul(count, s) if on_the_left else operator.mul(s, count)
+
     with pytest.raises(Exception) as raised:
-        operator.mul(_s("ab", sink), count)
+        times(_s("ab", sink))
 
     with pytest.raises(Exception) as plain:
-        operator.mul("ab", count)  # pyrefly: ignore[no-matching-overload]
+        times("ab")
     assert (type(raised.value), str(raised.value)) == (type(plain.value), str(plain.value))
     assert raised_by_target(raised.value)
     assert sink == []

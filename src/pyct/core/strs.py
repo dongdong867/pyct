@@ -35,7 +35,8 @@ from pyct.core.values import copy_as_itself, downgrade_the_rest, downgraded, for
 
 # not the target's path: `__hash__`, `__repr__`, `__getnewargs__`, which pickle no longer calls
 # once `__reduce_ex__` is taught, and the object plumbing, so a dict key and a debugger read cost
-# nothing. `__getattribute__`, object's, is kept: the downgrade wrapper reads `self.sink` with it
+# nothing. `__getattribute__`, object's, is kept: the downgrade wrapper reads `self.sink` with it,
+# and a wrapped one would recurse
 _KEPT = ("__hash__", "__repr__", "__getnewargs__", "__new__", "__getattribute__", "__sizeof__")
 
 

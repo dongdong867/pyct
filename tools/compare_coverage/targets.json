@@ -666,7 +666,7 @@
     {"set": "v2", "target": "targets.strs.rebinds_to_a_tracked_separator::check", "seed": {"sep": "-", "a": "q"}},
     {"set": "v2", "target": "targets.strs.rebound_separator::join_by_sep", "seed": {"s": "a"}},
     {"set": "v2", "target": "targets.strs.rebinds_separator::call", "seed": {"s": "a"}},
-    {"set": "v2", "module": "targets.strs.repeat_past_the_bound", "left_out": "v2 follows a repeat by a plain count up to 10 copies and downgrades past it (str-repeat-by-a-plain-count-up-to-ten-written-as-its-copies, the bound the user asked for in close-four-small-v1-gaps); legacy unrolls any count, so it covers return 1 here and v2 does not, a loss by design that the gate would otherwise fail on"},
+    {"set": "v2", "target": "targets.strs.repeat_past_the_bound::past_the_bound", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.repeats::twice", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.repeats::on_the_left", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.repeats::by_a_bool", "seed": {"s": ""}},

@@ -161,13 +161,11 @@ class _Program:
         self.bounds: list[str] = []
         # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
-        # the lists the path reads: they read their parts by name, as often as they need, and
-        # define what they write once in the program's own definitions
+        # the lists the path reads, which read parts by name and define what they write once
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
         lists.constant, lists.hold_fact = self._constant, self._hold_fact
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
-        # the forms the parts are written with, a count's by whether the path splits a string
         self.forms = forms(order)
         for node in order:
             self.types[id(node)] = self._result(node)
@@ -268,8 +266,10 @@ class _Program:
         1 or 0. A str with an int is a str's operation, as `3 * s` repeats s.
         """
         kinds = [kind for part in operands if (kind := self.type_of(part))]
-        if float in kinds or str in kinds:
-            return float if float in kinds else str
+        if float in kinds:
+            return float
+        if str in kinds:
+            return str
         return next((kind for kind in kinds if kind is not bool), kinds[0] if kinds else None)
 
     def _kind(self, head: str, operands: list[Expression]) -> type | None:
