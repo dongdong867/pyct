@@ -5,6 +5,7 @@ import ast
 
 import pytest
 
+from pyct.intercept.compiled import substituted_code
 from pyct.intercept.substitute import substitute
 from tests.unit.intercept.lines_up import lined_up
 
@@ -124,3 +125,19 @@ def test_a_format_spread_over_lines_lines_up(shape: str) -> None:
 
     assert "__pyct_" in ast.unparse(substitute(ast.parse(source))), shape
     assert lined_up(source, "<f>")
+
+
+def test_a_format_written_as_a_long_chain_of_literals_loads_and_formats_as_written() -> None:
+    # 1,000 links: deeper than a copy or a walk of the format that recurses one level a link
+    # can go, and as deep as the operator rule's own search for folded parts runs in about a
+    # second, a search that grows with the square of the chain
+    chain = " +\n".join(["'a'"] * 999 + ["'%s'"])
+    source = f"x = 'q'\nt = ({chain}) % (x,)\n"
+    written: dict[str, object] = {}
+    substituted: dict[str, object] = {}
+
+    exec(compile(source, "<chain>", "exec"), written)  # noqa: S102 - the module above
+    exec(substituted_code(source.encode(), "<chain>"), substituted)  # noqa: S102
+
+    assert substituted["t"] == written["t"]
+    assert any(name.startswith("__pyct_") for name in substituted)

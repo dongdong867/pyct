@@ -41,7 +41,6 @@ items.
 from __future__ import annotations
 
 import ast
-import copy
 import dis
 
 from pyct.intercept.positions import Parts
@@ -68,7 +67,7 @@ def replaced(node: ast.AST, parts: Parts) -> ast.AST | None:
     left, right = node.left, node.right
     if parts.folded(right) is not None:
         return None
-    if _text(left, parts):
+    if _a_text(left, parts):
         router = _FSTRING if isinstance(right, ast.Tuple) and _an_fstring(left, right) else _MOD
         call = ast.Call(func=parts.named(router, left), args=[left, right], keywords=[])
         return ast.copy_location(call, node)
@@ -98,7 +97,7 @@ def _curried(name: str, left: ast.expr, right: ast.expr, at: ast.AST, parts: Par
     return ast.copy_location(ast.Call(func=asked, args=[right], keywords=[]), at)
 
 
-def _text(node: ast.expr, parts: Parts) -> bool:
+def _a_text(node: ast.expr, parts: Parts) -> bool:
     """Whether the node is a str CPython folds to a constant."""
     folded = parts.folded(node)
     return folded is not None and type(folded[0]) is str
@@ -109,14 +108,25 @@ def _an_fstring(written: ast.expr, display: ast.Tuple) -> bool:
     `%`, its format as written and each operand a name, compiles to no `%` of its own on this
     Python. A format written as an operation on literals, ``'%' + 's'``, is one CPython may
     fold too late to read as a format."""
-    names: list[ast.expr] = [
-        ast.Starred(value=ast.Name(id="_", ctx=ast.Load()), ctx=ast.Load())
-        if isinstance(element, ast.Starred)
-        else ast.Name(id="_", ctx=ast.Load())
-        for element in display.elts
-    ]
-    held = ast.Tuple(elts=names, ctx=ast.Load())
-    fmt = copy.deepcopy(written)
-    tree = ast.Expression(body=ast.BinOp(left=fmt, op=ast.Mod(), right=held))
-    code = compile(ast.fix_missing_locations(tree), "<format>", "eval", dont_inherit=True)
+    # the written format is compiled in place, never copied or walked, since compiling leaves a
+    # tree as it was; only the nodes made here are placed, each where the format is
+    names = [_at(_operand(element), written) for element in display.elts]
+    held = _at(ast.Tuple(elts=names, ctx=ast.Load()), written)
+    tree = ast.Expression(body=_at(ast.BinOp(left=written, op=ast.Mod(), right=held), written))
+    code = compile(tree, "<format>", "eval", dont_inherit=True)
     return not any(step.opname == "BINARY_OP" for step in dis.get_instructions(code))
+
+
+def _operand(element: ast.expr) -> ast.expr:
+    """A name in the place of one operand of a display, starred where the operand is."""
+    name = ast.Name(id="_", ctx=ast.Load())
+    if isinstance(element, ast.Starred):
+        return ast.Starred(value=name, ctx=ast.Load())
+    return name
+
+
+def _at[Placed: ast.expr](node: Placed, where: ast.expr) -> Placed:
+    """The node, and the name a star holds, placed where ``where`` is."""
+    if isinstance(node, ast.Starred):
+        ast.copy_location(node.value, where)
+    return ast.copy_location(node, where)
