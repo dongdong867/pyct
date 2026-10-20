@@ -11,7 +11,6 @@ from pathlib import Path
 
 from tests.acceptance.harness import (
     REPO_ROOT,
-    downgrade,
     first_line,
     forks_of,
     hanging_cvc5,
@@ -253,17 +252,18 @@ def test_reports_a_slow_encoding_as_a_miss(tmp_path: Path) -> None:
     assert summary_line(result.stdout)["stopped"] == "budget spent"
 
 
-# beside follow-strings-records-an-untaught-method-as-a-downgrade, not a criterion of its own:
-# an rsplit pyct does not encode adds only its downgrade
-def test_an_rsplit_on_a_tracked_separator_adds_only_its_downgrade_to_the_line() -> None:
+# split-a-string-cut-at-a-tracked-position-rsplits-as-python: an rsplit by a tracked separator
+# is built by steps, each a fork, and names no loss
+def test_an_rsplit_on_a_tracked_separator_forks_on_its_steps() -> None:
     result = run_pyct(TRACKED_RSPLIT, '{"s": "xabyab", "t": "aba"}')
 
     assert result.returncode == 0, result.stderr
-    # the target made one rsplit call and no compare; pyct's own look at the separator adds
-    # nothing to its line
     seed = first_line(result.stdout)
-    assert seed["forks"] == []
-    assert seed["downgrades"] == [downgrade("rsplit", 1, "targets/strs/tracked_rsplit.py:2:12")]
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)][:2] == [
+        (["!=", "t", "''"], True),
+        (["!=", ["rfind", "s", "t"], -1], False),
+    ], seed
+    assert seed["downgrades"] == []
 
 
 # beside follow-strings-follows-the-split-family: an rsplit with a limit of 2,000

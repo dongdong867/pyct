@@ -272,9 +272,22 @@ def test_a_split_of_a_string_the_solver_cannot_work_out_is_python_s_own_list() -
 
     parts = text.split(",")
 
-    # its pieces are tracked, as on origin/v2, and the list is Python's own
+    # its pieces are tracked and the list is Python's own, built by steps whose forks decide
+    # how many pieces there are (split-a-string-cut-at-a-tracked-position)
     assert type(parts) is list and all(type(piece) is ConcolicStr for piece in parts)
-    assert sink == []
+    assert [item.expression for item in sink if isinstance(item, Branch)] == [
+        ["!=", ["find", ["+", "s", ["str", "n"]], "','"], -1],
+        [
+            "!=",
+            [
+                "find",
+                ["+", "s", ["str", "n"]],
+                "','",
+                ["+", ["find", ["+", "s", ["str", "n"]], "','"], 1],
+            ],
+            -1,
+        ],
+    ]
 
 
 @pytest.mark.parametrize(
