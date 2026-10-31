@@ -136,6 +136,23 @@ layers = [
   "(pyct.utils)",
 ]
 
+# core's files, top to bottom: a file imports only its own layer and those below it. Every file
+# is listed, so a new one fails lint until it takes a place. It checks imports alone, so a class
+# a lower file reaches through a registry, as `numbers.enter` keeps them, is not checked.
+[[tool.importlinter.contracts]]
+name = "core's layers"
+type = "layers"
+containers = ["pyct.core"]
+exhaustive = true
+layers = [
+  "bases : bound : codes : conversions : handed : hashed : math_calls : substitutes : type_calls",
+  "dict_changes : dict_compares : dict_handouts : dict_reads : dict_state : dict_views : dict_walk_keys : dicts",
+  "list_changes : list_compares : list_forms : list_reads : list_state : lists : ranges",
+  "str_cases : str_formats : str_joins : str_lengths : str_literals : str_operands : str_positions : str_repeats : str_splits : str_steps : str_walks : strs",
+  "bools : floats : ints : numbers : texts",
+  "branch : counts : escapes : spans : values : walk_key_escapes",
+]
+
 # The compare tool treats v2 as a black box: it runs `pyct run` and reads its lines, so it
 # measures what a person runs. Decision compare-tool-outside-pyct-layers
 [[tool.importlinter.contracts]]

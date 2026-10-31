@@ -10,7 +10,7 @@ Concolic testing for Python, rebuilt on the `v2` branch. The old code stays on
 ## Commands
 
 - test: `uv run pytest tests/ -n 8 --cov` — healthy: every test passes, no fewer pass than on the base branch, the tests marked `serial` run last, one at a time, and it prints `Required test coverage of … reached`: branch coverage of `pyct` and `tools`, every worker and subprocess included, is at or above `fail_under` in pyproject.toml. Eight workers, about three minutes. Drop `--cov` for a quick run. `-n 0` runs in one process, about 15 minutes; `-p no:xdist` does not work, since pyproject.toml's `addopts` names xdist's `--dist`. Rerun a parallel run's failures with `-n 8 --lf`: a `serial` test's id carries its group. A test that fails beside a parallel run's other workers takes `@pytest.mark.serial`; it then runs after them, alone within this run, but not apart from other sessions' load. Needs cvc5 on PATH, like every run (https://cvc5.github.io/, or `brew install cvc5`). The compare tool's `legacy` tests build a checkout of `main` once per session, shared by every worker, or reuse the one `PYCT_LEGACY_CHECKOUT` names; `-m "not legacy"` skips them
-- lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 2 kept, 0 broken.` Style, sizes, types, import layers, and the compare tool never importing pyct
+- lint: `uv run ruff check src/ tests/ tools/ && uv run python -m tests.line_limits src/ tests/ tools/ && uv run pyrefly check && uv run lint-imports` — healthy: `Line limits: … 0 broken.`, then `Contracts: 3 kept, 0 broken.` Style, sizes, types, import layers, core's own layers, and the compare tool never importing pyct
 - format: `uv run ruff format src/ tests/ tools/`
 - run: `uv run pyct run MODULE::FUNCTION --args '{"arg": value}'`
 - sweep: `uv run pyct sweep PACKAGE [--list]` — runs each entry as its own `pyct run` in a temporary directory, and prints one JSON line per entry and per module that did not import or could not be read, then a summary line. `--list` runs none and needs no cvc5
@@ -70,6 +70,11 @@ target's package call core where Python would not, through a fixed set of
 substitutions made as Python imports it and the builtin functions it binds
 in each module's builtins. Neither is a rewrite: `rewrite` is the next
 paper's LLM source rewrite.
+
+`core`'s files sit in six layers, top to bottom: entry points, dicts, lists,
+strs, numbers, foundation. A file imports only its own layer and those below
+it. `pyproject.toml` lists every file, so a new one fails lint until it takes
+a place there.
 
 ## Protocols
 
