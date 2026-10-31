@@ -307,6 +307,26 @@ def test_a_fork_on_a_limit_that_is_a_count_narrows_its_list_s_range() -> None:
     assert ([">", form, 1], False) in _facts_of(sink)
 
 
+@pytest.mark.parametrize("text, negative", [("a", True), ("a;b;c;d", False)])
+def test_a_negative_check_on_a_limit_that_is_a_count_narrows_its_list_s_range(
+    text: str, negative: bool
+) -> None:
+    sink: list[SinkItem] = []
+    _, count, form = _count_of(sink, text)
+    t: Any = ConcolicStr.made("x,y", expression="t", sink=sink)
+    limit = count - 3
+    check: Expression = ["<", ["-", form, 3], 0]
+    sink.clear()
+
+    t.split(",", limit)
+    assert [fork.expression for fork in forks(sink)].count(check) == 1
+
+    # the split's own fork settled the sign: the same compare in the target is decided
+    assert bool(limit < 0) is negative
+    assert [fork.expression for fork in forks(sink)].count(check) == 1
+    assert (check, negative) in _facts_of(sink)
+
+
 def test_a_limit_that_is_a_count_of_a_changed_list_keeps_the_range_len_read() -> None:
     sink: list[SinkItem] = []
     parts, count, form = _count_of(sink, "a")
