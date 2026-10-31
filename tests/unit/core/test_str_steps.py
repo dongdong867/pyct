@@ -307,7 +307,7 @@ def test_a_fork_on_a_limit_that_is_a_count_narrows_its_list_s_range() -> None:
     assert ([">", form, 1], False) in _facts_of(sink)
 
 
-@pytest.mark.parametrize("text, negative", [("a", True), ("a;b;c;d", False)])
+@pytest.mark.parametrize("text, negative", [("a", True), ("a;b;c", False)])
 def test_a_negative_check_on_a_limit_that_is_a_count_narrows_its_list_s_range(
     text: str, negative: bool
 ) -> None:
