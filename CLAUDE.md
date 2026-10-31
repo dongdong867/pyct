@@ -71,10 +71,10 @@ substitutions made as Python imports it and the builtin functions it binds
 in each module's builtins. Neither is a rewrite: `rewrite` is the next
 paper's LLM source rewrite.
 
-`core`'s files sit in six layers, top to bottom: entry points, dicts, lists,
-strs, numbers, foundation. A file imports only its own layer and those below
-it. `pyproject.toml` lists every file, so a new one fails lint until it takes
-a place there.
+`core`'s files sit in six layers, top to bottom: entry points and the class
+table, dicts, lists and ranges, strs, numbers, foundation. A file imports only
+its own layer and those below it. `pyproject.toml` lists every file, so a new
+one fails lint until it takes a place there.
 
 ## Protocols
 

@@ -137,8 +137,7 @@ layers = [
 ]
 
 # core's files, top to bottom: a file imports only its own layer and those below it. Every file
-# is listed, so a new one fails lint until it takes a place. It checks imports alone, so a class
-# a lower file reaches through a registry, as `numbers.enter` keeps them, is not checked.
+# is listed, so a new one fails lint until it takes a place. It checks import statements alone.
 [[tool.importlinter.contracts]]
 name = "core's layers"
 type = "layers"
