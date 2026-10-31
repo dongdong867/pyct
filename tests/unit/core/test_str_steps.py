@@ -11,6 +11,7 @@ import pytest
 
 from pyct.binding.bind import bind
 from pyct.core.bools import ConcolicBool
+from pyct.core.bound import len as tracked_len
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.ints import ConcolicInt
 from pyct.core.str_lengths import length
@@ -256,6 +257,66 @@ def test_a_limit_check_its_range_proves_is_a_fact() -> None:
         (["!=", ["find", "s", "','"], -1], True),
         ([">", width, 1], False),
     ]
+
+
+def _facts_of(sink: list[SinkItem]) -> list[tuple[Expression, bool]]:
+    return [(item.expression, item.taken) for item in sink if isinstance(item, Fact)]
+
+
+def _count_of(sink: list[SinkItem], text: str) -> tuple[Any, Any, Expression]:
+    """A split's list of ``text``, its count, and the count's form."""
+    s: Any = ConcolicStr.made(text, expression="s", sink=sink)
+    parts = s.split(";")
+    count: Any = tracked_len(parts)
+    return parts, count, count.expression
+
+
+def test_a_limit_that_is_a_split_s_count_reads_its_list_s_range() -> None:
+    sink: list[SinkItem] = []
+    _, count, form = _count_of(sink, "a;b")
+    t: Any = ConcolicStr.made("x,y,z", expression="t", sink=sink)
+    # the target's own compare leaves the list two pieces
+    assert bool(count == 2)
+    sink.clear()
+
+    assert [str.__str__(part) for part in t.split(",", count)] == ["x", "y", "z"]
+
+    assert _facts_of(sink) == [
+        (["<", form, 0], False),
+        ([">", form, 0], True),
+        ([">", form, 1], True),
+        ([">", form, 2], False),
+    ]
+    first: Expression = ["find", "t", "','"]
+    second: Expression = ["find", "t", "','", ["+", first, 1]]
+    assert [fork.expression for fork in forks(sink)] == [["!=", first, -1], ["!=", second, -1]]
+
+
+def test_a_fork_on_a_limit_that_is_a_count_narrows_its_list_s_range() -> None:
+    sink: list[SinkItem] = []
+    _, count, form = _count_of(sink, "a")
+    t: Any = ConcolicStr.made("x,y", expression="t", sink=sink)
+    sink.clear()
+
+    t.split(",", count)
+    assert [fork.expression for fork in forks(sink)].count([">", form, 1]) == 1
+
+    # the split's own fork left one piece: the same compare in the target is decided
+    assert not bool(count > 1)
+    assert [fork.expression for fork in forks(sink)].count([">", form, 1]) == 1
+    assert ([">", form, 1], False) in _facts_of(sink)
+
+
+def test_a_limit_that_is_a_count_of_a_changed_list_keeps_the_range_len_read() -> None:
+    sink: list[SinkItem] = []
+    parts, count, form = _count_of(sink, "a")
+    t: Any = ConcolicStr.made("x,y", expression="t", sink=sink)
+    parts.append("z")
+    sink.clear()
+
+    assert [str.__str__(part) for part in t.split(",", count)] == ["x", "y"]
+
+    assert (["<", form, 0], False) in _facts_of(sink)
 
 
 def test_an_empty_tracked_separator_forks_then_raises_python_s_error() -> None:

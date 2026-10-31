@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.ints import ConcolicInt, known_range
-from pyct.core.spans import Span, proves
+from pyct.core.spans import proves
 from pyct.core.str_cases import Tracked, piece
 from pyct.core.str_operands import literal, plain, position
 from pyct.core.values import forked, held, own
@@ -44,10 +44,9 @@ class _Limit:
 
     value: int
     form: Expression = None
-    # whether the walk checks it for negative: a tracked int's, not a tracked bool's
-    signed: bool = False
-    # the range a tracked int carries, which may prove a check
-    span: Span | None = None
+    # the tracked int it is, which the walk checks for negative and whose range a check reads;
+    # None for a tracked bool, and the int one is, which is never negative
+    number: ConcolicInt | None = None
 
 
 @dataclass(frozen=True)
@@ -80,11 +79,16 @@ class _Steps:
         self.pieces.append(piece(self.receiver, value, form))
 
     def checks_limit(self, op: str, number: int, taken: bool) -> bool:
-        """A check of a tracked limit: a fact where its range proves the answer, else a fork."""
+        """A check of a tracked limit as a tracked int's compare is tested: a fact where its
+        range proves the answer, else a fork, which narrows a split's count."""
         expression: Expression = [op, self.limit.form, number]
-        span = self.limit.span
-        if span is not None and proves(span, op, number) is taken:
-            return held(self.receiver.sink, expression, taken, self.name)
+        tracked = self.limit.number
+        if tracked is not None:
+            span = known_range(tracked)
+            if span is not None and proves(span, op, number) is taken:
+                return held(self.receiver.sink, expression, taken, self.name)
+            if tracked.count is not None:
+                tracked.count.narrow(op, number, taken)
         return self.fork(expression, taken)
 
     def allows(self) -> bool:
@@ -106,8 +110,8 @@ def _limit(args: tuple[object, ...]) -> _Limit | None:
     if isinstance(value, ConcolicBool):
         return _Limit(int.__index__(value), ["int", value.expression])
     if isinstance(value, ConcolicInt):
-        signed = value.as_int is None
-        return _Limit(int.__index__(value), value.expression, signed, known_range(value))
+        number = value if value.as_int is None else None
+        return _Limit(int.__index__(value), value.expression, number)
     at = position(value)
     return None if at is None else _Limit(at)
 
@@ -148,7 +152,7 @@ def stepped(name: str, receiver: Tracked, args: tuple[object, ...]) -> list[obje
     steps = _Steps(name, receiver, plain(receiver), separator, limit)
     if limit.form is None:
         steps.counted = limit.value >= 0
-    elif limit.signed:
+    elif limit.number is not None:
         steps.counted = not steps.checks_limit("<", 0, limit.value < 0)
     if separator.tracked:
         # the fork before Python's own ValueError for an empty separator
