@@ -116,15 +116,27 @@ def _typed_where_read(self: ListState, written: Expression, kind: str) -> bool:
     typed by the input's kind at a plain position. Any other position of it, and any list built
     from it, is typed only when the list holds no other kind that has a term. A list reached
     through a tracked index or one from the end is a row the solver cannot pick, since another
-    input's row may hold another kind.
+    input's row may hold another kind, and so is a list built from one: the solver types it by
+    every row's kinds, and this row's may differ.
     """
     form = self.expression
+    if is_read(form) and type(written) is int and _at_places(form):
+        return True
+    return _built_at_places(form) and self.kinds & _SCALARS == {kind}
+
+
+# the heads that build a list from the lists among their first two operands
+_BUILT = frozenset({"+", "*", "[:]"})
+
+
+def _built_at_places(form: Expression) -> bool:
+    """Whether each read of an argument's list a list's form builds on takes its steps at places
+    the target wrote; a slice's start or a repeat's count that is such a read counts too."""
     if is_read(form):
-        if not _at_places(form):
-            return False
-        if type(written) is int:
-            return True
-    return self.kinds & _SCALARS == {kind}
+        return _at_places(form)
+    if not isinstance(form, list) or form[0] not in _BUILT:
+        return True
+    return all(_built_at_places(part) for part in form[1:3])
 
 
 def _at_places(form: Expression) -> bool:

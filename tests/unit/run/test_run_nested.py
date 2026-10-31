@@ -186,6 +186,7 @@ def test_a_float_inside_an_argument_forks_and_flips(isolation: Isolation) -> Non
         and config["ratio"] > 0.5
         for record in solved
     )
+    assert all(record.mismatch_at is None for record in solved)
 
 
 def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None:

@@ -79,3 +79,30 @@ def grid_row(grid):
         if row[0] > 2.5:
             return "above"
     return "other"
+
+
+# placed here so the lines above keep their numbers, which accepted-per-merge.jsonl records
+import math  # noqa: E402
+
+
+def last_row_flag(grid, other):
+    if other > 5:
+        return "other"
+    row = grid[-1][0:]
+    if row[0]:
+        return "set"
+    return "clear"
+
+
+def picked_row_floor(grid, i):
+    row = grid[i] + [1.5]
+    if math.floor(row[0]) == 3:
+        return "three"
+    return "other"
+
+
+def picked_row_nan(grid, i):
+    row = grid[i] + [1.5]
+    if row[0] != row[0]:
+        return "nan"
+    return "a number"

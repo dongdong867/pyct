@@ -187,6 +187,22 @@ def test_a_float_under_a_tracked_key_keeps_its_read_as_written() -> None:
     assert [">", ["[]", "table", "name"], 2.5] in expressions
 
 
+def test_a_bool_in_a_list_built_on_the_last_row_leaves_other_forks_flipping() -> None:
+    # the solver types any row of the grid alike, so core hands the item out under its own place
+    lines = solved(lines_of(f"{NESTED}::last_row_flag", {"grid": [[1], [False]], "other": 0}))
+    assert any(args_of(line, "other") > 5 for line in lines), lines
+
+
+def test_a_floor_of_a_float_in_a_list_built_on_a_picked_row_is_rendered() -> None:
+    assert solved(lines_of(f"{NESTED}::picked_row_floor", {"grid": [[0.5], [1]], "i": 0}))
+
+
+def test_a_nan_in_a_row_an_index_picks_is_reached() -> None:
+    lines = solved(lines_of(f"{NESTED}::picked_row_nan", {"grid": [[0.5], [1]], "i": 0}))
+    items = [row[0] for line in lines for row in args_of(line, "grid") if row]
+    assert any(isinstance(item, float) and math.isnan(item) for item in items), lines
+
+
 def test_a_bool_read_by_is_true_records_the_read_as_its_fork() -> None:
     lines = lines_of(f"{NESTED}::is_true_value", {"d": {"k": False}})
     assert any(args_of(line, "d")["k"] is True for line in solved(lines))
@@ -228,10 +244,16 @@ def test_nan_and_infinity_flip_in_an_item_and_read_back() -> None:
     "text",
     ['{"xs": [NaN]}', '{"xs": [-0.0]}', '{"xs": [Infinity]}', '{"xs": [-Infinity]}'],
 )
-def test_a_seed_of_an_ieee_form_binds(text: str) -> None:
+def test_a_seed_of_an_ieee_form_binds_as_that_double(text: str) -> None:
     result = run_pyct(f"{ITEMS}::nan_item", "--args", text)
     assert result.returncode == 0, result.stderr
     assert input_lines(result.stdout)
+    # the target's own error carries what it read: repr tells -0.0, NaN and each infinity apart
+    result = run_pyct(f"{ITEMS}::raises_what_it_read", "--args", text)
+    assert result.returncode == 0, result.stderr
+    failure = input_lines(result.stdout)[0]["failure"]
+    assert isinstance(failure, dict)
+    assert failure["detail"] == f"ValueError: {json.loads(text)['xs'][0]!r}"
 
 
 @pytest.mark.parametrize(

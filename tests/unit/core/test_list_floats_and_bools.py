@@ -144,6 +144,26 @@ def test_a_float_in_a_row_reached_by_an_index_the_solver_cannot_place_keeps_its_
     assert row[0].expression == ["[]", ["[]", "grid", 0 if index == 0 else 1], 0]
 
 
+@pytest.mark.parametrize(
+    ("grid", "built", "place"),
+    [
+        ([[1], [False]], lambda grid, i: grid[-1][0:], 1),
+        ([[0.5], [1]], lambda grid, i: grid[i] + [1.5], 0),
+        ([[False], [1]], lambda grid, i: grid[i] + [True], 0),
+        ([[1], [False]], lambda grid, i: next(reversed(grid))[0:], 1),
+    ],
+)
+def test_a_list_built_from_a_row_the_solver_cannot_place_keeps_its_items_own_place(
+    grid: list[list[object]], built: Any, place: int
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": grid, "i": 0}, sink)
+
+    item = built(args["grid"], args["i"])[0]
+
+    assert item.expression == ["[]", ["[]", "grid", place], 0]
+
+
 def test_an_int_in_a_row_reached_by_a_tracked_index_comes_out_as_indexed_as_it_did() -> None:
     sink: list[SinkItem] = []
     args: Any = bind({"grid": [[1], [2]], "i": 0}, sink)

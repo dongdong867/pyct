@@ -7,7 +7,9 @@ from the end of one that holds a float or a bool; the list's kind, when every it
 has a term is of one kind; and else, for an int or a str, what the path does with it, since
 Python compares and adds an int or a str only with a value of its own kind, and the fork was
 recorded on a value of the kind the target read. Core hands out a float or a bool only where one
-of the first two types it (``core.list_reads``), since Python compares an int with a float.
+of the first two types it (``core.list_reads``), since Python compares an int with a float. It
+hands one out as stored from a list built on a row a tracked or from-the-end index picks, since
+the solver types that list by every row's kinds.
 """
 
 from __future__ import annotations
@@ -215,7 +217,7 @@ class ListTyping:
         return TrackedList
 
     def _item_type(self, node: list[Expression], kinds: Kinds) -> type | None:
-        """What a read hands out: a list inside a list, or an int or a str."""
+        """What a read hands out: a list inside a list, or an item of a kind in ``ITEM_TYPES``."""
         position = node[2]
         if kinds.shape is not None and from_start(position):
             kind = kinds.shape.kind_at(position)

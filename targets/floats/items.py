@@ -61,3 +61,7 @@ def freed_beside(xs, ys):
         if ys[0] > 1.0:
             return "both"
     return "other"
+
+
+def raises_what_it_read(xs):
+    raise ValueError(repr(xs[0]))
