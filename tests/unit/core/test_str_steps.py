@@ -13,6 +13,7 @@ from pyct.binding.bind import bind
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.ints import ConcolicInt
+from pyct.core.str_lengths import length
 from pyct.core.str_steps import last_word, next_word, word_end, word_start
 from pyct.core.strs import ConcolicStr
 from pyct.intercept.compiled import substituted_code
@@ -223,6 +224,38 @@ def test_a_tracked_bool_limit_is_never_negative() -> None:
 
     assert [str.__str__(part) for part in s.split(",", b)] == ["a", "b"]
     assert forks(sink)[0].expression == [">", ["int", "b"], 0]
+
+
+def test_the_int_a_tracked_bool_is_as_a_limit_is_never_negative() -> None:
+    sink: list[SinkItem] = []
+    s: Any = ConcolicStr.made("a,b", expression="s", sink=sink)
+    b: Any = ConcolicBool.made(True, expression="b", sink=sink)
+
+    assert [str.__str__(part) for part in s.split(",", +b)] == ["a", "b"]
+    assert [(fork.expression, fork.taken) for fork in forks(sink)] == [
+        ([">", "b", 0], True),
+        (["!=", ["find", "s", "','"], -1], True),
+        ([">", "b", 1], False),
+    ]
+
+
+def test_a_limit_check_its_range_proves_is_a_fact() -> None:
+    sink: list[SinkItem] = []
+    s: Any = ConcolicStr.made("a,b,c", expression="s", sink=sink)
+    d = ConcolicStr.made("", expression="d", sink=sink)
+    width: Expression = ["+", ["len", "d"], 1]
+
+    pieces = s.split(",", length(d) + 1)
+
+    assert [str.__str__(part) for part in pieces] == ["a", "b,c"]
+    assert [(item.expression, item.taken) for item in sink if isinstance(item, Fact)] == [
+        (["<", width, 0], False),
+        ([">", width, 0], True),
+    ]
+    assert [(fork.expression, fork.taken) for fork in forks(sink)] == [
+        (["!=", ["find", "s", "','"], -1], True),
+        ([">", width, 1], False),
+    ]
 
 
 def test_an_empty_tracked_separator_forks_then_raises_python_s_error() -> None:

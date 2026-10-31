@@ -368,7 +368,8 @@ def _text(value: object) -> object:
 
 def split_up(name: str, reader: Reader) -> Callable[..., object]:
     """str's own split, each piece a tracked str at its position in what Python built, in a
-    tracked list whose form is the call, or partition's tuple.
+    tracked list whose form is the call, or partition's tuple. A split built by steps is
+    Python's own list of tracked slices (``str_steps``).
 
     A form pyct does not encode is a downgrade whose pieces are all plain.
     """

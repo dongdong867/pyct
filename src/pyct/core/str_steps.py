@@ -6,7 +6,8 @@ the slice of the string between two places a step found, and each step records t
 decides, at the split's line, as CPython's own loop decides it:
 
 - a tracked limit first: ``n < 0``, no limit, and then before each cut ``n > k``, that the
-  limit allows cut k + 1; a plain limit decides nothing, and a tracked bool is never negative;
+  limit allows cut k + 1; a plain limit decides nothing, a tracked bool is never negative, and
+  a check the limit's range proves is a fact;
 - a tracked separator next: ``d != ''``, before Python's ValueError for an empty one;
 - each cut: ``s.find(sep, start) != -1``, that the rest from the end of the last piece holds
   another separator, or ``s.rfind(sep, 0, end) != -1`` from the right; by whitespace,
@@ -27,12 +28,13 @@ from dataclasses import dataclass, field
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
-from pyct.core.ints import ConcolicInt
+from pyct.core.ints import ConcolicInt, known_range
+from pyct.core.spans import Span, proves
 from pyct.core.str_cases import Tracked, piece
 from pyct.core.str_operands import literal, plain, position
-from pyct.core.values import forked, own
+from pyct.core.values import forked, held, own
 
-# the splits built by steps; partition and splitlines stay as they are
+# the splits built by steps
 STEPPED = frozenset({"split", "rsplit"})
 
 
@@ -42,8 +44,10 @@ class _Limit:
 
     value: int
     form: Expression = None
-    # whether it may be negative: a tracked int may, a tracked bool may not
+    # whether the walk checks it for negative: a tracked int's, not a tracked bool's
     signed: bool = False
+    # the range a tracked int carries, which may prove a check
+    span: Span | None = None
 
 
 @dataclass(frozen=True)
@@ -75,6 +79,14 @@ class _Steps:
     def add(self, value: str, form: Expression) -> None:
         self.pieces.append(piece(self.receiver, value, form))
 
+    def checks_limit(self, op: str, number: int, taken: bool) -> bool:
+        """A check of a tracked limit: a fact where its range proves the answer, else a fork."""
+        expression: Expression = [op, self.limit.form, number]
+        span = self.limit.span
+        if span is not None and proves(span, op, number) is taken:
+            return held(self.receiver.sink, expression, taken, self.name)
+        return self.fork(expression, taken)
+
     def allows(self) -> bool:
         """Whether the limit allows another cut, as CPython's ``maxcount-- > 0`` decides it."""
         cuts, limit = len(self.pieces), self.limit
@@ -82,19 +94,20 @@ class _Steps:
             return True
         if limit.form is None:
             return cuts < limit.value
-        return self.fork([">", limit.form, cuts], limit.value > cuts)
+        return self.checks_limit(">", cuts, limit.value > cuts)
 
 
 def _limit(args: tuple[object, ...]) -> _Limit | None:
     """The limit a split pyct steps through is given: none, a plain int or bool, or a tracked
-    int or bool; None for any other value, which Python refuses."""
+    int or bool; None for any other value, which pyct leaves to Python to answer or refuse."""
     if len(args) < 2:
         return _Limit(-1)
     value = args[1]
     if isinstance(value, ConcolicBool):
         return _Limit(int.__index__(value), ["int", value.expression])
     if isinstance(value, ConcolicInt):
-        return _Limit(int.__index__(value), value.expression, signed=value.as_int is None)
+        signed = value.as_int is None
+        return _Limit(int.__index__(value), value.expression, signed, known_range(value))
     at = position(value)
     return None if at is None else _Limit(at)
 
@@ -136,7 +149,7 @@ def stepped(name: str, receiver: Tracked, args: tuple[object, ...]) -> list[obje
     if limit.form is None:
         steps.counted = limit.value >= 0
     elif limit.signed:
-        steps.counted = not steps.fork(["<", limit.form, 0], limit.value < 0)
+        steps.counted = not steps.checks_limit("<", 0, limit.value < 0)
     if separator.tracked:
         # the fork before Python's own ValueError for an empty separator
         steps.fork(["!=", separator.form, "''"], separator.text != "", raising=True)

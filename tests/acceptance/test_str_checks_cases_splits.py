@@ -259,7 +259,7 @@ def test_an_rsplit_on_a_tracked_separator_forks_on_its_steps() -> None:
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)][:2] == [
+    assert [(fork["expression"], fork["taken"]) for fork in forks_of(seed)] == [
         (["!=", "t", "''"], True),
         (["!=", ["rfind", "s", "t"], -1], False),
     ], seed
