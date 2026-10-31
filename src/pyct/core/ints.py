@@ -83,6 +83,13 @@ def _through(op: str, span: Span, number: int, *, reflected: bool) -> Span:
     return added(scaled(span, -1), exactly(number)) if reflected else added(span, exactly(-number))
 
 
+def known_range(value: ConcolicInt) -> Span | None:
+    """The range a tracked int's checks read: a split's count reads its list's range as it is
+    now, and any other int the range it carries, if it carries one."""
+    count = value.count
+    return value.span if count is None else (count.span() or value.span)
+
+
 def _proven(op: str, name: str) -> Callable[..., Any]:
     """A tracked int's compare by its dunder ``name``, asked of a number subclass on the right
     first, answering a bool that records a fact where it is tested when the int carries a
@@ -94,7 +101,7 @@ def _proven(op: str, name: str) -> Callable[..., Any]:
     def compute(self: ConcolicInt, other: object) -> Any:
         answer = method(self, other)
         count = self.count
-        span = self.span if count is None else (count.span() or self.span)
+        span = known_range(self)
         if span is not None and type(answer) is ConcolicBool and type(other) in _PLAIN:
             number = int.__int__(other)  # pyrefly: ignore[bad-argument-type]
             if proves(span, op, number) is int.__bool__(answer):

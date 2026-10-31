@@ -21,9 +21,10 @@ substring included. Each takes its operands already written, in the order
 the expression holds them: the string and then the substring, but for
 ``in``, whose needle comes first. SMT-LIB has no last index and no count,
 so ``rfind`` reads the reversed strings, and ``count`` does too but on a
-path that splits a string; each term also states a bound Python's answer
-always meets, which cvc5 does not work out from the rest; decision
-string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split.
+path that splits a string or cuts a piece at a search's answer; each term
+also states a bound Python's answer always meets, which cvc5 does not work
+out from the rest; decision
+string-search-clamped-over-the-reversed-string-but-a-count-beside-a-piece-as-written.
 
 A piece is written as the SMT-LIB term for the str Python builds: an index
 or a slice, a replace, a repeat, and a removed prefix or suffix. A position arrives
@@ -175,9 +176,9 @@ def occurrences(term: str, sub: str, *, as_written: bool = False) -> str:
     runs on the reversed strings, as `last_index` reads them: cvc5 ran
     paths mixing a count on the plain strings with a last index to its time
     limit. ``as_written`` runs it on the strings as they stand, as a split's
-    pieces read them: beside those cvc5 ran the reversed count to its time
-    limit (decision
-    string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split).
+    pieces, and pieces cut at a search's answer, read them: beside those cvc5
+    ran the reversed count to its time limit (decision
+    string-search-clamped-over-the-reversed-string-but-a-count-beside-a-piece-as-written).
     The count is held at one or more where sub is in s and is 0 where it is not, which
     cvc5 does not work out from the removal. The empty substring occurs
     ``len(s) + 1`` times, as Python counts it.

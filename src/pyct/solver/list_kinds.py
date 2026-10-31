@@ -18,6 +18,7 @@ from typing import TypeGuard
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Expression
 from pyct.core.str_splits import LISTED_SPLITS
+from pyct.solver.words import WORD_EDGES
 
 # the sort of the items of each kind a read takes, and the type render gives such a read
 ITEM_SORTS: Mapping[str, str] = {"int": "Int", "str": "String"}
@@ -46,6 +47,7 @@ _ON_A_STR = frozenset(
         "replace",
         "removeprefix",
         "removesuffix",
+        *WORD_EDGES,
         "[]",
         "[:]",
         "len",

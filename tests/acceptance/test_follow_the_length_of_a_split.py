@@ -270,15 +270,23 @@ def test_reports_an_index_past_the_pieces() -> None:
     assert agreeing(lines, compare, lambda s: s.split(",")[1] == "b"), lines
 
 
-# follow-the-length-of-a-split-keeps-an-unencoded-split-plain
-def test_keeps_an_unencoded_split_plain() -> None:
+# follow-the-length-of-a-split-keeps-an-unencoded-split-plain, superseded by
+# split-a-string-cut-at-a-tracked-position-follows-a-tracked-separator: a split by a tracked
+# separator is built by steps, Python's own list whose count the steps' forks decide
+def test_builds_a_split_by_a_tracked_separator_by_steps() -> None:
     result = run_pyct(f"{LENGTHS}::by_a_tracked_separator", '{"s": "a,b", "t": ","}')
 
     assert result.returncode == 0, result.stderr
     seed = first_line(result.stdout)
-    assert "split" in downgrade_names(seed), seed
-    at = line_of("if len(parts) == 2:")
+    assert "split" not in downgrade_names(seed), seed
+    at, split = line_of("if len(parts) == 2:"), line_of("parts = s.split(t)")
     assert [fork for fork in listed(seed) if fork[0] == at] == [], seed
+    first = ["find", "s", "t"]
+    assert [fork for fork in listed(seed) if fork[0] == split] == [
+        (split, ["!=", "t", "''"], True),
+        (split, ["!=", first, -1], True),
+        (split, ["!=", ["find", "s", "t", ["+", first, ["len", "t"]]], -1], False),
+    ], seed
     assert covers(seed, line_of('return "two"')), seed
 
 

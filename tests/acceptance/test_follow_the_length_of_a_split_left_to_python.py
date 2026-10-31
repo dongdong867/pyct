@@ -42,7 +42,8 @@ def test_leaves_a_split_of_a_list_s_item_to_python(
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     at = line_of(line)
-    # the split's list is Python's own: no fork reads its count
+    # the split's list is Python's own: no fork reads its count; a split is built by steps,
+    # whose forks are its searches (split-a-string-cut-at-a-tracked-position)
     assert all("['len', ['split" not in str(fork[1]) for fork in listed(lines[0])), lines[0]
     covered = [each for each in solved(lines) if covers(each, at + 1) and agrees(**args_of(each))]
     assert covered, lines

@@ -29,6 +29,7 @@ from pyct.solver.recased import TO_DECLARE
 from pyct.solver.spans import equal, length, unequal, within, without
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, repeated, without_prefix, without_suffix
+from pyct.solver.words import WORD_EDGES
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
 # name for the IEEE double, `(_ FloatingPoint 11 53)`
@@ -81,6 +82,8 @@ RESULTS: Mapping[str, type | None] = {
     "index": int,
     "rindex": int,
     "count": int,
+    # the edges of a word a split built by steps finds (`words`)
+    **dict.fromkeys(WORD_EDGES, int),
     "len": int,
     # a character's code and a code's character, where pyct binds `ord` and `chr`
     "ord": int,
@@ -213,6 +216,7 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("*", str): repeated,
     ("removeprefix", str): without_prefix,
     ("removesuffix", str): without_suffix,
+    **{(head, str): form for head, form in WORD_EDGES.items()},
     ("!=", float): floats.unequal,
     ("-", float): floats.minus,
     ("is_integer", float): floats.whole,
@@ -243,17 +247,35 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
 # the forms a path that splits a string writes in place of `FORMS`' own: a count over the
 # string as it stands, as the split's pieces read it, where cvc5 ran the reversed count beside
 # them to its time limit
-# (decision string-search-clamped-over-the-reversed-string-but-a-count-beside-a-split)
+# (decision string-search-clamped-over-the-reversed-string-but-a-count-beside-a-piece-as-written)
 BESIDE_A_SPLIT: Mapping[tuple[str, type], Callable[..., str]] = {
     ("count", str): occurrences_as_written,
 }
 
+# the positions a split built by steps cuts its pieces at, by head: a search's answer, or a
+# word's edge (`core/str_steps.py`)
+_STEP_BOUNDS = frozenset({"find", "rfind", *WORD_EDGES})
+
 
 def forms(order: Iterable[list[Expression]]) -> Mapping[tuple[str, type], Callable[..., str]]:
     """The forms a path's parts are written with: `FORMS`, and `BESIDE_A_SPLIT` over them where
-    a part splits a string."""
-    split = any(isinstance(node[0], str) and node[0] in SPLITS for node in order)
+    a part splits a string, or is a piece cut where a step of a split found its edge."""
+    split = any(isinstance(node[0], str) and node[0] in SPLITS or _cut(node) for node in order)
     return ChainMap(BESIDE_A_SPLIT, FORMS) if split else FORMS  # pyrefly: ignore[bad-argument-type]
+
+
+def _cut(node: list[Expression]) -> bool:
+    """Whether a part is a slice cut at a search's answer or a word's edge, or past one by a
+    width, as a split built by steps cuts its pieces: beside those, cvc5 ran the reversed count
+    to its time limit too, where the count as written answered in 0.05 s."""
+    if node[0] != "[:]":
+        return False
+    for bound in node[2:4]:
+        if isinstance(bound, list) and bound[:1] == ["+"]:
+            bound = bound[1]
+        if isinstance(bound, list) and bound[:1] and bound[0] in _STEP_BOUNDS:
+            return True
+    return False
 
 
 # the forms of a head on one character of a string, `s[i]`, keyed by the head on str, which
@@ -289,5 +311,6 @@ READ_BY_A_FORM = frozenset({*CHECKS, *POSITIONED, *SPLITS, *TO_DECLARE})
 INDEXED = frozenset({"[]", "[:]"})
 POSITIONS_FROM: Mapping[str, int] = {
     **dict.fromkeys(["find", "rfind", "index", "rindex", "count", "startswith", "endswith"], 2),
+    **dict.fromkeys(WORD_EDGES, 1),
     "replace": 3,
 }
