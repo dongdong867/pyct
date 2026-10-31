@@ -15,13 +15,14 @@ from typing import Any, Self
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.spans import UNKNOWN, Span, exactly, measured
 from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
-TRACKED = frozenset({"int", "str"})
+TRACKED = frozenset({"int", "str", "float", "bool"})
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -32,6 +33,7 @@ _KINDS: dict[type, str] = {
     bool: "bool",
     ConcolicBool: "bool",
     float: "float",
+    ConcolicFloat: "float",
     type(None): "none",
     list: "list",
     dict: "dict",
@@ -62,11 +64,12 @@ _PLAIN: dict[type, Callable[[Any], object]] = {
     ConcolicInt: int.__int__,
     ConcolicStr: str.__str__,
     ConcolicBool: int.__bool__,
+    ConcolicFloat: float.__float__,
 }
 
 
 def plain(value: object) -> object:
-    """A tracked int, str or bool as the plain value it is; any other value as it is."""
+    """A tracked int, str, bool or float as the plain value it is; any other value as it is."""
     read = _PLAIN.get(type(value))
     return value if read is None else read(value)
 
@@ -188,8 +191,9 @@ class ListState(list):
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the items the arguments put here.
 
-        The list is plain from now on, so what it holds is plain too: each tracked int, str
-        and bool is its value, and a list inside, tracked in its own right, stays where it is.
+        The list is plain from now on, so what it holds is plain too: each tracked int, str,
+        bool and float is its value, and a list inside, tracked in its own right, stays where
+        it is.
         """
         self.__dict__["expression"] = None
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])

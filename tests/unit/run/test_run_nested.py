@@ -166,25 +166,26 @@ def test_run_lets_go_of_an_input_no_later_answer_can_start_from(
 
 
 @pytest.mark.parametrize("isolation", EVERYWHERE)
-def test_a_float_inside_an_argument_passes_through_plain(isolation: Isolation) -> None:
-    # run-with-nested-arguments follows a float inside an argument; until then it is a value
+def test_a_float_inside_an_argument_forks_and_flips(isolation: Isolation) -> None:
     target = load_target("targets.floats.inside_a_dict::check")
 
     result = run(target, {"config": {"ratio": 0.25, "count": 1}}, isolation=isolation)
 
     seeded, *solved = result.records
-    # each key is looked up first, and the float's compare records nothing
+    # each key is looked up first, and the float's compare is a fork of its own
     assert [fork.expression for fork in seeded.forks] == [
         ["in", "'ratio'", "config"],
+        [">", ["[]", "config", "'ratio'"], 0.5],
         ["in", "'count'", "config"],
         [">", ["[]", "config", "'count'"], 3],
     ]
     assert not seeded.downgrades and solved
-    for record in solved:
-        config = record.args["config"]
-        assert isinstance(config, dict)
-        assert "ratio" not in config or type(config["ratio"]) is float, config
-        assert config.get("ratio", 0.25) == 0.25 and record.mismatch_at is None
+    assert any(
+        isinstance(config := record.args["config"], dict)
+        and type(config.get("ratio")) is float
+        and config["ratio"] > 0.5
+        for record in solved
+    )
 
 
 def test_run_settles_a_list_cut_at_a_tracked_bound_as_the_input_had_it() -> None:

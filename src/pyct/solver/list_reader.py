@@ -116,6 +116,8 @@ class Context:
     shared: Shared | None = None
     # each split's count, which a compare with a number writes as whether a piece is there
     counts: Counts = field(default_factory=dict)
+    # each float read of a stored array, with the symbol of the list the seed names it under
+    float_reads: dict[str, str] = field(default_factory=dict)
 
 
 def read(piece: Piece, position: Lin, kind: str, context: Context) -> Read:
@@ -225,7 +227,10 @@ class _Reader:
         if self.kind not in piece.every:
             return Read(None, FALSE)
         guard = piece.guard(position, self.kind, self.least)
-        return Read(f"(select {piece.arrays(self.kind)} {position.text()})", guard)
+        term = f"(select {piece.arrays(self.kind)} {position.text()})"
+        if self.kind == "float":
+            self.context.float_reads[term] = piece.symbol
+        return Read(term, guard)
 
     def _shown(self, piece: Shown, position: Lin) -> Read:
         """A display: the item the position is, each one a branch."""

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from pyct.binding.annotations import NONE, Check, Items, OneOf, int_keys, reads_as_int
 from pyct.core.list_state import kind_of
@@ -58,6 +59,24 @@ class ListShape:
         if position < len(self.kinds):
             return self.rows.get(position)
         return self.fill_row
+
+    @cached_property
+    def mixed(self) -> bool:
+        """Whether its items do not share a kind, or the lists inside do not: a shorter answer
+        would lose what the next input's added items cannot bring back."""
+        return len(set(self.kinds)) > 1 or len({frozenset(r.kinds) for r in self.rows.values()}) > 1
+
+    @cached_property
+    def holds_floats(self) -> bool:
+        """Whether a read of the list, or of a list inside it at any depth, can be a float."""
+        pending: list[ListShape] = [self]
+        while pending:
+            shape = pending.pop()
+            if "float" in shape.kinds or shape.fill == "float":
+                return True
+            pending.extend(shape.rows.values())
+            pending.extend([] if shape.fill_row is None else [shape.fill_row])
+        return False
 
 
 def shaped(items: list[object], rows: Mapping[int, ListShape], check: Check | None) -> ListShape:
@@ -117,9 +136,12 @@ class ListAnswer:
     read: frozenset[int] = frozenset()
 
 
-# the item an added position holds when no array says, by its kind: the solver answers an int
-# or a str, and a float or a bool, which nothing solves yet, holds its type's own zero
+# the item an added position holds when no array says, by its kind
 _ADDED: Mapping[str, object] = {"int": 0, "str": "", "float": 0.0, "bool": False}
+
+# the kinds whose added item holds its zero until a fork reads it: an array's default is what
+# cvc5 chose for positions no fork asks about, and for a float that can be NaN
+_ZERO_UNREAD = frozenset({"float", "bool"})
 
 
 def resized(items: list[object], answer: ListAnswer, shape: ListShape) -> list[object]:
@@ -137,7 +159,8 @@ def _item(items: list[object], answer: ListAnswer, shape: ListShape, at: int) ->
     if at < len(items) and (at not in answer.read or array is None):
         return items[at]
     if kind in _ADDED:
-        return _ADDED[kind] if array is None else array.at(at)
+        unread = array is None or (kind in _ZERO_UNREAD and at not in answer.read)
+        return _ADDED[kind] if unread else array.at(at)
     return _STARTS[kind]() if kind in _STARTS else None
 
 
@@ -181,6 +204,11 @@ class DictShape:
         if self.int_keys:
             return list(made_up_ints(taken, count))
         return list(made_up(taken, count))
+
+    @cached_property
+    def holds_floats(self) -> bool:
+        """Whether a value the solver declares for the dict can be a float."""
+        return "float" in self.kinds or self.fill == "float"
 
     def adds(self, key: object) -> bool:
         """Whether the solver may add this key: one an answer's line reads back as itself

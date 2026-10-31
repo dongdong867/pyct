@@ -1,11 +1,13 @@
 """What a tracked list's parts are, as render types a path: lists, their lengths, and the items
 read from them.
 
-A list is a `TrackedList`, which no single term holds. An item read from a list is an int or a
-str: by its position, when the position is from the start of a list the input holds; by the
-list, when every item it can hold is of one kind; and else by what the path does with it, since
-Python compares and adds only values of one kind, and the fork was recorded on a value of the
-kind the target read.
+A list is a `TrackedList`, which no single term holds. An item read from a list has the kind the
+input holds at its position, when the position is from the start of a list the input holds, or
+from the end of one that holds a float or a bool; the list's kind, when every item it holds that
+has a term is of one kind; and else, for an int or a str, what the path does with it, since
+Python compares and adds an int or a str only with a value of its own kind, and the fork was
+recorded on a value of the kind the target read. Core hands out a float or a bool only where one
+of the first two types it (``core.list_reads``), since Python compares an int with a float.
 """
 
 from __future__ import annotations
@@ -21,8 +23,11 @@ from pyct.core.str_splits import LISTED_SPLITS
 from pyct.solver.words import WORD_EDGES
 
 # the sort of the items of each kind a read takes, and the type render gives such a read
-ITEM_SORTS: Mapping[str, str] = {"int": "Int", "str": "String"}
-ITEM_TYPES: Mapping[str, type] = {"int": int, "str": str}
+ITEM_SORTS: Mapping[str, str] = {"int": "Int", "str": "String", "float": "Float64", "bool": "Bool"}
+ITEM_TYPES: Mapping[str, type] = {"int": int, "str": str, "float": float, "bool": bool}
+
+# the kinds of item a path can type, by the other operand of what reads it
+_BY_THE_PATH = frozenset({"int", "str"})
 
 # the kind of an item render typed, as a list's items count kinds
 _KIND_OF_TYPE: Mapping[type, str] = {
@@ -110,6 +115,15 @@ def from_start(position: Expression) -> TypeGuard[int]:
     return isinstance(position, int) and not isinstance(position, bool) and position >= 0
 
 
+def from_end(position: Expression, shape: ListShape) -> TypeGuard[int]:
+    """Whether a position is a plain number from the end of a list of the input that holds a
+    float or a bool, which the path cannot type: such a read is typed by the input's kind there.
+    """
+    if type(position) is not int or not -len(shape.kinds) <= position < 0:
+        return False
+    return "float" in shape.kinds or "bool" in shape.kinds
+
+
 def access(part: Expression) -> str | None:
     """The name of an access to a list inside an argument, as the seed names it."""
     step = part
@@ -120,6 +134,20 @@ def access(part: Expression) -> str | None:
     if step is part or not isinstance(step, str):
         return None
     return json.dumps(part)
+
+
+def _one_kind(kinds: Kinds) -> type | None:
+    """The type of any item read from a list, when its items say.
+
+    A list that holds floats or bools alone reads as them. Any other list reads as the one of
+    an int and a str it can hold: core hands out a float or a bool from it as stored, so no read
+    of it is one. A list with neither reads as the one kind the solver may add.
+    """
+    held = kinds.kinds & ITEM_TYPES.keys()
+    if len(held) == 1 and not held <= _BY_THE_PATH:
+        return ITEM_TYPES[next(iter(held))]
+    named = kinds.every & _BY_THE_PATH or kinds.every & ITEM_TYPES.keys()
+    return ITEM_TYPES[next(iter(named))] if len(named) == 1 else None
 
 
 class ListTyping:
@@ -196,13 +224,15 @@ class ListTyping:
                 self.kinds[id(node)] = of_shape(row)
                 return TrackedList
             return ITEM_TYPES.get(kind)
+        if kinds.shape is not None and from_end(position, kinds.shape):
+            return ITEM_TYPES.get(kinds.shape.kinds[position])
         if kinds.every == {"list"} and kinds.shape is not None:
             self.kinds[id(node)] = of_rows(kinds.shape)
             self.row_shapes[id(node)] = kinds.shape
             return TrackedList
-        tracked = [ITEM_TYPES[kind] for kind in kinds.every if kind in ITEM_TYPES]
-        if len(tracked) == 1:
-            return tracked[0]
+        tracked = _one_kind(kinds)
+        if tracked is not None:
+            return tracked
         self.untyped.add(id(node))
         return None
 

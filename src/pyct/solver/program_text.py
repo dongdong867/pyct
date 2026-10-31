@@ -25,6 +25,7 @@ class Body(Protocol):
     definitions: list[str]
     bounds: list[str]
     bounded: bool
+    finite_items: list[str]
 
     def assertion(self, fork: Branch) -> str: ...
 
@@ -39,8 +40,8 @@ def program_text(
 ) -> str:
     """The program's lines, in the order cvc5 reads them: each leaf and each list's and dict's
     parts declared before any term on them, each split's count a line reads among them as its
-    c*, the leaves held finite, each class of characters a line names, the definitions, what
-    the lists, the dicts and the path assert, and what to ask for."""
+    c*, the leaves held finite, each class of characters a line names, the definitions, the
+    items held finite, what the lists, the dicts and the path assert, and what to ask for."""
     terms, dicts = body.lists, body.dicts
     # a dict's assertions may define the functions its walk's chosen keys call, which it
     # declares (see ``dict_orders``)
@@ -58,7 +59,7 @@ def program_text(
     # fork before it holds only while its index has that value
     aimed = terms.aimed(prefix[-1].expression) if prefix else []
     forks = [f"(assert {pin})" for pin in aimed] + [body.assertion(fork) for fork in prefix]
-    written = [*body.definitions, *bounds, *asserted, *forks]
+    written = [*body.definitions, *body.finite_items, *bounds, *asserted, *forks]
     counts = terms.splits.defined(written)
     lines += counts + finites + named_classes("\n".join(written)) + written
     lines.append("(check-sat)")

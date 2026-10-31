@@ -1,6 +1,8 @@
 """A tracked list's shape in the input, and a list answered back at its new length; a tracked
 dict's made-up keys."""
 
+import pytest
+
 from pyct.binding.annotations import Items, OneOf
 from pyct.binding.shapes import (
     ArrayValue,
@@ -64,13 +66,72 @@ def test_a_list_at_its_answered_length_keeps_what_no_fork_read() -> None:
     assert resized([1, "a"], answer, shape) == [9, "a", {}, {}]
 
 
-def test_an_added_item_the_annotation_types_as_a_float_or_a_bool_holds_its_plain_default() -> None:
+def test_an_added_float_or_bool_no_fork_read_holds_its_zero() -> None:
     answer = ListAnswer(length=2)
 
-    # nothing solves a float or a bool yet: the added item holds the type's own zero, which the
-    # seed check accepts, where null would be refused
+    # the seed check accepts the type's own zero, where null would be refused
     assert resized([], answer, ListShape((), fill="float")) == [0.0, 0.0]
     assert resized([], answer, ListShape((), fill="bool")) == [False, False]
+
+
+def test_an_added_float_or_bool_no_fork_read_holds_its_zero_whatever_the_array_says() -> None:
+    nan = float("nan")
+    floats = ListAnswer(length=2, arrays={"float": ArrayValue(nan, {0: 2.5})}, read=frozenset({0}))
+    bools = ListAnswer(length=2, arrays={"bool": ArrayValue(True)}, read=frozenset({1}))
+
+    # an array's default is what cvc5 chose for a position no fork asks about
+    assert resized([], floats, ListShape((), fill="float")) == [2.5, 0.0]
+    assert resized([], bools, ListShape((), fill="bool")) == [False, True]
+
+
+def test_an_added_int_or_str_takes_the_array_s_default_as_it_did() -> None:
+    answer = ListAnswer(length=1, arrays={"int": ArrayValue(7)})
+
+    assert resized([], answer, ListShape((), fill="int")) == [7]
+
+
+@pytest.mark.parametrize(
+    ("shape", "mixed"),
+    [
+        (ListShape(("int", "float")), True),
+        (ListShape(("int", "none")), True),
+        (ListShape(("float", "float")), False),
+        (ListShape(()), False),
+        (
+            ListShape(("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("float",))}),
+            True,
+        ),
+        (
+            ListShape(("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("int",))}),
+            False,
+        ),
+    ],
+)
+def test_a_list_is_mixed_when_its_items_or_its_rows_do_not_share_a_kind(
+    shape: ListShape, mixed: bool
+) -> None:
+    assert shape.mixed is mixed
+
+
+@pytest.mark.parametrize(
+    ("shape", "floats"),
+    [
+        (ListShape(("float",)), True),
+        (ListShape(()), False),
+        (ListShape((), fill="float"), True),
+        (ListShape(("list",), rows={0: ListShape(("float",))}), True),
+        (ListShape(("list",), rows={0: ListShape(("int",))}, fill="list"), False),
+        (ListShape((), fill="list", fill_row=ListShape((), fill="float")), True),
+    ],
+)
+def test_a_list_holds_floats_at_any_depth(shape: ListShape, floats: bool) -> None:
+    assert shape.holds_floats is floats
+
+
+def test_a_dict_holds_floats_by_its_values_or_what_the_solver_adds() -> None:
+    assert DictShape(keys=("a",), kinds=("float",)).holds_floats
+    assert DictShape(keys=(), kinds=(), fill="float").holds_floats
+    assert not DictShape(keys=("a",), kinds=("int",), fill="int").holds_floats
 
 
 def test_an_int_keyed_dict_makes_up_the_smallest_non_negative_ints_not_taken() -> None:

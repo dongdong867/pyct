@@ -55,6 +55,7 @@ from pyct.core.dict_handouts import (
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
 from pyct.core.escapes import escaped_in, lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
 from pyct.core.list_state import plain
@@ -266,6 +267,10 @@ def value(self: DictState, key: object, *, changing: bool = False) -> object:
         return ConcolicStr.made(stored, read, self.sink)
     if type(stored) is int:
         return ConcolicInt.made(stored, read, self.sink)
+    if type(stored) is float:
+        return ConcolicFloat.made(stored, read, self.sink)
+    if type(stored) is bool:
+        return ConcolicBool.made(stored, read, self.sink)
     return held
 
 

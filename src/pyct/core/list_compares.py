@@ -16,8 +16,9 @@ from typing import Any
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
+from pyct.core.floats import ConcolicFloat
 from pyct.core.list_reads import handed, more
-from pyct.core.list_state import ListState
+from pyct.core.list_state import ListState, is_read
 from pyct.core.spans import Span, added, proves, scaled
 from pyct.core.values import forked, held, own
 
@@ -33,9 +34,18 @@ ORDERS: dict[str, Callable[[Any, Any], Any]] = {
 def matches(item: object, other: object) -> bool:
     """Whether two items are equal as a list finds it: the same object, or `==` held.
 
-    Testing the answer for truth is what records the fork on a tracked item.
+    Testing the answer for truth is what records the fork on a tracked item. Two reads of one
+    float of the input are one object to Python, whatever its value, NaN included, so they are
+    the same object here, and Python records no compare for them.
     """
-    return item is other or own(bool, own(operator.eq, item, other))
+    return item is other or _one_float(item, other) or own(bool, own(operator.eq, item, other))
+
+
+def _one_float(item: object, other: object) -> bool:
+    """Whether two tracked floats are reads of one float of the input: the same access."""
+    if type(item) is not ConcolicFloat or type(other) is not ConcolicFloat:
+        return False
+    return is_read(item.expression) and item.expression == other.expression
 
 
 def searched(self: ListState, value: object, name: str, *, every: bool = False) -> list[int]:

@@ -6,8 +6,9 @@ string's does: `[">", ["len", items], i]` for an index from the start and
 when it holds, `[">=", ["len", items], ["-", i]]`, together Python's `-len <= i < len`.
 
 An item handed out is written as the target indexed it, `["[]", items, -1]` say, so it names
-the last item of any input. An int or a str comes out tracked; a list inside, a None and every
-other item come out as they are stored. A walk records `[">", ["len", items], j]` for each item
+the last item of any input. An int or a str comes out tracked, and so does a float or a bool the
+solver can type where it is read (``_typed_where_read``); a list inside, a None and every other
+item come out as they are stored. A walk records `[">", ["len", items], j]` for each item
 it takes and once more, taken false, where it ends. Each such check on the length is a fact,
 not a fork, where the list's length range proves it (``ListState.measure``, `core.spans`).
 
@@ -25,6 +26,7 @@ from typing import Any, Protocol
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.counts import Count
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
 from pyct.core.spans import UNKNOWN, decided
@@ -69,10 +71,12 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     """The item at ``position``, handed out as the target indexed it with ``written``.
 
     An int or a str comes out tracked, as ``items[written]``, whatever else the list holds: the
-    solver reads it by its position, by its list, or by what the path does with it. A list
-    inside comes out as it is stored, since the target may change it where it sits; one still
-    as its argument had it is named as the target indexed it (see ``_named``). A slot that no
-    longer holds what pyct saw there is read plain, named ``name``.
+    solver reads it by its position, by its list, or by what the path does with it. A float or
+    a bool comes out so where the solver can type it, and else as it is stored, with the
+    expression it came with (``_typed_where_read``). A list inside comes out as it is stored,
+    since the target may change it where it sits; one still as its argument had it is named as
+    the target indexed it (see ``_named``). A slot that no longer holds what pyct saw there is
+    read plain, named ``name``.
     """
     if not self.holds(name, position):
         return plain(list.__getitem__(self, position))
@@ -80,14 +84,60 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     if isinstance(item, ListState):
         _named(self, item, written)
         return item
-    if kind_of(item) not in TRACKED:
+    kind = kind_of(item)
+    if kind not in TRACKED or (kind in _BY_PLACE and not _typed_where_read(self, written, kind)):
         return item
     value = plain(item)
     expression: Expression = ["[]", self.expression, written]
+    if isinstance(value, float):
+        return ConcolicFloat.made(value, expression=expression, sink=self.sink)
+    if isinstance(value, bool):
+        return ConcolicBool.made(value, expression=expression, sink=self.sink)
     if isinstance(value, str):
         return ConcolicStr.made(value, expression=expression, sink=self.sink)
     assert isinstance(value, int)
     return ConcolicInt.made(value, expression=expression, sink=self.sink)
+
+
+# the kinds of item the solver types only by where a read lands or by its list's one kind: a path
+# cannot say which of them a read is, since Python compares an int with a float
+_BY_PLACE = frozenset({"float", "bool"})
+
+# the kinds of item that have a term, against which a list holds one kind
+_SCALARS = frozenset({"int", "str", "float", "bool"})
+
+
+def _typed_where_read(self: ListState, written: Expression, kind: str) -> bool:
+    """Whether the solver can type a float or a bool read from this list, as
+    ``solver.list_kinds.ListTyping`` does (containers-a-float-or-bool-item-typed-by-place-or-one-
+    kind).
+
+    An argument's list, or a list inside one at places the target wrote from the start, is
+    typed by the input's kind at a plain position. Any other position of it, and any list built
+    from it, is typed only when the list holds no other kind that has a term. A list reached
+    through a tracked index or one from the end is a row the solver cannot pick, since another
+    input's row may hold another kind.
+    """
+    form = self.expression
+    if is_read(form):
+        if not _at_places(form):
+            return False
+        if type(written) is int:
+            return True
+    return self.kinds & _SCALARS == {kind}
+
+
+def _at_places(form: Expression) -> bool:
+    """Whether a read of an argument's list takes each step at a key, or a position from the
+    start, the target wrote."""
+    step = form
+    while isinstance(step, list):
+        key = step[2]
+        written = isinstance(key, str) and key.startswith(("'", '"'))
+        if not written and not (type(key) is int and key >= 0):
+            return False
+        step = step[1]
+    return True
 
 
 def length(self: ListState) -> int:
