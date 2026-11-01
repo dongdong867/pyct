@@ -94,7 +94,8 @@ def test_an_added_int_or_str_takes_the_array_s_default_as_it_did() -> None:
     ("shape", "mixed"),
     [
         (ListShape(("int", "float")), True),
-        (ListShape(("int", "none")), True),
+        (ListShape(("int", "none")), False),
+        (ListShape(("bool", "none")), True),
         (ListShape(("float", "float")), False),
         (ListShape(()), False),
         (
@@ -105,9 +106,15 @@ def test_an_added_int_or_str_takes_the_array_s_default_as_it_did() -> None:
             ListShape(("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("int",))}),
             False,
         ),
+        (
+            ListShape(
+                ("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("int", "str"))}
+            ),
+            False,
+        ),
     ],
 )
-def test_a_list_is_mixed_when_its_items_or_its_rows_do_not_share_a_kind(
+def test_a_list_is_mixed_when_a_float_or_bool_sits_beside_another_kind(
     shape: ListShape, mixed: bool
 ) -> None:
     assert shape.mixed is mixed

@@ -58,7 +58,7 @@ from pyct.core.escapes import escaped_in, lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
-from pyct.core.list_state import plain
+from pyct.core.list_state import moved, plain
 from pyct.core.spans import decided, narrowed, proves
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked, own
@@ -253,11 +253,13 @@ def value(self: DictState, key: object, *, changing: bool = False) -> object:
     A tracked key reads the argument's value as ``config[name]``, so the solver may change the
     key; any other key hands out what the dict holds there. So does a tracked key into a dict
     the target changed, unless a change's own lookup (``changing``) found the key none of the
-    changed ones, and so the argument's.
+    changed ones, and so the argument's. A list or a dict under a tracked key is one another input
+    may not read (``list_state.moved``), and a dict reached so reads as it holds.
     """
     held = dict.__getitem__(self, plain(key))
-    if not is_tracked(key) or self.expression is None:
+    if not is_tracked(key) or self.expression is None or self.unplaced:
         return held
+    moved(held)
     if self.changed and not (changing and plain(key) not in self.changed):
         return held
     assert isinstance(key, ConcolicStr | ConcolicInt)

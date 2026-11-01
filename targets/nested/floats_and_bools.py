@@ -140,3 +140,114 @@ def joined_item_above(ys, xs):
     if zs[1] > 3.0:
         return "hit"
     return "miss"
+
+
+def sorted_row_above(grid, i):
+    row = grid[i]
+    row.sort()
+    if row[0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def sorted_row_equal(grid, i):
+    row = grid[i]
+    row.sort()
+    if row[0] == 0.75:
+        return "hit"
+    return "miss"
+
+
+def sorted_row_floor(grid, i):
+    row = grid[i]
+    row.sort()
+    if math.floor(row[0]) == 3:
+        return "hit"
+    return "miss"
+
+
+def sorted_row_is_true(grid, i):
+    row = grid[i]
+    row.sort()
+    if row[0] is True:
+        return "hit"
+    return "miss"
+
+
+def sorted_cut_equal(xs):
+    rest = xs[1:]
+    rest.sort()
+    if rest[0] == 0.75:
+        return "hit"
+    return "miss"
+
+
+def popped_and_sorted(xs):
+    xs.pop()
+    xs.sort()
+    if xs[0] + 0.5 > 2.5:
+        return "hit"
+    return "miss"
+
+
+def sorted_ints_row(grid, i):
+    row = grid[i]
+    row.sort()
+    if row[0] == 5:
+        return "hit"
+    return "miss"
+
+
+def cut_row_above(grid, i):
+    row = grid[i:][0]
+    if row[0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def keyed_row_above(d, k):
+    if d[k][0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def joined_row_above(ys, grid):
+    if (ys + grid)[1][0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def picked_dict_above(rows, i):
+    if rows[i]["x"] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def last_dict_above(rows):
+    if rows[-1]["x"] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def long_appended_float(xs):
+    for _ in range(600):
+        xs.append(0.5)
+    if xs[0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def long_appended_int(xs):
+    for _ in range(600):
+        xs.append(1)
+    if xs[0] > 3:
+        return "hit"
+    return "miss"
+
+
+def gains_later(xs, i, f):
+    ys = xs[i:]
+    ys.append(f)
+    if ys[1] > 3.0:
+        return "hit"
+    return "miss"

@@ -10,7 +10,7 @@ shadow behind, and the next operation that reads a position or the length sees i
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Self
+from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
@@ -23,9 +23,6 @@ from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
 TRACKED = frozenset({"int", "str", "float", "bool"})
-
-# the kinds of item a read may hand out under its own place (``core.list_reads.handed``)
-_BY_PLACE = frozenset({"float", "bool"})
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -98,6 +95,30 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
+def read_from_the_input(item: object) -> bool:
+    """Whether an item is a float or a bool of the input, tracked at its own place: what a read
+    leaves plain where the solver cannot type it (``core.list_reads.handed``). A parameter the
+    target stored is its own term wherever it is read, and so is a value it computed."""
+    if not isinstance(item, ConcolicFloat | ConcolicBool):
+        return False
+    return isinstance(item.expression, list) and is_read(item.expression)
+
+
+@runtime_checkable
+class Unplaceable(Protocol):
+    """A tracked container, which a read may reach at a place another input moves."""
+
+    def unplace(self) -> None: ...
+
+
+def moved(item: object) -> None:
+    """Note that the target reached ``item`` by a key or a position another input may move: a
+    float or a bool under it is not typed from then on, since its own place may not be where
+    another input reads."""
+    if isinstance(item, Unplaceable):
+        item.unplace()
+
+
 class ListState(list):
     """The state a tracked list keeps beside its items, and what every operation checks first.
 
@@ -119,16 +140,10 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
-    # the kinds every row an index of the argument's list of rows can pick holds, for a row the
-    # target reached by a tracked index or one from the end: what the solver types its reads by
+    # None for a list at places the target wrote. Else the target reached it by a tracked index,
+    # one from the end, or a cut: the kinds every row that index can pick holds, which the solver
+    # types its reads by, and none for a list the solver cannot place at all
     picked: frozenset[str] | None
-    # each int term, with its value now, that decides which of the argument's items a position
-    # from ``steady`` on reads: an index, a slice bound, a list's length before a join. A float
-    # or a bool handed out under its own place there holds them (``core.list_reads.handed``)
-    held: tuple[tuple[Expression, int], ...]
-    steady: int
-    # how many of ``held`` a read here already recorded as facts
-    told: int
 
     @classmethod
     def made(
@@ -152,9 +167,6 @@ class ListState(list):
         fields["span"] = span
         fields["marked"] = False
         fields["picked"] = None
-        fields["held"] = ()
-        fields["steady"] = len(items)
-        fields["told"] = 0
         return made
 
     def length(self) -> int:
@@ -219,8 +231,8 @@ class ListState(list):
         self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
-        and the range that form holds. It carries this one's mark, the kinds of the rows it was
-        picked from, and what holds its positions."""
+        and the range that form holds. It carries this one's mark and the kinds of the rows it
+        was picked from."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
@@ -228,22 +240,17 @@ class ListState(list):
         fields["span"] = span
         fields["marked"] = self.marked
         fields["picked"] = self.picked
-        fields["held"] = self.held
-        fields["steady"] = self.steady
         return made
 
-    def hold(
-        self, steady: int, *held: tuple[Expression, int], adding: frozenset[str] = frozenset()
-    ) -> None:
-        """Note terms that decide which of the argument's items each position from ``steady``
-        on reads, with the value each has now. Only a list that holds a float or a bool, or is
-        about to take in one of the ``adding`` kinds, notes them: no other item is handed out
-        under its own place."""
-        if not (self.kinds | adding) & _BY_PLACE:
-            return
-        fields = self.__dict__
-        fields["steady"] = min(self.steady, max(steady, 0))
-        fields["held"] = (*self.held, *held)
+    def unplace(self) -> None:
+        """Type no float or bool read from this list: see ``moved``."""
+        self.__dict__["picked"] = frozenset()
+
+    def took_in(self, other: object) -> None:
+        """Note that this list now holds the items of ``other``: one the solver types by another
+        row's kinds, or cannot place, leaves this one's floats and bools untyped too."""
+        if isinstance(other, ListState) and other.picked is not None:
+            self.unplace()
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False

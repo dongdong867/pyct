@@ -87,24 +87,7 @@ def _slice(self: ListState, key: slice) -> object:
     if step is not None:
         form = [*form, step]
     shadow = list.__getitem__(self.shadow, key)
-    made = self.derived(list.__getitem__(self, key), shadow, form, _cut_span(self, bounds, step))
-    _cut_held(self, made, key.start, step)
-    return made
-
-
-def _cut_held(self: ListState, made: ListState, start: object, step: object) -> None:
-    """What decides which of the argument's items each position of a cut reads: a tracked start
-    at its value, and the list's length for a start from the end or a step back. A plain start
-    from the front moves every position down by itself."""
-    value = changes.tracked_value(start)
-    number = value if value is not None else (reads.plain_index(start) or 0)
-    held = [] if value is None else [(changes.position(start), value)]
-    if number < 0 or step == -1:
-        held.append((["len", self.expression], self.length()))
-    if held:
-        made.hold(0, *held)
-    else:
-        made.__dict__["steady"] = max(self.steady - number, 0)
+    return self.derived(list.__getitem__(self, key), shadow, form, _cut_span(self, bounds, step))
 
 
 def _cut_span(self: ListState, bounds: tuple[Expression, Expression], step: object) -> spans.Span:
@@ -135,7 +118,7 @@ def _item(self: ListState, key: object) -> object:
     at = changes.resolved(self, key)
     if not self.holds("__getitem__", at):
         return own(list.__getitem__, self, key)
-    return reads.handed(self, at, changes.position(key), "__getitem__", changes.tracked_value(key))
+    return reads.handed(self, at, changes.position(key), "__getitem__")
 
 
 def _found(self: ListState, value: object, name: str) -> list[int] | None:
@@ -243,22 +226,10 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form], span)
     fields = made.__dict__
     fields["kinds"] = self.kinds | kinds
-    _hold_joined(made, *((other, self) if reflected else (self, other)), left_form)
+    made.took_in(other)
     if isinstance(other, ListState) and other.marked:
         made.mark()
     return made
-
-
-def _hold_joined(
-    made: ListState, first: list[object], second: list[object], first_form: Expression
-) -> None:
-    """What decides which of the argument's items each position of a join reads: what decides
-    each side's, and the first side's length for the second side's positions."""
-    fields = made.__dict__
-    fields["held"], fields["steady"] = (), made.length()
-    made.hold(changes.steady_of(first), *changes.held_of(first), *changes.held_of(second))
-    length = list.__len__(first)
-    made.hold(length, (["len", first_form], length))
 
 
 def _python_joined(self: ListState, name: str, left: list[object], right: list[object]) -> object:
@@ -284,9 +255,7 @@ def _repeated(self: ListState, count: object, name: str, *, reflected: bool = Fa
         return own(list.__mul__, list.copy(self), times)
     form = ["*", times, self.expression] if reflected else ["*", self.expression, times]
     span = spans.repeated(self.span, times)
-    made = self.derived(self.storage() * times, self.shadow * times, form, span)
-    made.hold(self.length(), (["len", self.expression], self.length()))
-    return made
+    return self.derived(self.storage() * times, self.shadow * times, form, span)
 
 
 def _copied(self: ListState) -> object:
@@ -331,9 +300,6 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     fields = self.__dict__
     fields["shadow"] = [shadow[at] for at in placed]
     fields["expression"] = ["[,]", *(["[]", self.expression, at] for at in placed)]
-    if self.held:
-        # each position now reads the item the walk found, wherever it was
-        self.hold(0)
     # a display holds exactly its items, as many as the walk took
     self.resized(spans.exactly(len(placed)))
 

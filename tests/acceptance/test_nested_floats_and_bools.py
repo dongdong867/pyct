@@ -28,6 +28,8 @@ SEARCHES = "targets.lists.float_searches"
 VALUES = "targets.dicts.float_and_bool_values"
 ITEMS = "targets.floats.items"
 ACCEPTED = REPO_ROOT / "tools" / "compare_coverage" / "accepted-per-merge.jsonl"
+QUICK = ("--budget", "4", "--solver-timeout", "2")
+_ITEM_TESTS = ("3.0", "0.75", "2.5", "floor", "true")
 
 
 def lines_of(target: str, seed: object, *argv: str) -> list[dict[str, object]]:
@@ -204,12 +206,6 @@ def test_a_floor_of_a_float_in_a_list_built_on_a_picked_row_is_rendered() -> Non
     assert solved(lines_of(f"{NESTED}::picked_row_floor", {"grid": [[0.5], [1]], "i": 0}))
 
 
-def test_a_nan_in_a_row_an_index_picks_is_reached() -> None:
-    lines = solved(lines_of(f"{NESTED}::picked_row_nan", {"grid": [[0.5], [1]], "i": 0}))
-    items = [row[0] for line in lines for row in args_of(line, "grid") if row]
-    assert any(isinstance(item, float) and math.isnan(item) for item in items), lines
-
-
 @pytest.mark.parametrize(
     ("function", "seed"),
     [
@@ -237,25 +233,59 @@ def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
         ("picked_row_above", {"grid": [[1], [0.5]], "i": 1}),
         ("cut_item_above", {"xs": [1, 0.5], "i": 1}),
         ("joined_item_above", {"ys": [1], "xs": [0.5, 1]}),
+        ("sorted_row_above", {"grid": [[1], [2.5, 0.5]], "i": 1}),
+        ("sorted_row_equal", {"grid": [[2.5, 0.5], [1]], "i": 0}),
+        ("sorted_row_floor", {"grid": [[2.5, 0.5], [1]], "i": 0}),
+        ("sorted_row_is_true", {"grid": [[False, False], [1]], "i": 0}),
+        ("sorted_cut_equal", {"xs": [1, 2.5, 0.5]}),
+        ("popped_and_sorted", {"xs": [0.5, 2, False]}),
+        ("cut_row_above", {"grid": [[0.5], [0.5]], "i": 1}),
+        ("keyed_row_above", {"d": {"a": [0.5], "b": [0.5]}, "k": "b"}),
+        ("joined_row_above", {"ys": [[1]], "grid": [[0.5], [1]]}),
+        ("picked_dict_above", {"rows": [{"x": 0.5}, {"x": 0.5}], "i": 1}),
+        ("last_dict_above", {"rows": [{"x": 0.5}, {"x": 0.5}]}),
     ],
 )
-def test_a_float_under_its_own_place_holds_what_picks_it(function: str, seed: object) -> None:
+def test_a_float_or_bool_the_solver_cannot_type_stays_plain_and_is_named(
+    function: str, seed: object
+) -> None:
     target = f"{NESTED}::{function}"
-    lines = lines_of(target, seed)
-    assert all(line["mismatch_at"] is None for line in lines), lines
-    assert missing_lines(target, lines) == set()
-
-
-def test_a_fork_on_an_index_a_float_under_its_own_place_holds_is_an_unsat_miss() -> None:
-    target = f"{NESTED}::picked_row_then_index"
-    result = run_pyct(target, "--args", json.dumps({"grid": [[1], [0.5]], "i": 1}))
+    result = run_pyct(target, "--args", json.dumps(seed), *QUICK)
     assert result.returncode == 0, result.stderr
-    first = _return_line(target, "first")
-    assert missing_lines(target, input_lines(result.stdout)) == {first}
-    why = summary_line(result.stdout)["why_uncovered"]
-    assert isinstance(why, list)
-    entry = next(entry for entry in why if first in entry["lines"])
-    assert entry["tries"]["unsat"] >= 1, entry
+    summary = summary_line(result.stdout)
+    seed_line = input_lines(result.stdout)[0]
+    read_at = _return_line(target, "hit") - 1
+    # the seed reads the float or the bool: its fork never reaches the solver, and the run says so
+    assert not [fork for fork in forks_of(seed_line) if _tests_the_item(fork, read_at)], seed_line
+    assert seed_line["downgrades"], seed_line
+    assert summary["stopped"] != "solver failed", summary
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("sorted_row_above", {"grid": [[1], [2.5, 0.5]], "i": 1}),
+        ("sorted_ints_row", {"grid": [[9, 6], [1, "a"]], "i": 0}),
+    ],
+)
+def test_a_list_of_mixed_rows_covers_what_its_ints_reach(function: str, seed: object) -> None:
+    target = f"{NESTED}::{function}"
+    assert missing_lines(target, lines_of(target, seed, *QUICK)) == set()
+
+
+def test_a_long_series_of_appends_reads_its_float() -> None:
+    target = f"{NESTED}::long_appended_float"
+    result = run_pyct(target, "--args", json.dumps({"xs": [0.5]}), *QUICK)
+    assert result.returncode == 0, result.stderr
+    assert "RecursionError" not in result.stdout
+    assert missing_lines(target, input_lines(result.stdout)) == set()
+
+
+def _tests_the_item(fork: dict[str, object], read_at: int) -> bool:
+    """Whether a fork on the line that tests the item is that test, by what the targets test it
+    with, rather than a check on a length or a key."""
+    text = json.dumps(fork["expression"])
+    return fork["line"] == read_at and any(test in text for test in _ITEM_TESTS)
 
 
 def _parts(expression: object) -> list[object]:

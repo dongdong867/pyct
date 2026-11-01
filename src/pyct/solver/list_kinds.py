@@ -9,7 +9,7 @@ Python compares and adds an int or a str only with a value of its own kind, and 
 recorded on a value of the kind the target read. Core hands out a float or a bool only where one
 of the first two types it (``core.list_reads``), since Python compares an int with a float: a
 row a tracked or from-the-end index picks is typed by every row's kinds, so core hands one out
-from it only when every row holds that one kind, and as stored from a list built on such a row.
+from it only when every row holds that one kind, and plain from a list built on such a row.
 """
 
 from __future__ import annotations
@@ -142,8 +142,9 @@ def _one_kind(kinds: Kinds) -> type | None:
     """The type of any item read from a list, when its items say.
 
     A list that holds floats or bools alone reads as them. Any other list reads as the one of
-    an int and a str it can hold: core hands out a float or a bool from it as stored, so no read
-    of it is one. A list with neither reads as the one kind the solver may add.
+    an int and a str it can hold: core hands out a float or a bool from it plain, or as the
+    term it was given, so no read of it is one. A list with neither reads as the one kind the
+    solver may add.
     """
     held = kinds.kinds & ITEM_TYPES.keys()
     if len(held) == 1 and not held <= _BY_THE_PATH:
