@@ -116,6 +116,14 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
+    # the kinds every row an index of the argument's list of rows can pick holds, for a row the
+    # target reached by a tracked index or one from the end: what the solver types its reads by
+    picked: frozenset[str] | None
+    # each int term, with its value now, that decides which of the argument's items a position
+    # from ``steady`` on reads: an index, a slice bound, a list's length before a join. A float
+    # or a bool handed out under its own place there holds them (``core.list_reads.handed``)
+    held: tuple[tuple[Expression, int], ...]
+    steady: int
 
     @classmethod
     def made(
@@ -138,6 +146,9 @@ class ListState(list):
         fields["walked_at"] = None
         fields["span"] = span
         fields["marked"] = False
+        fields["picked"] = None
+        fields["held"] = ()
+        fields["steady"] = len(items)
         return made
 
     def length(self) -> int:
@@ -202,14 +213,25 @@ class ListState(list):
         self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
-        and the range that form holds. It carries this one's mark."""
+        and the range that form holds. It carries this one's mark, the kinds of the rows it was
+        picked from, and what holds its positions."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds
         fields["span"] = span
         fields["marked"] = self.marked
+        fields["picked"] = self.picked
+        fields["held"] = self.held
+        fields["steady"] = self.steady
         return made
+
+    def hold(self, steady: int, *held: tuple[Expression, int]) -> None:
+        """Note terms that decide which of the argument's items each position from ``steady``
+        on reads, with the value each has now."""
+        fields = self.__dict__
+        fields["steady"] = min(self.steady, max(steady, 0))
+        fields["held"] = (*self.held, *(pair for pair in held if pair not in self.held))
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False

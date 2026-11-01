@@ -7,9 +7,9 @@ from the end of one that holds a float or a bool; the list's kind, when every it
 has a term is of one kind; and else, for an int or a str, what the path does with it, since
 Python compares and adds an int or a str only with a value of its own kind, and the fork was
 recorded on a value of the kind the target read. Core hands out a float or a bool only where one
-of the first two types it (``core.list_reads``), since Python compares an int with a float. It
-hands one out as stored from a list built on a row a tracked or from-the-end index picks, since
-the solver types that list by every row's kinds.
+of the first two types it (``core.list_reads``), since Python compares an int with a float: a
+row a tracked or from-the-end index picks is typed by every row's kinds, so core hands one out
+from it only when every row holds that one kind, and as stored from a list built on such a row.
 """
 
 from __future__ import annotations

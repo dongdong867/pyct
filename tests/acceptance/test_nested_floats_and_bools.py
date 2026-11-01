@@ -13,7 +13,14 @@ from typing import Any
 
 import pytest
 
-from tests.acceptance.harness import REPO_ROOT, forks_of, input_lines, run_pyct, union_of
+from tests.acceptance.harness import (
+    REPO_ROOT,
+    forks_of,
+    input_lines,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 
 NESTED = "targets.nested.floats_and_bools"
 MIXED = "targets.lists.mixed_numbers"
@@ -201,6 +208,74 @@ def test_a_nan_in_a_row_an_index_picks_is_reached() -> None:
     lines = solved(lines_of(f"{NESTED}::picked_row_nan", {"grid": [[0.5], [1]], "i": 0}))
     items = [row[0] for line in lines for row in args_of(line, "grid") if row]
     assert any(isinstance(item, float) and math.isnan(item) for item in items), lines
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("picked_row_above", {"grid": [[0.5], [0.5]], "i": 1}),
+        ("picked_row_flag", {"grid": [[False], [False]], "i": 1}),
+    ],
+)
+def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
+    function: str, seed: object
+) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed)
+    read = ["[]", ["[]", "grid", "i"], 0]
+    expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
+    assert any(
+        read == part for expression in expressions for part in [expression, *_parts(expression)]
+    )
+    assert all(line["mismatch_at"] is None for line in lines), lines
+    assert missing_lines(target, lines) == set()
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("picked_row_above", {"grid": [[1], [0.5]], "i": 1}),
+        ("cut_item_above", {"xs": [1, 0.5], "i": 1}),
+        ("joined_item_above", {"ys": [1], "xs": [0.5, 1]}),
+    ],
+)
+def test_a_float_under_its_own_place_holds_what_picks_it(function: str, seed: object) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed)
+    assert all(line["mismatch_at"] is None for line in lines), lines
+    assert missing_lines(target, lines) == set()
+
+
+def test_a_fork_on_an_index_a_float_under_its_own_place_holds_is_an_unsat_miss() -> None:
+    target = f"{NESTED}::picked_row_then_index"
+    result = run_pyct(target, "--args", json.dumps({"grid": [[1], [0.5]], "i": 1}))
+    assert result.returncode == 0, result.stderr
+    first = _return_line(target, "first")
+    assert missing_lines(target, input_lines(result.stdout)) == {first}
+    why = summary_line(result.stdout)["why_uncovered"]
+    assert isinstance(why, list)
+    entry = next(entry for entry in why if first in entry["lines"])
+    assert entry["tries"]["unsat"] >= 1, entry
+
+
+def _parts(expression: object) -> list[object]:
+    """The operands of an expression, none for a leaf."""
+    return list(expression[1:]) if isinstance(expression, list) else []
+
+
+def _return_line(target: str, value: str) -> int:
+    """The line of the function's ``return`` of a str literal."""
+    module, _, function = target.partition("::")
+    path = REPO_ROOT.joinpath(*module.split(".")).with_suffix(".py")
+    tree = ast.parse(path.read_text())
+    found = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
+    return next(
+        node.lineno
+        for node in ast.walk(found)
+        if isinstance(node, ast.Return)
+        and isinstance(node.value, ast.Constant)
+        and node.value.value == value
+    )
 
 
 def test_a_bool_read_by_is_true_records_the_read_as_its_fork() -> None:

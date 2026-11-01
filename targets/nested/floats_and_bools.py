@@ -106,3 +106,37 @@ def picked_row_nan(grid, i):
     if row[0] != row[0]:
         return "nan"
     return "a number"
+
+
+def picked_row_above(grid, i):
+    if grid[i][0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def picked_row_flag(grid, i):
+    if grid[i][0]:
+        return "on"
+    return "off"
+
+
+def picked_row_then_index(grid, i):
+    if grid[i][0] > 3.0:
+        if i == 0:
+            return "first"
+        return "hit"
+    return "miss"
+
+
+def cut_item_above(xs, i):
+    rest = xs[i:]
+    if rest[0] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def joined_item_above(ys, xs):
+    zs = ys + xs
+    if zs[1] > 3.0:
+        return "hit"
+    return "miss"

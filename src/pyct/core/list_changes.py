@@ -48,6 +48,37 @@ def position(key: object) -> Expression | None:
     return key.expression if type(key) is ConcolicInt else None
 
 
+def tracked_value(key: object) -> int | None:
+    """The value of a tracked index, or None for any other key."""
+    return int.__int__(key) if type(key) is ConcolicInt else None
+
+
+def held_of(value: object) -> tuple[tuple[Expression, int], ...]:
+    """What decides which of the argument's items a list's positions read (``ListState.held``):
+    none for a list pyct does not follow."""
+    return value.held if isinstance(value, ListState) else ()
+
+
+def steady_of(value: list[object]) -> int:
+    """How many of a list's first positions read the same items on every input."""
+    return value.steady if isinstance(value, ListState) else list.__len__(value)
+
+
+def moved_from(self: ListState, steady: int, *keys: object) -> None:
+    """Note, before a change, that positions from ``steady`` on may read other items on another
+    input: as each tracked key among ``keys`` and the list's length now decide."""
+    held = [(key.expression, int.__int__(key)) for key in keys if type(key) is ConcolicInt]
+    self.hold(steady, *held, (["len", self.expression], self.length()))
+
+
+def shifted_from(self: ListState, key: object) -> None:
+    """Note, before a change at the index ``key`` that moves the items after it, which positions
+    may read other items on another input: those from a plain index from the front, and every
+    one for a tracked index or one from the end."""
+    index = plain_index(key)
+    moved_from(self, min(index, self.length()) if index is not None and index >= 0 else 0, key)
+
+
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
     whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
@@ -180,6 +211,7 @@ def append(self: ListState, value: object) -> None:
         unfollowed(self, "append", change)
         return
     kinds = frozenset({kind_of(value)})
+    moved_from(self, self.length())
     made(self, change, joined(self.expression, ["[,]", form]), kinds, one_more(self.span))
 
 
@@ -201,6 +233,8 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
         return
     form, kinds = other
     span = spans.added(self.span, self.span_of(values if isinstance(values, list) else taken))
+    moved_from(self, self.length())
+    self.hold(self.length(), *held_of(values))
     made(self, change, joined(self.expression, form), kinds, span)
 
 
@@ -234,6 +268,7 @@ def insert(self: ListState, index: Any, value: object) -> None:
         unfollowed(self, "insert", change)
         return
     kinds = frozenset({kind_of(value)})
+    shifted_from(self, index)
     made(self, change, placed(self.expression, at, form), kinds, one_more(self.span))
 
 
@@ -256,7 +291,9 @@ def pop(self: ListState, *args: Any) -> object:
     if not self.holds("pop", at):
         # the slot no longer holds what pyct saw there: the list is plain, and so is the pop
         return own(list.pop, self, *args)
-    item = handed(self, at, position(key), "pop")
+    item = handed(self, at, position(key), "pop", tracked_value(key))
+    if args:
+        shifted_from(self, key)
     form = (
         ["[:]", self.expression, None, -1] if not args else dropped(self.expression, position(key))
     )
@@ -298,6 +335,7 @@ def reverse(self: ListState) -> None:
     if not self.holds("reverse"):
         own(list.reverse, self)
         return
+    moved_from(self, 0)
     made(self, list.reverse, ["[:]", self.expression, None, None, -1], frozenset(), self.span)
 
 
@@ -309,6 +347,7 @@ def repeat(self: ListState, count: Any, name: str) -> None:
         return
     times = plain_index(count)
     assert times is not None
+    moved_from(self, self.length())
     made(self, change, ["*", self.expression, times], frozenset(), spans.repeated(self.span, times))
 
 
@@ -334,6 +373,9 @@ def assign(self: ListState, key: Any, value: object) -> None:
     if not in_range(self, key, "__setitem__"):
         own(change, self)
     kinds = frozenset({kind_of(value)})
+    index = plain_index(key)
+    if index is None or index < 0:
+        moved_from(self, 0, key)
     made(self, change, put(self.expression, position(key), form), kinds, self.span)
 
 
@@ -348,6 +390,8 @@ def _assign_slice(self: ListState, key: slice, value: object) -> None:
     span = spans.added(
         _cut(self, bounds), self.span_of(value if isinstance(value, list) else taken)
     )
+    moved_from(self, 0, key.start, key.stop)
+    self.hold(0, *held_of(value))
     made(self, change, spliced(self.expression, bounds, form), kinds, span)
 
 
@@ -369,10 +413,12 @@ def delete(self: ListState, key: Any) -> None:
         unfollowed(self, "__delitem__", change)
         return
     if bounds is not None:
+        moved_from(self, 0, key.start, key.stop)
         made(self, change, spliced(self.expression, bounds, None), frozenset(), _cut(self, bounds))
         return
     if not in_range(self, key, "__delitem__"):
         own(change, self)
+    shifted_from(self, key)
     made(self, change, dropped(self.expression, position(key)), frozenset(), one_less(self.span))
 
 

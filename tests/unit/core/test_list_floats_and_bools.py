@@ -8,7 +8,7 @@ import pytest
 
 from pyct.binding.bind import bind
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_compares import matches
@@ -28,6 +28,17 @@ def forks(sink: list[SinkItem]) -> list[Expression]:
 
 def downgrades(sink: list[SinkItem]) -> list[str]:
     return [item.name for item in sink if isinstance(item, Downgrade)]
+
+
+def _held(sink: list[SinkItem]) -> list[Expression]:
+    """The terms the run held at their values: its facts that one equals a number."""
+    return [
+        fact.expression
+        for fact in sink
+        if isinstance(fact, Fact)
+        and isinstance(fact.expression, list)
+        and fact.expression[0] == "=="
+    ]
 
 
 def test_a_tracked_float_has_its_kind_and_plain_value() -> None:
@@ -131,17 +142,88 @@ def test_an_int_in_a_list_of_other_kinds_comes_out_as_indexed_as_it_did() -> Non
     assert (xs + ["a"])[0].expression == ["[]", form, 0]
 
 
+@pytest.mark.parametrize(
+    ("grid", "kind"), [([[0.5], [1.5]], ConcolicFloat), ([[False], [True, None]], ConcolicBool)]
+)
 @pytest.mark.parametrize("index", [0, -1])
-def test_a_float_in_a_row_reached_by_an_index_the_solver_cannot_place_keeps_its_own_place(
-    index: int,
+def test_a_row_an_index_picks_from_rows_of_one_kind_hands_its_item_out_as_indexed(
+    grid: list[list[object]], kind: type, index: int
 ) -> None:
     sink: list[SinkItem] = []
-    args: Any = bind({"grid": [[0.5], [1.5]], "i": index}, sink)
-    grid = args["grid"]
+    args: Any = bind({"grid": grid, "i": index}, sink)
 
-    row = grid[args["i"]] if index == 0 else grid[index]
+    item = (args["grid"][args["i"]] if index == 0 else args["grid"][index])[0]
 
-    assert row[0].expression == ["[]", ["[]", "grid", 0 if index == 0 else 1], 0]
+    assert type(item) is kind
+    assert item.expression == ["[]", ["[]", "grid", "i" if index == 0 else -1], 0]
+    assert not _held(sink)
+
+
+@pytest.mark.parametrize(
+    ("index", "held"),
+    [
+        (1, [["==", "i", 1]]),
+        (-1, [["==", "i", -1], ["==", ["len", "grid"], 2]]),
+    ],
+)
+def test_a_float_in_a_row_an_index_picks_from_rows_of_other_kinds_holds_the_index(
+    index: int, held: list[Expression]
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": [[1], [0.5]], "i": index}, sink)
+
+    row = args["grid"][args["i"]]
+    item, again = row[0], row[0]
+
+    assert item.expression == again.expression == ["[]", ["[]", "grid", 1], 0]
+    assert _held(sink) == held
+
+
+@pytest.mark.parametrize(
+    ("seed", "read", "held"),
+    [
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][a["i"] :][0], [["==", "i", 1]]),
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][-1:][0], [["==", ["len", "xs"], 2]]),
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][1:][0], []),
+        ({"xs": [0.5, 1], "ys": [1]}, lambda a: (a["ys"] + a["xs"])[1], [["==", ["len", "ys"], 1]]),
+        ({"xs": [0.5, 1], "ys": [1]}, lambda a: (a["xs"] + a["ys"])[0], []),
+        ({"xs": [0.5, 1], "i": 0}, lambda a: (a["xs"] * 2)[2], [["==", ["len", "xs"], 2]]),
+    ],
+)
+def test_a_float_under_its_own_place_holds_what_decides_where_it_lands(
+    seed: dict[str, object], read: Any, held: list[Expression]
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind(seed, sink)
+
+    assert type(read(args)) is ConcolicFloat
+    assert _held(sink) == held
+
+
+@pytest.mark.parametrize(
+    ("change", "position", "held"),
+    [
+        (lambda xs, i: xs.append(0.5), 1, []),
+        (lambda xs, i: xs.extend([2]), 1, []),
+        (lambda xs, i: xs.insert(0, 2), 2, [["==", ["len", "xs"], 2]]),
+        (lambda xs, i: xs.insert(i, 2), 2, [["==", "i", 0], ["==", ["len", "xs"], 2]]),
+        (lambda xs, i: xs.reverse(), 0, [["==", ["len", "xs"], 2]]),
+        (lambda xs, i: xs.__setitem__(0, 2), 1, []),
+        (lambda xs, i: xs.__delitem__(0), 0, [["==", ["len", "xs"], 2]]),
+        (lambda xs, i: xs.pop(-2), 0, [["==", ["len", "xs"], 2]]),
+    ],
+)
+def test_a_change_notes_what_decides_where_its_items_land(
+    change: Any, position: int, held: list[Expression]
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [1, 0.5], "i": 0}, sink)
+    xs = args["xs"]
+    change(xs, args["i"])
+    before = len(_held(sink))
+
+    assert type(xs[position]) is ConcolicFloat
+    assert _held(sink)[before:] == held
 
 
 @pytest.mark.parametrize(
