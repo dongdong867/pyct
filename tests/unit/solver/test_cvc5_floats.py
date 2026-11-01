@@ -1,5 +1,6 @@
 """A path on floats is asked finite first, and frees only the leaves an unsat rests on."""
 
+import json
 import logging
 import math
 import shutil
@@ -8,6 +9,7 @@ from typing import Any
 
 import pytest
 
+from pyct.binding.shapes import DictShape, ListAnswer, ListShape
 from pyct.core.branch import Expression
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
@@ -293,3 +295,64 @@ def test_the_real_cvc5_keeps_a_leaf_finite_beside_one_only_nan_serves() -> None:
     assert math.isnan(x)
     assert math.isfinite(y)
     assert not y > 0.0
+
+
+def item_of(answer: Sat, name: str) -> float:
+    """The first float a list's answer holds."""
+    listed = answer.model[name]
+    assert isinstance(listed, ListAnswer)
+    item = listed.arrays["float"].at(0)
+    assert isinstance(item, float)
+    return item
+
+
+@needs_cvc5
+def test_a_core_on_a_read_frees_its_list_and_leaves_another_list_held() -> None:
+    shapes = {"xs": ListShape(("float",), fill="float"), "ys": ListShape(("float",), fill="float")}
+    item: Expression = ["[]", "xs", 0]
+    other: Expression = ["[]", "ys", 0]
+    prefix = (fork(["!=", item, item], taken=True), fork([">", other, 1.0], taken=True))
+
+    answer = solve(prefix, {}, 5.0, shapes)
+
+    assert isinstance(answer, Sat)
+    assert math.isnan(item_of(answer, "xs"))
+    assert math.isfinite(item_of(answer, "ys"))
+
+
+@needs_cvc5
+def test_a_float_read_held_finite_answers_a_finite_double() -> None:
+    shapes = {"xs": ListShape(("float", "float"), fill="float")}
+    prefix = (fork([">", ["[]", "xs", 0], 0.0], taken=False),)
+
+    answer = solve(prefix, {}, 5.0, shapes)
+
+    assert isinstance(answer, Sat)
+    assert math.isfinite(item_of(answer, "xs"))
+
+
+@needs_cvc5
+def test_a_float_a_dict_declares_is_freed_by_a_core_that_names_it() -> None:
+    origin = {"d": DictShape(keys=("a",), kinds=("float",))}
+    read: Expression = ["[]", "d", "k"]
+    prefix = (fork(["in", "k", "d"], taken=True), fork(["!=", read, read], taken=True))
+
+    answer = solve(prefix, {"k": str}, 5.0, origin, {"k": "a"})
+
+    assert isinstance(answer, Sat)
+    value = answer.model[json.dumps(["[]", "d", "'a'"])]
+    assert isinstance(value, float) and math.isnan(value)
+
+
+def test_a_mixed_list_held_to_its_length_is_asked_free_after_an_unsat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, "unsat\n", 'sat\n((|arg.xs.len| 1))\n(error "none")\n')
+    monkeypatch.setenv("PATH", str(tmp_path))
+    shapes = {"xs": ListShape(("int", "float"))}
+
+    solve((fork(["==", ["len", "xs"], 1], taken=True),), {}, 5.0, shapes)
+
+    first, second = (tmp_path / "program0").read_text(), (tmp_path / "program1").read_text()
+    assert "(assert (>= |arg.xs.len| 2))" in first
+    assert "(assert (>= |arg.xs.len| 2))" not in second

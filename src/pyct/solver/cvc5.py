@@ -22,9 +22,10 @@ from pyct.solver.answer import (
 from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.floats import FINITE
 from pyct.solver.given import Given, answered, argv, options, took
+from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
-from pyct.solver.render import Program, float_leaves, program
+from pyct.solver.render import Program, program
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
 
@@ -123,7 +124,8 @@ def solve(
     float-floor-division-a-real-floor-inside-a-bound.
 
     A program that keeps each dict's keys no fork names and makes none up answers with the
-    input's keys where the path does not ask for others. An unsat to it asks once more with
+    input's keys where the path does not ask for others, and one that holds a list of mixed
+    kinds to the input's length keeps its items' kinds. An unsat to it asks once more with
     them free. A program that keeps a key a walk read at its place answers an input that walks
     as the path did; an unsat to it runs every ask once more without the places, where only an
     unsat is the path's, and a model is an ``Unknown()``, since pyct cannot tell whether the
@@ -133,8 +135,9 @@ def solve(
     ask; an unsat to it is asked with the keys the forks name chosen (``walk_keys``,
     ``_chosen``, ``_after_unsat``; let-the-solver-choose-a-small-dict-s-walk-key).
 
-    A prefix that names a float leaf is asked first with each such leaf held
-    finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
+    A prefix that names a float leaf or reads a float item is asked first with each such float
+    held finite; decision float-finite-first-frees-the-core-s-leaves-and-lists. See
+    ``_finite_first``.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -362,18 +365,20 @@ def _write(
 
 
 def _finite_first(path: _Path, origin: Origin, written: Program, finite: frozenset[str]) -> Answer:
-    """What cvc5 answers the program, each float leaf in ``finite`` held finite at first.
+    """What cvc5 answers the program, each float leaf in ``finite`` held finite at first, and
+    each float a list or a dict in ``finite`` reads.
 
     Only an ``Unsat`` asks again: once with the same leaves held and cvc5 asked for its unsat
     core, which says which of them the unsat rests on, and then with those leaves free and the
     rest still held. That repeats until an ask answers otherwise or the core names no held
     leaf. So a leaf may be NaN or an infinity only once an unsat that held it finite names it
-    in its core. One core may name several leaves where freeing any one of them would do, and
-    each is freed. The core costs its ask time only after an unsat, since asking for it slows
-    some sat answers.
+    in its core, and a list's or a dict's float once the core names any float it holds, which
+    frees all of them. One core may name several leaves where freeing any one of them would do,
+    and each is freed. The core costs its ask time only after an unsat, since asking for it
+    slows some sat answers, and a program that holds nothing finite asks no core.
     """
     answer, _ = _ask_by(written, origin.until)
-    while finite and isinstance(answer, Unsat):
+    while written.finite and isinstance(answer, Unsat):
         cored = _write(path, origin, finite, cores=True)
         if not isinstance(cored, Program):
             return cored
@@ -385,7 +390,8 @@ def _finite_first(path: _Path, origin: Origin, written: Program, finite: frozens
         freer = _write(path, origin, finite)
         if not isinstance(freer, Program):
             return freer
-        answer, _ = _ask_by(freer, origin.until)
+        written = freer
+        answer, _ = _ask_by(written, origin.until)
     return answer
 
 
@@ -450,15 +456,17 @@ def _read(stdout: str, stderr: str, written: Program) -> Answer:
 
 
 def _core(stdout: str, written: Program) -> frozenset[str]:
-    """The leaves an unsat answer's dumped core holds finite, by their names.
+    """The leaves, lists and dicts an unsat answer's dumped core holds finite, by their names.
 
     cvc5 prints the core right after the answer, its assertion names on one
     line or one per line; every other line after an unsat is a refusal that
-    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
+    names no assertion. Each name is ``FINITE`` and the leaf's symbol, or the symbol of the
+    list or dict that holds the float and a count (``held_items``).
     """
     words = stdout.replace("(", " ").replace(")", " ").split()
-    symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
-    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
+    names = {**written.names_by_symbol, **written.holders}
+    named = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
+    return frozenset(names[symbol.partition("!")[0]] for symbol in named)
 
 
 def _answer(stdout: str, stderr: str) -> Answer:

@@ -201,6 +201,7 @@ def extend(self: ListState, values: object, name: str = "extend") -> None:
         return
     form, kinds = other
     span = spans.added(self.span, self.span_of(values if isinstance(values, list) else taken))
+    self.took_in(values)
     made(self, change, joined(self.expression, form), kinds, span)
 
 
@@ -348,6 +349,7 @@ def _assign_slice(self: ListState, key: slice, value: object) -> None:
     span = spans.added(
         _cut(self, bounds), self.span_of(value if isinstance(value, list) else taken)
     )
+    self.took_in(value)
     made(self, change, spliced(self.expression, bounds, form), kinds, span)
 
 

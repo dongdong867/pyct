@@ -10,18 +10,19 @@ shadow behind, and the next operation that reads a position or the length sees i
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Self
+from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.spans import UNKNOWN, Span, exactly, measured
 from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
-TRACKED = frozenset({"int", "str"})
+TRACKED = frozenset({"int", "str", "float", "bool"})
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -32,6 +33,7 @@ _KINDS: dict[type, str] = {
     bool: "bool",
     ConcolicBool: "bool",
     float: "float",
+    ConcolicFloat: "float",
     type(None): "none",
     list: "list",
     dict: "dict",
@@ -62,11 +64,12 @@ _PLAIN: dict[type, Callable[[Any], object]] = {
     ConcolicInt: int.__int__,
     ConcolicStr: str.__str__,
     ConcolicBool: int.__bool__,
+    ConcolicFloat: float.__float__,
 }
 
 
 def plain(value: object) -> object:
-    """A tracked int, str or bool as the plain value it is; any other value as it is."""
+    """A tracked int, str, bool or float as the plain value it is; any other value as it is."""
     read = _PLAIN.get(type(value))
     return value if read is None else read(value)
 
@@ -92,6 +95,30 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
+def read_from_the_input(item: object) -> bool:
+    """Whether an item is a float or a bool of the input, tracked at its own place: what a read
+    leaves plain where the solver cannot type it (``core.list_reads.handed``). A parameter the
+    target stored is its own term wherever it is read, and so is a value it computed."""
+    if not isinstance(item, ConcolicFloat | ConcolicBool):
+        return False
+    return isinstance(item.expression, list) and is_read(item.expression)
+
+
+@runtime_checkable
+class Unplaceable(Protocol):
+    """A tracked container, which a read may reach at a place another input moves."""
+
+    def unplace(self) -> None: ...
+
+
+def moved(item: object) -> None:
+    """Note that the target reached ``item`` by a key or a position another input may move: a
+    float or a bool under it is not typed from then on, since its own place may not be where
+    another input reads."""
+    if isinstance(item, Unplaceable):
+        item.unplace()
+
+
 class ListState(list):
     """The state a tracked list keeps beside its items, and what every operation checks first.
 
@@ -113,6 +140,10 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
+    # None for a list at places the target wrote. Else the target reached it by a tracked index,
+    # one from the end, or a cut: the kinds every row that index can pick holds, which the solver
+    # types its reads by, and none for a list the solver cannot place at all
+    picked: frozenset[str] | None
 
     @classmethod
     def made(
@@ -135,6 +166,7 @@ class ListState(list):
         fields["walked_at"] = None
         fields["span"] = span
         fields["marked"] = False
+        fields["picked"] = None
         return made
 
     def length(self) -> int:
@@ -188,8 +220,9 @@ class ListState(list):
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the items the arguments put here.
 
-        The list is plain from now on, so what it holds is plain too: each tracked int, str
-        and bool is its value, and a list inside, tracked in its own right, stays where it is.
+        The list is plain from now on, so what it holds is plain too: each tracked int, str,
+        bool and float is its value, and a list inside, tracked in its own right, stays where
+        it is.
         """
         self.__dict__["expression"] = None
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
@@ -198,14 +231,26 @@ class ListState(list):
         self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
-        and the range that form holds. It carries this one's mark."""
+        and the range that form holds. It carries this one's mark and the kinds of the rows it
+        was picked from."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds
         fields["span"] = span
         fields["marked"] = self.marked
+        fields["picked"] = self.picked
         return made
+
+    def unplace(self) -> None:
+        """Type no float or bool read from this list: see ``moved``."""
+        self.__dict__["picked"] = frozenset()
+
+    def took_in(self, other: object) -> None:
+        """Note that this list now holds the items of ``other``: one the solver types by another
+        row's kinds, or cannot place, leaves this one's floats and bools untyped too."""
+        if isinstance(other, ListState) and other.picked is not None:
+            self.unplace()
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False

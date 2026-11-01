@@ -2,8 +2,9 @@
 
 cvc5 writes an array as a constant array and the stores over it, outermost last:
 ``(store (store ((as const (Array Int Int)) 0) 0 1) 3 101)`` holds 1 at 0, 101 at 3 and 0
-everywhere else. An item may itself be an array, for a list of lists, and a number may be
-negative, ``(- 1)``. A chain of stores is as long as the positions a model names, thousands for
+everywhere else. An item may itself be an array, for a list of lists, a number may be negative,
+``(- 1)``, a double is its three fields, NaN and the infinities among them, and a bool is
+``true`` or ``false``. A chain of stores is as long as the positions a model names, thousands for
 a long list, so it is read with a stack of its own, never by recursion.
 """
 
@@ -12,6 +13,7 @@ from __future__ import annotations
 import re
 
 from pyct.binding.shapes import ArrayValue
+from pyct.solver import floats
 from pyct.solver.strings import decode
 
 # one token of a model line: a parenthesis, a string literal with its doubled quotes, or an atom
@@ -56,12 +58,14 @@ def _parsed(text: str) -> _Sexp:
 
 
 def _value(sexp: _Sexp) -> object:
-    """A number, a string, or an array."""
+    """A number, a string, a double, a bool, or an array."""
     if isinstance(sexp, str):
         return _atom(sexp)
     match sexp:
         case ["-", str() as digits]:
             return -int(digits)
+        case ["fp", str() as sign, str() as exponent, str() as fraction]:
+            return floats.decode(f"(fp {sign} {exponent} {fraction})")
         case [["as", "const", _], default]:
             return ArrayValue(_value(default))
         case ["store", *_]:
@@ -74,6 +78,8 @@ def _atom(text: str) -> object:
         return decode(text)
     if text.isdigit():
         return int(text)
+    if text in ("true", "false"):
+        return text == "true"
     raise ArrayModelError(f"not a value pyct reads: {text}")
 
 

@@ -1,7 +1,7 @@
 """What a path's program declares, and how its answer is read back by name.
 
-A leaf is an int or a str the seed names on its own: a parameter, or a value inside a dict. A
-list the seed names is a leaf too, declared as its length and its items (see ``lists``), and so
+A leaf is a value the seed names on its own: a parameter, or a value inside a dict. A list the
+seed names is a leaf too, declared as its length and its items (see ``lists``), and so
 is a dict, declared as its keys and its size (see ``dicts``). Each gets a symbol, and the answer
 names each back by it.
 """
@@ -79,8 +79,9 @@ class Program:
     ``names_by_symbol`` holds each leaf's name, keyed by its constant's
     symbol without the bars, which is how a model names it back. ``lists`` and ``dicts`` are
     what the program declared for the lists and the dicts the path reads, which read their
-    answers back. ``kept`` says the program holds each dict's other keys and makes none up, and
-    ``placed`` that it keeps a key a walk read at its place.
+    answers back. ``kept`` says the program holds each dict's other keys and makes none up, or a
+    list of mixed kinds to its length at least, and ``placed`` that it keeps a key a walk read
+    at its place.
     ``bounded`` says a form in the program is exact only inside a bound, such as a float floor
     division's: a program that holds the bound answers Python's inputs when sat, and only one
     that leaves it out says unsat for every value Python could give past it (see
@@ -100,6 +101,11 @@ class Program:
     dicts: DictTerms | None = None
     kept: bool = False
     placed: bool = False
+    # each list and dict the program holds float items of finite, by its symbol: what an unsat
+    # core names beside the leaves (see ``held_items``)
+    holders: Mapping[str, str] = field(default_factory=dict)
+    # whether the program holds any float finite, which an unsat may rest on
+    finite: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for,

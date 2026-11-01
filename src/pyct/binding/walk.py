@@ -50,13 +50,13 @@ class Visitor(Protocol):
 def binds(value: object, access: Expression) -> TypeGuard[int | float | str]:
     """Whether bind tracks this value at this access: the one rule the walk reads.
 
-    A float and a bool are tracked as an argument's own value. One inside a
-    dict or a list passes through plain until run-with-nested-arguments
-    follows it.
+    An int, a str, a float and a bool are tracked at any access. A float subclass is tracked
+    as an argument's own value, and one inside a dict or a list passes through plain: no sort
+    declares a value that may be anything else as well.
     """
-    if isinstance(value, float | bool):
+    if isinstance(value, float) and type(value) is not float:
         return isinstance(access, str)
-    return isinstance(value, int | str)
+    return isinstance(value, int | float | str)
 
 
 # the types whose values the walk hands on as they are: nothing can change one

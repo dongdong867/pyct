@@ -1,5 +1,7 @@
 """An array value read back from a cvc5 model line."""
 
+from math import inf, isnan
+
 import pytest
 
 from pyct.binding.shapes import ArrayValue
@@ -53,3 +55,41 @@ def test_a_value_pyct_cannot_read_is_refused(line: str) -> None:
         value_line(line)
     with pytest.raises(SolverAnswerError, match="cannot read"):
         model_from([line])
+
+
+TWO_AND_A_HALF = f"(fp #b0 #b10000000000 #b01{'0' * 50})"
+ZERO = f"(fp #b0 #b{'0' * 11} #b{'0' * 52})"
+NAN = f"(fp #b0 #b{'1' * 11} #b1{'0' * 51})"
+INFINITY = f"(fp #b0 #b{'1' * 11} #b{'0' * 52})"
+FLOAT64 = "(Array Int (_ FloatingPoint 11 53))"
+
+
+def test_an_array_of_doubles_reads_each_double() -> None:
+    line = f"((x (store ((as const {FLOAT64}) {ZERO}) 1 {TWO_AND_A_HALF})))"
+
+    assert value_line(line) == ("x", ArrayValue(0.0, {1: 2.5}))
+
+
+def test_an_array_holds_nan_and_the_infinities() -> None:
+    line = f"((x (store (store ((as const {FLOAT64}) {NAN}) 0 {INFINITY}) 1 {ZERO})))"
+
+    _, array = value_line(line)
+
+    assert isinstance(array, ArrayValue) and isinstance(array.default, float)
+    assert isnan(array.default)
+    assert array.stored == {0: inf, 1: 0.0}
+
+
+def test_an_array_of_bools_reads_each_bool() -> None:
+    line = "((x (store ((as const (Array Int Bool)) false) 2 true)))"
+
+    assert value_line(line) == ("x", ArrayValue(False, {2: True}))
+
+
+def test_an_array_of_arrays_of_doubles_reads_each_level() -> None:
+    inner = f"(store ((as const {FLOAT64}) {ZERO}) 0 {TWO_AND_A_HALF})"
+    line = (
+        f"((x (store ((as const (Array Int {FLOAT64})) ((as const {FLOAT64}) {ZERO})) 1 {inner})))"
+    )
+
+    assert value_line(line) == ("x", ArrayValue(ArrayValue(0.0), {1: ArrayValue(0.0, {0: 2.5})}))

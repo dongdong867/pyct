@@ -20,7 +20,7 @@ from typing import Self
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
-from pyct.core.list_state import plain
+from pyct.core.list_state import moved, plain, read_from_the_input
 from pyct.core.spans import UNKNOWN, Span, added, exactly
 
 # what a key maps to where the dict holds no such key: apart from every value a dict holds
@@ -120,6 +120,9 @@ class DictState(dict):
     # named or made up: a key pyct does not follow that may equal an int turns such a dict
     # plain (see ``dict_reads.may_equal_added``)
     int_keyed: bool
+    # whether the target reached the dict by a key or a position another input may move: its float
+    # and bool values are plain from then on (see ``unplace``)
+    unplaced: bool
 
     @classmethod
     def made(
@@ -158,6 +161,7 @@ class DictState(dict):
         )
         fields["int_keyed"] = int_keyed
         fields["reordered"] = False
+        fields["unplaced"] = False
         return made
 
     def size(self) -> int:
@@ -239,6 +243,24 @@ class DictState(dict):
         for key, value in dict.items(self.storage()):
             dict.__setitem__(self, key, plain(value))
 
+    def unplace(self) -> None:
+        """Hold each float and bool value of the input as its plain value, and name the loss once:
+        a read may reach this dict at a place another input moves, where no term says which
+        value the read is. A list or a dict inside is moved with it (``list_state.moved``)."""
+        if self.unplaced:
+            return
+        fields = self.__dict__
+        fields["unplaced"] = True
+        values = [(key, held) for key, held in dict.items(self) if read_from_the_input(held)]
+        for key, held in values:
+            bare = plain(held)
+            dict.__setitem__(self, key, bare)
+            self.shadow[key] = bare
+        if values:
+            lost(self.sink, Downgrade(name="__getitem__", site=caller_site()))
+        for inside in dict.values(self):
+            moved(inside)
+
     def derived(self, items: dict[object, object]) -> DictState:
         """A new tracked dict of the same argument: these items, and what this one settled and
         changed, the argument's settled keys shared."""
@@ -257,7 +279,7 @@ class DictState(dict):
         fields["tracked_at"] = list(self.tracked_at)
         fields["tracked_changes"] = self.tracked_changes
         fields["grown"] = self.grown
-        fields.update(popped=self.popped, reordered=self.reordered)
+        fields.update(popped=self.popped, reordered=self.reordered, unplaced=self.unplaced)
         fields["unfollowed"] = set(self.unfollowed)
         fields["walk_clock"] = self.walk_clock
         fields["tracked_since"] = self.tracked_since

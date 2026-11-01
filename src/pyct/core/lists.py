@@ -226,6 +226,7 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form], span)
     fields = made.__dict__
     fields["kinds"] = self.kinds | kinds
+    made.took_in(other)
     if isinstance(other, ListState) and other.marked:
         made.mark()
     return made

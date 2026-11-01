@@ -30,7 +30,7 @@ MISSING = object()
 MADE = object()
 
 # the type a value of each kind is read as
-_TYPES: dict[str, type] = {"int": int, "str": str}
+_TYPES: dict[str, type] = {"int": int, "str": str, "float": float, "bool": bool}
 
 # whether an int term equals one of n int keys costs cvc5 time that grows with the square of n:
 # one tracked int key looked up took 0.07 s in 200 keys, 1.05 s in 1,000 and 9.7 s in 3,000,
@@ -117,6 +117,8 @@ class Keyed:
     constants: Mapping[str, str]
     extra: dict[str, str]
     valued: dict[str, tuple[str, object]]
+    # each float value a dict declared, and that dict's symbol (see ``held_items``)
+    float_values: dict[str, str]
     facts: dict[str, None]
     # each function a tracked key's lookup or read calls, by name, as the program defines it
     functions: dict[str, str]
@@ -230,6 +232,8 @@ class Keyed:
         if name not in self.extra:
             self.extra[name] = SORTS[_TYPES[kind]]
             self.valued[name] = answer
+            if kind == "float":
+                self.float_values[name] = found.symbol
         return name
 
 
