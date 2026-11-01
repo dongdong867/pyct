@@ -148,10 +148,9 @@ def _held_where_read(self: ListState, item: object) -> None:
     a fact holds for every fork after it."""
     if not isinstance(item, ConcolicFloat | ConcolicBool):
         return
-    fields = self.__dict__
-    for term, value in self.held[fields.get("told", 0) :]:
+    for term, value in self.held[self.told :]:
         self.sink.append(Fact(["==", term, value], True, caller_site()))
-    fields["told"] = len(self.held)
+    self.__dict__["told"] = len(self.held)
 
 
 # the heads that build a list from the lists among their first two operands

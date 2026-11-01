@@ -24,6 +24,9 @@ from pyct.core.strs import ConcolicStr
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
 TRACKED = frozenset({"int", "str", "float", "bool"})
 
+# the kinds of item a read may hand out under its own place (``core.list_reads.handed``)
+_BY_PLACE = frozenset({"float", "bool"})
+
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
     int: "int",
@@ -124,6 +127,8 @@ class ListState(list):
     # or a bool handed out under its own place there holds them (``core.list_reads.handed``)
     held: tuple[tuple[Expression, int], ...]
     steady: int
+    # how many of ``held`` a read here already recorded as facts
+    told: int
 
     @classmethod
     def made(
@@ -149,6 +154,7 @@ class ListState(list):
         fields["picked"] = None
         fields["held"] = ()
         fields["steady"] = len(items)
+        fields["told"] = 0
         return made
 
     def length(self) -> int:
@@ -226,12 +232,18 @@ class ListState(list):
         fields["steady"] = self.steady
         return made
 
-    def hold(self, steady: int, *held: tuple[Expression, int]) -> None:
+    def hold(
+        self, steady: int, *held: tuple[Expression, int], adding: frozenset[str] = frozenset()
+    ) -> None:
         """Note terms that decide which of the argument's items each position from ``steady``
-        on reads, with the value each has now."""
+        on reads, with the value each has now. Only a list that holds a float or a bool, or is
+        about to take in one of the ``adding`` kinds, notes them: no other item is handed out
+        under its own place."""
+        if not (self.kinds | adding) & _BY_PLACE:
+            return
         fields = self.__dict__
         fields["steady"] = min(self.steady, max(steady, 0))
-        fields["held"] = (*self.held, *(pair for pair in held if pair not in self.held))
+        fields["held"] = (*self.held, *held)
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False
