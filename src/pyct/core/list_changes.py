@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
     written,
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
-from pyct.core.list_state import TRACKED, ListState, kind_of, kinds_of, plain
+from pyct.core.list_state import TRACKED, ListState, kind_of, kinds_of, note_kind_change, plain
 from pyct.core.spans import Span, exactly
 from pyct.core.str_splits import LISTED_SPLITS, a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
@@ -108,6 +108,7 @@ def made(
     fields = self.__dict__
     fields["expression"] = kept_form(form)
     fields["kinds"] = self.kinds | kinds
+    note_kind_change()
     self.resized(span)
     return answer
 

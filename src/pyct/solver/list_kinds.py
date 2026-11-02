@@ -235,8 +235,11 @@ class ListTyping:
         fixed = kinds.shape is not None or (isinstance(node[1], list) and node[1][0] == "[,]")
         if fixed and from_start(position):
             return ITEM_TYPES[seen]
-        others = kinds.every & _NUMBERS - {seen} if seen in _NUMBERS else frozenset()
-        self.untried |= bool(kinds.every - _NUMBERS if seen in _NUMBERS else kinds.every - {seen})
+        if seen not in _NUMBERS:
+            self.untried |= bool(kinds.every - {seen})
+            return ITEM_TYPES[seen]
+        self.untried |= bool(kinds.every - _NUMBERS)
+        others = (kinds.every & _NUMBERS) - {seen}
         if not others:
             return ITEM_TYPES[seen]
         read = (_identity(node[1]), _identity(position))

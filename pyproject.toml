@@ -149,7 +149,7 @@ layers = [
   "list_changes : list_compares : list_forms : list_reads : list_state : lists : ranges",
   "str_cases : str_formats : str_joins : str_lengths : str_literals : str_operands : str_positions : str_repeats : str_splits : str_steps : str_walks : strs",
   "bools : floats : ints : numbers : texts",
-  "branch : counts : escapes : spans : values : walk_key_escapes",
+  "branch : counts : escapes : operands : spans : values : walk_key_escapes",
 ]
 
 # The compare tool treats v2 as a black box: it runs `pyct run` and reads its lines, so it

@@ -18,6 +18,7 @@ from pyct.binding.bind import leaf_name
 from pyct.binding.shapes import MADE_UP
 from pyct.core.branch import Expression
 from pyct.solver.heads import SORTS
+from pyct.solver.list_kinds import ITEM_TYPES
 from pyct.solver.list_reader import ProgramTooLargeError
 from pyct.solver.literals import is_literal, leaf_term, value
 from pyct.solver.strings import encode
@@ -30,7 +31,7 @@ MISSING = object()
 MADE = object()
 
 # the type a value of each kind is read as
-_TYPES: dict[str, type] = {"int": int, "str": str, "float": float, "bool": bool}
+_TYPES = ITEM_TYPES
 
 # whether an int term equals one of n int keys costs cvc5 time that grows with the square of n:
 # one tracked int key looked up took 0.07 s in 200 keys, 1.05 s in 1,000 and 9.7 s in 3,000,

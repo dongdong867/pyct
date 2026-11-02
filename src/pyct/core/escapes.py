@@ -4,13 +4,15 @@ first escape on the path says so with a fact that keeps its key at the key the i
 
 A walk key escapes when Python's own code hashes or compares it (``walk_key_escapes``), and at
 every downgrade the input records (``lost``): an operation pyct has not taught may have read any
-key the input's walks handed out, so each of them escapes there, whichever operation it was.
+key the input's walks handed out, so each of them escapes there, whichever operation it was. An
+operation on numbers that name no key cannot have read one (``on``).
 Each later escape on the path only marks its key, which compares as its plain key from then on:
 a fact for it would hold back no ask the first one does not.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from pyct.core.branch import BranchSink, Downgrade, Expression, Fact, caller_site
@@ -39,11 +41,41 @@ def escaped_in(sink: BranchSink) -> bool:
     return id(sink) in _PINNED
 
 
-def lost(sink: BranchSink, downgrade: Downgrade) -> None:
-    """Record a downgrade, and escape each walk key handed out into the same sink. An escape is
-    for good, so the keys leave the registry, and a downgrade inside a walk looks at each key
-    once."""
+def _names_a_key(form: object) -> bool:
+    """Whether a form holds a walk key's read."""
+    stack = [form]
+    seen: set[int] = set()
+    while stack:
+        part = stack.pop()
+        if not isinstance(part, list) or not part or id(part) in seen:
+            continue
+        seen.add(id(part))
+        if part[0] == WALK_KEY:
+            return True
+        stack.extend(part)
+    return False
+
+
+def _may_hold_a_key(operand: object) -> bool:
+    """Whether an operand may be, or be made from, a walk key: a float never is, and neither is
+    a plain value of a scalar type; a tracked int or bool is when its form names one."""
+    if isinstance(operand, float) or type(operand) in (int, bool, str, type(None)):
+        return False
+    if isinstance(operand, tuple):
+        return any(_may_hold_a_key(item) for item in operand)
+    if isinstance(operand, int):
+        return _names_a_key(getattr(operand, "expression", None))
+    return True
+
+
+def lost(sink: BranchSink, downgrade: Downgrade, on: Iterable[object] = ()) -> None:
+    """Record a downgrade, and escape each walk key handed out into the same sink, unless the
+    operation was given ``on``, its operands, and none may hold a key. An escape is for good, so
+    the keys leave the registry, and a downgrade inside a walk looks at each key once."""
     sink.append(downgrade)
+    operands = tuple(on)
+    if operands and not any(_may_hold_a_key(operand) for operand in operands):
+        return
     entry = _HANDED.pop(id(sink), None)
     if entry is not None:
         for key in entry[1]:

@@ -218,11 +218,11 @@ def _ended(failure: Failure | None) -> list[str]:
 # a part as the fork line writes it, and how tightly it binds as an operand, as `_BINARY` ranks
 type _Text = tuple[str, int]
 
-# how tightly Python's grammar binds what the fork line writes, loosest first. A keyword
-# head on one operand, such as `not`, is written `not a` and binds looser than everything
 # a read that says its kind prints as the target wrote it
 READ_HEAD_NAMES = frozenset(READ_HEADS.values())
 
+# how tightly Python's grammar binds what the fork line writes, loosest first. A keyword
+# head on one operand, such as `not`, is written `not a` and binds looser than everything
 _UNRANKED = 0
 _COMPARES = 1
 # a unary `-`, `+` or `~`, and a negative number, bind looser than `**` and tighter than `*`

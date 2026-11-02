@@ -257,7 +257,8 @@ class DictState(dict):
             dict.__setitem__(self, key, bare)
             self.shadow[key] = bare
         if values:
-            lost(self.sink, Downgrade(name="__getitem__", site=caller_site()))
+            kept = [plain(held) for _, held in values]
+            lost(self.sink, Downgrade(name="__getitem__", site=caller_site()), kept)
         for inside in dict.values(self):
             moved(inside)
 

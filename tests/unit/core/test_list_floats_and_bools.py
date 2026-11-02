@@ -474,3 +474,13 @@ def test_a_tracked_bool_or_float_as_a_key_is_a_downgrade(seed: list[object]) -> 
 
     assert args["table"].get(args["xs"][0]) == table[plain(args["xs"][0])]
     assert downgrades(sink)
+
+
+def test_a_list_built_on_a_row_a_cut_picks_hands_its_float_out_plain_and_named() -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"ys": [1], "g": [[0.5], [0.5]], "i": 1}, sink)
+
+    item = (args["ys"] + args["g"][args["i"] :][0])[1]
+
+    assert type(item) is float
+    assert downgrades(sink)

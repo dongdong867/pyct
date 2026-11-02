@@ -304,3 +304,150 @@ def appended_then_read(xs, i, f):
     if xs[i] > 3.0:
         return "hit"
     return "miss"
+
+
+def flag_indexes(ys, flags):
+    if ys[flags[0]] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_pops(ys, flags):
+    ys.pop(flags[0])
+    if ys[0] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_cuts_a_list(ys, flags):
+    if ys[flags[0] :][0] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_stores(ys, flags):
+    ys[flags[0]] = 0
+    if ys[1] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_repeats_a_list(ys, flags):
+    if (ys * flags[0])[0] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_cuts_a_str(s, flags):
+    if s[flags[0] :] == "bc":
+        return "hit"
+    return "miss"
+
+
+def flag_repeats_a_str(s, flags):
+    if s * flags[0] == "bc":
+        return "hit"
+    return "miss"
+
+
+def flag_picks_a_char(s, flags):
+    if s[flags[0]] == "z":
+        return "hit"
+    return "miss"
+
+
+def float_as_int_pads(s, xs):
+    if s.ljust(int(xs[0])) == "b  ":
+        return "hit"
+    return "miss"
+
+
+def float_as_int_indexes(ys, xs):
+    if ys[int(xs[0])] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_value_indexes(ys, data):
+    if ys[data["flag"]] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_as_a_key(d: dict[int, int], flags):
+    if d[flags[0]] > 5:
+        return "hit"
+    return "miss"
+
+
+def flag_searches_keys(d: dict[int, int], flags):
+    if flags[0] in d and d[0] > 5:
+        return "hit"
+    return "miss"
+
+
+def rounds_in_a_walk(d, xs):
+    for k in d:
+        round(xs[0], 1)
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def formats_in_a_walk(d, xs):
+    for k in d:
+        f"{xs[0]:.1f}"
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def percent_in_a_walk(d, xs):
+    for k in d:
+        "%.1f" % xs[0]
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def powers_in_a_walk(d, xs):
+    for k in d:
+        xs[0] ** 2
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def cut_row_in_a_walk(d, g, i):
+    for k in d:
+        if g[i:][0][0] > 1.0:
+            pass
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def picked_dict_in_a_walk(d, rows, i):
+    for k in d:
+        if rows[i]["x"] > 1.0:
+            pass
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def flag_in_a_walk(d, ys, flags):
+    for k in d:
+        ys[flags[0]]
+        if k == "target":
+            return "hit"
+    return "miss"
+
+
+def walk_of_reversed_rows(g, n):
+    for row in reversed(g):
+        pass
+    if n == 7:
+        return "hit"
+    return "miss"
+

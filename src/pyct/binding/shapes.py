@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 
 from pyct.binding.annotations import NONE, Check, Items, OneOf, int_keys, reads_as_int
+from pyct.core.branch import FLOAT_AND_BOOL
 from pyct.core.list_state import kind_of
 
 # the kinds an added item takes from an annotation's item type, when the items do not say
@@ -62,10 +63,10 @@ class ListShape:
 
     @cached_property
     def mixed(self) -> bool:
-        """Whether a float or a bool sits beside another kind among the list's own items: a
-        shorter answer would lose what the next input's added items cannot bring back."""
-        kinds = set(self.kinds)
-        return bool(kinds & {"float", "bool"}) and len(kinds) > 1
+        """Whether a float or a bool sits beside another kind of scalar among the list's own
+        items: a shorter answer would lose what the next input's added items cannot bring back."""
+        scalars = set(self.kinds) - {"list", "dict"}
+        return bool(scalars & FLOAT_AND_BOOL) and len(scalars) > 1
 
     @cached_property
     def holds_floats(self) -> bool:
@@ -142,7 +143,7 @@ _ADDED: Mapping[str, object] = {"int": 0, "str": "", "float": 0.0, "bool": False
 
 # the kinds whose added item holds its zero until a fork reads it: an array's default is what
 # cvc5 chose for positions no fork asks about, and for a float that can be NaN
-_ZERO_UNREAD = frozenset({"float", "bool"})
+_ZERO_UNREAD = FLOAT_AND_BOOL
 
 
 def resized(items: list[object], answer: ListAnswer, shape: ListShape) -> list[object]:

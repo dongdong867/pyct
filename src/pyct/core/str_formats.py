@@ -165,8 +165,8 @@ def _followed(spec: Spec, item: object) -> bool:
     return spec.bare and _base(item) in FOLLOWED.get(spec.letter, ())
 
 
-def _downgrade(sink: BranchSink) -> None:
-    lost(sink, Downgrade(name="__mod__", site=caller_site()))
+def _downgrade(sink: BranchSink, on: Iterable[object] = ()) -> None:
+    lost(sink, Downgrade(name="__mod__", site=caller_site()), on)
 
 
 class _Pieces:
@@ -179,6 +179,7 @@ class _Pieces:
         self.forms: list[Expression] = []
         self.sink: BranchSink | None = None
         self.lost = False
+        self.items = items
         operands = iter(items)
         for token in read:
             if isinstance(token, Spec):
@@ -215,7 +216,7 @@ class _Pieces:
             return text
         fmt = _text_literal("".join(self.written))
         if self.lost or fmt is None:
-            _downgrade(self.sink)
+            _downgrade(self.sink, self.items)
             return text
         operand = ["()", *self.forms] if tupled else self.forms[0]
         return numbers.tracked(text, ["%", fmt, operand], self.sink)

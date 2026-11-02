@@ -29,14 +29,15 @@ from functools import cached_property
 
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import FLOAT_AND_BOOL, Branch, Expression
 from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match
+from pyct.solver.list_kinds import ITEM_TYPES
 from pyct.solver.lists import Origin, UnencodedError
 
 # the type of a value each kind of value is read as: only these kinds have a term
-_VALUE_TYPES: Mapping[str, type] = {"int": int, "str": str, "float": float, "bool": bool}
+_VALUE_TYPES = ITEM_TYPES
 
 
 class TrackedDict:
@@ -311,7 +312,7 @@ class DictTerms(Keyed):
             return self.value_under(found, container, literal, kind)
         term, typed = self.named(key), self.type_of(key)
         kinds = set(found.shape.kinds)
-        self.kinds_move |= len(kinds) > 1 and bool(kinds & {"float", "bool"})
+        self.kinds_move |= len(kinds) > 1 and bool(kinds & FLOAT_AND_BOOL)
         self.hold(self.equals_a_key(found, term, typed))
         return self.read_under(found, container, (term, typed), kind)
 

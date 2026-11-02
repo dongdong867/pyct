@@ -472,12 +472,17 @@ class ListTerms(ListTyping, PositionPins):
         each list the target repeats no longer, each read's guard, and each str item read no
         longer than a string answer holds: the strings an answer hands out, and no others. The
         first ask also holds each list of mixed kinds to the input's length at least, since a
-        shorter one's items come back on the next input with no kind to go by."""
+        shorter one's items come back on the next input with no kind to go by, and with it each
+        other list, since a read through a join finds another item when one of them shrinks."""
         lengths = [f"(assert (<= 0 {length} {MOST_ITEMS}))" for length in self.bounded]
         held = [f"(assert (>= {length} {least}))" for length, least in self.present.items()]
         if self.source.keep:
-            mixed = self.holds.mixed.items()
-            held += [f"(assert (>= {length} {least}))" for length, least in mixed]
+            lengths_now = self.origin.items() if self.holds.mixed else ()
+            held += [
+                f"(assert (>= {length} {least}))"
+                for length, least in lengths_now
+                if length in self.bounded
+            ]
         guards = [f"(assert {guard})" for guard in self.guards]
         strings = [longest_string(term) for term in self.holds.strings]
         return lengths + self.capped + list(self.regime) + held + guards + strings

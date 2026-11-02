@@ -28,6 +28,36 @@ READ_HEADS: Mapping[str, str] = {
     "bool": "[bool]",
 }
 
+_READ_HEAD_NAMES = frozenset(READ_HEADS.values())
+
+# the head of a fact that keeps a number at the value an operation took it as, which no fork
+# tested: `["kept", ["==", x, 1]]`. Another value may take the same path (``core.operands``)
+KEPT = "kept"
+
+# the kinds that make a list's reads say their kind
+FLOAT_AND_BOOL = frozenset({"float", "bool"})
+
+
+def as_the_code_read_it(expression: Expression) -> Expression:
+    """The expression with each read that says its kind written as any read is, ``["[]", A, i]``:
+    the kind is the solver's, and a line names a read as the target wrote it."""
+    if not isinstance(expression, list):
+        return expression
+    root: list[Expression] = [None]
+    stack: list[tuple[list[Expression], list[Expression], int]] = [(expression, root, 0)]
+    while stack:
+        part, into, at = stack.pop()
+        made = list(part)
+        head = made[0] if made else None
+        if isinstance(head, str) and head in _READ_HEAD_NAMES:
+            made[0] = "[]"
+        into[at] = made
+        stack.extend(
+            (item, made, place) for place, item in enumerate(made) if isinstance(item, list)
+        )
+    return root[0]
+
+
 # whether a list is a leaf: the access that names a value inside an argument, which a condition
 # names as a value, never opens as an operation, and counts as one node
 type IsLeaf = Callable[[Expression], bool]

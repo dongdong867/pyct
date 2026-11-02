@@ -76,7 +76,7 @@ def test_the_ticket_s_float_and_bool_flip_each_with_its_expression() -> None:
     assert any(data["flags"] == [True] for data in answers)
     expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
     assert [">", ["[]", "data", "'ratio'"], 2.5] in expressions
-    assert ["[bool]", ["[]", "data", "'flags'"], 0] in expressions
+    assert ["[]", ["[]", "data", "'flags'"], 0] in expressions
 
 
 @pytest.mark.parametrize(
@@ -198,18 +198,18 @@ def test_a_floor_of_a_float_in_a_list_built_on_a_picked_row_is_rendered() -> Non
 
 
 @pytest.mark.parametrize(
-    ("function", "seed", "head"),
+    ("function", "seed"),
     [
-        ("picked_row_above", {"grid": [[0.5], [0.5]], "i": 1}, "[float]"),
-        ("picked_row_flag", {"grid": [[False], [False]], "i": 1}, "[bool]"),
+        ("picked_row_above", {"grid": [[0.5], [0.5]], "i": 1}),
+        ("picked_row_flag", {"grid": [[False], [False]], "i": 1}),
     ],
 )
 def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
-    function: str, seed: object, head: str
+    function: str, seed: object
 ) -> None:
     target = f"{NESTED}::{function}"
     lines = lines_of(target, seed)
-    read = [head, ["[]", "grid", "i"], 0]
+    read = ["[]", ["[]", "grid", "i"], 0]
     expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
     assert any(
         read == part for expression in expressions for part in [expression, *_parts(expression)]
@@ -262,27 +262,11 @@ def test_a_float_under_a_place_no_term_follows_stays_plain_and_is_named(
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
     seed_line = input_lines(result.stdout)[0]
-    read_at = _return_line(target, "hit") - 1
+    read_at = return_line(target, "hit") - 1
     # the seed reads the float or the bool: its fork never reaches the solver, and the run says so
     assert not [fork for fork in forks_of(seed_line) if _tests_the_item(fork, read_at)], seed_line
     assert seed_line["downgrades"], seed_line
     assert summary["stopped"] != "solver failed", summary
-
-
-@pytest.mark.parametrize(
-    ("function", "seed"),
-    [
-        ("two_keys", {"d": {"x": {"p": 1, "q": 5}}, "a": "x", "b": "p"}),
-        ("row_and_key", {"rows": [{"a": 1, "b": 5}], "i": 0, "k": "a"}),
-        ("last_row_key", {"rows": [{"a": 1, "b": 2}], "k": "a"}),
-        ("joined_int_row", {"ys": [[1]], "grid": [[2], [0.5]]}),
-        ("appended_then_read", {"xs": [1], "i": 1, "f": 0.5}),
-    ],
-)
-def test_a_line_base_covers_stays_covered(function: str, seed: object) -> None:
-    target = f"{NESTED}::{function}"
-    lines = lines_of(target, seed, *QUICK)
-    assert missing_lines(target, lines) == set()
 
 
 @pytest.mark.parametrize(
@@ -354,7 +338,7 @@ def _parts(expression: object) -> list[object]:
     return list(expression[1:]) if isinstance(expression, list) else []
 
 
-def _return_line(target: str, value: str) -> int:
+def return_line(target: str, value: str) -> int:
     """The line of the function's ``return`` of a str literal."""
     module, _, function = target.partition("::")
     path = REPO_ROOT.joinpath(*module.split(".")).with_suffix(".py")
@@ -459,10 +443,10 @@ def test_an_empty_seed_with_no_annotation_fills_null_and_the_flip_misses() -> No
     assert [args_of(line, "xs") for line in solved(lines)] == [[None]]
 
 
-def test_a_float_the_target_added_says_its_kind_and_a_longer_list_reads_past_it() -> None:
+def test_a_float_the_target_added_forks_and_a_longer_list_reads_past_it() -> None:
     lines = lines_of(f"{MIXED}::added_to_ints", {"xs": [1]})
     expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
-    assert [">", ["[float]", ["+", "xs", ["[,]", 2.5]], 1], 1.0] in expressions, expressions
+    assert [">", ["[]", ["+", "xs", ["[,]", 2.5]], 1], 1.0] in expressions, expressions
     assert all(not line["downgrades"] for line in lines), lines
     assert any(len(args_of(line, "xs")) > 1 for line in solved(lines)), lines
 

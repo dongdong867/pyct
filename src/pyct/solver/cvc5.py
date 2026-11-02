@@ -25,7 +25,7 @@ from pyct.solver.given import Given, answered, argv, options, took
 from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
-from pyct.solver.read_kinds import asked_of_each
+from pyct.solver.read_kinds import asked_of_each, without_kept
 from pyct.solver.render import Program, program
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
@@ -153,6 +153,7 @@ def solve(
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     origin = _origin(shapes or {}, values or {}, timeout)
+    prefix, kept = without_kept(prefix)
     try:
         walks = Walks(prefix, origin.dicts)
         fixed = walks.fixed(prefix)
@@ -173,7 +174,7 @@ def solve(
     def ask(kinds: Mapping[int, str]) -> Answer:
         return _asked((conditions, leaves), replace(origin, read_kinds=kinds), timeout)[0]
 
-    return asked_of_each(written.other_kinds, written.untried, ask)
+    return asked_of_each(written.other_kinds, written.untried or kept, ask)
 
 
 def _after_unsat(

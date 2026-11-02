@@ -189,7 +189,7 @@ def _tracked_call(
             return answer
     plain_args = [_plain(arg) for arg in args]
     answer = own(function, *plain_args, **{key: _plain(value) for key, value in kwargs.items()})
-    lost(sink, Downgrade(name=function.__name__, site=caller_site()))
+    lost(sink, Downgrade(name=function.__name__, site=caller_site()), args)
     return answer
 
 

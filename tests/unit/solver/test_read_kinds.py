@@ -3,11 +3,11 @@
 import pytest
 
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import KEPT, Branch, Expression, Fact, Site
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.origin import Origin
-from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments
+from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments, without_kept
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
 
@@ -177,3 +177,32 @@ def test_a_list_with_an_item_no_ask_can_write_is_unknown_past_an_unsat() -> None
     path = (fork([">", read, 3.0]), fork(["<", read, 1.0]))
 
     assert isinstance(solve(path, {"i": int}, 5.0, MIXED, {"i": 1}), Unknown)
+
+
+def test_a_fact_that_keeps_a_number_is_held_and_leaves_an_unsat_open() -> None:
+    fact = Fact([KEPT, ["==", "x", 1]], True, SITE)
+    other = Fact(["==", "y", 1], True, SITE)
+
+    path, kept = without_kept((fact, other, fork([">", "y", 0])))
+
+    assert kept
+    assert path[0].expression == ["==", "x", 1]
+    assert path[1] is other
+    assert without_kept((other,))[1] is False
+
+
+@needs_cvc5
+def test_an_unsat_past_a_kept_number_is_unknown() -> None:
+    path = (Fact([KEPT, ["==", "x", 1]], True, SITE), fork([">", "x", 5]))
+
+    assert isinstance(solve(path, {"x": int}, 5.0), Unknown)
+
+
+@needs_cvc5
+def test_an_answer_past_a_kept_number_keeps_it() -> None:
+    path = (Fact([KEPT, ["==", "x", 1]], True, SITE), fork([">", "y", 5]))
+
+    answer = solve(path, {"x": int, "y": int}, 5.0)
+
+    assert isinstance(answer, Sat)
+    assert answer.model["x"] == 1

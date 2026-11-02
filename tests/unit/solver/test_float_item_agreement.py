@@ -6,8 +6,9 @@ fork. A sat answer is run again in Python and must take the path the solver was 
 unsat answer must have no witness among small lists of the kinds the seed holds at each place, at
 any index a program reads by, since an unsat says no input takes the path.
 
-The picks in ``OWN_PLACE`` read a row under its own place, which no term ties to what picked it,
-so an answer may leave the path and an unsat holds for that row alone (known limit L8).
+The picks in ``OWN_PLACE`` read a row under its own place, which no term ties to what picked it.
+An answer that moves the pick may leave the path, so it is not judged, and an unsat holds for that
+row alone (known limit L8). An answer that keeps the pick is judged as any other.
 """
 
 import contextlib
@@ -22,7 +23,7 @@ import pytest
 from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
 from pyct.branches.compare import compare
-from pyct.core.branch import Branch, Downgrade, Fact, SinkItem
+from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem, as_the_code_read_it
 from pyct.solver.answer import Answer, Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from tests.unit.solver.agreement import needs_cvc5
@@ -78,6 +79,9 @@ PICKS: dict[str, Callable[..., Any]] = {
 # move: an answer that moves them may leave the path on an int, as on origin/v2 (known limit L8)
 OWN_PLACE = frozenset({"rows cut i", "rows + rows", "row under a key"})
 
+# the steps that write a plain value into the list
+WRITES = frozenset({"append", "insert", "set", "+"})
+
 # the picks another input's index or length moves: its row may hold another kind
 MOVING = tuple(pick for pick in PICKS if pick not in ("row 0", "row under a key"))
 
@@ -87,7 +91,7 @@ ROW_WITNESS_FLOATS = (0.0, 1.5, 2.5, float("nan"), float("inf"))
 type Step = tuple[str, float]
 
 # the fixed seeds a test's programs come from
-ROUNDS = (13, 101, 202, 303, 404, 505)
+ROUNDS = (13, 101, 202, 303, 404, 505, 606)
 
 # the items each seed starts from: floats, floats and bools, ints beside a float, and all three
 SEEDS: tuple[Callable[[random.Random], list[object]], ...] = (
@@ -159,13 +163,23 @@ def takes(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]) 
     return compare(path, forks(steps, args)) is None
 
 
+def _as_any_kind(expression: Expression) -> Expression:
+    """A fork as a run of any item's kind would write it: reads as any read is, and the truth of
+    a number as a bare read, since an int's truth is written as a compare with zero."""
+    form = as_the_code_read_it(expression)
+    if isinstance(form, list) and len(form) == 3 and form[0] == "!=" and form[2] in (0, 0.0):
+        return form[1]
+    return form
+
+
 def proves(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]) -> bool:
-    """Whether the arguments take the very path: its forks each on the side it asks for. A
-    program's checks share one line, so the fork's expression tells them apart."""
-    taken = forks(steps, args)
-    return len(taken) >= len(path) and all(
-        (mine.expression, mine.taken) == (wanted.expression, wanted.taken)
-        for mine, wanted in zip(taken, path, strict=False)
+    """Whether the arguments take the very path, whatever kind each read finds: its forks each
+    on the side it asks for. A program's checks share one line, so the fork's expression tells
+    them apart."""
+    taken, wanted = _past_finite(forks(steps, args)), _past_finite(path)
+    return len(taken) >= len(wanted) and all(
+        (_as_any_kind(mine.expression), mine.taken) == (_as_any_kind(want.expression), want.taken)
+        for mine, want in zip(taken, wanted, strict=False)
     )
 
 
@@ -223,7 +237,7 @@ def asked(steps: list[Step], args: dict[str, object]) -> tuple[tuple[Branch, ...
     prefix = (*items[: ends[-1]], flipped)
     path = tuple(item for item in prefix if isinstance(item, Branch))
     seed = Seed.of(args)
-    return path, solve(prefix, seed.leaves, 5.0, {**seed.lists, **seed.dicts})
+    return path, solve(prefix, seed.leaves, 5.0, {**seed.lists, **seed.dicts}, seed.values)
 
 
 def judged(steps: list[Step], args: dict[str, object]) -> str | None:
@@ -231,22 +245,55 @@ def judged(steps: list[Step], args: dict[str, object]) -> str | None:
     sat or unsat, None for any other answer or a program that forks nowhere.
 
     A sat answer that adds a null to a list of other kinds, which the program may then read and
-    raise on, is not judged (known limit O3), nor is one to a program on a row under its own
-    place (``OWN_PLACE``)."""
+    raise on, is not judged (known limit O3), nor is one that moves the pick of a row under its
+    own place (``OWN_PLACE``). One that reads an item of another kind takes the forks that kind
+    takes, so the path is compared past any `isfinite` (known limit L9)."""
     got = asked(steps, args)
     if got is None:
         return None
     path, answer = got
     if isinstance(answer, Sat):
         solved = apply(Seed.of(args), answer.model).args
-        if _nulls(solved) > _nulls(args) or steps[0][0] in OWN_PLACE:
+        if _nulls(solved) > _nulls(args) or _moved_the_pick(steps, args, solved):
             return None
-        assert takes(steps, dict(solved), path), (steps, args, solved, path)
+        assert follows(steps, dict(solved), path), (steps, args, solved, path)
         return "sat"
     if isinstance(answer, Unsat):
         assert witness(steps, path, args) is None, (steps, args, path)
         return "unsat"
     return "error" if isinstance(answer, Error) else None
+
+
+def follows(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]) -> bool:
+    """Whether an answer does what its path asks. It takes the path, past any `isfinite` an item
+    of another kind takes. On a row under its own place, a float the target wrote is plain and
+    can take or leave forks the path does not hold, so such a program is not held to it (L8), and
+    any other need only reach the flipped fork."""
+    taken = forks(steps, args)
+    if steps[0][0] in OWN_PLACE:
+        if any(step[0] in WRITES for step in steps):
+            return True
+        wanted = (_as_any_kind(path[-1].expression), path[-1].taken)
+        return wanted in [(_as_any_kind(fork.expression), fork.taken) for fork in taken]
+    return compare(_past_finite(path), _past_finite(taken)) is None
+
+
+def _past_finite(path: Iterable[Branch]) -> tuple[Branch, ...]:
+    return tuple(fork for fork in path if not _is_finite_check(fork))
+
+
+def _is_finite_check(fork: Branch) -> bool:
+    form = fork.expression
+    return isinstance(form, list) and form[0] == "isfinite"
+
+
+def _moved_the_pick(steps: list[Step], args: Any, solved: Any) -> bool:
+    """Whether an answer to a program on a row under its own place reads another row there."""
+    if steps[0][0] not in OWN_PLACE:
+        return False
+    before, after = args["items"], solved["items"]
+    kept = before.keys() == after.keys() if isinstance(before, dict) else len(before) == len(after)
+    return not kept or args["i"] != solved["i"]
 
 
 def _nulls(args: Any) -> int:
@@ -316,14 +363,13 @@ def test_cvc5_agrees_with_python_on_a_row_a_tracked_key_picks() -> None:
             answer = judged(steps, args)
             assert answer != "error", (steps, args)
             answers.append(answer)
+    assert answers.count("sat") >= 40, answers
     assert answers.count("unsat") >= 1, answers
 
 
 def keyed_program(chooser: random.Random) -> list[tuple[str, str, int]]:
-    """Reads of an int inside a dict of dicts, by a plain or a tracked inner key. A row a tracked
-    outer key picks keeps its own place, as on origin/v2 (known limit L8), so an answer that moves
-    that key may read another row: `two_keys` holds its coverage to base instead."""
-    reads = [("x", "b"), ("y", "b"), ("x", "p"), ("x", "q"), ("y", "p"), ("y", "q")]
+    """Reads of an int inside a dict of dicts, by a plain or a tracked key at each level."""
+    reads = [("a", "b"), ("a", "p"), ("x", "b"), ("y", "b"), ("x", "p"), ("x", "q"), ("y", "q")]
     length = chooser.randrange(1, 4)
     return [(*chooser.choice(reads), chooser.randrange(0, 4)) for _ in range(length)]
 
@@ -384,6 +430,9 @@ def keyed_answer(steps: list[tuple[str, str, int]], args: dict[str, Any]) -> str
     assert not isinstance(answer, Error), (steps, args, answer)
     if isinstance(answer, Sat):
         solved = dict(apply(seed, answer.model).args)
+        if solved["a"] != args["a"] and any(outer == "a" for outer, _, _ in steps):
+            # the row a tracked key picks keeps its own place (known limit L8)
+            return None
         wanted = [fork.taken for fork in path if _is_a_compare(fork.expression)]
         assert keyed_sides(steps, solved) == wanted, (steps, args, solved)
         return "sat"

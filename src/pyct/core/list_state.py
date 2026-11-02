@@ -13,7 +13,14 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import READ_HEADS, BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import (
+    FLOAT_AND_BOOL,
+    READ_HEADS,
+    BranchSink,
+    Downgrade,
+    Expression,
+    caller_site,
+)
 from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -27,7 +34,6 @@ TRACKED = frozenset({"int", "str", "float", "bool"})
 _READ_HEAD_SET = frozenset(READ_HEADS.values())
 
 # the kinds of item a path cannot tell apart, since Python compares an int with a float
-_SAID = frozenset({"float", "bool"})
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -100,6 +106,20 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
+# how many changes to a list have run, which may change what a list of rows holds
+_KIND_CHANGES = [0]
+
+
+def note_kind_change() -> None:
+    """Note a change to a list: what a list of rows was found to hold may no longer be so."""
+    _KIND_CHANGES[0] += 1
+
+
+def kind_changes() -> int:
+    """How many changes to a list have run."""
+    return _KIND_CHANGES[0]
+
+
 def is_item_read(expression: Expression) -> bool:
     """Whether a form reads an item of an argument's list as it came, under either kind of head:
     ``["[]", items, 0]``, as the input names it, or ``["[float]", items, 0]``, as a read hands it
@@ -160,8 +180,8 @@ class ListState(list):
     # the kinds every row holds, for a row a tracked index or one from the end picks: another
     # input may read another row, so a read says its kind if any row can hold a float or a bool
     among_rows: frozenset[str] | None
-    # whether the target reached this list at a place no term follows: by a cut, a join or a tracked
-    # key. A float or a bool of the input read from it comes out plain, and a downgrade names it
+    # whether the target reached this list at a place no term follows. A float or a bool of the
+    # input read from it comes out plain, and a downgrade names it (see ``unplace``)
     unplaced: bool
 
     @classmethod
@@ -276,7 +296,7 @@ class ListState(list):
     def says_kinds(self) -> bool:
         """Whether a read of this list says the kind it read: a list that can hold a float or a
         bool, or a row among rows that can."""
-        return bool((self.kinds | (self.among_rows or frozenset())) & _SAID)
+        return bool((self.kinds | (self.among_rows or frozenset())) & FLOAT_AND_BOOL)
 
     def read_of(self, written: Expression, kind: str) -> Expression:
         """The form of a read of an item of ``kind`` at ``written``."""

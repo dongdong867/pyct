@@ -27,7 +27,7 @@ from collections.abc import Iterable, Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, Expression, caller_site
+from pyct.core.branch import FLOAT_AND_BOOL, Downgrade, Expression, caller_site
 from pyct.core.counts import Count
 from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
@@ -36,6 +36,7 @@ from pyct.core.list_state import (
     TRACKED,
     ListState,
     is_read,
+    kind_changes,
     kind_of,
     moved,
     plain,
@@ -116,10 +117,7 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
 
 # the kinds of item a list reached at a place no term follows hands out plain: an int or a str
 # there keeps its own place, as it always has, and an answer can leave the plan on one
-_BY_PLACE = frozenset({"float", "bool"})
-
-# the kinds of item that have a term
-_SCALARS = frozenset({"int", "str", "float", "bool"})
+_BY_PLACE = FLOAT_AND_BOOL
 
 
 def _left_plain(self: ListState, item: object, name: str) -> object:
@@ -127,7 +125,7 @@ def _left_plain(self: ListState, item: object, name: str) -> object:
     its value, and the loss named ``name``, and any other item as it is stored."""
     if not read_from_the_input(item):
         return item
-    lost(self.sink, Downgrade(name=name, site=caller_site()))
+    lost(self.sink, Downgrade(name=name, site=caller_site()), (plain(item),))
     return plain(item)
 
 
@@ -203,14 +201,21 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
         fields = row.__dict__
         fields["expression"] = wanted
         fields["span"] = UNKNOWN
-        fields["among_rows"] = _rows_kinds(self) if moving else None
+    row.__dict__["among_rows"] = _rows_kinds(self) if moving else None
 
 
 def _rows_kinds(self: ListState) -> frozenset[str]:
-    """The kinds with a term that any row of a list of rows holds, or any row around them."""
+    """The kinds with a term that any row of a list of rows holds, or any row around them. A walk
+    names every row, so the answer is kept until a list changes what it holds."""
+    fields = self.__dict__
+    kept = fields.get("rows_kinds")
+    if kept is not None and kept[0] == kind_changes():
+        return kept[1]
     rows = [row for row in list.copy(self) if isinstance(row, ListState)]
     around = self.among_rows or frozenset()
-    return (around | frozenset().union(*(row.kinds for row in rows))) & _SCALARS
+    kinds = (around | frozenset().union(*(row.kinds for row in rows))) & TRACKED
+    fields["rows_kinds"] = (kind_changes(), kinds)
+    return kinds
 
 
 def more(self: ListState, at: int, name: str) -> bool:
