@@ -67,7 +67,6 @@ reads_plain(
         "center",
         "count",
         "endswith",
-        "expandtabs",
         "find",
         "index",
         "ljust",

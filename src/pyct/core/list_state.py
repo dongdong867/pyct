@@ -183,6 +183,8 @@ class ListState(list):
     # whether the target reached this list at a place no term follows. A float or a bool of the
     # input read from it comes out plain, and a downgrade names it (see ``unplace``)
     unplaced: bool
+    # what the rows inside this list hold, and how many changes had run when that was worked out
+    rows_kinds: tuple[int, frozenset[str]] | None
 
     @classmethod
     def made(
@@ -207,6 +209,7 @@ class ListState(list):
         fields["marked"] = False
         fields["among_rows"] = None
         fields["unplaced"] = False
+        fields["rows_kinds"] = None
         return made
 
     def length(self) -> int:
@@ -281,6 +284,7 @@ class ListState(list):
         fields["marked"] = self.marked
         fields["among_rows"] = self.among_rows
         fields["unplaced"] = self.unplaced
+        fields["rows_kinds"] = None
         return made
 
     def unplace(self) -> None:

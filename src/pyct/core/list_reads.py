@@ -208,7 +208,7 @@ def _rows_kinds(self: ListState) -> frozenset[str]:
     """The kinds with a term that any row of a list of rows holds, or any row around them. A walk
     names every row, so the answer is kept until a list changes what it holds."""
     fields = self.__dict__
-    kept = fields.get("rows_kinds")
+    kept = self.rows_kinds
     if kept is not None and kept[0] == kind_changes():
         return kept[1]
     rows = [row for row in list.copy(self) if isinstance(row, ListState)]
