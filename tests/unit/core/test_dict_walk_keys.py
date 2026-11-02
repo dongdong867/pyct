@@ -278,6 +278,16 @@ def test_a_walk_key_an_untaught_operation_takes_escapes() -> None:
     assert (["==", ["key", "config", 0], "'ab'"], True) in decided(sink)
 
 
+def test_a_float_made_from_a_walk_key_escapes_it_at_a_downgrade() -> None:
+    config, _ = tracked({"ab": 1})
+
+    keys = in_the_target(
+        "keys = []\nfor k in config:\n    keys.append(k)\n    round(len(k) * 0.5, 1)", config=config
+    )["keys"]
+
+    assert escapes.has_escaped(keys[0])
+
+
 def test_every_walk_key_escapes_at_a_downgrade() -> None:
     # an operation pyct has not taught may have read any key a walk handed out
     import pickle

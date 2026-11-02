@@ -1,5 +1,8 @@
-"""Every line base covers stays covered once a float or a bool inside an argument is tracked: under
-tracked keys and joins, where such a number is a position or a key, and across a dict's walk."""
+"""Every line base covers stays covered once a float or a bool inside an argument is tracked:
+under tracked keys and joins, beside a str a format writes, and across a dict's walk. Where such a
+number meets an operation with no form, the run names the line it loses."""
+
+import json
 
 import pytest
 
@@ -10,6 +13,9 @@ from tests.acceptance.test_nested_floats_and_bools import (
     missing_lines,
     return_line,
 )
+
+# many rows, which a walk once read in time that grew with each row
+MANY_ROWS = {"g": [[1]] * 16_000, "n": 1}
 
 
 @pytest.mark.parametrize(
@@ -23,29 +29,24 @@ from tests.acceptance.test_nested_floats_and_bools import (
         ("joined_int_row", {"ys": [[1]], "grid": [[2], True]}),
         ("joined_int_row", {"ys": [[1]], "grid": [[2], 0.5, 1]}),
         ("appended_then_read", {"xs": [1], "i": 1, "f": 0.5}),
-        ("flag_indexes", {"ys": [0, 1], "flags": [False]}),
-        ("flag_pops", {"ys": [0, 1], "flags": [False]}),
-        ("flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}),
-        ("flag_stores", {"ys": [0, 1], "flags": [False]}),
-        ("flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}),
-        ("flag_cuts_a_str", {"s": "abc", "flags": [True]}),
-        ("flag_repeats_a_str", {"s": "ab", "flags": [True]}),
-        ("flag_picks_a_char", {"s": "abc", "flags": [True]}),
-        ("float_as_int_pads", {"s": "a", "xs": [3.5]}),
-        ("float_as_int_indexes", {"ys": [0, 1, 2], "xs": [1.5]}),
-        ("flag_value_indexes", {"ys": [0, 1], "data": {"flag": False}}),
-        ("flag_as_a_key", {"d": {"0": 1}, "flags": [False]}),
-        ("flag_searches_keys", {"d": {"0": 1}, "flags": [False]}),
+        ("flag_value_in_a_sum", {"ys": [0, 1, 2], "data": {"flag": False}}),
+        ("percent_beside_a_name", {"name": "al", "scores": [0.5]}),
         ("rounds_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
         ("formats_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
         ("percent_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
         ("powers_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
-        ("flag_in_a_walk", {"d": {"a": 1}, "ys": [0, 1], "flags": [False]}),
     ],
 )
 def test_a_line_base_covers_stays_covered(function: str, seed: object) -> None:
     target = f"{NESTED}::{function}"
     lines = lines_of(target, seed, *QUICK)
+    assert missing_lines(target, lines) == set()
+
+
+@pytest.mark.parametrize("function", ["walk_of_reversed_rows", "walk_of_growing_rows"])
+def test_a_walk_of_many_rows_covers_every_line_in_its_budget(function: str) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, MANY_ROWS, "--budget", "15", "--solver-timeout", "3")
     assert missing_lines(target, lines) == set()
 
 
@@ -62,3 +63,36 @@ def test_a_float_left_plain_in_a_walk_lets_the_walk_choose_a_key(
     target = f"{NESTED}::{function}"
     lines = lines_of(target, seed, *QUICK)
     assert return_line(target, "hit") not in missing_lines(target, lines)
+
+
+@pytest.mark.parametrize(
+    ("function", "seed", "name"),
+    [
+        ("flag_indexes", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
+        ("flag_pops", {"ys": [0, 1], "flags": [False]}, "pop"),
+        ("flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
+        ("flag_stores", {"ys": [0, 1], "flags": [False]}, "__setitem__"),
+        ("flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}, "__mul__"),
+        ("flag_cuts_a_str", {"s": "abc", "flags": [True]}, "__getitem__"),
+        ("flag_repeats_a_str", {"s": "ab", "flags": [True]}, "__mul__"),
+        ("flag_picks_a_char", {"s": "abc", "flags": [True]}, "__getitem__"),
+        ("float_as_int_pads", {"s": "a", "xs": [3.5]}, "ljust"),
+        ("flag_value_indexes", {"ys": [0, 1], "data": {"flag": False}}, "__getitem__"),
+        ("flag_as_a_key", {"d": {"0": 1}, "flags": [False]}, "__getitem__"),
+        ("flag_searches_keys", {"d": {"0": 1}, "flags": [False]}, "__contains__"),
+        ("flag_in_a_walk", {"d": {"a": 1}, "ys": [0, 1], "flags": [False]}, "__getitem__"),
+    ],
+)
+def test_a_line_lost_to_an_operation_with_no_form_is_named(
+    function: str, seed: object, name: str
+) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed, *QUICK)
+    downgrades = json.dumps([line["downgrades"] for line in lines])
+    assert f'"name": "{name}"' in downgrades, downgrades
+
+
+@pytest.mark.parametrize("function", ["key_as_a_float_in_a_format", "key_as_a_tolerance"])
+def test_a_float_made_from_a_walk_key_keeps_every_answer_on_its_plan(function: str) -> None:
+    lines = lines_of(f"{NESTED}::{function}", {"d": {"1": 1}}, "--budget", "10")
+    assert [line["mismatch_at"] for line in lines if line["mismatch_at"] is not None] == []

@@ -1,13 +1,16 @@
 """What an unsat comes to when a read may land on an item of another kind than Python read."""
 
+from typing import Any
+
 import pytest
 
+from pyct.binding.bind import Seed, bind
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import KEPT, Branch, Expression, Fact, Site
+from pyct.core.branch import Branch, Expression, SinkItem, Site
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.origin import Origin
-from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments, without_kept
+from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments
 from pyct.solver.render import program
 from tests.unit.solver.agreement import needs_cvc5
 
@@ -179,30 +182,25 @@ def test_a_list_with_an_item_no_ask_can_write_is_unknown_past_an_unsat() -> None
     assert isinstance(solve(path, {"i": int}, 5.0, MIXED, {"i": 1}), Unknown)
 
 
-def test_a_fact_that_keeps_a_number_is_held_and_leaves_an_unsat_open() -> None:
-    fact = Fact([KEPT, ["==", "x", 1]], True, SITE)
-    other = Fact(["==", "y", 1], True, SITE)
-
-    path, kept = without_kept((fact, other, fork([">", "y", 0])))
-
-    assert kept
-    assert path[0].expression == ["==", "x", 1]
-    assert path[1] is other
-    assert without_kept((other,))[1] is False
+# rows beside other kinds, where a row's read finds no form on the kind the solver gives it
+NO_FORM_ROWS = [
+    [[[1], [1]], [[2], 0.5]],
+    [[[1], [1]], [[2], True]],
+    [[[2.5], [["a"], [True, 2.5], 2.5]], ["a", 2, [[2, 2.5, True]]], [False]],
+]
 
 
 @needs_cvc5
-def test_an_unsat_past_a_kept_number_is_unknown() -> None:
-    path = (Fact([KEPT, ["==", "x", 1]], True, SITE), fork([">", "x", 5]))
+@pytest.mark.parametrize("g", NO_FORM_ROWS)
+def test_a_path_no_program_writes_is_unknown_not_a_crash(g: list[object]) -> None:
+    args: dict[str, object] = {"g": g, "i": 0, "j": 0}
+    sink: list[SinkItem] = []
+    bound: Any = bind(args, sink)
+    bool(bound["g"][bound["i"]][bound["j"]][0] > 3.0)
+    *forks, last = [item for item in sink if isinstance(item, Branch)]
+    seed = Seed.of(args)
+    path = (*forks, Branch(last.expression, not last.taken, last.site))
 
-    assert isinstance(solve(path, {"x": int}, 5.0), Unknown)
+    answer = solve(path, seed.leaves, 5.0, seed.containers(), seed.values)
 
-
-@needs_cvc5
-def test_an_answer_past_a_kept_number_keeps_it() -> None:
-    path = (Fact([KEPT, ["==", "x", 1]], True, SITE), fork([">", "y", 5]))
-
-    answer = solve(path, {"x": int, "y": int}, 5.0)
-
-    assert isinstance(answer, Sat)
-    assert answer.model["x"] == 1
+    assert isinstance(answer, Sat | Unsat | Unknown), answer

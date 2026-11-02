@@ -206,15 +206,16 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
 
 def _rows_kinds(self: ListState) -> frozenset[str]:
     """The kinds with a term that any row of a list of rows holds, or any row around them. A walk
-    names every row, so the answer is kept until a list changes what it holds."""
+    names every row, so the answer is kept until a list gains a kind or changes its rows, or the
+    rows around it change."""
     fields = self.__dict__
     kept = self.rows_kinds
-    if kept is not None and kept[0] == kind_changes():
-        return kept[1]
-    rows = [row for row in list.copy(self) if isinstance(row, ListState)]
     around = self.among_rows or frozenset()
+    if kept is not None and kept[:2] == (kind_changes(), around):
+        return kept[2]
+    rows = [row for row in list.copy(self) if isinstance(row, ListState)]
     kinds = (around | frozenset().union(*(row.kinds for row in rows))) & TRACKED
-    fields["rows_kinds"] = (kind_changes(), kinds)
+    fields["rows_kinds"] = (kind_changes(), around, kinds)
     return kinds
 
 

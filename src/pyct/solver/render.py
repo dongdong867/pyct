@@ -136,7 +136,7 @@ class _Program:
         # the lists the path reads, which read parts by name and define what they write once
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
-        lists.constant, lists.hold_fact = self._constant, self._hold_fact
+        lists.constant, lists.hold_fact = self._number_constant, self._hold_fact
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         self.forms = forms(order)
         for node in order:
@@ -201,6 +201,14 @@ class _Program:
         """The constant of the leaf a part is, or None for any other part."""
         name = self.leaves.named(part)
         return None if name is None else self.leaves.constants[name]
+
+    def _number_constant(self, part: Expression) -> str | None:
+        """The constant of the leaf a part is as a list's position or length reads it, with a
+        bool as the Int 1 or 0, as Python reads one there."""
+        constant = self._constant(part)
+        if constant is not None and self.type_of(part) is bool:
+            return f"(ite {constant} 1 0)"
+        return constant
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.

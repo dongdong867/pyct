@@ -10,10 +10,8 @@ asked. A read that may land on a kind no ask can write, a str, a None or a list,
 
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import replace
 from itertools import islice, product
 
-from pyct.core.branch import KEPT, Branch, Fact
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 
 logger = logging.getLogger(__name__)
@@ -24,20 +22,6 @@ KIND_ASKS = 8
 
 # which read takes which kind: by its place among the reads that may move (``ListTyping``)
 type ReadKinds = Mapping[int, str]
-
-
-def without_kept(path: Sequence[Branch | Fact]) -> tuple[tuple[Branch | Fact, ...], bool]:
-    """The path with each fact that keeps a number written as the check it holds, and whether
-    there was one: an unsat with one is not the path's, since another value may take it."""
-    written = [_held_check(step) for step in path]
-    return tuple(written), any(new is not old for new, old in zip(written, path, strict=True))
-
-
-def _held_check(step: Branch | Fact) -> Branch | Fact:
-    form = step.expression
-    if isinstance(step, Fact) and isinstance(form, list) and form and form[0] == KEPT:
-        return replace(step, expression=form[1])
-    return step
 
 
 def assignments(others: Sequence[frozenset[str]]) -> Iterable[ReadKinds] | None:

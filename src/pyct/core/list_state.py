@@ -33,8 +33,6 @@ TRACKED = frozenset({"int", "str", "float", "bool"})
 
 _READ_HEAD_SET = frozenset(READ_HEADS.values())
 
-# the kinds of item a path cannot tell apart, since Python compares an int with a float
-
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
     int: "int",
@@ -106,17 +104,18 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
-# how many changes to a list have run, which may change what a list of rows holds
+# how many changes to a list have run that may change what a list of rows holds
 _KIND_CHANGES = [0]
 
 
 def note_kind_change() -> None:
-    """Note a change to a list: what a list of rows was found to hold may no longer be so."""
+    """Note a change that gave a list a new kind or changed its rows: what a list of rows was
+    found to hold may no longer be so."""
     _KIND_CHANGES[0] += 1
 
 
 def kind_changes() -> int:
-    """How many changes to a list have run."""
+    """How many changes to a list have run that may change what a list of rows holds."""
     return _KIND_CHANGES[0]
 
 
@@ -177,14 +176,15 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
-    # the kinds every row holds, for a row a tracked index or one from the end picks: another
-    # input may read another row, so a read says its kind if any row can hold a float or a bool
+    # the kinds every row holds, for a row another input may read in its place: a read of it
+    # says its kind if any row can hold a float or a bool
     among_rows: frozenset[str] | None
     # whether the target reached this list at a place no term follows. A float or a bool of the
     # input read from it comes out plain, and a downgrade names it (see ``unplace``)
     unplaced: bool
-    # what the rows inside this list hold, and how many changes had run when that was worked out
-    rows_kinds: tuple[int, frozenset[str]] | None
+    # what the rows inside this list hold, with the count of changes and the rows around it it
+    # was worked out at
+    rows_kinds: tuple[int, frozenset[str], frozenset[str]] | None
 
     @classmethod
     def made(

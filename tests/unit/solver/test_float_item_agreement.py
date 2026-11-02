@@ -112,8 +112,7 @@ ROWS: tuple[Callable[[random.Random], list[list[object]]], ...] = (
 )
 
 
-# rows under a tracked key: of ints and strs, which the key follows, and of floats and bools, whose
-# reads stay plain and record no fork
+# rows under a tracked key: the rows above, and one of ints alone, which the key follows
 KEYED_ROWS: tuple[Callable[[random.Random], list[list[object]]], ...] = (
     *ROWS,
     lambda r: [[r.randrange(0, 3)], [r.randrange(0, 3), r.randrange(0, 3)]],
@@ -156,11 +155,6 @@ def recorded(steps: list[Step], args: dict[str, object]) -> tuple[Branch | Fact 
 def forks(steps: list[Step], args: dict[str, object]) -> tuple[Branch, ...]:
     """The forks a program takes on the arguments, as a run records them, to the first raise."""
     return tuple(item for item in recorded(steps, args) if isinstance(item, Branch))
-
-
-def takes(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]) -> bool:
-    """Whether the arguments follow the path, by the rule a run's answers are held to."""
-    return compare(path, forks(steps, args)) is None
 
 
 def _as_any_kind(expression: Expression) -> Expression:
@@ -247,7 +241,9 @@ def judged(steps: list[Step], args: dict[str, object]) -> str | None:
     A sat answer that adds a null to a list of other kinds, which the program may then read and
     raise on, is not judged (known limit O3), nor is one that moves the pick of a row under its
     own place (``OWN_PLACE``). One that reads an item of another kind takes the forks that kind
-    takes, so the path is compared past any `isfinite` (known limit L9)."""
+    takes, so the path is compared past any `isfinite` the path does not hold, and one stopped by
+    such a check is not judged (known limit L9); nor is one whose row under its own place hands
+    its float out plain, which records no fork (known limit L8)."""
     got = asked(steps, args)
     if got is None:
         return None
@@ -255,6 +251,8 @@ def judged(steps: list[Step], args: dict[str, object]) -> str | None:
     if isinstance(answer, Sat):
         solved = apply(Seed.of(args), answer.model).args
         if _nulls(solved) > _nulls(args) or _moved_the_pick(steps, args, solved):
+            return None
+        if _stopped_by_another_kind(steps, dict(solved), path):
             return None
         assert follows(steps, dict(solved), path), (steps, args, solved, path)
         return "sat"
@@ -267,19 +265,39 @@ def judged(steps: list[Step], args: dict[str, object]) -> str | None:
 def follows(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]) -> bool:
     """Whether an answer does what its path asks. It takes the path, past any `isfinite` an item
     of another kind takes. On a row under its own place, a float the target wrote is plain and
-    can take or leave forks the path does not hold, so such a program is not held to it (L8), and
-    any other need only reach the flipped fork."""
+    can take or leave forks the path does not hold (L8), so the answer need only reach the
+    flipped fork."""
     taken = forks(steps, args)
     if steps[0][0] in OWN_PLACE:
-        if any(step[0] in WRITES for step in steps):
-            return True
         wanted = (_as_any_kind(path[-1].expression), path[-1].taken)
         return wanted in [(_as_any_kind(fork.expression), fork.taken) for fork in taken]
     return compare(_past_finite(path), _past_finite(taken)) is None
 
 
+def _stopped_by_another_kind(
+    steps: list[Step], args: dict[str, object], path: tuple[Branch, ...]
+) -> bool:
+    """Whether the answer's run ends before the flipped fork for a reason of another kind's own:
+    a float's `isfinite` the path does not hold (L9), or, on a row under its own place, a plain
+    float, handed out so with a downgrade or written by the target, which no fork records (L8)."""
+    made = recorded(steps, args)
+    taken = [item for item in made if isinstance(item, Branch)]
+    if len(_past_finite(taken)) >= len(_past_finite(path)):
+        return False
+    if taken and _is_finite_check(taken[-1]) and not taken[-1].taken:
+        return not any(_is_finite_check(fork) for fork in path)
+    plain = any(isinstance(item, Downgrade) for item in made) or any(
+        step[0] in WRITES for step in steps
+    )
+    return steps[0][0] in OWN_PLACE and plain
+
+
 def _past_finite(path: Iterable[Branch]) -> tuple[Branch, ...]:
-    return tuple(fork for fork in path if not _is_finite_check(fork))
+    """The forks, without each `isfinite` but the flipped one, which is the fork asked for."""
+    forks = tuple(path)
+    return tuple(
+        fork for at, fork in enumerate(forks) if at == len(forks) - 1 or not _is_finite_check(fork)
+    )
 
 
 def _is_finite_check(fork: Branch) -> bool:
@@ -317,8 +335,8 @@ def test_cvc5_agrees_with_python_on_paths_through_floats_and_bools() -> None:
         chooser = random.Random(round_seed)
         for _ in range(60):
             answers.append(judged(program(chooser), {"items": chooser.choice(SEEDS)(chooser)}))
-    assert answers.count("sat") >= 100, answers
-    assert answers.count("unsat") >= 10, answers
+    assert answers.count("sat") >= 210, answers
+    assert answers.count("unsat") >= 55, answers
 
 
 @needs_cvc5
@@ -329,8 +347,8 @@ def test_cvc5_agrees_with_python_on_a_row_at_a_place() -> None:
         chooser = random.Random(round_seed)
         for _ in range(60):
             answers.append(judged(row_program(chooser, "row 0"), rows_seed(chooser)))
-    assert answers.count("sat") >= 100, answers
-    assert answers.count("unsat") >= 30, answers
+    assert answers.count("sat") >= 240, answers
+    assert answers.count("unsat") >= 80, answers
 
 
 @needs_cvc5
@@ -345,8 +363,8 @@ def test_cvc5_agrees_with_python_on_a_row_an_index_picks() -> None:
             answer = judged(steps, args)
             assert answer != "error", (steps, args)
             answers.append(answer)
-    assert answers.count("sat") >= 100, answers
-    assert answers.count("unsat") >= 5, answers
+    assert answers.count("sat") >= 180, answers
+    assert answers.count("unsat") >= 25, answers
 
 
 @needs_cvc5
@@ -363,8 +381,8 @@ def test_cvc5_agrees_with_python_on_a_row_a_tracked_key_picks() -> None:
             answer = judged(steps, args)
             assert answer != "error", (steps, args)
             answers.append(answer)
-    assert answers.count("sat") >= 40, answers
-    assert answers.count("unsat") >= 1, answers
+    assert answers.count("sat") >= 65, answers
+    assert answers.count("unsat") >= 8, answers
 
 
 def keyed_program(chooser: random.Random) -> list[tuple[str, str, int]]:
@@ -452,4 +470,5 @@ def test_cvc5_agrees_with_python_on_ints_a_tracked_key_picks_from_a_dict_of_dict
             rows = {"x": {"p": 1, "q": 5}, "y": {"p": 2, "q": 3}}
             args = {"d": rows, "a": chooser.choice("xy"), "b": chooser.choice("pq")}
             answers.append(keyed_answer(keyed_program(chooser), args))
-    assert answers.count("sat") >= 30, answers
+    assert answers.count("sat") >= 180, answers
+    assert answers.count("unsat") >= 8, answers

@@ -57,13 +57,13 @@ def _names_a_key(form: object) -> bool:
 
 
 def _may_hold_a_key(operand: object) -> bool:
-    """Whether an operand may be, or be made from, a walk key: a float never is, and neither is
-    a plain value of a scalar type; a tracked int or bool is when its form names one."""
-    if isinstance(operand, float) or type(operand) in (int, bool, str, type(None)):
+    """Whether an operand may be, or be made from, a walk key: a plain value of a scalar type
+    never is; a tracked int, bool or float is when its form names one."""
+    if type(operand) in (int, bool, float, str, type(None)):
         return False
     if isinstance(operand, tuple):
         return any(_may_hold_a_key(item) for item in operand)
-    if isinstance(operand, int):
+    if isinstance(operand, int | float):
         return _names_a_key(getattr(operand, "expression", None))
     return True
 

@@ -13,7 +13,6 @@ from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.lists import ConcolicList
-from pyct.core.operands import reads_plain
 from pyct.core.ranges import ConcolicRange
 from pyct.core.strs import ConcolicStr
 
@@ -39,45 +38,3 @@ for tracked, base in _ROWS.items():
 # and a view has no plain value of its own (read-a-dict-view-s-type-as-python-s)
 _VIEWS = (ConcolicKeys, ConcolicValues, ConcolicItems)
 values.BASES_BY_ID.update({id(view): type(view.python({})) for view in _VIEWS})
-
-# what takes a position or a key (`pyct.core.operands`)
-reads_plain(
-    ConcolicList,
-    (
-        "__getitem__",
-        "__setitem__",
-        "__delitem__",
-        "__mul__",
-        "__rmul__",
-        "__imul__",
-        "insert",
-        "pop",
-    ),
-)
-reads_plain(
-    ConcolicDict,
-    ("__contains__", "__delitem__", "__getitem__", "__setitem__", "get", "pop", "setdefault"),
-)
-reads_plain(
-    ConcolicStr,
-    (
-        "__getitem__",
-        "__mul__",
-        "__rmul__",
-        "center",
-        "count",
-        "endswith",
-        "find",
-        "index",
-        "ljust",
-        "replace",
-        "rfind",
-        "rindex",
-        "rjust",
-        "rsplit",
-        "split",
-        "startswith",
-        "zfill",
-    ),
-    every=True,
-)

@@ -1,5 +1,5 @@
 """`%` formatting with a plain str format and a tracked operand: the text Python gives, tracked
-where pyct follows each tracked operand's conversion, and a `__mod__` downgrade elsewhere."""
+where pyct follows an operand's conversion, and a `__mod__` downgrade for each it does not."""
 
 import operator
 from collections.abc import Callable
@@ -166,6 +166,30 @@ def test_any_other_conversion_is_python_s_text_plain_and_a_downgrade(
     assert [item for item in sink if isinstance(item, Downgrade)][-1] == Downgrade(
         name="__mod__", site=ANY
     )
+
+
+# a format whose tracked operands pyct follows but one, the right side, and the expression the
+# answer carries: that one is written into the format as the text it gave
+WRITTEN_IN: dict[str, tuple[str, Callable[[dict[str, Any]], object], object]] = {
+    "a float's own letter": ("%s=%.1f", lambda t: (t["s"], t["f"]), ["%", "'%s=2.5'", ["()", "s"]]),
+    "a float as %s": ("%s%s", lambda t: (t["s"], t["f"]), ["%", "'%s2.5'", ["()", "s"]]),
+    "a width": ("%d|%5s", lambda t: (t["n"], t["s"]), ["%", "'%d|   ab'", ["()", "n"]]),
+    "a bool as hex": ("%s%x", lambda t: (t["s"], t["b"]), ["%", "'%s1'", ["()", "s"]]),
+}
+
+
+@pytest.mark.parametrize(("fmt", "right", "expression"), WRITTEN_IN.values(), ids=list(WRITTEN_IN))
+def test_an_operand_pyct_does_not_follow_is_written_in_and_the_rest_stay_tracked(
+    fmt: str, right: Callable[[dict[str, Any]], object], expression: object
+) -> None:
+    sink: list[SinkItem] = []
+
+    answer = formatted(fmt, right(_tracked(sink)))
+
+    assert type(answer) is ConcolicStr
+    assert str.__str__(answer) == fmt % _plain_values(right(_tracked([])))
+    assert answer.expression == expression  # pyrefly: ignore[missing-attribute]
+    assert sink == [Downgrade(name="__mod__", site=ANY)]
 
 
 def test_a_format_past_the_solver_s_characters_is_a_downgrade() -> None:

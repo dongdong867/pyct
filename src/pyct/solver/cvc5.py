@@ -24,8 +24,8 @@ from pyct.solver.floats import FINITE
 from pyct.solver.given import Given, answered, argv, options, took
 from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
-from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
-from pyct.solver.read_kinds import asked_of_each, without_kept
+from pyct.solver.lists import READ_STEPS, Origin
+from pyct.solver.read_kinds import asked_of_each
 from pyct.solver.render import Program, program
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
@@ -153,7 +153,6 @@ def solve(
     """
     timeout = min(timeout, LONGEST_WAIT_SECONDS - GRACE_SECONDS)
     origin = _origin(shapes or {}, values or {}, timeout)
-    prefix, kept = without_kept(prefix)
     try:
         walks = Walks(prefix, origin.dicts)
         fixed = walks.fixed(prefix)
@@ -174,7 +173,7 @@ def solve(
     def ask(kinds: Mapping[int, str]) -> Answer:
         return _asked((conditions, leaves), replace(origin, read_kinds=kinds), timeout)[0]
 
-    return asked_of_each(written.other_kinds, written.untried or kept, ask)
+    return asked_of_each(written.other_kinds, written.untried, ask)
 
 
 def _after_unsat(
@@ -354,8 +353,8 @@ def _write(
     """The program for the path, written by the origin's instant.
 
     A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is. A
-    path with a read nothing on it types, or one whose reads run past the steps the origin
-    gives them all, is an ``Unknown()``, a miss rather than a crash.
+    path with an operation no form writes on what it meets, or with reads past the steps the
+    origin gives them all, is an ``Unknown()``, a miss rather than a crash.
     """
     try:
         return program(*path, origin, finite=finite, cores=cores)
@@ -371,7 +370,8 @@ def _write(
     except UnknownCountError as error:
         logger.debug("giving up a program that reads a count with no c*: %s", error)
         return Unknown()
-    except UnencodedError as error:
+    except ValueError as error:
+        # an operation with no form on the type it meets, a list's read among them
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
 

@@ -1,3 +1,6 @@
+import math
+
+
 def ratio_and_flags(data):
     if data["ratio"] > 2.5:
         return "high"
@@ -420,8 +423,7 @@ def powers_in_a_walk(d, xs):
 
 def cut_row_in_a_walk(d, g, i):
     for k in d:
-        if g[i:][0][0] > 1.0:
-            pass
+        g[i:][0][0]
         if k == "target":
             return "hit"
     return "miss"
@@ -429,8 +431,7 @@ def cut_row_in_a_walk(d, g, i):
 
 def picked_dict_in_a_walk(d, rows, i):
     for k in d:
-        if rows[i]["x"] > 1.0:
-            pass
+        rows[i]["x"]
         if k == "target":
             return "hit"
     return "miss"
@@ -451,3 +452,42 @@ def walk_of_reversed_rows(g, n):
         return "hit"
     return "miss"
 
+
+def walk_of_growing_rows(g, n):
+    for row in reversed(g):
+        row.append(0)
+    if n == 7:
+        return "hit"
+    return "miss"
+
+
+def flag_value_in_a_sum(ys, data):
+    if ys[data["flag"] + 1] > 5:
+        return "hit"
+    return "miss"
+
+
+def percent_beside_a_name(name, scores):
+    if "%s=%.1f" % (name, scores[0]) == "bob=0.5":
+        return "hit"
+    return "miss"
+
+
+def key_as_a_float_in_a_format(d: dict[int, int]):
+    for k in d:
+        t = "%.1f" % (k * 0.5)
+        if t == "0.5" and k == 7:
+            return "never"
+        if k == 7:
+            return "seven"
+    return "none"
+
+
+def key_as_a_tolerance(d: dict[int, int]):
+    for k in d:
+        close = math.isclose(1.0, 1.5, abs_tol=k * 0.5)
+        if close and k == 7:
+            return "never"
+        if k == 7:
+            return "seven"
+    return "none"

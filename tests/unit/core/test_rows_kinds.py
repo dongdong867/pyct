@@ -29,3 +29,25 @@ def test_a_row_picked_after_a_change_says_the_kind_the_change_added() -> None:
     item = rows[args["i"]][0]
 
     assert head_of(item) == "[int]"
+
+
+def test_a_change_that_adds_no_kind_keeps_what_the_rows_hold() -> None:
+    args: Any = bind({"g": [[1], [2]], "i": 0}, [])
+    rows = args["g"]
+    _ = rows[args["i"]]
+    kept = rows.__dict__["rows_kinds"]
+
+    rows[1].append(3)
+    _ = rows[args["i"]]
+
+    assert rows.__dict__["rows_kinds"] is kept
+
+
+def test_a_read_says_the_same_kind_after_another_read_of_its_row() -> None:
+    args: Any = bind({"g": [[[1], [1]], [[2], 0.5]], "i": 0, "j": 0}, [])
+    g, i, j = args["g"], args["i"], args["j"]
+    before = head_of(g[i][j][0])
+
+    _ = g[0][j]
+
+    assert head_of(g[i][j][0]) == before

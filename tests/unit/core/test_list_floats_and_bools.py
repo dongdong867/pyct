@@ -484,3 +484,21 @@ def test_a_list_built_on_a_row_a_cut_picks_hands_its_float_out_plain_and_named()
 
     assert type(item) is float
     assert downgrades(sink)
+
+
+@pytest.mark.parametrize(
+    "takes",
+    [lambda ys, row: ys.extend(row), lambda ys, row: ys.__setitem__(slice(1, 1), row)],
+    ids=["extend", "a slice set"],
+)
+def test_a_list_that_takes_in_a_row_a_cut_picks_hands_its_float_out_plain_and_named(
+    takes: Any,
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"ys": [1], "g": [[0.5], [0.5]], "i": 1}, sink)
+    ys = args["ys"]
+
+    takes(ys, args["g"][args["i"] :][0])
+
+    assert type(ys[1]) is float
+    assert downgrades(sink)

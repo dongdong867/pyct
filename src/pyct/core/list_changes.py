@@ -107,8 +107,10 @@ def made(
     change(self.shadow)
     fields = self.__dict__
     fields["expression"] = kept_form(form)
+    if not kinds <= self.kinds or "list" in self.kinds | kinds:
+        # a new kind, or a change to which rows a list holds
+        note_kind_change()
     fields["kinds"] = self.kinds | kinds
-    note_kind_change()
     self.resized(span)
     return answer
 

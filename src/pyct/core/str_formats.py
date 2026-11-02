@@ -18,9 +18,10 @@ bool, with no flag, width, precision or length (`FOLLOWED`). A format that
 is `%s` alone answers with the operand's own text, as Python's own `%`
 does. A plain int, bool or str operand is a literal in the expression, and
 any other plain operand is written into the format as the text it gave.
-Any other conversion of a tracked operand, a format read through a key or
-a ``*``, or a text the solver cannot hold, gives Python's text, plain, and
-a downgrade named `__mod__`.
+Any other conversion of a tracked operand is written in the same way, with
+a downgrade named `__mod__`, and the other operands stay tracked. A format
+read through a key or a ``*``, or a text the solver cannot hold, gives
+Python's text, plain, and that downgrade.
 """
 
 from __future__ import annotations
@@ -194,13 +195,16 @@ class _Pieces:
         # an object of the target's own may hand back a tracked str from `__str__`: its text
         text = str.__str__(own(operator.mod, spec.text, (_plain(item),)))
         self.texts.append(text)
-        if _base(item) is not None:
+        if _base(item) is not None and _followed(spec, item):
             if self.sink is None:
                 self.sink = cast(Any, item).sink
-            self.lost = self.lost or not _followed(spec, item)
             self.written.append(spec.text)
             self.forms.append(cast(Any, item).expression)
             return
+        if _base(item) is not None:
+            # no form for this conversion of a tracked operand: its text is written in, as a
+            # plain operand's is, and the other operands stay tracked
+            _downgrade(cast(Any, item).sink, (item,))
         form = _literal(item)
         if form is None:
             self.lost = self.lost or not within_cvc5(text)

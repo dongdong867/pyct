@@ -6,17 +6,7 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import (
-    numbers,
-    operands,
-    str_cases,
-    str_repeats,
-    str_splits,
-    str_walks,
-    strs,
-    texts,
-    values,
-)
+from pyct.core import numbers, str_cases, str_repeats, str_splits, str_walks, strs, texts, values
 from pyct.core import walk_key_escapes as compares
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Branch, Downgrade, SinkItem, Site
@@ -484,7 +474,6 @@ def test_every_operation_that_reaches_strs_own_goes_through_the_helper() -> None
     # closure it holds, so what a function holds counts as what it calls
     files = {strs.__file__, numbers.__file__, values.__file__, texts.__file__, str_cases.__file__}
     files |= {str_splits.__file__, str_walks.__file__, compares.__file__, str_repeats.__file__}
-    files |= {operands.__file__}
     written_here = written_in(ConcolicStr, files)
 
     # the scan read the taught compares, the truth test and the searches, and a derived plain

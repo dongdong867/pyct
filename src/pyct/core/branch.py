@@ -30,10 +30,6 @@ READ_HEADS: Mapping[str, str] = {
 
 _READ_HEAD_NAMES = frozenset(READ_HEADS.values())
 
-# the head of a fact that keeps a number at the value an operation took it as, which no fork
-# tested: `["kept", ["==", x, 1]]`. Another value may take the same path (``core.operands``)
-KEPT = "kept"
-
 # the kinds that make a list's reads say their kind
 FLOAT_AND_BOOL = frozenset({"float", "bool"})
 
