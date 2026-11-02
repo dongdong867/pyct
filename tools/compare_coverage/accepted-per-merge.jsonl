@@ -233,6 +233,7 @@
 {"set": "v2", "target": "targets.lists.measured::renamed_row", "seed": {"grid": [[1], []], "i": 0}, "status": "differs", "only_legacy": [], "only_v2": [70, 71]}
 {"set": "v2", "target": "targets.lists.measured::unproven", "seed": {"xs": [], "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [50]}
 {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [], "only_v2": [4]}}
+{"set": "v2", "target": "targets.lists.mixed_numbers::added_to_ints", "seed": {"xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [34]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::isinstance_guard", "seed": {"row": [1, 0.5]}, "status": "differs", "only_legacy": [], "only_v2": [24]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::last_float", "seed": {"row": [1, 0.5]}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::row_by_position", "seed": {"row": [0, 0.5, false]}, "status": "differs", "only_legacy": [], "only_v2": [4, 5]}
@@ -245,13 +246,28 @@
 {"set": "v2", "target": "targets.lists.truth_kept::kept", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.loops.vowels::count_vowels", "seed": {"s": "xy"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::cut_row_in_a_walk", "seed": {"d": {"a": 1}, "g": [[0.5], [0.5]], "i": 1}, "status": "differs", "only_legacy": [424], "only_v2": [426]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_as_a_key", "seed": {"d": {"0": 1}, "flags": [false]}, "status": "differs", "only_legacy": [], "only_v2": [379, 380]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_cuts_a_str", "seed": {"s": "abc", "flags": [true]}, "status": "differs", "only_legacy": [], "only_v2": [344]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_in_a_walk", "seed": {"d": {"a": 1}, "ys": [0, 1], "flags": [false]}, "status": "differs", "only_legacy": [], "only_v2": [443]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_repeats_a_list", "seed": {"ys": [0, 1], "flags": [true]}, "status": "differs", "only_legacy": [], "only_v2": [337]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_repeats_a_str", "seed": {"s": "ab", "flags": [true]}, "status": "differs", "only_legacy": [], "only_v2": [349]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::flag_searches_keys", "seed": {"d": {"0": 1}, "flags": [false]}, "status": "differs", "only_legacy": [], "only_v2": [385]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::float_as_int_pads", "seed": {"s": "a", "xs": [3.5]}, "status": "differs", "only_legacy": [], "only_v2": [361]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_deep", "seed": {"d": {"a": [0.5]}}, "status": "differs", "only_legacy": [], "only_v2": [65]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_item_above", "seed": {"xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [47]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_item_equal", "seed": {"xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [41]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::float_of_item", "seed": {"xs": [1, 0.5, false], "i": 2}, "status": "differs", "only_legacy": [], "only_v2": [262]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_value_equal", "seed": {"d": {"k": 0.5}}, "status": "differs", "only_legacy": [], "only_v2": [53]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_value_sum", "seed": {"d": {"k": 0.5}}, "status": "differs", "only_legacy": [], "only_v2": [59]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::formats_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [401]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::is_true_value", "seed": {"d": {"k": false}}, "status": "differs", "only_legacy": [], "only_v2": [29]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::last_row_key", "seed": {"rows": [{"a": 1, "b": 2}], "k": "a"}, "status": "differs", "only_legacy": [], "only_v2": [291]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::percent_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [409]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::picked_dict_in_a_walk", "seed": {"d": {"a": 1}, "rows": [{"x": 0.5}, {"x": 0.5}], "i": 1}, "status": "differs", "only_legacy": [433], "only_v2": [435]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::powers_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [417]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::ratio_and_flags", "seed": {"data": {"ratio": 0.5, "flags": [false]}}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::rounds_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [393]}
 {"set": "v2", "target": "targets.nested.keeps_shape::check", "seed": {"items": [0], "config": {}, "note": null}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.nested.missing_key::check", "seed": {"config": {"server": {}}}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [5], "only_v2": [9]}
@@ -384,6 +400,3 @@
 {"set": "v2", "target": "targets.why.named::is_not_false_flag", "seed": {"x": 0}, "status": "differs", "only_legacy": [27], "only_v2": []}
 {"set": "v2", "target": "targets.why.negated::while_is_not_true", "seed": {"x": 0}, "status": "differs", "only_legacy": [105], "only_v2": [103, 106]}
 {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}
-{"set": "v2", "target": "targets.lists.mixed_numbers::added_to_ints", "seed": {"xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [34]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::float_of_item", "seed": {"xs": [1, 0.5, false], "i": 2}, "status": "differs", "only_legacy": [], "only_v2": [262]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::last_row_key", "seed": {"rows": [{"a": 1, "b": 2}], "k": "a"}, "status": "differs", "only_legacy": [], "only_v2": [291]}
