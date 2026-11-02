@@ -237,17 +237,70 @@ def long_appended_float(xs):
     return "miss"
 
 
-def long_appended_int(xs):
-    for _ in range(600):
-        xs.append(1)
-    if xs[0] > 3:
-        return "hit"
-    return "miss"
-
-
 def gains_later(xs, i, f):
     ys = xs[i:]
     ys.append(f)
     if ys[1] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def tracked_index_above(xs, i):
+    if xs[i] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def truth_then_index(grid, i):
+    if grid[i][0] and i == 0:
+        return "hit"
+    return "miss"
+
+
+def float_of_item(xs, i):
+    if float(xs[i]) > 3.0:
+        return "hit"
+    return "miss"
+
+
+def key_to_another_kind(d, k):
+    if d[k] > 3.0:
+        return "hit"
+    return "miss"
+
+
+def two_keys(d, a, b):
+    if d[a][b] == 7:
+        return "seven"
+    if d["x"]["p"] == 1:
+        return "one"
+    return "other"
+
+
+def row_and_key(rows, i, k):
+    if rows[i][k] == 7:
+        return "seven"
+    if rows[0]["a"] == 1:
+        return "one"
+    return "other"
+
+
+def last_row_key(rows, k):
+    row = rows[-1]
+    if row["a"] == 1 and row[k] == 7:
+        return "hit"
+    return "miss"
+
+
+def joined_int_row(ys, grid):
+    row = (ys + grid)[1]
+    if row[0] > 3:
+        return "hit"
+    return "miss"
+
+
+def appended_then_read(xs, i, f):
+    xs.append(f)
+    if xs[i] > 3.0:
         return "hit"
     return "miss"

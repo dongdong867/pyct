@@ -62,11 +62,10 @@ class ListShape:
 
     @cached_property
     def mixed(self) -> bool:
-        """Whether a float or a bool sits beside another kind, here or among the lists inside: a
+        """Whether a float or a bool sits beside another kind among the list's own items: a
         shorter answer would lose what the next input's added items cannot bring back."""
-        rows = {frozenset(row.kinds) for row in self.rows.values()}
-        kinds = set(self.kinds).union(*rows)
-        return bool(kinds & {"float", "bool"}) and (len(set(self.kinds)) > 1 or len(rows) > 1)
+        kinds = set(self.kinds)
+        return bool(kinds & {"float", "bool"}) and len(kinds) > 1
 
     @cached_property
     def holds_floats(self) -> bool:

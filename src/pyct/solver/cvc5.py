@@ -25,6 +25,7 @@ from pyct.solver.given import Given, answered, argv, options, took
 from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
+from pyct.solver.read_kinds import asked_of_each
 from pyct.solver.render import Program, program
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
@@ -135,6 +136,9 @@ def solve(
     ask; an unsat to it is asked with the keys the forks name chosen (``walk_keys``,
     ``_chosen``, ``_after_unsat``; let-the-solver-choose-a-small-dict-s-walk-key).
 
+    A read that may land on another kind than Python read makes an unsat one more thing to
+    check: each other kind is asked in turn (see ``read_kinds``).
+
     A prefix that names a float leaf or reads a float item is asked first with each such float
     held finite; decision float-finite-first-frees-the-core-s-leaves-and-lists. See
     ``_finite_first``.
@@ -159,10 +163,17 @@ def solve(
         return Unknown()
     conditions, places = held(fixed)
     origin = replace(origin, places=places)
-    answer, placed = _asked((conditions, leaves), origin, timeout)
+    answer, placed, written = _asked((conditions, leaves), origin, timeout)
     if not isinstance(answer, Unsat):
         return answer
-    return _after_unsat((prefix, leaves), walks, origin, placed, timeout)
+    answer = _after_unsat((prefix, leaves), walks, origin, placed, timeout)
+    if not isinstance(answer, Unsat) or written is None:
+        return answer
+
+    def ask(kinds: Mapping[int, str]) -> Answer:
+        return _asked((conditions, leaves), replace(origin, read_kinds=kinds), timeout)[0]
+
+    return asked_of_each(written.other_kinds, written.untried, ask)
 
 
 def _after_unsat(
@@ -187,7 +198,7 @@ def _after_unsat(
     if placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")
         unplaced = (held(walks.fixed(walks.unread(prefix)))[0], leaves)
-        answer, _ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
+        answer, *_ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
         if isinstance(answer, Sat):
             return Unknown()
     if isinstance(answer, Unsat) and walks.aimed:
@@ -195,7 +206,7 @@ def _after_unsat(
     if isinstance(answer, Unsat) and (walks.forked or walks.pinned):
         logger.debug("unsat with each walk key at the input's key: asking without them")
         unnamed = (held(walks.unnamed(prefix))[0], leaves)
-        answer, _ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)
+        answer, *_ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)
         return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
     return answer
 
@@ -222,7 +233,7 @@ def _chosen(
         until=monotonic() + limit,
         lookups=int(limit * LOOKUP_STEPS_PER_SECOND),
     )
-    answer, _ = _asked((conditions, {**leaves, **walk_leaves}), chosen, limit)
+    answer, *_ = _asked((conditions, {**leaves, **walk_leaves}), chosen, limit)
     logger.debug("with the walk keys chosen: %s", type(answer).__name__)
     return answer
 
@@ -245,10 +256,10 @@ def held(
     return conditions, places
 
 
-def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
+def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool, Program | None]:
     """What the path is answered from ``origin``, every ask a program that held more than the
-    path needs and was unsat taken in turn, and whether any program kept a key a walk read in
-    its place.
+    path needs and was unsat taken in turn, whether any program kept a key a walk read in its
+    place, and the last program asked.
 
     The places are what makes a model walk the dict as the path did; without them, a model may
     walk another order, and pyct cannot tell whether an answer it writes takes the path, so a
@@ -270,8 +281,8 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         origin = replace(origin, fixed_reads=False)
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
-        return _loosened(path, origin), placed
-    return answer, placed
+        return _loosened(path, origin), placed, written
+    return answer, placed, written
 
 
 def _origin(

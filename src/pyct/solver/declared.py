@@ -106,6 +106,10 @@ class Program:
     holders: Mapping[str, str] = field(default_factory=dict)
     # whether the program holds any float finite, which an unsat may rest on
     finite: bool = False
+    # the other kinds each read that may move can take, and whether a read may land on a kind no
+    # ask can write: what an unsat rests on beside the program (see ``read_kinds``)
+    other_kinds: tuple[frozenset[str], ...] = ()
+    untried: bool = False
 
     def read(self, model: Mapping[str, object]) -> dict[str, object]:
         """A model cvc5 wrote by constant, named by the leaves the constants were declared for,

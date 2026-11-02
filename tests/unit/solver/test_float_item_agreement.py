@@ -2,12 +2,12 @@
 
 A random program reads, searches and changes tracked items, then forks on them. The path it took,
 its last fork flipped, goes to the solver as a run asks it, with the facts recorded before that
-fork. A sat answer is run again in Python and must take the path the solver was asked for, unless
-the run named a loss: a read the solver cannot type stays plain, and no fork holds its value. An
-unsat answer must have no witness among small lists of the kinds the seed holds.
+fork. A sat answer is run again in Python and must take the path the solver was asked for. An
+unsat answer must have no witness among small lists of the kinds the seed holds at each place, at
+any index a program reads by, since an unsat says no input takes the path.
 
-On rows an index picks, the witness search varies the picked row at its own length and keeps the
-index.
+The picks in ``OWN_PLACE`` read a row under its own place, which no term ties to what picked it,
+so an answer may leave the path and an unsat holds for that row alone (known limit L8).
 """
 
 import contextlib
@@ -71,17 +71,18 @@ PICKS: dict[str, Callable[..., Any]] = {
     "rows joined": lambda rows, i: rows[0] + rows[1],
     "rows cut i": lambda rows, i: rows[i:][0],
     "rows + rows": lambda rows, i: (rows + rows)[1],
+    "row under a key": lambda rows, i: rows[i],
 }
 
 # the picks that hand out a row under its own place, which another input's index or length may
 # move: an answer that moves them may leave the path on an int, as on origin/v2 (known limit L8)
-OWN_PLACE = frozenset({"rows cut i", "rows + rows"})
+OWN_PLACE = frozenset({"rows cut i", "rows + rows", "row under a key"})
 
-# the picks the solver cannot place: another input's row may hold another kind
-UNPLACED = tuple(pick for pick in PICKS if pick != "row 0")
+# the picks another input's index or length moves: its row may hold another kind
+MOVING = tuple(pick for pick in PICKS if pick not in ("row 0", "row under a key"))
 
-# the steps that read from the end of the list
-FROM_THE_END = frozenset({"last <", "pop", "reversed"})
+# the doubles a witness search over two rows tries, fewer since it tries every row and index
+ROW_WITNESS_FLOATS = (0.0, 1.5, 2.5, float("nan"), float("inf"))
 
 type Step = tuple[str, float]
 
@@ -104,6 +105,14 @@ ROWS: tuple[Callable[[random.Random], list[list[object]]], ...] = (
     lambda r: [[r.choice(FLOATS)], [r.randrange(0, 3)]],
     lambda r: [[r.randrange(0, 3)], [r.choice((True, False))]],
     lambda r: [[r.choice((True, False)), r.choice(FLOATS)], [r.choice(FLOATS), r.randrange(0, 3)]],
+)
+
+
+# rows under a tracked key: of ints and strs, which the key follows, and of floats and bools, whose
+# reads stay plain and record no fork
+KEYED_ROWS: tuple[Callable[[random.Random], list[list[object]]], ...] = (
+    *ROWS,
+    lambda r: [[r.randrange(0, 3)], [r.randrange(0, 3), r.randrange(0, 3)]],
 )
 
 
@@ -140,11 +149,6 @@ def recorded(steps: list[Step], args: dict[str, object]) -> tuple[Branch | Fact 
     return tuple(item for item in sink if isinstance(item, Branch | Fact | Downgrade))
 
 
-def named_a_loss(steps: list[Step], args: dict[str, object]) -> bool:
-    """Whether a program's run named a read pyct left plain."""
-    return any(isinstance(item, Downgrade) for item in recorded(steps, args))
-
-
 def forks(steps: list[Step], args: dict[str, object]) -> tuple[Branch, ...]:
     """The forks a program takes on the arguments, as a run records them, to the first raise."""
     return tuple(item for item in recorded(steps, args) if isinstance(item, Branch))
@@ -165,61 +169,45 @@ def proves(steps: list[Step], args: dict[str, object], path: tuple[Branch, ...])
     )
 
 
-def left_out(steps: list[Step], seed: list[object]) -> bool:
-    """Whether a program's sat answer may leave its path for a reason named elsewhere: a plain
-    float left to Python beside another kind (known limit N5), or a float the target added to
-    ints or bools, which a longer input reads at another step and the run reports as leaving
-    the plan."""
-    names = {name for name, _ in steps}
-    kinds = {type(item) for item in seed}
-    adds = bool(names & {"append", "+", "set", "row i +"})
-    plain_compare = adds and kinds != {float} and bool(names & {"min", "max"})
-    return plain_compare or (adds and bool(kinds) and kinds <= {int, bool})
+def _kinds_of(items: list[object], floats: tuple[float, ...]) -> list[tuple[object, ...]]:
+    """What each place of a list may hold in a witness: values of the kind the seed holds there."""
+    return [
+        floats if type(item) is float else (True, False) if type(item) is bool else tuple(range(4))
+        for item in items
+    ]
 
 
-def varied(steps: list[Step], args: dict[str, Any]) -> int | None:
-    """The row a witness varies on a list of rows, None on a flat list: row 0 for a program on
-    row 0, and else the row the program picks, or reads last."""
-    if "i" not in args:
-        return None
-    rows, pick = args["items"], steps[0][0]
-    if pick == "row 0":
-        return 0
-    if pick in ("row i", "row i +") and -len(rows) <= args["i"] < len(rows):
-        return args["i"] % len(rows)
-    return len(rows) - 1
+def _shorter(items: list[object], floats: tuple[float, ...]) -> Iterable[list[object]]:
+    """Each list of the seed's kinds at their places, and none past them, shortest first."""
+    choices = _kinds_of(items, floats)
+    for length in range(len(items) + 1):
+        yield from map(list, itertools.product(*choices[:length]))
 
 
 def witness(steps: list[Step], path: tuple[Branch, ...], args: dict[str, Any]) -> object:
-    """Arguments of the seed's kinds at their places, and none past them, that take the path.
-
-    A read from the end of a list of other kinds is typed by the input's kind there, which holds
-    the list at the input's length, so only a list of that length is a witness for one. On a
-    list of rows, only the row ``varied`` names is varied, and a row an index picks only at its
-    own length, which the path holds with the index.
-    """
-    row = varied(steps, args)
-    seed = args["items"] if row is None else args["items"][row]
-    choices = [
-        WITNESS_FLOATS if type(item) is float else (True, False) if type(item) is bool else range(4)
-        for item in seed
-    ]
-    mixed = len({type(item) for item in seed}) > 1
-    reads_the_end = any(name in FROM_THE_END for name, _ in steps)
-    held = row is not None and steps[0][0] != "row 0"
-    shortest = len(seed) if (mixed and reads_the_end) or held else 0
-    for length in range(shortest, len(seed) + 1):
-        for items in itertools.product(*choices[:length]):
-            if proves(steps, {**args, "items": _with(args["items"], row, list(items))}, path):
+    """Arguments of the seed's kinds at their places, and none past them, that take the path: on
+    a list of rows, at any index, and with every row varied, but that a program under
+    ``OWN_PLACE`` keeps its index, which no term of its path follows."""
+    if "i" not in args:
+        for items in _shorter(args["items"], WITNESS_FLOATS):
+            if proves(steps, {**args, "items": items}, path):
                 return items
+        return None
+    return _row_witness(steps, path, args)
+
+
+def _row_witness(steps: list[Step], path: tuple[Branch, ...], args: dict[str, Any]) -> object:
+    rows: Any = args["items"]
+    keys = list(rows) if isinstance(rows, dict) else None
+    held = rows.values() if isinstance(rows, dict) else rows
+    each = [list(_shorter(row, ROW_WITNESS_FLOATS)) for row in held]
+    indexes = [args["i"]] if steps[0][0] in OWN_PLACE else keys or list(range(-2, 2))
+    for index in indexes:
+        for picked in itertools.product(*each):
+            made = dict(zip(keys, picked, strict=True)) if keys else [list(row) for row in picked]
+            if proves(steps, {**args, "items": made, "i": index}, path):
+                return made, index
     return None
-
-
-def _with(items: list[Any], row: int | None, values: list[object]) -> list[Any]:
-    """The list of the seed with ``values`` in place of row ``row``, or in place of the list."""
-    if row is None:
-        return values
-    return [values if at == row else list(each) for at, each in enumerate(items)]
 
 
 def asked(steps: list[Step], args: dict[str, object]) -> tuple[tuple[Branch, ...], Answer] | None:
@@ -243,22 +231,22 @@ def judged(steps: list[Step], args: dict[str, object]) -> str | None:
     sat or unsat, None for any other answer or a program that forks nowhere.
 
     A sat answer that adds a null to a list of other kinds, which the program may then read and
-    raise on, is not judged (known limit O3), nor is one to a run that named a loss, nor one to
-    a program on a row under its own place (``OWN_PLACE``)."""
+    raise on, is not judged (known limit O3), nor is one to a program on a row under its own
+    place (``OWN_PLACE``)."""
     got = asked(steps, args)
     if got is None:
         return None
     path, answer = got
     if isinstance(answer, Sat):
         solved = apply(Seed.of(args), answer.model).args
-        if _nulls(solved) > _nulls(args) or named_a_loss(steps, args) or steps[0][0] in OWN_PLACE:
+        if _nulls(solved) > _nulls(args) or steps[0][0] in OWN_PLACE:
             return None
         assert takes(steps, dict(solved), path), (steps, args, solved, path)
         return "sat"
     if isinstance(answer, Unsat):
         assert witness(steps, path, args) is None, (steps, args, path)
         return "unsat"
-    return None
+    return "error" if isinstance(answer, Error) else None
 
 
 def _nulls(args: Any) -> int:
@@ -281,12 +269,9 @@ def test_cvc5_agrees_with_python_on_paths_through_floats_and_bools() -> None:
     for round_seed in ROUNDS:
         chooser = random.Random(round_seed)
         for _ in range(60):
-            steps = program(chooser)
-            items = chooser.choice(SEEDS)(chooser)
-            if not left_out(steps, items):
-                answers.append(judged(steps, {"items": items}))
+            answers.append(judged(program(chooser), {"items": chooser.choice(SEEDS)(chooser)}))
     assert answers.count("sat") >= 100, answers
-    assert answers.count("unsat") >= 30, answers
+    assert answers.count("unsat") >= 10, answers
 
 
 @needs_cvc5
@@ -296,10 +281,7 @@ def test_cvc5_agrees_with_python_on_a_row_at_a_place() -> None:
     for round_seed in ROUNDS:
         chooser = random.Random(round_seed)
         for _ in range(60):
-            steps = row_program(chooser, "row 0")
-            args = rows_seed(chooser)
-            if not left_out(steps, args["items"][0]):
-                answers.append(judged(steps, args))
+            answers.append(judged(row_program(chooser, "row 0"), rows_seed(chooser)))
     assert answers.count("sat") >= 100, answers
     assert answers.count("unsat") >= 30, answers
 
@@ -311,15 +293,13 @@ def test_cvc5_agrees_with_python_on_a_row_an_index_picks() -> None:
     for round_seed in ROUNDS:
         chooser = random.Random(round_seed)
         for _ in range(60):
-            steps = row_program(chooser, chooser.choice(UNPLACED))
+            steps = row_program(chooser, chooser.choice(MOVING))
             args = rows_seed(chooser)
-            got = asked(steps, args)
-            assert got is None or not isinstance(got[1], Error), (steps, args, got)
-            row = args["items"][varied(steps, args) or 0]
-            if not left_out(steps, row):
-                answers.append(judged(steps, args))
-    assert answers.count("sat") >= 60, answers
-    assert answers.count("unsat") >= 20, answers
+            answer = judged(steps, args)
+            assert answer != "error", (steps, args)
+            answers.append(answer)
+    assert answers.count("sat") >= 100, answers
+    assert answers.count("unsat") >= 5, answers
 
 
 @needs_cvc5
@@ -329,11 +309,98 @@ def test_cvc5_agrees_with_python_on_a_row_a_tracked_key_picks() -> None:
     for round_seed in ROUNDS:
         chooser = random.Random(round_seed)
         for _ in range(30):
-            steps = row_program(chooser, "row i")
-            rows = chooser.choice(ROWS)(chooser)
+            steps = row_program(chooser, "row under a key")
+            rows = chooser.choice(KEYED_ROWS)(chooser)
             args: dict[str, object] = {"items": dict(zip("ab", rows, strict=True))}
             args["i"] = chooser.choice("ab")
-            got = asked(steps, args)
-            assert got is None or not isinstance(got[1], Error), (steps, args, got)
-            answers.append("named" if named_a_loss(steps, args) else None)
-    assert answers.count("named") >= 30, answers
+            answer = judged(steps, args)
+            assert answer != "error", (steps, args)
+            answers.append(answer)
+    assert answers.count("unsat") >= 1, answers
+
+
+def keyed_program(chooser: random.Random) -> list[tuple[str, str, int]]:
+    """Reads of an int inside a dict of dicts, by a plain or a tracked inner key. A row a tracked
+    outer key picks keeps its own place, as on origin/v2 (known limit L8), so an answer that moves
+    that key may read another row: `two_keys` holds its coverage to base instead."""
+    reads = [("x", "b"), ("y", "b"), ("x", "p"), ("x", "q"), ("y", "p"), ("y", "q")]
+    length = chooser.randrange(1, 4)
+    return [(*chooser.choice(reads), chooser.randrange(0, 4)) for _ in range(length)]
+
+
+def keyed_recorded(steps: list[tuple[str, str, int]], args: dict[str, Any]) -> list[SinkItem]:
+    """What a keyed program records on the arguments, to the first raise."""
+    sink: list[SinkItem] = []
+    bound: Any = bind(args, sink)
+    with contextlib.suppress(KeyError, TypeError):
+        for outer, inner, number in steps:
+            row = bound["d"][bound["a"] if outer == "a" else outer]
+            if row[bound["b"] if inner == "b" else inner] == number:
+                continue
+    return sink
+
+
+def keyed_witness(
+    steps: list[tuple[str, str, int]], args: dict[str, Any], path: tuple[Branch, ...]
+) -> object:
+    """Arguments of the seed's keys that take the path."""
+    values = itertools.product(range(4), repeat=4)
+    for a, b, (one, two, three, four) in itertools.product("xy", "pq", values):
+        made = {"x": {"p": one, "q": two}, "y": {"p": three, "q": four}}
+        candidate = {"d": made, "a": a, "b": b}
+        taken = [i for i in keyed_recorded(steps, candidate) if isinstance(i, Branch)]
+        if len(taken) >= len(path) and all(
+            (mine.expression, mine.taken) == (want.expression, want.taken)
+            for mine, want in zip(taken, path, strict=False)
+        ):
+            return candidate
+    return None
+
+
+def _is_a_compare(expression: object) -> bool:
+    return isinstance(expression, list) and expression[0] == "=="
+
+
+def keyed_sides(steps: list[tuple[str, str, int]], args: dict[str, Any]) -> list[bool]:
+    """The side each compare of a keyed program takes in plain Python: the forks of a path name
+    a row's lookups once, so another key can record fewer of them and still take every side."""
+    return [
+        args["d"][args["a"] if outer == "a" else outer][args["b"] if inner == "b" else inner]
+        == number
+        for outer, inner, number in steps
+    ]
+
+
+def keyed_answer(steps: list[tuple[str, str, int]], args: dict[str, Any]) -> str | None:
+    """How cvc5 answers a keyed program's path with its last fork flipped, once Python agrees."""
+    items = [i for i in keyed_recorded(steps, args) if isinstance(i, Branch | Fact)]
+    ends = [at for at, item in enumerate(items) if isinstance(item, Branch)]
+    last = items[ends[-1]]
+    assert isinstance(last, Branch)
+    prefix = (*items[: ends[-1]], Branch(last.expression, not last.taken, last.site))
+    path = tuple(item for item in prefix if isinstance(item, Branch))
+    seed = Seed.of(args)
+    answer = solve(prefix, seed.leaves, 5.0, {**seed.lists, **seed.dicts}, seed.values)
+    assert not isinstance(answer, Error), (steps, args, answer)
+    if isinstance(answer, Sat):
+        solved = dict(apply(seed, answer.model).args)
+        wanted = [fork.taken for fork in path if _is_a_compare(fork.expression)]
+        assert keyed_sides(steps, solved) == wanted, (steps, args, solved)
+        return "sat"
+    if isinstance(answer, Unsat):
+        assert keyed_witness(steps, args, path) is None, (steps, args, path)
+        return "unsat"
+    return None
+
+
+@needs_cvc5
+@pytest.mark.timeout(300)
+def test_cvc5_agrees_with_python_on_ints_a_tracked_key_picks_from_a_dict_of_dicts() -> None:
+    answers: list[str | None] = []
+    for round_seed in ROUNDS:
+        chooser = random.Random(round_seed)
+        for _ in range(40):
+            rows = {"x": {"p": 1, "q": 5}, "y": {"p": 2, "q": 3}}
+            args = {"d": rows, "a": chooser.choice("xy"), "b": chooser.choice("pq")}
+            answers.append(keyed_answer(keyed_program(chooser), args))
+    assert answers.count("sat") >= 30, answers

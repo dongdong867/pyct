@@ -80,6 +80,13 @@ def finite(term: str) -> str:
     return f"(not (or (fp.isNaN {term}) (fp.isInfinite {term})))"
 
 
+def truth(term: str, kind: type | None) -> str:
+    """Whether a term of ``kind`` is true, as Python tests it: a number is true unless it is 0."""
+    if kind is int:
+        return f"(not (= {term} 0))"
+    return f"(not (fp.isZero {term}))" if kind is float else term
+
+
 def unequal(left: str, right: str) -> str:
     """Python's ``!=`` on two doubles: not IEEE equal, so NaN is unequal to itself."""
     return f"(not (fp.eq {left} {right}))"

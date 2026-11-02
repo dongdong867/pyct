@@ -18,7 +18,7 @@ from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
 from pyct.core.floats import ConcolicFloat
 from pyct.core.list_reads import handed, more
-from pyct.core.list_state import ListState, is_read
+from pyct.core.list_state import ListState, is_item_read
 from pyct.core.spans import Span, added, proves, scaled
 from pyct.core.values import forked, held, own
 
@@ -45,7 +45,7 @@ def _one_float(item: object, other: object) -> bool:
     """Whether two tracked floats are reads of one float of the input: the same access."""
     if type(item) is not ConcolicFloat or type(other) is not ConcolicFloat:
         return False
-    return is_read(item.expression) and item.expression == other.expression
+    return is_item_read(item.expression) and item.expression == other.expression
 
 
 def searched(self: ListState, value: object, name: str, *, every: bool = False) -> list[int]:

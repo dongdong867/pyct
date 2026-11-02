@@ -100,7 +100,7 @@ def test_an_added_int_or_str_takes_the_array_s_default_as_it_did() -> None:
         (ListShape(()), False),
         (
             ListShape(("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("float",))}),
-            True,
+            False,
         ),
         (
             ListShape(("list", "list"), rows={0: ListShape(("int",)), 1: ListShape(("int",))}),

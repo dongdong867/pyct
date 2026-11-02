@@ -76,7 +76,7 @@ def test_the_ticket_s_float_and_bool_flip_each_with_its_expression() -> None:
     assert any(data["flags"] == [True] for data in answers)
     expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
     assert [">", ["[]", "data", "'ratio'"], 2.5] in expressions
-    assert ["[]", ["[]", "data", "'flags'"], 0] in expressions
+    assert ["[bool]", ["[]", "data", "'flags'"], 0] in expressions
 
 
 @pytest.mark.parametrize(
@@ -120,16 +120,7 @@ def test_a_mixed_row_keeps_each_item_s_kind_on_every_line() -> None:
 )
 def test_a_mixed_list_flips_by_its_kinds(function: str, seed: object) -> None:
     target = f"{MIXED}::{function}"
-    uncovered = missing_lines(target, lines_of(target, seed))
-    # `added_to_ints` adds a plain 2.5, whose compare has no other side
-    assert uncovered == (set() if function != "added_to_ints" else _return_other(target))
-
-
-def _return_other(target: str) -> set[int]:
-    """The line of the last return, which only a plain 2.5 at or below 1.0 reaches."""
-    module, _, function = target.partition("::")
-    path = REPO_ROOT.joinpath(*module.split(".")).with_suffix(".py")
-    return {max(_function_lines(path, function))}
+    assert missing_lines(target, lines_of(target, seed)) == set()
 
 
 @pytest.mark.parametrize(
@@ -207,18 +198,18 @@ def test_a_floor_of_a_float_in_a_list_built_on_a_picked_row_is_rendered() -> Non
 
 
 @pytest.mark.parametrize(
-    ("function", "seed"),
+    ("function", "seed", "head"),
     [
-        ("picked_row_above", {"grid": [[0.5], [0.5]], "i": 1}),
-        ("picked_row_flag", {"grid": [[False], [False]], "i": 1}),
+        ("picked_row_above", {"grid": [[0.5], [0.5]], "i": 1}, "[float]"),
+        ("picked_row_flag", {"grid": [[False], [False]], "i": 1}, "[bool]"),
     ],
 )
 def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
-    function: str, seed: object
+    function: str, seed: object, head: str
 ) -> None:
     target = f"{NESTED}::{function}"
     lines = lines_of(target, seed)
-    read = ["[]", ["[]", "grid", "i"], 0]
+    read = [head, ["[]", "grid", "i"], 0]
     expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
     assert any(
         read == part for expression in expressions for part in [expression, *_parts(expression)]
@@ -231,6 +222,7 @@ def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
     ("function", "seed"),
     [
         ("picked_row_above", {"grid": [[1], [0.5]], "i": 1}),
+        ("picked_row_above", {"grid": [[1], [0.5]], "i": 0}),
         ("cut_item_above", {"xs": [1, 0.5], "i": 1}),
         ("joined_item_above", {"ys": [1], "xs": [0.5, 1]}),
         ("sorted_row_above", {"grid": [[1], [2.5, 0.5]], "i": 1}),
@@ -239,6 +231,22 @@ def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
         ("sorted_row_is_true", {"grid": [[False, False], [1]], "i": 0}),
         ("sorted_cut_equal", {"xs": [1, 2.5, 0.5]}),
         ("popped_and_sorted", {"xs": [0.5, 2, False]}),
+        ("tracked_index_above", {"xs": [1, 0.5], "i": 1}),
+        ("gains_later", {"xs": [1], "i": 0, "f": 0.5}),
+    ],
+)
+def test_a_read_beside_another_kind_says_what_it_read_and_flips(
+    function: str, seed: object
+) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed, *QUICK)
+    assert missing_lines(target, lines) == set()
+    assert all(not line["downgrades"] for line in lines), lines
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
         ("cut_row_above", {"grid": [[0.5], [0.5]], "i": 1}),
         ("keyed_row_above", {"d": {"a": [0.5], "b": [0.5]}, "k": "b"}),
         ("joined_row_above", {"ys": [[1]], "grid": [[0.5], [1]]}),
@@ -246,7 +254,7 @@ def test_a_row_an_index_picks_from_rows_of_one_kind_follows_the_index(
         ("last_dict_above", {"rows": [{"x": 0.5}, {"x": 0.5}]}),
     ],
 )
-def test_a_float_or_bool_the_solver_cannot_type_stays_plain_and_is_named(
+def test_a_float_under_a_place_no_term_follows_stays_plain_and_is_named(
     function: str, seed: object
 ) -> None:
     target = f"{NESTED}::{function}"
@@ -259,6 +267,59 @@ def test_a_float_or_bool_the_solver_cannot_type_stays_plain_and_is_named(
     assert not [fork for fork in forks_of(seed_line) if _tests_the_item(fork, read_at)], seed_line
     assert seed_line["downgrades"], seed_line
     assert summary["stopped"] != "solver failed", summary
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("two_keys", {"d": {"x": {"p": 1, "q": 5}}, "a": "x", "b": "p"}),
+        ("row_and_key", {"rows": [{"a": 1, "b": 5}], "i": 0, "k": "a"}),
+        ("last_row_key", {"rows": [{"a": 1, "b": 2}], "k": "a"}),
+        ("joined_int_row", {"ys": [[1]], "grid": [[2], [0.5]]}),
+        ("appended_then_read", {"xs": [1], "i": 1, "f": 0.5}),
+    ],
+)
+def test_a_line_base_covers_stays_covered(function: str, seed: object) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed, *QUICK)
+    assert missing_lines(target, lines) == set()
+
+
+@pytest.mark.parametrize(
+    ("function", "seed", "answer"),
+    [
+        ("picked_row_then_index", {"grid": [[1], [0.5]], "i": 1}, {"i": 0}),
+        ("truth_then_index", {"grid": [[1], [False]], "i": 1}, {"i": 0}),
+    ],
+)
+def test_an_index_moves_to_an_item_of_another_kind(
+    function: str, seed: object, answer: dict[str, int]
+) -> None:
+    target = f"{NESTED}::{function}"
+    lines = lines_of(target, seed, *QUICK)
+    assert missing_lines(target, lines) == set(), lines
+    assert any(args_of(line, "i") == answer["i"] for line in solved(lines))
+
+
+@pytest.mark.parametrize(
+    ("function", "seed"),
+    [
+        ("float_of_item", {"xs": [1, 0.5, False], "i": 2}),
+        ("key_to_another_kind", {"d": {"a": False, "b": 0.5, "c": "s"}, "k": "a"}),
+    ],
+)
+def test_an_unsat_with_a_kind_no_ask_tried_is_a_named_miss(function: str, seed: object) -> None:
+    result = run_pyct(f"{NESTED}::{function}", "--args", json.dumps(seed), *QUICK)
+    assert result.returncode == 0, result.stderr
+    summary = summary_line(result.stdout)
+    assert summary["stopped"] != "solver failed", summary
+    solver = summary["solver"]
+    assert isinstance(solver, dict) and solver["unsat"] == 0, summary
+
+
+def test_a_nan_in_a_row_an_index_picks_flips() -> None:
+    target = f"{NESTED}::picked_row_nan"
+    assert missing_lines(target, lines_of(target, {"grid": [[0.5], [1]], "i": 0})) == set()
 
 
 @pytest.mark.parametrize(
@@ -398,11 +459,12 @@ def test_an_empty_seed_with_no_annotation_fills_null_and_the_flip_misses() -> No
     assert [args_of(line, "xs") for line in solved(lines)] == [[None]]
 
 
-def test_a_plain_float_the_target_added_records_no_fork_and_no_downgrade() -> None:
+def test_a_float_the_target_added_says_its_kind_and_a_longer_list_reads_past_it() -> None:
     lines = lines_of(f"{MIXED}::added_to_ints", {"xs": [1]})
-    expressions = [json.dumps(fork["expression"]) for line in lines for fork in forks_of(line)]
-    assert all("1.0" not in text for text in expressions), expressions
+    expressions = [fork["expression"] for line in lines for fork in forks_of(line)]
+    assert [">", ["[float]", ["+", "xs", ["[,]", 2.5]], 1], 1.0] in expressions, expressions
     assert all(not line["downgrades"] for line in lines), lines
+    assert any(len(args_of(line, "xs")) > 1 for line in solved(lines)), lines
 
 
 @pytest.mark.parametrize(

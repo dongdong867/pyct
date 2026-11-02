@@ -23,8 +23,8 @@ def fork(expression: Expression, *, taken: bool = True) -> Branch:
 
 
 def test_float_and_bool_arrays_are_declared_in_their_own_sorts() -> None:
-    floats = program((fork([">", ["[]", "xs", 0], 2.5]),), {}, FLOATS).text
-    bools = program((fork(["[]", "xs", 0]),), {}, BOOLS).text
+    floats = program((fork([">", ["[float]", "xs", 0], 2.5]),), {}, FLOATS).text
+    bools = program((fork(["[bool]", "xs", 0]),), {}, BOOLS).text
 
     assert "(declare-const |arg.xs.float| (Array Int Float64))" in floats
     assert "(declare-const |arg.xs.bool| (Array Int Bool))" in bools
@@ -34,7 +34,7 @@ def test_float_and_bool_arrays_are_declared_in_their_own_sorts() -> None:
 def test_a_row_of_floats_is_an_array_of_arrays() -> None:
     shapes = {"g": ListShape(("list",), rows={0: ListShape(("float",), fill="float")})}
 
-    text = program((fork([">", ["[]", ["[]", "g", 0], 0], 2.5]),), {}, shapes).text
+    text = program((fork([">", ["[float]", ["[]", "g", 0], 0], 2.5]),), {}, shapes).text
 
     assert "(declare-const |arg.g.rows.float| (Array Int (Array Int Float64)))" in text
     assert "(select (select |arg.g.rows.float| 0) 0)" in text
@@ -44,9 +44,9 @@ def test_each_position_of_a_mixed_list_reads_its_own_kind_with_a_guard_only_wher
     None
 ):
     path = (
-        fork(["==", ["[]", "xs", 0], 7]),
-        fork([">", ["[]", "xs", 1], 2.5]),
-        fork(["[]", "xs", 2]),
+        fork(["==", ["[int]", "xs", 0], 7]),
+        fork([">", ["[float]", "xs", 1], 2.5]),
+        fork(["[bool]", "xs", 2]),
     )
 
     text = program(path, {}, MIXED).text
@@ -57,7 +57,7 @@ def test_each_position_of_a_mixed_list_reads_its_own_kind_with_a_guard_only_wher
 
 
 def test_a_read_of_an_int_beside_a_float_is_an_int_whatever_it_is_compared_with() -> None:
-    text = program((fork([">", ["[]", "xs", 0], 2.5]),), {}, MIXED).text
+    text = program((fork([">", ["[int]", "xs", 0], 2.5]),), {}, MIXED).text
 
     assert "(select |arg.xs.int| 0)" in text
     assert "|arg.xs.float|" not in text
@@ -66,14 +66,14 @@ def test_a_read_of_an_int_beside_a_float_is_an_int_whatever_it_is_compared_with(
 def test_a_read_from_the_end_of_a_list_that_holds_a_float_is_the_input_s_kind_there() -> None:
     shapes = {"xs": ListShape(("float", "int"))}
 
-    text = program((fork([">", ["[]", "xs", -1], 2.5]),), {}, shapes).text
+    text = program((fork([">", ["[int]", "xs", -1], 2.5]),), {}, shapes).text
 
     assert "(select |arg.xs.int| (+ |arg.xs.len| (- 1)))" in text
     assert "|arg.xs.float|" not in text
 
 
 def test_a_tracked_index_into_a_list_of_one_kind_reads_that_kind() -> None:
-    text = program((fork([">", ["[]", "xs", "i"], 2.5]),), {"i": int}, FLOATS).text
+    text = program((fork([">", ["[float]", "xs", "i"], 2.5]),), {"i": int}, FLOATS).text
 
     assert "(select |arg.xs.float| " in text
 
@@ -81,7 +81,7 @@ def test_a_tracked_index_into_a_list_of_one_kind_reads_that_kind() -> None:
 def test_a_read_of_a_built_list_of_one_kind_reads_that_kind() -> None:
     joined: Expression = ["+", "xs", ["[,]", 2.5]]
 
-    text = program((fork([">", ["[]", joined, "i"], 1.0]),), {"i": int}, FLOATS).text
+    text = program((fork([">", ["[float]", joined, "i"], 1.0]),), {"i": int}, FLOATS).text
 
     assert "(select |arg.xs.float| " in text
 
@@ -90,14 +90,14 @@ def test_an_int_read_of_a_list_built_with_a_float_stays_an_int() -> None:
     joined: Expression = ["+", "xs", ["[,]", 2.5]]
     shapes = {"xs": ListShape(("int",), fill="int")}
 
-    text = program((fork([">", ["[]", joined, 0], 1.0]),), {}, shapes).text
+    text = program((fork([">", ["[int]", joined, 0], 1.0]),), {}, shapes).text
 
     assert "(select |arg.xs.int| 0)" in text
     assert "|arg.xs.float|" not in text
 
 
 def test_a_list_of_mixed_kinds_holds_its_length_on_the_first_ask_only() -> None:
-    path = (fork(["==", ["[]", "xs", 0], 7]),)
+    path = (fork(["==", ["[int]", "xs", 0], 7]),)
 
     first = program(path, {}, Origin(shapes=MIXED))
     free = program(path, {}, Origin(shapes=MIXED, keep=False))
@@ -109,14 +109,14 @@ def test_a_list_of_mixed_kinds_holds_its_length_on_the_first_ask_only() -> None:
 
 
 def test_a_list_of_one_kind_holds_no_length() -> None:
-    written = program((fork([">", ["[]", "xs", 0], 2.5]),), {}, Origin(shapes=FLOATS))
+    written = program((fork([">", ["[float]", "xs", 0], 2.5]),), {}, Origin(shapes=FLOATS))
 
     assert not written.kept
     assert "(assert (>= |arg.xs.len| 2))" not in written.text
 
 
 def test_each_float_read_is_held_finite_where_the_list_is_asked_finite() -> None:
-    path = (fork([">", ["[]", "xs", 0], 2.5]), fork([">", ["[]", "xs", 1], 2.5]))
+    path = (fork([">", ["[float]", "xs", 0], 2.5]), fork([">", ["[float]", "xs", 1], 2.5]))
 
     held = program(path, {}, FLOATS, finite={"xs"}).text
     free = program(path, {}, FLOATS).text
@@ -129,7 +129,7 @@ def test_each_float_read_is_held_finite_where_the_list_is_asked_finite() -> None
 
 
 def test_a_core_program_names_each_hold_for_its_list_and_a_count() -> None:
-    path = (fork([">", ["[]", "xs", 0], 2.5]), fork([">", ["[]", "xs", 1], 2.5]))
+    path = (fork([">", ["[float]", "xs", 0], 2.5]), fork([">", ["[float]", "xs", 1], 2.5]))
 
     written = program(path, {}, FLOATS, finite={"xs"}, cores=True)
 
@@ -141,7 +141,7 @@ def test_a_core_program_names_each_hold_for_its_list_and_a_count() -> None:
 
 def test_a_list_left_out_of_finite_stays_free_beside_one_held() -> None:
     shapes = {**FLOATS, "ys": ListShape(("float",), fill="float")}
-    path = (fork([">", ["[]", "xs", 0], 2.5]), fork([">", ["[]", "ys", 0], 2.5]))
+    path = (fork([">", ["[float]", "xs", 0], 2.5]), fork([">", ["[float]", "ys", 0], 2.5]))
 
     text = program(path, {}, shapes, finite={"ys"}).text
 
@@ -162,7 +162,7 @@ def test_a_float_value_a_dict_declares_is_held_finite_for_its_dict() -> None:
 
 @needs_cvc5
 def test_a_bool_item_a_fork_asks_to_equal_five_is_unsat() -> None:
-    answer = solve((fork(["==", ["[]", "xs", 0], 5]),), {}, 5.0, BOOLS)
+    answer = solve((fork(["==", ["[bool]", "xs", 0], 5]),), {}, 5.0, BOOLS)
 
     assert isinstance(answer, Unsat)
 

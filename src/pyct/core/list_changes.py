@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
     written,
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
-from pyct.core.list_state import ListState, kind_of, kinds_of, plain
+from pyct.core.list_state import TRACKED, ListState, kind_of, kinds_of, plain
 from pyct.core.spans import Span, exactly
 from pyct.core.str_splits import LISTED_SPLITS, a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
@@ -50,10 +50,12 @@ def position(key: object) -> Expression | None:
 
 def follows(self: ListState, key: object) -> bool:
     """Whether pyct follows an index into this list: a plain one, or a tracked one into a list
-    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) and that is
-    not made from a split's (follow-the-length-of-a-split)."""
+    whose items share a kind (containers-arrays-counted-keys-and-copied-walk-keys) or whose reads
+    say their kind and all have a term, and that is not made from a split's
+    (follow-the-length-of-a-split)."""
     if type(key) is ConcolicInt:
-        return len(self.kinds) <= 1 and not built_from_a_split(self.expression)
+        shared = len(self.kinds) <= 1 or (self.says_kinds() and self.kinds <= TRACKED)
+        return shared and not built_from_a_split(self.expression)
     return plain_index(key) is not None
 
 

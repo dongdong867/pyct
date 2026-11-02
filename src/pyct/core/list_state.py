@@ -13,7 +13,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import READ_HEADS, BranchSink, Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -23,6 +23,11 @@ from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
 TRACKED = frozenset({"int", "str", "float", "bool"})
+
+_READ_HEAD_SET = frozenset(READ_HEADS.values())
+
+# the kinds of item a path cannot tell apart, since Python compares an int with a float
+_SAID = frozenset({"float", "bool"})
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -95,13 +100,25 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
+def is_item_read(expression: Expression) -> bool:
+    """Whether a form reads an item of an argument's list as it came, under either kind of head:
+    ``["[]", items, 0]``, as the input names it, or ``["[float]", items, 0]``, as a read hands it
+    out."""
+    if not isinstance(expression, list) or not expression:
+        return False
+    head = expression[0]
+    if head in _READ_HEAD_SET:
+        return is_read(expression[1])
+    return is_read(expression)
+
+
 def read_from_the_input(item: object) -> bool:
-    """Whether an item is a float or a bool of the input, tracked at its own place: what a read
-    leaves plain where the solver cannot type it (``core.list_reads.handed``). A parameter the
-    target stored is its own term wherever it is read, and so is a value it computed."""
+    """Whether an item is a float or a bool of the input, tracked at its own place: what a list
+    reached at a place another input moves leaves plain (``core.list_reads.handed``). A parameter
+    the target stored is its own term wherever it is read, and so is a value it computed."""
     if not isinstance(item, ConcolicFloat | ConcolicBool):
         return False
-    return isinstance(item.expression, list) and is_read(item.expression)
+    return is_item_read(item.expression)
 
 
 @runtime_checkable
@@ -113,8 +130,8 @@ class Unplaceable(Protocol):
 
 def moved(item: object) -> None:
     """Note that the target reached ``item`` by a key or a position another input may move: a
-    float or a bool under it is not typed from then on, since its own place may not be where
-    another input reads."""
+    float or a bool under it is plain from then on, since its own place may not be where another
+    input reads."""
     if isinstance(item, Unplaceable):
         item.unplace()
 
@@ -140,10 +157,12 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
-    # None for a list at places the target wrote. Else the target reached it by a tracked index,
-    # one from the end, or a cut: the kinds every row that index can pick holds, which the solver
-    # types its reads by, and none for a list the solver cannot place at all
-    picked: frozenset[str] | None
+    # the kinds every row holds, for a row a tracked index or one from the end picks: another
+    # input may read another row, so a read says its kind if any row can hold a float or a bool
+    among_rows: frozenset[str] | None
+    # whether the target reached this list at a place no term follows: by a cut, a join or a tracked
+    # key. A float or a bool of the input read from it comes out plain, and a downgrade names it
+    unplaced: bool
 
     @classmethod
     def made(
@@ -166,7 +185,8 @@ class ListState(list):
         fields["walked_at"] = None
         fields["span"] = span
         fields["marked"] = False
-        fields["picked"] = None
+        fields["among_rows"] = None
+        fields["unplaced"] = False
         return made
 
     def length(self) -> int:
@@ -231,26 +251,37 @@ class ListState(list):
         self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
-        and the range that form holds. It carries this one's mark and the kinds of the rows it
-        was picked from."""
+        and the range that form holds. It carries this one's mark, the kinds of the rows it was
+        picked from, and whether it is unplaced."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds
         fields["span"] = span
         fields["marked"] = self.marked
-        fields["picked"] = self.picked
+        fields["among_rows"] = self.among_rows
+        fields["unplaced"] = self.unplaced
         return made
 
     def unplace(self) -> None:
-        """Type no float or bool read from this list: see ``moved``."""
-        self.__dict__["picked"] = frozenset()
+        """Hand out no float or bool of the input from this list as tracked: see ``moved``."""
+        self.__dict__["unplaced"] = True
 
     def took_in(self, other: object) -> None:
-        """Note that this list now holds the items of ``other``: one the solver types by another
-        row's kinds, or cannot place, leaves this one's floats and bools untyped too."""
-        if isinstance(other, ListState) and other.picked is not None:
+        """Note that this list now holds the items of ``other``: one reached at a place no term
+        follows leaves this one's floats and bools plain too."""
+        if isinstance(other, ListState) and other.unplaced:
             self.unplace()
+
+    def says_kinds(self) -> bool:
+        """Whether a read of this list says the kind it read: a list that can hold a float or a
+        bool, or a row among rows that can."""
+        return bool((self.kinds | (self.among_rows or frozenset())) & _SAID)
+
+    def read_of(self, written: Expression, kind: str) -> Expression:
+        """The form of a read of an item of ``kind`` at ``written``."""
+        head = READ_HEADS[kind] if kind in READ_HEADS and self.says_kinds() else "[]"
+        return [head, self.expression, written]
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False

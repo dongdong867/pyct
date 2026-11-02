@@ -158,6 +158,9 @@ class DictTerms(Keyed):
         # or the dict and the key it is the value under
         self.valued: dict[str, tuple[str, object]] = {}
         self.float_values: dict[str, str] = {}
+        # whether a tracked key may land on a value of another kind than Python read, beside a
+        # float or a bool, where an unsat holds only for the kind read
+        self.kinds_move = False
         # each chosen walk key's leaf, by the dict whose walk reads it (see ``dict_orders``)
         self.walk_leaves: dict[str, str] = {}
 
@@ -307,6 +310,8 @@ class DictTerms(Keyed):
             self.hold(self.present(found, literal))
             return self.value_under(found, container, literal, kind)
         term, typed = self.named(key), self.type_of(key)
+        kinds = set(found.shape.kinds)
+        self.kinds_move |= len(kinds) > 1 and bool(kinds & {"float", "bool"})
         self.hold(self.equals_a_key(found, term, typed))
         return self.read_under(found, container, (term, typed), kind)
 

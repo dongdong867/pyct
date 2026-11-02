@@ -1,15 +1,12 @@
 """What a tracked list's parts are, as render types a path: lists, their lengths, and the items
 read from them.
 
-A list is a `TrackedList`, which no single term holds. An item read from a list has the kind the
-input holds at its position, when the position is from the start of a list the input holds, or
-from the end of one that holds a float or a bool; the list's kind, when every item it holds that
-has a term is of one kind; and else, for an int or a str, what the path does with it, since
-Python compares and adds an int or a str only with a value of its own kind, and the fork was
-recorded on a value of the kind the target read. Core hands out a float or a bool only where one
-of the first two types it (``core.list_reads``), since Python compares an int with a float: a
-row a tracked or from-the-end index picks is typed by every row's kinds, so core hands one out
-from it only when every row holds that one kind, and plain from a list built on such a row.
+A list is a `TrackedList`, which no single term holds. A read of a list that can hold a float or
+a bool says the kind Python read (``core.branch.READ_HEADS``), since Python compares an int with
+a float and a path cannot say. Any other item read from a list is an int or a str: by its
+position, when the position is from the start of a list the input holds; by the list, when every
+item it can hold is of one kind; and else by what the path does with it, since Python compares and
+adds only values of one kind, and the fork was recorded on a value of the kind the target read.
 """
 
 from __future__ import annotations
@@ -20,7 +17,7 @@ from dataclasses import dataclass
 from typing import TypeGuard
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Expression
+from pyct.core.branch import READ_HEADS, Expression
 from pyct.core.str_splits import LISTED_SPLITS
 from pyct.solver.words import WORD_EDGES
 
@@ -28,8 +25,9 @@ from pyct.solver.words import WORD_EDGES
 ITEM_SORTS: Mapping[str, str] = {"int": "Int", "str": "String", "float": "Float64", "bool": "Bool"}
 ITEM_TYPES: Mapping[str, type] = {"int": int, "str": str, "float": float, "bool": bool}
 
-# the kinds of item a path can type, by the other operand of what reads it
-_BY_THE_PATH = frozenset({"int", "str"})
+# the kind each read head says, and the kinds a read may take in place of the one Python read
+READ_KINDS: Mapping[str, str] = {head: kind for kind, head in READ_HEADS.items()}
+_NUMBERS = frozenset({"int", "float", "bool"})
 
 # the kind of an item render typed, as a list's items count kinds
 _KIND_OF_TYPE: Mapping[type, str] = {
@@ -65,7 +63,7 @@ _ON_A_STR = frozenset(
 type TypeOf = Callable[[Expression], type | None]
 
 # the heads that build a list from lists, or read one
-_LIST_HEADS = frozenset({"[]", "len", "[,]", "+", "*", "[:]"})
+_LIST_HEADS = frozenset({"[]", "len", "[,]", "+", "*", "[:]", *READ_KINDS})
 
 # the splits whose list is tracked, each a list of strs; `partition` hands back a tuple
 SPLIT_HEADS = LISTED_SPLITS
@@ -117,15 +115,6 @@ def from_start(position: Expression) -> TypeGuard[int]:
     return isinstance(position, int) and not isinstance(position, bool) and position >= 0
 
 
-def from_end(position: Expression, shape: ListShape) -> TypeGuard[int]:
-    """Whether a position is a plain number from the end of a list of the input that holds a
-    float or a bool, which the path cannot type: such a read is typed by the input's kind there.
-    """
-    if type(position) is not int or not -len(shape.kinds) <= position < 0:
-        return False
-    return "float" in shape.kinds or "bool" in shape.kinds
-
-
 def access(part: Expression) -> str | None:
     """The name of an access to a list inside an argument, as the seed names it."""
     step = part
@@ -138,19 +127,10 @@ def access(part: Expression) -> str | None:
     return json.dumps(part)
 
 
-def _one_kind(kinds: Kinds) -> type | None:
-    """The type of any item read from a list, when its items say.
-
-    A list that holds floats or bools alone reads as them. Any other list reads as the one of
-    an int and a str it can hold: core hands out a float or a bool from it plain, or as the
-    term it was given, so no read of it is one. A list with neither reads as the one kind the
-    solver may add.
-    """
-    held = kinds.kinds & ITEM_TYPES.keys()
-    if len(held) == 1 and not held <= _BY_THE_PATH:
-        return ITEM_TYPES[next(iter(held))]
-    named = kinds.every & _BY_THE_PATH or kinds.every & ITEM_TYPES.keys()
-    return ITEM_TYPES[next(iter(named))] if len(named) == 1 else None
+def _identity(part: Expression) -> object:
+    """What tells a part of a read from another: a list by the object it is, as a path holds one
+    read's list and one read's index, and anything else by its value."""
+    return id(part) if isinstance(part, list) else part
 
 
 class ListTyping:
@@ -168,6 +148,13 @@ class ListTyping:
         self.row_shapes: dict[int, ListShape] = {}
         # each read whose kind neither its position nor its list says, typed by the path
         self.untyped: set[int] = set()
+        # each read that may land on another kind than Python read: the kinds an ask can write
+        # for it, by its place among them (``read_kinds``), the kind each ask gives it, and
+        # whether one may land on a kind no ask can write
+        self.moving: dict[tuple[object, object], int] = {}
+        self.other_kinds: list[frozenset[str]] = []
+        self.chosen: Mapping[int, str] = {}
+        self.untried = False
 
     def leaf(self, part: Expression) -> str | None:
         """The name of the list the seed names, when a part is one."""
@@ -209,6 +196,8 @@ class ListTyping:
             return int
         if head == "[]":
             return self._item_type(node, lists[0])
+        if head in READ_KINDS:
+            return self._said_type(node, lists[0])
         if head == "len":
             return int
         self.kinds[id(node)] = Kinds(
@@ -218,7 +207,7 @@ class ListTyping:
         return TrackedList
 
     def _item_type(self, node: list[Expression], kinds: Kinds) -> type | None:
-        """What a read hands out: a list inside a list, or an item of a kind in ``ITEM_TYPES``."""
+        """What a read that says no kind hands out: a list inside a list, or an int or a str."""
         position = node[2]
         if kinds.shape is not None and from_start(position):
             kind = kinds.shape.kind_at(position)
@@ -227,17 +216,34 @@ class ListTyping:
                 self.kinds[id(node)] = of_shape(row)
                 return TrackedList
             return ITEM_TYPES.get(kind)
-        if kinds.shape is not None and from_end(position, kinds.shape):
-            return ITEM_TYPES.get(kinds.shape.kinds[position])
         if kinds.every == {"list"} and kinds.shape is not None:
             self.kinds[id(node)] = of_rows(kinds.shape)
             self.row_shapes[id(node)] = kinds.shape
             return TrackedList
-        tracked = _one_kind(kinds)
-        if tracked is not None:
-            return tracked
+        tracked = [ITEM_TYPES[kind] for kind in kinds.every if kind in ITEM_TYPES]
+        if len(tracked) == 1:
+            return tracked[0]
         self.untyped.add(id(node))
         return None
+
+    def _said_type(self, node: list[Expression], kinds: Kinds) -> type:
+        """What a read that says its kind hands out: that kind, or the kind this ask gives it.
+        A position from the start of a list the input holds, or of a display, always lands on
+        the same item, and an answer keeps its kind."""
+        seen = READ_KINDS[str(node[0])]
+        position = node[2]
+        fixed = kinds.shape is not None or (isinstance(node[1], list) and node[1][0] == "[,]")
+        if fixed and from_start(position):
+            return ITEM_TYPES[seen]
+        others = kinds.every & _NUMBERS - {seen} if seen in _NUMBERS else frozenset()
+        self.untried |= bool(kinds.every - _NUMBERS if seen in _NUMBERS else kinds.every - {seen})
+        if not others:
+            return ITEM_TYPES[seen]
+        read = (_identity(node[1]), _identity(position))
+        if read not in self.moving:
+            self.moving[read] = len(self.other_kinds)
+            self.other_kinds.append(others)
+        return ITEM_TYPES[self.chosen.get(self.moving[read], seen)]
 
     def infer(self, node: list[Expression], types: MutableMapping[int, type | None]) -> None:
         """Type each read in a part that neither its position nor its list types, by the part:

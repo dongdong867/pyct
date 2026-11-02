@@ -233,6 +233,7 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("int", int): lambda term: term,
     ("int", float): floats.trunc,
     ("float", int): floats.from_int,
+    ("float", float): lambda term: term,
     ("int", str): numerals.int_of,
     ("isint", str): numerals.is_int,
     ("isfloat", str): numerals.is_float,

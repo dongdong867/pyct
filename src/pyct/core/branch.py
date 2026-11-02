@@ -7,7 +7,7 @@ import os
 import sys
 import types
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -17,6 +17,16 @@ from typing import Protocol
 # the target held, NaN, the infinities and -0.0 included. None is a slice's missing bound,
 # ["[:]", "s", 2, None], and prints as null
 type Expression = list[Expression] | str | int | float | bool | None
+
+# the head of a read of a list that can hold a float or a bool, by the kind of item Python read:
+# ["[float]", "xs", "i"]. Python compares an int with a float, so a path cannot say which kind a
+# read is, and the solver takes the kind from this head. A read of any other list is "[]"
+READ_HEADS: Mapping[str, str] = {
+    "int": "[int]",
+    "str": "[str]",
+    "float": "[float]",
+    "bool": "[bool]",
+}
 
 # whether a list is a leaf: the access that names a value inside an argument, which a condition
 # names as a value, never opens as an operation, and counts as one node

@@ -34,6 +34,7 @@ class Origin:
     path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
     ``fixed_reads`` says whether a piece of a split read from its end, where no walk of the
     reversed string reads it, holds the string to the count c* (see ``split_lists``).
+    ``read_kinds`` gives a read that may move another kind than Python read (see ``read_kinds``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -51,3 +52,4 @@ class Origin:
     lookups: int | None = None
     places: tuple[Expression, ...] = ()
     fixed_reads: bool = True
+    read_kinds: Mapping[int, str] = field(default_factory=dict)

@@ -15,6 +15,7 @@ at a plain index, `counts[0] += 1` thirty times, is a row of pieces a read goes 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from typing import Any
 
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
@@ -291,6 +292,7 @@ class ListTerms(ListTyping, PositionPins):
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
         self.splits.fixed_reads = origin.fixed_reads
+        self.chosen = origin.read_kinds
         # the value the input holds for a part it names as it is, a split's string say
         names = {constant: name for name, constant in constants.items()}
         self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))
@@ -431,6 +433,18 @@ class ListTerms(ListTyping, PositionPins):
     def held(self) -> bool:
         """Whether the program holds the length of a list the target repeats."""
         return bool(self.capped)
+
+    def flags(self, kinds_move: bool) -> dict[str, Any]:
+        """What a program says of the lists beside its text: what it holds to more than the path,
+        and what an unsat to it leaves to ask (see ``read_kinds``). ``kinds_move`` says a dict's
+        tracked key may land on another kind."""
+        return {
+            "narrowed": self.narrowed,
+            "held": self.held,
+            **self.splits.flags(),
+            "other_kinds": tuple(self.other_kinds),
+            "untried": self.untried or kinds_move,
+        }
 
     @property
     def keeps_length(self) -> bool:

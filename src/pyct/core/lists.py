@@ -21,7 +21,7 @@ from pyct.core import spans, str_splits
 from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
 from pyct.core.list_forms import sliced
-from pyct.core.list_state import ListState, plain, plain_items
+from pyct.core.list_state import ListState, kind_of, plain, plain_items
 from pyct.core.values import (
     REPORTED_CLASS,
     as_base,
@@ -299,7 +299,7 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     list.__setitem__(self, slice(None), [storage[at] for at in placed])
     fields = self.__dict__
     fields["shadow"] = [shadow[at] for at in placed]
-    fields["expression"] = ["[,]", *(["[]", self.expression, at] for at in placed)]
+    fields["expression"] = ["[,]", *(self.read_of(at, kind_of(storage[at])) for at in placed)]
     # a display holds exactly its items, as many as the walk took
     self.resized(spans.exactly(len(placed)))
 

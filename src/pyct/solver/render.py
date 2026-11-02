@@ -86,9 +86,7 @@ def program(
         text,
         {symbol: name for name, symbol in named.items() if name in leaves},
         terms if terms.declared else None,
-        narrowed=terms.narrowed,
-        held=terms.held,
-        **terms.splits.flags(),
+        **terms.flags(dicts.kinds_move),
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
         kept=dicts.held_back or terms.keeps_length,
@@ -163,8 +161,10 @@ class _Program:
             self.terms[id(node)] = self._written(node, define=define)
 
     def assertion(self, fork: Branch) -> str:
-        """The condition as the run met it: the side it took decides the negation."""
-        condition = self.term(fork.expression)
+        """The condition as the run met it: the side it took decides the negation. A bool read
+        an ask gives another kind is tested for truth, as Python tests that kind."""
+        kind = self.type_of(fork.expression)
+        condition = floats.truth(self.term(fork.expression), kind)
         return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
     def term(self, expression: Expression) -> str:
