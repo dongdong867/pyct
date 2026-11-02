@@ -384,3 +384,6 @@
 {"set": "v2", "target": "targets.why.named::is_not_false_flag", "seed": {"x": 0}, "status": "differs", "only_legacy": [27], "only_v2": []}
 {"set": "v2", "target": "targets.why.negated::while_is_not_true", "seed": {"x": 0}, "status": "differs", "only_legacy": [105], "only_v2": [103, 106]}
 {"set": "v2", "target": "targets.why.pop_empty::pop_empty", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [3]}
+{"set": "v2", "target": "targets.lists.mixed_numbers::added_to_ints", "seed": {"xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [34]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::float_of_item", "seed": {"xs": [1, 0.5, false], "i": 2}, "status": "differs", "only_legacy": [], "only_v2": [262]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::last_row_key", "seed": {"rows": [{"a": 1, "b": 2}], "k": "a"}, "status": "differs", "only_legacy": [], "only_v2": [291]}
