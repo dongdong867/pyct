@@ -247,7 +247,7 @@
 {"set": "v2", "target": "targets.lists.truth_kept::kept", "seed": {"items": []}, "status": "differs", "only_legacy": [], "only_v2": [7]}
 {"set": "v2", "target": "targets.loops.vowels::count_vowels", "seed": {"s": "xy"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
 {"set": "v2", "target": "targets.names.solver_words::accented", "seed": {"caf\u00e9": "x"}, "status": "differs", "only_legacy": [], "only_v2": [9]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::cut_row_in_a_walk", "seed": {"d": {"a": 1}, "g": [[0.5], [0.5]], "i": 1}, "status": "differs", "only_legacy": [], "only_v2": [428]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::cut_row_in_a_walk", "seed": {"d": {"a": 1}, "g": [[0.5], [0.5]], "i": 1}, "status": "differs", "only_legacy": [427], "only_v2": [429]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::flag_as_a_key", "seed": {"d": {"0": 1}, "flags": [false]}, "status": "differs", "only_legacy": [], "only_v2": [383]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::flag_cuts_a_list", "seed": {"ys": [0, 1], "flags": [false]}, "status": "differs", "only_legacy": [327], "only_v2": []}
 {"set": "v2", "target": "targets.nested.floats_and_bools::flag_indexes", "seed": {"ys": [0, 1], "flags": [false]}, "status": "differs", "only_legacy": [314], "only_v2": []}
@@ -263,18 +263,19 @@
 {"set": "v2", "target": "targets.nested.floats_and_bools::float_value_sum", "seed": {"d": {"k": 0.5}}, "status": "differs", "only_legacy": [], "only_v2": [62]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::formats_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [404]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::is_true_value", "seed": {"d": {"k": false}}, "status": "differs", "only_legacy": [], "only_v2": [32]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::key_as_a_float_in_a_format", "seed": {"d": {"1": 1}}, "status": "differs", "only_legacy": [], "only_v2": [479, 481, 483]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::key_as_a_tolerance", "seed": {"d": {"1": 1}}, "status": "differs", "only_legacy": [], "only_v2": [489, 491, 493]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::key_as_a_float_in_a_format", "seed": {"d": {"1": 1}}, "status": "differs", "only_legacy": [], "only_v2": [465, 467, 469]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::key_as_a_tolerance", "seed": {"d": {"1": 1}}, "status": "differs", "only_legacy": [], "only_v2": [475, 477, 479]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::last_row_key", "seed": {"rows": [{"a": 1, "b": 2}], "k": "a"}, "status": "differs", "only_legacy": [], "only_v2": [294]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::percent_beside_a_name", "seed": {"name": "al", "scores": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [472]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::percent_beside_a_name", "seed": {"name": "al", "scores": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [458]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::percent_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [412]}
-{"set": "v2", "target": "targets.nested.floats_and_bools::picked_dict_in_a_walk", "seed": {"d": {"a": 1}, "rows": [{"x": 0.5}, {"x": 0.5}], "i": 1}, "status": "differs", "only_legacy": [], "only_v2": [436]}
+{"set": "v2", "target": "targets.nested.floats_and_bools::picked_dict_in_a_walk", "seed": {"d": {"a": 1}, "rows": [{"x": 0.5}, {"x": 0.5}], "i": 1}, "status": "differs", "only_legacy": [436], "only_v2": [438]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::powers_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [420]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::ratio_and_flags", "seed": {"data": {"ratio": 0.5, "flags": [false]}}, "status": "differs", "only_legacy": [], "only_v2": [6]}
 {"set": "v2", "target": "targets.nested.floats_and_bools::rounds_in_a_walk", "seed": {"d": {"a": 1}, "xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [396]}
 {"set": "v2", "target": "targets.nested.keeps_shape::check", "seed": {"items": [0], "config": {}, "note": null}, "status": "differs", "only_legacy": [], "only_v2": [3, 5]}
 {"set": "v2", "target": "targets.nested.missing_key::check", "seed": {"config": {"server": {}}}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.nested.own_arguments::touch", "seed": {"items": [0], "config": {}}, "status": "differs", "only_legacy": [5], "only_v2": [9]}
+{"set": "v2", "target": "targets.nested.turned_plain::difference_as_an_index", "seed": {"ys": [0, 1], "y": 1, "flags": [true]}, "status": "differs", "only_legacy": [], "only_v2": [61]}
 {"set": "v2", "target": "targets.ranges.bool_item::check", "seed": {"x": 0}, "status": "differs", "only_legacy": [], "only_v2": [4]}
 {"set": "v2", "target": "targets.ranges.compared::same", "seed": {"n": 2, "m": 2}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.ranges.lengths::counted", "seed": {"n": 0}, "status": "differs", "only_legacy": [], "only_v2": [6]}
