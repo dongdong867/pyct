@@ -8,14 +8,10 @@ asked. A read that may land on a kind no ask can write, a str, a None or a list,
 ``Unknown()``, and so do more asks than ``KIND_ASKS``.
 """
 
-import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from itertools import islice, product
 
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
-from pyct.solver.unencoded import UnencodedError
-
-logger = logging.getLogger(__name__)
 
 # the most asks one unsat takes with other kinds of read. One read of a list of three kinds of
 # number takes two, and three reads take 26, so at most two such reads are asked at once
@@ -41,16 +37,6 @@ def assignments(others: Sequence[frozenset[str]]) -> Iterable[ReadKinds] | None:
     return sorted(islice(made, 1, None), key=len)
 
 
-def _asked_of(ask: Callable[[ReadKinds], Answer], kinds: ReadKinds) -> Answer:
-    """What one ask answers, an ``Unknown()`` where no program writes the path with those kinds:
-    an operation with no form on the kind a read takes."""
-    try:
-        return ask(kinds)
-    except UnencodedError as error:
-        logger.debug("no program reads those kinds: %s", error)
-        return Unknown()
-
-
 def asked_of_each(
     others: Sequence[frozenset[str]], untried: bool, ask: Callable[[ReadKinds], Answer]
 ) -> Answer:
@@ -64,7 +50,7 @@ def asked_of_each(
         return Unknown()
     proved = not untried
     for kinds in each:
-        answer = _asked_of(ask, kinds)
+        answer = ask(kinds)
         if isinstance(answer, Sat | Timeout):
             return answer
         proved = proved and isinstance(answer, Unsat)

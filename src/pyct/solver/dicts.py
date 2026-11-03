@@ -34,7 +34,8 @@ from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match
 from pyct.solver.list_kinds import ITEM_TYPES
-from pyct.solver.lists import Origin, UnencodedError
+from pyct.solver.lists import Origin
+from pyct.solver.unencoded import UnencodedError
 
 # the type of a value each kind of value is read as: only these kinds have a term
 _VALUE_TYPES = ITEM_TYPES

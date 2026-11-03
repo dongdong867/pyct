@@ -29,13 +29,14 @@ from pyct.solver.heads import (
 )
 from pyct.solver.held_items import finite_items, holders, path_of
 from pyct.solver.letters import Key, Spellings, fixed_position
-from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
+from pyct.solver.lists import ListTerms, Origin, TrackedList
 from pyct.solver.literals import leaf_term, plain_operand, string_order
 from pyct.solver.program_text import program_text
 from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.size_holds import held_small
 from pyct.solver.splits import SPLITS
 from pyct.solver.symbols import leaf_sort
+from pyct.solver.unencoded import UnencodedError
 
 
 def program(

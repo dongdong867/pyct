@@ -13,7 +13,6 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.origin import Origin
 from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments
 from pyct.solver.render import program
-from pyct.solver.unencoded import UnencodedError
 from tests.unit.solver.agreement import needs_cvc5
 
 SITE = Site("t.py", 1, 0)
@@ -96,10 +95,13 @@ def _raises(error: Exception) -> Callable[[object], Answer]:
     return ask
 
 
+@needs_cvc5
 def test_a_kind_no_program_writes_is_unknown() -> None:
-    ask = _raises(UnencodedError("pyct cannot render ord on float: nothing encodes it yet"))
+    # unsat as the float Python read; as an int or a bool, `isnan` has no form to write
+    read: Expression = ["[float]", "xs", "i"]
+    path = (fork(["isnan", read]), fork([">", read, 1.0]))
 
-    assert isinstance(asked_of_each([frozenset({"float"})], False, ask), Unknown)
+    assert solve(path, {"i": int}, 5.0, MIXED, {"i": 1}) == Unknown()
 
 
 def test_a_broken_rule_of_pyct_s_own_under_another_kind_is_raised() -> None:

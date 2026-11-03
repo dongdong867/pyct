@@ -56,7 +56,7 @@ from pyct.solver.position_pins import PIN, PositionPins
 from pyct.solver.split_paths import Splits
 from pyct.solver.unencoded import UnencodedError
 
-__all__ = ["ITEM_SORTS", "READ_STEPS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
+__all__ = ["ITEM_SORTS", "READ_STEPS", "ListTerms", "Origin", "TrackedList"]
 
 # how each fork on a list's length, taken or not, says how long the list is at least: by the
 # number it compares with

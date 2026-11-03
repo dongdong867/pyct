@@ -18,8 +18,9 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.declared import Program
 from pyct.solver.list_reader import RenderTimeError
 from pyct.solver.list_terms import FALSE, TRUE, Lin, both, either, ite
-from pyct.solver.lists import Origin, UnencodedError
+from pyct.solver.lists import Origin
 from pyct.solver.render import program
+from pyct.solver.unencoded import UnencodedError
 from tests.unit.solver.agreement import needs_cvc5
 
 SITE = Site("m.py", 2, 7)

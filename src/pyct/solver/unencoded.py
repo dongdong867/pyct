@@ -1,6 +1,6 @@
-"""The one error a program pyct cannot write raises: a miss, not a broken rule of pyct's own."""
+"""The error a path no program can write raises: a miss, not a broken rule of pyct's own."""
 
 
 class UnencodedError(ValueError):
-    """An operation, a read or a literal on the path that no form or term writes on what it
-    meets: the path is a miss, not a broken rule of pyct's own."""
+    """A path no program can write: an operation or a read with no form on what it meets, or a
+    character past the last one cvc5 holds."""
