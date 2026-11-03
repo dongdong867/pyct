@@ -10,8 +10,6 @@ import pyct.core
 
 CORE = "pyct.core"
 CORE_DIR = Path(pyct.core.__file__).parent
-# core and each of its folders: a name imported from one of them is a module or a folder
-PACKAGES = {CORE} | {f"{CORE}.{init.parent.name}" for init in CORE_DIR.glob("*/__init__.py")}
 # the package the samples below are read in: the folder ints sits in
 SAMPLE_PACKAGE = f"{CORE}.numbers"
 
@@ -24,6 +22,16 @@ def _underscored(name: str) -> bool:
 def _package(path: Path) -> str:
     """The package a file of core sits in: core, or one of its folders."""
     return ".".join([CORE, *path.parent.relative_to(CORE_DIR).parts])
+
+
+def _module(path: Path) -> str:
+    """The full name of a file of core: core itself, a folder, or a module."""
+    parts = path.relative_to(CORE_DIR).with_suffix("").parts
+    return ".".join([CORE, *(parts[:-1] if parts[-1] == "__init__" else parts)])
+
+
+# every module and folder of core, by its full name
+MODULES = {_module(path) for path in CORE_DIR.rglob("*.py")}
 
 
 def _resolved(node: ast.ImportFrom, package: str) -> str:
@@ -43,18 +51,17 @@ def _dotted(node: ast.expr) -> str | None:
     return None
 
 
-def _core_modules_bound(tree: ast.Module, package: str) -> dict[str, str]:
-    """Each local name the source binds to a whole core module or folder, and its full name."""
+def _names_bound(tree: ast.Module, package: str) -> dict[str, str]:
+    """Each local name an import binds, and the full name it stands for."""
     bound: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            # without `as`, the code reads the module through its full dotted name
             for alias in node.names:
-                if alias.name.startswith(f"{CORE}."):
-                    bound[alias.asname or alias.name] = alias.name
-        elif isinstance(node, ast.ImportFrom) and (module := _resolved(node, package)) in PACKAGES:
-            # only an import from a package binds a module; one from a module inside it,
-            # like pyct.core.numbers.bools, binds a name in that module
+                # without `as`, an import binds its first name, and the code reads the rest
+                root = alias.name.partition(".")[0]
+                bound[alias.asname or root] = alias.name if alias.asname else root
+        elif isinstance(node, ast.ImportFrom):
+            module = _resolved(node, package)
             for alias in node.names:
                 bound[alias.asname or alias.name] = f"{module}.{alias.name}"
     return bound
@@ -73,7 +80,7 @@ def _underscored_imports(tree: ast.Module, package: str) -> list[str]:
 
 
 def _full_name(dotted: str, bound: dict[str, str]) -> str | None:
-    """The full name a dotted chain spells when it starts with a bound name, like
+    """The full name a dotted chain spells when it starts with a name an import bound, like
     pyct.core.numbers.ints for numbers.ints after `from pyct.core import numbers`; None when it
     starts with none."""
     parts = dotted.split(".")
@@ -84,15 +91,14 @@ def _full_name(dotted: str, bound: dict[str, str]) -> str | None:
 
 
 def _underscored_attributes(tree: ast.Module, package: str) -> list[str]:
-    """Each underscored attribute read off a chain that starts with a name the source bound to
-    a whole core module or folder."""
-    bound = _core_modules_bound(tree, package)
+    """Each underscored attribute read off a chain that spells a core module or folder."""
+    bound = _names_bound(tree, package)
     return [
         f"{full}.{node.attr}"
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and _underscored(node.attr)
         if (dotted := _dotted(node.value)) is not None
-        and (full := _full_name(dotted, bound)) is not None
+        and (full := _full_name(dotted, bound)) in MODULES
     ]
 
 
@@ -127,6 +133,8 @@ SIDE_DOORS: dict[str, str] = {
     "folder-then-module-attribute": "from pyct.core import numbers\nnumbers.ints._operand",
     "relative-folder-then-module-attribute": "from .. import numbers\nnumbers.ints._operand",
     "dotted-folder-import": "import pyct.core.numbers\npyct.core.numbers.ints._operand",
+    "chain-from-the-root": "import pyct.core.numbers.floats\npyct.core.numbers.ints._operand",
+    "core-then-chain": "from pyct import core\ncore.numbers.ints._operand",
 }
 
 # sources that reach nothing private in core: a public name, a dunder every module has, a
@@ -136,6 +144,7 @@ NOTHING_PRIVATE: dict[str, str] = {
     "public-attribute": "from pyct.core.foundation import values\nvalues.own",
     "dunder-attribute": "from pyct.core.numbers import ints\nints.__file__",
     "own-attribute": "self._sink",
+    "public-object-attribute": "from pyct.core.foundation import spans\nspans.EMPTY._replace()",
     "outside-core": "from os import _exit",
 }
 
