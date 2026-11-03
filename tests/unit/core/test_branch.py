@@ -1,10 +1,13 @@
 import dataclasses
 import operator
+import os
 import weakref
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
+import pyct
 from pyct.core import branch as core_branch
 from pyct.core.branch import Branch, BranchSink, Downgrade, SinkItem, Site, caller_site
 from pyct.core.ints import ConcolicInt
@@ -156,3 +159,11 @@ def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
         "__float__",
         "__invert__",
     ]
+
+
+def test_pyct_dir_names_pyct_s_own_package_directory() -> None:
+    assert f"{Path(pyct.__file__).parent}{os.sep}" == core_branch.PYCT_DIR
+
+
+def test_pyct_root_names_the_folder_that_holds_pyct_s_package() -> None:
+    assert str(Path(pyct.__file__).parent.parent) == core_branch.PYCT_ROOT

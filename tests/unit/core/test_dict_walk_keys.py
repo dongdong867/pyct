@@ -6,7 +6,7 @@ from typing import Any
 
 import pytest
 
-from pyct.core import escapes
+from pyct.core import bound, dict_walk_keys, escapes
 from pyct.core.bound import BOUND
 from pyct.core.branch import Downgrade, Fact, SinkItem, Site
 from pyct.core.dicts import ConcolicDict
@@ -330,3 +330,7 @@ def test_a_walk_after_an_escape_hands_out_keys_as_before_walk_keys() -> None:
     assert [place for place in places(sink) if "key" in str(place)] == [
         ["walked", "config", ["key", "config", 0]]
     ]
+
+
+def test_the_bound_module_s_name_is_the_one_a_walk_compares_len_s_module_to() -> None:
+    assert bound.__name__ == dict_walk_keys._BOUND
