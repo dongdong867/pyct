@@ -79,6 +79,12 @@ PICKS: dict[str, Callable[..., Any]] = {
 # move: an answer that moves them may leave the path on an int, as on origin/v2 (known limit L8)
 OWN_PLACE = frozenset({"rows cut i", "rows + rows", "row under a key"})
 
+# the operations that hand out a row's item: on a row under its own place each hands a float or
+# a bool out plain, with a downgrade of its name at the read (`core.list_reads.handed`)
+HANDING = frozenset(
+    {"__getitem__", "__iter__", "__reversed__", "pop", "count", "index", "remove", "__contains__"}
+)
+
 # the steps that write a plain value into the list
 WRITES = frozenset({"append", "insert", "set", "+"})
 
@@ -279,17 +285,22 @@ def _stopped_by_another_kind(
 ) -> bool:
     """Whether the answer's run ends before the flipped fork for a reason of another kind's own:
     a float's `isfinite` the path does not hold (L9), or, on a row under its own place, a plain
-    float, handed out so with a downgrade or written by the target, which no fork records (L8)."""
+    float, handed out so by a step's read of the row, with a downgrade of that read at the step's
+    line, or written by the target, which no fork records (L8)."""
     made = recorded(steps, args)
     taken = [item for item in made if isinstance(item, Branch)]
     if len(_past_finite(taken)) >= len(_past_finite(path)):
         return False
     if taken and _is_finite_check(taken[-1]) and not taken[-1].taken:
         return not any(_is_finite_check(fork) for fork in path)
-    plain = any(isinstance(item, Downgrade) for item in made) or any(
-        step[0] in WRITES for step in steps
+    if steps[0][0] not in OWN_PLACE:
+        return False
+    lines = {{**CHANGES, **ROW_CHECKS}[name].__code__.co_firstlineno for name, _ in steps[1:]}
+    handed = any(
+        isinstance(item, Downgrade) and item.name in HANDING and item.site.line in lines
+        for item in made
     )
-    return steps[0][0] in OWN_PLACE and plain
+    return handed or any(step[0] in WRITES for step in steps)
 
 
 def _past_finite(path: Iterable[Branch]) -> tuple[Branch, ...]:
