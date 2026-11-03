@@ -9,7 +9,7 @@ operation SMT-LIB has no operator for by the form in `FORMS`, a piece by
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 
-from pyct.core.branch import Expression
+from pyct.core.branch import WAS, Expression
 from pyct.solver import floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
@@ -45,6 +45,8 @@ RESULTS: Mapping[str, type | None] = {
     ">=": bool,
     "==": bool,
     "!=": bool,
+    # a value as it was where a result wrote it in (`written_in`)
+    WAS: bool,
     "in": bool,
     "not in": bool,
     "startswith": bool,
@@ -147,6 +149,9 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("abs", float): "fp.abs",
     ("sqrt", float): "fp.sqrt RNE",
     ("fabs", float): "fp.abs",
+    # a value as it was where a result wrote it in is that very value: SMT-LIB's `=`, which tells
+    # a NaN and -0.0 apart from any other double, as the value's text does
+    **{(WAS, kind): "=" for kind in (int, str, bool, float)},
     ("isnan", float): "fp.isNaN",
     ("isinf", float): "fp.isInfinite",
     ("not", bool): "not",

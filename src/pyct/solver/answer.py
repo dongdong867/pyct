@@ -39,6 +39,9 @@ class Unknown:
     # whether a step guard, of tracked-key lookups or of a program's size, gave the ask up
     # before cvc5 ran: it cost no solver time
     guarded: bool = field(default=False, compare=False)
+    # whether the ask was unsat and its core named a value held where a result wrote it in, which no
+    # ask frees: an ask that holds less of anything else may still answer, as after an unsat
+    stayed: bool = field(default=False, compare=False)
 
 
 @dataclass(frozen=True)

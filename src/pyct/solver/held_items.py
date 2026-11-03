@@ -59,6 +59,20 @@ def float_leaves(
     return frozenset(name for name in named if leaves.get(name) is float or name in containers)
 
 
+def finite_leaves(
+    leaves: Mapping[str, type],
+    names: tuple[Mapping[str, str], Mapping[str, str]],
+    finite: Collection[str],
+    *,
+    cores: bool,
+) -> list[str]:
+    """The assertion that holds each float leaf in ``finite`` finite, by its constant, named for
+    its symbol when the program asks for a core."""
+    constants, symbols = names
+    held = [name for name in constants if name in finite and leaves[name] is float]
+    return [floats.held_finite(constants[name], symbols[name] if cores else None) for name in held]
+
+
 def finite_items(
     lists: ListTerms, dicts: DictTerms, finite: Collection[str], *, cores: bool
 ) -> list[str]:

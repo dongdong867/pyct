@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.branch import WAS, Expression
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.heads import BOUNDED, FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS
@@ -82,7 +82,7 @@ STR_TERMS: list[Expression] = [
     *([head, "s"] for head in (*CASES, *TO_DECLARE)),
     *([head, "s", 3] for head in PADDINGS),
 ]
-BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=")] + [
+BOOL_TERMS: list[Expression] = [[op, "x", 1] for op in ("<", "<=", ">", ">=", "==", "!=", WAS)] + [
     ["in", "'a'", "s"],
     ["not in", "'a'", "s"],
     ["in", "x", RANGE_TERMS[0]],

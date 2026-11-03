@@ -33,16 +33,35 @@ _READ_HEAD_NAMES = frozenset(READ_HEADS.values())
 # the kinds that make a list's reads say their kind
 FLOAT_AND_BOOL = frozenset({"float", "bool"})
 
+# the head of a result that wrote a tracked value in as its text, beside that value as it was:
+# ["wrote", ["%", "'1|%d'", "y"], ["was", "x", 1]]. The result no longer follows the value, so
+# an ask whose path reads the result holds the value there; the solver names the hold, and an
+# unsat that rests on it is no proof (plan nested-floats-bools, 5.9). A line writes the result
+WROTE = "wrote"
+
+# the head of a value as it was where a result wrote it in, ["was", "x", 1]: true when the value
+# is that very value, a NaN or a -0.0 among them
+WAS = "was"
+
 
 def as_the_code_read_it(expression: Expression) -> Expression:
-    """The expression with each read that says its kind written as any read is, ``["[]", A, i]``:
-    the kind is the solver's, and a line names a read as the target wrote it."""
+    """The expression with each read that says its kind written as any read is, ``["[]", A, i]``,
+    and each result that wrote a value in as the result alone: the kind and the hold are the
+    solver's, and a line names a read as the target wrote it."""
     if not isinstance(expression, list):
         return expression
     root: list[Expression] = [None]
     stack: list[tuple[list[Expression], list[Expression], int]] = [(expression, root, 0)]
     while stack:
         part, into, at = stack.pop()
+        if part[:1] == [WROTE]:
+            # a result that wrote a value in is written as the result alone
+            written = part[1]
+            if isinstance(written, list):
+                stack.append((written, into, at))
+            else:
+                into[at] = written
+            continue
         made = list(part)
         head = made[0] if made else None
         if isinstance(head, str) and head in _READ_HEAD_NAMES:

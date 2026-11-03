@@ -4,8 +4,8 @@ from collections.abc import Callable, Collection, Mapping
 from functools import partial
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Branch, Expression
-from pyct.solver import floats
+from pyct.core.branch import WROTE, Branch, Expression
+from pyct.solver import floats, written_in
 from pyct.solver.checks import CHECKS, check, checks_by_string
 from pyct.solver.dag import Node
 from pyct.solver.declared import Leaves, Program
@@ -27,7 +27,7 @@ from pyct.solver.heads import (
     forms,
     operator,
 )
-from pyct.solver.held_items import finite_items, holders, path_of
+from pyct.solver.held_items import finite_items, finite_leaves, holders, path_of
 from pyct.solver.letters import Key, Spellings, fixed_position
 from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
 from pyct.solver.literals import leaf_term, plain_operand, string_order
@@ -36,6 +36,7 @@ from pyct.solver.recased import TO_DECLARE, Declared
 from pyct.solver.size_holds import held_small
 from pyct.solver.splits import SPLITS
 from pyct.solver.symbols import leaf_sort
+from pyct.solver.written_in import wrote
 
 
 def program(
@@ -62,7 +63,8 @@ def program(
     `held_items`), and each bound a form is exact inside is held (see `Program`).
     With ``Origin.small``, each list length and dict size the solver chooses is held
     small (see `size_holds`). With ``cores``, each of those finite assertions is named for the
-    symbol of its leaf, list or dict, each size hold for a count, and cvc5 is asked
+    symbol of its leaf, list or dict, each size hold and each value a result wrote in as text
+    (``held_value``) for a count, and cvc5 is asked
     to dump the unsat core, so an unsat says which of them it rests on; that slows
     some sat answers, so only a program asked after an unsat does it. Without
     ``Origin.bounded`` the bounds are left out, and each form past its bound is only
@@ -79,11 +81,10 @@ def program(
     dicts = DictTerms.of_path(prefix, origin, constants)
     seed = Leaves(leaves, constants, origin.shapes, origin.dicts)
     body = _Program(seed, order, holding, prefix, (terms, dicts))
-    held = [name for name in constants if name in finite and leaves[name] is float]
-    finites = [floats.held_finite(constants[name], named[name] if cores else None) for name in held]
+    finites = finite_leaves(leaves, (constants, named), finite, cores=cores)
     items = finite_items(terms, dicts, finite, cores=cores)
     small, sizes = held_small(terms, dicts, origin, cores=cores)
-    body.holds = items + small
+    body.holds = items + small + written_in.holds(body.stays, cores=cores)
     text = program_text(prefix, body, declared, finites, cores=cores)
     return Program(
         text,
@@ -95,8 +96,9 @@ def program(
         kept=dicts.held_back or terms.keeps_length,
         placed=dicts.placed,
         holders=holders(terms, dicts),
-        finite=bool(held or items),
+        finite=bool(finites or items),
         sizes=sizes,
+        stays=bool(body.stays),
     )
 
 
@@ -112,6 +114,11 @@ class _Program:
     defined name never meets a parameter. The program then grows with the
     number of distinct parts, not with the conditions written out.
     """
+
+    # what the program holds beyond the path once its reads are written: each float item finite
+    # (see `held_items`), each list length and dict size small (`size_holds`), and each value a
+    # result the path reads wrote in (`written_in`), set by `program`
+    holds: list[str]
 
     def __init__(
         self,
@@ -133,9 +140,8 @@ class _Program:
         self.definitions: list[str] = []
         self.facts: set[str] = set()
         self.bounds: list[str] = []
-        # what the program holds beyond the path once its reads are written: each float item
-        # finite (see `held_items`), and each list length and dict size small (`size_holds`)
-        self.holds: list[str] = []
+        # each value a result the path reads wrote in, held as it was there (`written_in`)
+        self.stays: list[str] = []
         # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
         # the lists the path reads, which read parts by name and define what they write once
@@ -233,6 +239,8 @@ class _Program:
         """The type of an operation's value, its operands already typed. A part that builds or
         reads a tracked list is typed by the lists (see ``ListTerms.result``)."""
         head, *operands = node
+        if head == WROTE:
+            return self.type_of(operands[0])
         if self.dicts.involves(node):
             return self.dicts.result(node)
         self.lists.infer(node, self.types)
@@ -349,7 +357,9 @@ class _Program:
             return ""
         if kind is list:
             return self.term(node[1])
-        if self.dicts.involves(node):
+        if node[0] == WROTE:
+            operation = wrote(self, *node[1:])
+        elif self.dicts.involves(node):
             operation = self.dicts.scalar(node)
         elif self.lists.involves(node):
             operation = self.lists.scalar(node, kind)
