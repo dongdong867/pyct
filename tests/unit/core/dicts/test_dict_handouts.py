@@ -5,7 +5,7 @@ import json
 
 from pyct.core.foundation.branch import Branch, Expression, Fact
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_dicts import (
+from tests.unit.core.dicts.test_dicts import (
     decided,
     downgrades,
     forks,

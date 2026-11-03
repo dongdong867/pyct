@@ -16,7 +16,7 @@ from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_bases import tracked_values
+from tests.unit.core.entry.test_bases import tracked_values
 
 len_, ord_, chr_ = (BOUND[name][1] for name in ("len", "ord", "chr"))
 

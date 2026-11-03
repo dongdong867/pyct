@@ -13,7 +13,7 @@ from pyct.core.lists.list_changes import takes_another
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.str_splits import a_split_s_list, worked_out
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_list_reads import tracked
+from tests.unit.core.lists.test_list_reads import tracked
 
 
 def _split(sink: list[SinkItem]) -> Any:

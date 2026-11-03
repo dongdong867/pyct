@@ -11,8 +11,8 @@ import pytest
 from pyct.core.foundation.branch import Branch, Downgrade, Expression
 from pyct.core.lists.list_state import plain
 from pyct.core.numbers.ints import ConcolicInt
+from tests.unit.core.lists.test_list_reads import downgrades, forks, tracked, values
 from tests.unit.core.python_forms import evaluate
-from tests.unit.core.test_list_reads import downgrades, forks, tracked, values
 
 # each change a list's own methods make, with plain int positions and values, as a target
 # writes it; `x` is a tracked int the tests put in

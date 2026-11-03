@@ -10,7 +10,7 @@ import pytest
 
 from pyct.core.entry.bound import type_
 from pyct.core.foundation.values import raised_by_target
-from tests.unit.core.test_dicts import tracked
+from tests.unit.core.dicts.test_dicts import tracked
 
 VIEWS = [("keys", KeysView), ("values", ValuesView), ("items", ItemsView)]
 VIEW_IDS = [name for name, _ in VIEWS]

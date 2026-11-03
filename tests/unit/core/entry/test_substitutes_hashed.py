@@ -16,7 +16,7 @@ from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_substitutes import expressions, tracked_bool
+from tests.unit.core.entry.test_substitutes import expressions, tracked_bool
 
 
 def test_a_tracked_value_in_a_set_is_compared_with_each_element_in_its_own_order() -> None:

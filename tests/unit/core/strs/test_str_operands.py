@@ -8,7 +8,7 @@ from pyct.core.foundation.branch import SinkItem
 from pyct.core.strs.str_joins import joined
 from pyct.core.strs.str_operands import literal, within_cvc5
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_substitutes import expressions
+from tests.unit.core.entry.test_substitutes import expressions
 
 
 class OwnIter(str):

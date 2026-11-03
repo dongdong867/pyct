@@ -19,7 +19,7 @@ from pyct.core.lists.list_state import kind_of
 from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_dicts import decided, downgrades, forks, plain_dict, tracked
+from tests.unit.core.dicts.test_dicts import decided, downgrades, forks, plain_dict, tracked
 
 
 def test_a_change_under_a_tracked_key_is_followed_by_the_key_it_names() -> None:

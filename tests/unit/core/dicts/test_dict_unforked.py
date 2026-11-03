@@ -13,7 +13,7 @@ from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.foundation.branch import SinkItem
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_dicts import decided, forks, tracked
+from tests.unit.core.dicts.test_dicts import decided, forks, tracked
 
 # each change under a tracked int into a dict whose keys are strs, which pyct answers without a
 # fork and so marks, whatever the key may equal. Each with the fewest keys the dict holds after

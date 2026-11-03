@@ -11,7 +11,7 @@ from pyct.core.foundation.branch import Branch, Fact, SinkItem
 from pyct.core.foundation.spans import UNKNOWN
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_list_reads import tracked
+from tests.unit.core.lists.test_list_reads import tracked
 
 # strings with no piece, one piece and many, by each separator and by whitespace and line ends
 TEXTS = ["", ",", "a", "a,b", ",,", "a,,b,", " ", "a b", "  a  b c ", "\n", "a\nb", "a\r\nb\n"]

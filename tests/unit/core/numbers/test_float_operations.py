@@ -8,7 +8,7 @@ from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
 from pyct.core.foundation.values import raised_by_target
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
-from tests.unit.core.test_subclass_operands import MODULI, answer_or_error
+from tests.unit.core.numbers.test_subclass_operands import MODULI, answer_or_error
 
 # each taught arithmetic operation with a plain float: the call, and the node it builds. Each
 # keeps Python's written order, so a reflected one reads as the target wrote it

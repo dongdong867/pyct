@@ -12,8 +12,7 @@ from pyct.core.lists.list_state import plain
 from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.python_forms import evaluate
-from tests.unit.core.test_dicts import (
+from tests.unit.core.dicts.test_dicts import (
     decided,
     downgrades,
     forks,
@@ -21,6 +20,7 @@ from tests.unit.core.test_dicts import (
     plain_dict,
     tracked,
 )
+from tests.unit.core.python_forms import evaluate
 
 
 def part(expression: Expression, at: int) -> Expression:

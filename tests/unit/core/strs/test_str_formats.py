@@ -27,8 +27,8 @@ from pyct.core.strs.str_formats import (
     tokens,
 )
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_dict_walk_keys import in_the_target
-from tests.unit.core.test_dicts import tracked
+from tests.unit.core.dicts.test_dict_walk_keys import in_the_target
+from tests.unit.core.dicts.test_dicts import tracked
 
 
 def _tracked(sink: list[SinkItem]) -> dict[str, Any]:

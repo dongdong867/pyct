@@ -10,7 +10,7 @@ from pyct.core.dicts.dicts import ConcolicDict
 from pyct.core.foundation.branch import Branch, Fact
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_dicts import forks, tracked
+from tests.unit.core.dicts.test_dicts import forks, tracked
 
 
 def test_a_lookup_of_a_key_a_walk_handed_out_records_no_fork() -> None:

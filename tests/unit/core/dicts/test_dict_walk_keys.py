@@ -16,7 +16,7 @@ from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
 from pyct.intercept.compiled import substituted_code
-from tests.unit.core.test_dicts import decided, downgrades, forks, tracked
+from tests.unit.core.dicts.test_dicts import decided, downgrades, forks, tracked
 
 # builtins as pyct binds them in a module of the target's package
 _TARGETS: dict[str, Any] = {**vars(builtins), "len": BOUND["len"][1]}

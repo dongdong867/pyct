@@ -8,8 +8,8 @@ from pyct.core.foundation.branch import Branch, Downgrade, Fact, Site
 from pyct.core.lists.lists import ConcolicList
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
-from tests.unit.core.test_dict_walk_keys import in_the_target
-from tests.unit.core.test_dicts import decided, tracked
+from tests.unit.core.dicts.test_dict_walk_keys import in_the_target
+from tests.unit.core.dicts.test_dicts import decided, tracked
 from tests.unit.interrupted import Interrupt, at_every_line
 
 # the file the tally's own code comes from, as its frames name it

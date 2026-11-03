@@ -13,7 +13,7 @@ from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.floats import ConcolicFloat
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_substitutes import expressions
+from tests.unit.core.entry.test_substitutes import expressions
 
 
 def called(function: Callable[..., object]) -> Callable[..., Any]:

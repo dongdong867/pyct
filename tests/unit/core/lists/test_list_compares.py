@@ -11,7 +11,7 @@ from pyct.core.lists.lists import ConcolicList
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.ints import ConcolicInt
 from pyct.core.strs.strs import ConcolicStr
-from tests.unit.core.test_list_reads import decided, downgrades, forks, tracked
+from tests.unit.core.lists.test_list_reads import decided, downgrades, forks, tracked
 
 
 def test_in_compares_each_item_until_one_matches() -> None:
