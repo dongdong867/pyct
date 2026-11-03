@@ -234,6 +234,7 @@
 {"set": "v2", "target": "targets.lists.measured::unproven", "seed": {"xs": [], "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [50]}
 {"set": "v2", "target": "targets.lists.million::at_the_limit", "seed": {"items": [0]}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [], "only_v2": [4]}}
 {"set": "v2", "target": "targets.lists.mixed_numbers::added_to_ints", "seed": {"xs": [1]}, "status": "differs", "only_legacy": [], "only_v2": [34]}
+{"set": "v2", "target": "targets.lists.mixed_numbers::count_added", "seed": {"xs": [0.5]}, "status": "differs", "only_legacy": [], "only_v2": [44]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::isinstance_guard", "seed": {"row": [1, 0.5]}, "status": "differs", "only_legacy": [], "only_v2": [24]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::last_float", "seed": {"row": [1, 0.5]}, "status": "differs", "only_legacy": [], "only_v2": [11]}
 {"set": "v2", "target": "targets.lists.mixed_numbers::row_by_position", "seed": {"row": [0, 0.5, false]}, "status": "differs", "only_legacy": [], "only_v2": [4, 5]}
