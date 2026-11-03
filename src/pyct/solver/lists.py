@@ -471,7 +471,7 @@ class ListTerms(ListTyping, PositionPins):
         """What the program asserts of the lists: each length at most a million, not negative,
         each list the target repeats no longer, each read's guard, and each str item read no
         longer than a string answer holds: the strings an answer hands out, and no others. Those
-        are the caps; the first ask's holds below them are ``size_holds``'s. The
+        are the caps; the first ask's holds below a length's are ``size_holds``'s. The
         first ask also holds each list of mixed kinds to the input's length at least, since a
         shorter one's items come back on the next input with no kind to go by, and with it each
         other list, since a read through a join finds another item when one of them shrinks."""

@@ -1,5 +1,5 @@
-"""Each size the solver chooses is held small on the first ask, and grows only where an unsat's
-core names its hold."""
+"""Each list length and dict size the solver chooses is held small on the first ask, and grows
+only where an unsat's core names its hold; a string keeps only its cap."""
 
 import shutil
 from pathlib import Path
@@ -50,23 +50,6 @@ def test_a_float_s_int_as_an_index_answers_a_short_list() -> None:
 
 
 @needs_cvc5
-def test_a_float_s_int_as_a_string_s_position_answers_a_short_string() -> None:
-    at: Expression = ["int", "f"]
-    path = (
-        fork(["isfinite", "f"], taken=True),
-        fork([">", ["len", "s"], at], taken=True),
-        fork([">=", ["len", "s"], ["-", at]], taken=True),
-        fork(["==", ["[]", "s", at], "'z'"], taken=False),
-    )
-
-    answer = solve(path, {"s": str, "f": float}, 5.0, {}, {"s": "abc", "f": 1.5})
-
-    assert isinstance(answer, Sat)
-    text = answer.model["s"]
-    assert isinstance(text, str) and len(text) <= 2 * 3 + 8
-
-
-@needs_cvc5
 def test_a_fork_only_a_long_list_takes_grows_its_hold_until_one_fits() -> None:
     answer = solve((fork([">", ["len", "xs"], 200], taken=True),), {}, 5.0, {"xs": EMPTY})
 
@@ -89,31 +72,6 @@ def test_a_fork_past_the_cap_is_unsat_once_every_hold_is_free() -> None:
 
 
 @needs_cvc5
-def test_a_fork_only_a_long_string_takes_grows_its_hold_until_one_fits() -> None:
-    path = (fork([">", ["len", "s"], 200], taken=True),)
-
-    answer = solve(path, {"s": str}, 5.0, {}, {"s": "ab"})
-
-    assert isinstance(answer, Sat)
-    text = answer.model["s"]
-    assert isinstance(text, str) and 200 < len(text) <= 12 * 16 * 16
-
-
-@needs_cvc5
-def test_a_fork_only_a_long_str_item_takes_grows_its_hold_until_one_fits() -> None:
-    item: Expression = ["[]", "xs", 0]
-    path = (fork([">", ["len", item], 50], taken=True),)
-
-    answer = solve(path, {}, 5.0, {"xs": ListShape(("str",), fill="str")})
-
-    assert isinstance(answer, Sat)
-    listed = answer.model["xs"]
-    assert isinstance(listed, ListAnswer)
-    text = listed.arrays["str"].at(0)
-    assert isinstance(text, str) and 50 < len(text) <= 8 * 16
-
-
-@needs_cvc5
 def test_a_fork_only_a_large_dict_takes_grows_its_hold_until_one_fits() -> None:
     answer = solve((fork([">", ["len", "d"], 50], taken=True),), {}, 5.0, {"d": ONE_KEY})
 
@@ -124,7 +82,7 @@ def test_a_fork_only_a_large_dict_takes_grows_its_hold_until_one_fits() -> None:
     assert 50 < found.kept + found.made <= 10 * 16
 
 
-def test_the_first_ask_holds_each_size_to_twice_the_input_s_and_eight(
+def test_the_first_ask_holds_a_list_to_2n_and_8_and_a_string_to_its_cap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     fake_cvc5(tmp_path, f'sat\n((|arg.xs.len| 3))\n((|arg.s| "a"))\n{NOT_UNKNOWN}')
@@ -137,9 +95,13 @@ def test_the_first_ask_holds_each_size_to_twice_the_input_s_and_eight(
     # a sat answer is the answer, so no core is asked for
     assert program[0] == "(set-logic ALL)"
     assert "(assert (<= |arg.xs.len| 14))" in program
-    assert "(assert (<= (str.len |arg.s|) 16))" in program
     # the cap stays beside the hold
     assert f"(assert (<= 0 |arg.xs.len| {MOST_ITEMS}))" in program
+    # a string keeps only its cap: held small, cvc5 can spend its whole limit proving that a
+    # fork only a longer string takes is unsat
+    assert [line for line in program if "str.len |arg.s|" in line] == [
+        f"(assert (<= (str.len |arg.s|) {MOST_ITEMS}))"
+    ]
 
 
 def test_a_core_that_names_a_size_hold_grows_it_sixteen_fold(
@@ -206,13 +168,6 @@ def test_an_unsat_on_ints_beside_a_held_list_is_unsat() -> None:
     )
 
     assert solve(path, {"n": int}, 5.0, {"xs": INTS}) == Unsat()
-
-
-@needs_cvc5
-def test_an_unsat_on_a_string_beside_its_hold_is_unsat() -> None:
-    path = (fork(["==", "s", "'a'"], taken=True), fork(["==", "s", "'b'"], taken=True))
-
-    assert solve(path, {"s": str}, 5.0, {}, {"s": "ab"}) == Unsat()
 
 
 @needs_cvc5

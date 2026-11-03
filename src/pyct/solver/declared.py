@@ -106,8 +106,8 @@ class Program:
     holders: Mapping[str, str] = field(default_factory=dict)
     # whether the program holds any float finite, which an unsat may rest on
     finite: bool = False
-    # each size the program holds small, by its hold's name, with its term and its most: what
-    # an unsat may rest on beside the floats (see ``size_holds``)
+    # each list length and dict size the program holds small, by its hold's name, with its term
+    # and its most: what an unsat may rest on beside the floats (see ``size_holds``)
     sizes: Mapping[str, tuple[str, int]] = field(default_factory=dict)
     # the other kinds each read that may move can take, and whether a read may land on a kind no
     # ask can write: what an unsat rests on beside the program (see ``read_kinds``)

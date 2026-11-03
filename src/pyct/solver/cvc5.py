@@ -134,9 +134,9 @@ def solve(
     check: each other kind is asked in turn (see ``read_kinds``).
 
     A prefix that names a float leaf or reads a float item is asked first with each such float
-    held finite; decision float-finite-first-frees-the-core-s-leaves-and-lists. Each size the
-    solver chooses, a list's length, a dict's size or a string's, is asked first held small
-    (``size_holds``). See ``_held_first``.
+    held finite; decision float-finite-first-frees-the-core-s-leaves-and-lists. Each list length
+    and dict size the solver chooses is asked first held small (``size_holds``); a string keeps
+    only its cap. See ``_held_first``.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -295,12 +295,12 @@ def _origin(
 def _loosened(path: _Path, origin: Origin) -> Answer:
     """An unsat answer to a program that holds a repeated list's length or a form's bound.
 
-    The path is asked once more with neither held, every double allowed and every size free to
-    its cap, where each form past its bound can be whatever Python gives there: an unsat to that
-    unsettled program is the path's, whatever core cvc5 picked. A model is an ``Unknown()``,
-    since past a hold the target would build a list too long, and past a bound it may not be
-    Python's; so is a program that settled its clamps. A timeout or a failure is what it is on
-    any other ask.
+    The path is asked once more with neither held, every double allowed and every length and
+    size free to its cap, where each form past its bound can be whatever Python gives there: an
+    unsat to that unsettled program is the path's, whatever core cvc5 picked. A model is an
+    ``Unknown()``, since past a hold the target would build a list too long, and past a bound it
+    may not be Python's; so is a program that settled its clamps. A timeout or a failure is what
+    it is on any other ask.
     """
     loose = replace(origin, hold=False, bounded=False, small=False)
     written, _ = _written(path, loose, frozenset())
@@ -375,8 +375,8 @@ def _write(
 
 def _held_first(path: _Path, origin: Origin, written: Program, finite: frozenset[str]) -> Answer:
     """What cvc5 answers the program, each float leaf in ``finite`` held finite at first, and
-    each float a list or a dict in ``finite`` reads, and each size the solver chooses held small
-    (``size_holds``).
+    each float a list or a dict in ``finite`` reads, and each list length and dict size the solver
+    chooses held small (``size_holds``).
 
     Only an ``Unsat`` asks again: once with the same holds and cvc5 asked for its unsat core,
     which says which of them the unsat rests on, and then with those floats free, those sizes

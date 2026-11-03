@@ -18,8 +18,8 @@ _SYMBOL = re.compile(r"[^\s()]+")
 
 class Body(Protocol):
     """What a path's written conditions hand the text: their lists and dicts, the parts defined
-    once, each bound a form is exact inside, the items held finite, the sizes held small, and
-    each fork's assertion."""
+    once, each bound a form is exact inside, the items held finite, the lengths and sizes held
+    small, and each fork's assertion."""
 
     lists: ListTerms
     dicts: DictTerms
@@ -42,8 +42,8 @@ def program_text(
     """The program's lines, in the order cvc5 reads them: each leaf and each list's and dict's
     parts declared before any term on them, each split's count a line reads among them as its
     c*, the leaves held finite, each class of characters a line names, the definitions, the
-    items held finite, the sizes held small, what the lists, the dicts and the path assert,
-    and what to ask for."""
+    items held finite, the lengths and sizes held small, what the lists, the dicts and the path
+    assert, and what to ask for."""
     terms, dicts = body.lists, body.dicts
     # a dict's assertions may define the functions its walk's chosen keys call, which it
     # declares (see ``dict_orders``)

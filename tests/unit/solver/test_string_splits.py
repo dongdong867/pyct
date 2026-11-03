@@ -151,9 +151,6 @@ def test_a_piece_asserts_once_that_the_string_has_it() -> None:
     assert "str.substr |arg.s| 0 2" not in "\n".join(lines)
 
 
-# what the first ask holds s to, from an input that holds no s: 2 * 0 + 8 characters
-SMALL = "(assert (<= (str.len |arg.s|) 8))"
-
 # pieces every string has: partition's three, and the first of a split or an rsplit on a
 # separator, with no limit or one past what the reversed string is walked to
 ALWAYS_THERE: dict[str, Expression] = {
@@ -169,10 +166,9 @@ def test_a_piece_the_string_always_has_asserts_nothing(piece: Expression) -> Non
 
     lines = render(prefix, {"s": str}).splitlines()
 
-    # the string's length bound, its first ask's hold, and the fork
+    # the string's length bound, and the fork
     assert [line for line in lines if line.startswith("(assert ")] == [
         longest_string("|arg.s|"),
-        SMALL,
         lines[-3],
     ]
 
@@ -185,7 +181,6 @@ def test_an_rsplit_walked_to_its_limit_asserts_it_has_the_split_s_number_of_piec
     counts = f"(= {right_count('|arg.s|', (',', 2))} {left_count('|arg.s|', (',', 2))})"
     assert [line for line in lines if line.startswith("(assert ")] == [
         longest_string("|arg.s|"),
-        SMALL,
         f"(assert {counts})",
         lines[-3],
     ]

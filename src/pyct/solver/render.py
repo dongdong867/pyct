@@ -60,8 +60,8 @@ def program(
     `_Program`). Each float leaf in ``finite`` that the prefix names is held to a
     finite double, and so is each float a list or a dict in ``finite`` reads (see
     `held_items`), and each bound a form is exact inside is held (see `Program`).
-    With ``Origin.small``, each size the solver chooses is held small (see
-    `size_holds`). With ``cores``, each of those finite assertions is named for the
+    With ``Origin.small``, each list length and dict size the solver chooses is held
+    small (see `size_holds`). With ``cores``, each of those finite assertions is named for the
     symbol of its leaf, list or dict, each size hold for a count, and cvc5 is asked
     to dump the unsat core, so an unsat says which of them it rests on; that slows
     some sat answers, so only a program asked after an unsat does it. Without
@@ -82,7 +82,7 @@ def program(
     held = [name for name in constants if name in finite and leaves[name] is float]
     finites = [floats.held_finite(constants[name], named[name] if cores else None) for name in held]
     items = finite_items(terms, dicts, finite, cores=cores)
-    small, sizes = held_small(terms, dicts, seed, origin, cores=cores)
+    small, sizes = held_small(terms, dicts, origin, cores=cores)
     body.holds = items + small
     text = program_text(prefix, body, declared, finites, cores=cores)
     return Program(
@@ -134,7 +134,7 @@ class _Program:
         self.facts: set[str] = set()
         self.bounds: list[str] = []
         # what the program holds beyond the path once its reads are written: each float item
-        # finite (see `held_items`), and each size the solver chooses small (see `size_holds`)
+        # finite (see `held_items`), and each list length and dict size small (`size_holds`)
         self.holds: list[str] = []
         # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
