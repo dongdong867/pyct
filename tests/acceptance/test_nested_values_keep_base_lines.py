@@ -48,7 +48,15 @@ def test_a_line_base_covers_stays_covered(function: str, seed: object) -> None:
     assert missing_lines(target, lines) == set()
 
 
-@pytest.mark.parametrize("function", ["walk_of_reversed_rows", "walk_of_growing_rows"])
+@pytest.mark.parametrize(
+    "function",
+    [
+        "walk_of_reversed_rows",
+        "walk_of_growing_rows",
+        "walk_of_rows_given_floats",
+        "walk_of_rows_given_rows",
+    ],
+)
 def test_a_walk_of_many_rows_covers_every_line_in_its_budget(function: str) -> None:
     target = f"{NESTED}::{function}"
     lines = lines_of(target, MANY_ROWS, "--budget", "15", "--solver-timeout", "3")

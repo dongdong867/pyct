@@ -51,3 +51,20 @@ def test_a_read_says_the_same_kind_after_another_read_of_its_row() -> None:
     _ = g[0][j]
 
     assert head_of(g[i][j][0]) == before
+
+
+def test_a_kind_the_rows_already_hold_keeps_what_they_hold() -> None:
+    # the row picked stays as the argument had it, so the pick works out what the rows hold
+    args: Any = bind({"g": [[1], [2], [3], [4]], "i": 3, "f": 0.5}, [])
+    rows = args["g"]
+    rows[0].append(args["f"])
+    _ = rows[args["i"]]
+    kept = rows.__dict__["rows_kinds"]
+
+    # each row's first float is a kind that row did not hold, and one the rows already do
+    rows[1].append(args["f"])
+    rows[2].append([0])
+    _ = rows[args["i"]]
+
+    assert rows.__dict__["rows_kinds"] is kept
+    assert "float" in kept[2]

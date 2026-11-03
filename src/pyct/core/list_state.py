@@ -104,19 +104,28 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
-# how many changes to a list have run that may change what a list of rows holds
-_KIND_CHANGES = [0]
+# how many changes gave a list a kind with a term it did not hold, and the count each such kind
+# was last given at
+_GAINS = [0]
+_LAST_GAINED: dict[str, int] = {}
 
 
-def note_kind_change() -> None:
-    """Note a change that gave a list a new kind or changed its rows: what a list of rows was
-    found to hold may no longer be so."""
-    _KIND_CHANGES[0] += 1
+def note_kinds_gained(kinds: frozenset[str]) -> None:
+    """Note a change that gave a list kinds with a term it did not hold: a list of rows found to
+    hold none of them may hold them now."""
+    _GAINS[0] += 1
+    for kind in kinds:
+        _LAST_GAINED[kind] = _GAINS[0]
 
 
-def kind_changes() -> int:
-    """How many changes to a list have run that may change what a list of rows holds."""
-    return _KIND_CHANGES[0]
+def kinds_gained() -> int:
+    """How many changes gave a list a kind with a term it did not hold."""
+    return _GAINS[0]
+
+
+def gained_since(count: int, held: frozenset[str]) -> bool:
+    """Whether a change after the first ``count`` gave any list a kind outside ``held``."""
+    return any(at > count for kind, at in _LAST_GAINED.items() if kind not in held)
 
 
 def is_item_read(expression: Expression) -> bool:
@@ -182,8 +191,8 @@ class ListState(list):
     # whether the target reached this list at a place no term follows. A float or a bool of the
     # input read from it comes out plain, and a downgrade names it (see ``unplace``)
     unplaced: bool
-    # what the rows inside this list hold, with the count of changes and the rows around it it
-    # was worked out at
+    # what the rows inside this list hold, with the count of changes that gave a list a kind and
+    # the rows around it it was worked out at
     rows_kinds: tuple[int, frozenset[str], frozenset[str]] | None
 
     @classmethod

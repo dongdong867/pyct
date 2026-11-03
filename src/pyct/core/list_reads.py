@@ -35,9 +35,10 @@ from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import (
     TRACKED,
     ListState,
+    gained_since,
     is_read,
-    kind_changes,
     kind_of,
+    kinds_gained,
     moved,
     plain,
     read_from_the_input,
@@ -206,16 +207,18 @@ def _named(self: ListState, row: ListState, written: Expression) -> None:
 
 def _rows_kinds(self: ListState) -> frozenset[str]:
     """The kinds with a term that any row of a list of rows holds, or any row around them. A walk
-    names every row, so the answer is kept until a list gains a kind or changes its rows, or the
-    rows around it change."""
+    names every row, so the answer is kept until a list gains a kind it does not hold, the list
+    changes its rows, or the rows around it change. A row's kinds only grow, so a kind any list
+    gains that the answer holds already changes nothing: a walk that gives each row one kind
+    works the answer out once, not once a row."""
     fields = self.__dict__
     kept = self.rows_kinds
     around = self.among_rows or frozenset()
-    if kept is not None and kept[:2] == (kind_changes(), around):
+    if kept is not None and kept[1] == around and not gained_since(kept[0], kept[2]):
         return kept[2]
     rows = [row for row in list.copy(self) if isinstance(row, ListState)]
     kinds = (around | frozenset().union(*(row.kinds for row in rows))) & TRACKED
-    fields["rows_kinds"] = (kind_changes(), around, kinds)
+    fields["rows_kinds"] = (kinds_gained(), around, kinds)
     return kinds
 
 

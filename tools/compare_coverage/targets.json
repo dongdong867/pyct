@@ -600,6 +600,8 @@
     {"set": "v2", "target": "targets.nested.floats_and_bools::flag_in_a_walk", "seed": {"d": {"a": 1}, "ys": [0, 1], "flags": [false]}},
     {"set": "v2", "target": "targets.nested.floats_and_bools::walk_of_reversed_rows", "seed": {"g": [[1], [2]], "n": 1}},
     {"set": "v2", "target": "targets.nested.floats_and_bools::walk_of_growing_rows", "seed": {"g": [[1], [2]], "n": 1}},
+    {"set": "v2", "target": "targets.nested.floats_and_bools::walk_of_rows_given_floats", "seed": {"g": [[1], [2]], "n": 1}},
+    {"set": "v2", "target": "targets.nested.floats_and_bools::walk_of_rows_given_rows", "seed": {"g": [[1], [2]], "n": 1}},
     {"set": "v2", "target": "targets.nested.floats_and_bools::flag_value_in_a_sum", "seed": {"ys": [0, 1, 2], "data": {"flag": false}}},
     {"set": "v2", "target": "targets.nested.floats_and_bools::percent_beside_a_name", "seed": {"name": "al", "scores": [0.5]}},
     {"set": "v2", "target": "targets.nested.floats_and_bools::key_as_a_float_in_a_format", "seed": {"d": {"1": 1}}},

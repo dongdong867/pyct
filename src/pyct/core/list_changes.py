@@ -27,7 +27,7 @@ from pyct.core.list_forms import (
     written,
 )
 from pyct.core.list_reads import handed, long_enough, plain_index, tracked_long_enough
-from pyct.core.list_state import TRACKED, ListState, kind_of, kinds_of, note_kind_change, plain
+from pyct.core.list_state import TRACKED, ListState, kind_of, kinds_of, note_kinds_gained, plain
 from pyct.core.spans import Span, exactly
 from pyct.core.str_splits import LISTED_SPLITS, a_split_s_list, built_from_a_split, kept_form
 from pyct.core.values import own
@@ -107,9 +107,12 @@ def made(
     change(self.shadow)
     fields = self.__dict__
     fields["expression"] = kept_form(form)
-    if not kinds <= self.kinds or "list" in self.kinds | kinds:
-        # a new kind, or a change to which rows a list holds
-        note_kind_change()
+    gained = (kinds - self.kinds) & TRACKED
+    if gained:
+        note_kinds_gained(gained)
+    if "list" in self.kinds | kinds:
+        # the change may change which rows the list holds, and so what they hold
+        fields["rows_kinds"] = None
     fields["kinds"] = self.kinds | kinds
     self.resized(span)
     return answer

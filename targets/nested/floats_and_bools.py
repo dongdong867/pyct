@@ -491,3 +491,19 @@ def key_as_a_tolerance(d: dict[int, int]):
         if k == 7:
             return "seven"
     return "none"
+
+
+def walk_of_rows_given_floats(g, n):
+    for row in reversed(g):
+        row.append(0.5)
+    if n == 7:
+        return "hit"
+    return "miss"
+
+
+def walk_of_rows_given_rows(g, n):
+    for row in reversed(g):
+        row.append([0])
+    if n == 7:
+        return "hit"
+    return "miss"
