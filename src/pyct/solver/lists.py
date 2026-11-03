@@ -97,7 +97,10 @@ class ListTerms(ListTyping, PositionPins):
         self.built: list[list[Expression]] = []
         self.stored: dict[int, Place] = {}
         self.declared: dict[str, str] = {}
-        self.bounded: dict[str, None] = {}
+        # each length the program declares, by its term, with its size in the input: the list's
+        # own, or for a row read where no shape says which, the longest row's, which its first
+        # hold starts from (`size_holds`)
+        self.bounded: dict[str, int] = {}
         self.capped: list[str] = []
         self.guards: list[str] = []
         # the least length each list the seed names has on the path, by its length's term
@@ -341,10 +344,10 @@ class ListTerms(ListTyping, PositionPins):
         symbol = self.symbols[name]
         length = self._declared(symbol, positions, "len")
         if length not in self.bounded:
-            self.bounded[length] = None
+            self.bounded[length] = kinds.longest
             self.least[length] = max(self.least.get(length, 0), 0)
             if kinds.shape is not None:
-                self.origin[length] = len(kinds.shape.kinds)
+                self.origin[length] = self.bounded[length] = len(kinds.shape.kinds)
                 if kinds.shape.mixed:
                     self.holds.mixed[length] = len(kinds.shape.kinds)
         return Stored(

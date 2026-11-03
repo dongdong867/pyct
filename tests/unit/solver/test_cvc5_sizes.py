@@ -11,8 +11,9 @@ from pyct.core.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.cvc5 import solve
+from pyct.solver.given import taking
 from tests.unit.solver.test_cvc5 import NOT_UNKNOWN, fork
-from tests.unit.solver.test_cvc5_floats import asked, fake_cvc5
+from tests.unit.solver.test_cvc5_floats import asked, fake_cvc5, held
 
 needs_cvc5 = pytest.mark.skipif(shutil.which("cvc5") is None, reason="cvc5 is not installed")
 
@@ -175,3 +176,72 @@ def test_an_unsat_on_a_dict_beside_its_hold_is_unsat() -> None:
     path = (fork([">", ["len", "d"], 3], taken=True), fork(["<", ["len", "d"], 2], taken=True))
 
     assert solve(path, {}, 5.0, {"d": ONE_KEY}) == Unsat()
+
+
+def deep_row_path(at: Expression, flipped: int) -> tuple[Branch, ...]:
+    """The forks `row = g[at]`, then `row[j] == j` for j from 20, record on a row of 30 zeros,
+    the last of them flipped."""
+    row: Expression = ["[]", "g", at]
+    taken = [fork([">", ["len", "g"], "i"], taken=True)] if at == "i" else []
+    for j in range(20, flipped + 1):
+        taken.append(fork([">", ["len", row], j], taken=True))
+        taken.append(fork(["==", ["[]", row, j], j], taken=j == flipped))
+    return tuple(taken)
+
+
+ROWS = ListShape(("list",), rows={0: ListShape(("int",) * 30, fill="int")}, fill="list")
+
+
+@needs_cvc5
+@pytest.mark.parametrize(("at", "leaves"), [("i", {"i": int}), (-1, {})])
+def test_a_row_read_at_a_tracked_index_or_from_the_end_is_held_from_the_input_s_rows(
+    at: Expression, leaves: dict[str, type]
+) -> None:
+    # held to 8 items, a row the path already reads past item 7 took an unsat, a core and a
+    # grown hold for every sat
+    values = {"i": 0} if leaves else {}
+    with taking() as programs:
+        answer = solve(deep_row_path(at, 29), leaves, 5.0, {"g": ROWS}, values)
+
+    assert isinstance(answer, Sat), answer
+    assert len(programs) == 1
+
+
+def test_one_core_frees_a_float_and_grows_a_size_together(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(
+        tmp_path, "unsat\n", "unsat\n(\nfinite!arg.f\nsize!0\n)\n", "unsat\n", "unsat\n(\n)\n"
+    )
+    monkeypatch.setenv("PATH", str(tmp_path))
+    path = (fork([">", ["len", "xs"], "f"], taken=True),)
+
+    assert solve(path, {"f": float}, 5.0, {"xs": INTS}, {"f": 0.5}) == Unsat()
+
+    first, cored, freer, _ = asked(tmp_path)
+    assert held("f") in first
+    assert "(assert (! (<= |arg.xs.len| 10) :named size!0))" in cored
+    # the one core freed the float and grew the size in the same ask
+    assert held("f") not in freer
+    assert "(assert (<= |arg.xs.len| 160))" in freer
+
+
+def test_an_ask_with_each_dict_s_keys_free_holds_its_sizes_from_the_first_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_cvc5(tmp_path, "unsat\n", "unsat\n(\n)\n", "unsat\n", "unsat\n(\nsize!0\n)\n", "unsat\n")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    path = (fork([">", ["len", "d"], 3], taken=True),)
+
+    solve(path, {}, 5.0, {"d": ONE_KEY})
+
+    kept, kept_cored, free, free_cored, grown, *_ = asked(tmp_path)
+    made_none = "(assert (= |dict.0.made| 0))"
+    # the first ask keeps the input's keys; an unsat whose core names no hold asks with them free
+    assert made_none in kept
+    assert "(assert (! (<= |dict.0.len| 10) :named size!0))" in kept_cored
+    assert made_none not in free
+    # the ask with the keys free holds its sizes as a first ask does, and grows them as one does
+    assert "(assert (<= |dict.0.len| 10))" in free
+    assert "(assert (! (<= |dict.0.len| 10) :named size!0))" in free_cored
+    assert "(assert (<= |dict.0.len| 160))" in grown

@@ -77,11 +77,14 @@ class TrackedList:
 class Kinds:
     """What a list's items can be: the kinds core counts, and with them those the solver may
     add. ``shape`` is the input's own shape for an argument's list or a list inside one at a
-    place, which types a read at a position from the start by that position alone."""
+    place, which types a read at a position from the start by that position alone. ``longest``
+    is the most items any of the input's lists it may be holds, for a row read where no shape
+    says which: what its length's first hold starts from (``size_holds``)."""
 
     kinds: frozenset[str]
     every: frozenset[str]
     shape: ListShape | None = None
+    longest: int = 0
 
 
 # what a split's pieces are: strs, and only strs
@@ -100,7 +103,8 @@ def of_rows(shape: ListShape) -> Kinds:
     rows = [*shape.rows.values(), *([shape.fill_row] if shape.fill_row is not None else [])]
     kinds = frozenset().union(*(row.kinds for row in rows))
     every = frozenset().union(*(of_shape(row).every for row in rows))
-    return Kinds(frozenset(kinds), every)
+    longest = max((len(row.kinds) for row in rows), default=0)
+    return Kinds(frozenset(kinds), every, longest=longest)
 
 
 def measured(part: Expression) -> Expression | None:

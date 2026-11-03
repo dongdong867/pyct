@@ -10,6 +10,9 @@ held finite does (see ``cvc5._held_first``): each hold it names grows ``GROWTH``
 ``MOST_ITEMS`` it is written no more, so only the cap holds the size. A core that names no hold
 makes the unsat the path's. Plan nested-floats-bools, 5.8.
 
+The input's size of a list is its own length, and for a row read where no shape says which, at
+a tracked index or from the end, the longest of the input's rows.
+
 A string keeps only its cap: held small, a fork only a longer string takes can leave cvc5
 unable to prove the held ask unsat within its limit, a string split into twenty pieces say.
 """
@@ -22,8 +25,8 @@ from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.dicts import DictTerms
 from pyct.solver.lists import ListTerms, Origin
 
-# what names the assertion that holds a size, before its count. `!` is in no symbol, so the
-# name never meets a constant
+# what names the assertion that holds a size, before its count. No other name a program declares
+# or asserts starts with it, so the name never meets a constant or another hold
 SIZE = "size!"
 
 # how many times over a hold grows each time an unsat's core names it
@@ -48,7 +51,7 @@ def held_small(
 def sizes(lists: ListTerms, dicts: DictTerms) -> dict[str, int]:
     """Each size the program leaves the solver to choose, by its term, with the input's size of
     it: each list's length, and each dict's size where the program declares one."""
-    found = {length: lists.origin.get(length, 0) for length in lists.bounded}
+    found = dict(lists.bounded)
     for tracked in dicts.dicts.values():
         if tracked.sized:
             found[tracked.constant("len")] = len(tracked.shape.keys)
