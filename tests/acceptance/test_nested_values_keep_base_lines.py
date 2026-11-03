@@ -22,6 +22,9 @@ from tests.acceptance.test_nested_floats_and_bools import (
 # the walks of many rows
 ROW_WALKS = "targets.nested.row_walks"
 
+# the formats and the reads whose results turn plain
+PLAIN = "targets.nested.turned_plain"
+
 # many rows, which a walk once read in time that grew with each row
 MANY_ROWS = {"g": [[1]] * 16_000, "n": 1}
 
@@ -38,7 +41,6 @@ MANY_ROWS = {"g": [[1]] * 16_000, "n": 1}
         ("joined_int_row", {"ys": [[1]], "grid": [[2], 0.5, 1]}),
         ("appended_then_read", {"xs": [1], "i": 1, "f": 0.5}),
         ("flag_value_in_a_sum", {"ys": [0, 1, 2], "data": {"flag": False}}),
-        ("percent_beside_a_name", {"name": "al", "scores": [0.5]}),
         ("rounds_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
         ("formats_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
         ("percent_in_a_walk", {"d": {"a": 1}, "xs": [0.5]}),
@@ -81,47 +83,78 @@ def test_a_float_left_plain_in_a_walk_lets_the_walk_choose_a_key(
     assert return_line(target, "hit") not in missing_lines(target, lines)
 
 
-# each run that loses a line to an operation with no form: the downgrade that names it, the line
-# the operation is on, and the lines it loses
+# each run that loses a line to an operation with no form: the target, the seed, the downgrade
+# that names it, the line the operation is on, and the lines it loses
 NAMED_LOSSES = [
-    ("flag_indexes", {"ys": [0, 1], "flags": [False]}, "__getitem__", 313, [314]),
-    ("flag_pops", {"ys": [0, 1], "flags": [False]}, "pop", 319, [321]),
-    ("flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}, "__getitem__", 326, [327]),
-    ("flag_stores", {"ys": [0, 1], "flags": [False]}, "__setitem__", 332, [334]),
-    ("flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}, "__mul__", 339, [340]),
-    ("flag_cuts_a_str", {"s": "abc", "flags": [True]}, "__getitem__", 345, [347]),
-    ("flag_repeats_a_str", {"s": "ab", "flags": [True]}, "__mul__", 351, [352]),
-    ("flag_picks_a_char", {"s": "abc", "flags": [True]}, "__getitem__", 357, [358]),
-    ("float_as_int_pads", {"s": "a", "xs": [3.5]}, "ljust", 363, [364]),
-    ("flag_value_indexes", {"ys": [0, 1], "data": {"flag": False}}, "__getitem__", 375, [376]),
-    ("flag_as_a_key", {"d": {"0": 1}, "flags": [False]}, "__getitem__", 381, [382]),
-    ("flag_searches_keys", {"d": {"0": 1}, "flags": [False]}, "__contains__", 387, [388]),
-    ("cut_row_in_a_walk", {"d": {"a": 1}, "g": [[0.5], [0.5]], "i": 1}, "__getitem__", 426, [427]),
+    (f"{NESTED}::flag_indexes", {"ys": [0, 1], "flags": [False]}, "__getitem__", 313, [314]),
+    (f"{NESTED}::flag_pops", {"ys": [0, 1], "flags": [False]}, "pop", 319, [321]),
+    (f"{NESTED}::flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}, "__getitem__", 326, [327]),
+    (f"{NESTED}::flag_stores", {"ys": [0, 1], "flags": [False]}, "__setitem__", 332, [334]),
+    (f"{NESTED}::flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}, "__mul__", 339, [340]),
+    (f"{NESTED}::flag_cuts_a_str", {"s": "abc", "flags": [True]}, "__getitem__", 345, [347]),
+    (f"{NESTED}::flag_repeats_a_str", {"s": "ab", "flags": [True]}, "__mul__", 351, [352]),
+    (f"{NESTED}::flag_picks_a_char", {"s": "abc", "flags": [True]}, "__getitem__", 357, [358]),
+    (f"{NESTED}::float_as_int_pads", {"s": "a", "xs": [3.5]}, "ljust", 363, [364]),
     (
-        "picked_dict_in_a_walk",
+        f"{NESTED}::flag_value_indexes",
+        {"ys": [0, 1], "data": {"flag": False}},
+        "__getitem__",
+        375,
+        [376],
+    ),
+    (f"{NESTED}::flag_as_a_key", {"d": {"0": 1}, "flags": [False]}, "__getitem__", 381, [382]),
+    (
+        f"{NESTED}::flag_searches_keys",
+        {"d": {"0": 1}, "flags": [False]},
+        "__contains__",
+        387,
+        [388],
+    ),
+    (
+        f"{NESTED}::cut_row_in_a_walk",
+        {"d": {"a": 1}, "g": [[0.5], [0.5]], "i": 1},
+        "__getitem__",
+        426,
+        [427],
+    ),
+    (
+        f"{NESTED}::picked_dict_in_a_walk",
         {"d": {"a": 1}, "rows": [{"x": 0.5}, {"x": 0.5}], "i": 1},
         "__getitem__",
         435,
         [436],
     ),
     (
-        "flag_in_a_walk",
+        f"{NESTED}::flag_in_a_walk",
         {"d": {"a": 1}, "ys": [0, 1], "flags": [False]},
         "__getitem__",
         444,
         [446],
     ),
+    (f"{NESTED}::percent_beside_a_name", {"name": "al", "scores": [0.5]}, "__mod__", 457, [458]),
+    (f"{NESTED}::name_beside_a_float", {"s": "a", "xs": [0.5]}, "__mod__", 483, [484]),
+    (f"{PLAIN}::hex_beside_a_number", {"x": 1, "y": 0}, "__mod__", 2, [5]),
+    (f"{PLAIN}::precision_beside_a_name", {"xs": [0.5], "name": "a"}, "__mod__", 11, [14]),
+    (f"{PLAIN}::text_as_a_key", {"d": {"1.5": 1}, "xs": [1.5]}, "__str__", 22, [23]),
+    (f"{PLAIN}::percent_as_a_key", {"d": {"1.5": 1}, "xs": [1.5]}, "__mod__", 30, [31]),
+    (f"{PLAIN}::repr_beside_a_number", {"s": "\U000e0001", "y": 0}, "__mod__", 66, [68]),
+    (f"{PLAIN}::ascii_beside_a_number", {"s": "\U00030000", "y": 0}, "__mod__", 73, [75]),
+    (f"{PLAIN}::list_beside_a_number", {"xs": [1], "y": 0}, "__mod__", 80, [82]),
+    (f"{PLAIN}::dict_beside_a_number", {"d": {"k": 1}, "y": 0}, "__mod__", 87, [89]),
+    (f"{PLAIN}::hex_that_ends", {"x": 1, "y": 0}, "__mod__", 109, [111]),
+    (f"{PLAIN}::float_that_ends", {"x": 0.5, "y": 0}, "__mod__", 116, [118]),
+    (f"{PLAIN}::item_that_ends", {"xs": [0.5], "y": 0}, "__mod__", 123, [125]),
 ]
 
 
-@pytest.mark.parametrize(("function", "seed", "name", "at", "lost"), NAMED_LOSSES)
+@pytest.mark.parametrize(("target", "seed", "name", "at", "lost"), NAMED_LOSSES)
 def test_a_line_lost_to_an_operation_with_no_form_is_named_where_it_is_lost(
-    function: str, seed: object, name: str, at: int, lost: list[int]
+    target: str, seed: object, name: str, at: int, lost: list[int]
 ) -> None:
-    target = f"{NESTED}::{function}"
     lines = lines_of(target, seed, *QUICK)
     named = {(entry["name"], entry["line"]) for line in lines for entry in _downgrades(line)}
     assert (name, at) in named, named
+    assert set(lost) <= missing_lines(target, lines)
 
 
 def _downgrades(line: dict[str, object]) -> list[dict[str, object]]:
@@ -132,10 +165,10 @@ def _downgrades(line: dict[str, object]) -> list[dict[str, object]]:
 
 
 def test_a_line_only_legacy_covers_in_this_story_is_a_named_loss() -> None:
-    modules = (NESTED, ROW_WALKS, MIXED, SEARCHES, VALUES, ITEMS)
+    modules = (NESTED, ROW_WALKS, PLAIN, MIXED, SEARCHES, VALUES, ITEMS)
     records = [json.loads(line) for line in ACCEPTED.read_text().splitlines()]
     ours = [r for r in records if str(r.get("target")).startswith(modules)]
-    named = [(f"{NESTED}::{function}", seed, lost) for function, seed, *_, lost in NAMED_LOSSES]
+    named = [(target, seed, lost) for target, seed, *_, lost in NAMED_LOSSES]
     assert ours
     lost = [r for r in ours if r["only_legacy"]]
     assert all((r["target"], r["seed"], r["only_legacy"]) in named for r in lost), lost

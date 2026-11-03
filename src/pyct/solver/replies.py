@@ -4,7 +4,6 @@ from pyct.solver.answer import Answer, Error, Sat, Timeout, Unknown, Unsat, mode
 from pyct.solver.declared import Program
 from pyct.solver.floats import FINITE
 from pyct.solver.size_holds import SIZE
-from pyct.solver.written_in import STAYS_NAME
 
 # cvc5's reply to WHY when its time limit ended the check
 OUT_OF_TIME = "(:reason-unknown timeout)"
@@ -15,25 +14,19 @@ NO_REASON = "(error "
 
 def core_of(stdout: str, written: Program) -> frozenset[str]:
     """The leaves, lists and dicts an unsat answer's dumped core holds finite, by their names,
-    and the size holds and the values held where a result wrote them in it names, by theirs.
+    and the size holds it names, by theirs.
 
     cvc5 prints the core right after the answer, its assertion names on one
     line or one per line; every other line after an unsat is a refusal that
     names no assertion. Each name is ``FINITE`` and the leaf's symbol, or the symbol of the
     list or dict that holds the float and a count (``held_items``), or ``SIZE`` and a count
-    (``size_holds``), or ``STAYS_NAME`` and a count (``written_in``).
+    (``size_holds``).
     """
     words = stdout.replace("(", " ").replace(")", " ").split()
     names = {**written.names_by_symbol, **written.holders}
     named = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
-    held = [word for word in words if word.startswith((SIZE, STAYS_NAME))]
-    return frozenset(names[symbol.partition("!")[0]] for symbol in named) | frozenset(held)
-
-
-def stayed(core: frozenset[str]) -> bool:
-    """Whether an unsat's core names a value held where a result wrote it in, which no ask
-    frees."""
-    return any(name.startswith(STAYS_NAME) for name in core)
+    sized = [word for word in words if word.startswith(SIZE)]
+    return frozenset(names[symbol.partition("!")[0]] for symbol in named) | frozenset(sized)
 
 
 def answer_of(stdout: str, stderr: str) -> Answer:

@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.branch import READ_HEADS, WROTE, Branch, Expression, Site
+from pyct.core.branch import READ_HEADS, Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.printed import CUT, LINE_LIMIT, PrintedForks, printed_forks
@@ -286,10 +286,7 @@ def _leaf(leaf: Expression) -> _Text:
 
 
 def _text(expression: list[Expression], operands: list[_Text]) -> _Text:
-    """One condition, written from its operands, each already written. A result that wrote a
-    value in is written as the result alone, as the target wrote it."""
-    if expression[0] == WROTE:
-        return operands[0]
+    """One condition, written from its operands, each already written."""
     around = _around(expression, operands)
     if around is not None:
         return around, _ALONE

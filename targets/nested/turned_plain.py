@@ -60,3 +60,67 @@ def difference_as_an_index(ys, y, flags):
     if y == 5:
         return "hit"
     return "miss"
+
+
+def repr_beside_a_number(s: str, y: int):
+    t = "%r|%d" % (s, y)
+    if t.endswith("|5"):
+        return "hit"
+    return "miss"
+
+
+def ascii_beside_a_number(s: str, y: int):
+    t = "%a|%d" % (s, y)
+    if t.endswith("|5"):
+        return "hit"
+    return "miss"
+
+
+def list_beside_a_number(xs, y: int):
+    t = "%s|%d" % (xs, y)
+    if t.startswith("[9"):
+        return "hit"
+    return "miss"
+
+
+def dict_beside_a_number(d, y: int):
+    t = "%s|%d" % (d, y)
+    if t.startswith("{'k': 9"):
+        return "hit"
+    return "miss"
+
+
+def hex_as_a_key(d, x: int, y: int):
+    t = "%x|%d" % (x, y)
+    if t in d:
+        return "hit"
+    return "miss"
+
+
+def hex_matched_by_a_walk(d, x: int, y: int):
+    t = "%x|%d" % (x, y)
+    for k in d:
+        if k == t:
+            return "hit"
+    return "miss"
+
+
+def hex_that_ends(x: int, y: int):
+    s = "%x|%d" % (x, y)
+    if s.endswith("|5"):
+        return "hit"
+    return "miss"
+
+
+def float_that_ends(x: float, y: int):
+    s = "%.2f|%d" % (x, y)
+    if x > 1.0 and s.endswith("|5"):
+        return "hit"
+    return "miss"
+
+
+def item_that_ends(xs: list[float], y: int):
+    s = "%.2f|%d" % (xs[0], y)
+    if xs[0] > 1.0 and s.endswith("|5"):
+        return "hit"
+    return "miss"

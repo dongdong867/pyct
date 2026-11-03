@@ -1,5 +1,5 @@
 """`%` formatting with a plain str format and a tracked operand: the text Python gives, tracked
-where pyct follows an operand's conversion, and a `__mod__` downgrade for each it does not."""
+where pyct follows each tracked operand's conversion, and a `__mod__` downgrade elsewhere."""
 
 import operator
 from collections.abc import Callable
@@ -9,7 +9,7 @@ from unittest.mock import ANY
 import pytest
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import WAS, WROTE, Downgrade, SinkItem
+from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.dicts import ConcolicDict
 from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
@@ -168,66 +168,27 @@ def test_any_other_conversion_is_python_s_text_plain_and_a_downgrade(
     )
 
 
-# a format whose tracked operands pyct follows but one, the right side, and the expression the
-# answer carries: that one is written into the format as the text it gave, and the answer holds
-# it at the value it had there
-WRITTEN_IN: dict[str, tuple[str, Callable[[dict[str, Any]], object], object]] = {
-    "a float's own letter": (
-        "%s=%.1f",
-        lambda t: (t["s"], t["f"]),
-        [WROTE, ["%", "'%s=2.5'", ["()", "s"]], [WAS, "f", 2.5]],
-    ),
-    "a float as %s": (
-        "%s%s",
-        lambda t: (t["s"], t["f"]),
-        [WROTE, ["%", "'%s2.5'", ["()", "s"]], [WAS, "f", 2.5]],
-    ),
-    "a width": (
-        "%d|%5s",
-        lambda t: (t["n"], t["s"]),
-        [WROTE, ["%", "'%d|   ab'", ["()", "n"]], [WAS, "s", "'ab'"]],
-    ),
-    "a bool as hex": (
-        "%s%x",
-        lambda t: (t["s"], t["b"]),
-        [WROTE, ["%", "'%s1'", ["()", "s"]], [WAS, "b", True]],
-    ),
+# a format whose tracked operands pyct follows but one, and the right side
+BESIDE_A_FOLLOWED: dict[str, tuple[str, Callable[[dict[str, Any]], object]]] = {
+    "a float's own letter": ("%s=%.1f", lambda t: (t["s"], t["f"])),
+    "a float as %s": ("%s%s", lambda t: (t["s"], t["f"])),
+    "a width": ("%d|%5s", lambda t: (t["n"], t["s"])),
+    "a bool as hex": ("%s%x", lambda t: (t["s"], t["b"])),
+    "an int as hex": ("%x|%d", lambda t: (t["n"], t["n"])),
 }
 
 
-@pytest.mark.parametrize(("fmt", "right", "expression"), WRITTEN_IN.values(), ids=list(WRITTEN_IN))
-def test_an_operand_pyct_does_not_follow_is_written_in_and_the_rest_stay_tracked(
-    fmt: str, right: Callable[[dict[str, Any]], object], expression: object
+@pytest.mark.parametrize(("fmt", "right"), BESIDE_A_FOLLOWED.values(), ids=list(BESIDE_A_FOLLOWED))
+def test_an_operand_pyct_does_not_follow_makes_the_whole_answer_plain(
+    fmt: str, right: Callable[[dict[str, Any]], object]
 ) -> None:
     sink: list[SinkItem] = []
 
     answer = formatted(fmt, right(_tracked(sink)))
 
-    assert type(answer) is ConcolicStr
-    assert str.__str__(answer) == fmt % _plain_values(right(_tracked([])))
-    assert answer.expression == expression  # pyrefly: ignore[missing-attribute]
-    assert sink == [Downgrade(name="__mod__", site=ANY)]
-
-
-def test_each_value_written_in_is_held_once_however_often_it_is_written() -> None:
-    sink: list[SinkItem] = []
-    t = _tracked(sink)
-
-    answer = formatted("%s%x%.1f%x", (t["s"], t["n"], t["f"], t["n"]))
-
-    assert type(answer) is ConcolicStr
-    assert str.__str__(answer) == "ab-72.5-7"
-    held = [WROTE, ["%", "'%s-72.5-7'", ["()", "s"]], [WAS, "n", -7]]
-    assert answer.expression == [WROTE, held, [WAS, "f", 2.5]]  # pyrefly: ignore[missing-attribute]
-
-
-def test_a_format_that_writes_every_tracked_value_in_is_plain_and_holds_nothing() -> None:
-    sink: list[SinkItem] = []
-    n = ConcolicInt.made(1, expression="n", sink=sink)
-
-    answer = formatted("%x|%d", (n, 0))
-
+    # its text written in beside the others would not follow it: plan nested-floats-bools, 5.10
     assert type(answer) is str
+    assert answer == fmt % _plain_values(right(_tracked([])))
     assert sink == [Downgrade(name="__mod__", site=ANY)]
 
 

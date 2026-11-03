@@ -6,18 +6,7 @@ from collections.abc import Callable
 import pytest
 
 from pyct.core import branch as core_branch
-from pyct.core.branch import (
-    WAS,
-    WROTE,
-    Branch,
-    BranchSink,
-    Downgrade,
-    Expression,
-    SinkItem,
-    Site,
-    as_the_code_read_it,
-    caller_site,
-)
+from pyct.core.branch import Branch, BranchSink, Downgrade, SinkItem, Site, caller_site
 from pyct.core.ints import ConcolicInt
 
 # a probe whose text is fixed here, so the file, line and column asserted below are exact
@@ -167,15 +156,3 @@ def test_another_name_at_the_same_instruction_is_another_downgrade() -> None:
         "__float__",
         "__invert__",
     ]
-
-
-def test_a_line_writes_a_result_that_wrote_a_value_in_as_the_result_alone() -> None:
-    written: Expression = ["%", "'%s1'", ["[float]", "xs", 0]]
-    held: Expression = [WROTE, [WROTE, written, [WAS, "b", True]], [WAS, "n", 1]]
-
-    assert as_the_code_read_it(["==", held, "'a1'"]) == [
-        "==",
-        ["%", "'%s1'", ["[]", "xs", 0]],
-        "'a1'",
-    ]
-    assert as_the_code_read_it(held) == ["%", "'%s1'", ["[]", "xs", 0]]

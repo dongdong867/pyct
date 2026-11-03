@@ -477,3 +477,9 @@ def key_as_a_tolerance(d: dict[int, int]):
         if k == 7:
             return "seven"
     return "none"
+
+
+def name_beside_a_float(s, xs):
+    if "%s%s" % (s, xs[0]) == "zz0.5":
+        return "hit"
+    return "miss"

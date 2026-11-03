@@ -109,9 +109,6 @@ class Program:
     # each list length and dict size the program holds small, by its hold's name, with its term
     # and its most: what an unsat may rest on beside the floats (see ``size_holds``)
     sizes: Mapping[str, tuple[str, int]] = field(default_factory=dict)
-    # whether the program holds a value where a result the path reads wrote it in, which an
-    # unsat may rest on and no ask frees (see ``written_in``)
-    stays: bool = False
     # the other kinds each read that may move can take, and whether a read may land on a kind no
     # ask can write: what an unsat rests on beside the program (see ``read_kinds``)
     other_kinds: tuple[frozenset[str], ...] = ()

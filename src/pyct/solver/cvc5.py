@@ -26,7 +26,7 @@ from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, Rende
 from pyct.solver.lists import READ_STEPS, Origin
 from pyct.solver.read_kinds import asked_of_each
 from pyct.solver.render import Program, program
-from pyct.solver.replies import answer_of, core_of, stayed
+from pyct.solver.replies import answer_of, core_of
 from pyct.solver.size_holds import grown_by
 from pyct.solver.split_lists import UnknownCountError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
@@ -263,12 +263,12 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool, P
     """
     answer, written = _solved(path, origin)
     placed = written is not None and written.placed
-    if _refused(answer) and written is not None and written.kept:
+    if isinstance(answer, Unsat) and written is not None and written.kept:
         logger.debug("unsat with each dict's other keys kept: asking with them free")
         origin = replace(origin, keep=False)
         answer, written = _solved(path, origin)
         placed = placed or (written is not None and written.placed)
-    if _refused(answer) and written is not None and written.narrowed:
+    if isinstance(answer, Unsat) and written is not None and written.narrowed:
         logger.debug("unsat with clamps settled as the input had them: asking unsettled")
         origin = replace(origin, steps=None, most=int(timeout * UNSETTLED_STEPS_PER_SECOND))
         answer, written = _solved(path, origin)
@@ -276,15 +276,9 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool, P
         logger.debug("a read from a split's end held to c* pieces: asking at the input's own")
         origin = replace(origin, fixed_reads=False)
         answer, written = _solved(path, origin)
-    if _refused(answer) and written is not None and (written.held or written.bounded):
+    if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
         return _loosened(path, origin), placed, written
     return answer, placed, written
-
-
-def _refused(answer: Answer) -> bool:
-    """Whether an ask was unsat, its core naming a value held where a result wrote it in or
-    not: an ask that holds less of anything else is asked next either way."""
-    return isinstance(answer, Unsat) or (isinstance(answer, Unknown) and answer.stayed)
 
 
 def _origin(
@@ -304,8 +298,7 @@ def _loosened(path: _Path, origin: Origin) -> Answer:
 
     The path is asked once more with neither held, every double allowed and every length and
     size free to its cap, where each form past its bound can be whatever Python gives there: an
-    unsat to that unsettled program is the path's, whatever core cvc5 picked, but one that rests
-    on a value held where a result wrote it in, which is unknown (``_held_first``). A model is an
+    unsat to that unsettled program is the path's, whatever core cvc5 picked. A model is an
     ``Unknown()``, since past a hold the target would build a list too long, and past a bound it
     may not be Python's; so is a program that settled its clamps. A timeout or a failure is what
     it is on any other ask.
@@ -316,7 +309,7 @@ def _loosened(path: _Path, origin: Origin) -> Answer:
         return written
     if written.narrowed:
         return Unknown()
-    answer = _held_first(path, loose, written, frozenset())
+    answer, _ = _ask_by(written, origin.until)
     return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
 
 
@@ -394,22 +387,16 @@ def _held_first(path: _Path, origin: Origin, written: Program, finite: frozenset
     floats and grow sizes at once. One core may name several holds where loosening any one of
     them would do, and each is loosened. The core costs its ask time only after an unsat, since
     asking for it slows some sat answers, and a program that holds nothing asks no core.
-
-    A value held where a result the path reads wrote it in (``written_in``) is never
-    freed: an unsat whose core names one and nothing to loosen is an ``Unknown(stayed=True)``,
-    since another value may take the path, only not one the path already wrote as it was.
     """
     answer, _ = _ask_by(written, origin.until)
-    while (written.finite or written.sizes or written.stays) and isinstance(answer, Unsat):
+    while (written.finite or written.sizes) and isinstance(answer, Unsat):
         cored = _write(path, origin, finite, cores=True)
         if not isinstance(cored, Program):
             return cored
         answer, core = _ask_by(cored, origin.until)
         freed, grown = finite & core, grown_by(cored.sizes, core)
-        if not isinstance(answer, Unsat):
+        if not isinstance(answer, Unsat) or not (freed or grown):
             return answer
-        if not (freed or grown):
-            return Unknown(stayed=True) if stayed(core) else answer
         finite -= freed
         origin = replace(origin, sizes={**origin.sizes, **grown})
         freer = _write(path, origin, finite)

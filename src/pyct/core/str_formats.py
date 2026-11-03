@@ -18,12 +18,9 @@ bool, with no flag, width, precision or length (`FOLLOWED`). A format that
 is `%s` alone answers with the operand's own text, as Python's own `%`
 does. A plain int, bool or str operand is a literal in the expression, and
 any other plain operand is written into the format as the text it gave.
-Any other conversion of a tracked operand is written in the same way, with
-a downgrade named `__mod__`, and the other operands stay tracked: the answer
-then holds that operand at its value, ``["wrote", answer, ["was", x, v]]``,
-for any fork that reads the answer. A format
-read through a key or a ``*``, or a text the solver cannot hold, gives
-Python's text, plain, and that downgrade.
+Any other conversion of a tracked operand, a format read through a key or
+a ``*``, or a text the solver cannot hold, gives Python's text, plain, and
+a downgrade named `__mod__` (plan nested-floats-bools, 5.10).
 """
 
 from __future__ import annotations
@@ -36,7 +33,7 @@ from collections.abc import Callable, Iterable
 from typing import Any, NamedTuple, cast
 
 from pyct.core import numbers
-from pyct.core.branch import WAS, WROTE, BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
 from pyct.core.str_operands import within_cvc5
 from pyct.core.values import BASES, downgraded, own, plain
@@ -183,8 +180,6 @@ class _Pieces:
         self.sink: BranchSink | None = None
         self.lost = False
         self.items = items
-        # each tracked value written in as its text, as it was there, once per value
-        self.was: dict[int, Expression] = {}
         operands = iter(items)
         for token in read:
             if isinstance(token, Spec):
@@ -199,17 +194,14 @@ class _Pieces:
         # an object of the target's own may hand back a tracked str from `__str__`: its text
         text = str.__str__(own(operator.mod, spec.text, (_plain(item),)))
         self.texts.append(text)
-        if _base(item) is not None and _followed(spec, item):
+        if _base(item) is not None:
             if self.sink is None:
                 self.sink = cast(Any, item).sink
+            # no form for this conversion of a tracked operand makes the whole answer plain
+            self.lost = self.lost or not _followed(spec, item)
             self.written.append(spec.text)
             self.forms.append(cast(Any, item).expression)
             return
-        if _base(item) is not None:
-            # no form for this conversion of a tracked operand: its text is written in, as a
-            # plain operand's is, and the other operands stay tracked
-            _downgrade(cast(Any, item).sink, (item,))
-            self._held(item)
         form = _literal(item)
         if form is None:
             self.lost = self.lost or not within_cvc5(text)
@@ -217,16 +209,6 @@ class _Pieces:
             return
         self.written.append(spec.text)
         self.forms.append(form)
-
-    def _held(self, item: object) -> None:
-        """Note a tracked scalar written in as its text at the value it had, once."""
-        base = _base(item)
-        expression: Expression = cast(Any, item).expression
-        if base not in _SCALARS or id(expression) in self.was:
-            return
-        value = _plain(item)
-        written = str.__repr__(value) if isinstance(value, str) else value
-        self.was[id(expression)] = [WAS, expression, cast(Expression, written)]
 
     def answer(self, tupled: bool) -> object:
         """The text, tracked where it follows a tracked operand, plain where none is."""
@@ -238,11 +220,7 @@ class _Pieces:
             _downgrade(self.sink, self.items)
             return text
         operand = ["()", *self.forms] if tupled else self.forms[0]
-        expression: Expression = ["%", fmt, operand]
-        # the answer reads each value written in as it was there (plan nested-floats-bools, 5.9)
-        for was in self.was.values():
-            expression = [WROTE, expression, was]
-        return numbers.tracked(text, expression, self.sink)
+        return numbers.tracked(text, ["%", fmt, operand], self.sink)
 
 
 def _literal(item: object) -> Expression | None:
