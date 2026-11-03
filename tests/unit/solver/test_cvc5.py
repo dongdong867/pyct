@@ -312,3 +312,9 @@ def test_an_operation_no_form_writes_is_unknown(caplog: pytest.LogCaptureFixture
 
     assert solve((fork(["@@", "n", 1], taken=True),), {"n": int}, 5.0) == Unknown()
     assert "pyct cannot write the path for cvc5" in caplog.text
+
+
+def test_a_literal_past_the_last_character_cvc5_holds_is_unknown() -> None:
+    path = (fork(["==", "s", repr("\U000e0001")], taken=False),)
+
+    assert solve(path, {"s": str}, 5.0) == Unknown()

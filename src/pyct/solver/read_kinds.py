@@ -13,6 +13,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from itertools import islice, product
 
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
+from pyct.solver.unencoded import UnencodedError
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def _asked_of(ask: Callable[[ReadKinds], Answer], kinds: ReadKinds) -> Answer:
     an operation with no form on the kind a read takes."""
     try:
         return ask(kinds)
-    except ValueError as error:
+    except UnencodedError as error:
         logger.debug("no program reads those kinds: %s", error)
         return Unknown()
 

@@ -40,6 +40,7 @@ multiple of it.
 import re
 
 from pyct.core.str_operands import LAST_CHARACTER
+from pyct.solver.unencoded import UnencodedError
 
 # the printable ASCII characters, space to tilde: each is written as itself, but for the double
 # quote and the backslash
@@ -70,7 +71,7 @@ def _code_point(character: str) -> int:
     """A character's code point, for one cvc5 holds."""
     code = ord(character)
     if code > LAST_CHARACTER:
-        raise ValueError(f"cvc5 holds characters up to U+{LAST_CHARACTER:X}, not U+{code:X}")
+        raise UnencodedError(f"cvc5 holds characters up to U+{LAST_CHARACTER:X}, not U+{code:X}")
     return code
 
 

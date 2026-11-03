@@ -20,7 +20,6 @@ from pyct.solver.answer import (
 )
 from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.given import Given, answered, argv, options, took
-from pyct.solver.heads import UnencodedError
 from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin
@@ -29,6 +28,7 @@ from pyct.solver.render import Program, program
 from pyct.solver.replies import answer_of, core_of
 from pyct.solver.size_holds import grown_by
 from pyct.solver.split_lists import UnknownCountError
+from pyct.solver.unencoded import UnencodedError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
 
 logger = logging.getLogger(__name__)

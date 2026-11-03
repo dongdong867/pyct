@@ -20,7 +20,6 @@ from typing import Any
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
-from pyct.solver.heads import UnencodedError
 from pyct.solver.list_kinds import (
     ITEM_SORTS,
     ITEM_TYPES,
@@ -55,6 +54,7 @@ from pyct.solver.list_terms import (
 from pyct.solver.origin import READ_STEPS, Origin
 from pyct.solver.position_pins import PIN, PositionPins
 from pyct.solver.split_paths import Splits
+from pyct.solver.unencoded import UnencodedError
 
 __all__ = ["ITEM_SORTS", "READ_STEPS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
 

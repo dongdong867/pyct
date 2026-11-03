@@ -29,6 +29,7 @@ from pyct.solver.recased import TO_DECLARE
 from pyct.solver.spans import equal, length, unequal, within, without
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, repeated, without_prefix, without_suffix
+from pyct.solver.unencoded import UnencodedError
 from pyct.solver.words import WORD_EDGES
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
@@ -151,11 +152,6 @@ OPERATORS: Mapping[tuple[str, type], str] = {
     ("isinf", float): "fp.isInfinite",
     ("not", bool): "not",
 }
-
-
-class UnencodedError(ValueError):
-    """An operation or a read on the path that no form or term writes on what it meets: the
-    path is a miss, not a broken rule of pyct's own."""
 
 
 def operator(head: str, kind: type | None) -> str:

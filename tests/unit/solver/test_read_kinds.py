@@ -1,5 +1,6 @@
 """What an unsat comes to when a read may land on an item of another kind than Python read."""
 
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -12,6 +13,7 @@ from pyct.solver.cvc5 import solve
 from pyct.solver.origin import Origin
 from pyct.solver.read_kinds import KIND_ASKS, asked_of_each, assignments
 from pyct.solver.render import program
+from pyct.solver.unencoded import UnencodedError
 from tests.unit.solver.agreement import needs_cvc5
 
 SITE = Site("t.py", 1, 0)
@@ -85,6 +87,26 @@ def test_a_timeout_on_an_ask_is_a_timeout() -> None:
 
 def test_an_ask_that_answers_otherwise_leaves_the_unsat_unknown() -> None:
     assert isinstance(asked_of_each([frozenset({"int"})], False, lambda _: Unknown()), Unknown)
+
+
+def _raises(error: Exception) -> Callable[[object], Answer]:
+    def ask(kinds: object) -> Answer:
+        raise error
+
+    return ask
+
+
+def test_a_kind_no_program_writes_is_unknown() -> None:
+    ask = _raises(UnencodedError("pyct cannot render ord on float: nothing encodes it yet"))
+
+    assert isinstance(asked_of_each([frozenset({"float"})], False, ask), Unknown)
+
+
+def test_a_broken_rule_of_pyct_s_own_under_another_kind_is_raised() -> None:
+    ask = _raises(ValueError("the path names what the seed does not bind: n"))
+
+    with pytest.raises(ValueError, match="does not bind"):
+        asked_of_each([frozenset({"float"})], False, ask)
 
 
 def test_a_position_from_the_start_of_an_argument_keeps_its_kind() -> None:
