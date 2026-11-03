@@ -10,7 +10,7 @@ import pyct.core
 
 CORE = "pyct.core"
 CORE_DIR = Path(pyct.core.__file__).parent
-# core and each of its folders: an import from one of them binds a module
+# core and each of its folders: a name imported from one of them is a module or a folder
 PACKAGES = {CORE} | {f"{CORE}.{init.parent.name}" for init in CORE_DIR.glob("*/__init__.py")}
 # the package the samples below are read in: the folder ints sits in
 SAMPLE_PACKAGE = f"{CORE}.numbers"
@@ -44,7 +44,7 @@ def _dotted(node: ast.expr) -> str | None:
 
 
 def _core_modules_bound(tree: ast.Module, package: str) -> dict[str, str]:
-    """Each local name the source binds to a whole core module, and that module's full name."""
+    """Each local name the source binds to a whole core module or folder, and its full name."""
     bound: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -72,14 +72,27 @@ def _underscored_imports(tree: ast.Module, package: str) -> list[str]:
     ]
 
 
+def _full_name(dotted: str, bound: dict[str, str]) -> str | None:
+    """The full name a dotted chain spells when it starts with a bound name, like
+    pyct.core.numbers.ints for numbers.ints after `from pyct.core import numbers`; None when it
+    starts with none."""
+    parts = dotted.split(".")
+    for end in range(len(parts), 0, -1):
+        if (head := ".".join(parts[:end])) in bound:
+            return ".".join([bound[head], *parts[end:]])
+    return None
+
+
 def _underscored_attributes(tree: ast.Module, package: str) -> list[str]:
-    """Each underscored attribute read off a name the source bound to a whole core module."""
+    """Each underscored attribute read off a chain that starts with a name the source bound to
+    a whole core module or folder."""
     bound = _core_modules_bound(tree, package)
     return [
-        f"{bound[dotted]}.{node.attr}"
+        f"{full}.{node.attr}"
         for node in ast.walk(tree)
         if isinstance(node, ast.Attribute) and _underscored(node.attr)
-        if (dotted := _dotted(node.value)) is not None and dotted in bound
+        if (dotted := _dotted(node.value)) is not None
+        and (full := _full_name(dotted, bound)) is not None
     ]
 
 
@@ -111,6 +124,9 @@ SIDE_DOORS: dict[str, str] = {
     "relative-module-then-attribute": "from . import ints\nints._operand",
     "aliased-import": "import pyct.core.numbers.ints as ints\nints._operand",
     "dotted-import": "import pyct.core.numbers.ints\npyct.core.numbers.ints._operand",
+    "folder-then-module-attribute": "from pyct.core import numbers\nnumbers.ints._operand",
+    "relative-folder-then-module-attribute": "from .. import numbers\nnumbers.ints._operand",
+    "dotted-folder-import": "import pyct.core.numbers\npyct.core.numbers.ints._operand",
 }
 
 # sources that reach nothing private in core: a public name, a dunder every module has, a

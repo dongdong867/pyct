@@ -7,8 +7,8 @@ whichever core module a caller imports. So does `bases`, the table of each
 tracked class's base type, which the classes read as they answer.
 """
 
-# imported for their entries, and bound to no name: a name here would hide the folder of the
-# same name, as `strs` would hide core/strs/
+# imported for their entries by full name: `from pyct.core.strs import strs` here would bind
+# the module over the folder core/strs/
 import pyct.core.entry.bases
 import pyct.core.numbers.bools
 import pyct.core.numbers.floats
