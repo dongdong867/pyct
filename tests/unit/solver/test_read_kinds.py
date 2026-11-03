@@ -203,4 +203,4 @@ def test_a_path_no_program_writes_is_unknown_not_a_crash(g: list[object]) -> Non
 
     answer = solve(path, seed.leaves, 5.0, seed.containers(), seed.values)
 
-    assert isinstance(answer, Sat | Unsat | Unknown), answer
+    assert isinstance(answer, Unknown), answer

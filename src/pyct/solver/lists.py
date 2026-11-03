@@ -20,6 +20,7 @@ from typing import Any
 from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
+from pyct.solver.heads import UnencodedError
 from pyct.solver.list_kinds import (
     ITEM_SORTS,
     ITEM_TYPES,
@@ -71,10 +72,6 @@ _AT_LEAST: Mapping[tuple[str, bool], Callable[[int], int]] = {
 # where a list inside a list sits: the list the seed names, each position on the way as the
 # path wrote it, and each as a term
 type Place = tuple[str, tuple[Expression, ...], tuple[str, ...]]
-
-
-class UnencodedError(ValueError):
-    """A read on the path that no term writes: its kind is one nothing on the path tells."""
 
 
 class ListTerms(ListTyping, PositionPins):

@@ -368,7 +368,7 @@ class _Program:
         """An operation on its operands, as the form, the order or the operator that means it."""
         head, *operands = node
         if not isinstance(head, str):
-            raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+            raise UnencodedError(f"pyct cannot render {head}: nothing encodes it yet")
         if (counted := self.lists.counted_compare(node)) is not None:
             return counted
         if (positioned := POSITIONED.get(head)) is not None:

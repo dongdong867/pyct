@@ -20,6 +20,7 @@ from pyct.solver.answer import (
 )
 from pyct.solver.dict_keys import LookupsTooManyError
 from pyct.solver.given import Given, answered, argv, options, took
+from pyct.solver.heads import UnencodedError
 from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
 from pyct.solver.lists import READ_STEPS, Origin
@@ -367,8 +368,7 @@ def _write(
     except UnknownCountError as error:
         logger.debug("giving up a program that reads a count with no c*: %s", error)
         return Unknown()
-    except ValueError as error:
-        # an operation with no form on the type it meets, a list's read among them
+    except UnencodedError as error:
         logger.warning("pyct cannot write the path for cvc5: %s", error)
         return Unknown()
 

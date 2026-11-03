@@ -153,12 +153,17 @@ OPERATORS: Mapping[tuple[str, type], str] = {
 }
 
 
+class UnencodedError(ValueError):
+    """An operation or a read on the path that no form or term writes on what it meets: the
+    path is a miss, not a broken rule of pyct's own."""
+
+
 def operator(head: str, kind: type | None) -> str:
     """How SMT-LIB spells the operator a condition leads with, on operands of that type."""
     spelled = OPERATORS.get((head, kind)) if kind is not None else None
     if spelled is None:
         on = "anything" if kind is None else kind.__name__
-        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
+        raise UnencodedError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
     return spelled
 
 
