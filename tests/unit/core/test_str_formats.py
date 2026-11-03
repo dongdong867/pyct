@@ -8,6 +8,7 @@ from unittest.mock import ANY
 
 import pytest
 
+from pyct.core import escapes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.dicts import ConcolicDict
@@ -26,6 +27,8 @@ from pyct.core.str_formats import (
 )
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
+from tests.unit.core.test_dict_walk_keys import in_the_target
+from tests.unit.core.test_dicts import tracked
 
 
 def _tracked(sink: list[SinkItem]) -> dict[str, Any]:
@@ -412,3 +415,31 @@ def test_a_plain_format_of_a_tracked_str_is_followed_through_its_rmod() -> None:
     assert (str.__str__(text), type(text)) == ("<abc>", ConcolicStr)
     assert text.expression == ["%", "'<%s>'", "s"]  # pyrefly: ignore[missing-attribute]
     assert sink == []
+
+
+def _walked(answer: Callable[[object, list[SinkItem]], object]) -> object:
+    """The key a walk over a one-key dict hands out, ``answer`` of it run at its pass."""
+    config, sink = tracked({"ab": 1})
+    walked = in_the_target(
+        "keys = []\nfor k in config:\n    keys.append(k)\n    answer(k, sink)",
+        config=config,
+        sink=sink,
+        answer=answer,
+    )
+    return walked["keys"][0]
+
+
+def test_a_plain_answer_escapes_a_walk_key_among_its_operands() -> None:
+    def answer(key: object, sink: list[SinkItem]) -> object:
+        return formatted("%s|%x", (key, ConcolicInt.made(1, expression="n", sink=sink)))
+
+    assert escapes.has_escaped(_walked(answer))
+
+
+def test_a_plain_answer_escapes_no_walk_key_its_operands_do_not_hold() -> None:
+    # a tracked str may be a key, so the operands here are two ints that name none
+    def answer(key: object, sink: list[SinkItem]) -> object:
+        m = ConcolicInt.made(2, expression="m", sink=sink)
+        return formatted("%d|%x", (m, ConcolicInt.made(1, expression="n", sink=sink)))
+
+    assert not escapes.has_escaped(_walked(answer))
