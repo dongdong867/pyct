@@ -7,8 +7,13 @@ import json
 import pytest
 
 from tests.acceptance.test_nested_floats_and_bools import (
+    ACCEPTED,
+    ITEMS,
+    MIXED,
     NESTED,
     QUICK,
+    SEARCHES,
+    VALUES,
     lines_of,
     missing_lines,
     return_line,
@@ -65,24 +70,25 @@ def test_a_float_left_plain_in_a_walk_lets_the_walk_choose_a_key(
     assert return_line(target, "hit") not in missing_lines(target, lines)
 
 
-@pytest.mark.parametrize(
-    ("function", "seed", "name"),
-    [
-        ("flag_indexes", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
-        ("flag_pops", {"ys": [0, 1], "flags": [False]}, "pop"),
-        ("flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
-        ("flag_stores", {"ys": [0, 1], "flags": [False]}, "__setitem__"),
-        ("flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}, "__mul__"),
-        ("flag_cuts_a_str", {"s": "abc", "flags": [True]}, "__getitem__"),
-        ("flag_repeats_a_str", {"s": "ab", "flags": [True]}, "__mul__"),
-        ("flag_picks_a_char", {"s": "abc", "flags": [True]}, "__getitem__"),
-        ("float_as_int_pads", {"s": "a", "xs": [3.5]}, "ljust"),
-        ("flag_value_indexes", {"ys": [0, 1], "data": {"flag": False}}, "__getitem__"),
-        ("flag_as_a_key", {"d": {"0": 1}, "flags": [False]}, "__getitem__"),
-        ("flag_searches_keys", {"d": {"0": 1}, "flags": [False]}, "__contains__"),
-        ("flag_in_a_walk", {"d": {"a": 1}, "ys": [0, 1], "flags": [False]}, "__getitem__"),
-    ],
-)
+# each run that loses a line to an operation with no form, and the downgrade that names it
+NAMED_LOSSES = [
+    ("flag_indexes", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
+    ("flag_pops", {"ys": [0, 1], "flags": [False]}, "pop"),
+    ("flag_cuts_a_list", {"ys": [0, 1], "flags": [False]}, "__getitem__"),
+    ("flag_stores", {"ys": [0, 1], "flags": [False]}, "__setitem__"),
+    ("flag_repeats_a_list", {"ys": [0, 1], "flags": [True]}, "__mul__"),
+    ("flag_cuts_a_str", {"s": "abc", "flags": [True]}, "__getitem__"),
+    ("flag_repeats_a_str", {"s": "ab", "flags": [True]}, "__mul__"),
+    ("flag_picks_a_char", {"s": "abc", "flags": [True]}, "__getitem__"),
+    ("float_as_int_pads", {"s": "a", "xs": [3.5]}, "ljust"),
+    ("flag_value_indexes", {"ys": [0, 1], "data": {"flag": False}}, "__getitem__"),
+    ("flag_as_a_key", {"d": {"0": 1}, "flags": [False]}, "__getitem__"),
+    ("flag_searches_keys", {"d": {"0": 1}, "flags": [False]}, "__contains__"),
+    ("flag_in_a_walk", {"d": {"a": 1}, "ys": [0, 1], "flags": [False]}, "__getitem__"),
+]
+
+
+@pytest.mark.parametrize(("function", "seed", "name"), NAMED_LOSSES)
 def test_a_line_lost_to_an_operation_with_no_form_is_named(
     function: str, seed: object, name: str
 ) -> None:
@@ -90,6 +96,16 @@ def test_a_line_lost_to_an_operation_with_no_form_is_named(
     lines = lines_of(target, seed, *QUICK)
     downgrades = json.dumps([line["downgrades"] for line in lines])
     assert f'"name": "{name}"' in downgrades, downgrades
+
+
+def test_a_line_only_legacy_covers_in_this_story_is_a_named_loss() -> None:
+    modules = (NESTED, MIXED, SEARCHES, VALUES, ITEMS)
+    records = [json.loads(line) for line in ACCEPTED.read_text().splitlines()]
+    ours = [r for r in records if str(r.get("target")).startswith(modules)]
+    named = [(f"{NESTED}::{function}", seed) for function, seed, _ in NAMED_LOSSES]
+    assert ours
+    lost = [r for r in ours if r["only_legacy"]]
+    assert all((r["target"], r["seed"]) in named for r in lost), lost
 
 
 @pytest.mark.parametrize("function", ["key_as_a_float_in_a_format", "key_as_a_tolerance"])

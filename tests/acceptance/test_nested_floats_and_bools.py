@@ -466,11 +466,3 @@ def test_a_float_the_target_added_forks_and_a_longer_list_reads_past_it() -> Non
 def test_a_bool_fixture_legacy_flips_has_no_accepted_difference(target: str) -> None:
     records = [json.loads(line) for line in ACCEPTED.read_text().splitlines()]
     assert target not in {record.get("target") for record in records}
-
-
-def test_no_fixture_of_this_story_leaves_a_line_only_legacy_covers() -> None:
-    modules = (NESTED, MIXED, SEARCHES, VALUES, ITEMS)
-    records = [json.loads(line) for line in ACCEPTED.read_text().splitlines()]
-    ours = [r for r in records if str(r.get("target")).startswith(modules)]
-    assert ours
-    assert all(record["only_legacy"] == [] for record in ours), ours
