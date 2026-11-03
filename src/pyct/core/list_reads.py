@@ -6,10 +6,14 @@ string's does: `[">", ["len", items], i]` for an index from the start and
 when it holds, `[">=", ["len", items], ["-", i]]`, together Python's `-len <= i < len`.
 
 An item handed out is written as the target indexed it, `["[]", items, -1]` say, so it names
-the last item of any input. An int or a str comes out tracked; a list inside, a None and every
-other item come out as they are stored. A walk records `[">", ["len", items], j]` for each item
-it takes and once more, taken false, where it ends. Each such check on the length is a fact,
-not a fork, where the list's length range proves it (``ListState.measure``, `core.spans`).
+the last item of any input. A read of a list that can hold a float or a bool says the kind Python
+read, `["[float]", items, -1]` (``ListState.read_of``). An int, a str, a float and a bool come out
+tracked; a list inside, a None and every other item come out as they are stored. An argument's
+float or bool in a list reached at a place no term follows comes out plain, and a downgrade names
+the loss (``ListState.unplaced``). A walk records
+`[">", ["len", items], j]` for each item it takes and once more, taken false, where it ends.
+Each such check on the length is a fact, not a fork, where the list's length range proves it
+(``ListState.measure``, `core.spans`).
 
 `len(items)` and `bool(items)` where pyct binds or routes them read the length term,
 `["len", items]`, and record no fork where they run.
@@ -23,10 +27,22 @@ from collections.abc import Iterable, Iterator
 from typing import Any, Protocol
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Expression
+from pyct.core.branch import FLOAT_AND_BOOL, Downgrade, Expression, caller_site
 from pyct.core.counts import Count
+from pyct.core.escapes import lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import TRACKED, ListState, is_read, kind_of, plain
+from pyct.core.list_state import (
+    TRACKED,
+    ListState,
+    gained_since,
+    is_read,
+    kind_of,
+    kinds_gained,
+    moved,
+    plain,
+    read_from_the_input,
+)
 from pyct.core.spans import UNKNOWN, decided
 from pyct.core.str_splits import JOIN_WALKS, a_split_s_list
 from pyct.core.strs import ConcolicStr
@@ -68,11 +84,12 @@ def tracked_long_enough(self: ListState, index: ConcolicInt, name: str = "__geti
 def handed(self: ListState, position: int, written: Expression, name: str) -> object:
     """The item at ``position``, handed out as the target indexed it with ``written``.
 
-    An int or a str comes out tracked, as ``items[written]``, whatever else the list holds: the
-    solver reads it by its position, by its list, or by what the path does with it. A list
-    inside comes out as it is stored, since the target may change it where it sits; one still
-    as its argument had it is named as the target indexed it (see ``_named``). A slot that no
-    longer holds what pyct saw there is read plain, named ``name``.
+    An int, a str, a float or a bool comes out tracked, as ``items[written]``, whatever else the
+    list holds. An argument's float or bool in a list reached at a place no term follows comes
+    out plain, and ``name`` names the loss. A list or a dict inside comes out as it is stored,
+    since the target may change it where it sits; one still as its argument had it is named as
+    the target indexed it (see ``_named``). A slot that no longer holds what pyct saw there is
+    read plain, named ``name``.
     """
     if not self.holds(name, position):
         return plain(list.__getitem__(self, position))
@@ -80,14 +97,37 @@ def handed(self: ListState, position: int, written: Expression, name: str) -> ob
     if isinstance(item, ListState):
         _named(self, item, written)
         return item
-    if kind_of(item) not in TRACKED:
+    kind = kind_of(item)
+    if kind == "dict" and _may_move(self, written):
+        moved(item)
+    if kind in _BY_PLACE and self.unplaced:
+        return _left_plain(self, item, name)
+    if kind not in TRACKED:
         return item
     value = plain(item)
-    expression: Expression = ["[]", self.expression, written]
+    expression = self.read_of(written, kind)
+    if isinstance(value, float):
+        return ConcolicFloat.made(value, expression=expression, sink=self.sink)
+    if isinstance(value, bool):
+        return ConcolicBool.made(value, expression=expression, sink=self.sink)
     if isinstance(value, str):
         return ConcolicStr.made(value, expression=expression, sink=self.sink)
     assert isinstance(value, int)
     return ConcolicInt.made(value, expression=expression, sink=self.sink)
+
+
+# the kinds of item a list reached at a place no term follows hands out plain: an int or a str
+# there keeps its own place, as it always has, and an answer can leave the plan on one
+_BY_PLACE = FLOAT_AND_BOOL
+
+
+def _left_plain(self: ListState, item: object, name: str) -> object:
+    """What a list reached at a place no term follows hands out: an argument's float or bool as
+    its value, and the loss named ``name``, and any other item as it is stored."""
+    if not read_from_the_input(item):
+        return item
+    lost(self.sink, Downgrade(name=name, site=caller_site()), (plain(item),))
+    return plain(item)
 
 
 def length(self: ListState) -> int:
@@ -130,22 +170,56 @@ def condition(self: ListState) -> Any:
     return ConcolicBool.made(filled, test, self.sink)
 
 
+def _may_move(self: ListState, written: Expression) -> bool:
+    """Whether another input may read another item at ``written``: anything but a position from
+    the start of a list at places the target wrote."""
+    at_a_place = self.among_rows is None and not self.unplaced and is_read(self.expression)
+    return not (at_a_place and type(written) is int and written >= 0)
+
+
 def _named(self: ListState, row: ListState, written: Expression) -> None:
     """Name a list inside as the target indexed it, ``grid[-1]`` or ``grid[i]``, so its forks
     follow the outer list's length and the index.
 
     Only a list still as its argument had it, inside a list of lists still as the argument had
-    it, is named again: a list the target changed keeps the form that builds it.
+    it, is named again: a list the target changed keeps the form that builds it. A row picked
+    by a tracked index or one from the end notes the kinds every row holds, so its reads say
+    their kind where another row can hold a float or a bool. A row any other read may move keeps
+    its form and hands out its floats and bools plain, since no term follows what picked it
+    (``ListState.unplaced``).
     """
-    if self.kinds != {"list"} or self.expression is None or row.expression is None:
+    if self.expression is None or row.expression is None:
         return
-    if is_read(self.expression) and is_read(row.expression):
-        wanted: Expression = ["[]", self.expression, written]
-        if row.expression != wanted:
-            # a check counts only for the length it was written on, so the row's range starts over
-            fields = row.__dict__
-            fields["expression"] = wanted
-            fields["span"] = UNKNOWN
+    moving = _may_move(self, written)
+    unfollowed = self.kinds != {"list"} or not is_read(self.expression)
+    if unfollowed or self.unplaced or not is_read(row.expression):
+        if moving:
+            row.unplace()
+        return
+    wanted: Expression = ["[]", self.expression, written]
+    if row.expression != wanted:
+        # a check counts only for the length it was written on, so the row's range starts over
+        fields = row.__dict__
+        fields["expression"] = wanted
+        fields["span"] = UNKNOWN
+    row.__dict__["among_rows"] = _rows_kinds(self) if moving else None
+
+
+def _rows_kinds(self: ListState) -> frozenset[str]:
+    """The kinds with a term that any row of a list of rows holds, or any row around them. A walk
+    names every row, so the answer is kept until a list gains a kind it does not hold, the list
+    changes its rows, or the rows around it change. A row's kinds only grow, so a kind any list
+    gains that the answer holds already changes nothing: a walk that gives each row one kind
+    works the answer out once, not once a row."""
+    fields = self.__dict__
+    kept = self.rows_kinds
+    around = self.among_rows or frozenset()
+    if kept is not None and kept[1] == around and not gained_since(kept[0], kept[2]):
+        return kept[2]
+    rows = [row for row in list.copy(self) if isinstance(row, ListState)]
+    kinds = (around | frozenset().union(*(row.kinds for row in rows))) & TRACKED
+    fields["rows_kinds"] = (kinds_gained(), around, kinds)
+    return kinds
 
 
 def more(self: ListState, at: int, name: str) -> bool:

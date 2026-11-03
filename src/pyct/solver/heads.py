@@ -29,6 +29,7 @@ from pyct.solver.recased import TO_DECLARE
 from pyct.solver.spans import equal, length, unequal, within, without
 from pyct.solver.splits import SPLITS
 from pyct.solver.strings import contains, not_contains, repeated, without_prefix, without_suffix
+from pyct.solver.unencoded import UnencodedError
 from pyct.solver.words import WORD_EDGES
 
 # the sort of every type pyct binds. Nothing else reaches a solver yet. Float64 is SMT-LIB's
@@ -158,7 +159,7 @@ def operator(head: str, kind: type | None) -> str:
     spelled = OPERATORS.get((head, kind)) if kind is not None else None
     if spelled is None:
         on = "anything" if kind is None else kind.__name__
-        raise ValueError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
+        raise UnencodedError(f"pyct cannot render {head} on {on}: nothing encodes it yet")
     return spelled
 
 
@@ -233,6 +234,7 @@ FORMS: Mapping[tuple[str, type], Callable[..., str]] = {
     ("int", int): lambda term: term,
     ("int", float): floats.trunc,
     ("float", int): floats.from_int,
+    ("float", float): lambda term: term,
     ("int", str): numerals.int_of,
     ("isint", str): numerals.is_int,
     ("isfloat", str): numerals.is_float,

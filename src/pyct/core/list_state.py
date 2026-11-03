@@ -10,18 +10,28 @@ shadow behind, and the next operation that reads a position or the length sees i
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from typing import Any, Self
+from typing import Any, Protocol, Self, runtime_checkable
 
 from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Downgrade, Expression, caller_site
+from pyct.core.branch import (
+    FLOAT_AND_BOOL,
+    READ_HEADS,
+    BranchSink,
+    Downgrade,
+    Expression,
+    caller_site,
+)
 from pyct.core.escapes import lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.spans import UNKNOWN, Span, exactly, measured
 from pyct.core.str_splits import built_from_a_split, kept_form
 from pyct.core.strs import ConcolicStr
 
 # the kinds of item a read hands out as a tracked value: each has a concolic type of its own
-TRACKED = frozenset({"int", "str"})
+TRACKED = frozenset({"int", "str", "float", "bool"})
+
+_READ_HEAD_SET = frozenset(READ_HEADS.values())
 
 # the kind each type of item is, by exact type: a subclass the target wrote is its own kind
 _KINDS: dict[type, str] = {
@@ -32,6 +42,7 @@ _KINDS: dict[type, str] = {
     bool: "bool",
     ConcolicBool: "bool",
     float: "float",
+    ConcolicFloat: "float",
     type(None): "none",
     list: "list",
     dict: "dict",
@@ -62,11 +73,12 @@ _PLAIN: dict[type, Callable[[Any], object]] = {
     ConcolicInt: int.__int__,
     ConcolicStr: str.__str__,
     ConcolicBool: int.__bool__,
+    ConcolicFloat: float.__float__,
 }
 
 
 def plain(value: object) -> object:
-    """A tracked int, str or bool as the plain value it is; any other value as it is."""
+    """A tracked int, str, bool or float as the plain value it is; any other value as it is."""
     read = _PLAIN.get(type(value))
     return value if read is None else read(value)
 
@@ -92,6 +104,66 @@ def is_read(expression: Expression) -> bool:
     return isinstance(step, str) and not step.startswith(("'", '"'))
 
 
+# how many changes gave a list a kind with a term it did not hold, and the count each such kind
+# was last given at
+_GAINS = [0]
+_LAST_GAINED: dict[str, int] = {}
+
+
+def note_kinds_gained(kinds: frozenset[str]) -> None:
+    """Note a change that gave a list kinds with a term it did not hold: a list of rows found to
+    hold none of them may hold them now."""
+    _GAINS[0] += 1
+    for kind in kinds:
+        _LAST_GAINED[kind] = _GAINS[0]
+
+
+def kinds_gained() -> int:
+    """How many changes gave a list a kind with a term it did not hold."""
+    return _GAINS[0]
+
+
+def gained_since(count: int, held: frozenset[str]) -> bool:
+    """Whether a change after the first ``count`` gave any list a kind outside ``held``."""
+    return any(at > count for kind, at in _LAST_GAINED.items() if kind not in held)
+
+
+def is_item_read(expression: Expression) -> bool:
+    """Whether a form reads an item of an argument's list as it came, under either kind of head:
+    ``["[]", items, 0]``, as the input names it, or ``["[float]", items, 0]``, as a read hands it
+    out."""
+    if not isinstance(expression, list) or not expression:
+        return False
+    head = expression[0]
+    if head in _READ_HEAD_SET:
+        return is_read(expression[1])
+    return is_read(expression)
+
+
+def read_from_the_input(item: object) -> bool:
+    """Whether an item is a float or a bool of the input, tracked at its own place: what a list
+    reached at a place another input moves leaves plain (``core.list_reads.handed``). A parameter
+    the target stored is its own term wherever it is read, and so is a value it computed."""
+    if not isinstance(item, ConcolicFloat | ConcolicBool):
+        return False
+    return is_item_read(item.expression)
+
+
+@runtime_checkable
+class Unplaceable(Protocol):
+    """A tracked container, which a read may reach at a place another input moves."""
+
+    def unplace(self) -> None: ...
+
+
+def moved(item: object) -> None:
+    """Note that the target reached ``item`` by a key or a position another input may move: a
+    float or a bool under it is plain from then on, since its own place may not be where another
+    input reads."""
+    if isinstance(item, Unplaceable):
+        item.unplace()
+
+
 class ListState(list):
     """The state a tracked list keeps beside its items, and what every operation checks first.
 
@@ -113,6 +185,15 @@ class ListState(list):
     # the range of a marked list starts over at each change
     span: Span
     marked: bool
+    # the kinds every row holds, for a row another input may read in its place: a read of it
+    # says its kind if any row can hold a float or a bool
+    among_rows: frozenset[str] | None
+    # whether the target reached this list at a place no term follows. A float or a bool of the
+    # input read from it comes out plain, and a downgrade names it (see ``unplace``)
+    unplaced: bool
+    # what the rows inside this list hold, with the count of changes that gave a list a kind and
+    # the rows around it it was worked out at
+    rows_kinds: tuple[int, frozenset[str], frozenset[str]] | None
 
     @classmethod
     def made(
@@ -135,6 +216,9 @@ class ListState(list):
         fields["walked_at"] = None
         fields["span"] = span
         fields["marked"] = False
+        fields["among_rows"] = None
+        fields["unplaced"] = False
+        fields["rows_kinds"] = None
         return made
 
     def length(self) -> int:
@@ -188,8 +272,9 @@ class ListState(list):
     def turn_plain(self) -> None:
         """Drop the form, and with it the conditions of the items the arguments put here.
 
-        The list is plain from now on, so what it holds is plain too: each tracked int, str
-        and bool is its value, and a list inside, tracked in its own right, stays where it is.
+        The list is plain from now on, so what it holds is plain too: each tracked int, str,
+        bool and float is its value, and a list inside, tracked in its own right, stays where
+        it is.
         """
         self.__dict__["expression"] = None
         list.__setitem__(self, slice(None), [plain(item) for item in list.copy(self)])
@@ -198,14 +283,38 @@ class ListState(list):
         self, items: list[object], shadow: list[object], expression: Expression, span: Span
     ) -> ListState:
         """A new tracked list built from this one: the items, what pyct saw of them, the form,
-        and the range that form holds. It carries this one's mark."""
+        and the range that form holds. It carries this one's mark, the kinds of the rows it was
+        picked from, and whether it is unplaced."""
         made = type(self).made(items, kept_form(expression), self.sink)
         fields = made.__dict__
         fields["shadow"] = shadow
         fields["kinds"] = self.kinds
         fields["span"] = span
         fields["marked"] = self.marked
+        fields["among_rows"] = self.among_rows
+        fields["unplaced"] = self.unplaced
+        fields["rows_kinds"] = None
         return made
+
+    def unplace(self) -> None:
+        """Hand out no float or bool of the input from this list as tracked: see ``moved``."""
+        self.__dict__["unplaced"] = True
+
+    def took_in(self, other: object) -> None:
+        """Note that this list now holds the items of ``other``: one reached at a place no term
+        follows leaves this one's floats and bools plain too."""
+        if isinstance(other, ListState) and other.unplaced:
+            self.unplace()
+
+    def says_kinds(self) -> bool:
+        """Whether a read of this list says the kind it read: a list that can hold a float or a
+        bool, or a row among rows that can."""
+        return bool((self.kinds | (self.among_rows or frozenset())) & FLOAT_AND_BOOL)
+
+    def read_of(self, written: Expression, kind: str) -> Expression:
+        """The form of a read of an item of ``kind`` at ``written``."""
+        head = READ_HEADS[kind] if kind in READ_HEADS and self.says_kinds() else "[]"
+        return [head, self.expression, written]
 
     def measure(
         self, op: str, number: int, taken: bool, name: str = "__bool__", *, raising: bool = False

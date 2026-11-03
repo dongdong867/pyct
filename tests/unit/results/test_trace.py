@@ -102,6 +102,8 @@ INFIX: dict[str, tuple[Expression, str]] = {
     ),
     "key-in-double-quotes": (["[]", "d", '"it\'s"'], 'd["it\'s"]'),
     "item-index": (["==", ["[]", "items", 0], ["[]", "items", 1]], "items[0] == items[1]"),
+    "read-that-says-its-kind": ([">", ["[float]", "xs", "i"], 2.5], "xs[i] > 2.5"),
+    "read-that-says-a-bool": (["[bool]", ["[]", "g", 0], -1], "g[0][-1]"),
     "method-on-an-item": (["find", ["[]", "items", 0], "'x'"], "items[0].find('x')"),
     "index-of-a-condition": (["[]", ["+", "s", "t"], 0], "(s + t)[0]"),
     "index": (["[]", "s", 0], "s[0]"),

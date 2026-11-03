@@ -1,10 +1,13 @@
 """A condition used as a value: a Bool term, read as the Int 1 or 0 where a number is needed."""
 
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.binding.bind import Seed, bind
+from pyct.binding.model import apply
+from pyct.core.branch import Branch, Expression, SinkItem, Site
 from pyct.solver.cvc5 import Sat, Unsat, solve
 from tests.unit.solver.test_render import render
 from tests.unit.solver.test_render_types import BOOL_TERMS, TYPED_LEAVES, _head
@@ -254,3 +257,29 @@ def test_a_bool_parameter_true_and_false_at_once_is_unsat() -> None:
     )
 
     assert solve(prefix, {"flag": bool}, timeout=10.0) == Unsat()
+
+
+# a list read at a position a bool gives, as Python reads the bool there: the int 1 or 0
+POSITIONS: dict[str, tuple[dict[str, object], Callable[[Any], object]]] = {
+    "a parameter in a sum": ({"ys": [0, 1], "flag": False}, lambda a: a["ys"][a["flag"] + 1]),
+    "a dict's value in a sum": (
+        {"ys": [0, 1, 2], "data": {"flag": False}},
+        lambda a: a["ys"][a["data"]["flag"] + 1],
+    ),
+}
+
+
+@pytest.mark.parametrize(("args", "read"), POSITIONS.values(), ids=list(POSITIONS))
+def test_cvc5_reads_a_bool_as_1_or_0_at_a_list_position(
+    args: dict[str, object], read: Callable[[Any], object]
+) -> None:
+    sink: list[SinkItem] = []
+    bool(read(bind(args, sink)) == 7)
+    *forks, last = [item for item in sink if isinstance(item, Branch)]
+    seed = Seed.of(args)
+
+    flipped = Branch(last.expression, not last.taken, last.site)
+    answer = solve((*forks, flipped), seed.leaves, 10.0, seed.containers(), seed.values)
+
+    assert isinstance(answer, Sat), answer
+    assert read(apply(seed, answer.model).args) == 7

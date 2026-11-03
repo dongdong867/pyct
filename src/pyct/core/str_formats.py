@@ -20,7 +20,7 @@ does. A plain int, bool or str operand is a literal in the expression, and
 any other plain operand is written into the format as the text it gave.
 Any other conversion of a tracked operand, a format read through a key or
 a ``*``, or a text the solver cannot hold, gives Python's text, plain, and
-a downgrade named `__mod__`.
+a downgrade named `__mod__` (plan nested-floats-bools, 5.10).
 """
 
 from __future__ import annotations
@@ -165,8 +165,8 @@ def _followed(spec: Spec, item: object) -> bool:
     return spec.bare and _base(item) in FOLLOWED.get(spec.letter, ())
 
 
-def _downgrade(sink: BranchSink) -> None:
-    lost(sink, Downgrade(name="__mod__", site=caller_site()))
+def _downgrade(sink: BranchSink, on: Iterable[object] = ()) -> None:
+    lost(sink, Downgrade(name="__mod__", site=caller_site()), on)
 
 
 class _Pieces:
@@ -179,6 +179,7 @@ class _Pieces:
         self.forms: list[Expression] = []
         self.sink: BranchSink | None = None
         self.lost = False
+        self.items = items
         operands = iter(items)
         for token in read:
             if isinstance(token, Spec):
@@ -196,6 +197,7 @@ class _Pieces:
         if _base(item) is not None:
             if self.sink is None:
                 self.sink = cast(Any, item).sink
+            # no form for this conversion of a tracked operand makes the whole answer plain
             self.lost = self.lost or not _followed(spec, item)
             self.written.append(spec.text)
             self.forms.append(cast(Any, item).expression)
@@ -215,7 +217,7 @@ class _Pieces:
             return text
         fmt = _text_literal("".join(self.written))
         if self.lost or fmt is None:
-            _downgrade(self.sink)
+            _downgrade(self.sink, self.items)
             return text
         operand = ["()", *self.forms] if tupled else self.forms[0]
         return numbers.tracked(text, ["%", fmt, operand], self.sink)

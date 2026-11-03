@@ -8,6 +8,7 @@ from unittest.mock import ANY
 
 import pytest
 
+from pyct.core import escapes
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Downgrade, SinkItem
 from pyct.core.dicts import ConcolicDict
@@ -26,6 +27,8 @@ from pyct.core.str_formats import (
 )
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import raised_by_target
+from tests.unit.core.test_dict_walk_keys import in_the_target
+from tests.unit.core.test_dicts import tracked
 
 
 def _tracked(sink: list[SinkItem]) -> dict[str, Any]:
@@ -166,6 +169,30 @@ def test_any_other_conversion_is_python_s_text_plain_and_a_downgrade(
     assert [item for item in sink if isinstance(item, Downgrade)][-1] == Downgrade(
         name="__mod__", site=ANY
     )
+
+
+# a format whose tracked operands pyct follows but one, and the right side
+BESIDE_A_FOLLOWED: dict[str, tuple[str, Callable[[dict[str, Any]], object]]] = {
+    "a float's own letter": ("%s=%.1f", lambda t: (t["s"], t["f"])),
+    "a float as %s": ("%s%s", lambda t: (t["s"], t["f"])),
+    "a width": ("%d|%5s", lambda t: (t["n"], t["s"])),
+    "a bool as hex": ("%s%x", lambda t: (t["s"], t["b"])),
+    "an int as hex": ("%x|%d", lambda t: (t["n"], t["n"])),
+}
+
+
+@pytest.mark.parametrize(("fmt", "right"), BESIDE_A_FOLLOWED.values(), ids=list(BESIDE_A_FOLLOWED))
+def test_an_operand_pyct_does_not_follow_makes_the_whole_answer_plain(
+    fmt: str, right: Callable[[dict[str, Any]], object]
+) -> None:
+    sink: list[SinkItem] = []
+
+    answer = formatted(fmt, right(_tracked(sink)))
+
+    # its text written in beside the others would not follow it: plan nested-floats-bools, 5.10
+    assert type(answer) is str
+    assert answer == fmt % _plain_values(right(_tracked([])))
+    assert sink == [Downgrade(name="__mod__", site=ANY)]
 
 
 def test_a_format_past_the_solver_s_characters_is_a_downgrade() -> None:
@@ -388,3 +415,31 @@ def test_a_plain_format_of_a_tracked_str_is_followed_through_its_rmod() -> None:
     assert (str.__str__(text), type(text)) == ("<abc>", ConcolicStr)
     assert text.expression == ["%", "'<%s>'", "s"]  # pyrefly: ignore[missing-attribute]
     assert sink == []
+
+
+def _walked(answer: Callable[[object, list[SinkItem]], object]) -> object:
+    """The key a walk over a one-key dict hands out, ``answer`` of it run at its pass."""
+    config, sink = tracked({"ab": 1})
+    walked = in_the_target(
+        "keys = []\nfor k in config:\n    keys.append(k)\n    answer(k, sink)",
+        config=config,
+        sink=sink,
+        answer=answer,
+    )
+    return walked["keys"][0]
+
+
+def test_a_plain_answer_escapes_a_walk_key_among_its_operands() -> None:
+    def answer(key: object, sink: list[SinkItem]) -> object:
+        return formatted("%s|%x", (key, ConcolicInt.made(1, expression="n", sink=sink)))
+
+    assert escapes.has_escaped(_walked(answer))
+
+
+def test_a_plain_answer_escapes_no_walk_key_its_operands_do_not_hold() -> None:
+    # a tracked str may be a key, so the operands here are two ints that name none
+    def answer(key: object, sink: list[SinkItem]) -> object:
+        m = ConcolicInt.made(2, expression="m", sink=sink)
+        return formatted("%d|%x", (m, ConcolicInt.made(1, expression="n", sink=sink)))
+
+    assert not escapes.has_escaped(_walked(answer))

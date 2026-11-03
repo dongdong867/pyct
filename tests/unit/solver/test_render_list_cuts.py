@@ -62,7 +62,7 @@ def test_an_unsettled_program_past_its_shared_steps_is_given_up_at_once(
     monkeypatch: pytest.MonkeyPatch, times: int
 ) -> None:
     # eleven cuts or more double the reads past what the 10 s default gives them: an unknown,
-    # long before the limit, with cvc5 asked only about the settled program
+    # long before the limit, with cvc5 asked only about the settled program, and for its core
     seed, path = _cut(times)
     asks: list[str] = []
     ask = cvc5_module._ask
@@ -77,6 +77,9 @@ def test_an_unsettled_program_past_its_shared_steps_is_given_up_at_once(
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
     assert answer == Unknown()
-    assert len(asks) == 1
+    # the settled program held the list's length small, so its unsat asks for the core
+    settled, cored = asks
+    assert ":named size!" not in settled
+    assert cored.startswith("(set-option :dump-unsat-cores true)\n") and ":named size!" in cored
     # about 0.2 s alone; the margin is for a loaded machine, far inside the 10 s limit
     assert time.perf_counter() - started < 2.0

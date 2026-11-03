@@ -120,5 +120,5 @@ def int_in_another_form(value: ConcolicStr, /, *args: object, **kwargs: object) 
     call, so a call that raises records nothing.
     """
     answer = own(int, value, *args, **kwargs)
-    lost(value.sink, Downgrade(name="int", site=caller_site()))
+    lost(value.sink, Downgrade(name="int", site=caller_site()), (value, *args))
     return answer

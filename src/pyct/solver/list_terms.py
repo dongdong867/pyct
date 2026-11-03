@@ -116,6 +116,8 @@ class Stored(Piece):
 
     arrays: Callable[[str], str] = field(default=lambda kind: kind)
     guard: Guard = field(default=lambda position, kind, least: TRUE)
+    # the symbol of the list the seed names it under, itself or a list it is inside
+    symbol: str = ""
 
 
 @dataclass
@@ -178,6 +180,21 @@ class Repeated(Piece):
     ``q mod len``, so a repeat costs one piece however many times it repeats."""
 
     base: Piece = field(default_factory=lambda: Shown(Lin(), frozenset(), frozenset()))
+
+
+@dataclass
+class ItemHolds:
+    """What a program holds of the items its reads reach, beyond the path.
+
+    ``strings`` are the str items read, each held to the most characters an answer holds;
+    ``floats`` the float items read of a list the seed names, each with that list's symbol (see
+    ``held_items``); and ``mixed`` the length of each list of mixed kinds a read reaches, with
+    the input's length.
+    """
+
+    strings: dict[str, None] = field(default_factory=dict)
+    floats: dict[str, str] = field(default_factory=dict)
+    mixed: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

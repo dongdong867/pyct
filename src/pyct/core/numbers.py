@@ -219,7 +219,7 @@ def reflected_answer(
     """
     answer = own(operation, other, self, *modulus)
     if answer is not NotImplemented and type(answer) not in _CLASSES:
-        lost(cast(Number, self).sink, Downgrade(name=name, site=caller_site()))
+        lost(cast(Number, self).sink, Downgrade(name=name, site=caller_site()), (self, other))
     return answer
 
 

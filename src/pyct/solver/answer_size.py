@@ -6,6 +6,10 @@ takes is unsat. cvc5 is asked to write a string answer in full up to the
 same length; past its default, 65,536 characters, it writes a ``witness``
 term that names only a length and a counter, not a string. Decisions
 answers-hold-at-most-a-million-items and long-strings-written-in-full-by-cvc5.
+
+A list's length and a dict's size have the same cap. The first ask holds each of those far
+below it, and a hold grows toward the cap only where an unsat rests on it (``size_holds``); a
+string keeps only the cap.
 """
 
 # the most items a value in an answer holds, such as the characters of a string

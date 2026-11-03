@@ -15,7 +15,7 @@ from collections.abc import Mapping
 from pyct.binding.shapes import ArrayValue, ListAnswer
 from pyct.core.branch import Expression
 from pyct.solver.answer import SolverAnswerError
-from pyct.solver.list_kinds import SPLIT_HEADS, measured
+from pyct.solver.list_kinds import ITEM_SORTS, SPLIT_HEADS, measured
 from pyct.solver.lists import ListTerms
 
 # where an item of a list the path built came from: a list the seed names, the positions of the
@@ -95,7 +95,7 @@ class _Answering:
         length = self._value(name, positions, "len")
         arrays = {
             kind: array
-            for kind in ("int", "str")
+            for kind in ITEM_SORTS
             if isinstance(array := self._value(name, positions, kind), ArrayValue)
         }
         found = read.get((name, positions), set())

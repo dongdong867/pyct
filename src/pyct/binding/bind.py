@@ -21,8 +21,8 @@ from pyct.core.strs import ConcolicStr
 def bind(
     seed: Mapping[str, object], sink: BranchSink, checks: Mapping[str, Check] | None = None
 ) -> dict[str, object]:
-    """Give every int and str in the seed, at any depth, and every float and bool argument,
-    its access and the sink, and every list the walk names its form.
+    """Give every int, str, float and bool in the seed, at any depth, its access and the sink,
+    and every list the walk names its form.
 
     A parameter's own value is named by the parameter. A value inside a dict
     or a list is named by the access that reaches it, one ``["[]", <container>,
@@ -56,7 +56,7 @@ def bind(
 
 
 class _Tracker:
-    """bind's visitor: a tracked int or str for each value, a tracked list for each list."""
+    """bind's visitor: a tracked value for each value, a tracked list for each list."""
 
     def __init__(self, sink: BranchSink) -> None:
         self.sink = sink
@@ -91,9 +91,9 @@ class _Tracker:
 class Seed:
     """An input's arguments as the walk copied them, and what the solver may answer about.
 
-    ``leaves`` names each int and str the solver declares on its own: a parameter, or a value
-    inside a dict. ``lists`` names each tracked list the solver declares as a length and its
-    items, with its shape; an int or a str inside one is an item of it, not a leaf. ``dicts``
+    ``leaves`` names each value the solver declares on its own: a parameter, or a value inside
+    a dict. ``lists`` names each tracked list the solver declares as a length and its items,
+    with its shape; a value inside one is an item of it, not a leaf. ``dicts``
     names each tracked dict, a dict inside a list among them, with its keys, whose presence
     and count the solver declares. ``checks``
     is what each parameter's annotation asks of it, which says the kind of an item the solver
@@ -127,7 +127,7 @@ class Noted:
     """Seed's visitor: each leaf and list noted by name, each list's shape made after the walk."""
 
     def __init__(self) -> None:
-        # every int and str in walk order, and those the solver declares on their own
+        # every tracked value in walk order, and those the solver declares on their own
         self.named: dict[str, type] = {}
         self.leaves: dict[str, type] = {}
         self.values: dict[str, object] = {}
@@ -177,7 +177,7 @@ class Noted:
 
 
 def leaves(seed: Mapping[str, object]) -> dict[str, type]:
-    """The name and type of every int and str ``bind`` tracks, in the seed's order.
+    """The name and type of every value ``bind`` tracks, in the seed's order.
 
     Each is named as ``leaf_name`` names it: the leaves the solver declares and the items of
     the lists it declares, every value a fork can name by its access.

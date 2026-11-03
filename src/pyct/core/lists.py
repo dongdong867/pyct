@@ -21,7 +21,7 @@ from pyct.core import spans, str_splits
 from pyct.core.branch import Downgrade, Expression, caller_site
 from pyct.core.escapes import lost
 from pyct.core.list_forms import sliced
-from pyct.core.list_state import ListState, plain, plain_items
+from pyct.core.list_state import ListState, kind_of, plain, plain_items
 from pyct.core.values import (
     REPORTED_CLASS,
     as_base,
@@ -226,6 +226,7 @@ def _joined(self: ListState, other: object, name: str, *, reflected: bool = Fals
     made = self.derived(left + right, left_seen + right_seen, ["+", left_form, right_form], span)
     fields = made.__dict__
     fields["kinds"] = self.kinds | kinds
+    made.took_in(other)
     if isinstance(other, ListState) and other.marked:
         made.mark()
     return made
@@ -298,7 +299,7 @@ def _sorted(self: ListState, *args: object, **kwargs: object) -> None:
     list.__setitem__(self, slice(None), [storage[at] for at in placed])
     fields = self.__dict__
     fields["shadow"] = [shadow[at] for at in placed]
-    fields["expression"] = ["[,]", *(["[]", self.expression, at] for at in placed)]
+    fields["expression"] = ["[,]", *(self.read_of(at, kind_of(storage[at])) for at in placed)]
     # a display holds exactly its items, as many as the walk took
     self.resized(spans.exactly(len(placed)))
 

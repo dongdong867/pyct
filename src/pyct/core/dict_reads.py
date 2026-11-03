@@ -55,9 +55,10 @@ from pyct.core.dict_handouts import (
 )
 from pyct.core.dict_state import MISSING, TRACKED, DictState
 from pyct.core.escapes import escaped_in, lost
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_reads import caller
-from pyct.core.list_state import plain
+from pyct.core.list_state import moved, plain
 from pyct.core.spans import decided, narrowed, proves
 from pyct.core.strs import ConcolicStr
 from pyct.core.values import forked, own
@@ -252,20 +253,29 @@ def value(self: DictState, key: object, *, changing: bool = False) -> object:
     A tracked key reads the argument's value as ``config[name]``, so the solver may change the
     key; any other key hands out what the dict holds there. So does a tracked key into a dict
     the target changed, unless a change's own lookup (``changing``) found the key none of the
-    changed ones, and so the argument's.
+    changed ones, and so the argument's. A list or a dict under a tracked key is one another input
+    may not read (``list_state.moved``), and a float or a bool of a dict reached so stays as it
+    holds.
     """
     held = dict.__getitem__(self, plain(key))
     if not is_tracked(key) or self.expression is None:
         return held
+    moved(held)
     if self.changed and not (changing and plain(key) not in self.changed):
         return held
     assert isinstance(key, ConcolicStr | ConcolicInt)
     read: Expression = ["[]", self.expression, key.expression]
     stored = plain(held)
+    if self.unplaced and type(stored) in (float, bool):
+        return held
     if type(stored) is str:
         return ConcolicStr.made(stored, read, self.sink)
     if type(stored) is int:
         return ConcolicInt.made(stored, read, self.sink)
+    if type(stored) is float:
+        return ConcolicFloat.made(stored, read, self.sink)
+    if type(stored) is bool:
+        return ConcolicBool.made(stored, read, self.sink)
     return held
 
 

@@ -299,3 +299,22 @@ def test_a_model_naming_what_was_not_declared_is_unknown_rather_than_a_guess(
     warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1, caplog.text
     assert "arg.y" in warnings[0].getMessage()
+
+
+def test_a_path_that_names_what_the_seed_does_not_bind_is_pyct_s_own_error() -> None:
+    # pyct broke its own rule, which no answer of cvc5 hides: core and the seed disagree
+    with pytest.raises(ValueError, match="the seed does not bind: n"):
+        solve((fork([">", "n", 1], taken=True),), {}, 5.0)
+
+
+def test_an_operation_no_form_writes_is_unknown(caplog: pytest.LogCaptureFixture) -> None:
+    caplog.set_level(logging.WARNING)
+
+    assert solve((fork(["@@", "n", 1], taken=True),), {"n": int}, 5.0) == Unknown()
+    assert "pyct cannot write the path for cvc5" in caplog.text
+
+
+def test_a_literal_past_the_last_character_cvc5_holds_is_unknown() -> None:
+    path = (fork(["==", "s", repr("\U000e0001")], taken=False),)
+
+    assert solve(path, {"s": str}, 5.0) == Unknown()

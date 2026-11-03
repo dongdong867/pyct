@@ -7,7 +7,7 @@ import os
 import sys
 import types
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -17,6 +17,42 @@ from typing import Protocol
 # the target held, NaN, the infinities and -0.0 included. None is a slice's missing bound,
 # ["[:]", "s", 2, None], and prints as null
 type Expression = list[Expression] | str | int | float | bool | None
+
+# the head of a read of a list that can hold a float or a bool, by the kind of item Python read:
+# ["[float]", "xs", "i"]. Python compares an int with a float, so a path cannot say which kind a
+# read is, and the solver takes the kind from this head. A read of any other list is "[]"
+READ_HEADS: Mapping[str, str] = {
+    "int": "[int]",
+    "str": "[str]",
+    "float": "[float]",
+    "bool": "[bool]",
+}
+
+_READ_HEAD_NAMES = frozenset(READ_HEADS.values())
+
+# the kinds that make a list's reads say their kind
+FLOAT_AND_BOOL = frozenset({"float", "bool"})
+
+
+def as_the_code_read_it(expression: Expression) -> Expression:
+    """The expression with each read that says its kind written as any read is, ``["[]", A, i]``:
+    the kind is the solver's, and a line names a read as the target wrote it."""
+    if not isinstance(expression, list):
+        return expression
+    root: list[Expression] = [None]
+    stack: list[tuple[list[Expression], list[Expression], int]] = [(expression, root, 0)]
+    while stack:
+        part, into, at = stack.pop()
+        made = list(part)
+        head = made[0] if made else None
+        if isinstance(head, str) and head in _READ_HEAD_NAMES:
+            made[0] = "[]"
+        into[at] = made
+        stack.extend(
+            (item, made, place) for place, item in enumerate(made) if isinstance(item, list)
+        )
+    return root[0]
+
 
 # whether a list is a leaf: the access that names a value inside an argument, which a condition
 # names as a value, never opens as an operation, and counts as one node

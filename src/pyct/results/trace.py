@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.branch import READ_HEADS, Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.printed import CUT, LINE_LIMIT, PrintedForks, printed_forks
@@ -218,6 +218,9 @@ def _ended(failure: Failure | None) -> list[str]:
 # a part as the fork line writes it, and how tightly it binds as an operand, as `_BINARY` ranks
 type _Text = tuple[str, int]
 
+# a read that says its kind prints as the target wrote it
+READ_HEAD_NAMES = frozenset(READ_HEADS.values())
+
 # how tightly Python's grammar binds what the fork line writes, loosest first. A keyword
 # head on one operand, such as `not`, is written `not a` and binds looser than everything
 _UNRANKED = 0
@@ -387,7 +390,7 @@ def _around(expression: list[Expression], operands: list[_Text]) -> str | None:
     if head == "key" and len(texts) == 2:
         # a walk key: the key a walk of the dict reads at that pass
         return f"list({texts[0]})[{texts[1]}]"
-    if head == "[]" or head == "[:]":
+    if head == "[]" or head == "[:]" or head in READ_HEAD_NAMES:
         bounds = zip(expression[2:], texts[1:], strict=True)
         written = ":".join("" if position is None else text for position, text in bounds)
         return f"{_operand(operands[0], _ALONE)}[{written}]"

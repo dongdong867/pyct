@@ -1,0 +1,397 @@
+"""A float or a bool read from a tracked list: tracked, and the read says the kind Python read,
+but in a list reached at a place no term follows, where it is plain and named by a downgrade.
+``test_list_floats_and_bools_plain`` holds the rest: lists that turn plain, identity, and
+downgrades."""
+
+from typing import Any
+
+import pytest
+
+from pyct.binding.bind import bind
+from pyct.core.bools import ConcolicBool
+from pyct.core.branch import READ_HEADS, Branch, Downgrade, Expression, SinkItem
+from pyct.core.floats import ConcolicFloat
+from pyct.core.ints import ConcolicInt
+from pyct.core.list_forms import written
+from pyct.core.list_state import kind_of, plain
+from pyct.core.strs import ConcolicStr
+
+
+def bound(value: list[Any], name: str = "xs") -> tuple[Any, list[SinkItem]]:
+    """A list as a run binds it, and its sink."""
+    sink: list[SinkItem] = []
+    return bind({name: value}, sink)[name], sink
+
+
+# the ways a list takes in a value, each with the position the value lands on
+TAKING_IN = [
+    (lambda xs, value: xs.append(value), 2),
+    (lambda xs, value: xs.extend([value]), 2),
+    (lambda xs, value: xs.insert(1, value), 1),
+    (lambda xs, value: xs.__setitem__(1, value), 1),
+]
+
+
+def forks(sink: list[SinkItem]) -> list[Expression]:
+    return [item.expression for item in sink if isinstance(item, Branch)]
+
+
+def head_of(item: Any) -> Expression:
+    """The head of a tracked item's form."""
+    return item.expression[0]
+
+
+def downgrades(sink: list[SinkItem]) -> list[str]:
+    return [item.name for item in sink if isinstance(item, Downgrade)]
+
+
+def test_a_tracked_float_has_its_kind_and_plain_value() -> None:
+    value = ConcolicFloat.made(2.5, "x", [])
+
+    assert kind_of(value) == "float"
+    assert type(plain(value)) is float
+    assert plain(value) == 2.5
+
+
+def test_a_change_writes_a_tracked_float_as_its_expression() -> None:
+    assert written(ConcolicFloat.made(2.5, "x", []), "append") == "x"
+
+
+@pytest.mark.parametrize(
+    ("value", "kind"),
+    [(0.5, ConcolicFloat), (True, ConcolicBool)],
+)
+def test_an_argument_s_float_or_bool_at_a_position_comes_out_as_indexed(
+    value: object, kind: type
+) -> None:
+    xs, _ = bound([1, "a", value])
+
+    item = xs[2]
+    assert type(item) is kind
+    assert item.expression == [READ_HEADS[kind_of(item)], "xs", 2]
+
+
+def test_an_item_from_the_end_of_a_list_that_holds_a_float_comes_out_as_indexed() -> None:
+    xs, _ = bound([1, 0.5])
+
+    assert xs[-1].expression == ["[float]", "xs", -1]
+    assert xs[-2].expression == ["[int]", "xs", -2]
+    assert type(xs[-2]) is ConcolicInt
+
+
+def test_a_list_inside_at_places_the_target_wrote_is_read_as_an_argument_s() -> None:
+    sink: list[SinkItem] = []
+    d: Any = bind({"d": {"a": [1, 0.5]}}, sink)["d"]
+
+    assert d["a"][1].expression == ["[float]", ["[]", "d", "'a'"], 1]
+
+
+def test_a_float_under_a_tracked_index_comes_out_as_indexed_where_every_item_is_a_float() -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [0.5, 1.5], "i": 1}, sink)
+
+    item = args["xs"][args["i"]]
+    assert type(item) is ConcolicFloat
+    assert item.expression == ["[float]", "xs", "i"]
+
+
+@pytest.mark.parametrize(
+    ("at", "kind", "head"), [(0, ConcolicInt, "[int]"), (1, ConcolicFloat, "[float]")]
+)
+def test_a_tracked_index_into_a_list_beside_a_float_says_the_kind_it_read(
+    at: int, kind: type, head: str
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [1, 0.5], "i": at}, sink)
+
+    item = args["xs"][args["i"]]
+    assert type(item) is kind
+    assert item.expression == [head, "xs", "i"]
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize("seed", [[1, "a"], [0.5, None]])
+def test_a_tracked_index_into_a_list_with_no_float_or_with_no_term_is_a_downgrade(
+    seed: list[object],
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": seed, "i": 0}, sink)
+
+    assert type(args["xs"][args["i"]]) in (int, float)
+    assert downgrades(sink) == ["__getitem__"]
+
+
+def test_an_item_of_a_list_of_one_kind_built_from_an_argument_comes_out_as_indexed() -> None:
+    xs, _ = bound([0.5])
+
+    ys = xs + [2.5]
+
+    assert ys[1].expression == ["[float]", ["+", "xs", ["[,]", 2.5]], 1]
+    assert ys[0].expression == ["[float]", ["+", "xs", ["[,]", 2.5]], 0]
+
+
+def test_a_none_beside_floats_leaves_a_built_list_one_kind() -> None:
+    xs, _ = bound([0.5, None])
+
+    ys = xs + [2.5]
+
+    assert ys[2].expression == ["[float]", ["+", "xs", ["[,]", 2.5]], 2]
+
+
+def test_a_float_the_target_added_to_ints_says_its_kind_with_no_downgrade() -> None:
+    xs, sink = bound([1])
+
+    item = (xs + [2.5])[1]
+
+    assert type(item) is ConcolicFloat
+    assert item.expression == ["[float]", ["+", "xs", ["[,]", 2.5]], 1]
+    assert downgrades(sink) == []
+
+
+def test_an_argument_s_float_in_a_list_built_with_other_kinds_says_its_kind() -> None:
+    xs, sink = bound([1, 0.5])
+
+    item = (xs + ["a"])[1]
+
+    assert item.expression == ["[float]", ["+", "xs", ["[,]", "'a'"]], 1]
+    assert downgrades(sink) == []
+
+
+def test_an_int_in_a_list_beside_a_float_says_its_kind() -> None:
+    xs, _ = bound([1, 0.5])
+
+    assert (xs + ["a"])[0].expression == ["[int]", ["+", "xs", ["[,]", "'a'"]], 0]
+
+
+def test_an_int_in_a_list_of_ints_and_strs_reads_as_it_did() -> None:
+    xs, _ = bound([1, "a"])
+
+    assert xs[0].expression == ["[]", "xs", 0]
+
+
+@pytest.mark.parametrize(
+    ("grid", "kind"), [([[0.5], [1.5]], ConcolicFloat), ([[False], [True, None]], ConcolicBool)]
+)
+@pytest.mark.parametrize("index", [0, -1])
+def test_a_row_an_index_picks_from_rows_of_one_kind_hands_its_item_out_as_indexed(
+    grid: list[list[object]], kind: type, index: int
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": grid, "i": index}, sink)
+
+    item = (args["grid"][args["i"]] if index == 0 else args["grid"][index])[0]
+
+    assert type(item) is kind
+    assert item.expression[1:] == [["[]", "grid", "i" if index == 0 else -1], 0]
+    assert head_of(item) == READ_HEADS[kind_of(item)]
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("index", "kind", "head"), [(1, ConcolicFloat, "[float]"), (0, ConcolicInt, "[int]")]
+)
+def test_a_row_an_index_picks_says_its_kind_where_another_row_can_hold_a_float(
+    index: int, kind: type, head: str
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": [[1], [0.5]], "i": index}, sink)
+
+    item = args["grid"][args["i"]][0]
+
+    assert type(item) is kind
+    assert item.expression == [head, ["[]", "grid", "i"], 0]
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("seed", "read"),
+    [
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][a["i"] :][0]),
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][-1:][0]),
+        ({"xs": [1, 0.5], "i": 1}, lambda a: a["xs"][1:][0]),
+        ({"xs": [0.5, 1], "ys": [1]}, lambda a: (a["ys"] + a["xs"])[1]),
+        ({"xs": [0.5, 1], "ys": [1]}, lambda a: (a["xs"] + a["ys"])[0]),
+        ({"xs": [0.5, 1], "i": 0}, lambda a: (a["xs"] * 2)[2]),
+    ],
+)
+def test_a_float_in_a_built_list_of_other_kinds_says_its_kind(
+    seed: dict[str, object], read: Any
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind(seed, sink)
+
+    item = read(args)
+    assert type(item) is ConcolicFloat
+    assert head_of(item) == "[float]"
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "position"),
+    [
+        (lambda xs, i: xs.append(0.5), 1),
+        (lambda xs, i: xs.extend([2]), 1),
+        (lambda xs, i: xs.insert(0, 2), 2),
+        (lambda xs, i: xs.insert(i, 2), 2),
+        (lambda xs, i: xs.reverse(), 0),
+        (lambda xs, i: xs.__setitem__(0, 2), 1),
+        (lambda xs, i: xs.__delitem__(0), 0),
+        (lambda xs, i: xs.pop(-2), 0),
+    ],
+)
+def test_a_float_read_after_a_change_to_a_list_of_other_kinds_says_its_kind(
+    change: Any, position: int
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [1, 0.5], "i": 0}, sink)
+    xs = args["xs"]
+    change(xs, args["i"])
+    before = len(downgrades(sink))
+
+    assert head_of(xs[position]) == "[float]"
+    assert downgrades(sink)[before:] == []
+
+
+@pytest.mark.parametrize(("change", "position"), TAKING_IN)
+def test_an_argument_s_float_a_list_of_ints_takes_in_says_its_kind(
+    change: Any, position: int
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [1, 2], "fs": [0.5]}, sink)
+    xs = args["xs"]
+    change(xs, args["fs"][0])
+
+    assert head_of(xs[position]) == "[float]"
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(("change", "position"), TAKING_IN)
+def test_a_float_parameter_a_list_of_ints_takes_in_says_its_kind(
+    change: Any, position: int
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"xs": [1, 2], "f": 0.5}, sink)
+    xs = args["xs"]
+    change(xs, args["f"])
+
+    item = xs[position]
+    assert type(item) is ConcolicFloat
+    assert head_of(item) == "[float]"
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("grid", "built"),
+    [
+        ([[1], [False]], lambda grid, i: grid[-1][0:]),
+        ([[0.5], [1]], lambda grid, i: grid[i] + [1.5]),
+        ([[False], [1]], lambda grid, i: grid[i] + [True]),
+        ([[1], [False]], lambda grid, i: next(reversed(grid))[0:]),
+    ],
+)
+def test_a_list_built_on_a_row_an_index_picks_says_its_kind(
+    grid: list[list[object]], built: Any
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": grid, "i": 0}, sink)
+
+    item = built(args["grid"], args["i"])[0]
+
+    assert type(item) in (ConcolicFloat, ConcolicBool, ConcolicInt)
+    assert head_of(item) in READ_HEADS.values()
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("seed", "read"),
+    [
+        ({"g": [[0.5], [0.5]], "i": 0}, lambda a: a["g"][a["i"] :][0][0]),
+        ({"ys": [[1]], "g": [[0.5], [1]]}, lambda a: (a["ys"] + a["g"])[1][0]),
+        ({"d": {"a": [0.5], "b": [0.5]}, "k": "b"}, lambda a: a["d"][a["k"]][0]),
+        ({"rows": [{"x": 0.5}, {"x": 0.5}], "i": 1}, lambda a: a["rows"][a["i"]]["x"]),
+        ({"rows": [{"x": 0.5}, {"x": 0.5}]}, lambda a: a["rows"][-1]["x"]),
+        ({"rows": [{"x": True}, {"x": True}]}, lambda a: a["rows"][-1]["x"]),
+        ({"rows": [{"x": [0.5]}, {"x": [0.5]}]}, lambda a: a["rows"][-1]["x"][0]),
+        ({"rows": [{"x": 0.5}], "k": "x"}, lambda a: a["rows"][-1][a["k"]]),
+    ],
+)
+def test_a_float_under_a_row_or_dict_a_cut_or_index_picks_is_plain_and_named(
+    seed: dict[str, object], read: Any
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind(seed, sink)
+
+    assert type(read(args)) in (float, bool)
+    assert downgrades(sink)
+
+
+@pytest.mark.parametrize(
+    ("seed", "read", "expression"),
+    [
+        ({"d": {"a": 0.5}}, lambda a: a["d"]["a"], ["[]", "d", "'a'"]),
+        ({"rows": [{"x": 0.5}]}, lambda a: a["rows"][0]["x"], ["[]", ["[]", "rows", 0], "'x'"]),
+        ({"d": {"a": [1, 0.5]}}, lambda a: a["d"]["a"][1], ["[float]", ["[]", "d", "'a'"], 1]),
+        ({"g": [[1], [0.5]]}, lambda a: a["g"][1][0], ["[float]", ["[]", "g", 1], 0]),
+    ],
+)
+def test_a_float_at_places_the_target_wrote_stays_tracked(
+    seed: dict[str, object], read: Any, expression: Expression
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind(seed, sink)
+
+    item = read(args)
+
+    assert type(item) is ConcolicFloat
+    assert item.expression == expression
+    assert downgrades(sink) == []
+
+
+def test_a_list_changed_thousands_of_times_reads_its_float() -> None:
+    xs, _ = bound([0.5])
+    for _ in range(5000):
+        xs.append(0.5)
+
+    assert type(xs[0]) is ConcolicFloat
+
+
+def test_a_sorted_row_says_each_item_s_kind_where_it_lands() -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": [[2.5, 1], [1.5]], "i": 0}, sink)
+
+    row = args["grid"][args["i"]]
+    row.sort()
+
+    picked = ["[]", "grid", "i"]
+    assert row[0].expression == ["[int]", ["[,]", ["[int]", picked, 1], ["[float]", picked, 0]], 0]
+    assert downgrades(sink) == []
+
+
+@pytest.mark.parametrize(
+    ("seed", "read"),
+    [
+        ({"d": {"x": {"p": 1, "q": 5}}, "a": "x", "b": "p"}, lambda a: a["d"][a["a"]][a["b"]]),
+        ({"rows": [{"a": 1, "b": 5}], "i": 0, "k": "a"}, lambda a: a["rows"][a["i"]][a["k"]]),
+        ({"rows": [{"a": 1, "b": 5}], "k": "a"}, lambda a: a["rows"][-1][a["k"]]),
+        ({"rows": [{"a": "s", "b": "t"}], "k": "a"}, lambda a: a["rows"][-1][a["k"]]),
+    ],
+)
+def test_an_int_or_str_of_a_dict_reached_at_a_moving_place_keeps_its_tracked_key(
+    seed: dict[str, object], read: Any
+) -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind(seed, sink)
+
+    item = read(args)
+
+    assert type(item) in (ConcolicInt, ConcolicStr)
+    assert head_of(item) == "[]"
+    last = "b" if "b" in seed and "d" in seed else "k"
+    assert item.expression[2] == last
+
+
+def test_an_int_in_a_row_reached_by_a_tracked_index_comes_out_as_indexed_as_it_did() -> None:
+    sink: list[SinkItem] = []
+    args: Any = bind({"grid": [[1], [2]], "i": 0}, sink)
+
+    assert args["grid"][args["i"]][0].expression == ["[]", ["[]", "grid", "i"], 0]

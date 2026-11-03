@@ -161,3 +161,46 @@ def test_a_made_up_key_skips_every_text_the_dict_holds_or_a_fork_names() -> None
     assert made_up(set(), 0) == []
     assert DictShape(keys=("a", 1), kinds=(), fill="none").makes_up is False
     assert DictShape(keys=(), kinds=(), fill="none").makes_up is True
+
+
+def test_an_answer_with_float_and_bool_arrays_takes_each_at_a_read_position() -> None:
+    seed = Seed.of({"xs": [0.5, 1.5, False]})
+    answer = ListAnswer(
+        length=3,
+        arrays={"float": ArrayValue(0.0, {0: 2.5}), "bool": ArrayValue(False, {2: True})},
+        read=frozenset({0, 2}),
+    )
+
+    applied = apply(seed, {"xs": answer})
+
+    assert applied.args["xs"] == [2.5, 1.5, True]
+    assert applied.lists["xs"].kinds == ("float", "float", "bool")
+
+
+def test_an_added_float_no_fork_read_is_zero_and_keeps_the_kind() -> None:
+    seed = Seed.of({"xs": [0.5]})
+    answer = ListAnswer(length=2, arrays={"float": ArrayValue(float("nan"))}, read=frozenset())
+
+    applied = apply(seed, {"xs": answer})
+
+    assert applied.args["xs"] == [0.5, 0.0]
+
+
+def test_a_mixed_list_keeps_each_kind_at_its_position() -> None:
+    seed = Seed.of({"row": [0, 0.5, False]})
+    answer = ListAnswer(length=3, arrays={"int": ArrayValue(0, {0: 7})}, read=frozenset({0}))
+
+    applied = apply(seed, {"row": answer})
+
+    assert applied.args["row"] == [7, 0.5, False]
+    assert applied.lists["row"].mixed
+
+
+def test_a_float_or_bool_value_of_a_dict_is_a_leaf_the_model_names() -> None:
+    seed = Seed.of({"d": {"f": 0.5, "b": False}})
+    names = (json.dumps(["[]", "d", "'f'"]), json.dumps(["[]", "d", "'b'"]))
+
+    assert seed.leaves == {names[0]: float, names[1]: bool}
+    applied = apply(seed, {names[0]: 2.5, names[1]: True})
+
+    assert applied.args["d"] == {"f": 2.5, "b": True}

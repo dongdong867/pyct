@@ -15,9 +15,9 @@ at a plain index, `counts[0] += 1` thirty times, is a row of pieces a read goes 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from typing import Any
 
-from pyct.binding.shapes import DictShape, ListShape
+from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.list_kinds import (
@@ -35,6 +35,7 @@ from pyct.solver.list_terms import (
     TRUE,
     Counted,
     Guard,
+    ItemHolds,
     Joined,
     Least,
     Lin,
@@ -50,10 +51,12 @@ from pyct.solver.list_terms import (
     shape_guard,
     summed,
 )
+from pyct.solver.origin import READ_STEPS, Origin
 from pyct.solver.position_pins import PIN, PositionPins
 from pyct.solver.split_paths import Splits
+from pyct.solver.unencoded import UnencodedError
 
-__all__ = ["ITEM_SORTS", "ListTerms", "Origin", "TrackedList", "UnencodedError"]
+__all__ = ["ITEM_SORTS", "READ_STEPS", "ListTerms", "Origin", "TrackedList"]
 
 # how each fork on a list's length, taken or not, says how long the list is at least: by the
 # number it compares with
@@ -69,54 +72,6 @@ _AT_LEAST: Mapping[tuple[str, bool], Callable[[int], int]] = {
 # where a list inside a list sits: the list the seed names, each position on the way as the
 # path wrote it, and each as a term
 type Place = tuple[str, tuple[Expression, ...], tuple[str, ...]]
-
-
-# the steps one read takes before its program is written again with its clamps settled: far
-# more than a read through a list changed at plain positions takes, and far less than one that
-# doubles with each cut
-READ_STEPS = 512
-
-
-@dataclass(frozen=True)
-class Origin:
-    """The input whose path this is: each tracked list and dict with its shape, each leaf's
-    value, and how the program is written for it.
-
-    ``settle`` names the list parts whose clamps, where the path leaves them open, go the way
-    they went there (see ``list_slices``), and ``everywhere`` settles every one. ``hold`` says
-    whether a list the target repeats holds the answer's lengths (see ``_repeated``), and
-    ``bounded`` whether each bound a form is exact inside is held (see ``render._bounded``).
-    ``steps`` is the most steps one read takes before its program is written again settled,
-    None for no limit; ``most`` the most all reads of the program take together before the
-    program is given up (``ProgramTooLargeError``), None for no limit; and ``until`` the
-    monotonic instant writing must end by. ``keep`` says whether each dict keeps the input's
-    keys no fork names and makes none up, ``pinned`` whether it keeps each key a walk read at its
-    place, and ``lookups`` the most steps a path's tracked-key lookups take together before the
-    program is given up, None for no limit (see ``dicts``). ``places`` are the places the
-    path's facts keep: which key a walk read where (see ``core.dict_reads.placed``).
-    ``fixed_reads`` says whether a piece of a split read from its end, where no walk of the
-    reversed string reads it, holds the string to the count c* (see ``split_lists``).
-    """
-
-    shapes: Mapping[str, ListShape] = field(default_factory=dict)
-    dicts: Mapping[str, DictShape] = field(default_factory=dict)
-    values: Mapping[str, object] = field(default_factory=dict)
-    settle: frozenset[int] = frozenset()
-    everywhere: bool = False
-    hold: bool = True
-    bounded: bool = True
-    steps: int | None = READ_STEPS
-    most: int | None = None
-    until: float | None = None
-    keep: bool = True
-    pinned: bool = True
-    lookups: int | None = None
-    places: tuple[Expression, ...] = ()
-    fixed_reads: bool = True
-
-
-class UnencodedError(ValueError):
-    """A read on the path that no term writes: its kind is one nothing on the path tells."""
 
 
 class ListTerms(ListTyping, PositionPins):
@@ -139,7 +94,10 @@ class ListTerms(ListTyping, PositionPins):
         self.built: list[list[Expression]] = []
         self.stored: dict[int, Place] = {}
         self.declared: dict[str, str] = {}
-        self.bounded: dict[str, None] = {}
+        # each length the program declares, by its term, with its size in the input: the list's
+        # own, or for a row read where no shape says which, the longest row's, which its first
+        # hold starts from (`size_holds`)
+        self.bounded: dict[str, int] = {}
         self.capped: list[str] = []
         self.guards: list[str] = []
         # the least length each list the seed names has on the path, by its length's term
@@ -151,8 +109,7 @@ class ListTerms(ListTyping, PositionPins):
         self.source = Origin()
         self.shared: Shared | None = None
         self.places: dict[int, int] = {}
-        # each str item read, whose term is held to the most characters an answer holds
-        self.strings: dict[str, None] = {}
+        self.holds = ItemHolds()
         # each read of an item: the list part it reads and the position part, for the answer
         self.reads: list[tuple[Expression, Expression]] = []
         # the splits' lists the path reads
@@ -308,7 +265,7 @@ class ListTerms(ListTyping, PositionPins):
             (self.hold_fact if piece.of_a_split else self.guards.append)(found.guard)
         if item == "str" and not isinstance(piece, Counted):
             # a split's piece is no longer than its string, which the answer holds already
-            self.strings[found.value] = None
+            self.holds.strings[found.value] = None
         if isinstance(piece, Stored):
             self._present(piece.length, rest[0])
         self.reads.append((operand, rest[0]))
@@ -335,6 +292,7 @@ class ListTerms(ListTyping, PositionPins):
         self.source = origin
         self.shared = None if origin.most is None else Shared(origin.most)
         self.splits.fixed_reads = origin.fixed_reads
+        self.chosen = origin.read_kinds
         # the value the input holds for a part it names as it is, a split's string say
         names = {constant: name for name, constant in constants.items()}
         self.splits.given = lambda part: origin.values.get(names.get(self.constant(part) or "", ""))
@@ -350,6 +308,7 @@ class ListTerms(ListTyping, PositionPins):
             set(),
             self.shared,
             self.splits.counts,
+            self.holds.floats,
         )
 
     def _define_read(self, text: str, sort: str) -> str:
@@ -374,7 +333,7 @@ class ListTerms(ListTyping, PositionPins):
             self.present[term] = max(self.present.get(term, 0), needed)
 
     def _item_term(self, part: Expression) -> str | None:
-        """An item's term, for an item a read can hand out: an int or a str."""
+        """An item's term, for an item of a kind ``ITEM_SORTS`` holds."""
         return self.named(part) if self.item_kind(part) in ITEM_SORTS else None
 
     def _stored(self, name: str, positions: tuple[str, ...], kinds: Kinds, guard: Guard) -> Stored:
@@ -382,16 +341,19 @@ class ListTerms(ListTyping, PositionPins):
         symbol = self.symbols[name]
         length = self._declared(symbol, positions, "len")
         if length not in self.bounded:
-            self.bounded[length] = None
+            self.bounded[length] = kinds.longest
             self.least[length] = max(self.least.get(length, 0), 0)
             if kinds.shape is not None:
-                self.origin[length] = len(kinds.shape.kinds)
+                self.origin[length] = self.bounded[length] = len(kinds.shape.kinds)
+                if kinds.shape.mixed:
+                    self.holds.mixed[length] = len(kinds.shape.kinds)
         return Stored(
             Lin.of(length),
             kinds.kinds,
             kinds.every,
             arrays=lambda kind: self._declared(symbol, positions, kind),
             guard=guard,
+            symbol=symbol,
         )
 
     def _declared(self, symbol: str, positions: tuple[str, ...], part: str) -> str:
@@ -472,6 +434,24 @@ class ListTerms(ListTyping, PositionPins):
         """Whether the program holds the length of a list the target repeats."""
         return bool(self.capped)
 
+    def flags(self, kinds_move: bool) -> dict[str, Any]:
+        """What a program says of the lists beside its text: what it holds to more than the path,
+        and what an unsat to it leaves to ask (see ``read_kinds``). ``kinds_move`` says a dict's
+        tracked key may land on another kind."""
+        return {
+            "narrowed": self.narrowed,
+            "held": self.held,
+            **self.splits.flags(),
+            "other_kinds": tuple(self.other_kinds),
+            "untried": self.untried or kinds_move,
+        }
+
+    @property
+    def keeps_length(self) -> bool:
+        """Whether the program holds a list of mixed kinds to the input's length at least: an
+        unsat to it is asked again with the length free."""
+        return self.source.keep and bool(self.holds.mixed)
+
     def asked(self) -> list[str]:
         """What the program asks cvc5 for about the lists: each length and array it declared,
         and each position's term the answer reads (see ``list_answers``)."""
@@ -490,9 +470,20 @@ class ListTerms(ListTyping, PositionPins):
     def assertions(self) -> list[str]:
         """What the program asserts of the lists: each length at most a million, not negative,
         each list the target repeats no longer, each read's guard, and each str item read no
-        longer than a string answer holds: the strings an answer hands out, and no others."""
+        longer than a string answer holds: the strings an answer hands out, and no others. Those
+        are the caps; the first ask's holds below a length's are ``size_holds``'s. The
+        first ask also holds each list of mixed kinds to the input's length at least, since a
+        shorter one's items come back on the next input with no kind to go by, and with it each
+        other list, since a read through a join finds another item when one of them shrinks."""
         lengths = [f"(assert (<= 0 {length} {MOST_ITEMS}))" for length in self.bounded]
         held = [f"(assert (>= {length} {least}))" for length, least in self.present.items()]
+        if self.source.keep:
+            lengths_now = self.origin.items() if self.holds.mixed else ()
+            held += [
+                f"(assert (>= {length} {least}))"
+                for length, least in lengths_now
+                if length in self.bounded
+            ]
         guards = [f"(assert {guard})" for guard in self.guards]
-        strings = [longest_string(term) for term in self.strings]
+        strings = [longest_string(term) for term in self.holds.strings]
         return lengths + self.capped + list(self.regime) + held + guards + strings

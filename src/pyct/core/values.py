@@ -215,7 +215,7 @@ def downgraded(
         if result is NotImplemented:
             return result
         # the call's own caller is where the walk for the site starts
-        lost(self.sink, lost_at(name, sys._getframe(1)))
+        lost(self.sink, lost_at(name, sys._getframe(1)), (self, *args, *kwargs.values()))
         return own(plain, self, base) if result is self else result
 
     return downgrade

@@ -17,15 +17,18 @@ from pyct.solver.answer import (
     Timeout,
     Unknown,
     Unsat,
-    model_from,
 )
 from pyct.solver.dict_keys import LookupsTooManyError
-from pyct.solver.floats import FINITE
 from pyct.solver.given import Given, answered, argv, options, took
+from pyct.solver.held_items import float_leaves
 from pyct.solver.list_reader import ProgramTooLargeError, RenderTimeError, RenderTooLargeError
-from pyct.solver.lists import READ_STEPS, Origin, UnencodedError
-from pyct.solver.render import Program, float_leaves, program
+from pyct.solver.lists import READ_STEPS, Origin
+from pyct.solver.read_kinds import asked_of_each
+from pyct.solver.render import Program, program
+from pyct.solver.replies import answer_of, core_of
+from pyct.solver.size_holds import grown_by
 from pyct.solver.split_lists import UnknownCountError
+from pyct.solver.unencoded import UnencodedError
 from pyct.solver.walk_keys import UnwrittenError, Walks, missed
 
 logger = logging.getLogger(__name__)
@@ -33,12 +36,6 @@ logger = logging.getLogger(__name__)
 # asked after the program's last command, so the last line cvc5 prints is why it answered
 # unknown, or an error after any other answer
 WHY = "(get-info :reason-unknown)\n"
-
-# cvc5's reply to WHY when its time limit ended the check
-OUT_OF_TIME = "(:reason-unknown timeout)"
-
-# how cvc5's reply to WHY starts after an answer other than unknown, which has no reason
-NO_REASON = "(error "
 
 # cvc5 answers unknown at --tlimit-per; pyct stops it this much later when it does not
 GRACE_SECONDS = 1.0
@@ -123,7 +120,8 @@ def solve(
     float-floor-division-a-real-floor-inside-a-bound.
 
     A program that keeps each dict's keys no fork names and makes none up answers with the
-    input's keys where the path does not ask for others. An unsat to it asks once more with
+    input's keys where the path does not ask for others, and one that holds a list of mixed
+    kinds to the input's length keeps its items' kinds. An unsat to it asks once more with
     them free. A program that keeps a key a walk read at its place answers an input that walks
     as the path did; an unsat to it runs every ask once more without the places, where only an
     unsat is the path's, and a model is an ``Unknown()``, since pyct cannot tell whether the
@@ -133,8 +131,13 @@ def solve(
     ask; an unsat to it is asked with the keys the forks name chosen (``walk_keys``,
     ``_chosen``, ``_after_unsat``; let-the-solver-choose-a-small-dict-s-walk-key).
 
-    A prefix that names a float leaf is asked first with each such leaf held
-    finite; decision float-finite-first-frees-the-unsat-core. See ``_finite_first``.
+    A read that may land on another kind than Python read makes an unsat one more thing to
+    check: each other kind is asked in turn (see ``read_kinds``).
+
+    A prefix that names a float leaf or reads a float item is asked first with each such float
+    held finite; decision float-finite-first-frees-the-core-s-leaves-and-lists. Each list length
+    and dict size the solver chooses is asked first held small (``size_holds``); a string keeps
+    only its cap. See ``_held_first``.
 
     What cvc5 did never raises here. A crash, a nonzero exit, or output pyct
     does not recognize comes back as ``Error(detail)``, so the run keeps the
@@ -156,10 +159,17 @@ def solve(
         return Unknown()
     conditions, places = held(fixed)
     origin = replace(origin, places=places)
-    answer, placed = _asked((conditions, leaves), origin, timeout)
+    answer, placed, written = _asked((conditions, leaves), origin, timeout)
     if not isinstance(answer, Unsat):
         return answer
-    return _after_unsat((prefix, leaves), walks, origin, placed, timeout)
+    answer = _after_unsat((prefix, leaves), walks, origin, placed, timeout)
+    if not isinstance(answer, Unsat) or written is None:
+        return answer
+
+    def ask(kinds: Mapping[int, str]) -> Answer:
+        return _asked((conditions, leaves), replace(origin, read_kinds=kinds), timeout)[0]
+
+    return asked_of_each(written.other_kinds, written.untried, ask)
 
 
 def _after_unsat(
@@ -184,7 +194,7 @@ def _after_unsat(
     if placed:
         logger.debug("unsat with the keys a walk read kept in place: asking without")
         unplaced = (held(walks.fixed(walks.unread(prefix)))[0], leaves)
-        answer, _ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
+        answer, *_ = _asked(unplaced, replace(origin, keep=False, pinned=False), timeout)
         if isinstance(answer, Sat):
             return Unknown()
     if isinstance(answer, Unsat) and walks.aimed:
@@ -192,7 +202,7 @@ def _after_unsat(
     if isinstance(answer, Unsat) and (walks.forked or walks.pinned):
         logger.debug("unsat with each walk key at the input's key: asking without them")
         unnamed = (held(walks.unnamed(prefix))[0], leaves)
-        answer, _ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)
+        answer, *_ = _asked(unnamed, replace(origin, keep=False, pinned=False), timeout)
         return answer if isinstance(answer, Unsat | Timeout | Error) else Unknown()
     return answer
 
@@ -219,7 +229,7 @@ def _chosen(
         until=monotonic() + limit,
         lookups=int(limit * LOOKUP_STEPS_PER_SECOND),
     )
-    answer, _ = _asked((conditions, {**leaves, **walk_leaves}), chosen, limit)
+    answer, *_ = _asked((conditions, {**leaves, **walk_leaves}), chosen, limit)
     logger.debug("with the walk keys chosen: %s", type(answer).__name__)
     return answer
 
@@ -242,10 +252,10 @@ def held(
     return conditions, places
 
 
-def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
+def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool, Program | None]:
     """What the path is answered from ``origin``, every ask a program that held more than the
-    path needs and was unsat taken in turn, and whether any program kept a key a walk read in
-    its place.
+    path needs and was unsat taken in turn, whether any program kept a key a walk read in its
+    place, and the last program asked.
 
     The places are what makes a model walk the dict as the path did; without them, a model may
     walk another order, and pyct cannot tell whether an answer it writes takes the path, so a
@@ -267,8 +277,8 @@ def _asked(path: _Path, origin: Origin, timeout: float) -> tuple[Answer, bool]:
         origin = replace(origin, fixed_reads=False)
         answer, written = _solved(path, origin)
     if isinstance(answer, Unsat) and written is not None and (written.held or written.bounded):
-        return _loosened(path, origin), placed
-    return answer, placed
+        return _loosened(path, origin), placed, written
+    return answer, placed, written
 
 
 def _origin(
@@ -286,13 +296,15 @@ def _origin(
 def _loosened(path: _Path, origin: Origin) -> Answer:
     """An unsat answer to a program that holds a repeated list's length or a form's bound.
 
-    The path is asked once more with neither held and every double allowed, where each form
-    past its bound can be whatever Python gives there: an unsat to that unsettled program is
-    the path's, whatever core cvc5 picked. A model is an ``Unknown()``, since past a hold the
-    target would build a list too long, and past a bound it may not be Python's; so is a
-    program that settled its clamps. A timeout or a failure is what it is on any other ask.
+    The path is asked once more with neither held, every double allowed and every length and
+    size free to its cap, where each form past its bound can be whatever Python gives there: an
+    unsat to that unsettled program is the path's, whatever core cvc5 picked. A model is an
+    ``Unknown()``, since past a hold the target would build a list too long, and past a bound it
+    may not be Python's; so is a program that settled its clamps. A timeout or a failure is what
+    it is on any other ask.
     """
-    written, _ = _written(path, replace(origin, hold=False, bounded=False), frozenset())
+    loose = replace(origin, hold=False, bounded=False, small=False)
+    written, _ = _written(path, loose, frozenset())
     if not isinstance(written, Program):
         return written
     if written.narrowed:
@@ -308,7 +320,7 @@ def _solved(path: _Path, origin: Origin) -> tuple[Answer, Program | None]:
     written, origin = _written(path, origin, finite)
     if not isinstance(written, Program):
         return written, None
-    return _finite_first(path, origin, written, finite), written
+    return _held_first(path, origin, written, finite), written
 
 
 def _written(
@@ -339,8 +351,8 @@ def _write(
     """The program for the path, written by the origin's instant.
 
     A program that outlives the solve's limit is a ``Timeout()``, as a solve that does is. A
-    path with a read nothing on it types, or one whose reads run past the steps the origin
-    gives them all, is an ``Unknown()``, a miss rather than a crash.
+    path with an operation no form writes on what it meets, or with reads past the steps the
+    origin gives them all, is an ``Unknown()``, a miss rather than a crash.
     """
     try:
         return program(*path, origin, finite=finite, cores=cores)
@@ -361,31 +373,37 @@ def _write(
         return Unknown()
 
 
-def _finite_first(path: _Path, origin: Origin, written: Program, finite: frozenset[str]) -> Answer:
-    """What cvc5 answers the program, each float leaf in ``finite`` held finite at first.
+def _held_first(path: _Path, origin: Origin, written: Program, finite: frozenset[str]) -> Answer:
+    """What cvc5 answers the program, each float leaf in ``finite`` held finite at first, and
+    each float a list or a dict in ``finite`` reads, and each list length and dict size the solver
+    chooses held small (``size_holds``).
 
-    Only an ``Unsat`` asks again: once with the same leaves held and cvc5 asked for its unsat
-    core, which says which of them the unsat rests on, and then with those leaves free and the
-    rest still held. That repeats until an ask answers otherwise or the core names no held
-    leaf. So a leaf may be NaN or an infinity only once an unsat that held it finite names it
-    in its core. One core may name several leaves where freeing any one of them would do, and
-    each is freed. The core costs its ask time only after an unsat, since asking for it slows
-    some sat answers.
+    Only an ``Unsat`` asks again: once with the same holds and cvc5 asked for its unsat core,
+    which says which of them the unsat rests on, and then with those floats free, those sizes
+    grown, and the rest as they were. That repeats until an ask answers otherwise or the core
+    names no hold. So a leaf may be NaN or an infinity only once an unsat that held it finite
+    names it in its core, and a list's or a dict's float once the core names any float it holds,
+    which frees all of them; a size grows only once a core names its hold, and one core may free
+    floats and grow sizes at once. One core may name several holds where loosening any one of
+    them would do, and each is loosened. The core costs its ask time only after an unsat, since
+    asking for it slows some sat answers, and a program that holds nothing asks no core.
     """
     answer, _ = _ask_by(written, origin.until)
-    while finite and isinstance(answer, Unsat):
+    while (written.finite or written.sizes) and isinstance(answer, Unsat):
         cored = _write(path, origin, finite, cores=True)
         if not isinstance(cored, Program):
             return cored
         answer, core = _ask_by(cored, origin.until)
-        freed = finite & core
-        if not isinstance(answer, Unsat) or not freed:
+        freed, grown = finite & core, grown_by(cored.sizes, core)
+        if not isinstance(answer, Unsat) or not (freed or grown):
             return answer
         finite -= freed
+        origin = replace(origin, sizes={**origin.sizes, **grown})
         freer = _write(path, origin, finite)
         if not isinstance(freer, Program):
             return freer
-        answer, _ = _ask_by(freer, origin.until)
+        written = freer
+        answer, _ = _ask_by(written, origin.until)
     return answer
 
 
@@ -402,8 +420,8 @@ def _ask_by(written: Program, until: float | None) -> tuple[Answer, frozenset[st
 def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
     """One ask of cvc5: the program, then why it answered, within ``timeout`` seconds.
 
-    Also the leaves an unsat answer's core holds finite, when the program
-    held any.
+    Also what an unsat answer's core names, when the program held anything it may name
+    (``replies.core_of``).
     """
     text = written.text + WHY
     command = argv(timeout)
@@ -430,7 +448,7 @@ def _ask(written: Program, timeout: float) -> tuple[Answer, frozenset[str]]:
         logger.warning("cvc5 failed to answer: %s", answer.detail)
     else:
         logger.debug("cvc5 answered %s", type(answer).__name__)
-    return answer, _core(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
+    return answer, core_of(finished.stdout, written) if isinstance(answer, Unsat) else frozenset()
 
 
 def _read(stdout: str, stderr: str, written: Program) -> Answer:
@@ -438,42 +456,12 @@ def _read(stdout: str, stderr: str, written: Program) -> Answer:
 
     A sat model with a value line pyct cannot read, or a name the program
     did not declare, is an ``Unknown()``; any other reply is what
-    ``_answer`` makes of it.
+    ``replies.answer_of`` makes of it.
     """
     try:
-        answer = _answer(stdout, stderr)
+        answer = answer_of(stdout, stderr)
         # cvc5 answered by the constants the program declared; the run reads leaves by name
         return Sat(written.read(answer.model)) if isinstance(answer, Sat) else answer
     except SolverAnswerError as error:
         logger.warning("%s", error)
         return Unknown()
-
-
-def _core(stdout: str, written: Program) -> frozenset[str]:
-    """The leaves an unsat answer's dumped core holds finite, by their names.
-
-    cvc5 prints the core right after the answer, its assertion names on one
-    line or one per line; every other line after an unsat is a refusal that
-    names no assertion. Each name is ``FINITE`` and the leaf's symbol.
-    """
-    words = stdout.replace("(", " ").replace(")", " ").split()
-    symbols = [word.removeprefix(FINITE) for word in words if word.startswith(FINITE)]
-    return frozenset(written.names_by_symbol[symbol] for symbol in symbols)
-
-
-def _answer(stdout: str, stderr: str) -> Answer:
-    """What cvc5 said. The first word decides; anything unrecognized is kept whole.
-
-    The last line is cvc5's reply to ``WHY``, so a model is the lines between
-    the answer and that reply. A ``sat`` whose last line is not that reply is
-    an ``Error``: the line dropped as the reply might have been a value.
-    """
-    lines = stdout.strip().splitlines()
-    head = lines[0] if lines else ""
-    if head == "sat" and lines[-1].startswith(NO_REASON):
-        return Sat(model_from(lines[1:-1]))
-    if head == "unsat":
-        return Unsat()
-    if head == "unknown":
-        return Timeout() if lines[-1] == OUT_OF_TIME else Unknown()
-    return Error(f"{stdout}\n{stderr}".strip())

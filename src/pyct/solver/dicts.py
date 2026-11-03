@@ -29,14 +29,16 @@ from functools import cached_property
 
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.branch import FLOAT_AND_BOOL, Branch, Expression
 from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match
-from pyct.solver.lists import Origin, UnencodedError
+from pyct.solver.list_kinds import ITEM_TYPES
+from pyct.solver.lists import Origin
+from pyct.solver.unencoded import UnencodedError
 
-# the type of a value each kind of value is read as: only an int or a str has a term
-_VALUE_TYPES: Mapping[str, type] = {"int": int, "str": str}
+# the type of a value each kind of value is read as: only these kinds have a term
+_VALUE_TYPES = ITEM_TYPES
 
 
 class TrackedDict:
@@ -157,6 +159,10 @@ class DictTerms(Keyed):
         # each value constant a dict declared, and what the answer names it by: a leaf's name,
         # or the dict and the key it is the value under
         self.valued: dict[str, tuple[str, object]] = {}
+        self.float_values: dict[str, str] = {}
+        # whether a tracked key may land on a value of another kind than Python read, beside a
+        # float or a bool, where an unsat holds only for the kind read
+        self.kinds_move = False
         # each chosen walk key's leaf, by the dict whose walk reads it (see ``dict_orders``)
         self.walk_leaves: dict[str, str] = {}
 
@@ -301,11 +307,13 @@ class DictTerms(Keyed):
         literal = literal_key(key)
         kind = self._value_kind(found, key)
         if kind not in _VALUE_TYPES:
-            raise UnencodedError(f"pyct cannot render {key} in a dict: no int or str is read there")
+            raise UnencodedError(f"pyct cannot render {key} in a dict: no value it types is there")
         if literal is not MISSING:
             self.hold(self.present(found, literal))
             return self.value_under(found, container, literal, kind)
         term, typed = self.named(key), self.type_of(key)
+        kinds = set(found.shape.kinds)
+        self.kinds_move |= len(kinds) > 1 and bool(kinds & FLOAT_AND_BOOL)
         self.hold(self.equals_a_key(found, term, typed))
         return self.read_under(found, container, (term, typed), kind)
 

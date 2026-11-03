@@ -70,18 +70,35 @@ def test_a_float_becomes_a_concolic_float_named_after_its_parameter(value: float
     assert bound.sink is sink
 
 
-def test_a_float_inside_a_dict_or_a_list_stays_plain() -> None:
+def test_a_float_inside_a_dict_or_a_list_is_tracked_by_its_access() -> None:
     seed: dict[str, object] = {"d": {"f": 1.5, "n": 2}, "xs": [2.5, -0.0]}
 
     args = bind(seed, [])
 
-    # run-with-nested-arguments follows a float inside an argument; until then it is a value
     d, xs = args["d"], args["xs"]
     assert isinstance(d, dict) and isinstance(xs, list)
-    assert type(d["f"]) is float and type(d["n"]) is ConcolicInt
-    assert [type(item) for item in xs] == [float, float]
+    assert type(d["f"]) is ConcolicFloat and type(d["n"]) is ConcolicInt
+    assert d["f"].expression == ["[]", "d", "'f'"]
+    assert [type(item) for item in list.copy(xs)] == [ConcolicFloat, ConcolicFloat]
     assert repr(xs) == "[2.5, -0.0]"
-    assert leaves(seed) == {json.dumps(["[]", "d", "'n'"]): int}
+    assert leaves(seed) == {
+        json.dumps(["[]", "d", "'f'"]): float,
+        json.dumps(["[]", "d", "'n'"]): int,
+        json.dumps(["[]", "xs", 0]): float,
+        json.dumps(["[]", "xs", 1]): float,
+    }
+
+
+def test_a_float_subclass_inside_a_container_stays_plain_and_an_argument_s_own_is_tracked() -> None:
+    class Metres(float):
+        pass
+
+    args = bind({"d": {"f": Metres(1.5)}, "own": Metres(2.5)}, [])
+
+    d = args["d"]
+    assert isinstance(d, dict)
+    assert type(d["f"]) is Metres
+    assert type(args["own"]) is ConcolicFloat
 
 
 def test_every_other_value_is_a_plain_copy_of_its_own() -> None:
@@ -178,14 +195,15 @@ def test_a_value_under_a_key_of_another_type_passes_through() -> None:
     assert [type(value) for value in d.values()] == [int, int]
 
 
-def test_keys_nulls_and_bools_inside_stay_plain() -> None:
+def test_keys_and_nulls_inside_stay_plain_and_bools_and_floats_are_tracked() -> None:
     args = bind({"d": {"k": None, "b": True, "f": 1.5}}, [])
 
     d = args["d"]
     assert isinstance(d, dict)
     assert d == {"k": None, "b": True, "f": 1.5}
     assert [type(key) for key in d] == [str, str, str]
-    assert d["b"] is True
+    assert d["k"] is None
+    assert type(d["b"]) is ConcolicBool and type(d["f"]) is ConcolicFloat
 
 
 def test_each_dict_and_list_is_a_copy_of_its_own() -> None:
@@ -240,6 +258,7 @@ def test_leaves_names_each_value_inside_by_its_access_in_seed_order() -> None:
     assert leaves(seed) == {
         json.dumps(["[]", "items", 0]): int,
         json.dumps(["[]", "items", 1]): str,
+        json.dumps(["[]", "items", 2]): bool,
         json.dumps(["[]", "config", "'k'"]): int,
         "x": int,
     }

@@ -18,6 +18,7 @@ from enum import Enum
 
 from pyct.core.bools import ConcolicBool
 from pyct.core.branch import Expression
+from pyct.core.floats import ConcolicFloat
 from pyct.core.ints import ConcolicInt
 from pyct.core.list_state import ListState
 from pyct.core.strs import ConcolicStr
@@ -45,7 +46,7 @@ def written(value: object, name: str, depth: int = 0) -> Expression | _Unwritten
     A tracked list is its form while the form holds; ``name`` is the operation that reads it,
     which a list changed without its methods names as it turns plain.
     """
-    if isinstance(value, ConcolicInt | ConcolicStr | ConcolicBool):
+    if isinstance(value, ConcolicInt | ConcolicStr | ConcolicBool | ConcolicFloat):
         return value.expression
     if value is None or (isinstance(value, int | float) and type(value) in _AS_THEMSELVES):
         return value

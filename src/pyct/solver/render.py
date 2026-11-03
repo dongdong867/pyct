@@ -7,9 +7,9 @@ from pyct.binding.shapes import ListShape
 from pyct.core.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.checks import CHECKS, check, checks_by_string
-from pyct.solver.dag import Node, distinct
-from pyct.solver.declared import Leaves, Program, symbols
-from pyct.solver.dicts import DictTerms, TrackedDict
+from pyct.solver.dag import Node
+from pyct.solver.declared import Leaves, Program
+from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import (
     BOUNDED,
     FACTS,
@@ -27,15 +27,16 @@ from pyct.solver.heads import (
     forms,
     operator,
 )
-from pyct.solver.joined import joined
+from pyct.solver.held_items import finite_items, holders, path_of
 from pyct.solver.letters import Key, Spellings, fixed_position
-from pyct.solver.lists import ListTerms, Origin, TrackedList, UnencodedError
+from pyct.solver.lists import ListTerms, Origin, TrackedList
 from pyct.solver.literals import leaf_term, plain_operand, string_order
 from pyct.solver.program_text import program_text
 from pyct.solver.recased import TO_DECLARE, Declared
+from pyct.solver.size_holds import held_small
 from pyct.solver.splits import SPLITS
-from pyct.solver.str_joins import expanded
 from pyct.solver.symbols import leaf_sort
+from pyct.solver.unencoded import UnencodedError
 
 
 def program(
@@ -58,16 +59,18 @@ def program(
     written as the one piece they make (see `joined`), and a part of the
     conditions written more than once is defined once before the assertions (see
     `_Program`). Each float leaf in ``finite`` that the prefix names is held to a
-    finite double, and each bound a form is exact inside is held (see `Program`).
-    With ``cores``, each of those finite assertions is named for the leaf's
-    symbol and cvc5 is asked to dump the unsat core, so an unsat says which of
-    them it rests on; that slows some sat answers, so only a program asked after
-    an unsat does it. Without ``Origin.bounded`` the bounds are left out, and
-    each form past its bound is only what Python could give there (see
-    ``floats.floor_division``).
+    finite double, and so is each float a list or a dict in ``finite`` reads (see
+    `held_items`), and each bound a form is exact inside is held (see `Program`).
+    With ``Origin.small``, each list length and dict size the solver chooses is held
+    small (see `size_holds`). With ``cores``, each of those finite assertions is named for the
+    symbol of its leaf, list or dict, each size hold for a count, and cvc5 is asked
+    to dump the unsat core, so an unsat says which of them it rests on; that slows
+    some sat answers, so only a program asked after an unsat does it. Without
+    ``Origin.bounded`` the bounds are left out, and each form past its bound is only
+    what Python could give there (see ``floats.floor_division``).
     """
     origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
-    prefix, order, holders, named = _path(prefix, leaves, origin)
+    prefix, order, holding, named = path_of(prefix, leaves, origin)
     constants = {name: f"|{symbol}|" for name, symbol in named.items() if name in leaves}
     # a leaf no sort declares is named before any term on it is written
     declared = [(constant, leaf_sort(name, leaves[name])) for name, constant in constants.items()]
@@ -76,54 +79,26 @@ def program(
     terms.start_from(origin, constants)
     dicts = DictTerms.of_path(prefix, origin, constants)
     seed = Leaves(leaves, constants, origin.shapes, origin.dicts)
-    body = _Program(seed, order, holders, prefix, (terms, dicts))
+    body = _Program(seed, order, holding, prefix, (terms, dicts))
     held = [name for name in constants if name in finite and leaves[name] is float]
     finites = [floats.held_finite(constants[name], named[name] if cores else None) for name in held]
-    text = program_text(prefix, body, declared, finites, cores=bool(held and cores))
-    by_symbol = {symbol: name for name, symbol in named.items() if name in leaves}
-    listed = terms if terms.declared else None
+    items = finite_items(terms, dicts, finite, cores=cores)
+    small, sizes = held_small(terms, dicts, origin, cores=cores)
+    body.holds = items + small
+    text = program_text(prefix, body, declared, finites, cores=cores)
     return Program(
         text,
-        by_symbol,
-        listed,
-        narrowed=terms.narrowed,
-        held=terms.held,
-        **terms.splits.flags(),
+        {symbol: name for name, symbol in named.items() if name in leaves},
+        terms if terms.declared else None,
+        **terms.flags(dicts.kinds_move),
         bounded=bool(body.bounds),
         dicts=dicts if dicts.dicts else None,
-        kept=dicts.held_back,
+        kept=dicts.held_back or terms.keeps_length,
         placed=dicts.placed,
+        holders=holders(terms, dicts),
+        finite=bool(held or items),
+        sizes=sizes,
     )
-
-
-def _path(
-    prefix: tuple[Branch, ...], leaves: Mapping[str, type], origin: Origin
-) -> tuple[tuple[Branch, ...], list[Node], dict[int, int], dict[str, str]]:
-    """The path as written: joins spelled out, pieces side by side as one, each distinct part in
-    order with how many places hold it, and each leaf, list and dict it names by symbol."""
-    shapes = origin.shapes
-    seed = Leaves(kinds=leaves, constants={}, lists=shapes, dicts=origin.dicts)
-    prefix = expanded(prefix, seed.holds)
-    listed = ListTerms(shapes, {}).listed(distinct(prefix, seed.holds)[0])
-    containers = (TrackedList, TrackedDict)
-    prefix = joined(
-        prefix, seed.holds, lambda part: id(part) in listed or seed.kind(part) in containers
-    )
-    order, holders = distinct(prefix, seed.holds)
-    return prefix, order, holders, symbols(prefix, order, seed)
-
-
-def float_leaves(
-    prefix: tuple[Branch, ...],
-    leaves: Mapping[str, type],
-    lists: Mapping[str, ListShape] | Origin | None = None,
-) -> frozenset[str]:
-    """The float leaves a fork of the prefix names: those its first ask holds finite."""
-    if float not in leaves.values():
-        return frozenset()
-    origin = lists if isinstance(lists, Origin) else Origin(shapes=lists or {})
-    _, _, _, named = _path(prefix, leaves, origin)
-    return frozenset(name for name in named if leaves.get(name) is float)
 
 
 class _Program:
@@ -159,12 +134,15 @@ class _Program:
         self.definitions: list[str] = []
         self.facts: set[str] = set()
         self.bounds: list[str] = []
+        # what the program holds beyond the path once its reads are written: each float item
+        # finite (see `held_items`), and each list length and dict size small (`size_holds`)
+        self.holds: list[str] = []
         # each tuple's item terms, read once as the tuple is reached
         self.tuples: dict[int, tuple[str, ...]] = {}
         # the lists the path reads, which read parts by name and define what they write once
         self.lists = lists
         lists.named, lists.type_of, lists.definitions = self._named, self.type_of, self.definitions
-        lists.constant, lists.hold_fact = self._constant, self._hold_fact
+        lists.constant, lists.hold_fact = self._number_constant, self._hold_fact
         self.dicts.named, self.dicts.type_of = self._named, self.type_of
         self.forms = forms(order)
         for node in order:
@@ -189,8 +167,10 @@ class _Program:
             self.terms[id(node)] = self._written(node, define=define)
 
     def assertion(self, fork: Branch) -> str:
-        """The condition as the run met it: the side it took decides the negation."""
-        condition = self.term(fork.expression)
+        """The condition as the run met it: the side it took decides the negation. A bool read
+        an ask gives another kind is tested for truth, as Python tests that kind."""
+        kind = self.type_of(fork.expression)
+        condition = floats.truth(self.term(fork.expression), kind)
         return f"(assert {condition})" if fork.taken else f"(assert (not {condition}))"
 
     def term(self, expression: Expression) -> str:
@@ -227,6 +207,14 @@ class _Program:
         """The constant of the leaf a part is, or None for any other part."""
         name = self.leaves.named(part)
         return None if name is None else self.leaves.constants[name]
+
+    def _number_constant(self, part: Expression) -> str | None:
+        """The constant of the leaf a part is as a list's position or length reads it, with a
+        bool as the Int 1 or 0, as Python reads one there."""
+        constant = self._constant(part)
+        if constant is not None and self.type_of(part) is bool:
+            return f"(ite {constant} 1 0)"
+        return constant
 
     def type_of(self, term: Expression) -> type | None:
         """The type of a term's value, as Python has it, or None when nothing says.
@@ -381,7 +369,7 @@ class _Program:
         """An operation on its operands, as the form, the order or the operator that means it."""
         head, *operands = node
         if not isinstance(head, str):
-            raise ValueError(f"pyct cannot render {head}: nothing encodes it yet")
+            raise UnencodedError(f"pyct cannot render {head}: nothing encodes it yet")
         if (counted := self.lists.counted_compare(node)) is not None:
             return counted
         if (positioned := POSITIONED.get(head)) is not None:

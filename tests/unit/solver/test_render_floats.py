@@ -8,7 +8,8 @@ import pytest
 
 from pyct.core.branch import Branch, Expression
 from pyct.solver.floats import finite, literal, minus, unequal, whole
-from pyct.solver.render import float_leaves, program
+from pyct.solver.held_items import float_leaves
+from pyct.solver.render import program
 from tests.unit.solver.test_render import fork, render
 
 # each compare on doubles as the expression carries it, and the operator the program writes.
