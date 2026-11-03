@@ -167,6 +167,8 @@ def test_a_str_leaf_is_declared_a_string() -> None:
         "(set-logic ALL)",
         "(declare-const |arg.s| String)",
         "(assert (<= (str.len |arg.s|) 1000000))",
+        # the input holds no s, so the first ask holds it to 2 * 0 + 8 characters
+        "(assert (<= (str.len |arg.s|) 8))",
         '(assert (= |arg.s| "abc"))',
         "(check-sat)",
         "(get-value (|arg.s|))",
@@ -293,6 +295,7 @@ def test_a_search_answer_compared_with_an_int_declares_both_leaves() -> None:
         "(declare-const |arg.s| String)",
         "(declare-const |arg.n| Int)",
         "(assert (<= (str.len |arg.s|) 1000000))",
+        "(assert (<= (str.len |arg.s|) 8))",
         '(assert (not (< (str.indexof |arg.s| "x" 0) |arg.n|)))',
         "(check-sat)",
         "(get-value (|arg.s|))",

@@ -132,9 +132,10 @@ def test_a_read_held_to_the_input_s_count_is_asked_again_where_its_own_count_put
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
-    # held to the input's three lines, no fourth is there: unsat; asked again, the third line is
-    # read with no count held, as origin/v2 reads it, and the answer has a fourth
-    assert held == [True, False], held
+    # held to the input's three lines, no fourth is there: unsat, and its core names no size
+    # hold; asked again, the third line is read with no count held, as origin/v2 reads it, and
+    # the answer has a fourth
+    assert held == [True, True, False], held
     assert isinstance(answer, Sat), answer
     assert str(apply(seed, answer.model).args["s"]).splitlines()[2] == "end"
 
@@ -398,9 +399,10 @@ def test_a_piece_through_a_slice_held_to_c_star_is_asked_again_at_the_input_s_co
 
     answer = solve(path, seed.leaves, 10.0, seed.lists, seed.values)
 
-    # held to the input's three pieces, no fourth is there: unsat; asked again, the slice
-    # starts where the input's own three put it, at the second piece, with no count held
-    assert held == [True, False], held
+    # held to the input's three pieces, no fourth is there: unsat, and its core names no size
+    # hold; asked again, the slice starts where the input's own three put it, at the second
+    # piece, with no count held
+    assert held == [True, True, False], held
     assert isinstance(answer, Sat), answer
     pieces = str(apply(seed, answer.model).args["s"]).split(",")
     assert pieces[1] == "x" and pieces[3] == "z", pieces

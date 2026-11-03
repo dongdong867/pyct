@@ -347,12 +347,13 @@ def test_a_float_a_dict_declares_is_freed_by_a_core_that_names_it() -> None:
 def test_a_mixed_list_held_to_its_length_is_asked_free_after_an_unsat(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    fake_cvc5(tmp_path, "unsat\n", 'sat\n((|arg.xs.len| 1))\n(error "none")\n')
+    # the first ask holds the list's length small too, so its unsat asks for the core first
+    fake_cvc5(tmp_path, "unsat\n", "unsat\n(\n)\n", 'sat\n((|arg.xs.len| 1))\n(error "none")\n')
     monkeypatch.setenv("PATH", str(tmp_path))
     shapes = {"xs": ListShape(("int", "float"))}
 
     solve((fork(["==", ["len", "xs"], 1], taken=True),), {}, 5.0, shapes)
 
-    first, second = (tmp_path / "program0").read_text(), (tmp_path / "program1").read_text()
+    first, _, freed = asked(tmp_path)
     assert "(assert (>= |arg.xs.len| 2))" in first
-    assert "(assert (>= |arg.xs.len| 2))" not in second
+    assert "(assert (>= |arg.xs.len| 2))" not in freed
