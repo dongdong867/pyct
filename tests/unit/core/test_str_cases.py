@@ -6,13 +6,13 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.lists import ConcolicList
-from pyct.core.str_operands import plain
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.str_operands import plain
+from pyct.core.strs.strs import ConcolicStr
 
 # a character past the last one cvc5 holds
 PAST_CVC5 = "\U00030000"

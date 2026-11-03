@@ -6,11 +6,11 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
 
 # a probe whose text is fixed here, so the line and column of a fork are exact
 PROBE_SITE = Site(file="<probe>", line=2, col=11)

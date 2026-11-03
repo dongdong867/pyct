@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.answer import Error, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.floats import QUOTIENT_BOUND, finite, floor_division, from_int, literal

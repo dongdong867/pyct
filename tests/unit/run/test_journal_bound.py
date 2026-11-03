@@ -2,7 +2,7 @@
 line ends `too_long` with the facts before it, while a fact pyct cannot encode stays pyct's.
 """
 
-from pyct.core.branch import Branch, Fact, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.run.journal import END_ROOM, RECORDS, JournalWriter
 from pyct.run.journal_reader import read

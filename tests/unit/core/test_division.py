@@ -4,9 +4,9 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import Branch, SinkItem, Site
-from pyct.core.ints import ConcolicInt
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Branch, SinkItem, Site
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.ints import ConcolicInt
 
 # a division by a constant: the call, and the node it builds. Nothing here can be zero,
 # so none of them forks

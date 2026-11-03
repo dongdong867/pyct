@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 import pyct
-from pyct.core import branch as core_branch
-from pyct.core.branch import Branch, BranchSink, Downgrade, SinkItem, Site, caller_site
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation import branch as core_branch
+from pyct.core.foundation.branch import Branch, BranchSink, Downgrade, SinkItem, Site, caller_site
+from pyct.core.numbers.ints import ConcolicInt
 
 # a probe whose text is fixed here, so the file, line and column asserted below are exact
 PROBE = "def probe(site_of):\n    return site_of()\n"

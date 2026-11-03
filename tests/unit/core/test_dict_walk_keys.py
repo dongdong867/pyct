@@ -6,13 +6,15 @@ from typing import Any
 
 import pytest
 
-from pyct.core import bound, dict_walk_keys, escapes
-from pyct.core.bound import BOUND
-from pyct.core.branch import Downgrade, Fact, SinkItem, Site
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.dicts import dict_walk_keys
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.entry import bound
+from pyct.core.entry.bound import BOUND
+from pyct.core.foundation import escapes
+from pyct.core.foundation.branch import Downgrade, Fact, SinkItem, Site
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from pyct.intercept.compiled import substituted_code
 from tests.unit.core.test_dicts import decided, downgrades, forks, tracked
 

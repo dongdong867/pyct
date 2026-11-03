@@ -9,9 +9,9 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 class _Holder:

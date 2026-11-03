@@ -3,8 +3,8 @@ copy a change made stale, a key Python shares, and a popitem beside a tracked ch
 
 import json
 
-from pyct.core.branch import Branch, Expression, Fact
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Branch, Expression, Fact
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_dicts import (
     decided,
     downgrades,

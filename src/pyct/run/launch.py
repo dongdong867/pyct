@@ -48,7 +48,7 @@ from collections.abc import Callable, Generator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import NoReturn
 
-from pyct.core.branch import PYCT_ROOT
+from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.run.child import flush_streams
 from pyct.run.guard import guard
 from pyct.run.import_watch import ImportWatch

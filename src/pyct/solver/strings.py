@@ -39,7 +39,7 @@ multiple of it.
 
 import re
 
-from pyct.core.str_operands import LAST_CHARACTER
+from pyct.core.strs.str_operands import LAST_CHARACTER
 from pyct.solver.unencoded import UnencodedError
 
 # the printable ASCII characters, space to tilde: each is written as itself, but for the double

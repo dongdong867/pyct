@@ -4,10 +4,10 @@ answer with the operand written as its plain text."""
 
 import json
 
-from pyct.core.branch import SinkItem
-from pyct.core.str_joins import joined
-from pyct.core.str_operands import literal, within_cvc5
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.strs.str_joins import joined
+from pyct.core.strs.str_operands import literal, within_cvc5
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_substitutes import expressions
 
 

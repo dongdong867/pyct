@@ -7,7 +7,7 @@ with every pass of the loop that built it; walked by identity, each list is
 met once.
 """
 
-from pyct.core.branch import Branch, Expression, IsLeaf
+from pyct.core.foundation.branch import Branch, Expression, IsLeaf
 
 # a list of the path, as the walk meets it
 type Node = list[Expression]

@@ -6,14 +6,14 @@ from typing import Any
 
 import pytest
 
-from pyct.core import bound
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_reads import handed
-from pyct.core.list_state import plain
-from pyct.core.lists import ConcolicList
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import bound
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, Fact, SinkItem
+from pyct.core.lists.list_reads import handed
+from pyct.core.lists.list_state import plain
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def tracked(values: list[Any], name: str = "items") -> tuple[Any, list[SinkItem]]:

@@ -6,12 +6,14 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import numbers, str_cases, str_repeats, str_splits, str_walks, strs, texts, values
-from pyct.core import walk_key_escapes as compares
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.foundation import values
+from pyct.core.foundation import walk_key_escapes as compares
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers import numbers, texts
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.strs import str_cases, str_repeats, str_splits, str_walks, strs
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the taught compares: the call, and the answer str's own gives for s = "abc"

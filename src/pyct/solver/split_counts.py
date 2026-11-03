@@ -13,8 +13,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 
-from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LISTED_SPLITS, WORKED_METHODS, a_split_s_list
+from pyct.core.foundation.branch import Branch, Expression
+from pyct.core.strs.str_splits import LISTED_SPLITS, WORKED_METHODS, a_split_s_list
 from pyct.solver.list_terms import FALSE, SUM_DEPTH, TRUE, both, negated
 from pyct.solver.literals import plain_operand
 

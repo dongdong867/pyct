@@ -19,7 +19,7 @@ from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 
-from pyct.core.branch import Branch, Fact, ForkSite, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 from pyct.results.blocks import owners
 from pyct.results.coverage import compiled
 from pyct.results.graphs import OutOfTimeError, Pace, UnaffordableError

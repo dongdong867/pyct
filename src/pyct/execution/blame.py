@@ -9,9 +9,9 @@ import types
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 
-from pyct.core.branch import PYCT_DIR
-from pyct.core.substitutes import PASSING
-from pyct.core.values import raised_by_target
+from pyct.core.entry.substitutes import PASSING
+from pyct.core.foundation.branch import PYCT_DIR
+from pyct.core.foundation.values import raised_by_target
 from pyct.results.failure import Failure, FailureKind
 
 # the most frames pyct's own code runs on top of the target's for one operation, a fork written to

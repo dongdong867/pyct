@@ -19,7 +19,7 @@ and a split on whitespace splits where Python does too (`WORD_SPACE`), though
 
 from collections.abc import Callable, Mapping
 
-from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
+from pyct.core.strs.str_splits import LONGEST_WALK, overlaps_itself
 from pyct.solver.checks import SPACE, Ranges, one_of, outside
 from pyct.solver.strings import encode, length
 

@@ -4,13 +4,13 @@ import heapq
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_forms import UNWRITTEN, displayed, written
-from pyct.core.list_state import is_read, kind_of
-from pyct.core.lists import ConcolicList
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.lists.list_forms import UNWRITTEN, displayed, written
+from pyct.core.lists.list_state import is_read, kind_of
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_list_reads import decided, downgrades, forks, tracked
 
 

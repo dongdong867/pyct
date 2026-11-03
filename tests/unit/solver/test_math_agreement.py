@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.floats import literal

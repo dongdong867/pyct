@@ -4,7 +4,7 @@ runs as pyct did."""
 import subprocess
 from pathlib import Path
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.given import Given, answered, taking, took, write

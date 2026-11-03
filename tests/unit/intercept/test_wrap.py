@@ -7,7 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 
-from pyct.core import bound
+from pyct.core.entry import bound
 from pyct.intercept import wrap
 from pyct.intercept.wrap import LiveBuiltins
 

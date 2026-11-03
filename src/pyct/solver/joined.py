@@ -13,7 +13,7 @@ changes.
 
 from dataclasses import replace
 
-from pyct.core.branch import Branch, Expression, IsLeaf
+from pyct.core.foundation.branch import Branch, Expression, IsLeaf
 from pyct.solver.dag import Node, distinct
 from pyct.solver.splits import SPLITS
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import ForkSite, Site
+from pyct.core.foundation.branch import ForkSite, Site
 from pyct.results.way import Flow, Fork
 from pyct.results.why import Condition, Reason, Tries, Walked, WhyEntry
 from tests.unit.results.test_why import fork, module, why

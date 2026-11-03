@@ -16,7 +16,7 @@ held to one character outright, which cvc5 reads fastest.
 
 from collections.abc import Callable, Hashable, Iterable
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.dag import Node
 
 # what tells one string from another here: a leaf's name, or the id of the part that writes it

@@ -8,14 +8,14 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core import bound as bound_module
-from pyct.core import ranges
-from pyct.core.bools import ConcolicBool
-from pyct.core.bound import BOUND, CALLED
-from pyct.core.branch import Branch, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import bound as bound_module
+from pyct.core.entry.bound import BOUND, CALLED
+from pyct.core.foundation.branch import Branch, SinkItem
+from pyct.core.lists import ranges
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_bases import tracked_values
 
 len_, ord_, chr_ = (BOUND[name][1] for name in ("len", "ord", "chr"))
@@ -154,7 +154,11 @@ def test_a_bound_builtin_looks_like_python_s_own(name: str) -> None:
     python, bound = BOUND[name]
 
     # its module is its own, so pickle finds it by name as it finds Python's
-    assert (bound.__name__, bound.__qualname__, bound.__module__) == (name, name, "pyct.core.bound")
+    assert (bound.__name__, bound.__qualname__, bound.__module__) == (
+        name,
+        name,
+        "pyct.core.entry.bound",
+    )
     assert getattr(bound_module, name) is bound
     assert bound.__doc__ == python.__doc__
     text_signature = "__text_signature__"
@@ -269,7 +273,7 @@ def test_the_index_router_keeps_a_tracked_int_and_reads_a_tracked_bool_as_int_do
 
 
 def test_the_index_router_looks_and_pickles_like_python_s_own() -> None:
-    assert (index_.__name__, index_.__module__) == ("index", "pyct.core.bound")
+    assert (index_.__name__, index_.__module__) == ("index", "pyct.core.entry.bound")
     assert index_.__doc__ == operator.index.__doc__
     assert inspect.signature(index_) == inspect.signature(operator.index)
     assert pickle.loads(pickle.dumps(index_)) is index_

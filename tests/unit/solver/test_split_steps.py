@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, SinkItem
-from pyct.core.str_steps import last_word, next_word, word_end, word_start
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Branch, Expression, SinkItem
+from pyct.core.strs.str_steps import last_word, next_word, word_end, word_start
+from pyct.core.strs.strs import ConcolicStr
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.splits import named_classes

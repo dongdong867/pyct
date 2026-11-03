@@ -8,14 +8,14 @@ from typing import TypeGuard
 from pyct.binding.annotations import Check, Items, int_keys
 from pyct.binding.shapes import DictShape, ListShape, dict_shaped, shaped
 from pyct.binding.walk import Place, Walk
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Expression
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import kinds_of
-from pyct.core.lists import ConcolicList
-from pyct.core.strs import ConcolicStr
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.branch import BranchSink, Expression
+from pyct.core.lists.list_state import kinds_of
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def bind(

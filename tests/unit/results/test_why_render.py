@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyct.core.branch import Site
+from pyct.core.foundation.branch import Site
 from pyct.results.why import Condition, Reason, Tries, WhyEntry
 from pyct.results.why_render import why_json, why_line
 

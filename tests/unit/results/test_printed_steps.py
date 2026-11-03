@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.results.printed import COUNTING_STEPS, printed_forks
 from tests.unit.results.test_line_budget import _countdown
 from tests.unit.results.test_printed import (

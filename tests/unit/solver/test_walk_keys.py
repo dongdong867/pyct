@@ -10,7 +10,7 @@ from pyct.binding.annotations import check_of
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.shapes import DictAnswer, DictShape, rekeyed
-from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.solver import cvc5, walk_keys
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve

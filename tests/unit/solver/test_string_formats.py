@@ -3,7 +3,7 @@ with cvc5 held against Python's own `%`."""
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.str_formats import concatenated, is_format
 from pyct.solver.str_joins import expanded
 from tests.unit.solver.agreement import needs_cvc5

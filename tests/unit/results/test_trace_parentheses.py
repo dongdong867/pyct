@@ -4,7 +4,7 @@ import ast
 import json
 import random
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.record import InputRecord
 from pyct.results.trace import render_trace

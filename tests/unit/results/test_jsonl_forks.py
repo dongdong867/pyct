@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render

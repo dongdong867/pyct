@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from pyct.binding.bind import leaf_name
 from pyct.binding.shapes import MADE_UP
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.heads import SORTS
 from pyct.solver.list_kinds import ITEM_TYPES
 from pyct.solver.list_reader import ProgramTooLargeError

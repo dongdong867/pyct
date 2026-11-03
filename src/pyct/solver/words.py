@@ -1,7 +1,7 @@
 """The edges of the words a split by whitespace finds, for a split built by steps.
 
 Core builds ``split()`` and ``rsplit()`` of a string the solver cannot work
-out one word at a time (``core/str_steps.py``), each step a position:
+out one word at a time (``core/strs/str_steps.py``), each step a position:
 
 - ``["nextword", s, i]``: the first character at or past i that is not
   whitespace, -1 where none is;

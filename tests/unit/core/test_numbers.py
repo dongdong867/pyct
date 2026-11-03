@@ -6,11 +6,11 @@ import textwrap
 
 import pytest
 
-from pyct.core import numbers
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import BranchSink, Expression, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation.branch import BranchSink, Expression, SinkItem
+from pyct.core.numbers import numbers
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
 
 
 class Tracked(int):
@@ -156,13 +156,13 @@ def test_an_operand_reads_as_a_number_does() -> None:
 # the table is read from the numbers module alone, in an interpreter that imported nothing else
 TABLE_ALONE = textwrap.dedent(
     """
-    from pyct.core.numbers import tracked
+    from pyct.core.numbers.numbers import tracked
 
     kinds = [type(tracked(value, "x", [])) for value in (1, True, 1.5)]
 
-    from pyct.core.bools import ConcolicBool
-    from pyct.core.floats import ConcolicFloat
-    from pyct.core.ints import ConcolicInt
+    from pyct.core.numbers.bools import ConcolicBool
+    from pyct.core.numbers.floats import ConcolicFloat
+    from pyct.core.numbers.ints import ConcolicInt
 
     print(kinds == [ConcolicInt, ConcolicBool, ConcolicFloat])
     """

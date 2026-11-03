@@ -2,10 +2,10 @@ import functools
 import sys
 from collections.abc import Mapping
 
-from pyct.core import escapes
-from pyct.core.branch import Branch, Downgrade, Fact, Site
-from pyct.core.dicts import ConcolicDict
-from pyct.core.lists import ConcolicList
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation import escapes
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, Site
+from pyct.core.lists.lists import ConcolicList
 from pyct.execution.tally import Tally
 from pyct.results.record import DowngradeCount
 from tests.unit.core.test_dict_walk_keys import in_the_target

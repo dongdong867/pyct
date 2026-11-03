@@ -88,7 +88,7 @@ import struct
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.results.failure import Failure
 
 # the most bytes one input's journal holds. Mapped lazily: an input pays for what it writes

@@ -5,9 +5,9 @@ from typing import Any
 
 import pytest
 
-from pyct.core import substitutes
-from pyct.core.branch import Branch, Fact, SinkItem
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import substitutes
+from pyct.core.foundation.branch import Branch, Fact, SinkItem
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_dicts import tracked as tracked_dict
 from tests.unit.core.test_list_reads import tracked
 

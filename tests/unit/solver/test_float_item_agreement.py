@@ -23,7 +23,14 @@ import pytest
 from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
 from pyct.branches.compare import compare
-from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem, as_the_code_read_it
+from pyct.core.foundation.branch import (
+    Branch,
+    Downgrade,
+    Expression,
+    Fact,
+    SinkItem,
+    as_the_code_read_it,
+)
 from pyct.solver.answer import Answer, Error, Sat, Unsat
 from pyct.solver.cvc5 import solve
 from tests.unit.solver.agreement import needs_cvc5

@@ -9,7 +9,7 @@ operation SMT-LIB has no operator for by the form in `FORMS`, a piece by
 from collections import ChainMap
 from collections.abc import Callable, Iterable, Mapping
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver import floats, numerals
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
@@ -255,7 +255,7 @@ BESIDE_A_SPLIT: Mapping[tuple[str, type], Callable[..., str]] = {
 }
 
 # the positions a split built by steps cuts its pieces at, by head: a search's answer, or a
-# word's edge (`core/str_steps.py`)
+# word's edge (`core/strs/str_steps.py`)
 _STEP_BOUNDS = frozenset({"find", "rfind", *WORD_EDGES})
 
 

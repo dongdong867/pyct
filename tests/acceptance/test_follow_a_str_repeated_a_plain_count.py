@@ -9,7 +9,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.str_repeats import MOST_COPIES
+from pyct.core.strs.str_repeats import MOST_COPIES
 from targets.strs import repeats
 from tests.acceptance.harness import REPO_ROOT, input_lines, run_pyct
 from tests.acceptance.test_fork_on_a_split_s_count_before_it_unpacks import (

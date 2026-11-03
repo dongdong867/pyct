@@ -2,8 +2,9 @@ import sys
 
 import pytest
 
-from pyct.core import ints, numbers, texts, values, walk_key_escapes
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation import values, walk_key_escapes
+from pyct.core.numbers import ints, numbers, texts
+from pyct.core.numbers.ints import ConcolicInt
 from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicInt leaves to int, written out because the derivation reads the same

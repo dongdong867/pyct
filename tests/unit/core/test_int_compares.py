@@ -4,9 +4,9 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
 
 # the six taught comparisons: the call, and the answer int's own gives for x = 3
 TAUGHT_COMPARES: dict[str, tuple[Callable[[int], object], bool]] = {

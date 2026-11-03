@@ -4,14 +4,14 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import bound
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.ranges import ConcolicRange
-from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import PASSING, call, in_, is_, is_not, method, not_in, truth
+from pyct.core.entry import bound
+from pyct.core.entry.substitutes import PASSING, call, in_, is_, is_not, method, not_in, truth
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.lists.ranges import ConcolicRange
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def expressions(sink: list[SinkItem]) -> list[object]:

@@ -6,7 +6,7 @@ module's own dict when the module runs without one. The loader hands every
 module of the package one `LiveBuiltins` instead, made once, as Python
 hands every module the one dict of ``builtins``. It answers every name
 with what ``builtins`` holds when the name is looked up, but for the three
-names `pyct.core.bound.BOUND` names: while ``builtins`` holds
+names `pyct.core.entry.bound.BOUND` names: while ``builtins`` holds
 Python's own under one of them, the module finds pyct's. So every call that
 finds the name in the module reaches pyct's, a direct call, one in a method
 or a nested function, and a function the module hands on, as in
@@ -38,7 +38,7 @@ import copy
 import functools
 from collections.abc import ItemsView, Iterable, Iterator, KeysView, ValuesView
 
-from pyct.core.bound import BOUND
+from pyct.core.entry.bound import BOUND
 
 _BUILTINS = vars(builtins)
 # dict's own, held here: a write may clear ``builtins``, and these must still run after it

@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.list_terms import Lin
 from pyct.solver.split_counts import windowed, windows_past
 from pyct.solver.split_lists import UnknownCountError

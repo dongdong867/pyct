@@ -11,7 +11,7 @@ from collections.abc import Callable, Generator
 
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount
 from pyct.run import process

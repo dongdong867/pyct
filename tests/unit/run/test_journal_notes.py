@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.run.journal import FORK, HEAD, RECORDS, JournalWriter
 from pyct.run.journal_reader import read
 

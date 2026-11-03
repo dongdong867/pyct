@@ -4,7 +4,7 @@ import json
 import random
 import time
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Answer, Sat
 from pyct.solver.cvc5 import solve
 from pyct.solver.joined import joined

@@ -11,7 +11,7 @@ from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
 from pyct.binding.shapes import ArrayValue, ListShape
-from pyct.core.branch import Branch, Expression, SinkItem, Site
+from pyct.core.foundation.branch import Branch, Expression, SinkItem, Site
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Sat, SolverAnswerError, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve

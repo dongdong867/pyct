@@ -17,7 +17,7 @@ rewrite of the next paper is `pyct.rewrite`, which may hand its source to
 the same loader.
 
 Substituted code calls pyct through dunder names it binds in the module,
-one per function of `pyct.core.substitutes`, such as ``__pyct_in__``,
+one per function of `pyct.core.entry.substitutes`, such as ``__pyct_in__``,
 ``__pyct_call__`` and ``__pyct_handed__``, importing those it calls, and each
 class body declares them global. The names are reserved for pyct: a target
 module of the package that binds one of them itself changes what its

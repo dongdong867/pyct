@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 
 from pyct.binding.bind import access_name
 from pyct.binding.shapes import DictShape, ListAnswer, ListShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.dag import Node
 from pyct.solver.dict_answers import dict_answers

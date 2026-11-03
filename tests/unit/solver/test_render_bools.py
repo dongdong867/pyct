@@ -7,7 +7,7 @@ import pytest
 
 from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
-from pyct.core.branch import Branch, Expression, SinkItem, Site
+from pyct.core.foundation.branch import Branch, Expression, SinkItem, Site
 from pyct.solver.cvc5 import Sat, Unsat, solve
 from tests.unit.solver.test_render import render
 from tests.unit.solver.test_render_types import BOOL_TERMS, TYPED_LEAVES, _head

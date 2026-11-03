@@ -3,8 +3,8 @@ watch of none, and its ending is `too_long`, while its lines and downgrades stil
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import Branch, Downgrade, Fact, Site
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, Site
 from pyct.execution import tally
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.execution.tally import Tally

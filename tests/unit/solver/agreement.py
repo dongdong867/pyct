@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable, Mapping
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver import floats
 from pyct.solver.answer import Answer, Sat, Unsat
 from pyct.solver.strings import decode

@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Downgrade, Expression
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import plain
+from pyct.core.foundation.branch import Branch, Downgrade, Expression
+from pyct.core.lists.list_state import plain
+from pyct.core.numbers.ints import ConcolicInt
 from tests.unit.core.python_forms import evaluate
 from tests.unit.core.test_list_reads import downgrades, forks, tracked, values
 

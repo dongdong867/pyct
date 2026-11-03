@@ -6,7 +6,7 @@ import ast
 import types
 from typing import cast
 
-from pyct.core.values import own
+from pyct.core.foundation.values import own
 from pyct.intercept.substitute import substitute
 
 

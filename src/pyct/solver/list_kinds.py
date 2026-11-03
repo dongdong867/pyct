@@ -17,8 +17,8 @@ from dataclasses import dataclass
 from typing import TypeGuard
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import READ_HEADS, Expression
-from pyct.core.str_splits import LISTED_SPLITS
+from pyct.core.foundation.branch import READ_HEADS, Expression
+from pyct.core.strs.str_splits import LISTED_SPLITS
 from pyct.solver.words import WORD_EDGES
 
 # the sort of the items of each kind a read takes, and the type render gives such a read

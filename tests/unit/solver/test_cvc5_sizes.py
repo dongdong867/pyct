@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from pyct.binding.shapes import DictAnswer, DictShape, ListAnswer, ListShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.answer_size import MOST_ITEMS
 from pyct.solver.cvc5 import solve

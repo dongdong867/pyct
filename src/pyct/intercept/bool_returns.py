@@ -6,7 +6,7 @@ int, since bool cannot be subclassed, so a method that returns one, as
 raises where plain Python runs. In a function named `__bool__` written
 directly in a class body, each `return` of the function's own scope hands
 its value to pyct: ``return __pyct_truth__(value)``
-(`pyct.core.substitutes.truth`). A `return` in a function or class nested
+(`pyct.core.entry.substitutes.truth`). A `return` in a function or class nested
 in the method stays as written, and a lambda there has none; the method's
 own `return` still hands over what they give back. A bare `return`, and a
 value CPython folds to a constant, which is never tracked, stay as written.

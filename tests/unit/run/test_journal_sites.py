@@ -2,7 +2,7 @@
 
 import sys
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.results.record import DowngradeCount
 from pyct.run.journal import JournalWriter
 from pyct.run.journal_reader import read

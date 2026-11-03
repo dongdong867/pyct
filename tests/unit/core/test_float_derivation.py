@@ -5,9 +5,10 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import floats, numbers, values
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.floats import ConcolicFloat
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.numbers import floats, numbers
+from pyct.core.numbers.floats import ConcolicFloat
 from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicFloat leaves to float, written out because the derivation reads the

@@ -6,10 +6,10 @@ from typing import Any
 import pytest
 
 from pyct.binding.bind import bind
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, Expression, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.list_state import plain
+from pyct.core.foundation.branch import Downgrade, Expression, SinkItem
+from pyct.core.lists.list_state import plain
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
 
 
 @pytest.mark.parametrize(("value", "kind"), [(0.5, ConcolicFloat), (True, ConcolicBool)])

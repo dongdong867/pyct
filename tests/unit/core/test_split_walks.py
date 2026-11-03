@@ -7,12 +7,12 @@ from typing import Any
 
 import pytest
 
-from pyct.core import substitutes
-from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_changes import takes_another
-from pyct.core.str_splits import a_split_s_list, worked_out
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import substitutes
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, Fact, SinkItem
+from pyct.core.lists.list_changes import takes_another
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.str_splits import a_split_s_list, worked_out
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_list_reads import tracked
 
 

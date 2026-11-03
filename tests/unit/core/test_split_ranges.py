@@ -6,11 +6,11 @@ from typing import Any
 
 import pytest
 
-from pyct.core import bound
-from pyct.core.branch import Branch, Fact, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.spans import UNKNOWN
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import bound
+from pyct.core.foundation.branch import Branch, Fact, SinkItem
+from pyct.core.foundation.spans import UNKNOWN
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_list_reads import tracked
 
 # strings with no piece, one piece and many, by each separator and by whitespace and line ends

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Branch, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount

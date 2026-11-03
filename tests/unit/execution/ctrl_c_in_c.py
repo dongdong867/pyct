@@ -17,7 +17,7 @@ import subprocess
 import time
 from collections.abc import Callable
 
-from pyct.core.branch import PYCT_DIR
+from pyct.core.foundation.branch import PYCT_DIR
 from pyct.execution.execute import ExecutionContext, execute
 from tests.acceptance.harness import REPO_ROOT
 

@@ -7,9 +7,9 @@ from typing import Any
 import pytest
 
 from pyct.binding.bind import bind
-from pyct.core.branch import SinkItem
-from pyct.core.list_compares import matches
-from pyct.core.list_state import plain
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.lists.list_compares import matches
+from pyct.core.lists.list_state import plain
 from tests.unit.core.test_list_floats_and_bools import bound, downgrades, forks
 
 

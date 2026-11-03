@@ -12,11 +12,11 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.values import converted, raised_by_target
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.foundation.values import converted, raised_by_target
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
 
 # the names that hand back the value itself, on an int and on the bool that is an int
 ITSELF: dict[str, Callable[[int], object]] = {

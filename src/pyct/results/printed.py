@@ -30,7 +30,7 @@ from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from pyct.core.branch import Branch, Expression, IsLeaf
+from pyct.core.foundation.branch import Branch, Expression, IsLeaf
 
 # the most nodes a printed expression holds, as the line writes them
 LIMIT = 1000

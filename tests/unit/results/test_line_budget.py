@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.printed import CUT, LIMIT, LINE_LIMIT, printed, printed_forks
 from pyct.results.record import InputRecord

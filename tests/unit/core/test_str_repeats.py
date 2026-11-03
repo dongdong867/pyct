@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.str_repeats import MOST_COPIES
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.str_repeats import MOST_COPIES
+from pyct.core.strs.strs import ConcolicStr
 
 
 def _s(value: str, sink: list[SinkItem]) -> ConcolicStr:

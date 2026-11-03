@@ -8,7 +8,7 @@ from collections.abc import Callable, Mapping
 
 import pytest
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver import strings
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cvc5 import solve

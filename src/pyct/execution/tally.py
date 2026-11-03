@@ -11,8 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
-from pyct.core import escapes
-from pyct.core.branch import Branch, Downgrade, Fact, SinkItem, Site
+from pyct.core.foundation import escapes
+from pyct.core.foundation.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount

@@ -11,12 +11,12 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import ranges
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem, Site
-from pyct.core.ints import ConcolicInt
-from pyct.core.ranges import ConcolicRange
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, SinkItem, Site
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists import ranges
+from pyct.core.lists.ranges import ConcolicRange
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
 
 # a probe whose text is fixed here, so the line and column of each fork are exact
 PROBE = """\

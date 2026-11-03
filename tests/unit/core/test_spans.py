@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-from pyct.core.branch import Branch, Fact, SinkItem
-from pyct.core.spans import (
+from pyct.core.foundation.branch import Branch, Fact, SinkItem
+from pyct.core.foundation.spans import (
     UNKNOWN,
     Span,
     added,

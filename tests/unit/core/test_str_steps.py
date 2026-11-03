@@ -10,13 +10,13 @@ from typing import Any
 import pytest
 
 from pyct.binding.bind import bind
-from pyct.core.bools import ConcolicBool
-from pyct.core.bound import len as tracked_len
-from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.str_lengths import length
-from pyct.core.str_steps import last_word, next_word, word_end, word_start
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry.bound import len as tracked_len
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, Fact, SinkItem
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.str_lengths import length
+from pyct.core.strs.str_steps import last_word, next_word, word_end, word_start
+from pyct.core.strs.strs import ConcolicStr
 from pyct.intercept.compiled import substituted_code
 from pyct.intercept.wrap import bound_builtins
 

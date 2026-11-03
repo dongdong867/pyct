@@ -2,7 +2,7 @@
 
 Core writes ``fmt % operand`` on a plain format as ``["%", fmt, operand]``: ``fmt`` the format as
 repr writes it, and ``operand`` the one operand or a tuple of them, ``["()", ...]``
-(`pyct.core.str_formats`). Each conversion of a tracked operand is `%s`, whose text is the text
+(`pyct.core.strs.str_formats`). Each conversion of a tracked operand is `%s`, whose text is the text
 `str` writes, or `%d` or `%i`, whose text is the text `str` writes for the int; each plain
 operand is an int, a bool or a str literal, whose text Python writes here, and the format's own
 text stands between them. The condition means what it meant; only the way it is written
@@ -11,8 +11,8 @@ changes.
 
 import ast
 
-from pyct.core.branch import Expression
-from pyct.core.str_formats import Spec, tokens
+from pyct.core.foundation.branch import Expression
+from pyct.core.strs.str_formats import Spec, tokens
 
 # the head core writes for a format
 FORMAT = "%"

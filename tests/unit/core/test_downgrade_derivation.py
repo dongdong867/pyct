@@ -5,9 +5,9 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import BranchSink, Downgrade, SinkItem
-from pyct.core.values import raised_by_target
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import BranchSink, Downgrade, SinkItem
+from pyct.core.foundation.values import raised_by_target
 
 
 class StandIn:
@@ -201,10 +201,10 @@ STAND_IN_ALONE = textwrap.dedent(
     core = types.ModuleType("pyct.core")
     core.__path__ = [f"{pyct.__path__[0]}/core"]
     sys.modules["pyct.core"] = core
-    for name in ("ints", "bools", "strs", "numbers"):
+    for name in ("numbers.ints", "numbers.bools", "strs.strs", "numbers.numbers"):
         sys.modules[f"pyct.core.{name}"] = None
 
-    from pyct.core.values import downgrade_the_rest
+    from pyct.core.foundation.values import downgrade_the_rest
 
 
     class StandIn:

@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.letters import furthest_reads
 
 

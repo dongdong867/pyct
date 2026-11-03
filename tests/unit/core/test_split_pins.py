@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, SinkItem
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 SPLIT: Expression = ["split", "s", "','"]
 

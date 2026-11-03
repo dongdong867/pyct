@@ -8,17 +8,17 @@ from typing import Any
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
-from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.handed import handed
-from pyct.core.ints import ConcolicInt
-from pyct.core.lists import ConcolicList
-from pyct.core.ranges import ConcolicRange, ranged
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import BASES, BASES_BY_ID, raised_by_target
+from pyct.core.dicts.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.entry.handed import handed
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.foundation.values import BASES, BASES_BY_ID, raised_by_target
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.lists.ranges import ConcolicRange, ranged
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def tracked_values(sink: list[SinkItem]) -> list[tuple[object, type]]:

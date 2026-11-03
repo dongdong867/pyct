@@ -9,11 +9,11 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 # one call per untaught operation, a spread of them wide enough to stand for the whole list
 DOWNGRADED_CALLS: dict[str, Callable[[int], object]] = {

@@ -8,8 +8,8 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.core.branch import Expression
-from pyct.core.str_splits import LONGEST_WALK, overlaps_itself
+from pyct.core.foundation.branch import Expression
+from pyct.core.strs.str_splits import LONGEST_WALK, overlaps_itself
 from pyct.solver.answer import Sat, Unknown
 from pyct.solver.cvc5 import solve
 from pyct.solver.list_terms import FALSE, TRUE, Lin, compare

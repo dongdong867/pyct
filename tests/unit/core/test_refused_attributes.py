@@ -10,18 +10,18 @@ from pathlib import Path
 import pytest
 
 import pyct
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
-from pyct.core.dict_state import DictState
-from pyct.core.dict_views import _View
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import ListState
-from pyct.core.lists import ConcolicList
-from pyct.core.ranges import ConcolicRange, ranged
-from pyct.core.strs import ConcolicStr, one_character
-from pyct.core.values import raised_by_target
+from pyct.core.dicts.dict_state import DictState
+from pyct.core.dicts.dict_views import _View
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists.list_state import ListState
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.lists.ranges import ConcolicRange, ranged
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr, one_character
 
 # how each tracked value is built on a sink, beside the plain value Python is asked about, and
 # the field pyct keeps on it that must survive every refusal

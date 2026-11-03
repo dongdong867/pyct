@@ -2,9 +2,10 @@ import sys
 
 import pytest
 
-from pyct.core import bools, numbers, texts, values
-from pyct.core.bools import ConcolicBool
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation import values
+from pyct.core.numbers import bools, numbers, texts
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
 from tests.unit.core.own_scan import without_the_helper, written_in
 
 # the operations ConcolicBool leaves to int, written out because the derivation reads the same

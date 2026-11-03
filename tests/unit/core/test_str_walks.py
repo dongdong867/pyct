@@ -3,8 +3,8 @@ character a tracked str, as indexing hands it out, with no long-enough fork of i
 
 import pytest
 
-from pyct.core.branch import Branch, Downgrade, Expression, SinkItem, Site
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, SinkItem, Site
+from pyct.core.strs.strs import ConcolicStr
 
 # a probe whose text is fixed here, so the line and column of each fork are exact. Each walk
 # gathers what it hands out, so the test reads the characters back

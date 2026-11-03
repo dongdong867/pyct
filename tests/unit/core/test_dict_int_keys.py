@@ -7,11 +7,11 @@ from fractions import Fraction
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade
-from pyct.core.dict_reads import int_key
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
+from pyct.core.dicts.dict_reads import int_key
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.branch import Branch, Downgrade
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
 
 
 class Color(enum.IntEnum):

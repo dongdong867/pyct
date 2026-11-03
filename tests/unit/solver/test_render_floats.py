@@ -6,7 +6,7 @@ from collections.abc import Collection
 
 import pytest
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.floats import finite, literal, minus, unequal, whole
 from pyct.solver.held_items import float_leaves
 from pyct.solver.render import program

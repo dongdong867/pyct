@@ -8,10 +8,10 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.core.bound import len as tracked_len
-from pyct.core.branch import Branch, Expression, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry.bound import len as tracked_len
+from pyct.core.foundation.branch import Branch, Expression, SinkItem
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from pyct.solver.answer import Sat
 from pyct.solver.cvc5 import solve
 from pyct.solver.lists import Origin

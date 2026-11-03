@@ -2,9 +2,9 @@
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, SinkItem, Site
-from pyct.core.substitutes import is_, is_not
+from pyct.core.entry.substitutes import is_, is_not
+from pyct.core.foundation.branch import Branch, SinkItem, Site
+from pyct.core.numbers.bools import ConcolicBool
 
 
 def tracked_bool(value: bool, sink: list[SinkItem]) -> ConcolicBool:

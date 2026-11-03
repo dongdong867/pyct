@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Branch, Fact, ForkSite, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 from pyct.results import record, why
 from pyct.results.coverage import Coverage
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace

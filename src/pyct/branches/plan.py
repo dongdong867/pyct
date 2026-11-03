@@ -3,7 +3,7 @@
 import dataclasses
 from dataclasses import dataclass
 
-from pyct.core.branch import Branch, Fact
+from pyct.core.foundation.branch import Branch, Fact
 from pyct.results.record import Aim
 
 

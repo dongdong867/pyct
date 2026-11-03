@@ -14,7 +14,7 @@ from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 
 # a term that holds, and one that does not
 TRUE, FALSE = "true", "false"

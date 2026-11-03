@@ -4,9 +4,9 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Expression, SinkItem
-from pyct.core.floats import ConcolicFloat
+from pyct.core.foundation.branch import Branch, Expression, SinkItem
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
 
 ABOVE: Expression = [">", "x", 0]
 

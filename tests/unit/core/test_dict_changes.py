@@ -10,15 +10,15 @@ from typing import Any
 
 import pytest
 
-from pyct.core import bound
-from pyct.core.branch import Expression
-from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
-from pyct.core.dicts import ConcolicDict
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import kind_of
-from pyct.core.lists import ConcolicList
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.dicts.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.entry import bound
+from pyct.core.foundation.branch import Expression
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists.list_state import kind_of
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_dicts import decided, downgrades, forks, plain_dict, tracked
 
 

@@ -2,11 +2,12 @@
 
 import pytest
 
-from pyct.core import codes, str_lengths
-from pyct.core.branch import Branch, Expression, SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.entry import codes
+from pyct.core.foundation.branch import Branch, Expression, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs import str_lengths
+from pyct.core.strs.strs import ConcolicStr
 
 
 def sides(sink: list[SinkItem]) -> list[tuple[object, bool]]:

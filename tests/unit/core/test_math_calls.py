@@ -6,13 +6,13 @@ from typing import Any
 
 import pytest
 
-from pyct.core import math_calls, substitutes
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.entry import math_calls, substitutes
+from pyct.core.foundation.branch import Branch, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_substitutes import expressions
 
 

@@ -4,10 +4,10 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
 
 # the six taught comparisons: the call, and the answer float's own gives for x = 2.5
 TAUGHT_COMPARES: dict[str, tuple[Callable[[float], object], bool]] = {

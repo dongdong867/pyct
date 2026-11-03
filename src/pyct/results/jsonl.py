@@ -3,7 +3,7 @@
 import json
 from collections.abc import Mapping
 
-from pyct.core.branch import Branch, Expression, as_the_code_read_it
+from pyct.core.foundation.branch import Branch, Expression, as_the_code_read_it
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.printed import CUT, PrintedForks, printed_forks

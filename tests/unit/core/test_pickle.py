@@ -12,10 +12,10 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 # each concolic type built on a sink: how to make one, and the plain value Python's own holds
 TRACKED: dict[str, tuple[Callable[[list[SinkItem]], object], object]] = {

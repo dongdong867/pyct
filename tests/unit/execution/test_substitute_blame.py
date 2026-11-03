@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import strs
-from pyct.core.substitutes import Searched, in_
+from pyct.core.entry.substitutes import Searched, in_
+from pyct.core.strs import strs
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 

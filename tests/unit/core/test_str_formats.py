@@ -8,14 +8,15 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core import escapes
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.lists import ConcolicList
-from pyct.core.str_formats import (
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation import escapes
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.str_formats import (
     Spec,
     formatted,
     formatter,
@@ -25,8 +26,7 @@ from pyct.core.str_formats import (
     mod,
     tokens,
 )
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_dict_walk_keys import in_the_target
 from tests.unit.core.test_dicts import tracked
 

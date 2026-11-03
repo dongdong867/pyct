@@ -4,7 +4,7 @@ a split's among them, says it holds, with cvc5 held against Python."""
 import pytest
 
 from pyct.binding.bind import Seed
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.str_joins import expanded

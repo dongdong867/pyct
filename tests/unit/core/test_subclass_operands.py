@@ -11,9 +11,9 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
 
 
 def _refuse(*_args: object) -> Any:

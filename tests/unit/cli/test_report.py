@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import pytest
 
 from pyct.cli import _report
-from pyct.core.branch import Branch, Expression, IsLeaf, Site
+from pyct.core.foundation.branch import Branch, Expression, IsLeaf, Site
 from pyct.results.coverage import Coverage
 from pyct.results.jsonl import render
 from pyct.results.printed import PrintedForks, printed_forks

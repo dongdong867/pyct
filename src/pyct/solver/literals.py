@@ -4,7 +4,7 @@ written letter by letter against a literal."""
 
 import ast
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver import floats
 from pyct.solver.heads import STRING_ORDERS
 from pyct.solver.strings import above, below, encode

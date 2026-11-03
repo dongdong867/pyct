@@ -8,8 +8,8 @@ from collections.abc import Callable, ItemsView, KeysView, ValuesView
 
 import pytest
 
-from pyct.core.bound import type_
-from pyct.core.values import raised_by_target
+from pyct.core.entry.bound import type_
+from pyct.core.foundation.values import raised_by_target
 from tests.unit.core.test_dicts import tracked
 
 VIEWS = [("keys", KeysView), ("values", ValuesView), ("items", ItemsView)]

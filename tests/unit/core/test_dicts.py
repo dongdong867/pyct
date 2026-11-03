@@ -10,14 +10,14 @@ from typing import Any
 
 import pytest
 
-from pyct.core import bound
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, Expression, Fact, SinkItem
-from pyct.core.dicts import ConcolicDict
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_state import plain
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.entry import bound
+from pyct.core.foundation.branch import Branch, Downgrade, Expression, Fact, SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.lists.list_state import plain
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.python_forms import evaluate
 
 

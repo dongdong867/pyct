@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.values import raised_by_target
 from pyct.intercept import compiled
 from pyct.intercept.compiled import SubstitutionError, substituted_code
 

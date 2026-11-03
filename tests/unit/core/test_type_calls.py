@@ -4,12 +4,13 @@ import types
 
 import pytest
 
-from pyct.core import bound, ranges, type_calls
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
-from pyct.core.dicts import ConcolicDict
-from pyct.core.ints import ConcolicInt
-from pyct.core.ranges import ConcolicRange
+from pyct.core.dicts.dict_views import ConcolicItems, ConcolicKeys, ConcolicValues
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.entry import bound, type_calls
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.lists import ranges
+from pyct.core.lists.ranges import ConcolicRange
+from pyct.core.numbers.ints import ConcolicInt
 
 EMPTY = (range(0), {}.keys(), {}.values(), {}.items())
 CALLED = (types.WrapperDescriptorType, types.MethodDescriptorType)

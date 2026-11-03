@@ -1,5 +1,5 @@
 from pyct.branches.compare import compare
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 
 
 def fork(line: int, *, taken: bool) -> Branch:

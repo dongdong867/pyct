@@ -8,13 +8,13 @@ from typing import Any
 import pytest
 
 from pyct.binding.bind import bind
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import READ_HEADS, Branch, Downgrade, Expression, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.list_forms import written
-from pyct.core.list_state import kind_of, plain
-from pyct.core.strs import ConcolicStr
+from pyct.core.foundation.branch import READ_HEADS, Branch, Downgrade, Expression, SinkItem
+from pyct.core.lists.list_forms import written
+from pyct.core.lists.list_state import kind_of, plain
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def bound(value: list[Any], name: str = "xs") -> tuple[Any, list[SinkItem]]:

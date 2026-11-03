@@ -38,7 +38,7 @@ import sys
 import types
 from collections.abc import Sequence
 
-from pyct.core.branch import PYCT_DIR
+from pyct.core.foundation.branch import PYCT_DIR
 
 # the folder of pyct's core, whose code runs the target's own operations in its place
 _CORE = f"{PYCT_DIR}core{os.sep}"

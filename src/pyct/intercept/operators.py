@@ -17,7 +17,7 @@ runs as written.
 
 The right side becomes ``__pyct_handed__(b, a)``, the literal, or the name,
 written again after it, and the operator itself stays Python's own
-(`pyct.core.handed`). The right side is the operation's own node, moved into
+(`pyct.core.entry.handed`). The right side is the operation's own node, moved into
 the call, so it is evaluated once and in Python's order; the literal has
 nothing to evaluate, and a name read again is one more lookup of it. The
 router's name, the left side again and the call sit where the left side

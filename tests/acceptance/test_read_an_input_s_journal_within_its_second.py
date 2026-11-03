@@ -23,7 +23,7 @@ import pytest
 
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
-from pyct.core.branch import Branch
+from pyct.core.foundation.branch import Branch
 from pyct.results.failure import Failure, FailureKind
 from pyct.run import isolation
 from pyct.run.isolation import Isolation

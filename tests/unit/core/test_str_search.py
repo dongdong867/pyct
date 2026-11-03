@@ -6,11 +6,11 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Branch, Downgrade, SinkItem, Site
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.foundation.branch import Branch, Downgrade, SinkItem, Site
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 # each taught search on s = "abcb": the call, the expression it carries, and str's own answer
 TAUGHT_SEARCHES: dict[str, tuple[Callable[[str], object], list[object], object]] = {

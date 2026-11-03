@@ -4,7 +4,7 @@ import textwrap
 from collections.abc import Sequence
 from pathlib import Path
 
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.foundation.branch import Branch, ForkSite, Site
 from pyct.results.why import Condition, Reason, Run, Tries, Walked, WhyEntry, explain
 
 

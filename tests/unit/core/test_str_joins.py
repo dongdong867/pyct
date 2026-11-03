@@ -6,11 +6,11 @@ from collections.abc import Callable, Iterator
 
 import pytest
 
-from pyct.core import substitutes
-from pyct.core.branch import SinkItem
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.values import raised_by_target
+from pyct.core.entry import substitutes
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.foundation.values import raised_by_target
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_list_reads import downgrades, forks, tracked
 
 # a character past the last one cvc5 holds

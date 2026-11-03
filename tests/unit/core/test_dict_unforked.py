@@ -9,10 +9,10 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import SinkItem
-from pyct.core.dicts import ConcolicDict
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_dicts import decided, forks, tracked
 
 # each change under a tracked int into a dict whose keys are strs, which pyct answers without a

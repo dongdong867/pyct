@@ -9,12 +9,12 @@ from enum import Enum, IntEnum, StrEnum
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import Searched, in_, not_in
+from pyct.core.entry.substitutes import Searched, in_, not_in
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_substitutes import expressions
 
 

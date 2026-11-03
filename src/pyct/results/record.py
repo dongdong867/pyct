@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from pyct.config.goal import Goal
-from pyct.core.branch import Branch, Fact, ForkSite, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 from pyct.results.coverage import Coverage, Reach
 from pyct.results.failure import Failure
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace

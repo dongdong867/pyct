@@ -41,7 +41,7 @@ import types
 from collections.abc import Callable
 from pathlib import Path
 
-from pyct.core import bound, math_calls, type_calls
+from pyct.core.entry import bound, math_calls, type_calls
 from pyct.intercept import (
     calls,
     compiled,

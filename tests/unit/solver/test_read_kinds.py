@@ -7,7 +7,7 @@ import pytest
 
 from pyct.binding.bind import Seed, bind
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import Branch, Expression, SinkItem, Site
+from pyct.core.foundation.branch import Branch, Expression, SinkItem, Site
 from pyct.solver.answer import Answer, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.origin import Origin

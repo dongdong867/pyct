@@ -27,7 +27,7 @@ import struct
 from collections.abc import Buffer
 from dataclasses import dataclass, field
 
-from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.results.coverage import Reach
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount

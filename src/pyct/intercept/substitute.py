@@ -13,7 +13,7 @@ with one operator:
   CPython 3.14 keeps `in` where a test reads it and jumps the other way,
   on the same outcome, at the same position.
 
-Each becomes a call of a function of `pyct.core.substitutes` through a
+Each becomes a call of a function of `pyct.core.entry.substitutes` through a
 dunder name, ``__pyct_in__(a, b)`` say. The operands are the compare's own
 nodes, moved into the call and never copied, so each is evaluated once and
 in Python's order: the left, then the right, then the test.
@@ -66,7 +66,7 @@ from __future__ import annotations
 
 import ast
 
-from pyct.core.hashed import SEARCHED_MOST
+from pyct.core.entry.hashed import SEARCHED_MOST
 from pyct.intercept import bool_returns, calls, operators, percents, unpacks
 from pyct.intercept.positions import Parts, constants, statement_start
 
@@ -80,7 +80,7 @@ _NAMES: dict[type[ast.cmpop], str] = {
 # the name a chain's `in` link searches through, and the one an `is` link's right side becomes
 _SEARCHED = "__pyct_searched__"
 _IDENTITY = "__pyct_identity__"
-# the function of pyct.core.substitutes each name any rule calls is bound to
+# the function of pyct.core.entry.substitutes each name any rule calls is bound to
 BOUND: dict[str, str] = {
     "__pyct_is__": "is_",
     "__pyct_is_not__": "is_not",
@@ -104,7 +104,7 @@ _NEGATED: dict[type[ast.cmpop], type[ast.cmpop]] = {
 }
 
 # the module the bound names come from
-_SUBSTITUTES = "pyct.core.substitutes"
+_SUBSTITUTES = "pyct.core.entry.substitutes"
 
 # the fields that hold an annotation, by the node that holds them
 _ANNOTATIONS: dict[type[ast.AST], str] = {
@@ -357,7 +357,7 @@ def _bind(tree: ast.Module, classes: list[ast.ClassDef], names: list[str]) -> No
 
 
 def _imported(names: list[str], line: int, column: int) -> ast.ImportFrom:
-    """``from pyct.core.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
+    """``from pyct.core.entry.substitutes import in_ as __pyct_in__, ...``, placed at one spot."""
     aliases = [_at(ast.alias(name=BOUND[name], asname=name), line, column) for name in names]
     return _at(ast.ImportFrom(module=_SUBSTITUTES, names=aliases, level=0), line, column)
 

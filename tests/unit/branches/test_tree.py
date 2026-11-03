@@ -3,7 +3,7 @@ import time
 import pytest
 
 from pyct.branches.tree import ForkKey, Tree
-from pyct.core.branch import Branch, Fact, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.results.record import Aim
 
 

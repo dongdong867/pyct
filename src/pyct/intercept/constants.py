@@ -42,8 +42,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass, field
 
-from pyct.core.bound import BOUND
-from pyct.core.math_calls import NAMES as MATH_NAMES
+from pyct.core.entry.bound import BOUND
+from pyct.core.entry.math_calls import NAMES as MATH_NAMES
 
 # each module whose functions pyct routes when a call names them through it, with those functions
 ROUTED: dict[str, frozenset[str]] = {

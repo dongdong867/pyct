@@ -5,15 +5,15 @@ import time
 
 import pytest
 
-from pyct.core import substitutes
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import SinkItem
-from pyct.core.hashed import SEARCHED_MOST
+from pyct.core.entry import substitutes
+from pyct.core.entry.hashed import SEARCHED_MOST
+from pyct.core.foundation.branch import SinkItem
+from pyct.core.numbers.bools import ConcolicBool
 from pyct.intercept.compiled import SubstitutionError, substituted_code
 from pyct.intercept.substitute import BOUND, substitute
 
 # how the import a module with a substitution starts with begins
-BINDING = "from pyct.core.substitutes import "
+BINDING = "from pyct.core.entry.substitutes import "
 
 
 def substituted(source: str) -> str:

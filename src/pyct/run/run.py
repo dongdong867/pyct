@@ -20,7 +20,7 @@ from pyct.config.budget import Budget
 from pyct.config.goal import Goal
 from pyct.config.limits import Limits
 from pyct.config.solver_timeout import DEFAULT_SECONDS
-from pyct.core.branch import ForkSite
+from pyct.core.foundation.branch import ForkSite
 from pyct.execution.execute import ExecutionResult
 from pyct.results.coverage import Coverage, Progress, Scope, no_gain
 from pyct.results.record import (

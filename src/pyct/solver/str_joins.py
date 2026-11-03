@@ -12,7 +12,7 @@ a tracked list, so its walk fixes how many pieces the join holds, as any list's 
 
 from dataclasses import replace
 
-from pyct.core.branch import Branch, Expression, IsLeaf
+from pyct.core.foundation.branch import Branch, Expression, IsLeaf
 from pyct.solver.dag import Node, distinct
 from pyct.solver.str_formats import concatenated, is_format
 

@@ -13,7 +13,7 @@ from enum import Enum
 from typing import Any, Protocol, TypeGuard
 
 from pyct.binding.annotations import Check, Items, int_keys, reads_as_int
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 
 
 @dataclass(frozen=True)

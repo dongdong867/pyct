@@ -18,7 +18,7 @@ from collections.abc import Callable, Mapping
 from typing import Any
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.list_kinds import (
     ITEM_SORTS,

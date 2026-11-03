@@ -40,7 +40,7 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from pyct.core.values import own
+from pyct.core.foundation.values import own
 from pyct.intercept.cache import cached
 from pyct.intercept.compiled import substituted_code
 from pyct.intercept.positions import CHECKED_ON

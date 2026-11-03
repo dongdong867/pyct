@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 
 # the steps one read takes before its program is written again with its clamps settled: far
 # more than a read through a list changed at plain positions takes, and far less than one that

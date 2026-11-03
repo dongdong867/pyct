@@ -9,13 +9,13 @@ from unittest.mock import ANY
 
 import pytest
 
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Downgrade, SinkItem
-from pyct.core.floats import ConcolicFloat
-from pyct.core.hashed import SEARCHED_MOST
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
-from pyct.core.substitutes import Identity, Searched, in_, not_in
+from pyct.core.entry.hashed import SEARCHED_MOST
+from pyct.core.entry.substitutes import Identity, Searched, in_, not_in
+from pyct.core.foundation.branch import Downgrade, SinkItem
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from tests.unit.core.test_substitutes import expressions, tracked_bool
 
 
