@@ -423,7 +423,8 @@ def powers_in_a_walk(d, xs):
 
 def cut_row_in_a_walk(d, g, i):
     for k in d:
-        g[i:][0][0]
+        if g[i:][0][0] > 1.0:
+            pass
         if k == "target":
             return "hit"
     return "miss"
@@ -431,7 +432,8 @@ def cut_row_in_a_walk(d, g, i):
 
 def picked_dict_in_a_walk(d, rows, i):
     for k in d:
-        rows[i]["x"]
+        if rows[i]["x"] > 1.0:
+            pass
         if k == "target":
             return "hit"
     return "miss"
