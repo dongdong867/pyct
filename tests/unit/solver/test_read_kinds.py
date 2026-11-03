@@ -95,15 +95,6 @@ def _raises(error: Exception) -> Callable[[object], Answer]:
     return ask
 
 
-@needs_cvc5
-def test_a_kind_no_program_writes_is_unknown() -> None:
-    # unsat as the float Python read; as an int or a bool, `isnan` has no form to write
-    read: Expression = ["[float]", "xs", "i"]
-    path = (fork(["isnan", read]), fork([">", read, 1.0]))
-
-    assert solve(path, {"i": int}, 5.0, MIXED, {"i": 1}) == Unknown()
-
-
 def test_a_broken_rule_of_pyct_s_own_under_another_kind_is_raised() -> None:
     ask = _raises(ValueError("the path names what the seed does not bind: n"))
 

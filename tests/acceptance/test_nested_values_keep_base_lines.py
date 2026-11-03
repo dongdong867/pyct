@@ -1,7 +1,7 @@
-"""Every line base covers stays covered once a float or a bool inside an argument is tracked:
-under tracked keys and joins, in a format that follows each operand, and across a dict's walk.
-Where such a number meets an operation with no form, a `%` conversion it has no form for among
-them (plan nested-floats-bools, 5.10), the run names the line it loses."""
+"""Lines base covers stay covered once a float or a bool inside an argument is tracked: under
+tracked keys and joins, and across a dict's walk. Each entry of ``NAMED_LOSSES`` is a tracked
+value meeting an operation with no form, a `%` operand of any kind among them (plan
+nested-floats-bools, 5.10): the run names the line it loses."""
 
 import json
 
