@@ -8,14 +8,7 @@ from typing import Self
 from pyct.core.foundation import escapes, values, walk_key_escapes
 from pyct.core.foundation.branch import BranchSink, Downgrade, Expression, caller_site
 from pyct.core.foundation.spans import UNKNOWN, Span, added, exactly
-from pyct.core.foundation.values import (
-    copy_as_itself,
-    downgrade_the_rest,
-    downgraded,
-    forked,
-    own,
-    pickled,
-)
+from pyct.core.foundation.values import downgrade_the_rest, downgraded, forked, own, pickled
 from pyct.core.numbers import numbers, texts
 from pyct.core.numbers.bools import ConcolicBool
 from pyct.core.numbers.ints import ConcolicInt
@@ -23,7 +16,6 @@ from pyct.core.numbers.numbers import compare
 from pyct.core.strs import str_joins, str_lengths
 from pyct.core.strs.str_cases import changed, characters, check, width, width_and_fill
 from pyct.core.strs.str_formats import reflected
-from pyct.core.strs.str_lengths import spanned
 from pyct.core.strs.str_operands import literal, position, within_cvc5
 from pyct.core.strs.str_positions import long_enough, placed, search_positions, slice_bounds
 from pyct.core.strs.str_repeats import times, times_on_the_right
@@ -260,7 +252,7 @@ def _item(self: ConcolicStr, key: object) -> object:
         return _GETITEM_DOWNGRADE(self, key)
     expression = ["[:]", self.expression, *bounds]
     piece = ConcolicStr.made(own(str.__getitem__, self, key), expression=expression, sink=self.sink)
-    return spanned(piece, str_lengths.cut(self, key))  # pyrefly: ignore[bad-argument-type]
+    return str_lengths.spanned(piece, str_lengths.cut(self, key))  # pyrefly: ignore[bad-argument-type]
 
 
 def _one_str(_receiver: object, args: tuple[object, ...]) -> list[Expression] | None:
@@ -326,7 +318,7 @@ def _appended(self: ConcolicStr, other: object) -> object:
         return _ADD_DOWNGRADE(self, other)
     expression = ["+", self.expression, form]
     joined = ConcolicStr.made(own(str.__add__, self, other), expression=expression, sink=self.sink)
-    return spanned(joined, added(self.span, str_lengths.of_other(self, other)))
+    return str_lengths.spanned(joined, added(self.span, str_lengths.of_other(self, other)))
 
 
 def _joined_after(self: ConcolicStr, other: str) -> str:
@@ -354,7 +346,7 @@ def _prepended(self: ConcolicStr, other: object) -> object:
     joined = ConcolicStr.made(
         own(_joined_after, self, other), expression=expression, sink=self.sink
     )
-    return spanned(joined, added(str_lengths.of_other(self, other), self.span))
+    return str_lengths.spanned(joined, added(str_lengths.of_other(self, other), self.span))
 
 
 def one_character(value: str, expression: Expression, sink: BranchSink) -> ConcolicStr:
@@ -362,7 +354,7 @@ def one_character(value: str, expression: Expression, sink: BranchSink) -> Conco
     or `chr`'s, past the forks that decide it. `ord` reads the mark (see `codes.code`)."""
     character = ConcolicStr.made(value, expression=expression, sink=sink)
     character.__dict__["single"] = True
-    return spanned(character, exactly(1))
+    return str_lengths.spanned(character, exactly(1))
 
 
 class ConcolicStr(str):
@@ -395,8 +387,8 @@ class ConcolicStr(str):
     __ne__ = _compare("!=", "__ne__")  # pyrefly: ignore[bad-override]
     # a class body that defines __eq__ gets __hash__ = None unless it says otherwise
     __hash__ = walk_key_escapes.hashed(str.__hash__)
-    __copy__ = copy_as_itself
-    __deepcopy__ = copy_as_itself
+    __copy__ = values.copy_as_itself
+    __deepcopy__ = values.copy_as_itself
     # a pickle holds the plain value and loads as a str, and writing it is a downgrade
     __reduce_ex__, __reduce__ = pickled(str)
 

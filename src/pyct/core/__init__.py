@@ -7,8 +7,10 @@ whichever core module a caller imports. So does `bases`, the table of each
 tracked class's base type, which the classes read as they answer.
 """
 
-from pyct.core.entry import bases
-from pyct.core.numbers import bools, floats, ints
-from pyct.core.strs import strs
-
-__all__ = ["bases", "bools", "floats", "ints", "strs"]
+# imported for their entries, and bound to no name: a name here would hide the folder of the
+# same name, as `strs` would hide core/strs/
+import pyct.core.entry.bases
+import pyct.core.numbers.bools
+import pyct.core.numbers.floats
+import pyct.core.numbers.ints
+import pyct.core.strs.strs  # noqa: F401
