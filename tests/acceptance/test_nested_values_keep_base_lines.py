@@ -19,6 +19,9 @@ from tests.acceptance.test_nested_floats_and_bools import (
     return_line,
 )
 
+# the walks of many rows
+ROW_WALKS = "targets.nested.row_walks"
+
 # many rows, which a walk once read in time that grew with each row
 MANY_ROWS = {"g": [[1]] * 16_000, "n": 1}
 
@@ -58,7 +61,7 @@ def test_a_line_base_covers_stays_covered(function: str, seed: object) -> None:
     ],
 )
 def test_a_walk_of_many_rows_covers_every_line_in_its_budget(function: str) -> None:
-    target = f"{NESTED}::{function}"
+    target = f"{ROW_WALKS}::{function}"
     lines = lines_of(target, MANY_ROWS, "--budget", "15", "--solver-timeout", "3")
     assert missing_lines(target, lines) == set()
 
@@ -129,7 +132,7 @@ def _downgrades(line: dict[str, object]) -> list[dict[str, object]]:
 
 
 def test_a_line_only_legacy_covers_in_this_story_is_a_named_loss() -> None:
-    modules = (NESTED, MIXED, SEARCHES, VALUES, ITEMS)
+    modules = (NESTED, ROW_WALKS, MIXED, SEARCHES, VALUES, ITEMS)
     records = [json.loads(line) for line in ACCEPTED.read_text().splitlines()]
     ours = [r for r in records if str(r.get("target")).startswith(modules)]
     named = [(f"{NESTED}::{function}", seed, lost) for function, seed, *_, lost in NAMED_LOSSES]

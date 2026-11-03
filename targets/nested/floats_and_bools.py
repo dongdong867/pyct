@@ -447,22 +447,6 @@ def flag_in_a_walk(d, ys, flags):
     return "miss"
 
 
-def walk_of_reversed_rows(g, n):
-    for row in reversed(g):
-        pass
-    if n == 7:
-        return "hit"
-    return "miss"
-
-
-def walk_of_growing_rows(g, n):
-    for row in reversed(g):
-        row.append(0)
-    if n == 7:
-        return "hit"
-    return "miss"
-
-
 def flag_value_in_a_sum(ys, data):
     if ys[data["flag"] + 1] > 5:
         return "hit"
@@ -493,19 +477,3 @@ def key_as_a_tolerance(d: dict[int, int]):
         if k == 7:
             return "seven"
     return "none"
-
-
-def walk_of_rows_given_floats(g, n):
-    for row in reversed(g):
-        row.append(0.5)
-    if n == 7:
-        return "hit"
-    return "miss"
-
-
-def walk_of_rows_given_rows(g, n):
-    for row in reversed(g):
-        row.append([0])
-    if n == 7:
-        return "hit"
-    return "miss"
