@@ -35,6 +35,9 @@ class Origin:
     ``fixed_reads`` says whether a piece of a split read from its end, where no walk of the
     reversed string reads it, holds the string to the count c* (see ``split_lists``).
     ``read_kinds`` gives a read that may move another kind than Python read (see ``read_kinds``).
+    ``small`` says whether each size the solver chooses is held small at first, and ``sizes``
+    gives the most a size is held to where an unsat's core grew it, by its term (see
+    ``size_holds``).
     """
 
     shapes: Mapping[str, ListShape] = field(default_factory=dict)
@@ -53,3 +56,5 @@ class Origin:
     places: tuple[Expression, ...] = ()
     fixed_reads: bool = True
     read_kinds: Mapping[int, str] = field(default_factory=dict)
+    small: bool = True
+    sizes: Mapping[str, int] = field(default_factory=dict)

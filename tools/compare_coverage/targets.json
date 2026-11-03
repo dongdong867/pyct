@@ -475,6 +475,7 @@
     {"set": "v2", "target": "targets.lists.fills::walk", "seed": {"items": [1]}},
     {"set": "v2", "target": "targets.lists.fills::walk_floats", "seed": {"items": []}},
     {"set": "v2", "target": "targets.lists.fills::walk_strs", "seed": {"items": []}},
+    {"set": "v2", "target": "targets.lists.float_index::float_indexes", "seed": {"ys": [0, 1, 2], "x": 1.5}},
     {"set": "v2", "target": "targets.lists.float_searches::found", "seed": {"xs": [0.5]}},
     {"set": "v2", "target": "targets.lists.float_searches::counted", "seed": {"xs": [0.5, 0.5]}},
     {"set": "v2", "target": "targets.lists.float_searches::indexed", "seed": {"xs": [0.5, 2.5]}},
