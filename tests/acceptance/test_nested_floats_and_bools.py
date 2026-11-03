@@ -116,6 +116,7 @@ def test_a_mixed_row_keeps_each_item_s_kind_on_every_line() -> None:
         ("last_int", {"row": [0.5, 1]}),
         ("isinstance_guard", {"row": [1, 0.5]}),
         ("added_to_ints", {"xs": [1]}),
+        ("count_added", {"xs": [0.5]}),
     ],
 )
 def test_a_mixed_list_flips_by_its_kinds(function: str, seed: object) -> None:

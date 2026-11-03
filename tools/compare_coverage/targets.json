@@ -519,6 +519,7 @@
     {"set": "v2", "target": "targets.lists.mixed_numbers::last_int", "seed": {"row": [0.5, 1]}},
     {"set": "v2", "target": "targets.lists.mixed_numbers::isinstance_guard", "seed": {"row": [1, 0.5]}},
     {"set": "v2", "target": "targets.lists.mixed_numbers::added_to_ints", "seed": {"xs": [1]}},
+    {"set": "v2", "target": "targets.lists.mixed_numbers::count_added", "seed": {"xs": [0.5]}},
     {"set": "v2", "target": "targets.lists.new_shape::check", "seed": {"items": [5]}},
     {"set": "v2", "target": "targets.lists.outside_change::check", "seed": {"items": [3, 9]}},
     {"set": "v2", "target": "targets.lists.raises::pop_one", "seed": {"items": []}},

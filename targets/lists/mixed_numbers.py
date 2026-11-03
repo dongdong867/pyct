@@ -32,3 +32,14 @@ def added_to_ints(xs):
     if ys[1] > 1.0:
         return "added"
     return "other"
+
+
+def count_added(xs):
+    ys = xs + [0.0]
+    count = 0
+    for y in ys:
+        if y > 1.0:
+            count += 1
+    if count == 2:
+        return "two"
+    return "other"
