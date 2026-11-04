@@ -136,7 +136,7 @@ def _removed(term: str, kinds: Iterable[str]) -> str:
     )
 
 
-def _held(term: str, kinds: Iterable[str]) -> str:
+def _one_character_count(term: str, kinds: Iterable[str]) -> str:
     """How many characters of a term of at most one character are of the kinds: the sum of
     each kind's count, 1 where the term is a character of that kind and else 0."""
     return _summed([f"(ite (str.in_re {term} {one_of(KINDS[kind])}) 1 0)" for kind in kinds])
@@ -290,7 +290,9 @@ def check(head: str, term: str, *, alone: bool, character: bool) -> Check:
     """
     if alone:
         return membership(head, term), "true"
-    return (_ANSWERS[head](term, _held), "true") if character else CHECKS[head](term)
+    if character:
+        return _ANSWERS[head](term, _one_character_count), "true"
+    return CHECKS[head](term)
 
 
 def checks_by_string(order: Iterable[Node], key: Keyed) -> dict[Key, set[str]]:
