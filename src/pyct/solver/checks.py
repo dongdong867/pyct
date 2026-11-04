@@ -5,12 +5,13 @@ A check asks what kind each character of a string is: a digit, a letter, a
 space, and so on. The characters cvc5 holds are split into kinds that do not
 overlap (`KINDS`), and each check is a condition on how many characters of
 each kind the string has: ``isalpha`` is "a letter, and every character an
-uppercase or a lowercase letter". The count of a kind is the length the
-string loses when its characters of that kind are removed. Written so, two
-checks on one string meet as sums, which cvc5 settles at once, where it ran
-paths of a few regular expression memberships to its time limit. A check
-also states the fact that the counts add up to the string's length (see
-`counted`), which cvc5 does not work out from the removals.
+uppercase or a lowercase letter". Two checks on one string meet as sums of
+counts, which cvc5 settles at once, where it ran paths of a few regular
+expression memberships to its time limit. On a string that may hold more
+than one character, the count of a kind is the length the string loses when
+its characters of that kind are removed, and a check also states the fact
+that the counts add up to the string's length (see `counted`), which cvc5
+does not work out from the removals.
 
 A count costs cvc5 more the longer the string must be: a digit string of at
 least 13 characters ran past 10 s. So a string only one check reads, where
@@ -21,7 +22,7 @@ A loop over a string reads each character as ``s[i]``, a string of at most
 one character, and two checks on each wrote ten removals a character: from a
 16-character seed, `camel_to_snake_case`'s ask for a character that is not
 alphanumeric ran to cvc5's 10 s limit, and from a 64-character seed too. On
-such a string each count is written as one membership instead,
+a character an index reads, each count is written as one membership instead,
 ``(ite (str.in_re c K) 1 0)``, which is the removal's count there, and the
 fact that the counts add up to the length holds of itself. The same two asks
 then answer sat in 0.04 s and 0.23 s (cvc5 1.3.4).
