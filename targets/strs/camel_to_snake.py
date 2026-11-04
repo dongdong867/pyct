@@ -1,7 +1,30 @@
-# camel_to_snake_case, copied from TheAlgorithms/Python, strings/camel_case_to_snake_case.py:
-# https://github.com/TheAlgorithms/Python/blob/master/strings/camel_case_to_snake_case.py
-# MIT License, Copyright (c) 2016-2022 TheAlgorithms and contributors.
-# The doctest runner under `if __name__ == "__main__":` is left out.
+# camel_to_snake_case, copied from TheAlgorithms/Python, strings/camel_case_to_snake_case.py at
+# commit 7f94a73eec45edfd215e8f07148c9c657b4e4b89:
+# https://github.com/TheAlgorithms/Python/blob/7f94a73eec45edfd215e8f07148c9c657b4e4b89/strings/camel_case_to_snake_case.py
+# The doctest runner under `if __name__ == "__main__":` is left out. Its license, from
+# TheAlgorithms/Python's LICENSE.md:
+#
+# MIT License
+#
+# Copyright (c) 2016-2022 TheAlgorithms and contributors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
 
 
 def camel_to_snake_case(input_str: str) -> str:
