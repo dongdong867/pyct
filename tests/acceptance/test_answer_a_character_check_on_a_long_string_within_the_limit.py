@@ -24,9 +24,9 @@ UPPER_AND_DIGIT_FILE = str(REPO_ROOT / "targets" / "strs" / "upper_and_digit.py"
 SOLVER_LIMIT_MS = round(DEFAULT_SECONDS * 1000)
 
 # pyct writes a solve's first program within milliseconds of the solve's start, 14 ms at most
-# in the runs here, so a first program given more than a second less than the solver limit was
-# given what was left of the budget. A solve's later programs share the solve's own limit, so a
-# short limit on one of them says nothing about the budget
+# in the runs here, so a solve whose first program was given more than a second less than the
+# solver limit was given what was left of the budget. Its later programs share what is left of
+# that limit, so whether a solve was cut is read off its first program
 WRITING_MS = 1000
 
 # how a program that ran out of its time reads: cvc5 at its limit, or pyct stopping it past it
@@ -76,24 +76,24 @@ def camel_run(seed: str, directory: Path) -> dict[str, object]:
 @dataclass(frozen=True)
 class Asked:
     """A dumped program: its ask's place in the run's order, what cvc5 answered, and the
-    milliseconds it was given."""
+    milliseconds its solve's first program was given."""
 
     order: tuple[int, ...]
     answer: str
-    limit_ms: int
+    solve_limit_ms: int
 
     @property
     def cut_by_the_budget(self) -> bool:
-        """Whether the program is its solve's first and was given what was left of the budget,
-        short of the limit."""
-        return len(self.order) == 1 and self.limit_ms < SOLVER_LIMIT_MS - WRITING_MS
+        """Whether the program's solve was given what was left of the budget, short of the
+        limit."""
+        return self.solve_limit_ms < SOLVER_LIMIT_MS - WRITING_MS
 
 
 def asked_at_alnum(directory: Path) -> list[Asked]:
     """Each program asked at `not char.isalnum()` from the seed's path, in the run's order."""
     line, written = line_of("elif not char.isalnum():")
     aim = f"; aim {CAMEL_FILE}:{line}:{written.index('char.isalnum()')} at position "
-    asked = []
+    read: list[tuple[tuple[int, ...], str, int]] = []
     for path in directory.glob("ask-*.smt2"):
         text = path.read_text()
         head = text.splitlines()[:2]
@@ -102,7 +102,10 @@ def asked_at_alnum(directory: Path) -> list[Asked]:
             limit = re.search(r"^\(set-option :tlimit-per (\d+)\)$", text, re.MULTILINE)
             assert answered is not None and limit is not None, head
             order = tuple(int(part) for part in path.stem.split("-")[1:])
-            asked.append(Asked(order, answered.group(1), int(limit.group(1))))
+            read.append((order, answered.group(1), int(limit.group(1))))
+    # a solve's first program is ask-N, its later ones ask-N-k
+    firsts = {order[0]: limit for order, _, limit in read if len(order) == 1}
+    asked = [Asked(order, answer, firsts[order[0]]) for order, answer, _ in read]
     return sorted(asked, key=lambda program: program.order)
 
 
@@ -110,8 +113,8 @@ def assert_answered_within_the_limit(directory: Path, answers: set[str]) -> None
     """The seed's path's first ask at `not char.isalnum()`, the one the run makes first, was
     given the solver limit and answered one of the answers, and so did every later one.
 
-    A later ask the budget's end gave less than the limit and that ran out says nothing about
-    the limit: it ran out of the budget.
+    A later program whose solve the budget's end gave less than the limit, and that ran out,
+    says nothing about the limit: it ran out of the budget.
     """
     asked = asked_at_alnum(directory)
     assert asked, sorted(path.name for path in directory.iterdir())
