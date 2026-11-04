@@ -23,10 +23,14 @@ UPPER_AND_DIGIT_FILE = str(REPO_ROOT / "targets" / "strs" / "upper_and_digit.py"
 # the solver limit, in the milliseconds a dumped program's `:tlimit-per` gives cvc5
 SOLVER_LIMIT_MS = round(DEFAULT_SECONDS * 1000)
 
-# pyct writes a solve's program within milliseconds of the solve's start, 14 ms at most in the
-# runs here, so a program given more than a second less than the solver limit was given what
-# was left of the budget
+# pyct writes a solve's first program within milliseconds of the solve's start, 14 ms at most
+# in the runs here, so a first program given more than a second less than the solver limit was
+# given what was left of the budget. A solve's later programs share the solve's own limit, so a
+# short limit on one of them says nothing about the budget
 WRITING_MS = 1000
+
+# how a program that ran out of its time reads: cvc5 at its limit, or pyct stopping it past it
+RAN_OUT = {"unknown (timeout)", "no answer (timeout)"}
 
 
 # answer-a-character-check-on-a-long-string-within-the-limit-keeps-a-contradiction-unsat
@@ -80,8 +84,9 @@ class Asked:
 
     @property
     def cut_by_the_budget(self) -> bool:
-        """Whether the program was given what was left of the budget, short of the limit."""
-        return self.limit_ms < SOLVER_LIMIT_MS - WRITING_MS
+        """Whether the program is its solve's first and was given what was left of the budget,
+        short of the limit."""
+        return len(self.order) == 1 and self.limit_ms < SOLVER_LIMIT_MS - WRITING_MS
 
 
 def asked_at_alnum(directory: Path) -> list[Asked]:
@@ -116,7 +121,7 @@ def assert_answered_within_the_limit(directory: Path, answers: set[str]) -> None
         program
         for program in rest
         if program.answer not in answers
-        and not (program.cut_by_the_budget and program.answer == "unknown (timeout)")
+        and not (program.cut_by_the_budget and program.answer in RAN_OUT)
     ]
     assert ran_out == []
 
