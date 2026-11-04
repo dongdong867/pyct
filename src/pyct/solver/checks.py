@@ -17,6 +17,15 @@ least 13 characters ran past 10 s. So a string only one check reads, where
 no sums have anything to meet, is asked as one regular expression
 membership instead (see `check`), which gives the same answer.
 
+A loop over a string reads each character as ``s[i]``, a string of at most
+one character, and two checks on each wrote ten removals a character: from a
+16-character seed, `camel_to_snake_case`'s ask for a character that is not
+alphanumeric ran to cvc5's 10 s limit, and from a 64-character seed too. On
+such a string each count is written as one membership instead,
+``(ite (str.in_re c K) 1 0)``, which is the removal's count there, and the
+fact that the counts add up to the length holds of itself. The same two asks
+then answer sat in 0.04 s and 0.23 s (cvc5 1.3.4).
+
 Each kind is exact for ASCII. Past ASCII, a character is no digit, no letter
 and no space, and it has no case, as cvc5's ``str.to_upper`` and
 ``str.to_lower`` leave it; U+0080 to U+00A0 and the soft hyphen are not
