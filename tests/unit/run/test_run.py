@@ -12,7 +12,7 @@ from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
 from pyct.config.solver_timeout import SolverTimeout
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.coverage import Coverage, Progress, Scope
 from pyct.results.failure import Failure, FailureKind

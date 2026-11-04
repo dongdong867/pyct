@@ -3,7 +3,7 @@ character each pass reads, at every position of a long string."""
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
 from tests.unit.solver.agreement import disagrees, flipped_path, needs_cvc5

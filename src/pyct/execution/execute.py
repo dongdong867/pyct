@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pyct.binding.annotations import Check
 from pyct.binding.bind import bind
 from pyct.binding.call import call_arguments
-from pyct.core.branch import Branch, Fact
+from pyct.core.foundation.branch import Branch, Fact
 from pyct.execution import line_events
 from pyct.execution.blame import blame, one_line
 from pyct.execution.branch_ways import CodeWays

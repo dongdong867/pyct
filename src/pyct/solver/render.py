@@ -4,7 +4,7 @@ from collections.abc import Callable, Collection, Mapping
 from functools import partial
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver import floats
 from pyct.solver.checks import CHECKS, check, checks_by_string
 from pyct.solver.dag import Node

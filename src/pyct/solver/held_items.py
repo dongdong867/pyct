@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Collection, Mapping
 
 from pyct.binding.shapes import ListShape
-from pyct.core.branch import Branch
+from pyct.core.foundation.branch import Branch
 from pyct.solver import floats
 from pyct.solver.dag import Node, distinct
 from pyct.solver.declared import Leaves, symbols

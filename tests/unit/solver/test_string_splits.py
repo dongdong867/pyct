@@ -9,8 +9,8 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import Branch, Expression
-from pyct.core.str_splits import LONGEST_WALK
+from pyct.core.foundation.branch import Branch, Expression
+from pyct.core.strs.str_splits import LONGEST_WALK
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.answer_size import longest_string
 from pyct.solver.cvc5 import solve

@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.list_kinds import Kinds
 from pyct.solver.list_terms import FALSE, TRUE, Lin, Piece, Window, compare
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import reduce
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.list_kinds import ITEM_SORTS
 from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import TRUE, Lin, Piece, Read, both

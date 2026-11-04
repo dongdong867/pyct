@@ -7,7 +7,7 @@ import pytest
 
 from pyct.binding.annotations import check_of
 from pyct.binding.bind import Seed
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver.answer import Sat, Unknown
 from pyct.solver.cvc5 import _origin, solve
 from pyct.solver.dict_keys import LookupsTooManyError, call_steps

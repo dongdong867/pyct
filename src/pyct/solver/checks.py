@@ -27,7 +27,7 @@ plan. ``isascii`` is exact for every character.
 
 from collections.abc import Callable, Iterable, Mapping
 
-from pyct.core.str_operands import LAST_CHARACTER
+from pyct.core.strs.str_operands import LAST_CHARACTER
 from pyct.solver.dag import Node
 from pyct.solver.letters import Key, Keyed
 from pyct.solver.strings import encode, length

@@ -11,7 +11,7 @@ import operator
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 
 
 def evaluate(expression: Expression, args: Mapping[str, object]) -> object:

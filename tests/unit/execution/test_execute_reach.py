@@ -3,7 +3,7 @@ lines and branches, and the way each branch went."""
 
 from collections.abc import Callable, Mapping
 
-from pyct.core.branch import Branch, Fact, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionContext, execute
 
 SOURCE = """\

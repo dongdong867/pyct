@@ -5,10 +5,10 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import str_lengths
-from pyct.core.bound import chr as chr_
-from pyct.core.bound import len as len_
-from pyct.core.bound import ord as ord_
+from pyct.core.entry.bound import chr as chr_
+from pyct.core.entry.bound import len as len_
+from pyct.core.entry.bound import ord as ord_
+from pyct.core.strs import str_lengths
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import FailureKind
 

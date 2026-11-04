@@ -36,7 +36,7 @@ from typing import NoReturn
 
 from pyct.binding.call import positional_only
 from pyct.binding.resolve import checked_annotations
-from pyct.core.branch import PYCT_ROOT
+from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure

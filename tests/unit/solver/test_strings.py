@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
 from pyct.solver.strings import above, below, decode, encode

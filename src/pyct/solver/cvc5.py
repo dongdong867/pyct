@@ -7,7 +7,7 @@ from dataclasses import replace
 from time import monotonic, perf_counter
 
 from pyct.binding.shapes import DictShape, ListShape
-from pyct.core.branch import Branch, Expression, Fact
+from pyct.core.foundation.branch import Branch, Expression, Fact
 from pyct.solver import dict_orders
 from pyct.solver.answer import (
     Answer,

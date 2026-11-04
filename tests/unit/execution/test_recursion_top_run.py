@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import PYCT_DIR
+from pyct.core.foundation.branch import PYCT_DIR
 from pyct.execution import blame
 from pyct.execution.blame import MOST_OWN_FRAMES
 from pyct.execution.execute import ExecutionContext, execute

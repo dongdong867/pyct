@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver import given
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat

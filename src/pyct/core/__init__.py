@@ -7,6 +7,10 @@ whichever core module a caller imports. So does `bases`, the table of each
 tracked class's base type, which the classes read as they answer.
 """
 
-from pyct.core import bases, bools, floats, ints, strs
-
-__all__ = ["bases", "bools", "floats", "ints", "strs"]
+# imported for their entries by full name: `from pyct.core.strs import strs` here would bind
+# the module over the folder core/strs/
+import pyct.core.entry.bases
+import pyct.core.numbers.bools
+import pyct.core.numbers.floats
+import pyct.core.numbers.ints
+import pyct.core.strs.strs  # noqa: F401

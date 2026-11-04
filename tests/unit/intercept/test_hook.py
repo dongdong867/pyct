@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core import bound, substitutes
-from pyct.core.values import raised_by_target
+from pyct.core.entry import bound, substitutes
+from pyct.core.foundation.values import raised_by_target
 from pyct.intercept import hook
 from pyct.intercept.hook import Interception, current, intercepting
 

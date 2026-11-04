@@ -2,8 +2,8 @@
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import Site
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
 

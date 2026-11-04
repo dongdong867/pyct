@@ -3,7 +3,7 @@
 import random
 from collections.abc import Callable
 
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Error, Sat, Unsat
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.cvc5 import solve

@@ -29,7 +29,7 @@ from functools import cached_property
 
 from pyct.binding.bind import access_name, leaf_name
 from pyct.binding.shapes import DictShape
-from pyct.core.branch import FLOAT_AND_BOOL, Branch, Expression
+from pyct.core.foundation.branch import FLOAT_AND_BOOL, Branch, Expression
 from pyct.solver import dict_orders
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.dict_keys import MISSING, Keyed, literal_key, made_up_match

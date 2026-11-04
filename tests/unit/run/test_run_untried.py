@@ -9,7 +9,7 @@ from pyct.branches.tree import Tree
 from pyct.config.budget import Budget
 from pyct.config.limits import Limits
 from pyct.config.plateau import Plateau
-from pyct.core.branch import ForkSite, Site
+from pyct.core.foundation.branch import ForkSite, Site
 from pyct.results.record import StopKind
 from pyct.run.isolation import Isolation
 from pyct.run.process import InputStartError

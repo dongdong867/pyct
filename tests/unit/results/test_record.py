@@ -1,6 +1,6 @@
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.results.coverage import Coverage
 from pyct.results.record import (
     Aim,

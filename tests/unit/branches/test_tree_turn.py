@@ -6,7 +6,7 @@ and covered no new line; the run decides the second, so here ``turn`` stands for
 """
 
 from pyct.branches.tree import Tree
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 
 
 def fork(line: int, *, taken: bool = True) -> Branch:

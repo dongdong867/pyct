@@ -1,7 +1,7 @@
 """The tree tells sites apart by value, whatever object holds each one."""
 
 from pyct.branches.tree import Tree
-from pyct.core.branch import Branch, ForkSite, Site
+from pyct.core.foundation.branch import Branch, ForkSite, Site
 
 
 def test_two_objects_for_one_site_are_one_site() -> None:

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from pyct.core.branch import Site
+from pyct.core.foundation.branch import Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.record import DowngradeCount
 

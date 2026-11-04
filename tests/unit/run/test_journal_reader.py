@@ -8,7 +8,7 @@ import mmap
 
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.results.record import DowngradeCount
 from pyct.run import journal_reader
 from pyct.run.journal import LINE, RECORDS, JournalWriter

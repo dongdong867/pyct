@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from pyct.core.branch import Branch, Fact, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount

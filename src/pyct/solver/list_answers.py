@@ -13,7 +13,7 @@ import json
 from collections.abc import Mapping
 
 from pyct.binding.shapes import ArrayValue, ListAnswer
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.answer import SolverAnswerError
 from pyct.solver.list_kinds import ITEM_SORTS, SPLIT_HEADS, measured
 from pyct.solver.lists import ListTerms

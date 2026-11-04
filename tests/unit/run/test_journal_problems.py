@@ -10,7 +10,7 @@ import sys
 import time
 from collections.abc import Callable
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.execution.execute import ExecutionResult
 from pyct.results.failure import Failure, FailureKind
 from pyct.results.record import DowngradeCount

@@ -14,7 +14,7 @@ A str literal's ``'f' % b`` becomes ``__pyct_mod__('f', b)``, or
 ``__pyct_fstring_mod__('f', b)`` where ``b`` is a tuple display and CPython
 compiles the `%` as the f-string it means, which this Python's compiled code
 shows: the same `%` with names for operands compiles to no `%` of its own
-(`pyct.core.str_formats.fstring_mod`). Any other format's ``a % (x, y)``
+(`pyct.core.strs.str_formats.fstring_mod`). Any other format's ``a % (x, y)``
 becomes ``__pyct_formatter__(a)((x, y))``, and ``n %= (x, y)`` becomes
 ``n = __pyct_in_place_formatter__(n)((x, y))``: pyct is handed the left
 side first and hands back what the right side is given to, Python's own

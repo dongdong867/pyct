@@ -13,7 +13,7 @@ import pytest
 
 from pyct.branches.plan import Plan, plan
 from pyct.branches.tree import Tree
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 
 # a side of a fork: where it happened, and which way it went
 type Side = tuple[Site, bool]

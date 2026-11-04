@@ -6,7 +6,7 @@ import math
 from collections.abc import Mapping
 from typing import TypeGuard
 
-from pyct.core.branch import READ_HEADS, Branch, Expression, Site
+from pyct.core.foundation.branch import READ_HEADS, Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.failure import Failure
 from pyct.results.printed import CUT, LINE_LIMIT, PrintedForks, printed_forks

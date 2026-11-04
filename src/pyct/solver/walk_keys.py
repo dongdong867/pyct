@@ -29,9 +29,9 @@ from dataclasses import replace
 
 from pyct.binding.bind import access_name
 from pyct.binding.shapes import DictShape
-from pyct.core.branch import Branch, Expression, Fact
-from pyct.core.dict_walk_keys import MOST_KEYS
-from pyct.core.escapes import WALK_KEY
+from pyct.core.dicts.dict_walk_keys import MOST_KEYS
+from pyct.core.foundation.branch import Branch, Expression, Fact
+from pyct.core.foundation.escapes import WALK_KEY
 from pyct.solver.dict_keys import key_term
 
 # a dict's name and a pass of its walk

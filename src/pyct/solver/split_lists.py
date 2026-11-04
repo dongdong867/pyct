@@ -26,7 +26,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pyct.core.str_splits import LONGEST_WALK
+from pyct.core.strs.str_splits import LONGEST_WALK
 from pyct.solver.list_terms import FALSE, TRUE, Lin, Read, both, negated
 from pyct.solver.splits import (
     SPLITS,

@@ -3,7 +3,7 @@ way the input whose path this is went."""
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.list_kinds import Kinds, access
 from pyct.solver.list_slices import Slices
 from pyct.solver.list_terms import Lin, Shown, ite, nested

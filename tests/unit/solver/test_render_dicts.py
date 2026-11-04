@@ -7,7 +7,7 @@ from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
 from pyct.binding.shapes import DictAnswer, DictShape
-from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.solver.answer import Sat, SolverAnswerError, Unknown, Unsat
 from pyct.solver.cvc5 import held, solve
 from pyct.solver.dict_keys import made_up_number

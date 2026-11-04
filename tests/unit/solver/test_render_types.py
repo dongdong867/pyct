@@ -2,7 +2,7 @@
 
 import pytest
 
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver.cases import CASES, PADDINGS
 from pyct.solver.checks import CHECKS
 from pyct.solver.heads import BOUNDED, FORMS, OPERATORS, POSITIONED, RESULTS, STRING_ORDERS

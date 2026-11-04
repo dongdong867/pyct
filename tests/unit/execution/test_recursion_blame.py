@@ -6,8 +6,8 @@ from collections.abc import Callable
 
 import pytest
 
-from pyct.core import values
-from pyct.core.branch import PYCT_DIR
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import PYCT_DIR
 from pyct.execution.execute import ExecutionContext, execute
 from pyct.results.failure import FailureKind
 

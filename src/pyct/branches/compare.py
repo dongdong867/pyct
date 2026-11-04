@@ -1,6 +1,6 @@
 """Where a run's path left the plan it was solved for."""
 
-from pyct.core.branch import Branch
+from pyct.core.foundation.branch import Branch
 
 
 def compare(planned: tuple[Branch, ...], actual: tuple[Branch, ...]) -> int | None:

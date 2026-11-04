@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.core.branch import Branch, Site
+from pyct.core.foundation.branch import Branch, Site
 from pyct.results import blocks, senses, why
 from pyct.results.graphs import LONGEST_STRETCH, OutOfTimeError, Pace, UnaffordableError
 from pyct.results.senses import At

@@ -12,8 +12,8 @@ bug can only be provoked by patching pyct itself.
 import pytest
 
 from pyct.cli import main
-from pyct.core import values
-from pyct.core.branch import Site
+from pyct.core.foundation import values
+from pyct.core.foundation.branch import Site
 from pyct.run import isolation
 from tests.acceptance.harness import (
     REPO_ROOT,

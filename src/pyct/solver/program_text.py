@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from pyct.core.branch import Branch
+from pyct.core.foundation.branch import Branch
 from pyct.solver.answer_size import longest_string
 from pyct.solver.dicts import DictTerms
 from pyct.solver.heads import SORTS

@@ -16,7 +16,7 @@ import pytest
 
 from pyct.binding.bind import Seed, bind
 from pyct.binding.model import apply
-from pyct.core.branch import Branch, SinkItem
+from pyct.core.foundation.branch import Branch, SinkItem
 from pyct.solver.answer import Sat, Unsat
 from pyct.solver.cvc5 import solve
 from tests.unit.solver.agreement import needs_cvc5

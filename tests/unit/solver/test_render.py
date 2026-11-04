@@ -2,7 +2,7 @@ from collections.abc import Callable, Mapping
 
 import pytest
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.solver.heads import FORMS
 from pyct.solver.render import program
 from pyct.solver.strings import (

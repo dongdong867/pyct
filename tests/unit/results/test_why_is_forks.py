@@ -3,7 +3,7 @@
 import textwrap
 from pathlib import Path
 
-from pyct.core.branch import Branch, Fact, Site
+from pyct.core.foundation.branch import Branch, Fact, Site
 from pyct.results.why import Condition, Run, Walked, explain
 
 NAMED = """\

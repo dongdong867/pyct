@@ -8,7 +8,7 @@ import signal
 import time
 from typing import NoReturn
 
-from pyct.core.branch import Branch, Expression, Fact, Site
+from pyct.core.foundation.branch import Branch, Expression, Fact, Site
 from pyct.run.journal import RECORDS, JournalWriter
 from pyct.run.journal_reader import read
 

@@ -9,13 +9,13 @@ import pytest
 
 from pyct.binding.annotations import Items
 from pyct.binding.bind import Seed, access_name, bind, leaf_name, leaves
-from pyct.core.bools import ConcolicBool
-from pyct.core.branch import Expression, SinkItem
-from pyct.core.dicts import ConcolicDict
-from pyct.core.floats import ConcolicFloat
-from pyct.core.ints import ConcolicInt
-from pyct.core.lists import ConcolicList
-from pyct.core.strs import ConcolicStr
+from pyct.core.dicts.dicts import ConcolicDict
+from pyct.core.foundation.branch import Expression, SinkItem
+from pyct.core.lists.lists import ConcolicList
+from pyct.core.numbers.bools import ConcolicBool
+from pyct.core.numbers.floats import ConcolicFloat
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 
 
 def test_an_int_becomes_a_concolic_int_named_after_its_parameter() -> None:

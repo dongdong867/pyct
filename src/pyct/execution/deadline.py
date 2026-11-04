@@ -55,7 +55,7 @@ from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from typing import NoReturn
 
-from pyct.core.branch import PYCT_DIR
+from pyct.core.foundation.branch import PYCT_DIR
 from pyct.execution.stops import STOPS
 
 # a deadline already past still has to fire, and setitimer(0) would cancel instead

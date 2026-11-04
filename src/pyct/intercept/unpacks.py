@@ -7,7 +7,7 @@ value to pyct first, with the number of places the target has:
 ``a, b = s.split(",")`` becomes ``a, b = __pyct_unpack__(s.split(","), 2)``,
 and ``first, *rest = parts`` becomes
 ``first, *rest = __pyct_unpack_starred__(parts, 1)``, the count there being
-the places other than the star (`pyct.core.substitutes.unpack`). A nested
+the places other than the star (`pyct.core.entry.substitutes.unpack`). A nested
 tuple in the target is one place. pyct hands back the same items, so
 Python unpacks them, and raises its own error, as written.
 

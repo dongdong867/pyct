@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from pyct.binding.shapes import DictShape, ListAnswer, ListShape
-from pyct.core.branch import Expression
+from pyct.core.foundation.branch import Expression
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Error, Sat, Timeout, Unknown, Unsat
 from pyct.solver.cvc5 import solve

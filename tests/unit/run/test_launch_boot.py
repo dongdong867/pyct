@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from pyct.core.branch import PYCT_ROOT
+from pyct.core.foundation.branch import PYCT_ROOT
 from pyct.run.launch import _BOOT
 
 # a module named as one the command line imports, which says so and raises when imported

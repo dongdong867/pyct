@@ -3,7 +3,7 @@ recursion limit, and a string built over many passes."""
 
 import re
 
-from pyct.core.branch import Branch, Expression, Site
+from pyct.core.foundation.branch import Branch, Expression, Site
 from pyct.results.coverage import Coverage
 from pyct.results.printed import LIMIT
 from pyct.results.record import InputRecord

@@ -10,10 +10,10 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.core import bound
-from pyct.core.branch import Branch, Expression
-from pyct.core.ints import ConcolicInt
-from pyct.core.strs import ConcolicStr
+from pyct.core.entry import bound
+from pyct.core.foundation.branch import Branch, Expression
+from pyct.core.numbers.ints import ConcolicInt
+from pyct.core.strs.strs import ConcolicStr
 from pyct.solver import cvc5 as cvc5_module
 from pyct.solver.answer import Answer, Sat, Unknown, Unsat
 from pyct.solver.cvc5 import solve

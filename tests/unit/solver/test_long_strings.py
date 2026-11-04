@@ -10,7 +10,7 @@ import pytest
 
 from pyct.binding.bind import Seed
 from pyct.binding.model import apply
-from pyct.core.branch import Branch, Expression
+from pyct.core.foundation.branch import Branch, Expression
 from pyct.solver.answer import Sat, Unknown, Unsat
 from pyct.solver.answer_size import MOST_ITEMS, longest_string
 from pyct.solver.cvc5 import solve

@@ -1,7 +1,7 @@
 """The trace says how long each ask took, sums the seconds by answer, and names the lines each
 input covered first."""
 
-from pyct.core.branch import Site
+from pyct.core.foundation.branch import Site
 from pyct.results.record import Aim, InputRecord, Miss, MissWhy, Source, Stop, StopKind
 from pyct.results.trace import render_miss, render_stop, render_trace
 from tests.unit.results.test_trace import COVERAGE, stopped_with

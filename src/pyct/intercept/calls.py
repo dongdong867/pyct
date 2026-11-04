@@ -6,7 +6,7 @@ and a range or dict view method called through the type.
   bare or after a dot as in `builtins.int(...)`, a call written `map(...)`
   with one of the first three first, a call written `type(...)` with one
   argument alone, and a call of a function of `math` that pyct routes
-  (`pyct.core.math_calls.NAMES`) through a name the module binds to `math`
+  (`pyct.core.entry.math_calls.NAMES`) through a name the module binds to `math`
   or to that function alone, `math.sqrt(...)` or `root(...)` after `from
   math import sqrt as root` (`pyct.intercept.constants`), and a call of
   `len`, `ord` or `chr` through a name bound the same way to `builtins` or
@@ -22,14 +22,14 @@ and a range or dict view method called through the type.
   themselves are never changed. A `range(...)` whose arguments are all int literals, as
   `range(3)` or `range(0, 10, 2)`, stays as written: no run can make it
   tracked, and a plain range is searched with one fork all the same
-  (`pyct.core.substitutes.in_`).
+  (`pyct.core.entry.substitutes.in_`).
 - A call ``<receiver>.<name>(...)`` whose name is a method Python's range or
-  a dict view type defines (`pyct.core.type_calls.NAMES`), and whose receiver
+  a dict view type defines (`pyct.core.entry.type_calls.NAMES`), and whose receiver
   is written `type(x)` with one argument, `x.__class__`, or a name spelled
   `range`, `dict_keys`, `dict_values` or `dict_items`, bare or after a dot,
   becomes ``__pyct_call__(<receiver>.<name>)(...)`` as a conversion does:
   Python's own method checks its receiver's real class, which for a tracked
-  range or view is pyct's (`pyct.core.type_calls`).
+  range or view is pyct's (`pyct.core.entry.type_calls`).
 - A call written ``"text".name(...)``, a str literal's method, with at least
   one argument, becomes ``__pyct_method__("text".name, ...)``, and so does
   one on a name every binding of which in the module is a str literal
@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import ast
 
-from pyct.core.type_calls import NAMES as TYPE_METHODS
+from pyct.core.entry.type_calls import NAMES as TYPE_METHODS
 from pyct.intercept.positions import Parts
 
 # the names whose calls are conversions pyct follows, which a `map` may also hand its items to

@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from functools import cached_property
 
 from pyct.binding.annotations import NONE, Check, Items, OneOf, int_keys, reads_as_int
-from pyct.core.branch import FLOAT_AND_BOOL
-from pyct.core.list_state import kind_of
+from pyct.core.foundation.branch import FLOAT_AND_BOOL
+from pyct.core.lists.list_state import kind_of
 
 # the kinds an added item takes from an annotation's item type, when the items do not say
 _ANNOTATED: Mapping[type, str] = {int: "int", str: "str", float: "float", bool: "bool"}

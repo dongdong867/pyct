@@ -3,7 +3,7 @@
 from collections import Counter, deque
 
 from pyct.branches.plan import Plan, plan
-from pyct.core.branch import Branch, Fact, ForkSite, Site
+from pyct.core.foundation.branch import Branch, Fact, ForkSite, Site
 
 # what tells one fork from another: the id of the fork before it, -1 at the root, then its own
 # site's number (see `Tree._number`)
