@@ -7,8 +7,12 @@ writes.
 """
 
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
+import pytest
+
+from pyct.config.solver_timeout import DEFAULT_SECONDS
 from tests.acceptance.harness import REPO_ROOT, run_pyct, summary_line
 
 CAMEL = "targets.strs.camel_to_snake::camel_to_snake_case"
@@ -16,14 +20,25 @@ CAMEL_FILE = REPO_ROOT / "targets" / "strs" / "camel_to_snake.py"
 UPPER_AND_DIGIT = "targets.strs.upper_and_digit::both"
 UPPER_AND_DIGIT_FILE = str(REPO_ROOT / "targets" / "strs" / "upper_and_digit.py")
 
+# the solver limit, in the milliseconds a dumped program's `:tlimit-per` gives cvc5
+SOLVER_LIMIT_MS = round(DEFAULT_SECONDS * 1000)
+
+# pyct writes a solve's program within milliseconds of the solve's start, 14 ms at most in the
+# runs here, so a program given more than a second less than the solver limit was given what
+# was left of the budget
+WRITING_MS = 1000
+
 
 # answer-a-character-check-on-a-long-string-within-the-limit-keeps-a-contradiction-unsat
 def test_an_uppercase_digit_stays_unsat() -> None:
-    # the loop lengthens the string with each pass, so only a budget ends the run
-    result = run_pyct(UPPER_AND_DIGIT, '{"s": "aB1"}', "--budget", "5", timeout=60)
+    # the loop lengthens the string with each pass, so the run ends on its plateau, about 1 s
+    # in, long before the budget's end could cut an ask short
+    argv = ("--budget", "30", "--plateau", "40")
+    result = run_pyct(UPPER_AND_DIGIT, '{"s": "aB1"}', *argv, timeout=60)
 
     assert result.returncode == 0, result.stderr
     summary = summary_line(result.stdout)
+    assert summary["stopped"] == "no gain in 40 inputs", summary
     assert summary["uncovered"] == {UPPER_AND_DIGIT_FILE: [4]}, summary
     # each flip into `return 1` makes `c.isdigit()` true on an uppercase character
     explained = summary["why_uncovered"]
@@ -54,35 +69,72 @@ def camel_run(seed: str, directory: Path) -> dict[str, object]:
     return summary_line(result.stdout)
 
 
-def answers_at_alnum(directory: Path) -> list[str]:
-    """What cvc5 answered each ask aimed at `not char.isalnum()` from the seed's path, as its
-    file says."""
+@dataclass(frozen=True)
+class Asked:
+    """A dumped program: its ask's place in the run's order, what cvc5 answered, and the
+    milliseconds it was given."""
+
+    order: tuple[int, ...]
+    answer: str
+    limit_ms: int
+
+    @property
+    def cut_by_the_budget(self) -> bool:
+        """Whether the program was given what was left of the budget, short of the limit."""
+        return self.limit_ms < SOLVER_LIMIT_MS - WRITING_MS
+
+
+def asked_at_alnum(directory: Path) -> list[Asked]:
+    """Each program asked at `not char.isalnum()` from the seed's path, in the run's order."""
     line, written = line_of("elif not char.isalnum():")
     aim = f"; aim {CAMEL_FILE}:{line}:{written.index('char.isalnum()')} at position "
-    answers = []
-    for path in directory.iterdir():
-        head = path.read_text().splitlines()[:2]
+    asked = []
+    for path in directory.glob("ask-*.smt2"):
+        text = path.read_text()
+        head = text.splitlines()[:2]
         if head[0].startswith(aim) and head[0].endswith(", on the path of stdout line 1"):
             answered = re.fullmatch(r"; cvc5 answered (.+) in \d+\.\d{3} s", head[1])
-            assert answered is not None, head
-            answers.append(answered.group(1))
-    return answers
+            limit = re.search(r"^\(set-option :tlimit-per (\d+)\)$", text, re.MULTILINE)
+            assert answered is not None and limit is not None, head
+            order = tuple(int(part) for part in path.stem.split("-")[1:])
+            asked.append(Asked(order, answered.group(1), int(limit.group(1))))
+    return sorted(asked, key=lambda program: program.order)
+
+
+def assert_answered_within_the_limit(directory: Path, answers: set[str]) -> None:
+    """The seed's path's first ask at `not char.isalnum()`, the one the run makes first, was
+    given the solver limit and answered one of the answers, and so did every later one.
+
+    A later ask the budget's end gave less than the limit and that ran out says nothing about
+    the limit: it ran out of the budget.
+    """
+    asked = asked_at_alnum(directory)
+    assert asked, sorted(path.name for path in directory.iterdir())
+    first, *rest = asked
+    assert not first.cut_by_the_budget and first.answer in answers, first
+    ran_out = [
+        program
+        for program in rest
+        if program.answer not in answers
+        and not (program.cut_by_the_budget and program.answer == "unknown (timeout)")
+    ]
+    assert ran_out == []
 
 
 # answer-a-character-check-on-a-long-string-within-the-limit-covers-camel-case-line-45
+@pytest.mark.serial
 def test_covers_the_line_a_mark_reaches(tmp_path: Path) -> None:
     summary = camel_run("someRandomString", tmp_path / "D")
 
     covered = summary["covered"]
     assert isinstance(covered, dict), summary
     assert line_of('snake_str += "_"')[0] in covered[str(CAMEL_FILE)], summary
-    answers = answers_at_alnum(tmp_path / "D")
-    assert answers and set(answers) == {"sat"}, answers
+    assert_answered_within_the_limit(tmp_path / "D", {"sat"})
 
 
 # answer-a-character-check-on-a-long-string-within-the-limit-answers-a-long-loop
+@pytest.mark.serial
 def test_answers_the_check_on_a_64_character_loop(tmp_path: Path) -> None:
     camel_run("someRandom123Str" * 4, tmp_path / "D")
 
-    answers = answers_at_alnum(tmp_path / "D")
-    assert answers and set(answers) <= {"sat", "unsat"}, answers
+    assert_answered_within_the_limit(tmp_path / "D", {"sat", "unsat"})
