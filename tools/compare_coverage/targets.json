@@ -685,6 +685,7 @@
     {"set": "v2", "target": "targets.stop.last_fork::flip", "seed": {"x": 0}},
     {"set": "v2", "target": "targets.stop.raises_last::check", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.bool_int_text::counted", "seed": {"x": 0}},
+    {"set": "v2", "target": "targets.strs.camel_to_snake::camel_to_snake_case", "seed": {"input_str": "someRandomString"}},
     {"set": "v2", "target": "targets.strs.cases::shape", "seed": {"s": "x"}},
     {"set": "v2", "target": "targets.strs.checks::classify", "seed": {"s": ""}},
     {"set": "v2", "target": "targets.strs.code_at_position::code_at", "seed": {"s": "abc", "n": 0}},

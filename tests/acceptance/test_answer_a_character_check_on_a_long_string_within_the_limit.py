@@ -6,8 +6,13 @@ Each test spawns ``python -P -m pyct`` through the harness, so the asks are the 
 writes.
 """
 
+import re
+from pathlib import Path
+
 from tests.acceptance.harness import REPO_ROOT, run_pyct, summary_line
 
+CAMEL = "targets.strs.camel_to_snake::camel_to_snake_case"
+CAMEL_FILE = REPO_ROOT / "targets" / "strs" / "camel_to_snake.py"
 UPPER_AND_DIGIT = "targets.strs.upper_and_digit::both"
 UPPER_AND_DIGIT_FILE = str(REPO_ROOT / "targets" / "strs" / "upper_and_digit.py")
 
@@ -32,3 +37,52 @@ def test_an_uppercase_digit_stays_unsat() -> None:
     misses = summary["misses"]
     assert isinstance(misses, list)
     assert {miss["why"] for miss in misses if miss["line"] == 3 and miss["col"] == 27} == {"unsat"}
+
+
+def line_of(statement: str) -> tuple[int, str]:
+    """The camel-case target's one line that is the statement, and the line as written."""
+    lines = CAMEL_FILE.read_text().splitlines()
+    (number,) = [at for at, line in enumerate(lines, 1) if line.strip() == statement]
+    return number, lines[number - 1]
+
+
+def camel_run(seed: str, directory: Path) -> dict[str, object]:
+    """The summary of a 30 s run on the camel-case target from the seed, its asks dumped."""
+    argv = ("--budget", "30", "--dump-formulas", str(directory))
+    result = run_pyct(CAMEL, f'{{"input_str": "{seed}"}}', *argv, timeout=90)
+    assert result.returncode == 0, result.stderr
+    return summary_line(result.stdout)
+
+
+def answers_at_alnum(directory: Path) -> list[str]:
+    """What cvc5 answered each ask aimed at `not char.isalnum()` from the seed's path, as its
+    file says."""
+    line, written = line_of("elif not char.isalnum():")
+    aim = f"; aim {CAMEL_FILE}:{line}:{written.index('char.isalnum()')} at position "
+    answers = []
+    for path in directory.iterdir():
+        head = path.read_text().splitlines()[:2]
+        if head[0].startswith(aim) and head[0].endswith(", on the path of stdout line 1"):
+            answered = re.fullmatch(r"; cvc5 answered (.+) in \d+\.\d{3} s", head[1])
+            assert answered is not None, head
+            answers.append(answered.group(1))
+    return answers
+
+
+# answer-a-character-check-on-a-long-string-within-the-limit-covers-camel-case-line-45
+def test_covers_the_line_a_mark_reaches(tmp_path: Path) -> None:
+    summary = camel_run("someRandomString", tmp_path / "D")
+
+    covered = summary["covered"]
+    assert isinstance(covered, dict), summary
+    assert line_of('snake_str += "_"')[0] in covered[str(CAMEL_FILE)], summary
+    answers = answers_at_alnum(tmp_path / "D")
+    assert answers and set(answers) == {"sat"}, answers
+
+
+# answer-a-character-check-on-a-long-string-within-the-limit-answers-a-long-loop
+def test_answers_the_check_on_a_64_character_loop(tmp_path: Path) -> None:
+    camel_run("someRandom123Str" * 4, tmp_path / "D")
+
+    answers = answers_at_alnum(tmp_path / "D")
+    assert answers and set(answers) <= {"sat", "unsat"}, answers

@@ -39,6 +39,9 @@ type Ranges = tuple[tuple[int, int], ...]
 # the answer is, for render to assert once
 type Check = tuple[str, str]
 
+# how a check counts the characters of a string that are of some kinds
+type Count = Callable[[str, Iterable[str]], str]
+
 DIGITS: Ranges = ((0x30, 0x39),)
 UPPER: Ranges = ((0x41, 0x5A),)
 LOWER: Ranges = ((0x61, 0x7A),)
@@ -108,34 +111,47 @@ def one_of(ranges: Ranges) -> str:
     return parts[0] if len(parts) == 1 else f"(re.union {' '.join(parts)})"
 
 
-def _count(term: str, kinds: Iterable[str]) -> str:
-    """How many characters of the term are of the kinds: the sum of each kind's count."""
-    counts = [
-        f'(- {length(term)} (str.len (str.replace_re_all {term} {one_of(KINDS[kind])} "")))'
-        for kind in kinds
-    ]
+def _summed(counts: list[str]) -> str:
+    """The sum of the counts, one count or more."""
     return counts[0] if len(counts) == 1 else f"(+ {' '.join(counts)})"
+
+
+def _removed(term: str, kinds: Iterable[str]) -> str:
+    """How many characters of the term are of the kinds: the sum of each kind's count, the
+    length the term loses when that kind is removed."""
+    return _summed(
+        [
+            f'(- {length(term)} (str.len (str.replace_re_all {term} {one_of(KINDS[kind])} "")))'
+            for kind in kinds
+        ]
+    )
+
+
+def _held(term: str, kinds: Iterable[str]) -> str:
+    """How many characters of a term of at most one character are of the kinds: the sum of
+    each kind's count, 1 where the term is a character of that kind and else 0."""
+    return _summed([f"(ite (str.in_re {term} {one_of(KINDS[kind])}) 1 0)" for kind in kinds])
 
 
 def counted(term: str) -> str:
     """The fact every string meets: its counts are each zero or more, and add up to its length."""
-    each = [f"(>= {_count(term, [kind])} 0)" for kind in KINDS]
-    return f"(and (= {_count(term, KINDS)} {length(term)}) {' '.join(each)})"
+    each = [f"(>= {_removed(term, [kind])} 0)" for kind in KINDS]
+    return f"(and (= {_removed(term, KINDS)} {length(term)}) {' '.join(each)})"
 
 
-def _all(term: str, kinds: Iterable[str]) -> str:
+def _all(term: str, kinds: Iterable[str], count: Count) -> str:
     """The term has a character, and every character is of the kinds."""
-    return f"(and (> {length(term)} 0) (= {_count(term, kinds)} {length(term)}))"
+    return f"(and (> {length(term)} 0) (= {count(term, kinds)} {length(term)}))"
 
 
-def _none(term: str, kinds: Iterable[str]) -> str:
+def _none(term: str, kinds: Iterable[str], count: Count) -> str:
     """No character of the term is of the kinds."""
-    return f"(= {_count(term, kinds)} 0)"
+    return f"(= {count(term, kinds)} 0)"
 
 
-def _cased(term: str, cased: str, other: str) -> str:
+def _cased(term: str, cased: str, other: str, count: Count) -> str:
     """A letter of one case, and none of the other: ``isupper`` and ``islower``."""
-    return f"(and (> {_count(term, [cased])} 0) {_none(term, [other])})"
+    return f"(and (> {count(term, [cased])} 0) {_none(term, [other], count)})"
 
 
 # a run of letters as istitle and title want it: one uppercase letter, then lowercase ones
@@ -155,18 +171,18 @@ _TITLED = (
 )
 
 
-def _titled(term: str) -> str:
+def _titled(term: str, count: Count) -> str:
     """``s.istitle()``: each run of letters one uppercase letter and then lowercase ones.
 
     At least one run, so an uppercase letter, which is said as a count too
     for the checks around it to meet.
     """
-    return f"(and (str.in_re {term} {_TITLED}) (> {_count(term, ['upper'])} 0))"
+    return f"(and (str.in_re {term} {_TITLED}) (> {count(term, ['upper'])} 0))"
 
 
-def _identifier(term: str) -> str:
+def _identifier(term: str, count: Count) -> str:
     """``s.isidentifier()``: letters, digits and underscores, and no digit first."""
-    named = _all(term, ["digit", "upper", "lower", "underscore"])
+    named = _all(term, ["digit", "upper", "lower", "underscore"], count)
     return f"(and {named} (not (str.in_re (str.at {term} 0) {one_of(DIGITS)})))"
 
 
@@ -177,28 +193,29 @@ _UNPRINTABLE = ["whitespace_but_space", "control_but_whitespace", "unprintable_p
 
 # each character check, as the term that gives Python's answer for ASCII. isdigit, isdecimal
 # and isnumeric part only past ASCII, where each has characters the others do not
-_ANSWERS: Mapping[str, Callable[[str], str]] = {
-    "isdigit": lambda term: _all(term, ["digit"]),
-    "isdecimal": lambda term: _all(term, ["digit"]),
-    "isnumeric": lambda term: _all(term, ["digit"]),
-    "isalpha": lambda term: _all(term, ["upper", "lower"]),
-    "isalnum": lambda term: _all(term, ["digit", "upper", "lower"]),
-    "isspace": lambda term: _all(term, ["space", "whitespace_but_space"]),
-    "isupper": lambda term: _cased(term, "upper", "lower"),
-    "islower": lambda term: _cased(term, "lower", "upper"),
-    "isascii": lambda term: _none(term, _PAST_ASCII),
-    "isprintable": lambda term: _none(term, _UNPRINTABLE),
+_ANSWERS: Mapping[str, Callable[[str, Count], str]] = {
+    "isdigit": lambda term, count: _all(term, ["digit"], count),
+    "isdecimal": lambda term, count: _all(term, ["digit"], count),
+    "isnumeric": lambda term, count: _all(term, ["digit"], count),
+    "isalpha": lambda term, count: _all(term, ["upper", "lower"], count),
+    "isalnum": lambda term, count: _all(term, ["digit", "upper", "lower"], count),
+    "isspace": lambda term, count: _all(term, ["space", "whitespace_but_space"], count),
+    "isupper": lambda term, count: _cased(term, "upper", "lower", count),
+    "islower": lambda term, count: _cased(term, "lower", "upper", count),
+    "isascii": lambda term, count: _none(term, _PAST_ASCII, count),
+    "isprintable": lambda term, count: _none(term, _UNPRINTABLE, count),
     "istitle": _titled,
     "isidentifier": _identifier,
 }
 
 
-def _checked(answer: Callable[[str], str]) -> Callable[[str], Check]:
-    """A check's answer, with the fact about its string's counts."""
-    return lambda term: (answer(term), counted(term))
+def _checked(answer: Callable[[str, Count], str]) -> Callable[[str], Check]:
+    """A check's answer as removal counts, with the fact about its string's counts."""
+    return lambda term: (answer(term, _removed), counted(term))
 
 
-# each character check: the term for Python's answer, and the fact about the counts it reads
+# each character check as removal counts: the term for Python's answer, and the fact about the
+# counts it reads
 CHECKS: Mapping[str, Callable[[str], Check]] = {
     head: _checked(answer) for head, answer in _ANSWERS.items()
 }
@@ -254,10 +271,17 @@ def membership(head: str, term: str) -> str:
     return f"(str.in_re {term} {_MEMBERSHIPS[head]})"
 
 
-def check(head: str, term: str, *, alone: bool) -> Check:
+def check(head: str, term: str, *, alone: bool, character: bool) -> Check:
     """The check on the term: a membership when ``alone``, no other check reading the string,
-    and otherwise counts with their fact, for the checks on one string to meet as sums."""
-    return (membership(head, term), "true") if alone else CHECKS[head](term)
+    and otherwise counts, for the checks on one string to meet as sums.
+
+    A ``character`` is a string of at most one character, as ``s[i]`` hands one out: each
+    count there is one membership, and their fact holds of itself. Any other string's counts
+    are removals, with their fact.
+    """
+    if alone:
+        return membership(head, term), "true"
+    return (_ANSWERS[head](term, _held), "true") if character else CHECKS[head](term)
 
 
 def checks_by_string(order: Iterable[Node], key: Keyed) -> dict[Key, set[str]]:
