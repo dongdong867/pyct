@@ -123,7 +123,7 @@ def assert_answered_within_the_limit(directory: Path, answers: set[str]) -> None
 
 # answer-a-character-check-on-a-long-string-within-the-limit-covers-camel-case-line-45
 @pytest.mark.serial
-def test_covers_the_line_a_mark_reaches(tmp_path: Path) -> None:
+def test_a_character_that_is_not_alphanumeric_reaches_its_line(tmp_path: Path) -> None:
     summary = camel_run("someRandomString", tmp_path / "D")
 
     covered = summary["covered"]
