@@ -10,9 +10,14 @@ from collections.abc import Callable
 
 import pytest
 
+from pyct.results.failure import FailureKind
+from pyct.run.isolation import Isolation
+from pyct.run.run import run
+from pyct.run.target import load_target
 from targets.classes import cart
 from tests.acceptance.harness import (
     input_lines,
+    let_pyct_run_in_process,
     lines_expressions_and_sides,
     numbers_of,
     run_pyct,
@@ -75,6 +80,23 @@ def test_runs_other_kinds_of_method(name: str, seed: dict[str, object]) -> None:
     ]
     assert other_side, result.stdout
     assert all(answer["failure"] is None for answer in other_side), result.stdout
+
+
+# point-at-a-class-or-one-of-its-methods-takes-an-instance-as-self-through-run, in pyct's own
+# process, where the caller's instance is the one an input would change were it not copied
+def test_takes_an_instance_as_self_through_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    target = load_target(f"{MODULE}::Cart.total")
+    assert target.self_class is not None
+    given = target.self_class(owner="ann")
+
+    result = run(target, {"self": given, "discount": 5}, isolation=Isolation.IN_PROCESS)
+
+    discounts = [record.args["discount"] for record in result.records]
+    assert any(isinstance(discount, int) and discount > 10 for discount in discounts), discounts
+    failures = [record.failure for record in result.records if record.failure is not None]
+    assert all(failure.kind is not FailureKind.TARGET_RAISED for failure in failures), failures
+    assert vars(given) == {"owner": "ann"}
 
 
 # point-at-a-class-or-one-of-its-methods-reports-a-path-that-names-no-function
