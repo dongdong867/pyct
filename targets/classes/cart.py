@@ -80,3 +80,30 @@ class Catalog:
         if x > 0:
             return cls
         return None
+
+
+class Store:
+    reads = 0
+
+    @property
+    def till(self):
+        Store.reads += 1
+        return handler
+
+
+store = Store()
+
+prices = {"a": 1}
+
+
+class Proxy:
+    def __getattribute__(self, name):
+        return object.__getattribute__(self, name)
+
+    def pick(self, x):
+        if x > 2:
+            return "big"
+        return "small"
+
+
+proxy = Proxy()

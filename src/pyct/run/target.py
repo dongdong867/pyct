@@ -27,6 +27,19 @@ from pyct.run.own_imports import keep_own_imports
 _INSPECT_S_OWN = (ValueError, TypeError)
 
 
+# what Python reads through a ``__get__`` of its own: a function, a staticmethod, a method or
+# slot a type written in C holds, a ``__slots__`` slot, and a C type's own attribute
+_PYTHON_S_BINDINGS = (
+    types.FunctionType,
+    staticmethod,
+    types.ClassMethodDescriptorType,
+    types.MethodDescriptorType,
+    types.WrapperDescriptorType,
+    types.MemberDescriptorType,
+    types.GetSetDescriptorType,
+)
+
+
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
 
@@ -53,6 +66,13 @@ class Target:
     of its own when read through the class, bound to nothing, counts as one
     that binds to an instance, since only an instance would tell the two
     apart. The seed's value for ``self`` is passed as given.
+
+    ``found_by_name`` is the callable the spec's name reached, when each read
+    along it ran Python's own lookup alone (``_read_plainly``), so another
+    interpreter that follows the name finds the same callable without
+    running the target's code to get there. It is None when a read ran the
+    target's code, such as a property. A caller who puts another callable in
+    ``fn`` leaves it, so no name finds that one.
     """
 
     spec: str
@@ -61,6 +81,7 @@ class Target:
     signature: inspect.Signature
     import_lines: frozenset[int] = frozenset()
     self_class: type | None = None
+    found_by_name: Callable[..., object] | None = None
 
 
 def load_target(
@@ -68,8 +89,8 @@ def load_target(
 ) -> Target:
     """Import ``module`` from the current directory and follow ``name`` from it.
 
-    ``name`` is one or more names joined by dots, each read as an attribute of
-    the last, as ``getattr`` reads it (``follow``).
+    ``name`` is one or more names joined by dots, each read once as an
+    attribute of the last, as ``getattr`` reads it.
 
     The working directory goes first on the import path, so a module under
     it resolves with no ``PYTHONPATH`` set. From then on, a module pyct
@@ -88,7 +109,7 @@ def load_target(
     keeping = import_lines(module_name) if keep_import_lines else contextlib.nullcontext(set())
     with keeping as ran:
         module = _imported(module_name, watch)
-    fn, self_class = _followed(spec, module)
+    fn, self_class, found_by_name = _followed(spec, module)
     file = getattr(module, "__file__", None)
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
@@ -100,6 +121,7 @@ def load_target(
         signature=signature,
         import_lines=frozenset(ran),
         self_class=self_class,
+        found_by_name=found_by_name,
     )
 
 
@@ -113,20 +135,11 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
     )
 
 
-def follow(module: object, name: str) -> object:
-    """What ``name``, names joined by dots, reaches from ``module``, read one attribute at a time.
-
-    A read raises as ``getattr`` raises, an AttributeError for a name the
-    object lacks.
-    """
-    found = module
-    for part in name.split("."):
-        found = getattr(found, part)
-    return found
-
-
-def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], type | None]:
-    """The callable the spec's name reaches from ``module``, and the class it needs as ``self``.
+def _followed(
+    spec: str, module: ModuleType
+) -> tuple[Callable[..., object], type | None, Callable[..., object] | None]:
+    """The callable the spec's name reaches from ``module``, the class it needs as ``self``, and
+    the callable again when each read ran Python's own lookup alone, else None.
 
     A name the object lacks, or one that reaches nothing callable, is a
     ``TargetError`` that says the module has no such function. Any other
@@ -135,18 +148,67 @@ def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], typ
     first, as pyct reports any raise of the target's.
     """
     module_name, _, name = spec.partition("::")
-    owner_name, _, last = name.rpartition(".")
     missing = f"{module_name} has no function {name}"
     try:
-        owner = follow(module, owner_name) if owner_name else module
-        fn = getattr(owner, last)
+        owner, fn, plain = _walked(module, name)
     except AttributeError as error:
         raise TargetError(missing) from error
     except (Exception, SystemExit) as error:
         raise TargetError(f"cannot read {spec}: {one_line(error)}") from error
     if not callable(fn):
         raise TargetError(missing)
-    return fn, _self_class(owner, last, fn)
+    last = name.rpartition(".")[2]
+    return fn, _self_class(owner, last, fn), fn if plain else None
+
+
+def _walked(module: ModuleType, name: str) -> tuple[object, object, bool]:
+    """The object before ``name``'s last part, what that part reads as, and whether each read ran
+    Python's own lookup alone. Each name is read once, and raises as ``getattr`` raises."""
+    owner: object = module
+    found: object = module
+    plain = True
+    for part in name.split("."):
+        owner = found
+        plain = plain and _read_plainly(owner, part)
+        found = getattr(owner, part)
+    return owner, found, plain
+
+
+def _read_plainly(owner: object, name: str) -> bool:
+    """Whether reading ``name`` from ``owner`` runs Python's own lookup alone, none of the target's
+    code, told without reading it.
+
+    The owner's type looks attributes up as Python's built-in types do, the name
+    is held where that lookup finds it rather than given by a
+    ``__getattr__``, and what holds it either has no ``__get__`` or binds by
+    one of Python's own (``_PYTHON_S_BINDINGS``). A classmethod is told by
+    what it wraps, which Python 3.12 reads through its own ``__get__``.
+    """
+    if not _pythons_own(inspect.getattr_static(type(owner), "__getattribute__")):
+        return False
+    try:
+        held = inspect.getattr_static(owner, name)
+    except AttributeError:
+        return False
+    while type(held) is classmethod:
+        held = held.__func__
+    return type(held) in _PYTHON_S_BINDINGS or not _has_get(type(held))
+
+
+def _pythons_own(lookup: object) -> bool:
+    """Whether an attribute lookup is one of Python's built-in types' own, written in C."""
+    owner = (
+        getattr(lookup, "__objclass__", None)
+        if type(lookup) is types.WrapperDescriptorType
+        else None
+    )
+    return isinstance(owner, type) and owner.__module__ == "builtins"
+
+
+def _has_get(kind: type) -> bool:
+    """Whether Python reads an object of ``kind`` through its ``__get__``: along ``kind``'s own
+    classes, never ``kind``'s type."""
+    return any("__get__" in vars(base) for base in inspect.getmro(kind))
 
 
 def _self_class(owner: object, name: str, fn: object) -> type | None:
@@ -167,10 +229,8 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
     for base in inspect.getmro(owner):
         if name in vars(base):
             held = vars(base)[name]
-            # where Python looks `__get__` up: along the held object's type, never the type's type
-            binds = any("__get__" in vars(kind) for kind in inspect.getmro(type(held)))
             plain = isinstance(held, (staticmethod, classmethod))
-            return owner if binds and not plain else None
+            return owner if _has_get(type(held)) and not plain else None
     return None
 
 

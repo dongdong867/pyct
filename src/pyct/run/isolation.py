@@ -41,8 +41,6 @@ import logging
 import mmap
 import os
 import random
-import sys
-import types
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
 
@@ -53,7 +51,7 @@ from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
-from pyct.run.target import Target, execution_context, follow
+from pyct.run.target import Target, execution_context
 from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
@@ -89,11 +87,12 @@ class Inputs:
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
-        # read once, as the run starts: following the name runs the target's own code, such as
-        # a property, which no input's process holds once the run is under way
-        self._named = isolation in (Isolation.AUTO, Isolation.FRESH) and _named(target)
+        self._named = _named(target)
         if isolation is Isolation.FRESH and not self._named:
-            raise ValueError("a fresh interpreter imports the target by name, and none names it")
+            raise ValueError(
+                "a fresh interpreter imports the target by name, and no name reaches it"
+                " without running the target's own code"
+            )
         self.isolation = isolation
         self.ran: list[Isolation] = []
         self._switched: Isolation | None = None
@@ -141,7 +140,8 @@ class Inputs:
             return Isolation.FRESH
         logger.warning(
             "each input runs in pyct's process, because pyct's process runs other threads and"
-            " no module attribute names the target for a fresh interpreter to import"
+            " no name a fresh interpreter could import reaches the target without running the"
+            " target's own code"
         )
         return Isolation.IN_PROCESS
 
@@ -149,33 +149,11 @@ class Inputs:
 def _named(target: Target) -> bool:
     """Whether a fresh interpreter importing the target's module by name finds this callable.
 
-    It follows the spec's name from the module as ``load_target`` does. A read
-    that raises finds nothing.
+    That is what the load found by following the spec's name with Python's
+    own lookup alone (``Target.found_by_name``). Nothing is read again, so
+    no read of the target's runs in pyct's process beyond the load's one.
     """
-    module_name, _, name = target.spec.partition("::")
-    module = sys.modules.get(module_name)
-    if module is None:
-        return False
-    try:
-        found = follow(module, name)
-    except (Exception, SystemExit):
-        return False
-    return found is target.fn or _same_method(found, target.fn)
-
-
-def _same_method(found: object, fn: object) -> bool:
-    """Whether both are methods that bind the same function to the same object.
-
-    A method read through its object, as ``Cart.from_text`` or
-    ``registry.lookup``, is a new object at each read. Each part is compared
-    by identity, a C method's by its object and its name, so the comparison
-    runs none of the target's code.
-    """
-    if isinstance(found, types.MethodType) and isinstance(fn, types.MethodType):
-        return found.__func__ is fn.__func__ and found.__self__ is fn.__self__
-    if isinstance(found, types.BuiltinMethodType) and isinstance(fn, types.BuiltinMethodType):
-        return found.__self__ is fn.__self__ and found.__name__ == fn.__name__
-    return False
+    return target.found_by_name is target.fn
 
 
 def in_a_child(

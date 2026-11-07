@@ -8,12 +8,10 @@ import os
 import random
 import subprocess
 import sys
-import types
 from pathlib import Path
 
 import pytest
 
-from pyct.execution.execute import ExecutionResult
 from pyct.run import isolation, process
 from pyct.run.isolation import Inputs, Isolation
 from pyct.run.process import Stopped
@@ -199,94 +197,42 @@ def test_a_fresh_interpreter_runs_a_target_a_dotted_name_names(
     assert [branch.taken for branch in result.branches] == [False]
 
 
-class _Compared:
-    """A callable that counts each time Python asks it whether it equals something."""
-
-    asked = 0
-
-    def __call__(self, owner: object, x: int) -> int:
-        return x
-
-    def __eq__(self, other: object) -> bool:
-        _Compared.asked += 1
-        return True
-
-    __hash__ = object.__hash__
+def store_reads() -> int:
+    """How many times ``store.till``, a property, has been read since its module imported."""
+    return sys.modules["targets.classes.cart"].Store.reads
 
 
-class _Fresh:
-    """Gives a new method at each read, binding a new ``_Compared`` to the object read through."""
-
-    def __get__(self, instance: object, owner: type | None = None) -> object:
-        return types.MethodType(_Compared(), instance)
-
-
-def test_telling_a_method_read_again_from_the_target_runs_none_of_the_target_s_code(
-    monkeypatch: pytest.MonkeyPatch,
+def test_a_name_whose_read_runs_the_target_s_code_is_read_once_and_runs_in_process(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    module = types.ModuleType("boxes")
-    box = type("Box", (), {"act": _Fresh()})()
-    setattr(module, "box", box)  # noqa: B010 - a module built by hand
-    monkeypatch.setitem(sys.modules, "boxes", module)
-    target = dataclasses.replace(one_check(), spec="boxes::box.act", fn=box.act)
-    monkeypatch.setattr(_Compared, "asked", 0)
+    """Only the load reads the name. A fresh interpreter would have to run the property again."""
+    target = load_target("targets.classes.cart::store.till")
+    counting(monkeypatch, 2)
+
+    inputs = Inputs(target, Isolation.AUTO)
+    with caplog.at_level(logging.WARNING):
+        inputs({"x": 5}, None)
+
+    assert store_reads() == 1
+    assert inputs.ran == [Isolation.IN_PROCESS]
+    (said,) = caplog.messages
+    assert said.startswith("each input runs in pyct's process, because pyct's process runs other")
+    assert "running the target's own code" in said
+
+
+def test_a_fresh_interpreter_refuses_a_name_whose_read_runs_the_target_s_code() -> None:
+    target = load_target("targets.classes.cart::store.till")
 
     with pytest.raises(ValueError, match="by name"):
         Inputs(target, Isolation.FRESH)
 
-    assert _Compared.asked == 0
+    assert store_reads() == 1
 
 
-def test_a_fresh_interpreter_finds_a_method_written_in_c_read_again(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    module = types.ModuleType("caches")
-    cache: dict[str, int] = {}
-    setattr(module, "cache", cache)  # noqa: B010 - a module built by hand
-    monkeypatch.setitem(sys.modules, "caches", module)
-    target = dataclasses.replace(one_check(), spec="caches::cache.get", fn=cache.get)
+def test_a_fresh_interpreter_finds_a_method_written_in_c() -> None:
+    target = load_target("targets.classes.cart::prices.get")
 
     assert Inputs(target, Isolation.FRESH).isolation is Isolation.FRESH
-
-
-def shelf_read_once(monkeypatch: pytest.MonkeyPatch, fn: object) -> list[int]:
-    """Module ``shelves`` whose ``shelf.pick`` is a property that gives ``fn`` once, then raises.
-
-    The list returned holds one entry per read.
-    """
-    reads: list[int] = []
-
-    def pick(_shelf: object) -> object:
-        reads.append(len(reads))
-        if len(reads) > 1:
-            raise RuntimeError("read again")
-        return fn
-
-    module = types.ModuleType("shelves")
-    setattr(module, "shelf", type("Shelf", (), {"pick": property(pick)})())  # noqa: B010
-    monkeypatch.setitem(sys.modules, "shelves", module)
-    return reads
-
-
-def test_a_dotted_name_is_followed_once_as_the_inputs_start_never_mid_run(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
-) -> None:
-    """A read along the path runs the target's code, here a property that raises when read again."""
-    target = dataclasses.replace(one_check(), spec="shelves::shelf.pick")
-    reads = shelf_read_once(monkeypatch, target.fn)
-    no_lines = ExecutionResult(frozenset(), ())
-    monkeypatch.setattr(isolation, "in_a_fresh_interpreter", lambda *_: no_lines)
-    counting(monkeypatch, 2)
-
-    inputs = Inputs(target, Isolation.AUTO)
-    assert len(reads) == 1
-    with caplog.at_level(logging.WARNING):
-        inputs({"x": 3}, None)
-
-    assert len(reads) == 1
-    assert inputs.ran == [Isolation.FRESH]
-    (said,) = caplog.messages
-    assert said.startswith("each input runs in a fresh interpreter")
 
 
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:

@@ -1,4 +1,5 @@
 import contextlib
+import functools
 import importlib
 import inspect
 import sys
@@ -14,7 +15,6 @@ from pyct.run.target import (
     Target,
     TargetError,
     execution_context,
-    follow,
     interception,
     load_target,
 )
@@ -115,7 +115,9 @@ def test_load_target_keeps_the_class_a_method_needs_an_instance_of_as_self(
     target = load_target(f"{CART}::{name}")
 
     assert target.self_class is (
-        None if self_class is None else follow(sys.modules[CART], self_class)
+        None
+        if self_class is None
+        else functools.reduce(getattr, self_class.split("."), sys.modules[CART])
     )
 
 
@@ -151,6 +153,47 @@ def test_a_classmethod_that_wraps_a_staticmethod_binds_to_nothing() -> None:
     chained = type("Chained", (), {"f": classmethod(staticmethod(f))})
 
     assert self_class_of(chained, "f", getattr(chained, "f")) is None  # noqa: B009
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("Cart", id="a-class"),
+        pytest.param("Cart.total", id="a-method"),
+        pytest.param("Cart.from_text", id="a-classmethod"),
+        pytest.param("Cart.rate", id="a-staticmethod"),
+        pytest.param("Outer.Inner.check", id="a-method-of-a-nested-class"),
+        pytest.param("registry.lookup", id="a-method-of-a-module-level-object"),
+        pytest.param("handler", id="a-callable-object"),
+        pytest.param("Tags.fromkeys", id="a-classmethod-written-in-c"),
+        pytest.param("prices.get", id="a-method-written-in-c"),
+    ],
+)
+def test_load_target_keeps_what_a_name_read_by_python_s_own_code_alone_reaches(name: str) -> None:
+    target = load_target(f"{CART}::{name}")
+
+    assert target.found_by_name is target.fn
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("store.till", id="a-property"),
+        pytest.param("Catalog.opened", id="a-descriptor-written-in-python"),
+        pytest.param("proxy.pick", id="an-object-whose-type-looks-attributes-up-itself"),
+    ],
+)
+def test_load_target_keeps_nothing_found_by_a_name_whose_read_runs_the_target_s_code(
+    name: str,
+) -> None:
+    assert load_target(f"{CART}::{name}").found_by_name is None
+
+
+def test_load_target_keeps_nothing_found_by_a_name_a_module_s_getattr_gives() -> None:
+    target = load_target("targets.classes.lazy::made")
+
+    assert target.found_by_name is None
+    assert list(target.signature.parameters) == ["x"]
 
 
 @pytest.mark.parametrize(
