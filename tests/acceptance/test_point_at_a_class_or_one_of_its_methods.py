@@ -119,3 +119,14 @@ def test_refuses_a_malformed_path(name: str) -> None:
     assert result.stderr.splitlines() == [f"target must be MODULE::FUNCTION, got {spec!r}"]
     assert result.stdout == ""
     assert result.returncode == 2
+
+
+# a read along the path that raises other than AttributeError is refused (approved 2026-11-08, Q1)
+def test_refuses_a_path_whose_read_raises() -> None:
+    spec = "targets.load.raises_on_the_path::shelf.fetch"
+
+    result = run_pyct(spec, "--args", '{"x": 0}')
+
+    assert result.stderr.splitlines() == [f"cannot read {spec}: RuntimeError: the shelf is locked"]
+    assert result.stdout == ""
+    assert result.returncode == 1
