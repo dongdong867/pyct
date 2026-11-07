@@ -158,13 +158,22 @@ def test_load_target_names_a_dotted_name_that_ends_on_no_function(name: str) -> 
     assert str(refused.value) == f"{CART} has no function {name}"
 
 
-def test_load_target_names_a_read_along_the_name_that_raises_by_python_s_reason() -> None:
-    spec = "targets.load.raises_on_the_path::shelf.fetch"
+@pytest.mark.parametrize(
+    ("name", "reason"),
+    [
+        pytest.param("shelf.fetch", "RuntimeError: the shelf is locked", id="a-runtime-error"),
+        pytest.param("shelf.count", "ValueError: no stock", id="a-value-error"),
+    ],
+)
+def test_load_target_names_a_read_along_the_name_that_raises_by_its_type_and_message(
+    name: str, reason: str
+) -> None:
+    spec = f"targets.load.raises_on_the_path::{name}"
 
     with pytest.raises(TargetError) as refused:
         load_target(spec)
 
-    assert str(refused.value) == f"cannot read {spec}: RuntimeError: the shelf is locked"
+    assert str(refused.value) == f"cannot read {spec}: {reason}"
 
 
 def test_load_target_names_a_module_with_no_python_source(monkeypatch: pytest.MonkeyPatch) -> None:

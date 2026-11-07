@@ -14,6 +14,7 @@ from types import ModuleType
 
 from pyct.binding.call import positional_only
 from pyct.binding.resolve import checked_annotations
+from pyct.execution.blame import one_line
 from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
@@ -130,7 +131,8 @@ def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], typ
     A name the object lacks, or one that reaches nothing callable, is a
     ``TargetError`` that says the module has no such function. Any other
     raise, or a ``SystemExit``, as a read runs the target's own code, such as
-    a property, is a ``TargetError`` that gives ``_reason`` for it.
+    a property, is a ``TargetError`` that names it on one line, its type
+    first, as pyct reports any raise of the target's.
     """
     module_name, _, name = spec.partition("::")
     owner_name, _, last = name.rpartition(".")
@@ -141,7 +143,7 @@ def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], typ
     except AttributeError as error:
         raise TargetError(missing) from error
     except (Exception, SystemExit) as error:
-        raise TargetError(f"cannot read {spec}: {_reason(error)}") from error
+        raise TargetError(f"cannot read {spec}: {one_line(error)}") from error
     if not callable(fn):
         raise TargetError(missing)
     return fn, _self_class(owner, last, fn)

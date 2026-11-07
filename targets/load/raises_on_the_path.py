@@ -6,5 +6,9 @@ class Shelf:
     def fetch(self):
         raise RuntimeError("the shelf is locked")
 
+    @property
+    def count(self):
+        raise ValueError("no stock")
+
 
 shelf = Shelf()
