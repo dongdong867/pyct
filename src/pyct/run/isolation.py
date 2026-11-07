@@ -149,9 +149,9 @@ class Inputs:
 def _named(target: Target) -> bool:
     """Whether a fresh interpreter importing the target's module by name finds this callable.
 
-    That is what the load found by following the spec's name with Python's
-    own lookup alone (``Target.found_by_name``). Nothing is read again, so
-    no read of the target's runs in pyct's process beyond the load's one.
+    That is what the load found by a plain read of each part of the spec's
+    name (``Target.found_by_name``). Nothing is read again, so the load's
+    reads are the only ones pyct's process makes.
     """
     return target.found_by_name is target.fn
 

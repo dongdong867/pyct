@@ -72,11 +72,10 @@ class Target:
     apart. The seed's value for ``self`` is passed as given.
 
     ``found_by_name`` is the callable the spec's name reached, when each read
-    along it ran Python's own lookup alone (``_read_plainly``), so another
-    interpreter that follows the name finds the same callable without
-    running the target's code to get there. It is None when a read ran the
-    target's code, such as a property. A caller who puts another callable in
-    ``fn`` leaves it, so no name finds that one.
+    along it was plain (``_read_plainly``), so another interpreter that
+    follows the name finds the same callable. It is None when a read was not
+    plain, such as one through a property. A caller who puts another
+    callable in ``fn`` leaves it, so no name finds that one.
     """
 
     spec: str
@@ -143,7 +142,7 @@ def _followed(
     spec: str, module: ModuleType
 ) -> tuple[Callable[..., object], type | None, Callable[..., object] | None]:
     """The callable the spec's name reaches from ``module``, the class it needs as ``self``, and
-    the callable again when each read ran Python's own lookup alone, else None.
+    the callable again when each read was plain (``_read_plainly``), else None.
 
     A name the object lacks, or one that reaches nothing callable, is a
     ``TargetError`` that says the module has no such function. Any other
@@ -166,8 +165,8 @@ def _followed(
 
 
 def _walked(module: ModuleType, name: str) -> tuple[object, object, bool]:
-    """The object before ``name``'s last part, what that part reads as, and whether each read ran
-    Python's own lookup alone. Each name is read once, and raises as ``getattr`` raises."""
+    """The object before ``name``'s last part, what that part reads as, and whether each read was
+    plain (``_read_plainly``). Each name is read once, and raises as ``getattr`` raises."""
     owner: object = module
     found: object = module
     plain = True
@@ -179,17 +178,17 @@ def _walked(module: ModuleType, name: str) -> tuple[object, object, bool]:
 
 
 def _read_plainly(owner: object, name: str) -> bool:
-    """Whether reading ``name`` from ``owner`` takes Python's own steps, told without reading it:
-    none of the steps this checks runs the target's code.
+    """Whether reading ``name`` from ``owner`` is plain, told without reading it.
 
-    The owner's type looks attributes up as Python's built-in types do, and
-    the name is held where that lookup finds it rather than given by a
-    ``__getattr__``. Python reads a value through its ``__get__`` only when
-    a class holds it, along the owner's classes or its type's; a value in a
-    module's or an instance's own names is read as it is. A value a class
-    holds either has no ``__get__`` or binds by one of Python's own
-    (``_PYTHON_S_BINDINGS``). A classmethod is told by what it wraps, which
-    Python 3.12 reads through its own ``__get__``.
+    It is when the owner's type looks attributes up as Python's built-in
+    types do, the name is held where that lookup finds it rather than given
+    by a ``__getattr__``, and a value a class holds binds as Python's own
+    do. Python reads a value through its ``__get__`` only when a class holds
+    it, along the owner's classes or its type's; a value in a module's or an
+    instance's own names is read as it is. A value a class holds binds as
+    Python's own do when it has no ``__get__`` or binds by one of Python's
+    own (``_PYTHON_S_BINDINGS``). A classmethod is told by what it wraps,
+    which Python 3.12 reads through its own ``__get__``.
     """
     if not _pythons_own(inspect.getattr_static(type(owner), "__getattribute__")):
         return False
