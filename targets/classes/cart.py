@@ -1,5 +1,7 @@
 """A class with each kind of method, a nested class, and module-level objects to call."""
 
+import types
+
 
 class Cart:
     count = 0
@@ -58,3 +60,23 @@ class Handler:
 
 
 handler = Handler()
+
+
+class Tags(dict):
+    pass
+
+
+class to_the_class:
+    def __init__(self, function):
+        self.function = function
+
+    def __get__(self, instance, owner=None):
+        return types.MethodType(self.function, type(instance) if owner is None else owner)
+
+
+class Catalog:
+    @to_the_class
+    def opened(cls, x):
+        if x > 0:
+            return cls
+        return None

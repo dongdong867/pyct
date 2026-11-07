@@ -7,6 +7,7 @@ import importlib
 import inspect
 import os
 import sys
+import types
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
@@ -46,7 +47,11 @@ class Target:
     ``self_class`` is the class the spec names before a method that Python
     binds to an instance read through that class, such as ``Cart`` for
     ``Cart.total``: the method takes an instance of it as ``self``. It is None
-    for any other callable. The seed's value for ``self`` is passed as given.
+    for a callable read through the class that is bound to it already, or
+    that the class holds without binding. A descriptor that returns a callable
+    of its own when read through the class, bound to nothing, counts as one
+    that binds to an instance, since only an instance would tell the two
+    apart. The seed's value for ``self`` is passed as given.
     """
 
     spec: str
@@ -139,25 +144,34 @@ def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], typ
         raise TargetError(f"cannot read {spec}: {_reason(error)}") from error
     if not callable(fn):
         raise TargetError(missing)
-    return fn, _self_class(owner, last)
+    return fn, _self_class(owner, last, fn)
 
 
-def _self_class(owner: object, name: str) -> type | None:
+def _self_class(owner: object, name: str, fn: object) -> type | None:
     """``owner`` when it is a class whose attribute ``name`` binds to an instance read through it.
 
     That is the first object its classes hold under ``name``, in the order
     Python looks them up: one whose type has ``__get__``, other than a
-    staticmethod or a classmethod, which bind to no instance. A name only
-    the class's own type holds, as ``mro``, is bound to the class already.
+    staticmethod, which binds to nothing. ``fn``, the attribute as read
+    through the class, is bound to the class already for a classmethod,
+    written in Python or in C, and for any other descriptor that binds to
+    the class it is read through. A name only the class's own type holds,
+    as ``mro``, is bound to the class too.
     """
-    if not isinstance(owner, type):
+    if not isinstance(owner, type) or _bound_to(fn, owner):
         return None
     for base in inspect.getmro(owner):
         if name in vars(base):
             held = vars(base)[name]
             binds = hasattr(type(held), "__get__")
-            return owner if binds and not isinstance(held, (staticmethod, classmethod)) else None
+            return owner if binds and not isinstance(held, staticmethod) else None
     return None
+
+
+def _bound_to(fn: object, owner: type) -> bool:
+    """Whether ``fn`` is a method, written in Python or in C, bound to ``owner`` itself."""
+    method = isinstance(fn, (types.MethodType, types.BuiltinMethodType))
+    return method and getattr(fn, "__self__", None) is owner
 
 
 def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:

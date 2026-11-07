@@ -104,6 +104,8 @@ def test_load_target_reads_the_signature_of_what_the_name_ends_on(
         pytest.param("Cart.mro", None, id="a-method-of-the-class-s-own-type"),
         pytest.param("registry.lookup", None, id="a-method-of-a-module-level-object"),
         pytest.param("handler", None, id="a-callable-object"),
+        pytest.param("Tags.fromkeys", None, id="a-classmethod-written-in-c"),
+        pytest.param("Catalog.opened", None, id="a-descriptor-that-binds-to-the-class"),
     ],
 )
 def test_load_target_keeps_the_class_a_method_needs_an_instance_of_as_self(
