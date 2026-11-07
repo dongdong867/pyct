@@ -388,7 +388,8 @@ class _Program:
             return self._declared(declared, *rendered)
         if head in CHECKS:
             alone = self.checked.get(self._string(operands[0])) == {head}
-            answer, fact = check(head, *rendered, alone=alone)
+            character = self._character(operands[0])
+            answer, fact = check(head, *rendered, alone=alone, character=character)
             self._hold_fact(fact)
             return answer
         if head in STRING_ORDERS and kind is str:

@@ -190,3 +190,32 @@ def test_a_replaced_string_one_check_reads_is_asked_as_one_membership() -> None:
 
     assert "str.in_re" in text
     assert "str.replace_re_all" not in text
+
+
+def _piece_checked(taken: bool) -> tuple[Branch, ...]:
+    """A split's first piece pinned to "12", read by two checks: `isdigit` on the given side."""
+    piece: Expression = ["[]", ["split", "s", "','"], 0]
+    return (
+        Branch(expression=["==", piece, "'12'"], taken=True, site=SITE),
+        Branch(expression=["isascii", piece], taken=True, site=SITE),
+        Branch(expression=["isdigit", piece], taken=taken, site=SITE),
+    )
+
+
+def test_a_split_s_piece_two_checks_read_keeps_its_removal_counts() -> None:
+    """A piece is read from a list, not a string, so it may be longer than one character."""
+    text = render(_piece_checked(True), {"s": str})
+
+    assert "str.replace_re_all" in text
+    assert "(ite (str.in_re " not in text
+
+
+@needs_cvc5
+def test_a_split_s_piece_two_checks_read_keeps_its_answers() -> None:
+    held = solve(_piece_checked(True), {"s": str}, 5.0)
+    flipped = solve(_piece_checked(False), {"s": str}, 5.0)
+
+    assert isinstance(held, Sat), held
+    text = held.model["s"]
+    assert isinstance(text, str) and text.split(",")[0] == "12", held
+    assert isinstance(flipped, Unsat), flipped
