@@ -11,6 +11,7 @@ import types
 from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
+from typing import TypeGuard
 
 from pyct.binding.call import positional_only
 from pyct.binding.resolve import checked_annotations
@@ -25,23 +26,6 @@ from pyct.run.own_imports import keep_own_imports
 # the two exceptions inspect raises when it cannot read a signature; one of exactly these types
 # reads by its message alone
 _INSPECT_S_OWN = (ValueError, TypeError)
-
-
-# what Python reads through a ``__get__`` of its own: a function, a staticmethod, a method or
-# slot a type written in C holds, a ``__slots__`` slot, and a C type's own attribute
-_PYTHON_S_BINDINGS = (
-    types.FunctionType,
-    staticmethod,
-    types.ClassMethodDescriptorType,
-    types.MethodDescriptorType,
-    types.WrapperDescriptorType,
-    types.MemberDescriptorType,
-    types.GetSetDescriptorType,
-)
-
-
-# what no class holds, told apart from any value one holds
-_NOTHING = object()
 
 
 class TargetError(Exception):
@@ -71,11 +55,10 @@ class Target:
     that binds to an instance, since only an instance would tell the two
     apart. The seed's value for ``self`` is passed as given.
 
-    ``found_by_name`` is the callable the spec's name reached, when each read
-    along it was plain (``_read_plainly``), so another interpreter that
-    follows the name finds the same callable. It is None when a read was not
-    plain, such as one through a property. A caller who puts another
-    callable in ``fn`` leaves it, so no name finds that one.
+    ``found_by_name`` is the callable ``load_target`` reached by following
+    the spec's name, which a fresh interpreter follows again to find it. A
+    target built by hand has none, and a caller who puts another callable in
+    ``fn`` leaves it, so no name finds that one.
     """
 
     spec: str
@@ -112,7 +95,7 @@ def load_target(
     keeping = import_lines(module_name) if keep_import_lines else contextlib.nullcontext(set())
     with keeping as ran:
         module = _imported(module_name, watch)
-    fn, self_class, found_by_name = _followed(spec, module)
+    fn, self_class = _followed(spec, module)
     file = getattr(module, "__file__", None)
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
@@ -124,7 +107,7 @@ def load_target(
         signature=signature,
         import_lines=frozenset(ran),
         self_class=self_class,
-        found_by_name=found_by_name,
+        found_by_name=fn,
     )
 
 
@@ -138,11 +121,8 @@ def execution_context(target: Target, *, alone: bool = False) -> ExecutionContex
     )
 
 
-def _followed(
-    spec: str, module: ModuleType
-) -> tuple[Callable[..., object], type | None, Callable[..., object] | None]:
-    """The callable the spec's name reaches from ``module``, the class it needs as ``self``, and
-    the callable again when each read was plain (``_read_plainly``), else None.
+def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], type | None]:
+    """The callable the spec's name reaches from ``module``, and the class it needs as ``self``.
 
     A name the object lacks, or one that reaches nothing callable, is a
     ``TargetError`` that says the module has no such function. Any other
@@ -153,71 +133,25 @@ def _followed(
     module_name, _, name = spec.partition("::")
     missing = f"{module_name} has no function {name}"
     try:
-        owner, fn, plain = _walked(module, name)
+        owner, fn = _walked(module, name)
     except AttributeError as error:
         raise TargetError(missing) from error
     except (Exception, SystemExit) as error:
         raise TargetError(f"cannot read {spec}: {one_line(error)}") from error
     if not callable(fn):
         raise TargetError(missing)
-    last = name.rpartition(".")[2]
-    return fn, _self_class(owner, last, fn), fn if plain else None
+    return fn, _self_class(owner, name.rpartition(".")[2], fn)
 
 
-def _walked(module: ModuleType, name: str) -> tuple[object, object, bool]:
-    """The object before ``name``'s last part, what that part reads as, and whether each read was
-    plain (``_read_plainly``). Each name is read once, and raises as ``getattr`` raises."""
+def _walked(module: ModuleType, name: str) -> tuple[object, object]:
+    """The object before ``name``'s last part, and what that part reads as. Each name is read
+    once, and raises as ``getattr`` raises."""
     owner: object = module
     found: object = module
-    plain = True
     for part in name.split("."):
         owner = found
-        plain = plain and _read_plainly(owner, part)
         found = getattr(owner, part)
-    return owner, found, plain
-
-
-def _read_plainly(owner: object, name: str) -> bool:
-    """Whether reading ``name`` from ``owner`` is plain, told without reading it.
-
-    It is when the owner's type looks attributes up as Python's built-in
-    types do, the name is held where that lookup finds it rather than given
-    by a ``__getattr__``, and a value a class holds binds as Python's own
-    do. Python reads a value through its ``__get__`` only when a class holds
-    it, along the owner's classes or its type's; a value in a module's or an
-    instance's own names is read as it is. A value a class holds binds as
-    Python's own do when it has no ``__get__`` or binds by one of Python's
-    own (``_PYTHON_S_BINDINGS``). A classmethod is told by what it wraps,
-    which Python 3.12 reads through its own ``__get__``.
-    """
-    if not _pythons_own(inspect.getattr_static(type(owner), "__getattribute__")):
-        return False
-    try:
-        held = inspect.getattr_static(owner, name)
-    except AttributeError:
-        return False
-    if not _held_by_a_class(owner, name, held):
-        return True
-    while type(held) is classmethod:
-        held = held.__func__
-    return type(held) in _PYTHON_S_BINDINGS or not _has_get(type(held))
-
-
-def _held_by_a_class(owner: object, name: str, held: object) -> bool:
-    """Whether a class holds ``held`` under ``name``: one of the owner's own classes, when it is
-    a class, or one of its type's."""
-    classes = [*(inspect.getmro(owner) if isinstance(owner, type) else ()), *type(owner).__mro__]
-    return any(vars(kind).get(name, _NOTHING) is held for kind in classes)
-
-
-def _pythons_own(lookup: object) -> bool:
-    """Whether an attribute lookup is one of Python's built-in types' own, written in C."""
-    owner = (
-        getattr(lookup, "__objclass__", None)
-        if type(lookup) is types.WrapperDescriptorType
-        else None
-    )
-    return isinstance(owner, type) and owner.__module__ == "builtins"
+    return owner, found
 
 
 def _has_get(kind: type) -> bool:
@@ -239,19 +173,25 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
     the class it is read through. A name only the class's own type holds,
     as ``mro``, is bound to the class too.
     """
-    if not isinstance(owner, type) or _bound_to(fn, owner):
+    if not _is_a_class(owner) or _bound_to(fn, owner):
         return None
     for base in inspect.getmro(owner):
         if name in vars(base):
             held = vars(base)[name]
-            plain = isinstance(held, (staticmethod, classmethod))
-            return owner if _has_get(type(held)) and not plain else None
+            unbinding = issubclass(type(held), (staticmethod, classmethod))
+            return owner if _has_get(type(held)) and not unbinding else None
     return None
+
+
+def _is_a_class(owner: object) -> TypeGuard[type]:
+    """Whether ``owner`` is a class, told by its type alone: ``isinstance`` would read
+    ``__class__``, which an object's own property can answer."""
+    return issubclass(type(owner), type)
 
 
 def _bound_to(fn: object, owner: type) -> bool:
     """Whether ``fn`` is a method, written in Python or in C, bound to ``owner`` itself."""
-    method = isinstance(fn, (types.MethodType, types.BuiltinMethodType))
+    method = type(fn) in (types.MethodType, types.BuiltinMethodType)
     return method and getattr(fn, "__self__", None) is owner
 
 

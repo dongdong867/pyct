@@ -173,7 +173,7 @@ def test_a_run_that_forked_and_then_ran_in_process_was_not_isolated(
 def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
     closure = dataclasses.replace(one_check(), fn=lambda x: x)
 
-    with pytest.raises(ValueError, match="by name"):
+    with pytest.raises(ValueError, match="no name"):
         Inputs(closure, Isolation.FRESH)
 
 
@@ -202,31 +202,32 @@ def store_reads() -> int:
     return sys.modules["targets.classes.cart"].Store.reads
 
 
-def test_a_name_whose_read_runs_the_target_s_code_is_read_once_and_runs_in_process(
+def test_a_name_whose_read_runs_the_target_s_code_is_read_once_here_and_runs_fresh(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Only the load reads the name. A fresh interpreter would have to run the property again."""
+    """Only the load reads the name in pyct's process; a fresh interpreter reads it in its own."""
     target = load_target("targets.classes.cart::store.till")
     counting(monkeypatch, 2)
 
     inputs = Inputs(target, Isolation.AUTO)
     with caplog.at_level(logging.WARNING):
-        inputs({"x": 5}, None)
+        result = inputs({"x": 5}, None)
 
     assert store_reads() == 1
-    assert inputs.ran == [Isolation.IN_PROCESS]
+    assert inputs.ran == [Isolation.FRESH]
+    assert result.failure is None
     (said,) = caplog.messages
-    assert said.startswith("each input runs in pyct's process, because pyct's process runs other")
-    assert "running the target's own code" in said
+    assert said.startswith("each input runs in a fresh interpreter")
 
 
-def test_a_fresh_interpreter_refuses_a_name_whose_read_runs_the_target_s_code() -> None:
-    target = load_target("targets.classes.cart::store.till")
+def test_a_fresh_interpreter_runs_a_name_whose_read_runs_the_target_s_code() -> None:
+    inputs = Inputs(load_target("targets.classes.cart::store.till"), Isolation.FRESH)
 
-    with pytest.raises(ValueError, match="by name"):
-        Inputs(target, Isolation.FRESH)
+    result = inputs({"x": 5}, None)
 
     assert store_reads() == 1
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [True]
 
 
 def test_a_fresh_interpreter_finds_a_method_written_in_c() -> None:

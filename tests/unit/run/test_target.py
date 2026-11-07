@@ -144,6 +144,19 @@ def test_a_callable_whose_type_s_own_type_reads_get_binds_to_nothing(kind: type)
     assert self_class_of(desk, "tool", tool) is None
 
 
+def test_an_object_on_the_path_is_told_from_a_class_without_reading_its_class_attribute() -> None:
+    """``isinstance`` reads ``__class__``, which an object's own property can answer."""
+
+    class Masked:
+        @property
+        def __class__(self) -> type:  # pyrefly: ignore[bad-override]
+            raise RuntimeError("read __class__")
+
+    masked = Masked()
+
+    assert self_class_of(masked, "pick", len) is None
+
+
 def test_a_classmethod_that_wraps_a_staticmethod_binds_to_nothing() -> None:
     """Python 3.12 reads such a chain through the class as the plain function it holds."""
 
@@ -156,59 +169,31 @@ def test_a_classmethod_that_wraps_a_staticmethod_binds_to_nothing() -> None:
 
 
 @pytest.mark.parametrize(
-    "name",
+    "spec",
     [
-        pytest.param("Cart", id="a-class"),
-        pytest.param("Cart.total", id="a-method"),
-        pytest.param("Cart.from_text", id="a-classmethod"),
-        pytest.param("Cart.rate", id="a-staticmethod"),
-        pytest.param("Outer.Inner.check", id="a-method-of-a-nested-class"),
-        pytest.param("registry.lookup", id="a-method-of-a-module-level-object"),
-        pytest.param("handler", id="a-callable-object"),
-        pytest.param("Tags.fromkeys", id="a-classmethod-written-in-c"),
-        pytest.param("prices.get", id="a-method-written-in-c"),
+        pytest.param(f"{CART}::Cart", id="a-class"),
+        pytest.param(f"{CART}::Cart.total", id="a-method"),
+        pytest.param(f"{CART}::Cart.from_text", id="a-classmethod"),
+        pytest.param(f"{CART}::Cart.rate", id="a-staticmethod"),
+        pytest.param(f"{CART}::Outer.Inner.check", id="a-method-of-a-nested-class"),
+        pytest.param(f"{CART}::registry.lookup", id="a-method-of-a-module-level-object"),
+        pytest.param(f"{CART}::handler", id="a-callable-object"),
+        pytest.param(f"{CART}::Tags.fromkeys", id="a-classmethod-written-in-c"),
+        pytest.param(f"{CART}::prices.get", id="a-method-written-in-c"),
+        pytest.param(f"{CART}::store.till", id="a-property-on-the-path"),
+        pytest.param(f"{CART}::Catalog.opened", id="a-descriptor-written-in-python"),
+        pytest.param(f"{CART}::proxy.pick", id="an-object-that-looks-attributes-up-itself"),
+        pytest.param("targets.classes.lazy::made", id="a-module-s-getattr"),
+        pytest.param("targets.load.wrapped_at_top::cached", id="an-lru-cache"),
+        pytest.param("targets.load.wrapped_at_top::cached_forever", id="a-cache"),
+        pytest.param("targets.load.wrapped_at_top::logged", id="a-decorator-class-with-get"),
+        pytest.param("targets.load.wrapped_at_top::partly", id="a-partial"),
     ],
 )
-def test_load_target_keeps_what_a_name_read_by_python_s_own_code_alone_reaches(name: str) -> None:
-    target = load_target(f"{CART}::{name}")
+def test_load_target_keeps_what_its_spec_reaches_as_found_by_that_name(spec: str) -> None:
+    target = load_target(spec)
 
     assert target.found_by_name is target.fn
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param("cached", id="an-lru-cache"),
-        pytest.param("cached_forever", id="a-cache"),
-        pytest.param("logged", id="a-decorator-whose-class-has-get"),
-        pytest.param("partly", id="a-partial"),
-    ],
-)
-def test_load_target_keeps_a_module_level_callable_whatever_its_type_binds(name: str) -> None:
-    target = load_target(f"targets.load.wrapped_at_top::{name}")
-
-    assert target.found_by_name is target.fn
-
-
-@pytest.mark.parametrize(
-    "name",
-    [
-        pytest.param("store.till", id="a-property"),
-        pytest.param("Catalog.opened", id="a-descriptor-written-in-python"),
-        pytest.param("proxy.pick", id="an-object-whose-type-looks-attributes-up-itself"),
-    ],
-)
-def test_load_target_keeps_nothing_found_by_a_name_whose_read_runs_the_target_s_code(
-    name: str,
-) -> None:
-    assert load_target(f"{CART}::{name}").found_by_name is None
-
-
-def test_load_target_keeps_nothing_found_by_a_name_a_module_s_getattr_gives() -> None:
-    target = load_target("targets.classes.lazy::made")
-
-    assert target.found_by_name is None
-    assert list(target.signature.parameters) == ["x"]
 
 
 @pytest.mark.parametrize(
