@@ -154,9 +154,11 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
 
     That is the first object its classes hold under ``name``, in the order
     Python looks them up: one whose type has ``__get__``, other than a
-    staticmethod, which binds to nothing. ``fn``, the attribute as read
-    through the class, is bound to the class already for a classmethod,
-    written in Python or in C, and for any other descriptor that binds to
+    staticmethod or a classmethod, which bind to no instance. Python 3.12
+    reads a classmethod that wraps a staticmethod as its plain function, so
+    the classmethod is told by what the class holds. ``fn``, the attribute
+    as read through the class, is bound to the class already for a
+    classmethod written in C, and for any other descriptor that binds to
     the class it is read through. A name only the class's own type holds,
     as ``mro``, is bound to the class too.
     """
@@ -167,7 +169,8 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
             held = vars(base)[name]
             # where Python looks `__get__` up: along the held object's type, never the type's type
             binds = any("__get__" in vars(kind) for kind in inspect.getmro(type(held)))
-            return owner if binds and not isinstance(held, staticmethod) else None
+            plain = isinstance(held, (staticmethod, classmethod))
+            return owner if binds and not plain else None
     return None
 
 

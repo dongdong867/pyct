@@ -142,6 +142,17 @@ def test_a_callable_whose_type_s_own_type_reads_get_binds_to_nothing(kind: type)
     assert self_class_of(desk, "tool", tool) is None
 
 
+def test_a_classmethod_that_wraps_a_staticmethod_binds_to_nothing() -> None:
+    """Python 3.12 reads such a chain through the class as the plain function it holds."""
+
+    def f(x: int) -> int:
+        return x
+
+    chained = type("Chained", (), {"f": classmethod(staticmethod(f))})
+
+    assert self_class_of(chained, "f", getattr(chained, "f")) is None  # noqa: B009
+
+
 @pytest.mark.parametrize(
     "name",
     [
