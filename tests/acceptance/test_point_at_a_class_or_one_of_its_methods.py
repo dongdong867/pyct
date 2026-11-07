@@ -4,13 +4,49 @@ Each test spawns ``python -P -m pyct`` through the harness, on the class and the
 ``targets/classes/cart.py``.
 """
 
+import inspect
 import json
+from collections.abc import Callable
 
 import pytest
 
-from tests.acceptance.harness import input_lines, lines_expressions_and_sides, run_pyct
+from targets.classes import cart
+from tests.acceptance.harness import (
+    input_lines,
+    lines_expressions_and_sides,
+    numbers_of,
+    run_pyct,
+    summary_line,
+    union_of,
+)
 
 MODULE = "targets.classes.cart"
+
+
+def body_lines(function: Callable[..., object]) -> set[int]:
+    """The lines of a function's body: every line of its source after the ``def``."""
+    source, start = inspect.getsourcelines(function)
+    return set(range(start + 1, start + len(source)))
+
+
+# point-at-a-class-or-one-of-its-methods-runs-a-class-as-its-constructor
+def test_runs_a_class_as_its_constructor() -> None:
+    result = run_pyct(f"{MODULE}::Cart", "--args", '{"owner": "ann"}')
+
+    assert result.returncode == 0, result.stderr
+    notice = (
+        "Cart is a class, so each input constructs it; name a method as Cart.<method> to run it"
+    )
+    stderr = result.stderr.splitlines()
+    assert stderr[:2] == [notice, 'seed {"owner": "ann"}'], result.stderr
+    assert stderr.count(notice) == 1
+    lines = input_lines(result.stdout)
+    assert all("args" in line for line in lines), result.stdout
+    [(file, covered)] = union_of(lines).items()
+    assert body_lines(cart.Cart.__init__) <= set(covered)
+    assert body_lines(cart.Cart.total) <= set(
+        numbers_of(summary_line(result.stdout), "uncovered")[file]
+    )
 
 
 # point-at-a-class-or-one-of-its-methods-runs-other-kinds-of-method, but Outer.Inner.check, which
