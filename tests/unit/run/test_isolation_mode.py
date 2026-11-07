@@ -8,6 +8,7 @@ import os
 import random
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -195,6 +196,56 @@ def test_a_fresh_interpreter_runs_a_target_a_dotted_name_names(
 
     assert result.failure is None
     assert [branch.taken for branch in result.branches] == [False]
+
+
+class _Compared:
+    """A callable that counts each time Python asks it whether it equals something."""
+
+    asked = 0
+
+    def __call__(self, owner: object, x: int) -> int:
+        return x
+
+    def __eq__(self, other: object) -> bool:
+        _Compared.asked += 1
+        return True
+
+    __hash__ = object.__hash__
+
+
+class _Fresh:
+    """Gives a new method at each read, binding a new ``_Compared`` to the object read through."""
+
+    def __get__(self, instance: object, owner: type | None = None) -> object:
+        return types.MethodType(_Compared(), instance)
+
+
+def test_telling_a_method_read_again_from_the_target_runs_none_of_the_target_s_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = types.ModuleType("boxes")
+    box = type("Box", (), {"act": _Fresh()})()
+    setattr(module, "box", box)  # noqa: B010 - a module built by hand
+    monkeypatch.setitem(sys.modules, "boxes", module)
+    target = dataclasses.replace(one_check(), spec="boxes::box.act", fn=box.act)
+    monkeypatch.setattr(_Compared, "asked", 0)
+
+    with pytest.raises(ValueError, match="by name"):
+        Inputs(target, Isolation.FRESH)
+
+    assert _Compared.asked == 0
+
+
+def test_a_fresh_interpreter_finds_a_method_written_in_c_read_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = types.ModuleType("caches")
+    cache: dict[str, int] = {}
+    setattr(module, "cache", cache)  # noqa: B010 - a module built by hand
+    monkeypatch.setitem(sys.modules, "caches", module)
+    target = dataclasses.replace(one_check(), spec="caches::cache.get", fn=cache.get)
+
+    assert Inputs(target, Isolation.FRESH).isolation is Isolation.FRESH
 
 
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:
