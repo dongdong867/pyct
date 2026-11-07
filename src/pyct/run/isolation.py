@@ -35,6 +35,7 @@ and a crash ends pyct.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import logging
 import mmap
@@ -45,8 +46,6 @@ import types
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
 
-from pyct.binding.call import positional_only
-from pyct.binding.resolve import checked_annotations
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, flush_streams, serve
@@ -54,7 +53,7 @@ from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
-from pyct.run.target import Target, follow
+from pyct.run.target import Target, execution_context, follow
 from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
@@ -99,11 +98,7 @@ class Inputs:
         self.ran: list[Isolation] = []
         self._target = target
         self._switched: Isolation | None = None
-        positional = positional_only(target.signature)
-        checks = checked_annotations(target.signature, target.fn)
-        alone = ExecutionContext(
-            target.fn, target.file, alone=True, positional=positional, checks=checks
-        )
+        alone = execution_context(target, alone=True)
         self._calls: dict[Isolation, Call] = {
             # random's state as the run finds it after the target's import, taken once
             Isolation.FORK: functools.partial(in_a_child, alone, random.getstate()),
@@ -111,8 +106,7 @@ class Inputs:
                 in_a_fresh_interpreter, fresh_for(target.spec, target.file)
             ),
             Isolation.IN_PROCESS: functools.partial(
-                execute,
-                ExecutionContext(target.fn, target.file, positional=positional, checks=checks),
+                execute, dataclasses.replace(alone, alone=False)
             ),
         }
 

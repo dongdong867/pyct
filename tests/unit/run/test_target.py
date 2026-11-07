@@ -10,7 +10,14 @@ import pytest
 
 from pyct.intercept.hook import Interception, current
 from pyct.run.import_watch import ImportWatch
-from pyct.run.target import Target, TargetError, follow, interception, load_target
+from pyct.run.target import (
+    Target,
+    TargetError,
+    execution_context,
+    follow,
+    interception,
+    load_target,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CART = "targets.classes.cart"
@@ -262,3 +269,14 @@ def test_the_interception_of_a_spec_substitutes_its_module_s_package_into_the_ca
 
     assert held == Interception(module="shop.cart", cache=tmp_path)
     assert current() is None
+
+
+@pytest.mark.parametrize("alone", [True, False])
+def test_an_execution_context_calls_the_target_as_its_signature_says(alone: bool) -> None:
+    target = load_target("targets.sweep.defaults::g")
+
+    context = execution_context(target, alone=alone)
+
+    assert (context.fn, context.file, context.alone) == (target.fn, target.file, alone)
+    assert [parameter.name for parameter in context.positional] == ["value"]
+    assert list(context.checks) == ["strict"]

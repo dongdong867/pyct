@@ -11,6 +11,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from types import ModuleType
 
+from pyct.binding.call import positional_only
+from pyct.binding.resolve import checked_annotations
+from pyct.execution.execute import ExecutionContext
 from pyct.intercept.cache import cache_folder
 from pyct.intercept.hook import Interception, intercepting
 from pyct.run.import_lines import import_lines
@@ -91,6 +94,16 @@ def load_target(
         signature=signature,
         import_lines=frozenset(ran),
         self_class=self_class,
+    )
+
+
+def execution_context(target: Target, *, alone: bool = False) -> ExecutionContext:
+    """What each input of ``target`` calls: its callable and file, the parameters passed by
+    position, and what their annotations check. ``alone`` as ``ExecutionContext`` says."""
+    positional = positional_only(target.signature)
+    checks = checked_annotations(target.signature, target.fn)
+    return ExecutionContext(
+        target.fn, target.file, alone=alone, positional=positional, checks=checks
     )
 
 
