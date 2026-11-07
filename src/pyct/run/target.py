@@ -40,6 +40,10 @@ _PYTHON_S_BINDINGS = (
 )
 
 
+# what no class holds, told apart from any value one holds
+_NOTHING = object()
+
+
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
 
@@ -175,14 +179,17 @@ def _walked(module: ModuleType, name: str) -> tuple[object, object, bool]:
 
 
 def _read_plainly(owner: object, name: str) -> bool:
-    """Whether reading ``name`` from ``owner`` runs Python's own lookup alone, none of the target's
-    code, told without reading it.
+    """Whether reading ``name`` from ``owner`` takes Python's own steps, told without reading it:
+    none of the steps this checks runs the target's code.
 
-    The owner's type looks attributes up as Python's built-in types do, the name
-    is held where that lookup finds it rather than given by a
-    ``__getattr__``, and what holds it either has no ``__get__`` or binds by
-    one of Python's own (``_PYTHON_S_BINDINGS``). A classmethod is told by
-    what it wraps, which Python 3.12 reads through its own ``__get__``.
+    The owner's type looks attributes up as Python's built-in types do, and
+    the name is held where that lookup finds it rather than given by a
+    ``__getattr__``. Python reads a value through its ``__get__`` only when
+    a class holds it, along the owner's classes or its type's; a value in a
+    module's or an instance's own names is read as it is. A value a class
+    holds either has no ``__get__`` or binds by one of Python's own
+    (``_PYTHON_S_BINDINGS``). A classmethod is told by what it wraps, which
+    Python 3.12 reads through its own ``__get__``.
     """
     if not _pythons_own(inspect.getattr_static(type(owner), "__getattribute__")):
         return False
@@ -190,9 +197,18 @@ def _read_plainly(owner: object, name: str) -> bool:
         held = inspect.getattr_static(owner, name)
     except AttributeError:
         return False
+    if not _held_by_a_class(owner, name, held):
+        return True
     while type(held) is classmethod:
         held = held.__func__
     return type(held) in _PYTHON_S_BINDINGS or not _has_get(type(held))
+
+
+def _held_by_a_class(owner: object, name: str, held: object) -> bool:
+    """Whether a class holds ``held`` under ``name``: one of the owner's own classes, when it is
+    a class, or one of its type's."""
+    classes = [*(inspect.getmro(owner) if isinstance(owner, type) else ()), *type(owner).__mro__]
+    return any(vars(kind).get(name, _NOTHING) is held for kind in classes)
 
 
 def _pythons_own(lookup: object) -> bool:

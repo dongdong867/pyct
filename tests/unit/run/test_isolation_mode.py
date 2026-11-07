@@ -235,6 +235,17 @@ def test_a_fresh_interpreter_finds_a_method_written_in_c() -> None:
     assert Inputs(target, Isolation.FRESH).isolation is Isolation.FRESH
 
 
+@pytest.mark.parametrize("name", ["cached", "cached_forever", "logged", "partly"])
+def test_a_fresh_interpreter_runs_a_module_level_callable_whose_type_has_get(name: str) -> None:
+    """Python binds nothing it finds in a module's own names, whatever its type."""
+    inputs = Inputs(load_target(f"targets.load.wrapped_at_top::{name}"), Isolation.FRESH)
+
+    result = inputs({"x": 0}, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [False]
+
+
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:
     inputs = Inputs(one_check(), Isolation.IN_PROCESS)
 

@@ -178,6 +178,21 @@ def test_load_target_keeps_what_a_name_read_by_python_s_own_code_alone_reaches(n
 @pytest.mark.parametrize(
     "name",
     [
+        pytest.param("cached", id="an-lru-cache"),
+        pytest.param("cached_forever", id="a-cache"),
+        pytest.param("logged", id="a-decorator-whose-class-has-get"),
+        pytest.param("partly", id="a-partial"),
+    ],
+)
+def test_load_target_keeps_a_module_level_callable_whatever_its_type_binds(name: str) -> None:
+    target = load_target(f"targets.load.wrapped_at_top::{name}")
+
+    assert target.found_by_name is target.fn
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
         pytest.param("store.till", id="a-property"),
         pytest.param("Catalog.opened", id="a-descriptor-written-in-python"),
         pytest.param("proxy.pick", id="an-object-whose-type-looks-attributes-up-itself"),
