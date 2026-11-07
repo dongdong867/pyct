@@ -89,11 +89,13 @@ class Inputs:
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
-        if isolation is Isolation.FRESH and not _named(target):
+        # read once, as the run starts: following the name runs the target's own code, such as
+        # a property, which no input's process holds once the run is under way
+        self._named = isolation in (Isolation.AUTO, Isolation.FRESH) and _named(target)
+        if isolation is Isolation.FRESH and not self._named:
             raise ValueError("a fresh interpreter imports the target by name, and none names it")
         self.isolation = isolation
         self.ran: list[Isolation] = []
-        self._target = target
         self._switched: Isolation | None = None
         alone = execution_context(target, alone=True)
         self._calls: dict[Isolation, Call] = {
@@ -132,7 +134,7 @@ class Inputs:
 
     def _instead(self) -> Isolation:
         """Where the rest of the run goes once pyct's process runs other threads, said once."""
-        if _named(self._target):
+        if self._named:
             logger.warning(
                 "each input runs in a fresh interpreter, because pyct's process runs other threads"
             )

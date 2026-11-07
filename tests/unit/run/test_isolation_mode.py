@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from pyct.execution.execute import ExecutionResult
 from pyct.run import isolation, process
 from pyct.run.isolation import Inputs, Isolation
 from pyct.run.process import Stopped
@@ -246,6 +247,46 @@ def test_a_fresh_interpreter_finds_a_method_written_in_c_read_again(
     target = dataclasses.replace(one_check(), spec="caches::cache.get", fn=cache.get)
 
     assert Inputs(target, Isolation.FRESH).isolation is Isolation.FRESH
+
+
+def shelf_read_once(monkeypatch: pytest.MonkeyPatch, fn: object) -> list[int]:
+    """Module ``shelves`` whose ``shelf.pick`` is a property that gives ``fn`` once, then raises.
+
+    The list returned holds one entry per read.
+    """
+    reads: list[int] = []
+
+    def pick(_shelf: object) -> object:
+        reads.append(len(reads))
+        if len(reads) > 1:
+            raise RuntimeError("read again")
+        return fn
+
+    module = types.ModuleType("shelves")
+    setattr(module, "shelf", type("Shelf", (), {"pick": property(pick)})())  # noqa: B010
+    monkeypatch.setitem(sys.modules, "shelves", module)
+    return reads
+
+
+def test_a_dotted_name_is_followed_once_as_the_inputs_start_never_mid_run(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A read along the path runs the target's code, here a property that raises when read again."""
+    target = dataclasses.replace(one_check(), spec="shelves::shelf.pick")
+    reads = shelf_read_once(monkeypatch, target.fn)
+    no_lines = ExecutionResult(frozenset(), ())
+    monkeypatch.setattr(isolation, "in_a_fresh_interpreter", lambda *_: no_lines)
+    counting(monkeypatch, 2)
+
+    inputs = Inputs(target, Isolation.AUTO)
+    assert len(reads) == 1
+    with caplog.at_level(logging.WARNING):
+        inputs({"x": 3}, None)
+
+    assert len(reads) == 1
+    assert inputs.ran == [Isolation.FRESH]
+    (said,) = caplog.messages
+    assert said.startswith("each input runs in a fresh interpreter")
 
 
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:
