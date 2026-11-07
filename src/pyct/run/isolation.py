@@ -25,7 +25,7 @@ of the same module, or the host program, pyct does not try to tell. From
 the first input that finds another thread on, the run starts a fresh
 interpreter per input instead (see ``fresh``). That interpreter loads
 the target by its spec, and follows it again in its own process. A target
-its spec does not name, such as a closure, runs in pyct's process
+pyct cannot tell its spec names, such as a closure, runs in pyct's process
 instead. Either way pyct says so once.
 
 ``--in-process`` runs every input in pyct's own process instead, exactly as
@@ -84,15 +84,15 @@ class Inputs:
 
     ``ran`` names, in order, where each input ran. In ``auto`` the switch to
     fresh interpreters is said once on stderr; so is the switch to pyct's
-    own process, for a target its spec does not name, which a fresh
-    interpreter could not load.
+    own process, for a target pyct cannot tell its spec names, which a fresh
+    interpreter might not load.
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
         if isolation is Isolation.FRESH and not _named(target):
             raise ValueError(
                 "a fresh interpreter loads the target by its name, and"
-                f" {target.spec} does not name this callable"
+                f" pyct cannot tell that {target.spec} names this callable"
             )
         self._target = target
         self.isolation = isolation
@@ -142,14 +142,15 @@ class Inputs:
             return Isolation.FRESH
         logger.warning(
             "each input runs in pyct's process, because pyct's process runs other threads and"
-            " %s does not name the target for a fresh interpreter to load",
+            " pyct cannot tell that %s names the target for a fresh interpreter to load",
             self._target.spec,
         )
         return Isolation.IN_PROCESS
 
 
 def _named(target: Target) -> bool:
-    """Whether a fresh interpreter loading the target by its spec finds this callable.
+    """Whether pyct can tell that the target's spec names this callable, for a fresh
+    interpreter to load it by.
 
     ``load_target``'s record of this spec and callable says so without a
     read (``Target.followed``), so pyct's process reads a loaded target's

@@ -173,7 +173,7 @@ def test_a_run_that_forked_and_then_ran_in_process_was_not_isolated(
 def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
     closure = dataclasses.replace(one_check(), fn=lambda x: x)
 
-    with pytest.raises(ValueError, match="does not name this callable"):
+    with pytest.raises(ValueError, match="cannot tell that .* names this callable"):
         Inputs(closure, Isolation.FRESH)
 
 
@@ -267,7 +267,7 @@ def test_a_fresh_interpreter_refuses_a_target_whose_spec_was_changed_after_the_l
 
     assert str(refused.value) == (
         "a fresh interpreter loads the target by its name, and"
-        " targets.classes.cart::Cart.from_text does not name this callable"
+        " pyct cannot tell that targets.classes.cart::Cart.from_text names this callable"
     )
 
 
