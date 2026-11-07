@@ -82,8 +82,8 @@ class Inputs:
 
     ``ran`` names, in order, where each input ran. In ``auto`` the switch to
     fresh interpreters is said once on stderr; so is the switch to pyct's
-    own process, for a target no module attribute names, which a fresh
-    interpreter could not import.
+    own process, for a target no name reaches without running the target's
+    own code, which a fresh interpreter could not find.
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
