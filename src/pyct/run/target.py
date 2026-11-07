@@ -55,10 +55,10 @@ class Target:
     that binds to an instance, since only an instance would tell the two
     apart. The seed's value for ``self`` is passed as given.
 
-    ``found_by_name`` is the callable ``load_target`` reached by following
-    the spec's name, which a fresh interpreter follows again to find it. A
-    target built by hand has none, and a caller who puts another callable in
-    ``fn`` leaves it, so no name finds that one.
+    ``followed`` is the spec ``load_target`` followed and the callable it
+    reached, which a fresh interpreter finds by following that spec again.
+    A target built by hand has none, and a caller who changes ``spec`` or
+    ``fn`` leaves it as it was, so it then speaks for neither.
     """
 
     spec: str
@@ -67,7 +67,7 @@ class Target:
     signature: inspect.Signature
     import_lines: frozenset[int] = frozenset()
     self_class: type | None = None
-    found_by_name: Callable[..., object] | None = None
+    followed: tuple[str, Callable[..., object]] | None = None
 
 
 def load_target(
@@ -107,7 +107,7 @@ def load_target(
         signature=signature,
         import_lines=frozenset(ran),
         self_class=self_class,
-        found_by_name=fn,
+        followed=(spec, fn),
     )
 
 

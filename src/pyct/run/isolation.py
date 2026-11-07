@@ -24,9 +24,9 @@ one. Whose thread another one is, the target's import, an earlier import
 of the same module, or the host program, pyct does not try to tell. From
 the first input that finds another thread on, the run starts a fresh
 interpreter per input instead (see ``fresh``). That interpreter loads
-the target by the name ``load_target`` followed, and follows it again in
-its own process. A target handed over as an object with no name, such as
-a closure, runs in pyct's process instead. Either way pyct says so once.
+the target by its spec, and follows it again in its own process. A target
+its spec does not name, such as a closure, runs in pyct's process
+instead. Either way pyct says so once.
 
 ``--in-process`` runs every input in pyct's own process instead, exactly as
 before isolation: state carries over, the target writes to pyct's stdout,
@@ -42,6 +42,7 @@ import logging
 import mmap
 import os
 import random
+import sys
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
 
@@ -83,17 +84,17 @@ class Inputs:
 
     ``ran`` names, in order, where each input ran. In ``auto`` the switch to
     fresh interpreters is said once on stderr; so is the switch to pyct's
-    own process, for a target handed over as an object with no name, which
-    a fresh interpreter could not load.
+    own process, for a target its spec does not name, which a fresh
+    interpreter could not load.
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
-        self._named = _named(target)
-        if isolation is Isolation.FRESH and not self._named:
+        if isolation is Isolation.FRESH and not _named(target):
             raise ValueError(
-                "a fresh interpreter loads the target by its name, and this one was handed"
-                " over as an object with no name"
+                "a fresh interpreter loads the target by its name, and"
+                f" {target.spec} does not name this callable"
             )
+        self._target = target
         self.isolation = isolation
         self.ran: list[Isolation] = []
         self._switched: Isolation | None = None
@@ -134,15 +135,15 @@ class Inputs:
 
     def _instead(self) -> Isolation:
         """Where the rest of the run goes once pyct's process runs other threads, said once."""
-        if self._named:
+        if _named(self._target):
             logger.warning(
                 "each input runs in a fresh interpreter, because pyct's process runs other threads"
             )
             return Isolation.FRESH
         logger.warning(
             "each input runs in pyct's process, because pyct's process runs other threads and"
-            " the target was handed over as an object with no name for a fresh interpreter"
-            " to load"
+            " %s does not name the target for a fresh interpreter to load",
+            self._target.spec,
         )
         return Isolation.IN_PROCESS
 
@@ -150,12 +151,19 @@ class Inputs:
 def _named(target: Target) -> bool:
     """Whether a fresh interpreter loading the target by its spec finds this callable.
 
-    That is the callable ``load_target`` reached by following the spec
-    (``Target.found_by_name``). Nothing is read again here: the load's
-    reads are the only ones pyct's process makes, and a fresh interpreter
-    makes its own.
+    ``load_target``'s record of this spec and callable says so without a
+    read (``Target.followed``), so pyct's process reads a loaded target's
+    path once, at the load, and a fresh interpreter follows it in its own.
+    A target with no such record is looked up as a single attribute of its
+    module, which names a top-level callable.
     """
-    return target.found_by_name is target.fn
+    if target.followed is not None:
+        spec, fn = target.followed
+        if spec == target.spec and fn is target.fn:
+            return True
+    module_name, _, name = target.spec.partition("::")
+    module = sys.modules.get(module_name)
+    return module is not None and getattr(module, name, None) is target.fn
 
 
 def in_a_child(

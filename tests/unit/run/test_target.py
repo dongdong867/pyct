@@ -193,7 +193,7 @@ def test_a_classmethod_that_wraps_a_staticmethod_binds_to_nothing() -> None:
 def test_load_target_keeps_what_its_spec_reaches_as_found_by_that_name(spec: str) -> None:
     target = load_target(spec)
 
-    assert target.found_by_name is target.fn
+    assert target.followed == (spec, target.fn)
 
 
 @pytest.mark.parametrize(

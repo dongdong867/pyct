@@ -173,7 +173,7 @@ def test_a_run_that_forked_and_then_ran_in_process_was_not_isolated(
 def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
     closure = dataclasses.replace(one_check(), fn=lambda x: x)
 
-    with pytest.raises(ValueError, match="no name"):
+    with pytest.raises(ValueError, match="does not name this callable"):
         Inputs(closure, Isolation.FRESH)
 
 
@@ -245,6 +245,30 @@ def test_a_fresh_interpreter_runs_a_module_level_callable_whose_type_has_get(nam
 
     assert result.failure is None
     assert [branch.taken for branch in result.branches] == [False]
+
+
+def test_a_fresh_interpreter_runs_a_target_built_by_hand_that_its_spec_names() -> None:
+    loaded = one_check()
+    target = Target(spec=loaded.spec, fn=loaded.fn, file=loaded.file, signature=loaded.signature)
+    inputs = Inputs(target, Isolation.FRESH)
+
+    result = inputs({"x": 3}, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [True]
+
+
+def test_a_fresh_interpreter_refuses_a_target_whose_spec_was_changed_after_the_load() -> None:
+    loaded = load_target("targets.classes.cart::Cart.rate")
+    target = dataclasses.replace(loaded, spec="targets.classes.cart::Cart.from_text")
+
+    with pytest.raises(ValueError) as refused:
+        Inputs(target, Isolation.FRESH)
+
+    assert str(refused.value) == (
+        "a fresh interpreter loads the target by its name, and"
+        " targets.classes.cart::Cart.from_text does not name this callable"
+    )
 
 
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:
