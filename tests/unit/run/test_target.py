@@ -18,6 +18,7 @@ from pyct.run.target import (
     interception,
     load_target,
 )
+from pyct.run.target import _self_class as self_class_of
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CART = "targets.classes.cart"
@@ -116,6 +117,29 @@ def test_load_target_keeps_the_class_a_method_needs_an_instance_of_as_self(
     assert target.self_class is (
         None if self_class is None else follow(sys.modules[CART], self_class)
     )
+
+
+class _Locked(type):
+    """A type whose instances' type answers every attribute it lacks by raising."""
+
+    def __getattr__(cls, name: str) -> object:
+        raise RuntimeError(f"no {name}")
+
+
+class _Binder(type):
+    """A type whose own ``__get__`` makes its classes descriptors, not their instances."""
+
+    def __get__(cls, instance: object, owner: type | None = None) -> object:
+        return cls
+
+
+@pytest.mark.parametrize("kind", [_Locked, _Binder], ids=["raises-on-a-read", "has-get"])
+def test_a_callable_whose_type_s_own_type_reads_get_binds_to_nothing(kind: type) -> None:
+    """Python looks ``__get__`` up along the held object's type, never on that type's type."""
+    tool = kind("Tool", (), {"__call__": lambda self, x: x})()
+    desk = type("Desk", (), {"tool": tool})
+
+    assert self_class_of(desk, "tool", tool) is None
 
 
 @pytest.mark.parametrize(

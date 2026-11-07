@@ -163,7 +163,8 @@ def _self_class(owner: object, name: str, fn: object) -> type | None:
     for base in inspect.getmro(owner):
         if name in vars(base):
             held = vars(base)[name]
-            binds = hasattr(type(held), "__get__")
+            # where Python looks `__get__` up: along the held object's type, never the type's type
+            binds = any("__get__" in vars(kind) for kind in inspect.getmro(type(held)))
             return owner if binds and not isinstance(held, staticmethod) else None
     return None
 
