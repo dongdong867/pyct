@@ -177,6 +177,26 @@ def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
         Inputs(closure, Isolation.FRESH)
 
 
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        pytest.param("Cart.from_text", {"text": "a"}, id="a-classmethod"),
+        pytest.param("Cart.rate", {"x": 0}, id="a-staticmethod"),
+        pytest.param("registry.lookup", {"key": "a"}, id="a-method-of-a-module-level-object"),
+    ],
+)
+def test_a_fresh_interpreter_runs_a_target_a_dotted_name_names(
+    name: str, args: dict[str, object]
+) -> None:
+    """A method read through its object is a new object at each read, and still the one named."""
+    inputs = Inputs(load_target(f"targets.classes.cart::{name}"), Isolation.FRESH)
+
+    result = inputs(args, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [False]
+
+
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:
     inputs = Inputs(one_check(), Isolation.IN_PROCESS)
 

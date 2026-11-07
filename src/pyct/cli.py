@@ -393,9 +393,10 @@ def check_package(package: str) -> None:
 
 
 def check_spec(spec: str) -> None:
-    """Refuse anything but ``module::function``, each part a name. A path is not a module."""
-    module, separator, function = spec.partition("::")
-    parts = [*module.split("."), function]
+    """Refuse anything but ``module::name``, each part a name; a name may be names joined by
+    dots, as ``Cart.total``. A path is not a module."""
+    module, separator, name = spec.partition("::")
+    parts = [*module.split("."), *name.split(".")]
     named = bool(separator) and all(part.isidentifier() for part in parts)
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):

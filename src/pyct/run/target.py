@@ -25,8 +25,9 @@ _INSPECT_S_OWN = (ValueError, TypeError)
 class TargetError(Exception):
     """The target could not be loaded, and the message says why.
 
-    The module does not import, lacks the function, or has no Python source,
-    or Python cannot read the function's signature.
+    The module does not import, its name leads to no function or raises as it
+    is read, the module has no Python source, or Python cannot read the
+    function's signature.
     """
 
 
@@ -38,6 +39,11 @@ class Target:
     imported the module, which count for the run as covered. A module Python
     had already imported, by a ``run()`` caller or by pyct itself, such as
     ``json``, runs no line again, so it has none.
+
+    ``self_class`` is the class the spec names before a method that Python
+    binds to an instance read through that class, such as ``Cart`` for
+    ``Cart.total``: the method takes an instance of it as ``self``. It is None
+    for any other callable. The seed's value for ``self`` is passed as given.
     """
 
     spec: str
@@ -45,12 +51,16 @@ class Target:
     file: str
     signature: inspect.Signature
     import_lines: frozenset[int] = frozenset()
+    self_class: type | None = None
 
 
 def load_target(
     spec: str, watch: ImportWatch | None = None, *, keep_import_lines: bool = True
 ) -> Target:
-    """Import ``module`` from the current directory and take ``function`` from it.
+    """Import ``module`` from the current directory and follow ``name`` from it.
+
+    ``name`` is one or more names joined by dots, each read as an attribute of
+    the last, as ``getattr`` reads it (``follow``).
 
     The working directory goes first on the import path, so a module under
     it resolves with no ``PYTHONPATH`` set. From then on, a module pyct
@@ -61,7 +71,7 @@ def load_target(
     are kept on the target; an input's fresh interpreter, whose import is not
     the run's, keeps none.
     """
-    module_name, function_name = spec.split("::", 1)
+    module_name = spec.partition("::")[0]
     cwd = os.getcwd()
     if cwd not in sys.path:
         sys.path.insert(0, cwd)
@@ -69,14 +79,72 @@ def load_target(
     keeping = import_lines(module_name) if keep_import_lines else contextlib.nullcontext(set())
     with keeping as ran:
         module = _imported(module_name, watch)
-    fn = getattr(module, function_name, None)
-    if not callable(fn):
-        raise TargetError(f"{module_name} has no function {function_name}")
+    fn, self_class = _followed(spec, module)
     file = getattr(module, "__file__", None)
     if file is None or not file.endswith(".py"):
         raise TargetError(f"{module_name} has no Python source file")
     signature = _signature(spec, fn)
-    return Target(spec=spec, fn=fn, file=file, signature=signature, import_lines=frozenset(ran))
+    return Target(
+        spec=spec,
+        fn=fn,
+        file=file,
+        signature=signature,
+        import_lines=frozenset(ran),
+        self_class=self_class,
+    )
+
+
+def follow(module: object, name: str) -> object:
+    """What ``name``, names joined by dots, reaches from ``module``, read one attribute at a time.
+
+    A read raises as ``getattr`` raises, an AttributeError for a name the
+    object lacks.
+    """
+    found = module
+    for part in name.split("."):
+        found = getattr(found, part)
+    return found
+
+
+def _followed(spec: str, module: ModuleType) -> tuple[Callable[..., object], type | None]:
+    """The callable the spec's name reaches from ``module``, and the class it needs as ``self``.
+
+    A name the object lacks, or one that reaches nothing callable, is a
+    ``TargetError`` that says the module has no such function. Any other
+    raise, or a ``SystemExit``, as a read runs the target's own code, such as
+    a property, is a ``TargetError`` that gives ``_reason`` for it.
+    """
+    module_name, _, name = spec.partition("::")
+    owner_name, _, last = name.rpartition(".")
+    missing = f"{module_name} has no function {name}"
+    try:
+        owner = follow(module, owner_name) if owner_name else module
+        fn = getattr(owner, last)
+    except AttributeError as error:
+        raise TargetError(missing) from error
+    except (Exception, SystemExit) as error:
+        raise TargetError(f"cannot read {spec}: {_reason(error)}") from error
+    if not callable(fn):
+        raise TargetError(missing)
+    return fn, _self_class(owner, last)
+
+
+def _self_class(owner: object, name: str) -> type | None:
+    """``owner`` when it is a class whose attribute ``name`` binds to an instance read through it.
+
+    That is the first object its classes hold under ``name``, in the order
+    Python looks them up: one whose type has ``__get__``, other than a
+    staticmethod or a classmethod, which bind to no instance. A name only
+    the class's own type holds, as ``mro``, is bound to the class already.
+    """
+    if not isinstance(owner, type):
+        return None
+    for base in inspect.getmro(owner):
+        if name in vars(base):
+            held = vars(base)[name]
+            binds = hasattr(type(held), "__get__")
+            return owner if binds and not isinstance(held, (staticmethod, classmethod)) else None
+    return None
 
 
 def _imported(module_name: str, watch: ImportWatch | None) -> ModuleType:

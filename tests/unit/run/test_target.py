@@ -10,9 +10,10 @@ import pytest
 
 from pyct.intercept.hook import Interception, current
 from pyct.run.import_watch import ImportWatch
-from pyct.run.target import Target, TargetError, interception, load_target
+from pyct.run.target import Target, TargetError, follow, interception, load_target
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+CART = "targets.classes.cart"
 
 
 def test_load_target_imports_from_the_current_directory() -> None:
@@ -57,6 +58,80 @@ def test_load_target_names_a_missing_module() -> None:
 def test_load_target_names_a_function_the_module_lacks() -> None:
     with pytest.raises(TargetError, match="no_such_function"):
         load_target("targets.trace.uncalled_helper::no_such_function")
+
+
+def test_load_target_follows_a_dotted_name_one_attribute_at_a_time() -> None:
+    target = load_target(f"{CART}::Outer.Inner.check")
+
+    assert target.fn is sys.modules[CART].Outer.Inner.check
+    assert target.file == str(REPO_ROOT / "targets" / "classes" / "cart.py")
+    assert list(target.signature.parameters) == ["self", "x"]
+
+
+@pytest.mark.parametrize(
+    ("name", "parameters"),
+    [
+        pytest.param("Cart", ["owner"], id="a-class"),
+        pytest.param("Cart.from_text", ["text"], id="a-classmethod"),
+        pytest.param("Cart.rate", ["x"], id="a-staticmethod"),
+        pytest.param("registry.lookup", ["key"], id="a-method-of-a-module-level-object"),
+        pytest.param("handler", ["x"], id="a-callable-object"),
+    ],
+)
+def test_load_target_reads_the_signature_of_what_the_name_ends_on(
+    name: str, parameters: list[str]
+) -> None:
+    assert list(load_target(f"{CART}::{name}").signature.parameters) == parameters
+
+
+@pytest.mark.parametrize(
+    ("name", "self_class"),
+    [
+        pytest.param("Cart.total", "Cart", id="a-method"),
+        pytest.param("Outer.Inner.check", "Outer.Inner", id="a-method-of-a-nested-class"),
+        pytest.param("Cart.__repr__", "Cart", id="a-method-the-class-inherits"),
+        pytest.param("Cart", None, id="a-class"),
+        pytest.param("Outer.Inner", None, id="a-class-a-class-holds"),
+        pytest.param("Cart.from_text", None, id="a-classmethod"),
+        pytest.param("Cart.rate", None, id="a-staticmethod"),
+        pytest.param("Cart.mro", None, id="a-method-of-the-class-s-own-type"),
+        pytest.param("registry.lookup", None, id="a-method-of-a-module-level-object"),
+        pytest.param("handler", None, id="a-callable-object"),
+    ],
+)
+def test_load_target_keeps_the_class_a_method_needs_an_instance_of_as_self(
+    name: str, self_class: str | None
+) -> None:
+    target = load_target(f"{CART}::{name}")
+
+    assert target.self_class is (
+        None if self_class is None else follow(sys.modules[CART], self_class)
+    )
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("Cart.totl", id="a-misspelled-method"),
+        pytest.param("Cart.count", id="a-class-attribute"),
+        pytest.param("Cart.size", id="a-property"),
+        pytest.param("Outer.Missing.check", id="a-missing-name-before-the-last"),
+    ],
+)
+def test_load_target_names_a_dotted_name_that_ends_on_no_function(name: str) -> None:
+    with pytest.raises(TargetError) as refused:
+        load_target(f"{CART}::{name}")
+
+    assert str(refused.value) == f"{CART} has no function {name}"
+
+
+def test_load_target_names_a_read_along_the_name_that_raises_by_python_s_reason() -> None:
+    spec = "targets.load.raises_on_the_path::shelf.fetch"
+
+    with pytest.raises(TargetError) as refused:
+        load_target(spec)
+
+    assert str(refused.value) == f"cannot read {spec}: RuntimeError: the shelf is locked"
 
 
 def test_load_target_names_a_module_with_no_python_source(monkeypatch: pytest.MonkeyPatch) -> None:

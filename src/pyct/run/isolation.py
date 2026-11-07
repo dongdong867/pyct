@@ -41,6 +41,7 @@ import mmap
 import os
 import random
 import sys
+import types
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
 
@@ -53,10 +54,13 @@ from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
-from pyct.run.target import Target
+from pyct.run.target import Target, follow
 from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
+
+# a method written in Python, and one written in C, each bound to an object
+_METHODS = (types.MethodType, types.BuiltinMethodType)
 
 # one input in, what it did out: the arguments and the monotonic instant it must end by
 type Call = Callable[[Mapping[str, object], float | None], ExecutionResult]
@@ -150,10 +154,31 @@ class Inputs:
 
 
 def _named(target: Target) -> bool:
-    """Whether a fresh interpreter importing the target's module by name finds this callable."""
+    """Whether a fresh interpreter importing the target's module by name finds this callable.
+
+    It follows the spec's name from the module as ``load_target`` does. A read
+    that raises finds nothing.
+    """
     module_name, _, name = target.spec.partition("::")
     module = sys.modules.get(module_name)
-    return module is not None and getattr(module, name, None) is target.fn
+    if module is None:
+        return False
+    try:
+        found = follow(module, name)
+    except (Exception, SystemExit):
+        return False
+    return found is target.fn or _same_method(found, target.fn)
+
+
+def _same_method(found: object, fn: object) -> bool:
+    """Whether both are methods that bind the same function to the same object.
+
+    A method read through its object, as ``Cart.from_text`` or
+    ``registry.lookup``, is a new object at each read. Python's own equality
+    of two methods compares their function and their object by identity, so
+    it runs none of the target's code.
+    """
+    return type(found) is type(fn) and isinstance(fn, _METHODS) and found == fn
 
 
 def in_a_child(
