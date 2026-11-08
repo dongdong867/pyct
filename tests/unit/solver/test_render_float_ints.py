@@ -38,10 +38,27 @@ def test_true_division_between_ints_divides_as_doubles() -> None:
     assert f"(fp.geq (fp.div RNE {from_int(N)} {from_int(M)}) {literal(2.5)})" in text
 
 
-def test_an_int_compared_with_a_float_literal_is_compared_as_a_double() -> None:
+def test_an_int_compared_with_a_float_literal_is_compared_with_its_exact_value() -> None:
     text = _text(["<", "n", 2.5])
 
-    assert f"(fp.lt {from_int(N)} {literal(2.5)})" in text
+    # in real arithmetic, where nothing rounds the int; no conversion to a double is left
+    assert "(assert (< (to_real |arg.n|) (/ 5.0 2.0)))" in text
+    assert "to_fp" not in text
+
+
+def test_an_int_compared_with_a_tracked_float_reads_a_finite_double_as_a_real() -> None:
+    text = _text(["<=", "x", "n"])
+
+    # the int on the right: x <= n is n >= x. NaN takes no side but `!=`, +inf is above every
+    # int and -inf below
+    infinite = (
+        "(ite (fp.isInfinite y!) (ite (fp.isPositive y!) false true) (>= x! (fp.to_real y!)))"
+    )
+    assert f"(let ((x! (to_real {N})) (y! {X})) (ite (fp.isNaN y!) false {infinite}))" in text
+
+
+def test_a_plain_int_a_double_holds_is_compared_as_that_double() -> None:
+    assert f"(fp.gt {X} {from_int('3')})" in _text([">", "x", 3])
 
 
 def test_a_rounding_answers_an_int_that_meets_an_int() -> None:
