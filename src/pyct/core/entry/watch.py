@@ -18,13 +18,12 @@ The calls start and answer in the order Python runs them, so the calls
 whose arguments started are a stack, one per thread, and each answer takes
 the newest call its own frame started: a call inside the first argument
 answers before the call around it starts. A call that raises never answers.
-When the raise is caught in a frame below the call's, the call's entry is
-left above that frame's own calls, and the next of them to take an argument
-or answer drops it. When it is caught in the call's own frame, the entry
-stays below that frame's later calls, and a stack keeps its newest
-`MOST_OPEN` entries. A call of the target's that starts clears every
-thread's stack (``forget``). The count of downgrades the watch reads is the
-process's, on every thread (`escapes.RECORDED`).
+Its entry is dropped when its frame starts a call at the same place again,
+or when a call of a frame below it takes an argument or answers, once the
+frame that left it has returned. A stack keeps its newest `MOST_OPEN`
+entries. A call of the target's that starts drops every thread's open calls
+(``forget``). The count of downgrades the watch reads is the process's, on
+every thread (`escapes.RECORDED`).
 """
 
 from __future__ import annotations
@@ -43,44 +42,56 @@ _CONTAINERS = frozenset({list, tuple, set, frozenset})
 
 
 class _Open:
-    """One call whose arguments started and that has not answered: the frame that started it,
-    its first tracked argument, and how many downgrades the input had recorded when its last
-    argument was in hand."""
+    """One call whose arguments started and that has not answered: the frame that started it and
+    the instruction it started at, its first tracked argument, and how many downgrades the input
+    had recorded when its last argument was in hand."""
 
-    __slots__ = ("count", "frame", "tracked")
+    __slots__ = ("at", "count", "frame", "tracked")
 
     def __init__(self, frame: types.FrameType, tracked: object, count: int) -> None:
         self.frame = frame
+        self.at = frame.f_lasti
         self.tracked = tracked
         self.count = count
 
 
+class _Calls(threading.local):
+    """One thread's open calls, the newest last, and the round of ``forget`` they belong to."""
+
+    def __init__(self) -> None:
+        self.open: list[_Open] = []
+        self.round = _ROUND[0]
+
+
 # the most calls one thread's stack keeps open, the newest
 MOST_OPEN = 4096
-# each thread's open calls, the newest last, by the thread's identity
-_OPEN: dict[int, list[_Open]] = {}
+# how many times the open calls were dropped, which a thread's stack from before is out of
+_ROUND = [0]
+_CALLS = _Calls()
 
 
 def forget() -> None:
     """Drop every call still open on every thread, as a call of the target's that starts
     does."""
-    _OPEN.clear()
+    _ROUND[0] += 1
 
 
 def first[Value](value: Value, /) -> Value:
     """A call's first argument: the call starts, noting the argument when it is tracked."""
     tracked = value if type(value) in TRACKED_CLASSES else None
-    calls = _OPEN.setdefault(threading.get_ident(), [])
+    calls = _calls()
+    call = _Open(sys._getframe(1), tracked, escapes.RECORDED[0])
+    _drop_left_at(calls, call)
     if len(calls) == MOST_OPEN:
         del calls[0]
-    calls.append(_Open(sys._getframe(1), tracked, escapes.RECORDED[0]))
+    calls.append(call)
     return value
 
 
 def given[Value](value: Value, /) -> Value:
     """A later argument of the frame's newest open call, noted when it is tracked and the call
     has none yet."""
-    top = _top(sys._getframe(1))
+    top = _top(_calls(), sys._getframe(1))
     if top is None:
         return value
     if top.tracked is None and type(value) in TRACKED_CLASSES:
@@ -91,10 +102,11 @@ def given[Value](value: Value, /) -> Value:
 
 def answer[Result](result: Result, name: str, /) -> Result:
     """The call's answer, handed back, after a loss it shows is recorded under ``name``."""
-    top = _top(sys._getframe(1))
+    calls = _calls()
+    top = _top(calls, sys._getframe(1))
     if top is None:
         return result
-    _OPEN[threading.get_ident()].pop()
+    calls.pop()
     tracked = top.tracked
     if tracked is None or escapes.RECORDED[0] != top.count or not _plain(result):
         return result
@@ -103,11 +115,30 @@ def answer[Result](result: Result, name: str, /) -> Result:
     return result
 
 
-def _top(frame: types.FrameType) -> _Open | None:
-    """The newest call ``frame`` started, after the calls above it are dropped: each one a frame
-    above this one started, whose raise was caught below it. None when ``frame`` has no call
-    open, which leaves the stack as it was."""
-    calls = _OPEN.get(threading.get_ident(), [])
+def _calls() -> list[_Open]:
+    """This thread's open calls, none from before the last ``forget``."""
+    held = _CALLS
+    if held.round != _ROUND[0]:
+        held.open = []
+        held.round = _ROUND[0]
+    return held.open
+
+
+def _drop_left_at(calls: list[_Open], call: _Open) -> None:
+    """Drop the call the frame left open at the place ``call`` starts, and every call after it:
+    the frame runs that place again, so none of them answers."""
+    for at in range(len(calls) - 1, -1, -1):
+        if calls[at].frame is not call.frame:
+            return
+        if calls[at].at == call.at:
+            del calls[at:]
+            return
+
+
+def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:
+    """The newest call ``frame`` started, after the calls above it are dropped: each one left
+    open by a frame above that has since returned. None when ``frame`` has no call open, which
+    leaves the stack as it was."""
     for at in range(len(calls) - 1, -1, -1):
         if calls[at].frame is frame:
             del calls[at + 1 :]

@@ -89,7 +89,7 @@ def _watchable(call: ast.Call, reserved: frozenset[str]) -> bool:
 
 def _stops(node: ast.AST) -> bool:
     """Whether a node can stop the frame it runs in: an `await`, a `yield`, and an `async for`
-    of a comprehension, which runs in the frame around it."""
+    of a list, set or dict comprehension, which runs in the frame around it."""
     return isinstance(node, _STOPS) or (isinstance(node, ast.comprehension) and node.is_async == 1)
 
 

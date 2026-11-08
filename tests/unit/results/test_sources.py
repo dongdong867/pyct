@@ -277,7 +277,7 @@ def test_each_walk_of_the_reading_takes_steps(tmp_path: Path) -> None:
 
     # the module's functions and each one's bindings are read once; the condition's test and its
     # names, for each condition
-    reading = {"_own_nodes", "_with_inner", "sources", "_read"}
+    reading = {"_own_nodes", "_carried_in", "sources", "_read"}
     assert {"_function", "_with_loops", *reading} <= first
     assert set(walks) == reading
 
@@ -371,3 +371,31 @@ def test_a_long_chain_of_names_is_read_in_time_as_long(tmp_path: Path) -> None:
     Origins(file, {}, step=lambda: None).of(code_named(file, "chain"), 6001, 7)
 
     assert time.perf_counter() - started < 3.0
+
+
+INNER_NAMED = """\
+def inner(a, n, s):
+    x = foo(a)
+    kept = [x for x in range(3) if foo(x, n) > 2]
+    y = 3
+    t = foo(y, n)
+    return kept, [t for y in s if t > 2]
+"""
+
+
+def test_a_name_is_carried_by_the_scope_it_is_read_in(tmp_path: Path) -> None:
+    file = module(tmp_path, INNER_NAMED)
+    downgrades = {(3, 35): ("foo",), (5, 8): ("foo",)}
+
+    # the comprehension's x is plain, so the value that went in is n
+    assert sources(file, "inner", (3, 35), downgrades) == (lost(file, "n", "foo", 3, 35),)
+    # t is the function's, made from its own plain y and n
+    assert sources(file, "inner", (6, 34), downgrades) == (lost(file, "n", "foo", 5, 8),)
+
+
+def test_a_value_a_test_picked_names_what_went_in(tmp_path: Path) -> None:
+    file = module(
+        tmp_path, "def picks(x, k):\n    if pow(3 if x > 0 else 2, k) == 9:\n        return 1\n"
+    )
+
+    assert sources(file, "picks", (2, 7), {(2, 7): ("pow",)}) == (lost(file, "k", "pow", 2, 7),)

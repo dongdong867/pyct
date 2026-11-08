@@ -209,25 +209,56 @@ def test_an_answer_that_holds_itself_is_read_once() -> None:
     assert [name for name, _ in lost(sink)] == ["f"]
 
 
-def test_calls_left_open_in_one_frame_are_kept_to_a_bound() -> None:
+def test_a_call_left_open_at_a_site_is_dropped_when_the_site_runs_again() -> None:
+    sink: list[SinkItem] = []
+    x = tracked(3, sink)
+
+    for _ in range(10_000):
+        with contextlib.suppress(ZeroDivisionError):
+            answer(divmod(first(1), given(0)), "divmod")
+
+    assert len(watch._calls()) == 1
+    # the frame's next call answers for itself, not for a call left open with a plain argument
+    answer(bin(first(x)), "bin")
+    assert [name for name, _ in lost(sink)] == ["bin"]
+
+
+def _leaves_one_open() -> None:
+    with contextlib.suppress(ZeroDivisionError):
+        answer(divmod(first(1), given(0)), "divmod")
+
+
+def test_calls_left_open_by_frames_that_returned_are_kept_to_a_bound() -> None:
     sink: list[SinkItem] = []
     x = tracked(3, sink)
 
     for _ in range(watch.MOST_OPEN + 10):
-        with contextlib.suppress(ZeroDivisionError):
-            answer(divmod(first(x), given(0)), "divmod")
+        _leaves_one_open()
 
-    assert len(watch._OPEN[threading.get_ident()]) == watch.MOST_OPEN
-    # the frame's next call still answers for itself
+    assert len(watch._calls()) == watch.MOST_OPEN
     answer(bin(first(x)), "bin")
     assert [name for name, _ in lost(sink)] == ["bin"]
 
 
 def test_forget_drops_the_calls_every_thread_left_open() -> None:
-    left = threading.Thread(target=lambda: first(5))
-    left.start()
-    left.join(5)
+    sink: list[SinkItem] = []
+    opened, forgotten = threading.Event(), threading.Event()
+    seen: list[object] = []
 
+    def other() -> None:
+        first(tracked(3, sink))
+        opened.set()
+        forgotten.wait(5)
+        # the call opened before the forget is gone, so its answer records nothing
+        seen.append(answer(2, "other"))
+        seen.append(len(watch._calls()))
+
+    thread = threading.Thread(target=other)
+    thread.start()
+    opened.wait(5)
     watch.forget()
+    forgotten.set()
+    thread.join(5)
 
-    assert watch._OPEN == {}
+    assert seen == [2, 0]
+    assert lost(sink) == []

@@ -2,14 +2,16 @@
 
 import ast
 import importlib
+import importlib.util
 import os
 import types
 from pathlib import Path
 
 import pytest
 
-from pyct.intercept import cache, compiled
+from pyct.intercept import cache, compiled, substitute, watch
 from pyct.intercept.cache import CACHE_VARIABLE, cache_folder, cached
+from pyct.results import sources
 
 
 class Module:
@@ -256,7 +258,14 @@ def test_the_transform_s_version_reads_each_rule_the_transform_imports(
 
     # a rule changed alone makes a new version, so no older rule's code is read again: each module
     # of the transform, and each module of pyct's one of them imports from
-    assert set(_transform_files()) <= set(read)
+    files = _transform_files()
+    assert {substitute.__file__, watch.__file__, sources.__file__} <= set(files)
+    assert set(files) <= set(read)
+
+
+# the modules the transform imports that decide nothing an entry holds: `own` runs the parse and
+# the compile, and marks a raise out of them as the target's
+_RUN_ONLY = {"pyct.core.foundation.values"}
 
 
 def _transform_files() -> list[str]:
@@ -266,23 +275,29 @@ def _transform_files() -> list[str]:
     while pending:
         name = pending.pop()
         file = str(importlib.import_module(name).__file__)
-        if file in files:
+        if file in files or name in _RUN_ONLY:
             continue
         files.append(file)
         if name.startswith("pyct.intercept."):
-            pending.extend(_imported(file))
+            pending.extend(_imported(name, file))
     return files
 
 
-def _imported(file: str) -> list[str]:
-    """The pyct modules a module's ``from ... import`` statements name, each name a module or
-    the module it is taken from."""
+def _imported(name: str, file: str) -> list[str]:
+    """The pyct modules a module imports, anywhere in it: each module named, or the module a
+    name is taken from."""
     found: list[str] = []
-    for node in ast.parse(Path(file).read_text()).body:
-        if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("pyct."):
-            module = str(node.module)
-            held = vars(importlib.import_module(module))
-            for alias in node.names:
-                taken = held.get(alias.name)
-                found.append(taken.__name__ if isinstance(taken, types.ModuleType) else module)
+    for node in ast.walk(ast.parse(Path(file).read_text())):
+        if isinstance(node, ast.Import):
+            found += [alias.name for alias in node.names if alias.name.startswith("pyct.")]
+        elif isinstance(node, ast.ImportFrom):
+            module = importlib.util.resolve_name("." * node.level + (node.module or ""), name)
+            if module.startswith("pyct."):
+                found += [_taken(module, alias.name) for alias in node.names]
     return found
+
+
+def _taken(module: str, name: str) -> str:
+    """The module a ``from module import name`` reads: ``name`` itself when it is a module."""
+    taken = vars(importlib.import_module(module)).get(name)
+    return taken.__name__ if isinstance(taken, types.ModuleType) else module

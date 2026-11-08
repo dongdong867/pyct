@@ -85,8 +85,8 @@ class Origins:
             known = self._known[id(function)] = _read_function(function, self.step)
         # the names the test reads that a comprehension around it binds are the comprehension's
         inner = _comprehension_names(test, known.parents)
-        carried = _with_inner(known.carried, inner, self.step)
-        return _Reading(self, known.bound, inner, carried).sources(test)
+        in_test = _carried_in(known.carried, inner, self.step)
+        return _Reading(self, known.bound, inner, (known.carried, in_test)).sources(test)
 
     def _function(self, code: types.CodeType) -> ast.AST | None:
         if not self._read:
@@ -229,13 +229,14 @@ def _carried(
     return frozenset(carried)
 
 
-def _with_inner(
+def _carried_in(
     carried: frozenset[str], inner: dict[str, list[_Binding]], step: Callable[[], None]
 ) -> frozenset[str]:
-    """The names carried for a test inside comprehensions: also each name a comprehension
-    binds from a carried value."""
+    """The names carried where a test reads them, inside the comprehensions around it: the
+    function's, but those a comprehension binds again, which are carried when it binds them
+    from a carried value."""
     reads = {name: _names_read(binding.value, step) for name, (binding,) in inner.items()}
-    names = set(carried)
+    names = set(carried - inner.keys())
     # an inner comprehension's names can be made from an outer one's, which come later
     grown = True
     while grown:
@@ -319,7 +320,8 @@ class _Reading:
     origins: Origins
     bound: dict[str, list[_Binding]]
     inner: dict[str, list[_Binding]]
-    carried: frozenset[str]
+    # the names a parameter carries to: in the function, and where the test reads them
+    carried: tuple[frozenset[str], frozenset[str]]
     seen: set[tuple[str, bool]] = field(default_factory=set)
     found: dict[tuple[SourceKind, str, At], Source] = field(default_factory=dict)
 
@@ -350,14 +352,15 @@ class _Reading:
     def _read(self, expression: ast.expr, name: str | None) -> Iterator[str]:
         """The names an expression reads outside a call that lost a value and outside a
         comprehension, after each of those is noted as a source."""
+        carried = self.carried[0] if name is not None else self.carried[1]
         pending: list[ast.AST] = [expression]
         while pending:
             self.origins.step()
             node = pending.pop()
             if isinstance(node, _COMPREHENSIONS):
-                self._add(SourceKind.LOOP, name or _first_name(node, self.carried), node)
+                self._add(SourceKind.LOOP, name or _first_name(node, carried), node)
                 continue
-            if self._lost_in(node):
+            if self._lost_in(node, carried):
                 continue
             if isinstance(node, ast.Lambda):
                 continue
@@ -365,7 +368,7 @@ class _Reading:
                 yield node.id
             pending.extend(reversed(list(ast.iter_child_nodes(node))))
 
-    def _lost_in(self, node: ast.AST) -> bool:
+    def _lost_in(self, node: ast.AST, carried: frozenset[str]) -> bool:
         """Whether an input recorded a downgrade of this part at its site, noted as a lost
         source of the first name the part reads: a call's by the name the call writes, or by
         the last name after its dot, and a call's, an operator's or a subscript's by a dunder."""
@@ -376,7 +379,7 @@ class _Reading:
         called = next((name for name in names if name in written or _dunder(name)), None)
         if called is None:
             return False
-        self._add(SourceKind.LOST, _first_name(node, self.carried), node, called)
+        self._add(SourceKind.LOST, _first_name(node, carried), node, called)
         return True
 
     def _add(self, kind: SourceKind, name: str, node: ast.AST, call: str | None = None) -> None:
@@ -415,22 +418,22 @@ def _first_name(node: ast.AST, carried: frozenset[str]) -> str:
         for each in _in_order(part)
         if isinstance(each, ast.Name) and isinstance(each.ctx, ast.Load)
     ]
-    for held in (carried, frozenset(names)):
-        first = next((name for name in names if name in held), None)
-        if first is not None:
-            return first
-    return written_name(node)  # pyrefly: ignore[bad-argument-type]
+    first = next((name for name in names if name in carried), names[0] if names else None)
+    return first if first is not None else written_name(node)  # pyrefly: ignore[bad-argument-type]
 
 
 def _in_order(node: ast.AST) -> Iterator[ast.AST]:
-    """The node and the nodes under it, each before its children, in the order written but for
-    a call's, whose arguments come before its callee: the callee is what reads them."""
+    """The node and the nodes under it that make its value, each before its children, in the
+    order written but for a call's, whose arguments come before its callee, which is what reads
+    them; a conditional expression's test picks its value and is no part of it."""
     pending = [node]
     while pending:
         each = pending.pop()
         yield each
         if isinstance(each, ast.Call):
             children = [*each.args, *each.keywords, each.func]
+        elif isinstance(each, ast.IfExp):
+            children = [each.body, each.orelse]
         else:
             children = list(ast.iter_child_nodes(each))
         pending.extend(reversed(children))
