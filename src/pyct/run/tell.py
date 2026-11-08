@@ -19,8 +19,8 @@ type Missed = Callable[[Miss], None]
 @dataclass(frozen=True)
 class Ask:
     """One ask of the solver: its number among the run's asks, from 1, the fork aimed at, the
-    input whose path it extends by that input's place among the run's inputs, the seed's 0, and
-    each program pyct gave cvc5 for it, in order."""
+    input whose path it extends by that input's place among the run's inputs, the first seed's
+    0, and each program pyct gave cvc5 for it, in order."""
 
     number: int
     aim: Aim
