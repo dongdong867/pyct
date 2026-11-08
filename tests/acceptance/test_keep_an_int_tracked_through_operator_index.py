@@ -95,7 +95,9 @@ def test_leaves_a_name_bound_otherwise_as_written() -> None:
     assert result.returncode == 0, result.stderr
     lines = input_lines(result.stdout)
     assert listed(lines[0]) == []
-    assert lines[0]["downgrades"] == []
+    # Python's own `index` hands back a plain int, a quiet loss the call's watch names
+    # (sort-stuck-lines-by-cause)
+    assert [entry["name"] for entry in lines[0]["downgrades"]] == ["index"]  # type: ignore[union-attr]
 
 
 # close-four-small-v1-gaps-index-leaves-plain-values-as-python

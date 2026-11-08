@@ -96,7 +96,11 @@ def test_asks_an_int_subclass_its_own_reflected_method_first() -> None:
     # Rev's own reversed `__lt__` answers `-5 > Rev(3)`, as it does in plain Python
     assert own_subclass.rev(-5) == "big"
     assert REV_BIG in covered_in(seed, OWN_SUBCLASS_FILE)
-    # its answer is a plain bool, so the condition is lost and the operation is named
+    # its answer is a plain bool, so the condition is lost and the operation is named, after
+    # the call of int's own `__gt__` inside it, which reads the tracked int as a plain one
     assert seed["forks"] == []
-    assert seed["downgrades"] == [downgrade("__gt__", 1, "targets/ints/own_subclass.py:98:7")]
+    assert seed["downgrades"] == [
+        downgrade("int.__gt__", 1, "targets/ints/own_subclass.py:64:15"),
+        downgrade("__gt__", 1, "targets/ints/own_subclass.py:98:7"),
+    ]
     assert summary_line(result.stdout)["stopped"] == "no fork to flip"

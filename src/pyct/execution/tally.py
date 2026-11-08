@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Protocol
 
+from pyct.core.entry import watch
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import Branch, Downgrade, Fact, SinkItem, Site
 from pyct.results.coverage import Reach
@@ -175,6 +176,7 @@ class Tally:
         names its loss to. The walk keys an earlier call handed out are no keys of its path."""
         _LIVE[0] = self
         escapes.forget()
+        watch.forget()
 
     def seal(self) -> None:
         """End the call's tally: whatever comes after is pyct's, not the target's."""

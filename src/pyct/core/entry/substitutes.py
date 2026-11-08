@@ -29,6 +29,8 @@ module's builtins, and the callee itself for anything else, so a function of
 the target's runs with no frame of pyct's above it. An operator's right side
 goes through `handed` (`pyct.core.entry.handed`) before Python's own operator runs,
 so no frame of pyct's is above the target's own operator either.
+Any other call with an argument is watched (`pyct.core.entry.watch`), for an
+answer that lost a tracked value.
 
 Each function is a router: it picks which answer to give and calls Python
 or core for it, and runs none of the target's code in its own lines. So
@@ -50,6 +52,9 @@ from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.entry.handed import PASSING as HANDED_PASSING
 from pyct.core.entry.handed import handed as handed  # substituted modules import it from here
 from pyct.core.entry.hashed import Tracked, hashed, looked_up, tracked
+from pyct.core.entry.watch import answer as answer  # substituted modules import these
+from pyct.core.entry.watch import first as first
+from pyct.core.entry.watch import given as given
 from pyct.core.foundation.values import tested_against
 from pyct.core.lists import list_reads, ranges
 from pyct.core.lists.lists import ConcolicList

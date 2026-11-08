@@ -46,11 +46,23 @@ def line_of(file: Path, text: str, function: str | None = None) -> int:
     return next(number for number, line in enumerate(lines, 1) if number > start and text in line)
 
 
+# the calls of the target's that take a tracked argument and answer a plain value by its type,
+# each a quiet loss (sort-stuck-lines-by-cause), by the target that makes them
+LOSSES: dict[str, frozenset[str]] = {
+    "shop.typed::checks": frozenset({"classes.is_flag"}),
+    "shop.typed::ranged": frozenset({"classes.is_range"}),
+    "shop.typed::rebuilt": frozenset({"classes.rebuild"}),
+    "targets.types.dispatched::f": frozenset({"kind"}),
+    "targets.types.matched::f": frozenset({"kind"}),
+}
+
+
 def covers_plainly(
     target: str, seed: str, file: Path, returned: str, *argv: str, cwd: Path = REPO_ROOT
 ) -> dict[str, object]:
     """Run the target, and check the seed's line: it covers the line that returns ``returned``,
-    with no failure, no fork and no downgrade. The line comes back for more checks."""
+    with no failure, no fork and no downgrade but the quiet losses ``LOSSES`` names for the
+    target. The line comes back for more checks."""
     result = run_pyct(target, seed, *argv, cwd=cwd)
 
     assert result.returncode == 0, result.stderr
@@ -59,7 +71,10 @@ def covers_plainly(
     function = target.rpartition("::")[2]
     assert line_of(file, f'return "{returned}"', function) in covered_in(line, str(file))
     assert line["forks"] == []
-    assert line["downgrades"] == []
+    downgrades = line["downgrades"]
+    assert isinstance(downgrades, list), line
+    named = {downgrade["name"] for downgrade in downgrades}
+    assert named == LOSSES.get(target, frozenset()), downgrades
     return line
 
 
