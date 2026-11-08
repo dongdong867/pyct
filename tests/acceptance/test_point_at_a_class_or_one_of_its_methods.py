@@ -124,6 +124,19 @@ def test_keeps_the_keys_of_self() -> None:
     assert not any("TypeError" in json.dumps(line["failure"]) for line in lines), result.stdout
 
 
+# point-at-a-class-or-one-of-its-methods-fills-a-left-out-default
+def test_fills_a_left_out_default() -> None:
+    result = run_pyct(f"{SHOP}::Member.price", "--args", '{"self": {"name": "ann"}}')
+
+    assert result.returncode == 0, result.stderr
+    first, *solved = lines = input_lines(result.stdout)
+    assert first["args"] == {"self": {"name": "ann", "vip": False}}
+    assert any(line["args"] == {"self": {"name": "ann", "vip": True}} for line in solved), (
+        result.stdout
+    )
+    assert not any("tags" in self_of(line) for line in lines), result.stdout
+
+
 # point-at-a-class-or-one-of-its-methods-names-self-by-the-first-parameter
 def test_names_self_by_the_first_parameter() -> None:
     spec = f"{SHOP}::Till.total"
