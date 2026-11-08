@@ -39,7 +39,7 @@ from pyct.results.failure import Failure, FailureKind
 from pyct.results.jsonl import render, render_summary
 from pyct.results.printed import printed_forks
 from pyct.results.record import InputRecord, Miss, RunResult, StopKind
-from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.results.trace import render_miss, render_start, render_stop, render_trace
 from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
@@ -135,7 +135,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
     that hangs never hides the first one's line. Why the run stopped is a
     fact about the whole run, so it ends stderr, and the summary line ends
     stdout after it: the readable text comes first, as it does for every
-    input.
+    input. A class target first says, once, that each input constructs it.
 
     The target's package is substituted from its import to the run's end,
     in this process and in every input's (``pyct.intercept``).
@@ -159,6 +159,7 @@ def main(argv: Sequence[str] | None = None, watch: ImportWatch | None = None) ->
             return _sweep(command)
         with interception(command.spec):
             target, seed, limits, tell = _checked(command, watch)
+            print(render_start(command.spec, target.fn), end="", file=sys.stderr, flush=True)
             result = run(
                 target,
                 seed,
@@ -393,9 +394,10 @@ def check_package(package: str) -> None:
 
 
 def check_spec(spec: str) -> None:
-    """Refuse anything but ``module::function``, each part a name. A path is not a module."""
-    module, separator, function = spec.partition("::")
-    parts = [*module.split("."), function]
+    """Refuse anything but ``module::name``, each part a name; a name may be names joined by
+    dots, as ``Cart.total``. A path is not a module."""
+    module, separator, name = spec.partition("::")
+    parts = [*module.split("."), *name.split(".")]
     named = bool(separator) and all(part.isidentifier() for part in parts)
     # `mod.py` is every part a name, and still a file path rather than a module
     if not named or module.endswith(".py"):

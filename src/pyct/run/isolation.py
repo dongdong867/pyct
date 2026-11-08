@@ -23,9 +23,10 @@ the system counts them, and forks only when the main thread is the only
 one. Whose thread another one is, the target's import, an earlier import
 of the same module, or the host program, pyct does not try to tell. From
 the first input that finds another thread on, the run starts a fresh
-interpreter per input instead (see ``fresh``). That interpreter imports
-the target by name, so a target no module attribute names, such as a
-closure, runs in pyct's process instead. Either way pyct says so once.
+interpreter per input instead (see ``fresh``). That interpreter loads
+the target by its spec, and follows it again in its own process. A target
+pyct cannot tell its spec names, such as a closure, runs in pyct's process
+instead. Either way pyct says so once.
 
 ``--in-process`` runs every input in pyct's own process instead, exactly as
 before isolation: state carries over, the target writes to pyct's stdout,
@@ -35,6 +36,7 @@ and a crash ends pyct.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import logging
 import mmap
@@ -44,8 +46,6 @@ import sys
 from collections.abc import Callable, Generator, Mapping
 from enum import StrEnum
 
-from pyct.binding.call import positional_only
-from pyct.binding.resolve import checked_annotations
 from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
 from pyct.results.failure import Failure
 from pyct.run.child import Served, flush_streams, serve
@@ -53,7 +53,7 @@ from pyct.run.fresh import fresh_for, in_a_fresh_interpreter
 from pyct.run.journal import CAPACITY, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, refuse_after_a_stop, watched
-from pyct.run.target import Target
+from pyct.run.target import Target, execution_context
 from pyct.run.threads import running
 
 logger = logging.getLogger(__name__)
@@ -84,22 +84,21 @@ class Inputs:
 
     ``ran`` names, in order, where each input ran. In ``auto`` the switch to
     fresh interpreters is said once on stderr; so is the switch to pyct's
-    own process, for a target no module attribute names, which a fresh
-    interpreter could not import.
+    own process, for a target pyct cannot tell its spec names, which a fresh
+    interpreter might not load.
     """
 
     def __init__(self, target: Target, isolation: Isolation) -> None:
         if isolation is Isolation.FRESH and not _named(target):
-            raise ValueError("a fresh interpreter imports the target by name, and none names it")
+            raise ValueError(
+                "a fresh interpreter loads the target by its name, and"
+                f" pyct cannot tell that {target.spec} names this callable"
+            )
+        self._target = target
         self.isolation = isolation
         self.ran: list[Isolation] = []
-        self._target = target
         self._switched: Isolation | None = None
-        positional = positional_only(target.signature)
-        checks = checked_annotations(target.signature, target.fn)
-        alone = ExecutionContext(
-            target.fn, target.file, alone=True, positional=positional, checks=checks
-        )
+        alone = execution_context(target, alone=True)
         self._calls: dict[Isolation, Call] = {
             # random's state as the run finds it after the target's import, taken once
             Isolation.FORK: functools.partial(in_a_child, alone, random.getstate()),
@@ -107,8 +106,7 @@ class Inputs:
                 in_a_fresh_interpreter, fresh_for(target.spec, target.file)
             ),
             Isolation.IN_PROCESS: functools.partial(
-                execute,
-                ExecutionContext(target.fn, target.file, positional=positional, checks=checks),
+                execute, dataclasses.replace(alone, alone=False)
             ),
         }
 
@@ -144,13 +142,26 @@ class Inputs:
             return Isolation.FRESH
         logger.warning(
             "each input runs in pyct's process, because pyct's process runs other threads and"
-            " no module attribute names the target for a fresh interpreter to import"
+            " pyct cannot tell that %s names the target for a fresh interpreter to load",
+            self._target.spec,
         )
         return Isolation.IN_PROCESS
 
 
 def _named(target: Target) -> bool:
-    """Whether a fresh interpreter importing the target's module by name finds this callable."""
+    """Whether pyct can tell that the target's spec names this callable, for a fresh
+    interpreter to load it by.
+
+    ``load_target``'s record of this spec and callable says so without a
+    read (``Target.followed``), so pyct's process reads a loaded target's
+    path once, at the load, and a fresh interpreter follows it in its own.
+    A target with no such record is looked up as a single attribute of its
+    module, which names a top-level callable.
+    """
+    if target.followed is not None:
+        spec, fn = target.followed
+        if spec == target.spec and fn is target.fn:
+            return True
     module_name, _, name = target.spec.partition("::")
     module = sys.modules.get(module_name)
     return module is not None and getattr(module, name, None) is target.fn

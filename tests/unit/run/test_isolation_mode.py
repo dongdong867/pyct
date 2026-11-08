@@ -173,8 +173,102 @@ def test_a_run_that_forked_and_then_ran_in_process_was_not_isolated(
 def test_a_fresh_interpreter_needs_a_target_a_name_finds() -> None:
     closure = dataclasses.replace(one_check(), fn=lambda x: x)
 
-    with pytest.raises(ValueError, match="by name"):
+    with pytest.raises(ValueError, match="cannot tell that .* names this callable"):
         Inputs(closure, Isolation.FRESH)
+
+
+@pytest.mark.parametrize(
+    ("name", "args"),
+    [
+        pytest.param("Cart.from_text", {"text": "a"}, id="a-classmethod"),
+        pytest.param("Cart.rate", {"x": 0}, id="a-staticmethod"),
+        pytest.param("registry.lookup", {"key": "a"}, id="a-method-of-a-module-level-object"),
+    ],
+)
+def test_a_fresh_interpreter_runs_a_target_a_dotted_name_names(
+    name: str, args: dict[str, object]
+) -> None:
+    """A method read through its object is a new object at each read, and still the one named."""
+    inputs = Inputs(load_target(f"targets.classes.cart::{name}"), Isolation.FRESH)
+
+    result = inputs(args, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [False]
+
+
+def store_reads() -> int:
+    """How many times ``store.till``, a property, has been read since its module imported."""
+    return sys.modules["targets.classes.cart"].Store.reads
+
+
+def test_a_name_whose_read_runs_the_target_s_code_is_read_once_here_and_runs_fresh(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Only the load reads the name in pyct's process; a fresh interpreter reads it in its own."""
+    target = load_target("targets.classes.cart::store.till")
+    counting(monkeypatch, 2)
+
+    inputs = Inputs(target, Isolation.AUTO)
+    with caplog.at_level(logging.WARNING):
+        result = inputs({"x": 5}, None)
+
+    assert store_reads() == 1
+    assert inputs.ran == [Isolation.FRESH]
+    assert result.failure is None
+    (said,) = caplog.messages
+    assert said.startswith("each input runs in a fresh interpreter")
+
+
+def test_a_fresh_interpreter_runs_a_name_whose_read_runs_the_target_s_code() -> None:
+    inputs = Inputs(load_target("targets.classes.cart::store.till"), Isolation.FRESH)
+
+    result = inputs({"x": 5}, None)
+
+    assert store_reads() == 1
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [True]
+
+
+def test_a_fresh_interpreter_finds_a_method_written_in_c() -> None:
+    target = load_target("targets.classes.cart::prices.get")
+
+    assert Inputs(target, Isolation.FRESH).isolation is Isolation.FRESH
+
+
+@pytest.mark.parametrize("name", ["cached", "cached_forever", "logged", "partly"])
+def test_a_fresh_interpreter_runs_a_module_level_callable_whose_type_has_get(name: str) -> None:
+    """Python binds nothing it finds in a module's own names, whatever its type."""
+    inputs = Inputs(load_target(f"targets.load.wrapped_at_top::{name}"), Isolation.FRESH)
+
+    result = inputs({"x": 0}, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [False]
+
+
+def test_a_fresh_interpreter_runs_a_target_built_by_hand_that_its_spec_names() -> None:
+    loaded = one_check()
+    target = Target(spec=loaded.spec, fn=loaded.fn, file=loaded.file, signature=loaded.signature)
+    inputs = Inputs(target, Isolation.FRESH)
+
+    result = inputs({"x": 3}, None)
+
+    assert result.failure is None
+    assert [branch.taken for branch in result.branches] == [True]
+
+
+def test_a_fresh_interpreter_refuses_a_target_whose_spec_was_changed_after_the_load() -> None:
+    loaded = load_target("targets.classes.cart::Cart.rate")
+    target = dataclasses.replace(loaded, spec="targets.classes.cart::Cart.from_text")
+
+    with pytest.raises(ValueError) as refused:
+        Inputs(target, Isolation.FRESH)
+
+    assert str(refused.value) == (
+        "a fresh interpreter loads the target by its name, and"
+        " pyct cannot tell that targets.classes.cart::Cart.from_text names this callable"
+    )
 
 
 def test_in_process_says_nothing_about_threads(caplog: pytest.LogCaptureFixture) -> None:

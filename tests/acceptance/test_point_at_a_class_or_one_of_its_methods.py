@@ -1,0 +1,132 @@
+"""Acceptance tests for point-at-a-class-or-one-of-its-methods.
+
+Each test spawns ``python -P -m pyct`` through the harness, on the class and the objects of
+``targets/classes/cart.py``.
+"""
+
+import inspect
+import json
+from collections.abc import Callable
+
+import pytest
+
+from pyct.results.failure import FailureKind
+from pyct.run.isolation import Isolation
+from pyct.run.run import run
+from pyct.run.target import load_target
+from targets.classes import cart
+from tests.acceptance.harness import (
+    input_lines,
+    let_pyct_run_in_process,
+    lines_expressions_and_sides,
+    numbers_of,
+    run_pyct,
+    summary_line,
+    union_of,
+)
+
+MODULE = "targets.classes.cart"
+
+
+def body_lines(function: Callable[..., object]) -> set[int]:
+    """The lines of a function's body: every line of its source after the ``def``."""
+    source, start = inspect.getsourcelines(function)
+    return set(range(start + 1, start + len(source)))
+
+
+# point-at-a-class-or-one-of-its-methods-runs-a-class-as-its-constructor
+def test_runs_a_class_as_its_constructor() -> None:
+    result = run_pyct(f"{MODULE}::Cart", "--args", '{"owner": "ann"}')
+
+    assert result.returncode == 0, result.stderr
+    notice = (
+        "Cart is a class, so each input constructs it; name a method as Cart.<method> to run it"
+    )
+    stderr = result.stderr.splitlines()
+    assert stderr[:2] == [notice, 'seed {"owner": "ann"}'], result.stderr
+    assert stderr.count(notice) == 1
+    lines = input_lines(result.stdout)
+    assert all("args" in line for line in lines), result.stdout
+    [(file, covered)] = union_of(lines).items()
+    assert body_lines(cart.Cart.__init__) <= set(covered)
+    assert body_lines(cart.Cart.total) <= set(
+        numbers_of(summary_line(result.stdout), "uncovered")[file]
+    )
+
+
+# point-at-a-class-or-one-of-its-methods-runs-other-kinds-of-method, but Outer.Inner.check, which
+# builds self
+@pytest.mark.parametrize(
+    ("name", "seed"),
+    [
+        pytest.param("Cart.from_text", {"text": "a"}, id="a-classmethod"),
+        pytest.param("Cart.rate", {"x": 0}, id="a-staticmethod"),
+        pytest.param("registry.lookup", {"key": "a"}, id="a-method-of-a-module-level-object"),
+        pytest.param("handler", {"x": 0}, id="a-callable-object"),
+    ],
+)
+def test_runs_other_kinds_of_method(name: str, seed: dict[str, object]) -> None:
+    result = run_pyct(f"{MODULE}::{name}", "--args", json.dumps(seed))
+
+    assert result.returncode == 0, result.stderr
+    first, *solved = input_lines(result.stdout)
+    [(line, expression, taken)] = lines_expressions_and_sides(first)
+    assert first["args"] == seed
+    assert taken is False
+    other_side = [
+        answer
+        for answer in solved
+        if (line, expression, True) in lines_expressions_and_sides(answer)
+    ]
+    assert other_side, result.stdout
+    assert all(answer["failure"] is None for answer in other_side), result.stdout
+
+
+# point-at-a-class-or-one-of-its-methods-takes-an-instance-as-self-through-run, in pyct's own
+# process, where the caller's instance is the one an input would change were it not copied
+def test_takes_an_instance_as_self_through_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    let_pyct_run_in_process(monkeypatch)
+    target = load_target(f"{MODULE}::Cart.total")
+    assert target.self_class is not None
+    given = target.self_class(owner="ann")
+
+    result = run(target, {"self": given, "discount": 5}, isolation=Isolation.IN_PROCESS)
+
+    discounts = [record.args["discount"] for record in result.records]
+    assert any(isinstance(discount, int) and discount > 10 for discount in discounts), discounts
+    failures = [record.failure for record in result.records if record.failure is not None]
+    assert all(failure.kind is not FailureKind.TARGET_RAISED for failure in failures), failures
+    assert vars(given) == {"owner": "ann"}
+
+
+# point-at-a-class-or-one-of-its-methods-reports-a-path-that-names-no-function
+@pytest.mark.parametrize("name", ["Cart.totl", "Cart.count", "Cart.size"])
+def test_reports_a_path_that_names_no_function(name: str) -> None:
+    result = run_pyct(f"{MODULE}::{name}", "--args", '{"owner": "ann"}')
+
+    assert result.stderr.splitlines() == [f"{MODULE} has no function {name}"]
+    assert result.stdout == ""
+    assert result.returncode == 1
+
+
+# point-at-a-class-or-one-of-its-methods-refuses-a-malformed-path
+@pytest.mark.parametrize("name", ["Cart.", ".total", "Cart..total"])
+def test_refuses_a_malformed_path(name: str) -> None:
+    spec = f"{MODULE}::{name}"
+
+    result = run_pyct(spec, "--args", '{"owner": "ann"}')
+
+    assert result.stderr.splitlines() == [f"target must be MODULE::FUNCTION, got {spec!r}"]
+    assert result.stdout == ""
+    assert result.returncode == 2
+
+
+# a read along the path that raises other than AttributeError is refused (approved 2026-11-08, Q1)
+def test_refuses_a_path_whose_read_raises() -> None:
+    spec = "targets.load.raises_on_the_path::shelf.fetch"
+
+    result = run_pyct(spec, "--args", '{"x": 0}')
+
+    assert result.stderr.splitlines() == [f"cannot read {spec}: RuntimeError: the shelf is locked"]
+    assert result.stdout == ""
+    assert result.returncode == 1

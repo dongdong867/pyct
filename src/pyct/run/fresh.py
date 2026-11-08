@@ -22,6 +22,7 @@ stdout is stderr from its first instruction.
 from __future__ import annotations
 
 import contextlib
+import dataclasses
 import functools
 import mmap
 import os
@@ -34,17 +35,15 @@ from collections.abc import Generator, Mapping
 from dataclasses import dataclass
 from typing import NoReturn
 
-from pyct.binding.call import positional_only
-from pyct.binding.resolve import checked_annotations
 from pyct.core.foundation.branch import PYCT_ROOT
-from pyct.execution.execute import ExecutionContext, ExecutionResult, execute
+from pyct.execution.execute import ExecutionResult, execute
 from pyct.intercept.hook import Interception, current, intercepting
 from pyct.results.failure import Failure
 from pyct.run.child import serve
 from pyct.run.journal import CAPACITY, JournalWriter
 from pyct.run.journal_reader import JournalReader
 from pyct.run.process import InputStartError, ending, watched
-from pyct.run.target import load_target
+from pyct.run.target import execution_context, load_target
 
 # what the new interpreter runs: the pyct package this process runs, imported from the folder
 # that holds it, which then leaves the path again; then pyct's run code, whose own modules come
@@ -104,11 +103,8 @@ def _requested(request: int, watch: JournalWriter) -> Failure | None:
         sys.path[:] = pickle.load(handed)
         spec, file, args, until, interception = pickle.load(handed)
     with _intercepting(interception):
-        target = load_target(spec, keep_import_lines=False)
-        positional = positional_only(target.signature)
-        checks = checked_annotations(target.signature, target.fn)
-        ctx = ExecutionContext(target.fn, file, alone=True, positional=positional, checks=checks)
-        return execute(ctx, args, until, watch=watch).failure
+        target = dataclasses.replace(load_target(spec, keep_import_lines=False), file=file)
+        return execute(execution_context(target, alone=True), args, until, watch=watch).failure
 
 
 def _intercepting(interception: Interception | None) -> contextlib.AbstractContextManager[None]:

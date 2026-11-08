@@ -33,6 +33,10 @@ SIGNATURE = inspect.signature(classify)
         "mod::f g",
         "pkg..mod::f",
         "mod::1f",
+        "mod::Cart.",
+        "mod::.total",
+        "mod::Cart..total",
+        "mod::Cart.1f",
     ],
 )
 def test_check_spec_refuses_anything_but_module_function(spec: str) -> None:
@@ -46,6 +50,11 @@ def test_check_spec_accepts_a_dotted_module() -> None:
 
 def test_check_spec_accepts_underscores_and_digits() -> None:
     check_spec("_private.mod2::f_2")
+
+
+@pytest.mark.parametrize("spec", ["pkg.mod::Cart.total", "mod::Outer.Inner.check"])
+def test_check_spec_accepts_a_name_of_names_joined_by_dots(spec: str) -> None:
+    check_spec(spec)
 
 
 @pytest.mark.parametrize("text", ["[1]", "1", '"x"', "null", "not json", ""])
