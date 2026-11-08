@@ -2,6 +2,7 @@
 
 import builtins
 import contextlib
+import functools
 import math
 import sys
 import threading
@@ -310,6 +311,28 @@ partial = functools.partial(is_big)
 """
 
 
+def _decorated(function: Callable[[Any], Any]) -> Callable[[Any], Any]:
+    """``function`` behind a wrapper of a decorator outside the target's package, as a library
+    writes one."""
+
+    @functools.wraps(function)
+    def wrapper(value: Any) -> Any:
+        return function(value)
+
+    return wrapper
+
+
+class _Answers:
+    """A callable outside the target's package whose every other attribute is a function of
+    the package's, as a mock's would be."""
+
+    def __call__(self, value: object) -> int:
+        return bin(value).count("1")  # pyrefly: ignore[bad-argument-type]
+
+    def __getattr__(self, name: str) -> object:
+        return _in_the_package(HELPER, "is_big")
+
+
 @pytest.mark.parametrize(
     "callee",
     [
@@ -317,6 +340,16 @@ partial = functools.partial(is_big)
         pytest.param(lambda: _in_the_package(HELPER, "Sizes")().is_big, id="a bound method"),
         pytest.param(lambda: _in_the_package(HELPER, "partial"), id="a partial"),
         pytest.param(lambda: _in_the_package(HELPER, "Sizes")(), id="an object's __call__"),
+        pytest.param(
+            lambda: _decorated(_in_the_package(HELPER, "is_big")), id="a library's decorator"
+        ),
+        pytest.param(
+            lambda: functools.lru_cache(_in_the_package(HELPER, "is_big")), id="lru_cache"
+        ),
+        pytest.param(
+            lambda: functools.singledispatch(_in_the_package(HELPER, "is_big")),
+            id="singledispatch",
+        ),
     ],
 )
 def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any]) -> None:
@@ -326,6 +359,14 @@ def test_a_call_into_the_target_s_package_is_not_judged(callee: Callable[[], Any
     answer(called(function)(given(tracked(3, sink))), "is_big")
 
     assert lost(sink) == []
+
+
+def test_a_callable_s_own_attribute_lookup_does_not_place_it() -> None:
+    sink: list[SinkItem] = []
+
+    answer(called(_Answers())(given(tracked(3, sink))), "answers")
+
+    assert [name for name, _ in lost(sink)] == ["answers"]
 
 
 def test_a_call_into_the_target_s_package_is_not_judged_while_len_is_replaced() -> None:

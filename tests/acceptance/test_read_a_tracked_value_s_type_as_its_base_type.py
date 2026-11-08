@@ -48,13 +48,11 @@ def line_of(file: Path, text: str, function: str | None = None) -> int:
 
 # the calls outside the target's package that take a tracked argument and answer a plain value
 # by its type, each a quiet loss (sort-stuck-lines-by-cause), by the target that makes them:
-# `measure` sits beside the target's package `shop`, and `kind` is a `functools.singledispatch`
-# function, which runs functools' own code first
+# `measure` sits beside the target's package `shop`
 LOSSES: dict[str, frozenset[str]] = {
     "shop.typed::checks": frozenset({"classes.is_flag"}),
     "shop.typed::ranged": frozenset({"classes.is_range"}),
     "shop.typed::rebuilt": frozenset({"classes.rebuild"}),
-    "targets.types.dispatched::f": frozenset({"kind"}),
 }
 
 

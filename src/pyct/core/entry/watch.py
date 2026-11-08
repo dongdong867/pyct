@@ -10,8 +10,10 @@ pyct's above it, and every function here hands back what it was given.
 
 pyct sees inside a function of the target's package, whose module runs with
 the builtins pyct binds, so a call of one, reached directly or through a
-bound method, a `functools.partial` or its class's `__call__`, is not
-judged: the calls and operations inside it are. Any other callee is, as one
+bound method, a `functools.partial`, a decorator's wrapper that names it as
+``__wrapped__`` or its class's `__call__`, is not judged: the calls and
+operations inside it are, so a cached answer of `functools.lru_cache`
+records nothing. Any other callee is, as one
 written in C or one outside the target's package (run-quiet-loss-downgrade).
 Its answer is a loss when an argument is a tracked value, or a list, tuple
 or dict holding one among its first `MOST_ITEMS` items, no fork or downgrade
@@ -55,6 +57,7 @@ from pyct.core.foundation.branch import Downgrade, caller_site
 # one of its calls runs
 _getattr, _id, _len, _next, _range, _set, _type = getattr, id, len, next, range, set, type
 _PARTIAL = functools.partial
+_object_attribute, _dict_get = object.__getattribute__, dict.get
 _chain, _islice = itertools.chain, itertools.islice
 
 # the types a plain answer is made of, and the containers that may hold them
@@ -201,22 +204,35 @@ def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:
 
 def _judged(callee: object) -> bool:
     """Whether a callee is one pyct cannot see inside: anything but a function of the target's
-    package, reached through a bound method, a `functools.partial` or an object's own
-    `__call__`."""
+    package, reached through a bound method, a `functools.partial`, a decorator's wrapper that
+    names it as ``__wrapped__``, or an object's own `__call__`."""
     function = callee
     for _ in _range(_MOST_WRAPPED):
         kind = _type(function)
-        if kind is types.FunctionType:
-            return not bound.binds(function.__builtins__)  # pyrefly: ignore[missing-attribute]
+        if kind is types.FunctionType and bound.binds(function.__builtins__):  # pyrefly: ignore[missing-attribute]
+            return False
         if kind is types.MethodType:
             function = function.__func__  # pyrefly: ignore[missing-attribute]
         elif kind is _PARTIAL:
             function = function.func  # pyrefly: ignore[missing-attribute]
+        elif (wrapped := _wrapped(function)) is not None:
+            function = wrapped
         elif _type(_getattr(kind, "__call__", None)) is types.FunctionType:
             function = kind.__call__  # pyrefly: ignore[missing-attribute]
         else:
             return True
     return True
+
+
+def _wrapped(function: object) -> object:
+    """The function a decorator's wrapper names as its ``__wrapped__``, as `functools.wraps`
+    and `functools.update_wrapper` write it, read from the wrapper's own attributes alone, else
+    None."""
+    try:
+        held = _object_attribute(function, "__dict__")
+    except AttributeError:
+        return None
+    return _dict_get(held, "__wrapped__") if _type(held) is dict else None
 
 
 def _tracked_in(value: object) -> object:
