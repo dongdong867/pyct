@@ -9,6 +9,8 @@ from types import ModuleType
 
 import pytest
 
+from pyct.binding.annotations import Fields, Items
+from pyct.execution.execute import execute
 from pyct.intercept.hook import Interception, current
 from pyct.run.import_watch import ImportWatch
 from pyct.run.target import (
@@ -144,6 +146,21 @@ def test_load_target_reads_the_constructor_of_the_class_self_is_built_from() -> 
     assert target.constructor is not None
     assert list(target.constructor.parameters) == ["name", "vip", "tags"]
     assert load_target(f"{CART}::Cart.from_text").constructor is None
+
+
+def test_a_loaded_method_builds_self_by_the_constructor_s_own_signature() -> None:
+    """The constructor's annotations resolve in its own module, not the method's, and its
+    positional-only parameter goes by position."""
+    ctx = execution_context(load_target("tests.unit.run.ledger::Ledger.total"))
+
+    assert ctx.checks["self"] == Fields({"owner": str, "counts": Items(dict, int, keys=int)})
+    assert ctx.self_build is not None
+    assert [parameter.name for parameter in ctx.self_build.positional] == ["owner"]
+    result = execute(ctx, {"self": {"owner": "admin", "counts": {"1": 2}}})
+    assert result.failure is None
+    assert [branch.expression for branch in result.branches] == [
+        ["==", ["[]", "self", "'owner'"], "'admin'"]
+    ]
 
 
 def _keyword_first(*, owner: str) -> None: ...
