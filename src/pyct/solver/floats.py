@@ -25,20 +25,24 @@ operation each, in `heads.OPERATORS`.
 ``%`` follows CPython's own steps, from C's ``fmod``, ``//`` is the floor
 CPython's steps come to inside a bound (``floor_division``), and the four
 roundings to an int read the integral double back as an Int. An Int meets a
-double as Python converts it, rounding half to even (``from_int``).
+double as Python converts it, rounding half to even (``from_int``), but where
+Python compares the two, which it does exactly (``compared``).
 
 A form here names the parts it reads more than once with ``let``, as
 ``m!``, ``q!``, ``k!``, ``e!``, ``r!``, ``d!``, ``x!`` and ``y!``. None of them can
 capture a name in an operand, since render defines every part a form reads:
 an operand is a leaf's constant, a literal, a name render defined or
 declared, ``e!`` and a number and never one of these, or an int's
-conversion of one of those. ``!`` is in no Python name.
+conversion of one of those. ``compared``, which render calls apart from the
+forms, binds both its operands in one ``let``, so they stand outside its
+names' scope. ``!`` is in no Python name.
 """
 
 import math
+import operator
 import re
 import struct
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 
 # a double's three fields as cvc5 prints them: one sign bit, eleven exponent bits, fifty-two
 # fraction bits
@@ -111,6 +115,83 @@ def from_int(term: str) -> str:
     the largest double an infinity, where Python's own conversion raises.
     """
     return f"((_ to_fp 11 53) RNE (to_real {term}))"
+
+
+# Python's six compares: each as it reads with its operands swapped, what it means, and the
+# operator that writes it in real arithmetic, where `!=` is the negation of `=`
+_SWAPPED = {"<": ">", "<=": ">=", ">": "<", ">=": "<=", "==": "==", "!=": "!="}
+_MEANS: dict[str, Callable[[float, float], bool]] = {
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+    "==": operator.eq,
+    "!=": operator.ne,
+}
+_REAL = {"<": "<", "<=": "<=", ">": ">", ">=": ">=", "==": "="}
+
+
+def whole_at(head: str, operands: Sequence[object], kinds: Sequence[type | None]) -> int | None:
+    """Which operand is the int of a compare of an int or a bool with a float, which
+    ``compared`` writes; None for any other part.
+
+    A plain int a double holds exactly is compared as that double, exactly as Python compares
+    it, so it is left to the compare of two doubles.
+    """
+    if head not in _SWAPPED or float not in kinds:
+        return None
+    at = next((at for at, kind in enumerate(kinds) if kind is int or kind is bool), None)
+    if at is None:
+        return None
+    plain = operands[at]
+    return None if isinstance(plain, int) and _held(plain) else at
+
+
+def _held(number: int) -> bool:
+    """Whether a double holds a plain int exactly."""
+    try:
+        return float(number) == number
+    except OverflowError:
+        return False
+
+
+def compared(head: str, whole: str, double: str | float, *, swapped: bool) -> str:
+    """Python's compare of an int, the Int term ``whole``, with a float: a Float64 term or a
+    constant. ``swapped`` puts the int on the right.
+
+    Python compares an int with a float exactly, and a finite double is a rational exactly, so
+    the two are compared in real arithmetic, where nothing rounds the int: ``2**53 + 1 >
+    2.0**53`` holds. Against NaN and the infinities Python answers alike for every int, so each
+    is the constant Python gives for 0: only ``!=`` holds against NaN, and an infinity is above
+    or below every int.
+    """
+    head = _SWAPPED[head] if swapped else head
+    means = _MEANS[head]
+    if isinstance(double, float):
+        if not math.isfinite(double):
+            return _truth(means(0, double))
+        return _real(head, f"(to_real {whole})", _rational(double))
+    nan, above, below = (_truth(means(0, value)) for value in (math.nan, math.inf, -math.inf))
+    exact = _real(head, "x!", "(fp.to_real y!)")
+    infinite = f"(ite (fp.isInfinite y!) (ite (fp.isPositive y!) {above} {below}) {exact})"
+    return f"(let ((x! (to_real {whole})) (y! {double})) (ite (fp.isNaN y!) {nan} {infinite}))"
+
+
+def _real(head: str, left: str, right: str) -> str:
+    """A compare of two Real terms."""
+    return f"(not (= {left} {right}))" if head == "!=" else f"({_REAL[head]} {left} {right})"
+
+
+def _rational(value: float) -> str:
+    """The Real a finite double is exactly."""
+    numerator, denominator = value.as_integer_ratio()
+    top = f"(- {-numerator}.0)" if numerator < 0 else f"{numerator}.0"
+    return top if denominator == 1 else f"(/ {top} {denominator}.0)"
+
+
+def _truth(held: bool) -> str:
+    """A Python truth value as an SMT-LIB Bool."""
+    return "true" if held else "false"
 
 
 def _to_int(mode: str) -> Callable[[str], str]:

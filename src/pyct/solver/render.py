@@ -370,8 +370,8 @@ class _Program:
         head, *operands = node
         if not isinstance(head, str):
             raise UnencodedError(f"pyct cannot render {head}: nothing encodes it yet")
-        if (counted := self.lists.counted_compare(node)) is not None:
-            return counted
+        if (compared := self._compared(node, head)) is not None:
+            return compared
         if (positioned := POSITIONED.get(head)) is not None:
             term, *positions = operands
             if isinstance(term, list) and self.type_of(term) is list:
@@ -395,6 +395,17 @@ class _Program:
         if head in STRING_ORDERS and kind is str:
             return string_order(head, operands, rendered)
         return f"({operator(head, kind)} {' '.join(rendered)})"
+
+    def _compared(self, node: Node, head: str) -> str | None:
+        """A compare of a split's length (``ListTerms.counted_compare``), or of an int or a bool
+        with a float, exactly (``floats.compared``); None for any other part."""
+        operands = node[1:]
+        at = floats.whole_at(head, operands, [self.type_of(part) for part in operands])
+        if at is None:
+            return self.lists.counted_compare(node)
+        double = operands[1 - at]
+        term = double if isinstance(double, float) else self.term(double)
+        return floats.compared(head, self._operand(operands[at], int), term, swapped=at == 1)
 
     def _rendered(self, head: str, operands: list[Expression], kind: type | None) -> list[object]:
         """Each operand's term; past the operands a search or a replace reads as terms, each

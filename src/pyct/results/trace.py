@@ -47,6 +47,20 @@ def render_trace(
     return _written(lines)
 
 
+def render_start(spec: str, fn: object) -> str:
+    """What stderr says once, before the seed's trace: for a class target, that each input
+    constructs it, under the name the spec gives; nothing for any other target."""
+    if not isinstance(fn, type):
+        return ""
+    name = spec.partition("::")[2]
+    return _written(
+        [
+            f"{name} is a class, so each input constructs it;"
+            f" name a method as {name}.<method> to run it"
+        ]
+    )
+
+
 def render_miss(miss: Miss) -> str:
     """The fork the solver was asked about, and the answer that gave no input.
 

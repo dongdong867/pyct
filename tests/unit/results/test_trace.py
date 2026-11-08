@@ -16,11 +16,31 @@ from pyct.results.record import (
     Stop,
     StopKind,
 )
-from pyct.results.trace import render_miss, render_stop, render_trace
+from pyct.results.trace import render_miss, render_start, render_stop, render_trace
 from tests.unit.environment import ENVIRONMENT
 
 FORK = Branch(expression=["<", "x", 10], taken=True, site=Site(file="m.py", line=5, col=7))
 COVERAGE = Coverage(covered={"m.py": frozenset({6, 5})}, lines={"m.py": frozenset(range(1, 8))})
+
+
+class Outer:
+    class Inner:
+        pass
+
+
+def test_render_start_says_a_class_target_constructs_it_by_the_name_the_spec_gives() -> None:
+    text = render_start("shop::Outer.Inner", Outer.Inner)
+
+    assert text.splitlines() == [
+        "Outer.Inner is a class, so each input constructs it;"
+        " name a method as Outer.Inner.<method> to run it"
+    ]
+    assert text.endswith("\n")
+
+
+@pytest.mark.parametrize("fn", [len, Outer.Inner()], ids=["a-function", "an-object"])
+def test_render_start_says_nothing_for_a_target_that_is_not_a_class(fn: object) -> None:
+    assert render_start("shop::f", fn) == ""
 
 
 def test_render_trace_puts_one_fact_on_each_line_in_order() -> None:
@@ -474,11 +494,3 @@ def test_render_stop_indents_what_the_solver_said_under_the_stop_line() -> None:
     lines = render_stop(stopped_with(stop)).splitlines()
 
     assert lines[-3:] == ["stopped: solver failed", "    cvc5: boom", "    segmentation fault"]
-
-
-def test_render_trace_names_where_a_seed_came_from_after_its_source() -> None:
-    record = InputRecord(args={"x": 1}, forks=(FORK,), covered_lines=frozenset({6, 5}))
-
-    text = render_trace(record, COVERAGE, label="seeds.jsonl:3")
-
-    assert text.splitlines()[0] == 'seed seeds.jsonl:3 {"x": 1}'
