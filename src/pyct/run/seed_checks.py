@@ -89,18 +89,18 @@ def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
     """Every reason to refuse a parsed seed: its names, then its types.
 
     When the seed's keys do not fit the parameters, that line is the only
-    one. Otherwise, for a method whose instance each input builds, the lines
-    for the object under its first parameter come first, checked against the
-    constructor (``ObjectCheck``), then each other value that contradicts its
-    annotation, in signature order.
+    one. Otherwise, for a method whose instance each input builds from the
+    seed's value under its first parameter, the lines for that object come
+    first, checked against the constructor (``ObjectCheck``), then each other
+    value that contradicts its annotation, in signature order.
     """
     fit = _fit_line(target.signature, seed)
     if fit is not None:
         return [fit]
     checks = checked_annotations(target.signature, target.fn)
-    if target.self_class is None or target.self_name is None:
-        return contradictions(checks, seed)
     name = target.self_name
+    if target.self_class is None or name is None or name not in seed:
+        return contradictions(checks, seed)
     lines = ObjectCheck.of(target.self_class, target.constructor).lines(name, seed[name])
     others = {key: check for key, check in checks.items() if key != name}
     return lines + contradictions(others, seed)

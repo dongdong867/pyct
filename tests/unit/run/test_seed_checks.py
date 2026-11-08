@@ -137,3 +137,19 @@ def test_check_seed_raises_every_refusal_as_one_line_each() -> None:
         "self['owner'] must be a str, got 5",
         "discount must be an int, got 1.5",
     ]
+
+
+def test_seed_refusals_check_nothing_under_a_self_the_seed_leaves_to_its_default() -> None:
+    discount = _TOTAL.parameters["discount"].replace(default=0)
+    signature = _TOTAL.replace(parameters=[_SELF.replace(default=None), discount])
+    target = Target(
+        spec="m::Cart.total",
+        fn=Cart.total,
+        file="m.py",
+        signature=signature,
+        self_class=Cart,
+        self_name="self",
+        constructor=inspect.signature(Cart),
+    )
+
+    assert seed_refusals(target, {"discount": "1"}) == ['discount must be an int, got "1"']
