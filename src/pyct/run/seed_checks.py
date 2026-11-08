@@ -10,9 +10,9 @@ import json
 from collections.abc import Mapping
 
 from pyct.binding.annotations import contradictions
-from pyct.binding.call import call_arguments, positional_only
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import UsageError
+from pyct.run.object_checks import fit_failure
 from pyct.run.target import Target
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -84,14 +84,12 @@ def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) ->
     A positional-only parameter is named too, and bound by position, as the
     call will pass it.
     """
-    positional, keywords = call_arguments(positional_only(signature), seed)
-    try:
-        signature.bind(*positional, **keywords)
-    except TypeError as error:
+    reason = fit_failure(signature, seed)
+    if reason is not None:
         # bind names a missing parameter before an unexpected key, so name the keys too
         given = ", ".join(seed) or "nothing"
         parameters = ", ".join(signature.parameters) or "no parameters"
-        raise UsageError(f"args ({given}) do not fit ({parameters}): {error}") from error
+        raise UsageError(f"args ({given}) do not fit ({parameters}): {reason}")
 
 
 def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
