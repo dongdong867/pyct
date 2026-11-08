@@ -1,7 +1,8 @@
 """Acceptance tests for point-at-a-class-or-one-of-its-methods: the seed checks under ``self``.
 
 Each test spawns ``python -P -m pyct`` through the harness, on the classes of
-``targets/classes/shop.py`` and ``targets/classes/sealed.py``, or calls ``run()``. A refusal is a
+``targets/classes/shop.py``, ``targets/classes/sealed.py`` and
+``targets/classes/annotated_child.py``, or calls ``run()``. A refusal is a
 usage error: exit 2, nothing on stdout, and the reason on stderr.
 """
 
@@ -25,6 +26,8 @@ from tests.acceptance.harness import (
 
 SHOP = "targets.classes.shop"
 SEALED = "targets.classes.sealed"
+# a class whose base, and the text annotations of its methods, are written in another module
+ELSEWHERE = "targets.classes.annotated_child"
 RESERVED = "pyct reserves keys that start and end with __"
 NOT_AN_OBJECT = "self must be a JSON object of {}'s constructor arguments, got {}"
 
@@ -85,6 +88,19 @@ def test_refuses_a_reserved_key_under_self(key: str, value: object) -> None:
     seed = json.dumps({"self": {"w": 1, key: value}})
 
     assert refused(f"{SHOP}::Box.size", "--args", seed) == [f"self cannot hold {key!r}: {RESERVED}"]
+
+
+# point-at-a-class-or-one-of-its-methods-resolves-a-text-annotation-where-the-method-was-written
+@pytest.mark.parametrize(
+    ("seed", "expected"),
+    [
+        ('{"self": {"owner": "ann"}, "level": "5"}', 'level must be an int, got "5"'),
+        ('{"self": {"owner": 5}, "level": 5}', "self['owner'] must be a str, got 5"),
+    ],
+    ids=["method", "constructor"],
+)
+def test_resolves_a_text_annotation_where_the_method_was_written(seed: str, expected: str) -> None:
+    assert refused(f"{ELSEWHERE}::Cart.describe", "--args", seed) == [expected]
 
 
 # point-at-a-class-or-one-of-its-methods-refuses-a-bad-self-in-a-seeds-file
