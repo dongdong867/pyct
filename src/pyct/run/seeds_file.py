@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from pyct.config.command_line import UsageError
-from pyct.run.seed_checks import check_seed_fits, parse_seed, type_contradictions
+from pyct.run.seed_checks import parse_seed, seed_refusals
 from pyct.run.target import Target
 
 # what JSON reads as space between values within a line: a line of only these is blank
@@ -86,10 +86,9 @@ def _checked(target: Target, text: str) -> tuple[Mapping[str, object] | None, li
     """The line's seed and no reason, or no seed and each reason the line is refused."""
     try:
         seed = parse_seed(text)
-        check_seed_fits(target.signature, seed)
     except UsageError as error:
         return None, [str(error)]
-    reasons = type_contradictions(target, seed)
+    reasons = seed_refusals(target, seed)
     return (None, reasons) if reasons else (seed, [])
 
 

@@ -40,12 +40,7 @@ from pyct.run.import_watch import ImportWatch
 from pyct.run.isolation import Isolation
 from pyct.run.launch import launch
 from pyct.run.run import run
-from pyct.run.seed_checks import (
-    check_seed_fits,
-    check_seed_types,
-    missing_args_message,
-    parse_seed,
-)
+from pyct.run.seed_checks import check_seed, missing_args_message, parse_seed
 from pyct.run.seeds_file import SeedsFile, checked_seeds, distinct, read_seeds_file
 from pyct.run.target import Target, TargetError, interception, load_target
 from pyct.run.tell import Ask, Tell
@@ -227,8 +222,7 @@ def _seeds(target: Target, seed: Mapping[str, object] | None, file: SeedsFile | 
         return Seeds(tuple(each.seed for each in kept), tuple(each.label for each in kept), skipped)
     if seed is None:
         raise UsageError(missing_args_message(target.signature))
-    check_seed_fits(target.signature, seed)
-    check_seed_types(target, seed)
+    check_seed(target, seed)
     return Seeds((seed,))
 
 

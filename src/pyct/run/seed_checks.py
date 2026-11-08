@@ -1,6 +1,6 @@
 """The checks a seed passes before a run: its shape as JSON, its names, then its types.
 
-Each raises a UsageError naming what is wrong, as the command line reports it.
+Each refusal is a UsageError naming what is wrong, as the command line reports it.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from collections.abc import Mapping
 from pyct.binding.annotations import contradictions
 from pyct.binding.resolve import checked_annotations
 from pyct.config.command_line import UsageError
-from pyct.run.object_checks import fit_failure
+from pyct.run.object_checks import ObjectCheck, fit_failure
 from pyct.run.target import Target
 
 # how many levels past the seed's own depth the check writes: room for the line, its forks, one
@@ -78,27 +78,45 @@ def missing_args_message(signature: inspect.Signature) -> str:
     )
 
 
-def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
-    """Refuse a seed whose keys do not fit the parameters. Names only, not types.
+def check_seed(target: Target, seed: Mapping[str, object]) -> None:
+    """Refuse a seed with any of ``seed_refusals``' lines, every line at once."""
+    refusals = seed_refusals(target, seed)
+    if refusals:
+        raise UsageError("\n".join(refusals))
+
+
+def seed_refusals(target: Target, seed: Mapping[str, object]) -> list[str]:
+    """Every reason to refuse a parsed seed: its names, then its types.
+
+    When the seed's keys do not fit the parameters, that line is the only
+    one. Otherwise, for a method whose instance each input builds, the lines
+    for the object under its first parameter come first, checked against the
+    constructor (``ObjectCheck``), then each other value that contradicts its
+    annotation, in signature order.
+    """
+    fit = _fit_line(target.signature, seed)
+    if fit is not None:
+        return [fit]
+    checks = checked_annotations(target.signature, target.fn)
+    if target.self_class is None or target.self_name is None:
+        return contradictions(checks, seed)
+    name = target.self_name
+    lines = ObjectCheck.of(target.self_class, target.constructor).lines(name, seed[name])
+    others = {key: check for key, check in checks.items() if key != name}
+    return lines + contradictions(others, seed)
+
+
+def _fit_line(signature: inspect.Signature, seed: Mapping[str, object]) -> str | None:
+    """Why the seed's keys do not fit the parameters, or None when they fit. Names only, not
+    types.
 
     A positional-only parameter is named too, and bound by position, as the
     call will pass it.
     """
     reason = fit_failure(signature, seed)
-    if reason is not None:
-        # bind names a missing parameter before an unexpected key, so name the keys too
-        given = ", ".join(seed) or "nothing"
-        parameters = ", ".join(signature.parameters) or "no parameters"
-        raise UsageError(f"args ({given}) do not fit ({parameters}): {reason}")
-
-
-def check_seed_types(target: Target, seed: Mapping[str, object]) -> None:
-    """Refuse a seed that contradicts an annotation, naming every value at once."""
-    lines = type_contradictions(target, seed)
-    if lines:
-        raise UsageError("\n".join(lines))
-
-
-def type_contradictions(target: Target, seed: Mapping[str, object]) -> list[str]:
-    """Each value of the seed that contradicts an annotation, one reason each."""
-    return contradictions(checked_annotations(target.signature, target.fn), seed)
+    if reason is None:
+        return None
+    # bind names a missing parameter before an unexpected key, so name the keys too
+    given = ", ".join(seed) or "nothing"
+    parameters = ", ".join(signature.parameters) or "no parameters"
+    return f"args ({given}) do not fit ({parameters}): {reason}"

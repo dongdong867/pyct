@@ -3,7 +3,8 @@ import inspect
 import pytest
 
 from pyct.config.command_line import UsageError
-from pyct.run.seed_checks import check_seed_fits, parse_seed
+from pyct.run.seed_checks import check_seed, parse_seed, seed_refusals
+from pyct.run.target import Target
 from tests.nesting import nested_text, seed_limits
 
 
@@ -11,7 +12,13 @@ def classify(x: int) -> str:
     return "positive" if x > 0 else "other"
 
 
-SIGNATURE = inspect.signature(classify)
+def target_for(fn: object) -> Target:
+    """A Target around ``fn``, as the seed checks read it."""
+    assert callable(fn)
+    return Target(spec="m::f", fn=fn, file="m.py", signature=inspect.signature(fn))
+
+
+CLASSIFY = target_for(classify)
 
 
 @pytest.mark.parametrize("text", ["[1]", "1", '"x"', "null", "not json", ""])
@@ -24,36 +31,35 @@ def test_parse_seed_returns_the_object() -> None:
     assert parse_seed('{"x": 1, "s": "a"}') == {"x": 1, "s": "a"}
 
 
-def test_check_seed_fits_refuses_an_unexpected_key() -> None:
+def test_check_seed_refuses_an_unexpected_key() -> None:
     with pytest.raises(UsageError, match="y"):
-        check_seed_fits(SIGNATURE, {"y": 1})
+        check_seed(CLASSIFY, {"y": 1})
 
 
-def test_check_seed_fits_refuses_a_missing_key() -> None:
+def test_check_seed_refuses_a_missing_key() -> None:
     with pytest.raises(UsageError, match="x"):
-        check_seed_fits(SIGNATURE, {})
+        check_seed(CLASSIFY, {})
 
 
 def check(value: str, /, strict: bool = False) -> str:
     return value if strict else ""
 
 
-def test_check_seed_fits_takes_a_positional_only_parameter_by_name() -> None:
-    check_seed_fits(inspect.signature(check), {"value": "x", "strict": True})
+def test_check_seed_takes_a_positional_only_parameter_by_name() -> None:
+    check_seed(target_for(check), {"value": "x", "strict": True})
 
 
-def test_check_seed_fits_refuses_a_missing_positional_only_parameter() -> None:
+def test_check_seed_refuses_a_missing_positional_only_parameter() -> None:
     with pytest.raises(UsageError, match="value"):
-        check_seed_fits(inspect.signature(check), {"strict": True})
+        check_seed(target_for(check), {"strict": True})
 
 
-def test_check_seed_fits_accepts_a_fitting_seed() -> None:
-    check_seed_fits(SIGNATURE, {"x": 1})
+def test_check_seed_accepts_a_fitting_seed() -> None:
+    check_seed(CLASSIFY, {"x": 1})
 
 
-def test_check_seed_fits_ignores_the_value_type() -> None:
-    # names only: a wrong-typed value is the target's business, not the command line's
-    check_seed_fits(SIGNATURE, {"x": "a"})
+def test_seed_refusals_check_the_types_once_the_names_fit() -> None:
+    assert seed_refusals(CLASSIFY, {"x": "a"}) == ['x must be an int, got "a"']
 
 
 def test_parse_seed_takes_a_seed_nested_thousands_deep() -> None:
@@ -74,3 +80,60 @@ def test_parse_seed_refuses_a_seed_too_deep_to_write() -> None:
 
     with pytest.raises(UsageError, match="too deep for pyct to write"):
         parse_seed(nested_text(write))
+
+
+class Cart:
+    def __init__(self, owner: str) -> None:
+        self.owner = owner
+
+    def total(self, discount: int) -> int:
+        return discount
+
+
+# the method's signature with an annotation on self, which the check under self replaces
+_TOTAL = inspect.signature(Cart.total)
+_SELF = _TOTAL.parameters["self"].replace(annotation=str)
+CART = Target(
+    spec="m::Cart.total",
+    fn=Cart.total,
+    file="m.py",
+    signature=_TOTAL.replace(parameters=[_SELF, _TOTAL.parameters["discount"]]),
+    self_class=Cart,
+    self_name="self",
+    constructor=inspect.signature(Cart),
+)
+
+
+def test_seed_refusals_give_the_method_s_fit_alone_when_it_fails() -> None:
+    refusals = seed_refusals(CART, {"self": 5, "count": "5"})
+
+    assert len(refusals) == 1
+    assert refusals[0].startswith("args (self, count) do not fit (self, discount): ")
+
+
+def test_seed_refusals_give_the_lines_under_self_before_the_other_parameters() -> None:
+    assert seed_refusals(CART, {"discount": "5", "self": {"owner": 5}}) == [
+        "self['owner'] must be a str, got 5",
+        'discount must be an int, got "5"',
+    ]
+
+
+def test_seed_refusals_check_self_against_the_constructor_and_not_its_own_annotation() -> None:
+    assert seed_refusals(CART, {"self": 5, "discount": 1}) == [
+        "self must be a JSON object of Cart's constructor arguments, got 5"
+    ]
+
+
+def test_seed_refusals_pass_a_seed_that_fits() -> None:
+    assert seed_refusals(CART, {"self": {"owner": "ann"}, "discount": 1}) == []
+
+
+def test_check_seed_raises_every_refusal_as_one_line_each() -> None:
+    with pytest.raises(UsageError) as raised:
+        check_seed(CART, {"self": {"owner": 5, "__calls__": []}, "discount": 1.5})
+
+    assert str(raised.value).splitlines() == [
+        "self cannot hold '__calls__': pyct reserves keys that start and end with __",
+        "self['owner'] must be a str, got 5",
+        "discount must be an int, got 1.5",
+    ]
