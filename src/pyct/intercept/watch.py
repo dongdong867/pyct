@@ -5,7 +5,9 @@ __pyct_given__(b)), "f")`` (`pyct.core.entry.watch`): the callee and each
 argument are the call's own nodes, kept in place, so each is evaluated once
 and in Python's order, and the callee is called from the target's frame. The
 text is the callee as the call writes it, which names the downgrade a loss
-records. A constant after the first argument passes as written.
+records (`pyct.results.sources.written_name`, which a no-fork condition's
+sources read it back by). A constant after the first argument passes as
+written.
 
 A call is watched when its arguments are written out (`calls.written_out`),
 at least one is not a constant, and it calls a function pyct leaves to
@@ -25,6 +27,7 @@ import ast
 from pyct.core.entry.bound import BOUND as BOUND_BUILTINS
 from pyct.intercept.calls import spelled, written_out
 from pyct.intercept.positions import Parts, after_the_value
+from pyct.results.sources import written_name
 
 BOUND: dict[str, str] = {
     "__pyct_first__": "first",
@@ -54,7 +57,7 @@ def watched(call: ast.Call, parts: Parts, reserved: frozenset[str]) -> ast.Call:
     for keyword, value in zip(call.keywords, passed[count:], strict=True):
         keyword.value = value
     call.args = passed[:count]
-    text = ast.copy_location(ast.Constant(value=ast.unparse(call.func)), call)
+    text = ast.copy_location(ast.Constant(value=written_name(call.func)), call)
     outer = ast.Call(func=parts.named("__pyct_answer__", call), args=[call, text], keywords=[])
     return ast.copy_location(outer, call)
 

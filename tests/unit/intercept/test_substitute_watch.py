@@ -106,3 +106,19 @@ def test_the_call_stays_the_call_written_with_its_own_nodes() -> None:
 def test_a_watched_call_spread_over_lines_lines_up(source: str) -> None:
     indented = source.replace("\n", "\n    ")
     assert lined_up(f"def _f():\n    {indented}\n", "<f>")
+
+
+def test_a_long_method_chain_is_watched_without_a_deep_stack() -> None:
+    # 1,000 calls, each the callee of the next: the text of a callee this long is its last name
+    chain = "s" + ".replace(a, b)" * 1000
+    tree = substitute(ast.parse(chain))
+    compile(tree, "m.py", "exec")
+
+    outer = tree.body[-1].value  # pyrefly: ignore[missing-attribute]
+    assert isinstance(outer, ast.Call) and outer.args[1].value == "replace"  # pyrefly: ignore[missing-attribute]
+
+
+def test_a_short_callee_is_named_as_written() -> None:
+    assert watched("self.items[0].count(x)") == (
+        "__pyct_answer__(self.items[0].count(__pyct_first__(x)), 'self.items[0].count')"
+    )

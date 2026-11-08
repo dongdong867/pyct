@@ -1,5 +1,6 @@
 """Where a condition's value came from, read backward through its function's local names."""
 
+import sys
 import textwrap
 import types
 from collections.abc import Mapping
@@ -252,9 +253,69 @@ def test_a_module_that_no_longer_reads_gives_no_source(tmp_path: Path) -> None:
 
 def test_the_reading_stops_when_the_analysis_s_stop_comes(tmp_path: Path) -> None:
     file = module(tmp_path, COUNTS)
-
-    def stop() -> None:
-        raise OutOfTimeError
+    code = code_named(file, "counts")
+    origins = Origins(file, {}, step=lambda: None)
+    # the module is read once, so a later condition's steps are its reading's own
+    origins.of(code, 6, 7)
+    origins.step = stop
 
     with pytest.raises(OutOfTimeError):
-        Origins(file, {}, step=stop).of(code_named(file, "counts"), 6, 7)
+        origins.of(code, 6, 7)
+
+
+def test_each_walk_of_the_reading_takes_steps(tmp_path: Path) -> None:
+    file = module(tmp_path, COUNTS)
+    code = code_named(file, "counts")
+    walks: list[str] = []
+    origins = Origins(file, {}, step=lambda: walks.append(sys._getframe(1).f_code.co_name))
+
+    origins.of(code, 6, 7)
+    first = set(walks)
+    walks.clear()
+    origins.of(code, 6, 7)
+
+    # the module's functions and each one's bindings are read once; the condition's test and its
+    # names, for each condition
+    reading = {"_own_nodes", "sources", "_read"}
+    assert {"_function", "_with_loops", *reading} <= first
+    assert set(walks) == reading
+
+
+def stop() -> None:
+    raise OutOfTimeError
+
+
+NAMED = """\
+def powered(x):
+    base = 2
+    if pow(base, x) == 64:
+        return 1
+    n = 7
+    if n ^ x == 3:
+        return 2
+    return 0
+"""
+
+
+def test_a_lost_source_names_the_value_that_went_in_tracked(tmp_path: Path) -> None:
+    file = module(tmp_path, NAMED)
+    downgrades = {(3, 7): ("pow",), (6, 7): ("__rxor__",)}
+
+    assert sources(file, "powered", (3, 7), downgrades) == (lost(file, "x", "pow", 3, 7),)
+    assert sources(file, "powered", (6, 7), downgrades) == (lost(file, "x", "__rxor__", 6, 7),)
+
+
+COMPREHENSION_TEST = """\
+def picks(x):
+    return [
+        c
+        for c in bin(x)
+        if c == "z"
+    ]
+"""
+
+
+def test_a_comprehension_s_own_name_comes_from_the_comprehension(tmp_path: Path) -> None:
+    file = module(tmp_path, COMPREHENSION_TEST)
+
+    assert sources(file, "picks", (5, 11)) == (loop(file, "c", 2, 11),)

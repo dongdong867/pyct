@@ -1,7 +1,9 @@
 """A watched call: a tracked argument and a plain answer record a downgrade named as written."""
 
+import contextlib
 import math
 import sys
+import threading
 from typing import Any
 
 import pytest
@@ -139,3 +141,69 @@ def test_a_call_that_raised_leaves_the_next_call_its_own() -> None:
     answer(abs(first(-4)), "abs")
 
     assert lost(sink) == []
+
+
+def _catching(value: Any) -> int:
+    """A callee whose own watched call raises, and which catches it and answers plainly."""
+    with contextlib.suppress(ZeroDivisionError):
+        answer(divmod(first(value), given(0)), "divmod")
+    return 1
+
+
+def test_a_call_whose_callee_caught_a_raise_is_judged_by_its_own_argument() -> None:
+    sink: list[SinkItem] = []
+    x = tracked(3, sink)
+
+    # a plain list goes in, and the callee's divmod, left open, took the tracked x inside it
+    answer(first_of(first([x])), "first_of")
+    assert lost(sink) == []
+
+    # x goes in tracked, and the callee's divmod, left open, took a plain 7
+    answer(two(first(x)), "two")
+    assert [name for name, _ in lost(sink)] == ["two"]
+
+
+def first_of(items: list[object]) -> int:
+    return _catching(items[0])
+
+
+def two(_value: object) -> int:
+    _catching(7)
+    return 2
+
+
+def test_each_thread_keeps_its_own_open_calls() -> None:
+    sink: list[SinkItem] = []
+    x = tracked(3, sink)
+    opened, pushed, done = threading.Event(), threading.Event(), threading.Event()
+
+    def other() -> None:
+        # a plain call opens in another thread while this thread's call is open, and answers
+        # after it
+        opened.wait(5)
+        first(5)
+        pushed.set()
+        done.wait(5)
+        answer(2, "other")
+
+    def waits(_value: object) -> int:
+        opened.set()
+        pushed.wait(5)
+        return 2
+
+    thread = threading.Thread(target=other)
+    thread.start()
+    answer(waits(first(x)), "waits")
+    done.set()
+    thread.join(5)
+
+    assert [name for name, _ in lost(sink)] == ["waits"]
+
+
+def test_an_answer_that_holds_itself_is_read_once() -> None:
+    sink: list[SinkItem] = []
+    held: Any = [1]
+    held.append(held)
+
+    assert answer(first(tracked(3, sink)) and held, "f") is held
+    assert [name for name, _ in lost(sink)] == ["f"]

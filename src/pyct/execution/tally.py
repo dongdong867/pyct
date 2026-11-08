@@ -113,6 +113,7 @@ class Tally:
             if live is not None and live is not self and not placed:
                 name = item.name if isinstance(item, Downgrade) else item.lost_as
                 live.append(Downgrade(name=name, site=item.site))
+                escapes.RECORDED[0] += 1
             return
         if self.past_bound and not isinstance(item, Downgrade):
             return

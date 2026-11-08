@@ -31,7 +31,7 @@ _PINNED: dict[int, BranchSink] = {}
 
 # how many downgrades the process has recorded, which a call's watch reads before and after it
 # (`pyct.core.entry.watch`)
-LOST: list[int] = [0]
+RECORDED: list[int] = [0]
 
 
 def handed_into(sink: BranchSink, key: object) -> None:
@@ -77,7 +77,7 @@ def lost(sink: BranchSink, downgrade: Downgrade, on: Iterable[object] = ()) -> N
     operation was given ``on``, its operands, and none may hold a key. An escape is for good, so
     the keys leave the registry, and a downgrade inside a walk looks at each key once."""
     sink.append(downgrade)
-    LOST[0] += 1
+    RECORDED[0] += 1
     operands = tuple(on)
     if operands and not any(_may_hold_a_key(operand) for operand in operands):
         return

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from pyct.intercept import cache
+from pyct.intercept import cache, substitute
 from pyct.intercept.cache import CACHE_VARIABLE, cache_folder, cached
 
 
@@ -237,3 +237,25 @@ def test_a_folder_that_fails_each_write_is_named_once(
         Module(tmp_path / folder, "x = 1").code(tmp_path / "cache")
 
     assert len([record for record in caplog.records if record.levelname == "WARNING"]) == 1
+
+
+def test_the_transform_s_version_reads_each_rule_the_transform_imports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    read: list[str] = []
+    real = Path.read_bytes
+
+    def reads(path: Path) -> bytes:
+        read.append(str(path))
+        return real(path)
+
+    monkeypatch.setattr(Path, "read_bytes", reads)
+    cache._version.__wrapped__()
+
+    # a rule changed alone makes a new version, so no older rule's code is read again
+    rules = [
+        str(module.__file__)
+        for module in vars(substitute).values()
+        if isinstance(module, types.ModuleType) and module.__name__.startswith("pyct.intercept.")
+    ]
+    assert rules and set(rules) <= set(read)
