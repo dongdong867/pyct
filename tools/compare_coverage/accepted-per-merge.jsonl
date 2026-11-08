@@ -138,6 +138,7 @@
 {"set": "v2", "target": "targets.floats.rounding::round_off", "seed": {"x": 0.5, "n": 0}, "status": "differs", "only_legacy": [], "only_v2": [7, 9, 11, 13]}
 {"set": "v2", "target": "targets.floats.rounding_exact::hit", "seed": {"x": 0.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.searched_members::ratios", "seed": {"f": 3.0}, "status": "differs", "only_legacy": [], "only_v2": [14]}
+{"set": "v2", "target": "targets.floats.slow_modulo::rest", "seed": {"x": 0.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.true_division::ratio", "seed": {"x": 1.0, "y": 1.0}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.floats.truth_test::tell", "seed": {"x": 1.5}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.intercept.across::spread", "seed": {"x": 10}, "status": "differs", "only_legacy": [], "only_v2": [17]}
@@ -337,7 +338,6 @@
 {"set": "v2", "target": "targets.strs.searched_members::not_tagged", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [46]}
 {"set": "v2", "target": "targets.strs.searched_members::touchy", "seed": {"s": "x"}, "status": "differs", "only_legacy": [], "only_v2": [58]}
 {"set": "v2", "target": "targets.strs.shouted_pair::pair", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [3]}
-{"set": "v2", "target": "targets.strs.six_compares::count", "seed": {"s": "a"}, "status": "differs", "only_legacy": [], "only_v2": [12]}
 {"set": "v2", "target": "targets.strs.special_characters::match", "seed": {"s": ""}, "status": "differs", "only_legacy": [], "only_v2": [3]}
 {"set": "v2", "target": "targets.strs.split_family::route", "seed": {"s": "a,b"}, "status": "differs", "only_legacy": [], "only_v2": [], "varies": {"only_legacy": [3], "only_v2": [5, 7, 9, 11], "reason": "v2 misses line 3 only when its run ends on its budget: 3 of 29 saved per-merge gate runs on 2026-09-27 and 2026-09-28 had legacy alone on 3, each with v2 stopped on budget spent; the other 26 had v2 cover all 11 lines with no fork to flip"}}
 {"set": "v2", "target": "targets.strs.split_forms::read", "seed": {"s": "x y"}, "status": "differs", "only_legacy": [], "only_v2": [5]}
