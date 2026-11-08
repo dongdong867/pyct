@@ -266,14 +266,15 @@ class RunResult:
         # the stop cut short leave every line not worked out
         if not run.late():
             with contextlib.suppress(OutOfTimeError):
-                tries = _tries(self, Pace(run.late))
+                pace = Pace(run.late)
+                tries = _tries(self, pace)
                 walked = [
                     Walked(
                         record.forks, record.failure is not None, record.covered_lines, record.facts
                     )
                     for record in self.records
                 ]
-                run = Run(walked, tries, stop_at=stop_at)
+                run = Run(walked, tries, stop_at=stop_at, lost=_lost(self, pace))
         # what the inputs ran, without the import's lines: a function only the import called is
         # one no input entered, and its lines the import skipped are not called
         ran = frozenset[int]().union(*(record.covered_lines for record in self.records))
@@ -282,6 +283,16 @@ class RunResult:
             for file, lines in self.coverage.uncovered.items()
             for entry in explain(file, lines, ran & self.coverage.lines[file], run)
         )
+
+
+def _lost(result: RunResult, pace: Pace) -> dict[Site, tuple[str, ...]]:
+    """The names of the downgrades the inputs recorded at each site, in the order first
+    recorded, each a step of ``pace``."""
+    names: dict[Site, dict[str, None]] = {}
+    for record in result.records:
+        for entry in pace.each(record.downgrades):
+            names.setdefault(entry.site, {})[entry.name] = None
+    return {site: tuple(held) for site, held in names.items()}
 
 
 def _tries(result: RunResult, pace: Pace) -> dict[ForkSite, Tries]:

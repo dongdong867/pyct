@@ -5,6 +5,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from pyct.core.foundation.branch import Branch, ForkSite, Site
+from pyct.results.causes import Source, SourceKind
 from pyct.results.why import Condition, Reason, Run, Tries, Walked, WhyEntry, explain
 
 
@@ -103,12 +104,31 @@ def test_a_plain_condition_whose_side_no_input_took_recorded_no_fork(tmp_path: P
 
     (entry,) = why(file, ({4}, {2, 3, 5}))
 
+    # no input recorded the downgrade c's value was lost at, so no source is found
     assert entry == WhyEntry(
         file=file,
         lines=(4,),
         reason=Reason.NO_FORK,
         condition=Condition(site=Site(file=file, line=3, col=7), side=True),
+        sources=(),
     )
+
+
+def test_a_no_fork_entry_names_where_its_value_was_lost(tmp_path: Path) -> None:
+    source = """\
+    def big(x):
+        c = x ^ 0
+        if c > 10:
+            return "big"
+        return "small"
+    """
+    file = module(tmp_path, source)
+    lost = {Site(file=file, line=2, col=8): ("__xor__",)}
+
+    (entry,) = explain(file, frozenset({4}), frozenset({2, 3, 5}), Run((), {}, lost=lost))
+
+    site = Site(file=file, line=2, col=8)
+    assert entry.sources == (Source(SourceKind.LOST, "x", site, "__xor__"),)
 
 
 def test_the_first_untaken_side_on_the_way_is_blamed_for_every_line_behind_it(
