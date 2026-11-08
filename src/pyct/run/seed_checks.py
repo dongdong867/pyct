@@ -68,6 +68,16 @@ def _depth(value: object) -> int:
     return deepest
 
 
+def missing_args_message(signature: inspect.Signature) -> str:
+    """Name the parameters the seed must give, and each way to pass it."""
+    parameters = ", ".join(signature.parameters) or "no parameters"
+    return (
+        f"args are required: a JSON object for {parameters}\n"
+        f"pass it after the target (pyct run MODULE::FUNCTION JSON) or through --args,"
+        f" or a file of them through --seeds"
+    )
+
+
 def check_seed_fits(signature: inspect.Signature, seed: Mapping[str, object]) -> None:
     """Refuse a seed whose keys do not fit the parameters. Names only, not types.
 
