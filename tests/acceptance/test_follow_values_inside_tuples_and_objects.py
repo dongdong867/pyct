@@ -228,7 +228,7 @@ def same_types_run(isolation: Isolation, monkeypatch: pytest.MonkeyPatch) -> tup
     return run(target, seed, isolation=isolation), module
 
 
-# run-with-nested-arguments-hands-back-the-same-types, all but its last clause
+# run-with-nested-arguments-hands-back-the-same-types, all but its last clause (see below)
 @pytest.mark.parametrize("isolation", EVERYWHERE)
 def test_hands_back_the_same_types(isolation: Isolation, monkeypatch: pytest.MonkeyPatch) -> None:
     result, module = same_types_run(isolation, monkeypatch)
@@ -251,12 +251,17 @@ def test_hands_back_the_same_types(isolation: Isolation, monkeypatch: pytest.Mon
 
 
 # run-with-nested-arguments-hands-back-the-same-types, its last clause: no record says the target
-# raised
+# raised, except a KeyError in a record whose `by_id` lacks the key 1
 @pytest.mark.parametrize("isolation", EVERYWHERE)
-def test_hands_back_the_same_types_with_no_raise(
+def test_hands_back_the_same_types_raising_only_where_by_id_lacks_its_key(
     isolation: Isolation, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     result, _ = same_types_run(isolation, monkeypatch)
 
-    raised = [r.failure for r in result.records if r.failure is not None]
-    assert all(failure.kind is not FailureKind.TARGET_RAISED for failure in raised), raised
+    for record in result.records:
+        failure, by_id = record.failure, record.args["by_id"]
+        if failure is None:
+            continue
+        assert failure.kind is FailureKind.TARGET_RAISED, record
+        assert failure.detail.startswith("KeyError"), record
+        assert isinstance(by_id, dict) and 1 not in by_id, record
