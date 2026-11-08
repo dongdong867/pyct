@@ -35,6 +35,9 @@ KINDS = [
     pytest.param([">", ["+", "n", 1], 0], {}, id="ints"),
     pytest.param([">", ["+", "x", 1.5], 0.0], {}, id="doubles"),
     pytest.param(["==", ["len", "s"], 3], {}, id="strings"),
+    # a string that only spells a conversion, a quote inside it among them
+    pytest.param(["==", "s", repr("(fp.to_real x)")], {}, id="spelled-to-real"),
+    pytest.param(["==", "s", repr('say "((_ to_fp 11 53) RNE" now')], {}, id="spelled-to-double"),
 ]
 
 

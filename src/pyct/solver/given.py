@@ -49,6 +49,10 @@ _CONVERSION = re.compile(r"\(fp\.to_real |\(_ to_fp ")
 # a string in a program: the String sort, or a string operation
 _STRING = re.compile(r"[\s(]String[\s)]|\(str\.")
 
+# a string literal, or one run of it: an escaped quote, ``""``, ends one run and starts the next,
+# so blanking each run blanks the whole literal
+_LITERAL = re.compile(r'"[^"]*"')
+
 # the programs of each ask a caller is taking now, the innermost last
 _TAKING: list[list[Given]] = []
 
@@ -119,10 +123,12 @@ def options(timeout: float, text: str) -> tuple[str, ...]:
 
 def _added(text: str) -> tuple[tuple[str, str], ...]:
     """The options a program gets beside ``ARGUMENTS`` and its limit: none unless it converts
-    between a double and a real, and then those for a program with a string or without one."""
-    if _CONVERSION.search(text) is None:
+    between a double and a real, and then those for a program with a string or without one.
+    What a string literal spells is no term of the program."""
+    terms = _LITERAL.sub('""', text)
+    if _CONVERSION.search(terms) is None:
         return ()
-    return _STRINGS_ADDED if _STRING.search(text) else _OTHERS_ADDED
+    return _STRINGS_ADDED if _STRING.search(terms) else _OTHERS_ADDED
 
 
 def answered(stdout: str | None, answer: Answer) -> str:
