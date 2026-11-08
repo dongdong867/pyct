@@ -58,8 +58,8 @@ class Target:
 
     ``self_name`` is that method's first parameter, when it takes a position:
     the seed's key for the constructor's arguments, from which each input
-    builds the instance. With none, nothing is built, and the seed's value
-    for the method's parameters is passed as given. ``constructor`` is the
+    builds the instance. With none, no instance is built, and each seed
+    value goes to the method as given. ``constructor`` is the
     class's signature, as Python reads it at load, or None when Python
     cannot read it; the instance is still built then.
 
