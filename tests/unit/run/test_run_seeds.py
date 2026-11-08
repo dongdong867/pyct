@@ -1,5 +1,6 @@
 """A caller of run() gives it several seeds: each runs, in order, before any solver input."""
 
+import dataclasses
 import time
 from collections import deque
 
@@ -171,3 +172,20 @@ def test_one_seed_that_gains_nothing_still_gives_the_solver_a_turn() -> None:
     assert _covered_or_plateau(Bounds(plateau=1, seeds=1), progress) == Stop(
         StopKind.NO_GAIN, plateau=1
     )
+
+
+def test_one_seed_that_covers_no_line_in_scope_still_gives_the_solver_a_turn() -> None:
+    target = load_target(BUCKET)
+    # measured against another module, as a function another file defines is: no input covers
+    # a line in scope, so only the plateau ends the run
+    elsewhere = dataclasses.replace(target, file=load_target(NO_CHECK).file)
+
+    result = run(
+        elsewhere,
+        {"x": 5},
+        limits=Limits(plateau=Plateau(inputs=1)),
+        isolation=Isolation.IN_PROCESS,
+    )
+
+    assert sources(result.records) == [Source.SEED, Source.SOLVER]
+    assert result.stopped == Stop(StopKind.NO_GAIN, plateau=1)

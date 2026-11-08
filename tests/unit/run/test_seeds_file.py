@@ -110,12 +110,18 @@ def test_read_leaves_a_byte_order_mark_out_of_the_first_line(tmp_path: Path) -> 
     assert read_seeds_file(name).lines == ((1, '{"x": 1}'),)
 
 
+def test_read_leaves_a_byte_order_mark_out_of_a_later_line(tmp_path: Path) -> None:
+    name = written(tmp_path, b'{"x": 1}\n\xef\xbb\xbf{"x": 2}\n')
+
+    assert read_seeds_file(name).lines == ((1, '{"x": 1}'), (2, '{"x": 2}'))
+
+
 def test_read_refuses_an_empty_name() -> None:
     with pytest.raises(UsageError, match="^--seeds needs a file name$"):
         read_seeds_file("")
 
 
-def test_checked_keeps_a_reason_with_a_line_break_on_one_line() -> None:
+def test_checked_gives_a_reason_with_a_line_break_one_prefix() -> None:
     file = SeedsFile("s.jsonl", ((1, '{"a\\nb": 5}'),))
 
     with pytest.raises(UsageError) as raised:

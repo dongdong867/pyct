@@ -13,6 +13,8 @@ from pyct.run.target import Target
 
 # what JSON reads as space between values within a line: a line of only these is blank
 _BLANK = " \t"
+# the byte-order mark an editor may write at a file's start
+_MARK = "\ufeff"
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,8 @@ class FileSeed:
 
 def read_seeds_file(name: str) -> SeedsFile:
     """Read the file ``name`` names. Refuse an empty name, and a file that cannot be read or
-    holds only blank lines. A byte-order mark at the file's start is not part of its first line.
+    holds only blank lines. A byte-order mark at a line's start is not part of the line, so a
+    file made by joining files that start with one reads as they do.
 
     A line ends where Python's text reading ends one, at ``\\n``, ``\\r\\n`` or
     ``\\r``; a line separator ``splitlines`` would also split on, such as
@@ -49,12 +52,12 @@ def read_seeds_file(name: str) -> SeedsFile:
     if not name:
         raise UsageError("--seeds needs a file name")
     try:
-        text = Path(name).read_text(encoding="utf-8-sig")
+        text = Path(name).read_text(encoding="utf-8")
     except OSError as error:
         raise UsageError(f"cannot read {name}: {error.strerror}") from error
     except UnicodeDecodeError as error:
         raise UsageError(f"cannot read {name}: {error}") from error
-    numbered = enumerate(text.split("\n"), start=1)
+    numbered = enumerate((line.removeprefix(_MARK) for line in text.split("\n")), start=1)
     lines = tuple((number, line) for number, line in numbered if line.strip(_BLANK))
     if not lines:
         raise UsageError(f"{name} holds no seed")
@@ -64,8 +67,9 @@ def read_seeds_file(name: str) -> SeedsFile:
 def checked_seeds(target: Target, file: SeedsFile) -> tuple[FileSeed, ...]:
     """Each line's seed, checked as ``--args`` checks one: its shape, its names, then its types.
 
-    Every bad line is refused at once, each reason the checks give on a line
-    of its own, as ``FILE:N: <reason>``.
+    Every bad line is refused at once, each reason the checks give after a
+    ``FILE:N: `` of its own; a reason that holds a line break, as a key may,
+    keeps it.
     """
     seeds: list[FileSeed] = []
     refusals: list[str] = []

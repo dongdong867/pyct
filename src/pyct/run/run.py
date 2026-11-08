@@ -371,13 +371,13 @@ def _attempt(
 def _seed_attempt(
     call: Call, waiting: deque[Seed], bounds: Bounds, progress: Progress
 ) -> Attempt | None:
-    """One pass for the next seed still waiting: the clock, the coverage, then the seed. None
-    when no seed waits.
+    """One pass for the next seed still waiting: the clock, the coverage and the plateau, then
+    the seed. None when no seed waits.
 
-    No fork is picked while a seed waits, so ``no fork to flip`` does not
-    hold, and the plateau never does before the last seed; the budget and full
-    coverage stop the run as ``_attempt`` says, and the seeds after it do not
-    run.
+    No fork is picked while a seed waits, so ``no fork to flip`` is not
+    checked, and the plateau, checked as ``_attempt`` checks it, cannot hold
+    before the last seed. The budget and full coverage stop the run as they
+    do in ``_attempt``, and the seeds after it do not run.
     """
     if not waiting:
         return None
@@ -405,8 +405,9 @@ def _solved(wanted: Plan, origin: Seed, limit: float) -> tuple[Answer, float, As
 
 
 def _covered_or_plateau(bounds: Bounds, progress: Progress) -> Stop | None:
-    """The stop once a fork is picked: every line and branch covered, for the coverage goal, then
-    the plateau, which counts only the inputs after the seeds. None when neither holds."""
+    """The stop on every line and branch covered, for the coverage goal, then the plateau, which
+    counts only the inputs after the last seed and so never holds while one waits. None when
+    neither holds."""
     if bounds.goal is Goal.COVERAGE and progress.full():
         return Stop(StopKind.FULL)
     plateau = bounds.plateau

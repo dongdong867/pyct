@@ -3,7 +3,7 @@ import inspect
 from pyct.cli import missing_args_message
 
 
-def test_missing_args_message_names_the_parameters_and_both_forms() -> None:
+def test_missing_args_message_names_the_parameters_and_each_form() -> None:
     def target(x: int, name: str) -> None:
         pass
 
