@@ -54,6 +54,8 @@ LOSSES: dict[str, frozenset[str]] = {
     "shop.typed::rebuilt": frozenset({"classes.rebuild"}),
     "targets.types.dispatched::f": frozenset({"kind"}),
     "targets.types.matched::f": frozenset({"kind"}),
+    "targets.types.views::copied": frozenset({"compared"}),
+    "targets.types.views::pickled": frozenset({"compared"}),
 }
 
 

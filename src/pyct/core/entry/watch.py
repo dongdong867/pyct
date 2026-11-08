@@ -23,7 +23,10 @@ or when a call of a frame below it takes an argument or answers, once the
 frame that left it has returned. A stack keeps its newest `MOST_OPEN`
 entries. A call of the target's that starts drops every thread's open calls
 (``forget``). The count of downgrades the watch reads is the process's, on
-every thread (`escapes.RECORDED`).
+every thread (`escapes.RECORDED`). While the interpreter shuts down, as a
+target's tracer can still run, each function hands its value back and does
+nothing else: the modules it reads may be cleared by then, and the function
+holds what tells it so.
 """
 
 from __future__ import annotations
@@ -31,10 +34,15 @@ from __future__ import annotations
 import sys
 import threading
 import types
+from collections.abc import Callable
 
 from pyct.core.entry.bases import TRACKED_CLASSES
 from pyct.core.foundation import escapes
 from pyct.core.foundation.branch import Downgrade, caller_site
+
+# Python's own, which each watched call reads: the target may put others in `builtins` while
+# one of its calls runs
+_id, _len, _range, _set, _type = id, len, range, set, type
 
 # the types a plain answer is made of, and the containers that may hold them
 _PLAIN = frozenset({int, float, bool, str})
@@ -76,32 +84,40 @@ def forget() -> None:
     _ROUND[0] += 1
 
 
-def first[Value](value: Value, /) -> Value:
+def first[Value](value: Value, /, *, _ending: Callable[[], bool] = sys.is_finalizing) -> Value:
     """A call's first argument: the call starts, noting the argument when it is tracked."""
-    tracked = value if type(value) in TRACKED_CLASSES else None
+    if _ending():
+        return value
+    tracked = value if _type(value) in TRACKED_CLASSES else None
     calls = _calls()
     call = _Open(sys._getframe(1), tracked, escapes.RECORDED[0])
     _drop_left_at(calls, call)
-    if len(calls) == MOST_OPEN:
+    if _len(calls) == MOST_OPEN:
         del calls[0]
     calls.append(call)
     return value
 
 
-def given[Value](value: Value, /) -> Value:
+def given[Value](value: Value, /, *, _ending: Callable[[], bool] = sys.is_finalizing) -> Value:
     """A later argument of the frame's newest open call, noted when it is tracked and the call
     has none yet."""
+    if _ending():
+        return value
     top = _top(_calls(), sys._getframe(1))
     if top is None:
         return value
-    if top.tracked is None and type(value) in TRACKED_CLASSES:
+    if top.tracked is None and _type(value) in TRACKED_CLASSES:
         top.tracked = value
     top.count = escapes.RECORDED[0]
     return value
 
 
-def answer[Result](result: Result, name: str, /) -> Result:
+def answer[Result](
+    result: Result, name: str, /, *, _ending: Callable[[], bool] = sys.is_finalizing
+) -> Result:
     """The call's answer, handed back, after a loss it shows is recorded under ``name``."""
+    if _ending():
+        return result
     calls = _calls()
     top = _top(calls, sys._getframe(1))
     if top is None:
@@ -127,7 +143,7 @@ def _calls() -> list[_Open]:
 def _drop_left_at(calls: list[_Open], call: _Open) -> None:
     """Drop the call the frame left open at the place ``call`` starts, and every call after it:
     the frame runs that place again, so none of them answers."""
-    for at in range(len(calls) - 1, -1, -1):
+    for at in _range(_len(calls) - 1, -1, -1):
         if calls[at].frame is not call.frame:
             return
         if calls[at].at == call.at:
@@ -139,7 +155,7 @@ def _top(calls: list[_Open], frame: types.FrameType) -> _Open | None:
     """The newest call ``frame`` started, after the calls above it are dropped: each one left
     open by a frame above that has since returned. None when ``frame`` has no call open, which
     leaves the stack as it was."""
-    for at in range(len(calls) - 1, -1, -1):
+    for at in _range(_len(calls) - 1, -1, -1):
         if calls[at].frame is frame:
             del calls[at + 1 :]
             return calls[at]
@@ -150,17 +166,17 @@ def _plain(value: object) -> bool:
     """Whether a value is a plain int, float, bool or str, or a container of only those, each
     container read once."""
     stack = [value]
-    read: set[int] = set()
+    read: set[int] = _set()
     while stack:
         part = stack.pop()
-        kind = type(part)
+        kind = _type(part)
         if kind in _PLAIN:
             continue
         if kind not in _CONTAINERS and kind is not dict:
             return False
-        if id(part) in read:
+        if _id(part) in read:
             continue
-        read.add(id(part))
+        read.add(_id(part))
         if kind is dict:
             stack.extend(part.keys())  # pyrefly: ignore[missing-attribute]
             stack.extend(part.values())  # pyrefly: ignore[missing-attribute]
