@@ -54,6 +54,10 @@ class Pinned:
         return discount
 
 
+# each time a ``Slow``'s ``__del__`` started
+DEL_STARTS: list[float] = []
+
+
 class Slow:
     """An instance whose ``__del__`` outlasts any short deadline."""
 
@@ -61,7 +65,8 @@ class Slow:
         self.x = x
 
     def __del__(self) -> None:
-        time.sleep(2)
+        DEL_STARTS.append(time.monotonic())
+        time.sleep(3)
 
     def m(self) -> int:
         return self.x
@@ -109,7 +114,7 @@ def test_a_raise_in_the_constructor_is_the_target_s_and_says_it_came_while_build
 
 def test_a_raise_in_a_constructor_written_in_c_is_the_target_s() -> None:
     with pytest.raises(ValueError) as plain:
-        # float's own parameter goes by position only, as the build passes it
+        # float's own parameter goes by position only, as the construction passes it
         Ratio("a")
 
     result = built(Ratio, Ratio.double, {"self": {"x": "a"}})
@@ -142,7 +147,7 @@ def test_a_raise_from_pyct_under_the_constructor_is_a_pyct_bug(
     assert result.failure.detail == "RuntimeError: boom"
 
 
-def test_a_raise_in_the_method_after_the_build_says_nothing_of_building() -> None:
+def test_a_raise_in_the_method_after_the_construction_says_nothing_of_building() -> None:
     result = built(Cart, Cart.total, {"self": {"owner": "ann"}, "discount": -1})
 
     assert result.failure == Failure(
@@ -170,8 +175,10 @@ def test_a_value_that_is_not_a_dict_is_passed_as_self_as_given() -> None:
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
 def test_the_instance_goes_inside_the_deadline_so_its_del_is_held_to_it() -> None:
     # plain Python drops the instance as the method returns, inside the call
+    DEL_STARTS.clear()
     started = time.monotonic()
 
-    built(Slow, Slow.m, {"self": {"x": 1}}, started + 0.2)
+    built(Slow, Slow.m, {"self": {"x": 1}}, started + 0.5)
 
-    assert time.monotonic() - started < 1.5
+    assert len(DEL_STARTS) == 1
+    assert time.monotonic() - started < 2
