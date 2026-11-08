@@ -162,7 +162,7 @@ def test_positional_only_parameters_go_by_position_on_both_calls() -> None:
     assert [branch.expression for branch in result.branches] == [OWNER_IS_ADMIN]
 
 
-def test_a_value_that_is_not_a_dict_is_passed_as_self_as_given() -> None:
+def test_an_instance_given_as_self_runs_the_method_with_its_attributes_followed() -> None:
     result = built(Cart, Cart.total, {"self": Cart("ann"), "discount": 5})
 
     # the instance's owner is followed by its attribute, as the walk names it

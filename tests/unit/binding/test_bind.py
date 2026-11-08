@@ -379,10 +379,14 @@ class Wrapped:
         self.held = held
 
 
-def test_a_copy_that_fails_part_way_leaves_nothing_half_made_behind() -> None:
+def test_a_list_reached_first_through_a_tuple_is_named_through_it() -> None:
     # a tuple's items are walked, so the list in it is the walk's own, named through the tuple
     x: list[object] = [threading.Lock(), 0]
+
     assert leaves({"t": (x,), "a": x}) == {json.dumps(["[]", ["[]", "t", 0], 1]): int}
+
+
+def test_a_copy_that_fails_part_way_leaves_nothing_half_made_behind() -> None:
     # deepcopy records an object's copy before it copies what it holds, and the lock refuses
     w = Wrapped([threading.Lock(), 0])
 
