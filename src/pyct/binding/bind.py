@@ -24,17 +24,20 @@ def bind(
     """Give every int, str, float and bool in the seed, at any depth, its access and the sink,
     and every list the walk names its form.
 
-    A parameter's own value is named by the parameter. A value inside a dict
-    or a list is named by the access that reaches it, one ``["[]", <container>,
-    <key>]`` per step, so ``config["server"]["port"]`` is
+    A parameter's own value is named by the parameter. A value inside a dict,
+    a list, a tuple or an object is named by the access that reaches it, one
+    ``["[]", <container>, <key>]`` per key or index and one
+    ``["getattr", <object>, "'<name>'"]`` per attribute, so
+    ``config["server"]["port"]`` is
     ``["[]", ["[]", "config", "'server'"], "'port'"]``. The seed decides the
     type: JSON ``true`` is a tracked bool whatever the annotation says. A list the
     walk names is a tracked list whose form is its access, so its length and
     its changes are followed too, and a dict the walk names is a tracked dict
     of that access, so its keys and its changes are.
 
-    Every dict and list the walk reaches is rebuilt, whatever key it sits
-    under, and every other value deepcopy can copy is copied, so a change the
+    Every dict, list and tuple the walk reaches is rebuilt, whatever key it
+    sits under, and every other value deepcopy can copy is copied, an
+    object's attributes followed into its copy, so a change the
     target makes to a copy reaches neither the seed nor a later input. A
     value under a key no access can name, a float key say, is copied the same
     way and tracked nowhere; a value deepcopy refuses is handed on as it came
