@@ -52,8 +52,22 @@ class OneOf:
     kinds: tuple[type, ...]
 
 
-# what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union
-type Check = type | Items | OneOf
+@dataclass(frozen=True)
+class Fields:
+    """A dict whose keys are fixed: a constructor's arguments, which pyct unpacks itself.
+
+    Its values are tracked and named by their keys, as a dict's values are,
+    while the dict itself is not, so no answer adds a key, drops one or
+    changes its length. ``each`` is what each key's own annotation asks of
+    its value.
+    """
+
+    each: Mapping[str, "Check"]
+
+
+# what an annotation asks of a value: a plain type, a list or dict, or, for an item, a union;
+# and what the arguments a method's instance is built from ask
+type Check = type | Items | OneOf | Fields
 
 
 def check_of(annotation: object) -> Check | None:
@@ -126,8 +140,12 @@ def contradictions(checks: Mapping[str, Check], seed: Mapping[str, object]) -> l
 
 
 def _refused(check: Check, value: object, written: str) -> list[str]:
-    """The lines for one value and everything under it. ``written`` is its access."""
-    if isinstance(check, Items) and check.keys is not str:
+    """The lines for one value and everything under it. ``written`` is its access.
+
+    A dict whose keys are not strs gives none, and so does ``Fields``, which
+    ``checked_annotations`` never makes.
+    """
+    if isinstance(check, Fields) or (isinstance(check, Items) and check.keys is not str):
         return []
     if isinstance(check, type):
         check = OneOf((check,))
