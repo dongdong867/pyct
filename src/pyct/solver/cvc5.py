@@ -64,9 +64,9 @@ CHOSEN_SECONDS = 1.0
 
 # the steps all reads of the unsettled program asked after a settled unsat may take together, per
 # square root of a second of the solve's limit, so a path's outcome never turns on how long the
-# first ask took. Each cut of a list at open clamps doubles the steps, and cvc5's time grows with
-# their square, so the steps a limit allows grow with its square root. cvc5 1.4.2, three runs
-# at a load of about 4:
+# first ask took. Each cut of a list at open clamps doubles the steps, and up to ten cuts cvc5's
+# time grows about with their square, so the steps a limit allows grow with its square root.
+# cvc5 1.4.2, three runs at a load of about 4:
 #
 #   cuts   steps  seconds
 #      7   1,271  0.17-0.18
@@ -75,8 +75,8 @@ CHOSEN_SECONDS = 1.0
 #     10  10,231  11.3-12.3
 #
 # 1 s allows 2,700 steps, 2 s 3,818, 5 s 6,037 and the 10 s default 8,538. So eight cuts are
-# asked at 1 s and 2 s, and nine at 5 s and 10 s; ten are given up at once at 10 s. An asked
-# program takes at most about three quarters of the limit
+# asked at 1 s and 2 s, and nine at 5 s and 10 s; ten are given up at once at 10 s. Each row
+# above took 72% to 86% of the shortest limit that asks it
 UNSETTLED_STEPS_PER_ROOT_SECOND = 2_700
 
 # how often a read that runs long settles the clamps it went through before every clamp settles
